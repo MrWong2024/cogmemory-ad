@@ -13,6 +13,7 @@
 - 测试环境默认 `STORAGE_DRIVER=fake`。
 - 测试环境 `LLM_PROVIDER=stub`，不得依赖真实大模型调用。
 - 当前没有 E2E 用例。
+- `tsconfig.build.tsbuildinfo` 为 TypeScript 增量构建缓存，不进入版本库。
 
 ## 3. 当前 package.json 脚本
 
@@ -34,11 +35,24 @@
 
 ## 4. 当前可执行性说明
 
+- 当前已验证命令：
+  - `npm install`
+  - `npm run build`
+  - `npm test -- --runInBand`
+- 当前验证结果：
+  - `npm install` 成功。
+  - `npm run build` 成功。
+  - `npm test -- --runInBand` 成功。
+  - 3 个测试套件通过。
+  - 9 个测试通过。
+- 当前未验证命令：
+  - `npm run lint`
+  - `npm run test:e2e`
 - 如果 `backend\node_modules` 存在，可执行 `npm run build` 验证 TypeScript 编译。
 - 如果 `backend\node_modules` 存在，可执行 `npm test -- --runInBand` 验证单元测试。
 - 如果 `backend\node_modules` 不存在，不应自动执行 `npm install`。
 - 当前任务不调用真实 OSS、阿里云 SMS、大模型或生产数据库。
-- `test:e2e` 脚本存在，但当前没有 E2E 用例，后续新增真实 HTTP 闭环后再同步。
+- `test:e2e` 脚本存在，但当前没有 E2E 用例，且本次未执行 E2E；后续新增真实 HTTP 闭环后再同步。
 
 ## 5. 当前单元测试口径
 

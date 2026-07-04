@@ -73,6 +73,14 @@
 - 影响范围：`backend\src` 公共底座、`backend\README.md` 和后端 handoff 文档。
 - 后续复查点：后续新增认证、用户、医生、患者、量表、评估、报告、SMS、LLM 或业务上传能力时，必须以单独任务明确边界、接口、数据模型和测试。
 
+### D-008：TypeScript 增量构建缓存不纳入版本库
+
+- 日期：2026-07-05
+- 决策：保留 `backend\tsconfig.json` 中 `rootDir: "./src"`，用于解决 TypeScript / VS Code 对源代码根目录的提示问题；显式将 `tsBuildInfoFile` 指向 `./dist/tsconfig.build.tsbuildinfo`，并将 `*.tsbuildinfo` 视为 TypeScript 增量构建缓存生成物，不纳入仓库跟踪。
+- 背景：后端公共底座已完成本地验证，需要清理误入文件树的 `backend\tsconfig.build.tsbuildinfo`，并避免后续 build 再次带入增量构建缓存。
+- 影响范围：`backend\.gitignore`、`backend\tsconfig.json`、后端 README 和 handoff 验证记录。
+- 后续复查点：当前后端公共底座已通过 `npm install`、`npm run build`、`npm test -- --runInBand` 验证，验证结果为 3 个测试套件、9 个测试全部通过；lint 和 E2E 未执行，且本决策不代表任何业务模块已经实现。
+
 ## 4. 后续同步规则
 
 - 新增关键技术选型、接口设计、数据模型、测试策略或部署策略后，应追加决策记录。

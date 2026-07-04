@@ -20,6 +20,8 @@ This directory contains the NestJS backend public foundation for CogMemory AD /
 - No authentication, user management, doctor, patient, scale, assessment,
   report, SMS, or LLM business service is implemented.
 - No business module, DTO, schema, or API has been added.
+- `*.tsbuildinfo` files are TypeScript incremental build caches and are not
+  tracked as source files.
 
 ## Defaults
 
@@ -56,3 +58,16 @@ Current `package.json` scripts are:
 
 Dependencies were not installed by this task. Build and unit tests require
 `backend\node_modules` to exist.
+
+## Current Verification
+
+- `npm install` has been executed locally and completed successfully.
+- `npm run build` has been executed locally and completed successfully.
+- `npm test -- --runInBand` has been executed locally and completed
+  successfully.
+- Unit test result: 3 个测试套件通过，9 个测试通过。
+- E2E has not been executed in the current verification record.
+- Lint has not been executed in the current verification record.
+- The current backend remains a public foundation only; no business modules,
+  authentication, user management, doctor, patient, scale, assessment, report,
+  SMS Service, LLM Service, or business upload endpoint has been implemented.
