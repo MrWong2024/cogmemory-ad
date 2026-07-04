@@ -65,6 +65,14 @@
 - 影响范围：`backend\.env.*.example`、`backend\README.md` 和后端 handoff 配置说明。
 - 后续复查点：后续真实接入 OSS、SMS 或 LLM 时，必须以单独任务实现服务代码并同步配置校验、测试和 handoff；本决策不代表 OSS Service、SMS Service 或 LLM Service 已实现。
 
+### D-007：一次性授权迁移后端 src 公共底座
+
+- 日期：2026-07-04
+- 决策：一次性授权从指定外部 GitHub commit `b302b8af7b7ac9cc558939dc1b38ace0976c65b3` 迁移后端 `src` 公共底座。仅继承 NestJS 启动、配置、异常、校验、MongoDB、Storage 等公共工程经验；排除业务模块、角色权限、业务流程、业务 DTO、业务 Service、业务 Schema 和业务 API。所有项目口径改造为 CogMemory AD / 智忆评。
+- 背景：CogMemory AD 需要先具备可编译的 NestJS 后端公共底座，再进入后续业务模块设计。
+- 影响范围：`backend\src` 公共底座、`backend\README.md` 和后端 handoff 文档。
+- 后续复查点：后续新增认证、用户、医生、患者、量表、评估、报告、SMS、LLM 或业务上传能力时，必须以单独任务明确边界、接口、数据模型和测试。
+
 ## 4. 后续同步规则
 
 - 新增关键技术选型、接口设计、数据模型、测试策略或部署策略后，应追加决策记录。

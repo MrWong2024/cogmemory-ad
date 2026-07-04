@@ -1,33 +1,38 @@
 # CogMemory AD Backend / 智忆评后端
 
-This directory currently contains only the backend root-level public skeleton for
-CogMemory AD / 智忆评: package metadata, environment examples, and engineering
-configuration for NestJS, TypeScript, ESLint, Prettier, Jest, Mongoose, and OSS
-placeholder settings.
-
-The backend code directories have not been initialized in this task:
-
-- `backend\src`
-- `backend\test`
-- `backend\scripts`
+This directory contains the NestJS backend public foundation for CogMemory AD /
+智忆评.
 
 ## Current Scope
 
-- Local default backend port: `5002`.
-- Local default frontend port: `3002`.
-- Local `FRONTEND_URL` and `CORS_ORIGIN` examples use `http://localhost:3002`.
-- Development defaults to `STORAGE_DRIVER=fake`; production defaults to
-  `STORAGE_DRIVER=oss`; test keeps the minimal fake configuration.
-- OSS / SMS values in `.env.*.example` are Alibaba Cloud example or
-  pending-confirmation placeholders only.
-- These placeholders do not mean OSS or SMS services have been implemented.
-- Business modules, Controllers, Services, DTOs, Schemas, real APIs, database
-  connection implementation, OSS Service, authentication, scales, assessments,
-  and reports are not implemented.
-- OSS, SMS, and LLM values in `.env.*.example` are placeholder configuration
-  only; they do not mean OSS, SMS, or LLM services have been implemented.
-- Dependencies have not been installed by this task. Commands below require
-  dependencies to be installed before execution.
+- `backend\src` has been initialized with the NestJS startup entry, root module,
+  global application setup, health controller, configuration loading,
+  environment validation, MongoDB connection foundation, global validation pipe,
+  global exception filter, and public storage module.
+- `GET /health` is the only public HTTP endpoint.
+- `GET /health` returns `{ status: 'ok', service: 'cogmemory-ad-backend' }`.
+- `ConfigModule` loads `.env.${NODE_ENV}` and `.env`.
+- `MongooseModule` reads `mongo.uri`, `mongo.autoIndex`, and
+  `mongo.serverSelectionTimeoutMs` from the centralized config.
+- `StorageModule` provides the `STORAGE_SERVICE` token with fake and Alibaba
+  Cloud OSS driver structure. This is only a low-level storage adapter.
+- No business upload controller or business upload endpoint is implemented.
+- No authentication, user management, doctor, patient, scale, assessment,
+  report, SMS, or LLM business service is implemented.
+- No business module, DTO, schema, or API has been added.
+
+## Defaults
+
+- Local backend port: `5002`.
+- Local frontend origin: `http://localhost:3002`.
+- Session cookie name: `cogmemory_ad_session`.
+- Development MongoDB naming uses `cogmemory_ad_dev`.
+- Test MongoDB naming uses `cogmemory_ad_test`.
+- Storage object prefix defaults to `cogmemory_ad`.
+- Development and test default to `STORAGE_DRIVER=fake`; production defaults to
+  `STORAGE_DRIVER=oss`.
+- OSS, SMS, and LLM values are placeholders or examples only. No real bucket,
+  AccessKey, SMS credential, SMS template, or LLM API key is stored here.
 
 ## Package Scripts
 
@@ -49,6 +54,5 @@ Current `package.json` scripts are:
 - `npm run test:debug`
 - `npm run test:e2e`
 
-Because `src`, `test`, and `scripts` are not initialized yet, build, lint, unit
-test, and E2E execution must be evaluated again after those directories and
-dependencies are in place.
+Dependencies were not installed by this task. Build and unit tests require
+`backend\node_modules` to exist.

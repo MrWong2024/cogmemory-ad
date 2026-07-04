@@ -6,30 +6,39 @@
 
 ## 2. 当前状态
 
-- 当前 DTO 与响应速查处于初始化阶段。
-- 当前不定义真实 DTO 字段。
-- 当前不定义真实响应结构、默认值或校验规则。
+- 当前只存在公共底座 DTO、响应 type 和 Storage interface。
+- 当前不记录任何业务 DTO。
+- 当前没有认证、用户、医生、患者、量表、评估、报告或业务上传 DTO。
 
-## 3. DTO 记录格式
+## 3. 当前 DTO / Type 清单
 
-后续每个 DTO 建议按以下格式记录：
+- 名称：`AppHealthResponse`
+- 文件：`backend\src\app.service.ts`
+- 用途：`GET /health` 响应 type。
+- 字段：`status: 'ok'`，`service: 'cogmemory-ad-backend'`。
 
-- DTO 名称：
-- 所属接口或模块：
-- 字段名：
-- 类型：
-- 必填性：
-- 默认值：
-- 校验规则：
-- 响应映射：
-- 备注：
+- 名称：`PaginationQueryDto`
+- 文件：`backend\src\common\dto\pagination-query.dto.ts`
+- 用途：公共分页 query DTO。
+- 字段：`page` 默认 `1`，`pageSize` 默认 `100`。
+- 校验：`page` 为不小于 `1` 的整数；`pageSize` 为 `1` 到 `1000` 的整数。
 
-## 4. 当前 DTO 清单
+- 名称：`ListFilterQueryDto`
+- 文件：`backend\src\common\dto\pagination-query.dto.ts`
+- 用途：公共列表过滤 query DTO。
+- 字段：`keyword?: string`，`isActive?: boolean`。
 
-- 当前暂无已确认 DTO。
-- 后续新增或修改 DTO 时，同步字段名、类型、必填性、默认值、校验规则和响应映射。
+- 名称：`PaginatedResponse<T>`
+- 文件：`backend\src\common\dto\pagination-query.dto.ts`
+- 用途：公共分页响应 type。
+- 字段：`items`、`page`、`pageSize`、`total`。
 
-## 5. 后续同步规则
+- 名称：`StorageService` 及相关输入输出 type
+- 文件：`backend\src\modules\storage\storage.interface.ts`
+- 用途：Storage 公共底层接口。
+- 相关 type：`UploadFileInput`、`UploadedFileResult`、`SignedUrlOptions`、`SignedUrlResult`。
+
+## 4. 后续同步规则
 
 - DTO 事实以实际 DTO 文件、校验装饰器、Controller 使用方式和测试为准。
 - 不得在业务文档未确认前编造字段、枚举、状态或响应结构。
