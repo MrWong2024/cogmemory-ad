@@ -13,13 +13,16 @@ The backend code directories have not been initialized in this task:
 
 ## Current Scope
 
-- Local default backend port: `3002`.
-- Local frontend origin examples use `http://localhost:3000`.
+- Local default backend port: `5002`.
+- Local default frontend port: `3002`.
+- Local `FRONTEND_URL` and `CORS_ORIGIN` examples use `http://localhost:3002`.
 - Business modules, Controllers, Services, DTOs, Schemas, real APIs, database
   connection implementation, OSS Service, authentication, scales, assessments,
   and reports are not implemented.
 - OSS bucket values in `.env.*.example` are placeholders or examples. A real
   CogMemory AD bucket must be created and substituted in a later task.
+- OSS, SMS, and LLM values in `.env.*.example` are placeholder configuration
+  only; they do not mean OSS, SMS, or LLM services have been implemented.
 - Dependencies have not been installed by this task. Commands below require
   dependencies to be installed before execution.
 

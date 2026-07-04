@@ -41,6 +41,14 @@
 - 影响范围：`backend` 根目录包管理、环境示例、工程配置和后端 handoff 文档。
 - 后续复查点：后续初始化后端代码目录时，应继续避免继承外部项目业务事实，并按实际代码同步 handoff。
 
+### D-004：统一后端配置口径为 backend 5002 / frontend 3002
+
+- 日期：2026-07-04
+- 决策：后端默认端口统一为 `5002`；前端本地默认端口统一为 `3002`，本地 `FRONTEND_URL` / `CORS_ORIGIN` 统一为 `http://localhost:3002`；`OSS_OBJECT_PREFIX` 统一为 `cogmemory_ad`；SMS 配置全部使用 CogMemory AD 占位符；LLM 仅保留 development / production 的 `bailian` 占位和 test 的 `stub` 口径。
+- 背景：后端根目录公共骨架迁移后，env example、README 与 handoff 中存在端口、OSS 前缀、SMS 和 LLM 配置口径不一致，需要在不初始化业务代码的前提下统一。
+- 影响范围：`backend\.env.*.example`、`backend\README.md` 和后端 handoff 配置说明。
+- 后续复查点：后续真实接入 OSS、SMS 或 LLM 前，必须新建或确认 CogMemory AD 专用资源，并同步更新 env example 与 handoff；本决策不代表 OSS Service、SMS Service 或 LLM Service 已实现。
+
 ## 4. 后续同步规则
 
 - 新增关键技术选型、接口设计、数据模型、测试策略或部署策略后，应追加决策记录。

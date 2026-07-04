@@ -9,7 +9,8 @@
 - `backend` 根目录公共骨架已初始化改造。
 - 当前仅包含后端根目录配置、包管理和工程配置文件。
 - 已存在 `backend\package.json` 与 `backend\package-lock.json`，后端 npm package name 为 `cogmemory-ad-backend`。
-- 本地默认后端端口为 `3002`。
+- 本地默认后端端口为 `5002`。
+- 本地默认前端端口为 `3002`，本地 `FRONTEND_URL` / `CORS_ORIGIN` 示例为 `http://localhost:3002`。
 - 当前仓库未初始化 `backend\src`、`backend\test`、`backend\scripts`。
 - 当前不得写成完整后端工程已经可运行。
 
@@ -20,6 +21,7 @@
 - 后端根目录公共骨架保留 NestJS、TypeScript、ESLint、Prettier、Jest、Mongoose、OSS 等公共工程能力的配置形态。
 - `.env.*.example` 使用 CogMemory AD / 智忆评口径的示例配置，不包含真实密钥。
 - OSS bucket 当前仅为占位或示例，真实 bucket 待后续为 CogMemory AD 新建后替换。
+- OSS、SMS、LLM 当前只是 `.env.*.example` 中的配置占位，不代表对应服务已实现。
 
 ## 4. 当前尚未初始化或实现
 
@@ -29,7 +31,7 @@
 - 尚无业务模块。
 - 尚无 Controller、Service、DTO、Schema。
 - 尚无真实 API。
-- 尚未实现配置加载代码、数据库连接、OSS Service、认证、量表、评估、报告、短信登录或 AI / LLM 调用。
+- 尚未实现配置加载代码、数据库连接、OSS Service、SMS Service、认证、量表、评估、报告、短信登录或 AI / LLM 调用。
 
 ## 5. 后续同步规则
 

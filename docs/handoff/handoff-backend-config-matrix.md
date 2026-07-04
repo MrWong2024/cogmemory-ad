@@ -15,23 +15,35 @@
 | 配置项 | development 示例 | production 示例 | test 示例 | 备注 |
 | --- | --- | --- | --- | --- |
 | `NODE_ENV` | `development` | `production` | `test` | 运行环境 |
-| `PORT` | `3002` | `3002` | `3002` | 后端本地默认端口为 `3002` |
-| `FRONTEND_URL` | `http://localhost:3000` | `https://your-cogmemory-ad-frontend-domain.example` | `http://localhost:3000` | 当前为示例值 |
-| `CORS_ORIGIN` | `http://localhost:3000` | `https://your-cogmemory-ad-frontend-domain.example` | `http://localhost:3000` | 当前为示例值 |
+| `PORT` | `5002` | `5002` | `5002` | 后端默认端口为 `5002` |
+| `FRONTEND_URL` | `http://localhost:3002` | `https://your-cogmemory-ad-frontend-domain.example` | `http://localhost:3002` | 前端本地默认端口为 `3002` |
+| `CORS_ORIGIN` | `http://localhost:3002` | `https://your-cogmemory-ad-frontend-domain.example` | `http://localhost:3002` | 前端本地默认端口为 `3002` |
 | `MONGO_URI` | `cogmemory_ad_dev` 口径 | `cogmemory_ad` 口径 | `cogmemory_ad_test` 口径 | 示例连接串，不包含真实密码 |
 | `MONGO_ADMIN_URI` | `cogmemory_ad_dev` 口径 | `cogmemory_ad` 口径 | `cogmemory_ad_test` 口径 | 示例管理连接串，不包含真实密码 |
 | `MONGO_AUTO_INDEX` | `true` | `false` | `true` | 生产默认关闭自动建索引 |
 | `MONGO_SERVER_SELECTION_TIMEOUT_MS` | `5000` | `5000` | `5000` | MongoDB 连接超时示例 |
 | `STORAGE_DRIVER` | `fake` | `oss` | `fake` | 当前仅为公共配置口径 |
 | `OSS_BUCKET` | `cogmemory-ad-dev-materials` | `{COGMEMORY_AD_OSS_BUCKET}` | `cogmemory-ad-test-materials` | 当前为占位或示例；真实 bucket 待后续为 CogMemory AD 新建后替换 |
-| `OSS_OBJECT_PREFIX` | `cogmemory-ad` | `cogmemory-ad` | `cogmemory-ad-test` | 对象前缀示例 |
+| `OSS_OBJECT_PREFIX` | `cogmemory_ad` | `cogmemory_ad` | `cogmemory_ad` | 统一对象前缀占位 |
 | `SESSION_COOKIE_NAME` | `cogmemory_ad_session` | `cogmemory_ad_session` | `cogmemory_ad_session` | 会话 Cookie 名称示例 |
-| `LLM_PROVIDER` | 未配置 | 未配置 | `stub` | 当前不实现真实大模型调用 |
+| `SMS_AUTH_PROVIDER` | `{COGMEMORY_AD_SMS_AUTH_PROVIDER}` | `{COGMEMORY_AD_SMS_AUTH_PROVIDER}` | 未配置 | SMS 占位配置，当前未实现短信服务 |
+| `ALIYUN_SMS_ACCESS_KEY_ID` | `{COGMEMORY_AD_SMS_ACCESS_KEY_ID}` | `{COGMEMORY_AD_SMS_ACCESS_KEY_ID}` | 未配置 | SMS 占位配置，当前未实现短信服务 |
+| `ALIYUN_SMS_ACCESS_KEY_SECRET` | `{COGMEMORY_AD_SMS_ACCESS_KEY_SECRET}` | `{COGMEMORY_AD_SMS_ACCESS_KEY_SECRET}` | 未配置 | SMS 占位配置，当前未实现短信服务 |
+| `ALIYUN_SMS_SIGN_NAME` | `{COGMEMORY_AD_SMS_SIGN_NAME}` | `{COGMEMORY_AD_SMS_SIGN_NAME}` | 未配置 | SMS 占位配置，不写入真实短信签名 |
+| `ALIYUN_SMS_TEMPLATE_CODE` | `{COGMEMORY_AD_SMS_TEMPLATE_CODE}` | `{COGMEMORY_AD_SMS_TEMPLATE_CODE}` | 未配置 | SMS 占位配置，不写入真实模板号 |
+| `ALIYUN_SMS_TEMPLATE_PARAM` | `{COGMEMORY_AD_SMS_TEMPLATE_PARAM}` | `{COGMEMORY_AD_SMS_TEMPLATE_PARAM}` | 未配置 | SMS 占位配置，不写入真实模板参数 |
+| `LLM_PROVIDER` | `bailian` | `bailian` | `stub` | LLM 占位配置，当前未实现真实大模型调用 |
+| `BAILIAN_API_KEY` | `{BAILIAN_API_KEY}` | `{BAILIAN_API_KEY}` | 未配置 | 仅为占位，不写入真实 API Key |
+| `BAILIAN_BASE_URL` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | 未配置 | 仅为 bailian 占位口径 |
+| `BAILIAN_MODEL` | `qwen3.6-plus` | `qwen3.6-plus` | 未配置 | 仅为 bailian 占位口径 |
 
 ## 4. 安全与部署注意事项
 
 - `.env.*.example` 只能保留占位值或示例值，不得写入真实密钥。
 - `OSS_BUCKET` 当前不代表 OSS 已正式开通，真实 bucket 待后续新建后替换。
+- `OSS_OBJECT_PREFIX` 统一为 `cogmemory_ad`，不代表 OSS Service 已实现。
+- SMS 变量当前只保留 CogMemory AD 占位配置，不代表 SMS Service 已实现。
+- LLM 变量当前只保留 development / production 的 `bailian` 占位和 test 的 `stub` 口径，不代表 LLM Service 已实现。
 - 测试环境不得依赖真实 OSS、真实短信或真实大模型服务。
 - 生产 MongoDB 密码必须在真实环境中使用 URL 编码后的安全值，不得写入仓库。
 
