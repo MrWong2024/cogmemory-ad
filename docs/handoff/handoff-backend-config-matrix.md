@@ -23,15 +23,14 @@
 | `MONGO_AUTO_INDEX` | `true` | `false` | `true` | 生产默认关闭自动建索引 |
 | `MONGO_SERVER_SELECTION_TIMEOUT_MS` | `5000` | `5000` | `5000` | MongoDB 连接超时示例 |
 | `STORAGE_DRIVER` | `fake` | `oss` | `fake` | 当前仅为公共配置口径 |
-| `OSS_BUCKET` | `cogmemory-ad-dev-materials` | `{COGMEMORY_AD_OSS_BUCKET}` | `cogmemory-ad-test-materials` | 当前为占位或示例；真实 bucket 待后续为 CogMemory AD 新建后替换 |
-| `OSS_OBJECT_PREFIX` | `cogmemory_ad` | `cogmemory_ad` | `cogmemory_ad` | 统一对象前缀占位 |
+| `OSS_BUCKET` | 不需要 | `{COGMEMORY_AD_OSS_BUCKET}` | 不需要 | 仅 `STORAGE_DRIVER=oss` 时需要；真实 bucket 待后续为 CogMemory AD 新建后替换 |
+| `OSS_OBJECT_PREFIX` | 不需要 | `cogmemory_ad` | 不需要 | fake 模式使用代码默认 fake storage 配置 |
 | `SESSION_COOKIE_NAME` | `cogmemory_ad_session` | `cogmemory_ad_session` | `cogmemory_ad_session` | 会话 Cookie 名称示例 |
-| `SMS_AUTH_PROVIDER` | `{COGMEMORY_AD_SMS_AUTH_PROVIDER}` | `{COGMEMORY_AD_SMS_AUTH_PROVIDER}` | 未配置 | SMS 占位配置，当前未实现短信服务 |
-| `ALIYUN_SMS_ACCESS_KEY_ID` | `{COGMEMORY_AD_SMS_ACCESS_KEY_ID}` | `{COGMEMORY_AD_SMS_ACCESS_KEY_ID}` | 未配置 | SMS 占位配置，当前未实现短信服务 |
-| `ALIYUN_SMS_ACCESS_KEY_SECRET` | `{COGMEMORY_AD_SMS_ACCESS_KEY_SECRET}` | `{COGMEMORY_AD_SMS_ACCESS_KEY_SECRET}` | 未配置 | SMS 占位配置，当前未实现短信服务 |
-| `ALIYUN_SMS_SIGN_NAME` | `{COGMEMORY_AD_SMS_SIGN_NAME}` | `{COGMEMORY_AD_SMS_SIGN_NAME}` | 未配置 | SMS 占位配置，不写入真实短信签名 |
-| `ALIYUN_SMS_TEMPLATE_CODE` | `{COGMEMORY_AD_SMS_TEMPLATE_CODE}` | `{COGMEMORY_AD_SMS_TEMPLATE_CODE}` | 未配置 | SMS 占位配置，不写入真实模板号 |
-| `ALIYUN_SMS_TEMPLATE_PARAM` | `{COGMEMORY_AD_SMS_TEMPLATE_PARAM}` | `{COGMEMORY_AD_SMS_TEMPLATE_PARAM}` | 未配置 | SMS 占位配置，不写入真实模板参数 |
+| `ALIYUN_SMS_ACCESS_KEY_ID` | `{COGMEMORY_AD_ALIYUN_SMS_ACCESS_KEY_ID}` | `{COGMEMORY_AD_ALIYUN_SMS_ACCESS_KEY_ID}` | 未配置 | 阿里云 SMS 示例 / 待确认配置，当前未实现 SMS Service |
+| `ALIYUN_SMS_ACCESS_KEY_SECRET` | `{COGMEMORY_AD_ALIYUN_SMS_ACCESS_KEY_SECRET}` | `{COGMEMORY_AD_ALIYUN_SMS_ACCESS_KEY_SECRET}` | 未配置 | 阿里云 SMS 示例 / 待确认配置，当前未实现 SMS Service |
+| `ALIYUN_SMS_SIGN_NAME` | `{COGMEMORY_AD_ALIYUN_SMS_SIGN_NAME}` | `{COGMEMORY_AD_ALIYUN_SMS_SIGN_NAME}` | 未配置 | 阿里云 SMS 示例 / 待确认配置，不写入真实短信签名 |
+| `ALIYUN_SMS_TEMPLATE_CODE` | `{COGMEMORY_AD_ALIYUN_SMS_TEMPLATE_CODE}` | `{COGMEMORY_AD_ALIYUN_SMS_TEMPLATE_CODE}` | 未配置 | 阿里云 SMS 示例 / 待确认配置，不写入真实模板号 |
+| `ALIYUN_SMS_TEMPLATE_PARAM` | `{COGMEMORY_AD_ALIYUN_SMS_TEMPLATE_PARAM}` | `{COGMEMORY_AD_ALIYUN_SMS_TEMPLATE_PARAM}` | 未配置 | 阿里云 SMS 示例 / 待确认配置，不写入真实模板参数 |
 | `LLM_PROVIDER` | `bailian` | `bailian` | `stub` | LLM 占位配置，当前未实现真实大模型调用 |
 | `BAILIAN_API_KEY` | `{BAILIAN_API_KEY}` | `{BAILIAN_API_KEY}` | 未配置 | 仅为占位，不写入真实 API Key |
 | `BAILIAN_BASE_URL` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | 未配置 | 仅为 bailian 占位口径 |
@@ -40,9 +39,10 @@
 ## 4. 安全与部署注意事项
 
 - `.env.*.example` 只能保留占位值或示例值，不得写入真实密钥。
-- `OSS_BUCKET` 当前不代表 OSS 已正式开通，真实 bucket 待后续新建后替换。
-- `OSS_OBJECT_PREFIX` 统一为 `cogmemory_ad`，不代表 OSS Service 已实现。
-- SMS 变量当前只保留 CogMemory AD 占位配置，不代表 SMS Service 已实现。
+- development / test 默认 `STORAGE_DRIVER=fake`，不需要 `OSS_BUCKET` / `OSS_OBJECT_PREFIX`，fake 模式使用代码默认 fake storage 配置。
+- production 默认 `STORAGE_DRIVER=oss`，`OSS_BUCKET` 当前不代表 OSS 已正式开通，真实 bucket 待后续新建后替换。
+- production 的 `OSS_OBJECT_PREFIX` 为 `cogmemory_ad`，不代表 OSS Service 已实现。
+- SMS 变量当前只保留阿里云 SMS 示例 / 待确认配置，不代表 SMS Service 已实现。
 - LLM 变量当前只保留 development / production 的 `bailian` 占位和 test 的 `stub` 口径，不代表 LLM Service 已实现。
 - 测试环境不得依赖真实 OSS、真实短信或真实大模型服务。
 - 生产 MongoDB 密码必须在真实环境中使用 URL 编码后的安全值，不得写入仓库。

@@ -44,10 +44,18 @@
 ### D-004：统一后端配置口径为 backend 5002 / frontend 3002
 
 - 日期：2026-07-04
-- 决策：后端默认端口统一为 `5002`；前端本地默认端口统一为 `3002`，本地 `FRONTEND_URL` / `CORS_ORIGIN` 统一为 `http://localhost:3002`；`OSS_OBJECT_PREFIX` 统一为 `cogmemory_ad`；SMS 配置全部使用 CogMemory AD 占位符；LLM 仅保留 development / production 的 `bailian` 占位和 test 的 `stub` 口径。
+- 决策：后端默认端口统一为 `5002`；前端本地默认端口统一为 `3002`，本地 `FRONTEND_URL` / `CORS_ORIGIN` 统一为 `http://localhost:3002`；OSS 与 SMS 配置先按 CogMemory AD 占位口径统一，fake 存储 env 和阿里云 SMS 占位细节后续由 D-005 修正；LLM 仅保留 development / production 的 `bailian` 占位和 test 的 `stub` 口径。
 - 背景：后端根目录公共骨架迁移后，env example、README 与 handoff 中存在端口、OSS 前缀、SMS 和 LLM 配置口径不一致，需要在不初始化业务代码的前提下统一。
 - 影响范围：`backend\.env.*.example`、`backend\README.md` 和后端 handoff 配置说明。
 - 后续复查点：后续真实接入 OSS、SMS 或 LLM 前，必须新建或确认 CogMemory AD 专用资源，并同步更新 env example 与 handoff；本决策不代表 OSS Service、SMS Service 或 LLM Service 已实现。
+
+### D-005：修正 fake 存储 env 口径与阿里云 SMS 占位
+
+- 日期：2026-07-04
+- 决策：development / test 默认 `STORAGE_DRIVER=fake` 时，不在 env example 中显式配置 `OSS_BUCKET` / `OSS_OBJECT_PREFIX`；production 的 `OSS_BUCKET` 保持 CogMemory AD 占位，`OSS_OBJECT_PREFIX` 保持 `cogmemory_ad`；SMS 变量保留为阿里云 SMS 示例 / 待确认配置，全部使用 `COGMEMORY_AD_ALIYUN_SMS_*` 占位符。
+- 背景：fake 模式应使用代码默认 fake storage 配置，不应在 dev/test env example 中保留看似真实但尚未创建的 OSS bucket；短信配置也需要明确为阿里云 SMS 方向的配置预留。
+- 影响范围：`backend\.env.*.example`、`backend\README.md` 和后端 handoff 配置说明。
+- 后续复查点：后续真实接入 OSS 或 SMS 前，必须确认 CogMemory AD 专用 OSS bucket 和阿里云 SMS 签名、模板、参数口径；本决策不代表 OSS Service 或 SMS Service 已实现。
 
 ## 4. 后续同步规则
 

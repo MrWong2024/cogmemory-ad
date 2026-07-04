@@ -16,11 +16,15 @@ The backend code directories have not been initialized in this task:
 - Local default backend port: `5002`.
 - Local default frontend port: `3002`.
 - Local `FRONTEND_URL` and `CORS_ORIGIN` examples use `http://localhost:3002`.
+- Development and test default to `STORAGE_DRIVER=fake`; fake mode does not
+  explicitly configure `OSS_BUCKET` or `OSS_OBJECT_PREFIX`.
+- Production uses `STORAGE_DRIVER=oss`; `OSS_BUCKET` is a CogMemory AD
+  placeholder and must be replaced after a real CogMemory AD bucket is created.
+- SMS variables are Alibaba Cloud SMS example / pending-confirmation
+  placeholders only; they do not mean SMS service has been implemented.
 - Business modules, Controllers, Services, DTOs, Schemas, real APIs, database
   connection implementation, OSS Service, authentication, scales, assessments,
   and reports are not implemented.
-- OSS bucket values in `.env.*.example` are placeholders or examples. A real
-  CogMemory AD bucket must be created and substituted in a later task.
 - OSS, SMS, and LLM values in `.env.*.example` are placeholder configuration
   only; they do not mean OSS, SMS, or LLM services have been implemented.
 - Dependencies have not been installed by this task. Commands below require

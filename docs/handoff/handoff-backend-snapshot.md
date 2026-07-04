@@ -20,7 +20,9 @@
 - 项目方向为阿尔茨海默病认知评估与辅助诊断系统。
 - 后端根目录公共骨架保留 NestJS、TypeScript、ESLint、Prettier、Jest、Mongoose、OSS 等公共工程能力的配置形态。
 - `.env.*.example` 使用 CogMemory AD / 智忆评口径的示例配置，不包含真实密钥。
-- OSS bucket 当前仅为占位或示例，真实 bucket 待后续为 CogMemory AD 新建后替换。
+- fake 存储 env example 口径已修正：development / test 默认 `STORAGE_DRIVER=fake`，不要求 `OSS_BUCKET` / `OSS_OBJECT_PREFIX`。
+- production 的 `OSS_BUCKET` 仅为 CogMemory AD 占位，真实 bucket 待后续为 CogMemory AD 新建后替换。
+- SMS 采用阿里云 SMS 示例 / 待确认配置，当前仅占位，不代表短信服务已实现。
 - OSS、SMS、LLM 当前只是 `.env.*.example` 中的配置占位，不代表对应服务已实现。
 
 ## 4. 当前尚未初始化或实现

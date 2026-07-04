@@ -9,6 +9,7 @@
 - 当前 `backend\package.json` 已初始化公共骨架脚本。
 - 当前未初始化 `backend\src`、`backend\test`、`backend\scripts`。
 - 后端默认端口为 `5002`；本地前端默认端口为 `3002`，本地 `FRONTEND_URL` / `CORS_ORIGIN` 示例为 `http://localhost:3002`。
+- 测试环境 `STORAGE_DRIVER=fake`，不需要 `OSS_BUCKET` / `OSS_OBJECT_PREFIX`。
 - 测试环境 `LLM_PROVIDER=stub`，不得依赖真实大模型调用。
 - 本任务不安装依赖，不执行构建、单元测试或 E2E 测试。
 - 当前不编写测试代码，不定义真实后端测试用例。
@@ -37,8 +38,8 @@
 - `lint` 与 `lint:fix` 当前只覆盖标准 `src` / `test` TypeScript glob，不引用未迁移的 `scripts` 目录。
 - `test:e2e` 仍是公共骨架脚本，实际 E2E 配置和用例待后续初始化 `backend\test` 后确认。
 - 本任务不执行 `npm install`、`npm run build`、`npm test` 或 `npm run test:e2e`。
-- 本任务不执行真实 OSS、短信、大模型或数据库生产环境测试。
-- 测试环境不得调用真实 OSS、真实 SMS 或真实 LLM；相关配置仅为占位口径。
+- 本任务不执行真实 OSS、阿里云 SMS、大模型或数据库生产环境测试。
+- 测试环境不得调用真实 OSS、真实阿里云 SMS 或真实 LLM；相关配置仅为占位口径。
 
 ## 5. 后端单元测试口径
 
@@ -60,7 +61,7 @@
 
 - 测试不得使用真实患者数据、真实身份证号、真实手机号、真实病历号或其他可识别个人信息。
 - 量表测试数据应使用脱敏样本或人工构造样本。
-- 不得调用真实短信、支付、医保、医院 HIS/LIS/PACS、对象存储生产环境或真实大模型服务，除非未来单独定义受控集成测试。
+- 不得调用真实短信、真实阿里云 SMS、支付、医保、医院 HIS/LIS/PACS、对象存储生产环境或真实大模型服务，除非未来单独定义受控集成测试。
 - 不得在测试断言中生成真实医疗诊断结论。
 
 ## 9. 后续同步规则
