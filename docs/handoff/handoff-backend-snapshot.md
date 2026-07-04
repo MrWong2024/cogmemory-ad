@@ -15,7 +15,10 @@
 - `GET /health` 是当前唯一公共接口。
 - 已完成后端公共底座本地验证：`npm install` 成功、`npm run build` 成功、`npm test -- --runInBand` 成功。
 - 单元测试验证结果为 3 个测试套件通过、9 个测试通过。
-- `tsconfig.build.tsbuildinfo` 已作为 TypeScript 增量构建缓存清理，不作为项目源文件纳入版本库。
+- 后端 TypeScript 编译根目录为 `.`，`outDir` 保持 `./dist`，因此 `src/main.ts` 编译后的主入口产物为 `dist/src/main.js`。
+- `package.json` 中 `start:prod` 保持指向 `./dist/src/main.js`，当前 build 产物路径已与该启动路径对齐。
+- `tsBuildInfoFile` 保持 `./dist/tsconfig.build.tsbuildinfo`；`dist` 与 `*.tsbuildinfo` 均作为生成物处理，不作为项目源文件纳入版本库。
+- 本次仅验证 `npm run build` 成功并确认 `dist/src/main.js` 存在，不代表已完成真实生产环境启动验证。
 - 当前不得写成完整业务后端已经实现。
 
 ## 3. 当前已确认后端事实
@@ -29,6 +32,7 @@
 - OSS、SMS、LLM 配置均为占位或示例口径，不包含真实密钥。
 - SMS Service、LLM Service、业务上传接口均未实现。
 - 当前无业务模块、业务 API、认证、量表、评估或报告。
+- 当前 `start:prod` 与 TypeScript build 主入口产物路径均指向 `dist/src/main.js`。
 - 本次仅使用指定外部 GitHub commit `b302b8af7b7ac9cc558939dc1b38ace0976c65b3` 作为后端公共底座来源，不继承其业务事实。
 
 ## 4. 当前尚未实现

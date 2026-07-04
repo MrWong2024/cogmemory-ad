@@ -20,7 +20,12 @@ This directory contains the NestJS backend public foundation for CogMemory AD /
 - No authentication, user management, doctor, patient, scale, assessment,
   report, SMS, or LLM business service is implemented.
 - No business module, DTO, schema, or API has been added.
-- `*.tsbuildinfo` files are TypeScript incremental build caches and are not
+- TypeScript `rootDir` is `.` and `outDir` remains `./dist`, so
+  `src/main.ts` builds to `dist/src/main.js`.
+- `start:prod` keeps requiring `./dist/src/main.js`, which is aligned with the
+  current build output path.
+- `tsBuildInfoFile` remains `./dist/tsconfig.build.tsbuildinfo`.
+- `dist` and `*.tsbuildinfo` files are generated build artifacts and are not
   tracked as source files.
 
 ## Defaults
@@ -61,12 +66,16 @@ Dependencies were not installed by this task. Build and unit tests require
 
 ## Current Verification
 
-- `npm install` has been executed locally and completed successfully.
+- `npm install` has previously been executed locally and completed
+  successfully.
 - `npm run build` has been executed locally and completed successfully.
+- Current rootDir alignment verification: `npm run build` completed
+  successfully and `dist/src/main.js` was verified to exist.
 - `npm test -- --runInBand` has been executed locally and completed
   successfully.
 - Unit test result: 3 个测试套件通过，9 个测试通过。
-- E2E has not been executed in the current verification record.
+- `npm test -- --runInBand` was not re-run for the current rootDir-only task.
+- E2E has not been executed in the current rootDir alignment task.
 - Lint has not been executed in the current verification record.
 - The current backend remains a public foundation only; no business modules,
   authentication, user management, doctor, patient, scale, assessment, report,

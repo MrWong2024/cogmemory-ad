@@ -81,6 +81,14 @@
 - 影响范围：`backend\.gitignore`、`backend\tsconfig.json`、后端 README 和 handoff 验证记录。
 - 后续复查点：当前后端公共底座已通过 `npm install`、`npm run build`、`npm test -- --runInBand` 验证，验证结果为 3 个测试套件、9 个测试全部通过；lint 和 E2E 未执行，且本决策不代表任何业务模块已经实现。
 
+### D-009：调整 TypeScript rootDir 以匹配生产启动产物路径
+
+- 日期：2026-07-05
+- 决策：为匹配 `package.json` 中 `start:prod` 指向的 `./dist/src/main.js`，将 backend TypeScript `rootDir` 从 `"./src"` 调整为 `"."`；`outDir` 保持 `./dist`，`tsBuildInfoFile` 保持 `./dist/tsconfig.build.tsbuildinfo`。本决策更新 D-008 中关于保留 `rootDir: "./src"` 的历史口径。
+- 背景：当 `rootDir` 为 `"./src"` 且 `outDir` 为 `"./dist"` 时，`src/main.ts` 会编译到 `dist/main.js`，与当前 `start:prod` 查找的 `dist/src/main.js` 不一致。
+- 影响范围：`backend\tsconfig.json`、后端 README 和后端 handoff 文档；不修改 `package.json`、`start:prod`、后端源码、测试、脚本或业务边界。
+- 后续复查点：本次验证 `npm run build` 成功，并确认 `dist/src/main.js` 存在；`dist` 与 `*.tsbuildinfo` 继续作为生成物处理，不纳入版本库。本决策不代表真实生产环境启动已验证，也不代表任何业务模块已经实现。
+
 ## 4. 后续同步规则
 
 - 新增关键技术选型、接口设计、数据模型、测试策略或部署策略后，应追加决策记录。
