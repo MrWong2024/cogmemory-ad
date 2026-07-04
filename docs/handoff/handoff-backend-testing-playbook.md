@@ -9,7 +9,7 @@
 - 当前 `backend\package.json` 已初始化公共骨架脚本。
 - 当前未初始化 `backend\src`、`backend\test`、`backend\scripts`。
 - 后端默认端口为 `5002`；本地前端默认端口为 `3002`，本地 `FRONTEND_URL` / `CORS_ORIGIN` 示例为 `http://localhost:3002`。
-- 测试环境 `STORAGE_DRIVER=fake`，不需要 `OSS_BUCKET` / `OSS_OBJECT_PREFIX`。
+- 测试环境 `STORAGE_DRIVER=fake`；test env example 不配置 OSS bucket 与对象前缀。
 - 测试环境 `LLM_PROVIDER=stub`，不得依赖真实大模型调用。
 - 本任务不安装依赖，不执行构建、单元测试或 E2E 测试。
 - 当前不编写测试代码，不定义真实后端测试用例。
