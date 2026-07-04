@@ -16,7 +16,8 @@ This directory contains the NestJS backend public foundation for CogMemory AD /
   `mongo.serverSelectionTimeoutMs` from the centralized config.
 - `StorageModule` provides the `STORAGE_SERVICE` token with fake and Alibaba
   Cloud OSS driver structure. This is only a low-level storage adapter.
-- No business upload controller or business upload endpoint is implemented.
+- No OSS business upload service, business upload controller, or business
+  upload endpoint is implemented.
 - No authentication, user management, doctor, patient, scale, assessment,
   report, SMS, or LLM business service is implemented.
 - No business module, DTO, schema, or API has been added.
@@ -74,9 +75,16 @@ Dependencies were not installed by this task. Build and unit tests require
 - `npm test -- --runInBand` has been executed locally and completed
   successfully.
 - Unit test result: 3 个测试套件通过，9 个测试通过。
-- `npm test -- --runInBand` was not re-run for the current rootDir-only task.
-- E2E has not been executed in the current rootDir alignment task.
+- `npm run start:prod` has been verified locally by the user and started
+  successfully.
+- `npm run start:prod` keeps requiring `./dist/src/main.js`, matching the
+  verified build artifact path `dist/src/main.js`.
+- The backend public foundation has completed the basic local verification
+  loop: install, build, unit test, and `start:prod`.
+- This does not mean a real production deployment has been completed.
+- E2E has not been executed in the current verification record.
 - Lint has not been executed in the current verification record.
 - The current backend remains a public foundation only; no business modules,
   authentication, user management, doctor, patient, scale, assessment, report,
-  SMS Service, LLM Service, or business upload endpoint has been implemented.
+  OSS business upload service, SMS Service, LLM Service, or business upload
+  endpoint has been implemented.

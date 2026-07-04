@@ -41,22 +41,25 @@
   - `npm install`
   - `npm run build`
   - `npm test -- --runInBand`
-- 本次 rootDir 路径对齐验证命令：
+  - `npm run start:prod`
+- 当前路径对齐验证命令：
   - `npm run build`
   - 检查 `dist/src/main.js` 存在
+  - `npm run start:prod`
 - 当前验证结果：
   - `npm install` 成功。
   - `npm run build` 成功。
-  - 本次 rootDir 路径对齐验证中，`npm run build` 成功，且 `dist/src/main.js` 已确认存在。
+  - build 后 `dist/src/main.js` 已确认存在。
   - `npm test -- --runInBand` 成功。
   - 3 个测试套件通过。
   - 9 个测试通过。
-  - 本次 rootDir-only 任务未重新执行 `npm test -- --runInBand`。
+  - 用户已补充验证 `npm run start:prod` 本地启动成功。
+  - `dist/src/main.js` 与 `start:prod` 指向的 `./dist/src/main.js` 路径匹配。
 - 当前未验证命令：
   - `npm run lint`
   - `npm run test:e2e`
 - 如果 `backend\node_modules` 存在，可执行 `npm run build` 验证 TypeScript 编译。
-- 当前 rootDir 路径对齐验证目标是确认 build 产物路径与 `start:prod` 指向的 `./dist/src/main.js` 一致，不代表已完成真实生产环境启动验证。
+- 当前 `start:prod` 验证仅为本地基础启动验证，不代表真实生产环境部署完成。
 - 如果 `backend\node_modules` 存在，可执行 `npm test -- --runInBand` 验证单元测试。
 - 如果 `backend\node_modules` 不存在，不应自动执行 `npm install`。
 - 当前任务不调用真实 OSS、阿里云 SMS、大模型或生产数据库。

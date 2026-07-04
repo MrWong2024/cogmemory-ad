@@ -89,6 +89,14 @@
 - 影响范围：`backend\tsconfig.json`、后端 README 和后端 handoff 文档；不修改 `package.json`、`start:prod`、后端源码、测试、脚本或业务边界。
 - 后续复查点：本次验证 `npm run build` 成功，并确认 `dist/src/main.js` 存在；`dist` 与 `*.tsbuildinfo` 继续作为生成物处理，不纳入版本库。本决策不代表真实生产环境启动已验证，也不代表任何业务模块已经实现。
 
+### D-010：记录后端公共底座基础闭环验证通过
+
+- 日期：2026-07-05
+- 决策：在 `rootDir` 调整为 `"."` 且 `start:prod` 保持指向 `./dist/src/main.js` 后，用户已本地验证 `npm run start:prod` 启动成功。至此后端公共底座已完成 `npm install`、`npm run build`、`npm test -- --runInBand`、`npm run start:prod` 的基础闭环验证。
+- 背景：`src/main.ts` 当前 build 产物为 `dist/src/main.js`，与 `start:prod` 启动路径一致；用户补充完成了本地 `start:prod` 启动验证。
+- 影响范围：后端 README 和后端 handoff 文档的验证记录；不修改 package、tsconfig、后端源码、测试、脚本或业务边界。
+- 后续复查点：该结论仅覆盖公共底座本地基础启动链路，不代表业务模块、E2E、lint、真实生产部署、OSS/SMS/LLM 集成或医疗业务能力已完成。
+
 ## 4. 后续同步规则
 
 - 新增关键技术选型、接口设计、数据模型、测试策略或部署策略后，应追加决策记录。
