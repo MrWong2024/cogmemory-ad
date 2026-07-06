@@ -8,7 +8,7 @@
 - 后续从 ReviewX 迁移前端公共结构时，必须先阅读本文档。
 - 本项目只继承 ReviewX 的工程结构、配置经验和组件治理方法，不继承 ReviewX 的视觉风格。
 - 后续前端页面与组件设计必须以本文档作为设计边界。
-- 当前前端仍处于根目录公共骨架配置阶段，尚未迁移 `frontend\app` 或 `frontend\src`。
+- 当前前端已完成 `frontend\app` / `frontend\src` 最小公共底座首次落地；这不代表完整设计系统或业务 MVP 已实现。
 
 ## 2. 产品气质
 
@@ -144,6 +144,7 @@ CogMemory AD 更适合：
 ## 15. 后续维护规则
 
 - 新增页面、组件、布局、样式前，应先检查本文档。
+- 本次 app/src 公共底座页面已按本文档进行首次落地。
 - 如后续实际产品风格调整，应先更新本文档，再改页面和组件。
 - `handoff-frontend-component-map.md`、`handoff-frontend-route-map.md`、`handoff-frontend-testing-playbook.md` 应与本文档保持一致。
 - Codex 后续执行前端页面或组件迁移任务时，必须把本文档作为视觉基线。
