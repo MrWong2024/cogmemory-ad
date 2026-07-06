@@ -24,26 +24,37 @@
 - `npm run lint:file`
 - `npm run lint:file:fix`
 
-本次任务执行状态：
+当前用户本地验证结果：
 
-- `npm install`：未执行。
-- `npm run build`：未执行。
-- `npm run lint`：未执行。
-- `npm run typecheck`：未执行。
-- 未执行原因：`frontend\node_modules` 不存在，按任务约束默认不执行安装和依赖于安装结果的构建 / lint / 类型检查。
+- `npm install`：成功。
+- `npm run build`：成功。
+- `npm run lint`：成功。
+- `npm run typecheck`：成功。
 - E2E：未执行；当前没有业务流程或 E2E 场景。
 
-## 4. 当前应执行的非安装检查
+## 4. 当前验证覆盖范围
 
-本次公共底座任务完成时，应在仓库根目录执行：
+本次公共底座级验证覆盖：
 
-- 旧标识 / 旧业务残留检查。
-- 业务目录污染检查。
-- `frontend\package.json` name 与端口检查。
-- `git diff --check -- frontend docs\handoff`。
-- `git status --short`。
+- 前端依赖安装。
+- Next 构建。
+- ESLint。
+- TypeScript 类型检查。
+- 公共首页与公共 UI 底座的基础可用性。
 
-检查结果以执行后的终端输出和任务最终汇总为准，不得编造通过结果。
+本次公共底座级验证不覆盖：
+
+- 真实登录流程。
+- 医生端真实工作流。
+- 患者端真实作答。
+- 量表业务。
+- 评估记录。
+- 报告生成。
+- API client。
+- 后端业务接口联调。
+- E2E。
+
+以上结果不代表真实医疗业务已完成验收，也不代表业务 MVP 完成。
 
 ## 5. 页面人工验证口径
 

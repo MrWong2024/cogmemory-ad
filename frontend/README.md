@@ -38,13 +38,12 @@
 
 ## 验证命令
 
-后续可在 `frontend` 目录执行：
+用户已在 `frontend` 目录完成公共底座级验证：
 
-```bash
-npm install
-npm run build
-npm run lint
-npm run typecheck
-```
+- `npm install`：通过。
+- `npm run build`：通过。
+- `npm run lint`：通过。
+- `npm run typecheck`：通过。
+- E2E：未执行。
 
-本次任务中，`frontend/node_modules` 不存在，按任务约束未执行 `npm install`、`npm run build`、`npm run lint` 和 `npm run typecheck`。
+以上结果仅说明前端公共底座可安装、可构建、可 lint、可类型检查，不代表业务 MVP 完成，不代表已经完成真实生产部署，也不代表真实医疗业务流程完成。

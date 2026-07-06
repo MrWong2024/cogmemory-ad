@@ -55,12 +55,12 @@
 
 ## 5. 当前验证状态
 
-- 当前未执行 `npm install`。
-- 当前未执行 `npm run build`。
-- 当前未执行 `npm run lint`。
-- 当前未执行 `npm run typecheck`。
-- 未执行原因：`frontend\node_modules` 不存在，按任务约束默认不执行安装和依赖于安装结果的构建 / lint / 类型检查。
-- 不执行 E2E；当前没有业务流程或 E2E 场景。
+- 用户本地已执行 `npm install`，结果成功。
+- 用户本地已执行 `npm run build`，结果成功。
+- 用户本地已执行 `npm run lint`，结果成功。
+- 用户本地已执行 `npm run typecheck`，结果成功。
+- E2E 未执行；当前没有真实业务流程或 E2E 场景。
+- 当前验证结果仅覆盖前端公共底座的安装、构建、lint 和类型检查，不代表业务 MVP 完成。
 
 ## 6. 当前未确认前端事实
 
