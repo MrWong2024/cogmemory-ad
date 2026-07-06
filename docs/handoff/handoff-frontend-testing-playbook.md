@@ -6,14 +6,21 @@
 
 ## 2. 当前状态
 
-- 当前前端验证手册处于初始化阶段。
-- 当前未发现 `frontend\package.json`，自动验证命令暂无，以 `frontend\package.json` 实际脚本为准。
+- 当前前端根目录公共骨架配置已初始化。
+- 当前 `frontend\package.json` 已存在，自动验证命令以其中真实脚本为准。
+- 当前未执行 `npm install`。
+- 当前未执行 `npm run build`。
+- 当前未执行 `npm run lint`。
+- 当前未执行 `npm run typecheck`。
+- 未执行原因：本任务只迁移 `frontend\` 根目录配置，尚未迁移 `frontend\app` 或 `frontend\src` 页面入口，安装和构建类验证留待后续公共底座迁移后执行。
 - 当前不编写测试代码，不定义真实页面验证用例。
 
 ## 3. 自动验证命令
 
-- 暂无，以 `frontend\package.json` 实际脚本为准。
-- 后续只能记录真实存在的脚本，不得凭空假设 `build`、`lint`、`test` 或 E2E 命令。
+- 当前可见脚本包括 `dev`、`build`、`start`、`lint`、`lint:file`、`lint:file:fix`、`typecheck`，但本任务未执行安装、构建、lint 或类型检查。
+- 后续迁移 `frontend\app` / `frontend\src` 公共底座后，再执行依赖安装、构建、lint 和类型检查。
+- 后续只能记录真实存在的脚本，不得凭空假设未在 `frontend\package.json` 中定义的测试或 E2E 命令。
+- 当前 `eslint.config.mjs` 保留公共 lint 口径中的 `react-hooks/exhaustive-deps` 与 `react-hooks/set-state-in-effect` 关闭项；这只记录当前公共配置，不代表业务代码可绕过代码评审。
 
 ## 4. 页面人工验证口径
 

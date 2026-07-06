@@ -1,0 +1,17 @@
+.next
+# Next.js generated types
+/next-env.d.ts
+node_modules
+out
+build
+coverage
+*.log
+*.tsbuildinfo
+.env
+.env.*
+.env.local
+.env*.local
+!.env.local.example
+!.env.development.example
+!.env.test.example
+!.env.production.example
