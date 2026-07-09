@@ -12,7 +12,7 @@
 - `StorageModule` 当前只提供 fake / OSS 底层 driver 结构和 `STORAGE_SERVICE` token，不提供业务上传接口。
 - `ScalesModule` 当前提供量表定义 / 量表版本 Schema、内部 `ScalesService` 读取底座、MMSE / MoCA 初始配置 seed 常量、内部只读 `ScaleSeedDataService` 和 `validateScaleSeeds()` 种子校验纯函数，不提供公开业务接口。
 - `PatientsModule` 当前只提供患者 / 受试者基础档案 Schema 与内部 `PatientsService` 读取底座，不提供公开业务接口。
-- `AssessmentsModule` 当前只提供访视 / 量表实例运行时 Schema、题目作答数据 Schema 与内部 `AssessmentsService` 读取底座，不提供公开业务接口。
+- `AssessmentsModule` 当前提供访视 / 量表实例运行时 Schema、题目作答数据 Schema、内部 `AssessmentsService` 读取底座，以及内部 `AssessmentExecutionService` 评估执行初始化编排底座，不提供公开业务接口。
 - `MediaModule` 当前只提供媒体证据元数据 Schema 与内部 `MediaEvidenceService` 读取底座，不提供公开媒体上传、下载、查询、删除或签名 URL 接口。
 - `ScoringModule` 当前只提供计分结果快照 Schema、内部 `ScoringService` 读取底座和 `summarizeItemScores()` 通用计分汇总纯函数，不提供公开计分触发、查询、复核或报告接口。
 - `CognitiveDomainsModule` 当前只提供认知域结果快照 Schema、内部 `CognitiveDomainsService` 读取底座和 `summarizeDomainScores()` 通用认知域汇总纯函数，不提供公开认知域计算触发、查询、复核或报告接口。
@@ -22,7 +22,7 @@
 - 本地默认前端 origin 为 `http://localhost:3002`。
 - `GET /health` 是当前唯一公共接口。
 - 已完成后端公共底座基础闭环本地验证：`npm install` 成功、`npm run build` 成功、`npm test -- --runInBand` 成功、`npm run start:prod` 启动成功。
-- 单元测试验证结果为 11 个测试套件通过、116 个测试通过。
+- 单元测试验证结果为 12 个测试套件通过、131 个测试通过。
 - 后端 TypeScript 编译根目录为 `.`，`outDir` 保持 `./dist`，因此 `src/main.ts` 编译后的主入口产物为 `dist/src/main.js`。
 - `package.json` 中 `start:prod` 保持指向 `./dist/src/main.js`，当前 build 产物路径已与该启动路径对齐。
 - `tsBuildInfoFile` 保持 `./dist/tsconfig.build.tsbuildinfo`；`dist` 与 `*.tsbuildinfo` 均作为生成物处理，不作为项目源文件纳入版本库。
@@ -39,7 +39,7 @@
 - development / test 默认 `STORAGE_DRIVER=fake`，production 默认 `STORAGE_DRIVER=oss`。
 - OSS、SMS、LLM 配置均为占位或示例口径，不包含真实密钥。
 - OSS 业务上传服务、SMS Service、LLM Service、业务上传接口均未实现。
-- 当前已有 `scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains` 与 `reports` 内部模型底座，其中 `scales` 已包含 MMSE / MoCA 初始配置 seed 常量、只读读取 Service 和 seed 校验纯函数，`assessments` 已包含 `AssessmentVisit`、`ScaleInstance` 与 `ItemResponse`，`media` 已包含 `MediaEvidence`，`scoring` 已包含 `ScoreResult`，`cognitive-domains` 已包含 `CognitiveDomainResult`，`reports` 已包含 `ClinicalReport`；但无公开业务 API、认证、真实患者建档流程、评估执行业务接口、作答提交、媒体上传 / 下载 / 签名 URL、数据库 seed runner、seed 写库、公开 MMSE / MoCA 配置查询接口、计分触发、认知域计算触发、MMSE / MoCA 专用计分规则执行、MMSE / MoCA 专用认知域规则执行、报告生成接口、医生确认写库流程、PDF 导出、疾病诊断或 AI。
+- 当前已有 `scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains` 与 `reports` 内部模型底座，其中 `scales` 已包含 MMSE / MoCA 初始配置 seed 常量、只读读取 Service 和 seed 校验纯函数，`assessments` 已包含 `AssessmentVisit`、`ScaleInstance`、`ItemResponse` 与内部 `AssessmentExecutionService`，`media` 已包含 `MediaEvidence`，`scoring` 已包含 `ScoreResult`，`cognitive-domains` 已包含 `CognitiveDomainResult`，`reports` 已包含 `ClinicalReport`；但无公开业务 API、认证、真实患者建档流程、公开评估执行业务接口、作答提交、媒体上传 / 下载 / 签名 URL、数据库 seed runner、seed 写库、公开 MMSE / MoCA 配置查询接口、计分触发、认知域计算触发、MMSE / MoCA 专用计分规则执行、MMSE / MoCA 专用认知域规则执行、报告生成接口、医生确认写库流程、PDF 导出、疾病诊断或 AI。
 - 当前 `start:prod` 与 TypeScript build 主入口产物路径均指向 `dist/src/main.js`，并已完成本地启动验证。
 - 本次仅使用指定外部 GitHub commit `b302b8af7b7ac9cc558939dc1b38ace0976c65b3` 作为后端公共底座来源，不继承其业务事实。
 
@@ -59,7 +59,7 @@
 - `validateScaleSeeds()` 当前为不落库的种子数据校验纯函数，覆盖量表 code、版本、group code、item code、groupCode 引用、CRF 编码重复风险、scoreRange、证据 / 计时一致性、MoCA 即刻记忆不计分、MoCA 延迟回忆提示后表现保留、MoCA 抽象项 CRF 修正、MMSE 表达第 9 项和绘图第 10 项修正，以及 MMSE / MoCA 连续减 7 分步配置。
 - MMSE seed 当前来源标识为 `MMSE+MoCA.pdf`，版本为 `1.0`，总分范围 0-30，包含定向力、即刻回忆、注意力和计算力、回忆、语言、视空间 / 绘图分组；题目覆盖时间定向、地点定向、即刻回忆、连续减 7、延迟回忆、命名、重复、阅读并执行、三步指令、表达 / 写完整句子和绘图。
 - MoCA seed 当前来源标识为 `MMSE+MoCA.pdf`，版本为 `1.0`，总分范围 0-30，包含视空间与执行功能、命名、即刻记忆、注意、语言、抽象、延迟回忆和定向分组；题目覆盖交替连线、立方体、钟表、命名、两次即刻记忆记录、数字广度、警觉性、连续减 7、句子复述、词语流畅性、两个抽象项、延迟回忆和定向；`N1.2.15` 总分字段保留在 reporting / research export 映射中。
-- 当前未实现数据库 seed runner、seed 写库、公开 MMSE / MoCA 配置查询 API、真实评估执行业务流程、作答提交流程、媒体上传 / 下载 / 签名 URL、MMSE / MoCA 专用自动计分规则执行、报告或 AI。
+- 当前未实现数据库 seed runner、seed 写库、公开 MMSE / MoCA 配置查询 API、完整公开评估执行业务流程、作答提交流程、媒体上传 / 下载 / 签名 URL、MMSE / MoCA 专用自动计分规则执行、报告或 AI。
 
 ## 5. 当前 patients / assessments 运行时与作答模型底座
 
@@ -81,7 +81,10 @@
 - `ItemResponse` 当前索引为 `{ scaleInstanceId: 1, itemCode: 1 }` unique、`{ assessmentVisitId: 1, scaleInstanceId: 1, itemOrder: 1 }`、`{ patientId: 1, scaleCode: 1, itemCode: 1 }`、`{ scaleCode: 1, itemCode: 1 }`、`{ status: 1, updatedAt: -1 }`、`{ scaleInstanceId: 1, countsTowardTotal: 1 }`。
 - 当前已建立 `Patient` -> `AssessmentVisit` -> `ScaleInstance` -> `ItemResponse` 的运行时 ObjectId 引用关系，并在 `ScaleInstance` 与 `ItemResponse` 中保存量表定义、量表版本和版本追溯快照字段。
 - `AssessmentsService` 当前提供 `ItemResponse` 的最小内部读取能力：规范化 item code、按量表实例和题目编码读取单条作答、按量表实例读取作答列表、按量表实例读取已计分作答列表、按访视读取作答列表；返回结果经过 mapper，不直接返回完整 Mongoose document。
-- 当前未实现真实患者建档流程、访视创建流程、真实作答提交、作答提交后自动计分触发、MMSE / MoCA 专用计分规则、认知域结果、报告生成流程、AI、认证或权限。
+- `AssessmentExecutionService` 当前提供内部评估执行初始化编排能力：规范化 subject / instance / scale code，基于 `ScaleSeedDataService` 读取并校验 MMSE / MoCA seed，构建不写库的 `ScaleExecutionPlan`，并在内部写库方法中先创建 `ScaleInstance`、再批量创建初始 `ItemResponse` 骨架。
+- `AssessmentExecutionService` 生成的初始 `ItemResponse` 骨架会从 seed 复制 itemCode、CRF 编码、分组、标题、顺序、作答类型、是否计入总分、认知域、item 配置快照、版本追溯、score 初始快照、连续减 7 / 钟表等分步结果占位、MoCA 延迟回忆提示后表现占位、计时占位和 photo / handwriting / duration / raw_text / operator_note 等 evidenceRefs 占位。
+- `AssessmentExecutionService` 当前仅为内部底座，不提供公开 API；不创建 Patient、AssessmentVisit、MediaEvidence、ScoreResult、CognitiveDomainResult 或 ClinicalReport；不实现事务、幂等、并发控制、作答提交、媒体上传、自动计分触发、认知域计算触发、报告生成、AI、认证或权限。
+- 当前未实现真实患者建档流程、访视创建流程、公开评估执行接口、真实作答提交、作答提交后自动计分触发、MMSE / MoCA 专用计分规则、认知域结果生成流程、报告生成流程、AI、认证或权限。
 
 ## 6. 当前 media 媒体证据模型底座
 
@@ -140,6 +143,7 @@
 - 尚无用户管理。
 - 尚无医生端或患者端业务。
 - 尚无公开患者、访视、量表实例、题目作答或量表业务接口、评估、报告生成 / 查询 / 医生确认 / 归档 / 更正 / 作废或诊断建议业务。
+- 尚无公开 assessment execution controller、评估创建接口、量表实例初始化接口或作答提交接口。
 - 尚无公开媒体上传、媒体查询、媒体下载、媒体删除或签名 URL 业务接口。
 - 尚无数据库 seed runner、seed 写库或公开 MMSE / MoCA 配置查询接口。
 - 尚无公开计分触发、计分查询、计分复核或报告接口。
@@ -150,7 +154,7 @@
 - 尚无 AI / LLM 调用接口。
 - 尚无业务 Controller 或公开业务 API。
 - 当前 E2E 未执行。
-- 已完成本次 `scales` 定向 lint、后端 build 与全量单元测试；全量 lint 当前未执行。
+- 已完成本次 `assessments` 定向 lint、后端 build 与全量单元测试；全量 lint 当前未执行。
 
 ## 11. 后续同步规则
 

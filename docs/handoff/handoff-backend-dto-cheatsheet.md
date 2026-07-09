@@ -6,7 +6,7 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 DTO、响应 type、Storage interface，以及 `scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains`、`reports` 内部 Service 读取输出 type；`scales` 当前还包含 MMSE / MoCA 初始配置 seed 内部 type。
+- 当前存在公共底座 DTO、响应 type、Storage interface，以及 `scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains`、`reports` 内部 Service 读取输出 type；`scales` 当前还包含 MMSE / MoCA 初始配置 seed 内部 type，`assessments` 当前还包含评估执行初始化内部编排 type。
 - 当前不记录任何业务请求 DTO。
 - 当前没有认证、用户、医生、患者、量表、评估、媒体、报告或业务上传请求 DTO。
 
@@ -89,6 +89,21 @@
 - 名称：`ItemResponseVersionTraceSummary`、`ItemScoreSummary`、`ItemStepResultSummary`、`PromptResponseRecordSummary`、`ItemResponseTimingSummary`、`ItemEvidenceRefSummary`
 - 文件：`backend\src\modules\assessments\services\assessments.service.ts`
 - 用途：`ItemResponseSummary` 的内部嵌套输出 type，承载版本追溯、单题得分、分步记录、提示后表现、计时与证据引用占位。
+
+- 名称：`BuildScaleExecutionPlanInput`
+- 文件：`backend\src\modules\assessments\types\assessment-execution.types.ts`
+- 用途：`AssessmentExecutionService.buildScaleExecutionPlan()` / `createScaleExecutionFromSeed()` 的内部输入 type，不是 HTTP DTO。
+- 字段摘要：患者 ID、访视 ID、受试者编码、量表定义 ID、量表版本 ID、量表 code / version、实例编码、实例序号、施测模式、操作者快照、开始时间和 metadata。
+
+- 名称：`ScaleExecutionPlan`、`ScaleInstanceDraft`、`ItemResponseDraft`、`ScaleExecutionSeedSummary`
+- 文件：`backend\src\modules\assessments\types\assessment-execution.types.ts`
+- 用途：评估执行初始化内部计划和写库草稿 type，不是公开 API DTO。
+- 字段摘要：`ScaleInstance` 初始草稿、与 seed items 对齐的初始 `ItemResponse` 草稿、seed 摘要和 seed 校验结果；`ItemResponseDraft` 包含题目快照、版本追溯、score 初始占位、stepResults、promptResponses、timing 与 evidenceRefs 占位。
+
+- 名称：`ScaleExecutionCreationResult`、`CreatedScaleInstanceSummary`、`CreatedItemResponseSummary`
+- 文件：`backend\src\modules\assessments\types\assessment-execution.types.ts`
+- 用途：`AssessmentExecutionService.createScaleExecutionFromPlan()` / `createScaleExecutionFromSeed()` 的内部 mapper 输出 type，不直接暴露 Mongoose document，不是 HTTP DTO。
+- 字段摘要：创建后的量表实例摘要、初始题目作答摘要、创建的题目作答数量、量表 code / version 与实例编码。
 
 - 名称：`MediaEvidenceSummary`
 - 文件：`backend\src\modules\media\services\media-evidence.service.ts`

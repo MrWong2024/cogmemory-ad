@@ -161,6 +161,14 @@
 - 影响范围：`backend\src\modules\scales` 和后端 handoff 文档。
 - 后续复查点：后续如进入数据库 seed runner、公开配置查询 API、MMSE / MoCA 评估执行页面、作答提交、自动计分触发、认知域计算触发、报告生成、AI、认证权限或科研导出阶段，应以单独任务明确 Controller、DTO、权限、写库边界、规则执行边界和测试口径，并单独同步 handoff。
 
+### D-019：建设评估执行工作流内部编排底座，不暴露公开 API
+
+- 日期：2026-07-10
+- 决策：后端 A9 在 `assessments` 内部模块落地 `AssessmentExecutionService`，基于 MMSE / MoCA seed 构建评估执行初始化计划，并在内部方法中创建 `ScaleInstance` 与初始 `ItemResponse` 骨架；本阶段不新增 Controller，不暴露公开 HTTP API。
+- 背景：在 A8 已具备 MMSE / MoCA seed 只读配置后，需要先形成评估执行初始化的内部编排底座，使后续公开评估流程或页面可以复用同一套版本追溯、题目快照、score 初始占位、分步记录、提示后表现、计时与证据占位口径。
+- 影响范围：`backend\src\modules\assessments` 和后端 handoff 文档；`AssessmentsModule` 为注入 `ScaleSeedDataService` 最小导入 `ScalesModule`。
+- 后续复查点：本阶段不实现事务、幂等、并发控制、作答提交、媒体上传、自动计分触发、认知域计算触发、报告生成、AI、认证或权限。后续如进入公开业务 API 或真实评估工作流，应单独确认 Controller、DTO、权限、Mongo session / transaction 或补偿策略、幂等策略和测试口径。
+
 ## 4. 后续同步规则
 
 - 新增关键技术选型、接口设计、数据模型、测试策略或部署策略后，应追加决策记录。

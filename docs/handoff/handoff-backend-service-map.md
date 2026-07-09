@@ -6,8 +6,8 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 Service / Provider，以及 `scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains`、`reports` 内部读取 Service；`scales` 还包含 MMSE / MoCA 初始配置 seed 只读 Service。
-- 当前没有认证、用户、医生、SMS 或 LLM Service；`ScalesService`、`ScaleSeedDataService`、`PatientsService`、`AssessmentsService`、`MediaEvidenceService`、`ScoringService`、`CognitiveDomainsService`、`ReportsService` 仅为内部模型读取 / seed 读取 / 汇总或状态校验底座。
+- 当前存在公共底座 Service / Provider，以及 `scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains`、`reports` 内部读取 Service；`scales` 还包含 MMSE / MoCA 初始配置 seed 只读 Service，`assessments` 还包含评估执行初始化内部编排 Service。
+- 当前没有认证、用户、医生、SMS 或 LLM Service；`ScalesService`、`ScaleSeedDataService`、`PatientsService`、`AssessmentsService`、`AssessmentExecutionService`、`MediaEvidenceService`、`ScoringService`、`CognitiveDomainsService`、`ReportsService` 仅为内部模型读取 / seed 读取 / 初始化编排 / 汇总或状态校验底座。
 
 ## 3. 当前 Service / Provider 清单
 
@@ -85,6 +85,16 @@
 - 下游依赖：`AssessmentVisit`、`ScaleInstance` 与 `ItemResponse` Mongoose Model。
 - 边界：不创建、更新、删除访视、量表实例或题目作答；不实现状态流转、作答提交、媒体证据读写流程、计分、报告、AI、认证、权限或公开评估 API。
 - 测试覆盖口径：`backend\src\modules\assessments\services\assessments.service.spec.ts`，覆盖 code 规范化、访视 / 量表实例 / 题目作答查无返回 `null`、mapper 输出、列表读取、schema collection、索引、内嵌子文档 `_id: false` 和关键字段显式类型；不连接真实 MongoDB，测试数据为脱敏人工样例。
+
+- Service 名称：`AssessmentExecutionService`
+- 文件路径：`backend\src\modules\assessments\services\assessment-execution.service.ts`
+- 职责边界：提供评估执行初始化内部编排底座；基于 MMSE / MoCA seed 构建不写库执行计划，并可内部创建 `ScaleInstance` 与初始 `ItemResponse` 骨架；按 mapper 输出创建摘要，不直接返回完整 Mongoose document。
+- 当前方法：`normalizeSubjectCode(subjectCode)`、`normalizeInstanceCode(instanceCode)`、`normalizeScaleCode(scaleCode)`、`buildScaleExecutionPlan(input)`、`createScaleExecutionFromPlan(plan)`、`createScaleExecutionFromSeed(input)`。
+- 上游调用方：当前暂无公开 Controller；预期供后续后端评估执行工作流内部调用。
+- 下游依赖：`ScaleInstance` 与 `ItemResponse` Mongoose Model、`ScaleSeedDataService`。`AssessmentsModule` 为此最小导入 `ScalesModule`。
+- 边界：不注入 Patients / Media / Scoring / CognitiveDomains / Reports / Storage Service；不创建 Patient 或 AssessmentVisit；不创建 MediaEvidence、ScoreResult、CognitiveDomainResult 或 ClinicalReport；不提供公开 API；不实现作答提交、媒体上传、自动计分触发、认知域计算触发、报告生成、AI、认证或权限。
+- 写库策略：`createScaleExecutionFromPlan()` 当前先创建 `ScaleInstance`，再批量创建初始 `ItemResponse`；本阶段不使用 Mongo session / transaction，不实现幂等、并发控制或补偿删除。后续公开业务 API 如需要原子性，应引入 transaction 或补偿策略。
+- 测试覆盖口径：`backend\src\modules\assessments\services\assessment-execution.service.spec.ts`，覆盖 MMSE / MoCA 执行计划、MMSE 修正 CRF、MoCA 即刻记忆不计分、MoCA 延迟回忆提示记录、MMSE / MoCA 连续减 7 stepResults、绘图 / 连线图片与手写证据占位、计时占位、score 初始占位、normalize 方法、seed 不存在、seed 校验失败、非法输入、写库调用顺序和 mapper 输出；不连接真实 MongoDB，不调用 OSS / Storage / SMS / LLM，测试数据为配置样例或脱敏人工样例。
 
 - Service 名称：`MediaEvidenceService`
 - 文件路径：`backend\src\modules\media\services\media-evidence.service.ts`
