@@ -145,6 +145,14 @@
 - 影响范围：`backend\src\app.module.ts`、`backend\src\modules\cognitive-domains` 和后端 handoff 文档。
 - 后续复查点：后续进入 MMSE / MoCA 专用认知域规则、报告、认证权限或公开业务 API 阶段时，应继续保持模型、Controller、DTO、权限、规则边界和测试边界清晰，并单独同步 handoff。
 
+### D-017：建设临床报告模型与医生确认流程底座，不暴露公开 API
+
+- 日期：2026-07-09
+- 决策：后端 A7 落地 `reports` 内部模块，建设 `ClinicalReport` 数据模型、最小内部读取 Service 和报告状态转换校验纯函数；本阶段不新增 Controller，不暴露公开 HTTP API。
+- 背景：通用量表引擎在认知域结果模型之后，需要保存一次评估 / 访视下的临床报告快照，并通过 `Patient` -> `AssessmentVisit` -> `ScaleInstance` -> `ScoreResult` -> `CognitiveDomainResult` -> `ClinicalReport` 形成报告追溯链，同时在证据快照中保留 `ItemResponse` 与 `MediaEvidence` 引用；当前阶段只建设模型、内部读取和状态语义校验，不实现真实报告生成、医生确认写库、归档 / 更正 / 作废写库、AI 报告或 PDF 导出。
+- 影响范围：`backend\src\app.module.ts`、`backend\src\modules\reports` 和后端 handoff 文档。
+- 后续复查点：后续进入报告生成接口、医生确认接口、报告归档 / 更正 / 作废流程、AuditLog、AI 报告、PDF 导出、认证权限或公开业务 API 阶段时，应继续保持 Controller、DTO、权限、状态流转写库、审计和测试边界清晰，并单独同步 handoff。
+
 ## 4. 后续同步规则
 
 - 新增关键技术选型、接口设计、数据模型、测试策略或部署策略后，应追加决策记录。

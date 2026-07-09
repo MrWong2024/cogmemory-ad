@@ -11,6 +11,7 @@ import { AssessmentsModule } from './modules/assessments/assessments.module';
 import { CognitiveDomainsModule } from './modules/cognitive-domains/cognitive-domains.module';
 import { MediaModule } from './modules/media/media.module';
 import { PatientsModule } from './modules/patients/patients.module';
+import { ReportsModule } from './modules/reports/reports.module';
 import { ScalesModule } from './modules/scales/scales.module';
 import { ScoringModule } from './modules/scoring/scoring.module';
 import { StorageModule } from './modules/storage/storage.module';
@@ -39,6 +40,7 @@ import { StorageModule } from './modules/storage/storage.module';
     ScalesModule,
     ScoringModule,
     CognitiveDomainsModule,
+    ReportsModule,
     StorageModule,
   ],
   controllers: [AppController],

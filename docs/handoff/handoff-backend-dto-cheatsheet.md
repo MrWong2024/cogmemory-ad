@@ -6,7 +6,7 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 DTO、响应 type、Storage interface，以及 `scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains` 内部 Service 读取输出 type。
+- 当前存在公共底座 DTO、响应 type、Storage interface，以及 `scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains`、`reports` 内部 Service 读取输出 type。
 - 当前不记录任何业务请求 DTO。
 - 当前没有认证、用户、医生、患者、量表、评估、媒体、报告或业务上传请求 DTO。
 
@@ -114,6 +114,15 @@
 - 名称：`CognitiveDomainItemInput`、`CognitiveDomainMappingInput`、`CognitiveDomainComputationSummary`、`CognitiveDomainComputationWarning`
 - 文件：`backend\src\modules\cognitive-domains\services\cognitive-domains.service.ts`
 - 用途：`summarizeDomainScores()` 通用认知域汇总纯函数的输入 / 输出 type，不是 HTTP DTO；只描述基于单题得分快照和认知域映射快照的内存汇总结构。
+
+- 名称：`ClinicalReportSummary`
+- 文件：`backend\src\modules\reports\services\reports.service.ts`
+- 用途：`ReportsService` 内部读取临床报告摘要时返回的 mapper 输出 type，不是 HTTP DTO。
+- 字段摘要：运行时引用、报告编码 / 编号 / 类型 / 状态 / 版本 / 来源、患者快照、访视快照、量表追溯、计分结果快照、认知域结果快照、媒体证据摘要、报告正文占位、AI 草稿占位、医生确认、锁定、归档、更正、作废、审计引用占位、质控状态、质控提示、备注和 metadata。
+
+- 名称：`ReportPatientSnapshotSummary`、`ReportVisitSnapshotSummary`、`ReportScaleTraceSummary`、`ReportScoreSnapshotSummary`、`ReportDomainSnapshotSummary`、`ReportEvidenceSnapshotSummary`、`ReportNarrativeSummary`、`ReportAiDraftSummary`、`ReportConfirmationSummary`、`ReportCorrectionSummary`
+- 文件：`backend\src\modules\reports\services\reports.service.ts`
+- 用途：`ClinicalReportSummary` 的内部嵌套输出 type，承载患者 / 访视快照、量表版本追溯、计分与认知域快照、证据摘要、报告正文占位、AI 草稿占位、医生确认和更正记录摘要。
 
 ## 4. 后续同步规则
 
