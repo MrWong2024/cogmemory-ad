@@ -6,8 +6,8 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 Service / Provider，以及 `scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains`、`reports` 内部读取 Service；`scales` 还包含 MMSE / MoCA 初始配置 seed 只读 Service，`assessments` 还包含评估执行初始化内部编排 Service。
-- 当前没有认证、用户、医生、SMS 或 LLM Service；`ScalesService`、`ScaleSeedDataService`、`PatientsService`、`AssessmentsService`、`AssessmentExecutionService`、`MediaEvidenceService`、`ScoringService`、`CognitiveDomainsService`、`ReportsService` 仅为内部模型读取 / seed 读取 / 初始化编排 / 汇总或状态校验底座。
+- 当前存在公共底座 Service / Provider，以及 `scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains`、`reports`、`users`、`auth` 内部读取或认证底座 Service；`scales` 还包含 MMSE / MoCA 初始配置 seed 只读 Service，`assessments` 还包含评估执行初始化内部编排 Service，`auth` 还包含 session 认证 Guard 和角色 Guard 底座。
+- 当前没有医生、SMS 或 LLM Service；`ScalesService`、`ScaleSeedDataService`、`PatientsService`、`AssessmentsService`、`AssessmentExecutionService`、`MediaEvidenceService`、`ScoringService`、`CognitiveDomainsService`、`ReportsService`、`UsersService`、`AuthService` 仅为内部模型读取 / seed 读取 / 初始化编排 / 汇总 / 状态校验 / 认证会话底座。
 
 ## 3. 当前 Service / Provider 清单
 
@@ -131,6 +131,40 @@
 - 下游依赖：`ClinicalReport` Mongoose Model；状态转换校验纯函数不依赖数据库。
 - 边界：不创建、更新、删除报告；不实现报告生成、医生确认写库、锁定写库、归档写库、更正写库、作废写库、PDF / Word / 打印导出、AI 报告生成、AuditLog、AiAnalysisResult、认证、权限或公开报告 API；不修改 `ScoreResult`、`CognitiveDomainResult`、`ItemResponse`、`MediaEvidence` 或其他既有模型。
 - 测试覆盖口径：`backend\src\modules\reports\services\reports.service.spec.ts`，覆盖 report code 规范化、查无返回 `null`、mapper 输出、按访视最新读取、按访视 / 患者 / 状态读取、按患者读取 confirmed / archived / corrected 报告列表、schema collection、索引、内嵌子文档 `_id: false`、关键字段显式类型，以及 `canTransitionReportStatus()` / `getAllowedReportStatusTransitions()` 对 draft、pending_confirmation、confirmed、archived、corrected、voided 的处理；不连接真实 MongoDB，不调用 Storage / OSS / SMS / LLM，测试数据为脱敏人工样例。
+
+- Service 名称：`UsersService`
+- 文件路径：`backend\src\modules\users\services\users.service.ts`
+- 职责边界：提供系统账号内部读取、账号编码规范化和安全 mapper 输出；普通 mapper 不返回 `passwordHash`，凭证查询只返回认证必要字段。
+- 当前方法：`normalizeAccountName(accountName)`、`normalizeEmail(email)`、`normalizeStaffCode(staffCode)`、`findUserById(userId)`、`findUserByAccountName(accountName)`、`findUserCredentialByAccountName(accountName)`、`listActiveUsers()`。
+- 上游调用方：当前暂无公开 Controller；`AuthService` 当前调用 `findUserById()` 校验 session 对应用户。
+- 下游依赖：`User` Mongoose Model。
+- 边界：不创建、更新、删除用户；不实现密码重置、账号禁用、角色矩阵管理、公开用户管理 API、登录接口、登出接口、认证探针、短信验证码、OAuth / SSO、JWT 主登录态或前端认证。
+- 测试覆盖口径：`backend\src\modules\users\services\users.service.spec.ts`，覆盖 `User` schema collection、索引、`passwordHash select: false`、枚举 / Date / Number / Mixed 显式类型，覆盖账号 / 邮箱 / 工号规范化、查无返回 `null`、mapper 输出不含 `passwordHash`、凭证查询显式 select `+passwordHash` 且只返回认证必要字段、active 用户列表读取；不连接真实 MongoDB，测试数据为脱敏人工样例。
+
+- Service 名称：`AuthService`
+- 文件路径：`backend\src\modules\auth\services\auth.service.ts`
+- 职责边界：提供内部密码哈希 / 校验、session token 生成 / hash、session 创建、session 校验、session 撤销和公开认证上下文构建能力。
+- 当前方法：`hashPassword(plainPassword)`、`verifyPassword(plainPassword, storedPasswordHash)`、`generateSessionToken()`、`hashSessionToken(rawToken)`、`createSessionForUser(input)`、`validateSessionToken(rawToken)`、`revokeSessionByToken(rawToken)`、`buildPublicAuthUser(user, sessionId?)`。
+- 上游调用方：当前暂无公开 Controller；`SessionAuthGuard` 调用 `validateSessionToken()`。
+- 下游依赖：`Session` Mongoose Model、`UsersService`、Node.js 内置 `crypto`。
+- 边界：不设置 Cookie，不清除 Cookie，不实现登录接口、登出接口、认证探针、公开用户管理 API、短信验证码、OAuth / SSO、JWT 主登录态、max active session 回收、前端认证或权限页面。
+- 测试覆盖口径：`backend\src\modules\auth\services\auth.service.spec.ts`，覆盖 `Session` schema collection、索引、`sessionTokenHash select: false`、TTL 索引、ObjectId / Date / Mixed 显式类型，覆盖密码 hash / verify、损坏 hash、session token 随机性、token hash 稳定性、session 创建写入 token hash 而非 raw token、session 不存在 / revoked / expired / 用户不存在 / 用户非 active 返回 `null`、正常返回 `AuthenticatedUserContext` 且不含 passwordHash、raw token 或 token hash；不连接真实 MongoDB，不调用 OSS / Storage / SMS / LLM。
+
+- Guard 名称：`SessionAuthGuard`
+- 文件路径：`backend\src\modules\auth\guards\session-auth.guard.ts`
+- 职责边界：支持 `@Public()` 路由直通；从 cookie-parser cookies 或原始 `cookie` header 读取 `_session`；调用 `AuthService.validateSessionToken()`；校验成功后挂载 `req.user`，失败抛 `UnauthorizedException`。
+- 上游调用方：当前未注册为全局 Guard，未来由具体 Controller 或模块按需启用。
+- 下游依赖：`Reflector`、`AuthService`。
+- 边界：不下发 Cookie，不清除 Cookie，不改变 `GET /health` 权限，不实现登录 / 登出 / auth me。
+- 测试覆盖口径：`backend\src\modules\auth\guards\session-auth.guard.spec.ts`，覆盖 public 路由直通、缺少 Cookie 抛 `UnauthorizedException`、cookie-parser cookies 读取、原始 cookie header 解析、校验成功挂载 `req.user`、校验失败抛 `UnauthorizedException`。
+
+- Guard 名称：`RolesGuard`
+- 文件路径：`backend\src\modules\auth\guards\roles.guard.ts`
+- 职责边界：读取 `@Roles()` 元数据；无角色要求时直通；有角色要求时基于 `req.user.roles` 校验，角色不足或缺少 `req.user` 时抛 `ForbiddenException`。
+- 上游调用方：当前未注册为全局 Guard，未来由具体 Controller 或模块按需启用。
+- 下游依赖：`Reflector`。
+- 边界：不实现完整权限矩阵，不实现权限管理接口，不改变 `GET /health` 权限。
+- 测试覆盖口径：`backend\src\modules\auth\guards\roles.guard.spec.ts`，覆盖无角色要求直通、包含要求角色通过、角色不足抛 `ForbiddenException`、没有 `req.user` 抛 `ForbiddenException`。
 
 ## 4. 后续同步规则
 

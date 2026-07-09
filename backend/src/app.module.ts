@@ -8,6 +8,7 @@ import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import configuration from './config/configuration';
 import { envValidationSchema } from './config/env.validation';
 import { AssessmentsModule } from './modules/assessments/assessments.module';
+import { AuthModule } from './modules/auth/auth.module';
 import { CognitiveDomainsModule } from './modules/cognitive-domains/cognitive-domains.module';
 import { MediaModule } from './modules/media/media.module';
 import { PatientsModule } from './modules/patients/patients.module';
@@ -15,6 +16,7 @@ import { ReportsModule } from './modules/reports/reports.module';
 import { ScalesModule } from './modules/scales/scales.module';
 import { ScoringModule } from './modules/scoring/scoring.module';
 import { StorageModule } from './modules/storage/storage.module';
+import { UsersModule } from './modules/users/users.module';
 
 @Module({
   imports: [
@@ -41,6 +43,8 @@ import { StorageModule } from './modules/storage/storage.module';
     ScoringModule,
     CognitiveDomainsModule,
     ReportsModule,
+    UsersModule,
+    AuthModule,
     StorageModule,
   ],
   controllers: [AppController],

@@ -7,7 +7,7 @@
 ## 2. 当前状态
 
 - `backend\src` 公共底座已初始化。
-- 当前存在 health controller spec、Storage service spec、上传文件名工具 spec、scales service / schema spec、scales seed service spec、patients service / schema spec、assessments service / schema spec、assessment execution service spec、media service / schema spec、scoring service / schema spec、cognitive-domains service / schema spec 和 reports service / schema spec。
+- 当前存在 health controller spec、Storage service spec、上传文件名工具 spec、scales service / schema spec、scales seed service spec、patients service / schema spec、assessments service / schema spec、assessment execution service spec、media service / schema spec、scoring service / schema spec、cognitive-domains service / schema spec、reports service / schema spec、users service / schema spec、auth service / schema spec、session auth guard spec 和 roles guard spec。
 - 后端默认端口为 `5002`。
 - 本地前端默认 origin 为 `http://localhost:3002`。
 - 测试环境默认 `STORAGE_DRIVER=fake`。
@@ -78,6 +78,10 @@
   - `npm run lint:file -- src/modules/assessments`
   - `npm run build`
   - `npm test -- --runInBand`
+- 本次后端 A10 已验证命令：
+  - `npm run lint:file -- src/modules/users src/modules/auth src/app.module.ts`
+  - `npm run build`
+  - `npm test -- --runInBand`
 - 当前路径对齐验证命令：
   - `npm run build`
   - 检查 `dist/src/main.js` 存在
@@ -87,8 +91,8 @@
   - `npm run build` 成功。
   - build 后 `dist/src/main.js` 已确认存在。
   - `npm test -- --runInBand` 成功。
-  - 当前单元测试为 12 个测试套件通过。
-  - 当前单元测试为 131 个测试通过。
+  - 当前单元测试为 16 个测试套件通过。
+  - 当前单元测试为 160 个测试通过。
   - 用户已补充验证 `npm run start:prod` 本地启动成功。
   - `dist/src/main.js` 与 `start:prod` 指向的 `./dist/src/main.js` 路径匹配。
 - 当前未验证命令：
@@ -115,6 +119,10 @@
 - `backend\src\modules\scoring\services\scoring.service.spec.ts`：验证 `ScoreResult` schema 的 collection、索引、枚举 / ObjectId / Date / Number / Boolean / Mixed 显式类型，验证计分结果内嵌子文档 `_id: false`，验证 `ScoringService` 的 `scoreResultCode` 规范化、查无返回 `null`、mapper 输出、按量表实例最新读取、按量表实例 / 访视 / 患者读取，以及 `summarizeItemScores()` 对计入 / 不计入总分、缺失、未评分、需复核、非有限数字、逐步计分和 group score 汇总的处理；不连接真实 MongoDB，不调用 Storage / OSS / SMS / LLM，测试数据为 `SUBJ-TEST-*`、`VISIT-TEST-*`、`INST-TEST-*`、`SCR-TEST-*`、`moca.memory.immediate.trial_1.face`、`moca.recall.delayed.free.face`、`mmse.attention.serial_sevens.step_1` 等脱敏人工样例。
 - `backend\src\modules\cognitive-domains\services\cognitive-domains.service.spec.ts`：验证 `CognitiveDomainResult` schema 的 collection、索引、枚举 / ObjectId / Date / Number / Boolean / Mixed 显式类型，验证认知域结果内嵌子文档 `_id: false`，验证 `CognitiveDomainsService` 的 `domainResultCode` / `domainCode` 规范化、查无返回 `null`、mapper 输出、按量表实例最新读取、按量表实例 / 计分结果 / 访视 / 患者读取，以及 `summarizeDomainScores()` 对默认映射、多认知域映射、权重、不计入认知域、缺失、未评分、需复核和非有限数字 warning 的处理；不连接真实 MongoDB，不调用 Storage / OSS / SMS / LLM，测试数据为 `SUBJ-TEST-*`、`VISIT-TEST-*`、`INST-TEST-*`、`SCR-TEST-*`、`CDR-TEST-*`、`moca.visuospatial.clock`、`moca.memory.delayed.face`、`mmse.attention.serial_sevens.step_1` 等脱敏人工样例。
 - `backend\src\modules\reports\services\reports.service.spec.ts`：验证 `ClinicalReport` schema 的 collection、索引、枚举 / ObjectId / Date / Number / Boolean / Mixed 显式类型，验证报告内嵌子文档 `_id: false`，验证 `ReportsService` 的 `reportCode` 规范化、查无返回 `null`、mapper 输出、按访视最新读取、按访视 / 患者 / 状态读取、按患者读取 confirmed / archived / corrected 报告列表，以及 `canTransitionReportStatus()` / `getAllowedReportStatusTransitions()` 对草稿、待确认、已确认、已归档、更正和作废状态的处理；不连接真实 MongoDB，不调用 Storage / OSS / SMS / LLM，测试数据为 `SUBJ-TEST-*`、`VISIT-TEST-*`、`INST-TEST-*`、`SCR-TEST-*`、`CDR-TEST-*`、`RPT-TEST-*`、`moca.visuospatial.clock` 等脱敏人工样例。
+- `backend\src\modules\users\services\users.service.spec.ts`：验证 `User` schema 的 collection、索引、`passwordHash select: false`、枚举 / Date / Number / Mixed 显式类型，验证 `UsersService` 的 accountName / email / staffCode 规范化、按 ID / 账号查无返回 `null`、mapper 输出不含 `passwordHash`、凭证查询显式 select `+passwordHash` 且只返回认证必要字段、active 用户列表读取；不连接真实 MongoDB，测试数据为 `doctor-test-001`、`STAFF-TEST-001`、`doctor-test-001@example.test` 等脱敏人工样例。
+- `backend\src\modules\auth\services\auth.service.spec.ts`：验证 `Session` schema 的 collection、索引、`sessionTokenHash select: false`、`expiresAt` TTL 索引、ObjectId / Date / Mixed 显式类型，验证 `AuthService` 的密码 hash / verify、错误密码和损坏 hash、session token 随机性、token hash 稳定性、session 创建写入 token hash 而非 raw token、session 不存在 / revoked / expired / 用户不存在 / 用户非 active 返回 `null`、正常返回 `AuthenticatedUserContext` 且不含 `passwordHash`、raw token、session token hash 或 token hash；不连接真实 MongoDB，不调用 OSS / Storage / SMS / LLM，测试数据为 `SESSION-TEST-*` 等脱敏人工样例。
+- `backend\src\modules\auth\guards\session-auth.guard.spec.ts`：验证 `SessionAuthGuard` 对 `@Public()` 路由直通、缺少 Cookie 抛 `UnauthorizedException`、从 cookie-parser cookies 读取 `_session`、从原始 cookie header 解析 `_session`、校验成功挂载 `req.user`、校验失败抛 `UnauthorizedException`；不连接真实 MongoDB，不调用外部服务。
+- `backend\src\modules\auth\guards\roles.guard.spec.ts`：验证 `RolesGuard` 在没有 `@Roles()` 时直通、用户包含要求角色时通过、已认证但角色不足时抛 `ForbiddenException`、没有 `req.user` 时抛 `ForbiddenException`；不连接真实 MongoDB，不调用外部服务。
 
 ## 6. E2E 测试口径
 

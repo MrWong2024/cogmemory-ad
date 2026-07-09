@@ -10,7 +10,7 @@
 
 本文档是 CogMemory AD 后端 handoff 文档入口，用于索引后端事实快照、API、DTO、Service、配置、决策和验证手册。
 
-当前内容记录后端公共底座、已进入真实代码阶段的 `scales` 量表定义模型底座、`patients` / `assessments` 患者、访视和量表实例运行时模型底座、`assessments` 内部 `ItemResponse` 题目作答数据模型底座、`media` 媒体证据模型底座、`scoring` 自动计分结果模型与通用计分汇总底座、`cognitive-domains` 认知域结果模型与通用认知域汇总底座、`reports` 临床报告模型与医生确认流程底座、`scales` 内部 MMSE / MoCA 初始配置种子数据底座，以及 `assessments` 内部评估执行初始化编排底座；未实现的业务能力仍只能标记为待后续阶段确认。
+当前内容记录后端公共底座、已进入真实代码阶段的 `scales` 量表定义模型底座、`patients` / `assessments` 患者、访视和量表实例运行时模型底座、`assessments` 内部 `ItemResponse` 题目作答数据模型底座、`media` 媒体证据模型底座、`scoring` 自动计分结果模型与通用计分汇总底座、`cognitive-domains` 认知域结果模型与通用认知域汇总底座、`reports` 临床报告模型与医生确认流程底座、`scales` 内部 MMSE / MoCA 初始配置种子数据底座、`assessments` 内部评估执行初始化编排底座，以及 `users` / `auth` 认证、用户、会话与角色权限模型 / Service / Guard 底座；未实现的业务能力仍只能标记为待后续阶段确认。
 
 ## 3. 当前状态
 
@@ -26,8 +26,10 @@
 - 当前新增 `reports` 临床报告模型与医生确认流程底座，包含 `ClinicalReport` Schema、`ReportsService` 内部读取能力和报告状态转换校验纯函数。
 - 当前新增 `scales` 内部 MMSE / MoCA 初始配置种子数据底座，包含 MMSE / MoCA seed 常量、`ScaleSeedDataService` 只读读取能力和 `validateScaleSeeds()` 种子数据校验纯函数。
 - 当前新增 `assessments` 内部 `AssessmentExecutionService`，可基于 MMSE / MoCA seed 构建执行计划，并在内部方法中创建 `ScaleInstance` 与初始 `ItemResponse` 骨架；不提供公开 API。
-- 当前公开 API 仍只有 `GET /health`；`scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains`、`reports` 均未新增 Controller 或公开业务接口。
-- 认证、真实患者建档流程、访视管理接口、公开评估执行业务接口、作答提交、媒体上传 / 下载 / 签名 URL、数据库 seed runner、seed 写库、公开 MMSE / MoCA 配置查询接口、计分触发、认知域计算触发、MMSE / MoCA 专用计分规则执行、MMSE / MoCA 专用认知域规则执行、报告生成接口、医生确认写库流程、报告归档 / 更正 / 作废接口、PDF 导出、疾病诊断、AI、科研导出等业务能力仍未实现。
+- 当前新增 `users` 内部模块，包含 `User` Schema 与 `UsersService` 内部账号读取、账号编码规范化和安全 mapper 输出能力。
+- 当前新增 `auth` 内部模块，包含 `Session` Schema、`AuthService` 密码哈希 / 校验、session token 生成 / hash、session 创建 / 校验 / 撤销能力，以及 `@Public()`、`@Roles()`、`@CurrentUser()`、`SessionAuthGuard`、`RolesGuard` 底座；不提供公开 API，不注册全局 Guard。
+- 当前公开 API 仍只有 `GET /health`；`scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains`、`reports`、`users`、`auth` 均未新增 Controller 或公开业务接口。
+- 公开登录 / 登出 / auth me / users me / 用户管理 API、前端登录页、认证态联动、权限菜单、真实患者建档流程、访视管理接口、公开评估执行业务接口、作答提交、媒体上传 / 下载 / 签名 URL、数据库 seed runner、seed 写库、公开 MMSE / MoCA 配置查询接口、计分触发、认知域计算触发、MMSE / MoCA 专用计分规则执行、MMSE / MoCA 专用认知域规则执行、报告生成接口、医生确认写库流程、报告归档 / 更正 / 作废接口、PDF 导出、疾病诊断、AI、科研导出等业务能力仍未实现。
 
 ## 4. 必读基础文档
 

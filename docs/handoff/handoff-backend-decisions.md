@@ -169,6 +169,14 @@
 - 影响范围：`backend\src\modules\assessments` 和后端 handoff 文档；`AssessmentsModule` 为注入 `ScaleSeedDataService` 最小导入 `ScalesModule`。
 - 后续复查点：本阶段不实现事务、幂等、并发控制、作答提交、媒体上传、自动计分触发、认知域计算触发、报告生成、AI、认证或权限。后续如进入公开业务 API 或真实评估工作流，应单独确认 Controller、DTO、权限、Mongo session / transaction 或补偿策略、幂等策略和测试口径。
 
+### D-020：建设认证、用户、会话与角色权限模型底座，不暴露公开认证 API
+
+- 日期：2026-07-10
+- 决策：后端 A10 新增 `users` 与 `auth` 内部模块，主登录态遵循服务端 Session + HttpOnly Cookie 口径；本阶段只建设 `User` / `Session` 模型、内部 `UsersService`、内部 `AuthService`、认证上下文、`@Public()` / `@Roles()` / `@CurrentUser()` 装饰器、`SessionAuthGuard` 与 `RolesGuard` 底座。
+- 背景：A1-A9 已完成量表、患者、评估、作答、媒体、计分、认知域、报告和评估执行初始化内部模型 / Service 底座，后续公开业务接口需要先具备系统账号、服务端会话、密码哈希、会话校验和角色 Guard 的后端基础能力。
+- 影响范围：`backend\src\app.module.ts`、`backend\src\modules\users`、`backend\src\modules\auth` 和后端 handoff 文档。
+- 后续复查点：本阶段不新增 Controller，不暴露登录、登出、auth me、users me、公开用户管理或权限管理 API；不使用 JWT 作为主登录态；不设置或清除 Cookie；不注册全局 Guard；不影响当前唯一公开接口 `GET /health`。后续如进入公开认证 API 或前端登录态，应单独确认 Cookie 配置口径、Controller、DTO、CSRF / CORS、权限策略、审计和 E2E 测试。
+
 ## 4. 后续同步规则
 
 - 新增关键技术选型、接口设计、数据模型、测试策略或部署策略后，应追加决策记录。

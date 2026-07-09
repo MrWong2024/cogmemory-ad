@@ -8,7 +8,7 @@
 
 - 当前只实现一个公共健康检查接口。
 - 当前公开 API 仍只有 `GET /health`。
-- 当前没有认证、用户、医生、患者、量表、评估、报告、短信、AI / LLM 或业务上传接口。
+- 当前没有公开认证、公开用户、医生、患者、量表、评估、报告、短信、AI / LLM 或业务上传接口。
 - 本次新增的 `ScalesModule` 仅为内部模型、Service 和 MMSE / MoCA 初始配置 seed 底座，不新增 scale controller，不暴露公开业务 API。
 - 本次新增的 `PatientsModule` 与 `AssessmentsModule` 仅为内部模型和 Service 底座，不新增 patient / assessment controller，不暴露患者、访视或量表实例公开业务 API。
 - 本次新增的 `ItemResponse` 仅为 `assessments` 内部题目作答数据模型和 Service 读取底座，不新增 item-response controller，不暴露作答提交、作答查询、计分或媒体上传公开业务 API。
@@ -17,6 +17,8 @@
 - 本次新增的 `CognitiveDomainsModule` 仅为内部认知域结果模型和 Service 底座，不新增 cognitive-domain controller，不暴露认知域计算触发、认知域查询、认知域复核、报告或其他公开业务 API。
 - 本次新增的 `ReportsModule` 仅为内部临床报告模型、Service 读取和报告状态转换校验底座，不新增 reports controller，不暴露报告生成、报告查询、医生确认、归档、更正、作废、PDF 导出、AI 生成或其他公开业务 API。
 - 本次新增的 `AssessmentExecutionService` 仅为 `assessments` 内部评估执行初始化编排底座，不新增 assessment execution controller，不暴露评估创建、量表实例初始化、作答提交、媒体上传、计分触发、认知域计算触发、报告生成或其他公开业务 API。
+- 本次新增的 `UsersModule` 仅为内部用户模型和账号读取 / mapper 底座，不新增 users controller，不暴露用户创建、更新、禁用、重置密码或公开用户管理 API。
+- 本次新增的 `AuthModule` 仅为内部服务端 session、密码哈希、session token hash、会话校验、认证上下文、认证 / 角色装饰器和 Guard 底座，不新增 auth controller，不暴露登录、登出、认证探针、auth me、users me、短信验证码、OAuth / SSO、JWT 登录态或权限管理 API。
 - 当前 API 事实以 `backend\src\app.controller.ts` 和对应测试为准。
 
 ## 3. 当前 API 清单
@@ -49,7 +51,11 @@
 - `CognitiveDomainsService` 仅供后续后端业务模块内部读取认知域结果摘要，并提供不落库的通用认知域汇总纯函数。
 - `backend\src\modules\reports` 当前没有 Controller。
 - `ReportsService` 仅供后续后端业务模块内部读取临床报告摘要，并提供不落库的报告状态转换校验纯函数。
-- 当前不定义前端调用契约，不定义认证或权限，不提供 MMSE / MoCA 填写、MMSE / MoCA 配置查询、seed 执行、公开评估创建、公开量表实例初始化、作答提交、计分触发、计分查询、计分复核、认知域计算触发、认知域查询、认知域复核、报告生成、报告查询、医生确认、归档、更正、作废、PDF 导出、媒体上传或其他种子数据接口。
+- `backend\src\modules\users` 当前没有 Controller。
+- `UsersService` 仅供后续后端认证或业务模块内部读取系统账号摘要或认证必要字段；当前不暴露公开用户管理 API。
+- `backend\src\modules\auth` 当前没有 Controller。
+- `AuthService`、`SessionAuthGuard` 与 `RolesGuard` 仅为后续认证链路内部底座；当前不注册全局 Guard，不影响 `GET /health`。
+- 当前不定义前端调用契约，不暴露认证或权限接口，不提供登录、登出、认证探针、auth me、users me、用户管理、角色权限管理、MMSE / MoCA 填写、MMSE / MoCA 配置查询、seed 执行、公开评估创建、公开量表实例初始化、作答提交、计分触发、计分查询、计分复核、认知域计算触发、认知域查询、认知域复核、报告生成、报告查询、医生确认、归档、更正、作废、PDF 导出、媒体上传或其他种子数据接口。
 
 ## 5. 后续同步规则
 

@@ -6,9 +6,9 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 DTO、响应 type、Storage interface，以及 `scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains`、`reports` 内部 Service 读取输出 type；`scales` 当前还包含 MMSE / MoCA 初始配置 seed 内部 type，`assessments` 当前还包含评估执行初始化内部编排 type。
+- 当前存在公共底座 DTO、响应 type、Storage interface，以及 `scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains`、`reports`、`users`、`auth` 内部 Service 读取输出 type；`scales` 当前还包含 MMSE / MoCA 初始配置 seed 内部 type，`assessments` 当前还包含评估执行初始化内部编排 type，`auth` 当前还包含认证上下文和 session 创建内部 type。
 - 当前不记录任何业务请求 DTO。
-- 当前没有认证、用户、医生、患者、量表、评估、媒体、报告或业务上传请求 DTO。
+- 当前没有认证、用户、医生、患者、量表、评估、媒体、报告或业务上传请求 DTO；当前也没有公开 API 响应 DTO。
 
 ## 3. 当前 DTO / Type 清单
 
@@ -148,6 +148,46 @@
 - 名称：`ReportPatientSnapshotSummary`、`ReportVisitSnapshotSummary`、`ReportScaleTraceSummary`、`ReportScoreSnapshotSummary`、`ReportDomainSnapshotSummary`、`ReportEvidenceSnapshotSummary`、`ReportNarrativeSummary`、`ReportAiDraftSummary`、`ReportConfirmationSummary`、`ReportCorrectionSummary`
 - 文件：`backend\src\modules\reports\services\reports.service.ts`
 - 用途：`ClinicalReportSummary` 的内部嵌套输出 type，承载患者 / 访视快照、量表版本追溯、计分与认知域快照、证据摘要、报告正文占位、AI 草稿占位、医生确认和更正记录摘要。
+
+- 名称：`UserMetadata`
+- 文件：`backend\src\modules\users\schemas\user.schema.ts`
+- 用途：`User` Schema 的内部扩展 metadata type，不是 HTTP DTO。
+- 字段摘要：`Record<string, unknown> | null`。
+
+- 名称：`UserSummary`
+- 文件：`backend\src\modules\users\services\users.service.ts`
+- 用途：`UsersService` 内部读取系统账号时返回的安全 mapper 输出 type，不是 HTTP DTO。
+- 字段摘要：账号 ID、accountName、displayName、staffCode、email、phone、passwordChangedAt、roles、permissions、userType、status、department、organization、lastLoginAt、failedLoginCount、lockedUntil 和 metadata；不包含 `passwordHash`。
+
+- 名称：`UserCredentialRecord`
+- 文件：`backend\src\modules\users\services\users.service.ts`
+- 用途：`UsersService.findUserCredentialByAccountName()` 返回给内部认证流程的最小凭证读取 type，不是 HTTP DTO，不得作为普通响应输出。
+- 字段摘要：账号 ID、accountName、displayName、`passwordHash`、passwordChangedAt、roles、permissions、userType、status、failedLoginCount 和 lockedUntil。
+
+- 名称：`SessionMetadata`
+- 文件：`backend\src\modules\auth\schemas\session.schema.ts`
+- 用途：`Session` Schema 的内部扩展 metadata type，不是 HTTP DTO。
+- 字段摘要：`Record<string, unknown> | null`。
+
+- 名称：`AuthenticatedUserContext`
+- 文件：`backend\src\modules\auth\types\auth-user-context.type.ts`
+- 用途：后续 Guard 或 Controller 挂载 `req.user` 的内部认证上下文 type，不是公开 API DTO。
+- 字段摘要：`id`、`accountName`、`displayName`、`roles`、`permissions`、可选 `sessionId` 和可选 `userType`；不包含 passwordHash、session token 或 token hash。
+
+- 名称：`RequestWithAuthenticatedUser`
+- 文件：`backend\src\modules\auth\types\auth-user-context.type.ts`
+- 用途：`SessionAuthGuard`、`RolesGuard` 和 `@CurrentUser()` 内部读取 / 挂载 `req.user` 的最小 request type。
+- 字段摘要：`headers`、可选 `cookies`、可选 `user`。
+
+- 名称：`CreateSessionForUserInput`
+- 文件：`backend\src\modules\auth\services\auth.service.ts`
+- 用途：`AuthService.createSessionForUser()` 的内部输入 type，不是公开 API DTO。
+- 字段摘要：`userId`、`expiresAt`、可选 `userAgent`、`ipAddress` 和 `metadata`。
+
+- 名称：`CreateSessionForUserResult`
+- 文件：`backend\src\modules\auth\services\auth.service.ts`
+- 用途：`AuthService.createSessionForUser()` 的内部返回 type；包含 raw token 仅供后续内部登录流程下发 Cookie 时使用，不得作为普通 mapper 输出。
+- 字段摘要：`sessionId`、`rawToken`、`expiresAt` 和 `user: AuthenticatedUserContext`；不包含 token hash。
 
 ## 4. 后续同步规则
 
