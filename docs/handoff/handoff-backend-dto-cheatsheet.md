@@ -6,7 +6,7 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 DTO、响应 type、Storage interface，以及 `scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains`、`reports` 内部 Service 读取输出 type。
+- 当前存在公共底座 DTO、响应 type、Storage interface，以及 `scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains`、`reports` 内部 Service 读取输出 type；`scales` 当前还包含 MMSE / MoCA 初始配置 seed 内部 type。
 - 当前不记录任何业务请求 DTO。
 - 当前没有认证、用户、医生、患者、量表、评估、媒体、报告或业务上传请求 DTO。
 
@@ -51,6 +51,16 @@
 - 名称：`ScaleScoreRangeSummary`、`ScaleGroupConfigSummary`、`ScaleItemConfigSummary`
 - 文件：`backend\src\modules\scales\services\scales.service.ts`
 - 用途：`ScaleVersionSummary` 的内部配置输出 type，承载题目分组、题目配置、作答类型、得分范围、证据要求和展示 / 导出规则。
+
+- 名称：`ScaleSeedDefinition`、`ScaleSeedVersion`、`ScaleSeedGroup`、`ScaleSeedItem`、`ScaleSeedData`
+- 文件：`backend\src\modules\scales\seeds\scale-seed.types.ts`
+- 用途：MMSE / MoCA 初始配置 seed 的内部静态配置 type，不是 HTTP DTO，不定义前端调用契约，不代表数据库写入结构。
+- 字段摘要：量表 definition、版本追溯、总分范围、分组、题目、指导语摘要、作答类型、得分范围、证据要求、计时 / 图片 / 手写 / 原始文本 / 操作者备注、规则元数据、认知域映射、质控 / 报告 / 科研导出映射。
+
+- 名称：`ScaleSeedValidationResult`、`ScaleSeedValidationIssue`
+- 文件：`backend\src\modules\scales\seeds\scale-seed.types.ts`
+- 用途：`validateScaleSeeds()` 种子数据校验纯函数的内部输出 type，不是 HTTP DTO。
+- 字段摘要：`valid`、`errors`、`warnings`、`issues`；用于表达量表 code / 版本 / item / group / scoreRange / CRF 修正 / 证据一致性等校验结果。
 
 - 名称：`PatientSummary`
 - 文件：`backend\src\modules\patients\services\patients.service.ts`

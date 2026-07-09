@@ -7,7 +7,7 @@
 ## 2. 当前状态
 
 - `backend\src` 公共底座已初始化。
-- 当前存在 health controller spec、Storage service spec、上传文件名工具 spec、scales service / schema spec、patients service / schema spec、assessments service / schema spec、media service / schema spec、scoring service / schema spec、cognitive-domains service / schema spec 和 reports service / schema spec。
+- 当前存在 health controller spec、Storage service spec、上传文件名工具 spec、scales service / schema spec、scales seed service spec、patients service / schema spec、assessments service / schema spec、media service / schema spec、scoring service / schema spec、cognitive-domains service / schema spec 和 reports service / schema spec。
 - 后端默认端口为 `5002`。
 - 本地前端默认 origin 为 `http://localhost:3002`。
 - 测试环境默认 `STORAGE_DRIVER=fake`。
@@ -70,6 +70,10 @@
   - `npm run lint:file -- src/modules/reports src/app.module.ts`
   - `npm run build`
   - `npm test -- --runInBand`
+- 本次后端 A8 已验证命令：
+  - `npm run lint:file -- src/modules/scales`
+  - `npm run build`
+  - `npm test -- --runInBand`
 - 当前路径对齐验证命令：
   - `npm run build`
   - 检查 `dist/src/main.js` 存在
@@ -79,8 +83,8 @@
   - `npm run build` 成功。
   - build 后 `dist/src/main.js` 已确认存在。
   - `npm test -- --runInBand` 成功。
-  - 当前单元测试为 10 个测试套件通过。
-  - 当前单元测试为 93 个测试通过。
+  - 当前单元测试为 11 个测试套件通过。
+  - 当前单元测试为 116 个测试通过。
   - 用户已补充验证 `npm run start:prod` 本地启动成功。
   - `dist/src/main.js` 与 `start:prod` 指向的 `./dist/src/main.js` 路径匹配。
 - 当前未验证命令：
@@ -99,6 +103,7 @@
 - `backend\src\modules\storage\storage.service.spec.ts`：验证 fake storage 不依赖 OSS 配置，并验证 OSS driver 缺少配置时抛出明确异常。
 - `backend\src\common\utils\uploaded-filename.util.spec.ts`：验证上传文件名的编码修复、空值 fallback 与路径字符清理。
 - `backend\src\modules\scales\services\scales.service.spec.ts`：验证 `ScaleDefinition` / `ScaleVersion` schema 的 collection、索引、枚举 / ObjectId / Date / Mixed 显式类型，验证 `ScalesService` 的 code 规范化、查无返回 `null`、mapper 输出和 active definition 列表读取；不连接真实 MongoDB。
+- `backend\src\modules\scales\seeds\scale-seed-data.service.spec.ts`：验证 `ScaleSeedDataService` 对 MMSE / MoCA 初始配置 seed 的只读读取、trim + lowercase code 规范化、版本读取、definition / version 列表、内置 seed 校验、总分范围、MMSE 表达第 9 项与绘图第 10 项修正、MoCA 抽象项 `N1.2.12.1` / `N1.2.12.2` 修正、MoCA 即刻记忆不计分但保留原始记录、MoCA 延迟回忆保留分类提示和多选提示记录、MMSE / MoCA 连续减 7 分步独立计分、MoCA 连线 / 立方体 / 钟表图片与手写证据、连线计时要求、item code 唯一、groupCode 引用存在，以及重复 item code、无效 groupCode、无效 scoreRange 和错误 MoCA 抽象 CRF 编码的校验错误分支；不连接真实 MongoDB，不调用 Storage / OSS / SMS / LLM，测试数据为配置样例或脱敏人工样例。
 - `backend\src\modules\patients\services\patients.service.spec.ts`：验证 `Patient` schema 的 collection、索引、枚举 / Date / Number / Mixed 显式类型，验证 `PatientsService` 的 `subjectCode` 规范化、查无返回 `null`、mapper 输出和 active patient 列表读取；不连接真实 MongoDB，测试数据为 `SUBJ-TEST-*` 等脱敏人工样例。
 - `backend\src\modules\assessments\services\assessments.service.spec.ts`：验证 `AssessmentVisit` / `ScaleInstance` / `ItemResponse` schema 的 collection、索引、枚举 / ObjectId / Date / Number / Boolean / Mixed 显式类型，验证 `ItemResponse` 内嵌子文档 `_id: false`，验证 `AssessmentsService` 的 `visitCode` / `instanceCode` / `itemCode` 规范化、访视 / 量表实例 / 题目作答查无返回 `null`、mapper 输出、按量表实例读取、按已计分条件读取和按访视读取；不连接真实 MongoDB，测试数据为 `SUBJ-TEST-*`、`VISIT-TEST-*`、`INST-TEST-*`、`moca.memory.immediate.trial_1.face`、`mmse.attention.serial_sevens.step_1` 等脱敏人工样例。
 - `backend\src\modules\media\services\media-evidence.service.spec.ts`：验证 `MediaEvidence` schema 的 collection、索引、枚举 / ObjectId / Date / Number / Boolean / Mixed 显式类型，验证媒体证据内嵌子文档 `_id: false`，验证 `MediaEvidenceService` 的 `evidenceCode` 规范化、查无返回 `null`、mapper 输出、按题目作答 / 量表实例 / 访视 / 患者读取和 attached / locked 过滤读取；不连接真实 MongoDB，不调用 Storage / OSS，测试数据为 `SUBJ-TEST-*`、`VISIT-TEST-*`、`INST-TEST-*`、`EVD-TEST-*`、`moca.visuospatial.trail_making`、`moca.visuospatial.clock`、`mmse.language.drawing` 等脱敏人工样例。

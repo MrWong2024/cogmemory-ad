@@ -153,6 +153,14 @@
 - 影响范围：`backend\src\app.module.ts`、`backend\src\modules\reports` 和后端 handoff 文档。
 - 后续复查点：后续进入报告生成接口、医生确认接口、报告归档 / 更正 / 作废流程、AuditLog、AI 报告、PDF 导出、认证权限或公开业务 API 阶段时，应继续保持 Controller、DTO、权限、状态流转写库、审计和测试边界清晰，并单独同步 handoff。
 
+### D-018：建设 MMSE / MoCA 初始配置种子数据底座，不暴露公开 API
+
+- 日期：2026-07-10
+- 决策：后端 A8 在 `scales` 内部模块落地 MMSE / MoCA 初始配置 seed 常量、只读 `ScaleSeedDataService` 和 `validateScaleSeeds()` 种子数据校验纯函数；本阶段不新增 Controller，不暴露公开 HTTP API，不执行数据库 seed 写入。
+- 背景：通用量表引擎在量表定义、运行时、作答、媒体证据、计分、认知域和报告模型底座之后，需要先具备可追溯的 MMSE / MoCA 初始配置数据，覆盖分组、题目、指导语、作答类型、分值范围、证据要求、计时、原始记录、操作者备注、规则元数据、认知域映射、质控 / 报告 / 科研导出映射，并记录 `MMSE+MoCA.pdf` 来源和已确认的 PDF / CRF 编号修正。
+- 影响范围：`backend\src\modules\scales` 和后端 handoff 文档。
+- 后续复查点：后续如进入数据库 seed runner、公开配置查询 API、MMSE / MoCA 评估执行页面、作答提交、自动计分触发、认知域计算触发、报告生成、AI、认证权限或科研导出阶段，应以单独任务明确 Controller、DTO、权限、写库边界、规则执行边界和测试口径，并单独同步 handoff。
+
 ## 4. 后续同步规则
 
 - 新增关键技术选型、接口设计、数据模型、测试策略或部署策略后，应追加决策记录。

@@ -9,7 +9,7 @@
 - 当前只实现一个公共健康检查接口。
 - 当前公开 API 仍只有 `GET /health`。
 - 当前没有认证、用户、医生、患者、量表、评估、报告、短信、AI / LLM 或业务上传接口。
-- 本次新增的 `ScalesModule` 仅为内部模型和 Service 底座，不新增 scale controller，不暴露公开业务 API。
+- 本次新增的 `ScalesModule` 仅为内部模型、Service 和 MMSE / MoCA 初始配置 seed 底座，不新增 scale controller，不暴露公开业务 API。
 - 本次新增的 `PatientsModule` 与 `AssessmentsModule` 仅为内部模型和 Service 底座，不新增 patient / assessment controller，不暴露患者、访视或量表实例公开业务 API。
 - 本次新增的 `ItemResponse` 仅为 `assessments` 内部题目作答数据模型和 Service 读取底座，不新增 item-response controller，不暴露作答提交、作答查询、计分或媒体上传公开业务 API。
 - 本次新增的 `MediaModule` 仅为内部媒体证据元数据模型和 Service 读取底座，不新增 media controller，不暴露媒体上传、媒体查询、媒体下载、媒体删除或签名 URL 公开业务 API。
@@ -34,6 +34,7 @@
 
 - `backend\src\modules\scales` 当前没有 Controller。
 - `ScalesService` 仅供后续后端业务模块内部读取量表定义与版本配置。
+- `ScaleSeedDataService` 仅供后续导入脚本、初始化任务或后端业务模块内部只读读取 MMSE / MoCA 初始配置 seed；当前不暴露公开 MMSE / MoCA 配置查询 API，不提供 seed 执行接口，不写数据库。
 - `backend\src\modules\patients` 当前没有 Controller。
 - `PatientsService` 仅供后续后端业务模块内部读取患者 / 受试者基础档案。
 - `backend\src\modules\assessments` 当前没有 Controller。
@@ -46,7 +47,7 @@
 - `CognitiveDomainsService` 仅供后续后端业务模块内部读取认知域结果摘要，并提供不落库的通用认知域汇总纯函数。
 - `backend\src\modules\reports` 当前没有 Controller。
 - `ReportsService` 仅供后续后端业务模块内部读取临床报告摘要，并提供不落库的报告状态转换校验纯函数。
-- 当前不定义前端调用契约，不定义认证或权限，不提供 MMSE / MoCA 填写、作答提交、计分触发、计分查询、计分复核、认知域计算触发、认知域查询、认知域复核、报告生成、报告查询、医生确认、归档、更正、作废、PDF 导出、媒体上传或种子数据接口。
+- 当前不定义前端调用契约，不定义认证或权限，不提供 MMSE / MoCA 填写、MMSE / MoCA 配置查询、seed 执行、作答提交、计分触发、计分查询、计分复核、认知域计算触发、认知域查询、认知域复核、报告生成、报告查询、医生确认、归档、更正、作废、PDF 导出、媒体上传或其他种子数据接口。
 
 ## 5. 后续同步规则
 

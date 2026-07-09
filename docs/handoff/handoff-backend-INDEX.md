@@ -10,7 +10,7 @@
 
 本文档是 CogMemory AD 后端 handoff 文档入口，用于索引后端事实快照、API、DTO、Service、配置、决策和验证手册。
 
-当前内容记录后端公共底座、已进入真实代码阶段的 `scales` 量表定义模型底座、`patients` / `assessments` 患者、访视和量表实例运行时模型底座、`assessments` 内部 `ItemResponse` 题目作答数据模型底座、`media` 媒体证据模型底座、`scoring` 自动计分结果模型与通用计分汇总底座、`cognitive-domains` 认知域结果模型与通用认知域汇总底座，以及 `reports` 临床报告模型与医生确认流程底座；未实现的业务能力仍只能标记为待后续阶段确认。
+当前内容记录后端公共底座、已进入真实代码阶段的 `scales` 量表定义模型底座、`patients` / `assessments` 患者、访视和量表实例运行时模型底座、`assessments` 内部 `ItemResponse` 题目作答数据模型底座、`media` 媒体证据模型底座、`scoring` 自动计分结果模型与通用计分汇总底座、`cognitive-domains` 认知域结果模型与通用认知域汇总底座、`reports` 临床报告模型与医生确认流程底座，以及 `scales` 内部 MMSE / MoCA 初始配置种子数据底座；未实现的业务能力仍只能标记为待后续阶段确认。
 
 ## 3. 当前状态
 
@@ -24,8 +24,9 @@
 - 当前新增 `scoring` 自动计分结果模型与通用计分汇总底座，包含 `ScoreResult` Schema、`ScoringService` 内部读取能力和 `summarizeItemScores()` 通用汇总纯函数。
 - 当前新增 `cognitive-domains` 认知域结果模型与通用认知域汇总底座，包含 `CognitiveDomainResult` Schema、`CognitiveDomainsService` 内部读取能力和 `summarizeDomainScores()` 通用认知域汇总纯函数。
 - 当前新增 `reports` 临床报告模型与医生确认流程底座，包含 `ClinicalReport` Schema、`ReportsService` 内部读取能力和报告状态转换校验纯函数。
+- 当前新增 `scales` 内部 MMSE / MoCA 初始配置种子数据底座，包含 MMSE / MoCA seed 常量、`ScaleSeedDataService` 只读读取能力和 `validateScaleSeeds()` 种子数据校验纯函数。
 - 当前公开 API 仍只有 `GET /health`；`scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains`、`reports` 均未新增 Controller 或公开业务接口。
-- 认证、真实患者建档流程、访视管理接口、评估执行业务接口、作答提交、媒体上传 / 下载 / 签名 URL、计分触发、认知域计算触发、MMSE / MoCA 专用计分规则、MMSE / MoCA 专用认知域规则、报告生成接口、医生确认写库流程、报告归档 / 更正 / 作废接口、PDF 导出、疾病诊断、AI、科研导出等业务能力仍未实现。
+- 认证、真实患者建档流程、访视管理接口、评估执行业务接口、作答提交、媒体上传 / 下载 / 签名 URL、数据库 seed runner、seed 写库、公开 MMSE / MoCA 配置查询接口、计分触发、认知域计算触发、MMSE / MoCA 专用计分规则执行、MMSE / MoCA 专用认知域规则执行、报告生成接口、医生确认写库流程、报告归档 / 更正 / 作废接口、PDF 导出、疾病诊断、AI、科研导出等业务能力仍未实现。
 
 ## 4. 必读基础文档
 

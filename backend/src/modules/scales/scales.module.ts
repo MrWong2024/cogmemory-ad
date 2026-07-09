@@ -9,6 +9,7 @@ import {
   ScaleVersion,
   ScaleVersionSchema,
 } from './schemas/scale-version.schema';
+import { ScaleSeedDataService } from './seeds/scale-seed-data.service';
 import { ScalesService } from './services/scales.service';
 
 @Module({
@@ -18,7 +19,7 @@ import { ScalesService } from './services/scales.service';
       { name: ScaleVersion.name, schema: ScaleVersionSchema },
     ]),
   ],
-  providers: [ScalesService],
-  exports: [ScalesService],
+  providers: [ScalesService, ScaleSeedDataService],
+  exports: [ScalesService, ScaleSeedDataService],
 })
 export class ScalesModule {}
