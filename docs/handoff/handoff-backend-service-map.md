@@ -6,9 +6,8 @@
 
 ## 2. 当前状态
 
-- 当前只存在公共底座 Service / Provider。
-- 当前没有任何业务 Service。
-- 当前没有认证、用户、医生、患者、量表、评估、报告、SMS 或 LLM Service。
+- 当前存在公共底座 Service / Provider，以及 `scales` 内部读取 Service。
+- 当前没有认证、用户、医生、患者、评估、报告、SMS 或 LLM Service；`ScalesService` 仅为量表定义内部读取底座。
 
 ## 3. 当前 Service / Provider 清单
 
@@ -50,6 +49,15 @@
 - Provider token：`STORAGE_SERVICE`
 - 文件路径：`backend\src\modules\storage\storage.constants.ts`
 - 职责边界：根据 `STORAGE_DRIVER` 选择 fake 或 OSS driver。
+
+- Service 名称：`ScalesService`
+- 文件路径：`backend\src\modules\scales\services\scales.service.ts`
+- 职责边界：提供量表定义与量表版本配置的内部读取底座；规范化 scale code；按 mapper 输出 `ScaleDefinitionSummary` / `ScaleVersionSummary`，不直接返回完整 Mongoose document。
+- 当前方法：`normalizeScaleCode(code)`、`findDefinitionByCode(code)`、`findVersionByScaleCodeAndVersion(scaleCode, version)`、`listActiveDefinitions()`。
+- 上游调用方：当前暂无公开 Controller；预期供后续评估、计分或配置读取模块内部调用。
+- 下游依赖：`ScaleDefinition` 与 `ScaleVersion` Mongoose Model。
+- 边界：不创建、更新、删除量表配置；不导入种子数据；不实现评估实例、作答、计分、报告、AI、认证或权限。
+- 测试覆盖口径：`backend\src\modules\scales\services\scales.service.spec.ts`，覆盖 code 规范化、查无返回 `null`、mapper 输出、schema collection、索引和关键字段显式类型；不连接真实 MongoDB。
 
 ## 4. 后续同步规则
 

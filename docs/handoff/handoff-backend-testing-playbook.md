@@ -7,7 +7,7 @@
 ## 2. 当前状态
 
 - `backend\src` 公共底座已初始化。
-- 当前存在 health controller spec、Storage service spec 和上传文件名工具 spec。
+- 当前存在 health controller spec、Storage service spec、上传文件名工具 spec 和 scales service / schema spec。
 - 后端默认端口为 `5002`。
 - 本地前端默认 origin 为 `http://localhost:3002`。
 - 测试环境默认 `STORAGE_DRIVER=fake`。
@@ -42,6 +42,10 @@
   - `npm run build`
   - `npm test -- --runInBand`
   - `npm run start:prod`
+- 本次后端 A1 已验证命令：
+  - `npm run lint:file -- src/modules/scales src/app.module.ts`
+  - `npm run build`
+  - `npm test -- --runInBand`
 - 当前路径对齐验证命令：
   - `npm run build`
   - 检查 `dist/src/main.js` 存在
@@ -51,8 +55,8 @@
   - `npm run build` 成功。
   - build 后 `dist/src/main.js` 已确认存在。
   - `npm test -- --runInBand` 成功。
-  - 3 个测试套件通过。
-  - 9 个测试通过。
+  - 当前单元测试为 4 个测试套件通过。
+  - 当前单元测试为 19 个测试通过。
   - 用户已补充验证 `npm run start:prod` 本地启动成功。
   - `dist/src/main.js` 与 `start:prod` 指向的 `./dist/src/main.js` 路径匹配。
 - 当前未验证命令：
@@ -70,6 +74,7 @@
 - `backend\src\app.controller.spec.ts`：验证 `GET /health` 的 controller 返回结构。
 - `backend\src\modules\storage\storage.service.spec.ts`：验证 fake storage 不依赖 OSS 配置，并验证 OSS driver 缺少配置时抛出明确异常。
 - `backend\src\common\utils\uploaded-filename.util.spec.ts`：验证上传文件名的编码修复、空值 fallback 与路径字符清理。
+- `backend\src\modules\scales\services\scales.service.spec.ts`：验证 `ScaleDefinition` / `ScaleVersion` schema 的 collection、索引、枚举 / ObjectId / Date / Mixed 显式类型，验证 `ScalesService` 的 code 规范化、查无返回 `null`、mapper 输出和 active definition 列表读取；不连接真实 MongoDB。
 
 ## 6. E2E 测试口径
 
