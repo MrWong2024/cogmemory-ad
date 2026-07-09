@@ -6,8 +6,8 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 Service / Provider，以及 `scales`、`patients`、`assessments` 内部读取 Service。
-- 当前没有认证、用户、医生、报告、SMS 或 LLM Service；`ScalesService`、`PatientsService`、`AssessmentsService` 仅为内部模型读取底座。
+- 当前存在公共底座 Service / Provider，以及 `scales`、`patients`、`assessments`、`media` 内部读取 Service。
+- 当前没有认证、用户、医生、报告、SMS 或 LLM Service；`ScalesService`、`PatientsService`、`AssessmentsService`、`MediaEvidenceService` 仅为内部模型读取底座。
 
 ## 3. 当前 Service / Provider 清单
 
@@ -74,8 +74,17 @@
 - 当前方法：`normalizeVisitCode(visitCode)`、`normalizeInstanceCode(instanceCode)`、`normalizeItemCode(itemCode)`、`findVisitByCode(visitCode)`、`listVisitsByPatientId(patientId)`、`findScaleInstanceByCode(instanceCode)`、`listScaleInstancesByVisitId(assessmentVisitId)`、`findItemResponseByScaleInstanceAndItemCode(scaleInstanceId, itemCode)`、`listItemResponsesByScaleInstanceId(scaleInstanceId)`、`listScoredItemResponsesByScaleInstanceId(scaleInstanceId)`、`listItemResponsesByVisitId(assessmentVisitId)`。
 - 上游调用方：当前暂无公开 Controller；预期供后续评估执行、计分、报告或科研导出等后端业务模块内部读取访视、量表实例和题目作答。
 - 下游依赖：`AssessmentVisit`、`ScaleInstance` 与 `ItemResponse` Mongoose Model。
-- 边界：不创建、更新、删除访视、量表实例或题目作答；不实现状态流转、作答提交、媒体证据、计分、报告、AI、认证、权限或公开评估 API。
+- 边界：不创建、更新、删除访视、量表实例或题目作答；不实现状态流转、作答提交、媒体证据读写流程、计分、报告、AI、认证、权限或公开评估 API。
 - 测试覆盖口径：`backend\src\modules\assessments\services\assessments.service.spec.ts`，覆盖 code 规范化、访视 / 量表实例 / 题目作答查无返回 `null`、mapper 输出、列表读取、schema collection、索引、内嵌子文档 `_id: false` 和关键字段显式类型；不连接真实 MongoDB，测试数据为脱敏人工样例。
+
+- Service 名称：`MediaEvidenceService`
+- 文件路径：`backend\src\modules\media\services\media-evidence.service.ts`
+- 职责边界：提供媒体证据元数据的内部读取底座；规范化 `evidenceCode`；按 mapper 输出 `MediaEvidenceSummary`，不直接返回完整 Mongoose document。
+- 当前方法：`normalizeEvidenceCode(evidenceCode)`、`findEvidenceByCode(evidenceCode)`、`listEvidenceByItemResponseId(itemResponseId)`、`listEvidenceByScaleInstanceId(scaleInstanceId)`、`listEvidenceByVisitId(assessmentVisitId)`、`listEvidenceByPatientId(patientId)`、`listAttachedEvidenceByItemResponseId(itemResponseId)`。
+- 上游调用方：当前暂无公开 Controller；预期供后续评估执行、计分、报告或科研导出等后端业务模块内部读取媒体证据元数据。
+- 下游依赖：`MediaEvidence` Mongoose Model。
+- 边界：不创建、更新、删除媒体证据；不实现媒体上传、下载、签名 URL、Storage 调用、文件删除、状态流转、图片压缩、OCR、图像识别、手写轨迹解析、自动计分、报告、AI、认证、权限或公开媒体 API。
+- 测试覆盖口径：`backend\src\modules\media\services\media-evidence.service.spec.ts`，覆盖 evidence code 规范化、查无返回 `null`、mapper 输出、按题目作答 / 量表实例 / 访视 / 患者读取、attached / locked 过滤读取、schema collection、索引、内嵌子文档 `_id: false` 和关键字段显式类型；不连接真实 MongoDB，不调用 Storage / OSS，测试数据为脱敏人工样例。
 
 ## 4. 后续同步规则
 

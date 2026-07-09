@@ -7,7 +7,7 @@
 ## 2. 当前状态
 
 - `backend\src` 公共底座已初始化。
-- 当前存在 health controller spec、Storage service spec、上传文件名工具 spec、scales service / schema spec、patients service / schema spec 和 assessments service / schema spec。
+- 当前存在 health controller spec、Storage service spec、上传文件名工具 spec、scales service / schema spec、patients service / schema spec、assessments service / schema spec 和 media service / schema spec。
 - 后端默认端口为 `5002`。
 - 本地前端默认 origin 为 `http://localhost:3002`。
 - 测试环境默认 `STORAGE_DRIVER=fake`。
@@ -54,6 +54,10 @@
   - `npm run lint:file -- src/modules/assessments`
   - `npm run build`
   - `npm test -- --runInBand`
+- 本次后端 A4 已验证命令：
+  - `npm run lint:file -- src/modules/media src/app.module.ts`
+  - `npm run build`
+  - `npm test -- --runInBand`
 - 当前路径对齐验证命令：
   - `npm run build`
   - 检查 `dist/src/main.js` 存在
@@ -63,8 +67,8 @@
   - `npm run build` 成功。
   - build 后 `dist/src/main.js` 已确认存在。
   - `npm test -- --runInBand` 成功。
-  - 当前单元测试为 6 个测试套件通过。
-  - 当前单元测试为 44 个测试通过。
+  - 当前单元测试为 7 个测试套件通过。
+  - 当前单元测试为 55 个测试通过。
   - 用户已补充验证 `npm run start:prod` 本地启动成功。
   - `dist/src/main.js` 与 `start:prod` 指向的 `./dist/src/main.js` 路径匹配。
 - 当前未验证命令：
@@ -85,6 +89,7 @@
 - `backend\src\modules\scales\services\scales.service.spec.ts`：验证 `ScaleDefinition` / `ScaleVersion` schema 的 collection、索引、枚举 / ObjectId / Date / Mixed 显式类型，验证 `ScalesService` 的 code 规范化、查无返回 `null`、mapper 输出和 active definition 列表读取；不连接真实 MongoDB。
 - `backend\src\modules\patients\services\patients.service.spec.ts`：验证 `Patient` schema 的 collection、索引、枚举 / Date / Number / Mixed 显式类型，验证 `PatientsService` 的 `subjectCode` 规范化、查无返回 `null`、mapper 输出和 active patient 列表读取；不连接真实 MongoDB，测试数据为 `SUBJ-TEST-*` 等脱敏人工样例。
 - `backend\src\modules\assessments\services\assessments.service.spec.ts`：验证 `AssessmentVisit` / `ScaleInstance` / `ItemResponse` schema 的 collection、索引、枚举 / ObjectId / Date / Number / Boolean / Mixed 显式类型，验证 `ItemResponse` 内嵌子文档 `_id: false`，验证 `AssessmentsService` 的 `visitCode` / `instanceCode` / `itemCode` 规范化、访视 / 量表实例 / 题目作答查无返回 `null`、mapper 输出、按量表实例读取、按已计分条件读取和按访视读取；不连接真实 MongoDB，测试数据为 `SUBJ-TEST-*`、`VISIT-TEST-*`、`INST-TEST-*`、`moca.memory.immediate.trial_1.face`、`mmse.attention.serial_sevens.step_1` 等脱敏人工样例。
+- `backend\src\modules\media\services\media-evidence.service.spec.ts`：验证 `MediaEvidence` schema 的 collection、索引、枚举 / ObjectId / Date / Number / Boolean / Mixed 显式类型，验证媒体证据内嵌子文档 `_id: false`，验证 `MediaEvidenceService` 的 `evidenceCode` 规范化、查无返回 `null`、mapper 输出、按题目作答 / 量表实例 / 访视 / 患者读取和 attached / locked 过滤读取；不连接真实 MongoDB，不调用 Storage / OSS，测试数据为 `SUBJ-TEST-*`、`VISIT-TEST-*`、`INST-TEST-*`、`EVD-TEST-*`、`moca.visuospatial.trail_making`、`moca.visuospatial.clock`、`mmse.language.drawing` 等脱敏人工样例。
 
 ## 6. E2E 测试口径
 

@@ -8,17 +8,18 @@
 
 - `backend\src` 公共底座已初始化。
 - 已具备 NestJS 启动入口、根模块、全局应用配置、健康检查、配置加载与校验、MongoDB 连接底座、全局 ValidationPipe、全局异常过滤器和 Storage 公共模块。
-- `backend\src\modules` 当前包含 `storage`、`scales`、`patients` 与 `assessments`。
+- `backend\src\modules` 当前包含 `storage`、`scales`、`patients`、`assessments` 与 `media`。
 - `StorageModule` 当前只提供 fake / OSS 底层 driver 结构和 `STORAGE_SERVICE` token，不提供业务上传接口。
 - `ScalesModule` 当前只提供量表定义 / 量表版本 Schema 与内部 `ScalesService` 读取底座，不提供公开业务接口。
 - `PatientsModule` 当前只提供患者 / 受试者基础档案 Schema 与内部 `PatientsService` 读取底座，不提供公开业务接口。
 - `AssessmentsModule` 当前只提供访视 / 量表实例运行时 Schema、题目作答数据 Schema 与内部 `AssessmentsService` 读取底座，不提供公开业务接口。
+- `MediaModule` 当前只提供媒体证据元数据 Schema 与内部 `MediaEvidenceService` 读取底座，不提供公开媒体上传、下载、查询、删除或签名 URL 接口。
 - OSS 业务上传服务、SMS Service、LLM Service 均未实现。
 - 本地默认后端端口为 `5002`。
 - 本地默认前端 origin 为 `http://localhost:3002`。
 - `GET /health` 是当前唯一公共接口。
 - 已完成后端公共底座基础闭环本地验证：`npm install` 成功、`npm run build` 成功、`npm test -- --runInBand` 成功、`npm run start:prod` 启动成功。
-- 单元测试验证结果为 6 个测试套件通过、44 个测试通过。
+- 单元测试验证结果为 7 个测试套件通过、55 个测试通过。
 - 后端 TypeScript 编译根目录为 `.`，`outDir` 保持 `./dist`，因此 `src/main.ts` 编译后的主入口产物为 `dist/src/main.js`。
 - `package.json` 中 `start:prod` 保持指向 `./dist/src/main.js`，当前 build 产物路径已与该启动路径对齐。
 - `tsBuildInfoFile` 保持 `./dist/tsconfig.build.tsbuildinfo`；`dist` 与 `*.tsbuildinfo` 均作为生成物处理，不作为项目源文件纳入版本库。
@@ -35,7 +36,7 @@
 - development / test 默认 `STORAGE_DRIVER=fake`，production 默认 `STORAGE_DRIVER=oss`。
 - OSS、SMS、LLM 配置均为占位或示例口径，不包含真实密钥。
 - OSS 业务上传服务、SMS Service、LLM Service、业务上传接口均未实现。
-- 当前已有 `scales`、`patients` 与 `assessments` 内部模型底座，其中 `assessments` 已包含 `AssessmentVisit`、`ScaleInstance` 与 `ItemResponse`；但无公开业务 API、认证、真实患者建档流程、评估执行业务接口、作答提交、媒体证据、计分或报告。
+- 当前已有 `scales`、`patients`、`assessments` 与 `media` 内部模型底座，其中 `assessments` 已包含 `AssessmentVisit`、`ScaleInstance` 与 `ItemResponse`，`media` 已包含 `MediaEvidence`；但无公开业务 API、认证、真实患者建档流程、评估执行业务接口、作答提交、媒体上传 / 下载 / 签名 URL、计分或报告。
 - 当前 `start:prod` 与 TypeScript build 主入口产物路径均指向 `dist/src/main.js`，并已完成本地启动验证。
 - 本次仅使用指定外部 GitHub commit `b302b8af7b7ac9cc558939dc1b38ace0976c65b3` 作为后端公共底座来源，不继承其业务事实。
 
@@ -50,7 +51,7 @@
 - `ScaleVersion` 当前覆盖量表引用、量表 code、版本、CRF 版本、评分规则版本、字段编码版本、来源材料、状态、总分范围、分组配置、题目配置、质控规则、报告规则、科研导出映射、生效时间和退役时间。
 - `ScaleVersion` 当前索引为 `{ scaleDefinitionId: 1, version: 1 }` unique、`{ scaleCode: 1, version: 1 }`、`{ scaleCode: 1, status: 1 }`。
 - 内嵌 group / item 配置已预留指导语、作答类型、得分范围、是否计入总分、认知域、证据类型、计时、图片上传、平板手写、操作者备注、质控规则、报告规则和科研导出映射等字段。
-- 当前未写入 MMSE / MoCA 种子数据，未实现评估执行业务流程、作答记录、媒体证据、自动计分、报告或 AI。
+- 当前未写入 MMSE / MoCA 种子数据，未实现真实评估执行业务流程、作答提交流程、媒体上传 / 下载 / 签名 URL、自动计分、报告或 AI。
 
 ## 5. 当前 patients / assessments 运行时与作答模型底座
 
@@ -72,21 +73,34 @@
 - `ItemResponse` 当前索引为 `{ scaleInstanceId: 1, itemCode: 1 }` unique、`{ assessmentVisitId: 1, scaleInstanceId: 1, itemOrder: 1 }`、`{ patientId: 1, scaleCode: 1, itemCode: 1 }`、`{ scaleCode: 1, itemCode: 1 }`、`{ status: 1, updatedAt: -1 }`、`{ scaleInstanceId: 1, countsTowardTotal: 1 }`。
 - 当前已建立 `Patient` -> `AssessmentVisit` -> `ScaleInstance` -> `ItemResponse` 的运行时 ObjectId 引用关系，并在 `ScaleInstance` 与 `ItemResponse` 中保存量表定义、量表版本和版本追溯快照字段。
 - `AssessmentsService` 当前提供 `ItemResponse` 的最小内部读取能力：规范化 item code、按量表实例和题目编码读取单条作答、按量表实例读取作答列表、按量表实例读取已计分作答列表、按访视读取作答列表；返回结果经过 mapper，不直接返回完整 Mongoose document。
-- 当前未实现真实患者建档流程、访视创建流程、真实作答提交、媒体证据、自动计分、认知域结果、报告、AI、认证或权限。
+- 当前未实现真实患者建档流程、访视创建流程、真实作答提交、自动计分、认知域结果、报告、AI、认证或权限。
 
-## 6. 当前尚未实现
+## 6. 当前 media 媒体证据模型底座
+
+- `MediaEvidence` Schema 位于 `backend\src\modules\media\schemas\media-evidence.schema.ts`。
+- `MediaEvidence` collection 为 `media_evidences`，使用 `timestamps: true`，不在 class 中重复声明 `createdAt` / `updatedAt`。
+- `MediaEvidence` 当前覆盖患者、访视、量表实例、题目作答、量表定义和量表版本引用；同时保存受试者编码、量表 code / version、实例编码和题目编码快照。
+- 当前已通过 `MediaEvidence.patientId`、`assessmentVisitId`、`scaleInstanceId` 与 `itemResponseId` 建立 `Patient` -> `AssessmentVisit` -> `ScaleInstance` -> `ItemResponse` -> `MediaEvidence` 的证据链 ObjectId 引用关系。
+- `MediaEvidence` 当前覆盖证据稳定编码、证据类型、采集方式、证据状态、存储状态、CRF 编码、题目组、题目标题、作答类型、是否计入总分、认知域编码、题目快照、版本追溯、存储对象元数据、图片元数据、平板手写轨迹元数据、采集上下文、操作者快照、质量状态、质量提示占位、操作者备注、描述、扩展 metadata、锁定 / 作废 / 删除时间。
+- `MediaEvidence` 当前内嵌 `MediaEvidenceVersionTrace`、`MediaStorageSnapshot`、`MediaImageMetadata`、`HandwritingTraceSnapshot`、`MediaCaptureContext` 与 `MediaOperatorSnapshot` 子文档，均使用 `_id: false`。
+- `MediaEvidence` 当前索引为 `{ evidenceCode: 1 }` unique、`{ itemResponseId: 1, evidenceType: 1, status: 1 }`、`{ scaleInstanceId: 1, itemCode: 1, evidenceType: 1 }`、`{ assessmentVisitId: 1, createdAt: -1 }`、`{ patientId: 1, createdAt: -1 }`、`{ status: 1, updatedAt: -1 }`、`{ 'storage.objectKey': 1 }` sparse、`{ scaleCode: 1, itemCode: 1, evidenceType: 1 }`。
+- `MediaEvidenceService` 当前提供最小内部读取能力：规范化 evidence code、按证据编码读取、按题目作答读取、按量表实例读取、按访视读取、按患者读取、按题目作答读取 attached / locked 证据；返回结果经过 mapper，不直接返回完整 Mongoose document。
+- `MediaEvidence` 仅为媒体证据元数据模型底座，不包含真实图片上传、平板手写轨迹保存、下载、删除、签名 URL、Storage 调用、图片压缩、OCR、图像识别、手写轨迹解析、自动计分、报告或 AI 能力。
+
+## 7. 当前尚未实现
 
 - 尚无认证体系。
 - 尚无用户管理。
 - 尚无医生端或患者端业务。
 - 尚无公开患者、访视、量表实例、题目作答或量表业务接口、评估、报告或诊断建议业务。
+- 尚无公开媒体上传、媒体查询、媒体下载、媒体删除或签名 URL 业务接口。
 - 尚无短信发送接口。
 - 尚无 AI / LLM 调用接口。
 - 尚无业务 Controller 或公开业务 API。
 - 当前 E2E 未执行。
-- 已完成本次 `patients` / `assessments` / `app.module.ts` 定向 lint；全量 lint 当前未执行。
+- 已完成本次 `media` / `app.module.ts` 定向 lint；全量 lint 当前未执行。
 
-## 7. 后续同步规则
+## 8. 后续同步规则
 
 - 后续新增模块、接口、DTO、数据模型、Service 或测试命令后，应同步更新对应 handoff 文档。
 - 本文档只记录已确认事实，不承载未确认推测。

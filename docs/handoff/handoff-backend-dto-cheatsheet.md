@@ -6,9 +6,9 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 DTO、响应 type、Storage interface，以及 `scales`、`patients`、`assessments` 内部 Service 读取输出 type。
+- 当前存在公共底座 DTO、响应 type、Storage interface，以及 `scales`、`patients`、`assessments`、`media` 内部 Service 读取输出 type。
 - 当前不记录任何业务请求 DTO。
-- 当前没有认证、用户、医生、患者、量表、评估、报告或业务上传请求 DTO。
+- 当前没有认证、用户、医生、患者、量表、评估、媒体、报告或业务上传请求 DTO。
 
 ## 3. 当前 DTO / Type 清单
 
@@ -79,6 +79,15 @@
 - 名称：`ItemResponseVersionTraceSummary`、`ItemScoreSummary`、`ItemStepResultSummary`、`PromptResponseRecordSummary`、`ItemResponseTimingSummary`、`ItemEvidenceRefSummary`
 - 文件：`backend\src\modules\assessments\services\assessments.service.ts`
 - 用途：`ItemResponseSummary` 的内部嵌套输出 type，承载版本追溯、单题得分、分步记录、提示后表现、计时与证据引用占位。
+
+- 名称：`MediaEvidenceSummary`
+- 文件：`backend\src\modules\media\services\media-evidence.service.ts`
+- 用途：`MediaEvidenceService` 内部读取媒体证据元数据时返回的 mapper 输出 type，不是 HTTP DTO。
+- 字段摘要：运行时证据链引用、量表版本追溯、题目标识与快照、证据编码、证据类型、采集方式、存储状态、媒体存储对象元数据、图片元数据、手写轨迹元数据、采集上下文、操作者快照、质量状态、锁定 / 作废 / 删除时间、备注和 metadata。
+
+- 名称：`MediaEvidenceVersionTraceSummary`、`MediaStorageSummary`、`MediaImageMetadataSummary`、`HandwritingTraceSummary`、`MediaCaptureContextSummary`、`MediaOperatorSnapshotSummary`
+- 文件：`backend\src\modules\media\services\media-evidence.service.ts`
+- 用途：`MediaEvidenceSummary` 的内部嵌套输出 type，承载版本追溯、存储对象、图片、手写轨迹、采集上下文和操作者快照摘要。
 
 ## 4. 后续同步规则
 

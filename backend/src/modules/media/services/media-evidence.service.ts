@@ -1,0 +1,417 @@
+// backend/src/modules/media/services/media-evidence.service.ts
+import { Injectable } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model, Types } from 'mongoose';
+import {
+  HandwritingInputTool,
+  HandwritingTraceSnapshot,
+  HandwritingTrajectoryFormat,
+  MediaCaptureContext,
+  MediaCaptureMode,
+  MediaEvidence,
+  MediaEvidenceDocument,
+  MediaEvidenceMetadata,
+  MediaEvidenceStatus,
+  MediaEvidenceType,
+  MediaEvidenceVersionTrace,
+  MediaImageMetadata,
+  MediaItemSnapshot,
+  MediaOperatorRole,
+  MediaOperatorSnapshot,
+  MediaQualityHints,
+  MediaQualityStatus,
+  MediaResponseType,
+  MediaStorageDriver,
+  MediaStorageSnapshot,
+  MediaStorageStatus,
+} from '../schemas/media-evidence.schema';
+
+export type MediaEvidenceVersionTraceSummary = {
+  scaleVersion?: string;
+  crfVersion?: string;
+  scoringRuleVersion?: string;
+  fieldEncodingVersion?: string;
+  sourceDocument?: string;
+};
+
+export type MediaStorageSummary = {
+  storageDriver: MediaStorageDriver;
+  bucket?: string;
+  objectKey?: string;
+  objectPrefix?: string;
+  publicUrl?: string;
+  mimeType?: string;
+  fileExtension?: string;
+  sizeBytes: number | null;
+  checksum?: string;
+  checksumAlgorithm?: string;
+  originalFilename?: string;
+  storedAt: Date | null;
+};
+
+export type MediaImageMetadataSummary = {
+  width: number | null;
+  height: number | null;
+  orientation?: string;
+  pageNo: number | null;
+  isColor: boolean | null;
+  capturedAt: Date | null;
+};
+
+export type HandwritingTraceSummary = {
+  hasTrajectory: boolean;
+  trajectoryObjectKey?: string;
+  trajectoryFormat: HandwritingTrajectoryFormat;
+  strokeCount: number | null;
+  durationMs: number | null;
+  canvasWidth: number | null;
+  canvasHeight: number | null;
+  deviceType?: string;
+  inputTool: HandwritingInputTool;
+};
+
+export type MediaCaptureContextSummary = {
+  capturedAt: Date | null;
+  uploadedAt: Date | null;
+  sourceDevice?: string;
+  sourceApp?: string;
+  captureNote?: string;
+};
+
+export type MediaOperatorSnapshotSummary = {
+  operatorId: string | null;
+  operatorName?: string;
+  operatorRole?: MediaOperatorRole;
+};
+
+export type MediaEvidenceSummary = {
+  id: string;
+  patientId: string;
+  assessmentVisitId: string;
+  scaleInstanceId: string;
+  itemResponseId: string;
+  subjectCode: string;
+  scaleDefinitionId: string;
+  scaleVersionId: string;
+  scaleCode: string;
+  scaleVersion: string;
+  instanceCode: string;
+  itemCode: string;
+  evidenceCode: string;
+  evidenceType: MediaEvidenceType;
+  captureMode: MediaCaptureMode;
+  status: MediaEvidenceStatus;
+  storageStatus: MediaStorageStatus;
+  crfCode?: string;
+  groupCode?: string;
+  itemTitle?: string;
+  responseType?: MediaResponseType;
+  countsTowardTotal: boolean | null;
+  cognitiveDomainCodes: string[];
+  itemSnapshot: MediaItemSnapshot;
+  versionTrace: MediaEvidenceVersionTraceSummary | null;
+  storage: MediaStorageSummary | null;
+  imageMetadata: MediaImageMetadataSummary | null;
+  handwritingTrace: HandwritingTraceSummary | null;
+  captureContext: MediaCaptureContextSummary | null;
+  operatorSnapshot: MediaOperatorSnapshotSummary | null;
+  qualityStatus: MediaQualityStatus;
+  qualityHints: MediaQualityHints;
+  operatorNote?: string;
+  description?: string;
+  metadata: MediaEvidenceMetadata;
+  lockedAt: Date | null;
+  voidedAt: Date | null;
+  deletedAt: Date | null;
+};
+
+@Injectable()
+export class MediaEvidenceService {
+  constructor(
+    @InjectModel(MediaEvidence.name)
+    private readonly mediaEvidenceModel: Model<MediaEvidenceDocument>,
+  ) {}
+
+  normalizeEvidenceCode(evidenceCode: string): string {
+    return evidenceCode.trim().toUpperCase();
+  }
+
+  async findEvidenceByCode(
+    evidenceCode: string,
+  ): Promise<MediaEvidenceSummary | null> {
+    const normalizedCode = this.normalizeEvidenceCode(evidenceCode);
+
+    if (!normalizedCode) {
+      return null;
+    }
+
+    const evidence = await this.mediaEvidenceModel
+      .findOne({ evidenceCode: normalizedCode })
+      .exec();
+
+    if (!evidence) {
+      return null;
+    }
+
+    return this.mapEvidence(evidence);
+  }
+
+  async listEvidenceByItemResponseId(
+    itemResponseId: Types.ObjectId | string,
+  ): Promise<MediaEvidenceSummary[]> {
+    const normalizedId = this.normalizeObjectId(itemResponseId);
+
+    if (!normalizedId) {
+      return [];
+    }
+
+    const evidences = await this.mediaEvidenceModel
+      .find({ itemResponseId: normalizedId })
+      .sort({ createdAt: 1 })
+      .exec();
+
+    return evidences.map((evidence) => this.mapEvidence(evidence));
+  }
+
+  async listEvidenceByScaleInstanceId(
+    scaleInstanceId: Types.ObjectId | string,
+  ): Promise<MediaEvidenceSummary[]> {
+    const normalizedId = this.normalizeObjectId(scaleInstanceId);
+
+    if (!normalizedId) {
+      return [];
+    }
+
+    const evidences = await this.mediaEvidenceModel
+      .find({ scaleInstanceId: normalizedId })
+      .sort({ itemCode: 1, createdAt: 1 })
+      .exec();
+
+    return evidences.map((evidence) => this.mapEvidence(evidence));
+  }
+
+  async listEvidenceByVisitId(
+    assessmentVisitId: Types.ObjectId | string,
+  ): Promise<MediaEvidenceSummary[]> {
+    const normalizedId = this.normalizeObjectId(assessmentVisitId);
+
+    if (!normalizedId) {
+      return [];
+    }
+
+    const evidences = await this.mediaEvidenceModel
+      .find({ assessmentVisitId: normalizedId })
+      .sort({ scaleInstanceId: 1, itemCode: 1, createdAt: 1 })
+      .exec();
+
+    return evidences.map((evidence) => this.mapEvidence(evidence));
+  }
+
+  async listEvidenceByPatientId(
+    patientId: Types.ObjectId | string,
+  ): Promise<MediaEvidenceSummary[]> {
+    const normalizedId = this.normalizeObjectId(patientId);
+
+    if (!normalizedId) {
+      return [];
+    }
+
+    const evidences = await this.mediaEvidenceModel
+      .find({ patientId: normalizedId })
+      .sort({ createdAt: -1 })
+      .exec();
+
+    return evidences.map((evidence) => this.mapEvidence(evidence));
+  }
+
+  async listAttachedEvidenceByItemResponseId(
+    itemResponseId: Types.ObjectId | string,
+  ): Promise<MediaEvidenceSummary[]> {
+    const normalizedId = this.normalizeObjectId(itemResponseId);
+
+    if (!normalizedId) {
+      return [];
+    }
+
+    const evidences = await this.mediaEvidenceModel
+      .find({
+        itemResponseId: normalizedId,
+        status: { $in: ['attached', 'locked'] },
+      })
+      .sort({ createdAt: 1 })
+      .exec();
+
+    return evidences.map((evidence) => this.mapEvidence(evidence));
+  }
+
+  private normalizeObjectId(
+    id: Types.ObjectId | string,
+  ): Types.ObjectId | null {
+    if (id instanceof Types.ObjectId) {
+      return id;
+    }
+
+    const normalizedId = id.trim();
+
+    if (!normalizedId || !Types.ObjectId.isValid(normalizedId)) {
+      return null;
+    }
+
+    const objectId = new Types.ObjectId(normalizedId);
+
+    if (objectId.toString() !== normalizedId.toLowerCase()) {
+      return null;
+    }
+
+    return objectId;
+  }
+
+  private mapEvidence(evidence: MediaEvidenceDocument): MediaEvidenceSummary {
+    return {
+      id: evidence._id.toString(),
+      patientId: evidence.patientId.toString(),
+      assessmentVisitId: evidence.assessmentVisitId.toString(),
+      scaleInstanceId: evidence.scaleInstanceId.toString(),
+      itemResponseId: evidence.itemResponseId.toString(),
+      subjectCode: evidence.subjectCode,
+      scaleDefinitionId: evidence.scaleDefinitionId.toString(),
+      scaleVersionId: evidence.scaleVersionId.toString(),
+      scaleCode: evidence.scaleCode,
+      scaleVersion: evidence.scaleVersion,
+      instanceCode: evidence.instanceCode,
+      itemCode: evidence.itemCode,
+      evidenceCode: evidence.evidenceCode,
+      evidenceType: evidence.evidenceType,
+      captureMode: evidence.captureMode,
+      status: evidence.status,
+      storageStatus: evidence.storageStatus,
+      crfCode: evidence.crfCode,
+      groupCode: evidence.groupCode,
+      itemTitle: evidence.itemTitle,
+      responseType: evidence.responseType,
+      countsTowardTotal: evidence.countsTowardTotal ?? null,
+      cognitiveDomainCodes: [...(evidence.cognitiveDomainCodes ?? [])],
+      itemSnapshot: evidence.itemSnapshot ?? null,
+      versionTrace: this.mapVersionTrace(evidence.versionTrace),
+      storage: this.mapStorage(evidence.storage),
+      imageMetadata: this.mapImageMetadata(evidence.imageMetadata),
+      handwritingTrace: this.mapHandwritingTrace(evidence.handwritingTrace),
+      captureContext: this.mapCaptureContext(evidence.captureContext),
+      operatorSnapshot: this.mapOperatorSnapshot(evidence.operatorSnapshot),
+      qualityStatus: evidence.qualityStatus,
+      qualityHints: evidence.qualityHints ?? null,
+      operatorNote: evidence.operatorNote,
+      description: evidence.description,
+      metadata: evidence.metadata ?? null,
+      lockedAt: evidence.lockedAt ?? null,
+      voidedAt: evidence.voidedAt ?? null,
+      deletedAt: evidence.deletedAt ?? null,
+    };
+  }
+
+  private mapVersionTrace(
+    versionTrace?: MediaEvidenceVersionTrace | null,
+  ): MediaEvidenceVersionTraceSummary | null {
+    if (!versionTrace) {
+      return null;
+    }
+
+    return {
+      scaleVersion: versionTrace.scaleVersion,
+      crfVersion: versionTrace.crfVersion,
+      scoringRuleVersion: versionTrace.scoringRuleVersion,
+      fieldEncodingVersion: versionTrace.fieldEncodingVersion,
+      sourceDocument: versionTrace.sourceDocument,
+    };
+  }
+
+  private mapStorage(
+    storage?: MediaStorageSnapshot | null,
+  ): MediaStorageSummary | null {
+    if (!storage) {
+      return null;
+    }
+
+    return {
+      storageDriver: storage.storageDriver,
+      bucket: storage.bucket,
+      objectKey: storage.objectKey,
+      objectPrefix: storage.objectPrefix,
+      publicUrl: storage.publicUrl,
+      mimeType: storage.mimeType,
+      fileExtension: storage.fileExtension,
+      sizeBytes: storage.sizeBytes ?? null,
+      checksum: storage.checksum,
+      checksumAlgorithm: storage.checksumAlgorithm,
+      originalFilename: storage.originalFilename,
+      storedAt: storage.storedAt ?? null,
+    };
+  }
+
+  private mapImageMetadata(
+    imageMetadata?: MediaImageMetadata | null,
+  ): MediaImageMetadataSummary | null {
+    if (!imageMetadata) {
+      return null;
+    }
+
+    return {
+      width: imageMetadata.width ?? null,
+      height: imageMetadata.height ?? null,
+      orientation: imageMetadata.orientation,
+      pageNo: imageMetadata.pageNo ?? null,
+      isColor: imageMetadata.isColor ?? null,
+      capturedAt: imageMetadata.capturedAt ?? null,
+    };
+  }
+
+  private mapHandwritingTrace(
+    handwritingTrace?: HandwritingTraceSnapshot | null,
+  ): HandwritingTraceSummary | null {
+    if (!handwritingTrace) {
+      return null;
+    }
+
+    return {
+      hasTrajectory: handwritingTrace.hasTrajectory,
+      trajectoryObjectKey: handwritingTrace.trajectoryObjectKey,
+      trajectoryFormat: handwritingTrace.trajectoryFormat,
+      strokeCount: handwritingTrace.strokeCount ?? null,
+      durationMs: handwritingTrace.durationMs ?? null,
+      canvasWidth: handwritingTrace.canvasWidth ?? null,
+      canvasHeight: handwritingTrace.canvasHeight ?? null,
+      deviceType: handwritingTrace.deviceType,
+      inputTool: handwritingTrace.inputTool,
+    };
+  }
+
+  private mapCaptureContext(
+    captureContext?: MediaCaptureContext | null,
+  ): MediaCaptureContextSummary | null {
+    if (!captureContext) {
+      return null;
+    }
+
+    return {
+      capturedAt: captureContext.capturedAt ?? null,
+      uploadedAt: captureContext.uploadedAt ?? null,
+      sourceDevice: captureContext.sourceDevice,
+      sourceApp: captureContext.sourceApp,
+      captureNote: captureContext.captureNote,
+    };
+  }
+
+  private mapOperatorSnapshot(
+    operatorSnapshot?: MediaOperatorSnapshot | null,
+  ): MediaOperatorSnapshotSummary | null {
+    if (!operatorSnapshot) {
+      return null;
+    }
+
+    return {
+      operatorId: operatorSnapshot.operatorId?.toString() ?? null,
+      operatorName: operatorSnapshot.operatorName,
+      operatorRole: operatorSnapshot.operatorRole,
+    };
+  }
+}
