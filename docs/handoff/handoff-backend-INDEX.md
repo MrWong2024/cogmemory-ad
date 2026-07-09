@@ -10,7 +10,7 @@
 
 本文档是 CogMemory AD 后端 handoff 文档入口，用于索引后端事实快照、API、DTO、Service、配置、决策和验证手册。
 
-当前内容记录后端公共底座、已进入真实代码阶段的 `scales` 量表定义模型底座、`patients` / `assessments` 患者、访视和量表实例运行时模型底座、`assessments` 内部 `ItemResponse` 题目作答数据模型底座、`media` 媒体证据模型底座，以及 `scoring` 自动计分结果模型与通用计分汇总底座；未实现的业务能力仍只能标记为待后续阶段确认。
+当前内容记录后端公共底座、已进入真实代码阶段的 `scales` 量表定义模型底座、`patients` / `assessments` 患者、访视和量表实例运行时模型底座、`assessments` 内部 `ItemResponse` 题目作答数据模型底座、`media` 媒体证据模型底座、`scoring` 自动计分结果模型与通用计分汇总底座，以及 `cognitive-domains` 认知域结果模型与通用认知域汇总底座；未实现的业务能力仍只能标记为待后续阶段确认。
 
 ## 3. 当前状态
 
@@ -22,8 +22,9 @@
 - 当前新增 `assessments` 题目作答数据模型底座，包含 `ItemResponse` Schema 与 `AssessmentsService` 按量表实例 / 访视读取题目作答的内部能力。
 - 当前新增 `media` 媒体证据模型底座，包含 `MediaEvidence` Schema 与 `MediaEvidenceService` 按证据编码、题目作答、量表实例、访视或患者读取媒体证据摘要的内部能力。
 - 当前新增 `scoring` 自动计分结果模型与通用计分汇总底座，包含 `ScoreResult` Schema、`ScoringService` 内部读取能力和 `summarizeItemScores()` 通用汇总纯函数。
-- 当前公开 API 仍只有 `GET /health`；`scales`、`patients`、`assessments`、`media`、`scoring` 均未新增 Controller 或公开业务接口。
-- 认证、真实患者建档流程、访视管理接口、评估执行业务接口、作答提交、媒体上传 / 下载 / 签名 URL、计分触发、MMSE / MoCA 专用计分规则、报告、AI、科研导出等业务能力仍未实现。
+- 当前新增 `cognitive-domains` 认知域结果模型与通用认知域汇总底座，包含 `CognitiveDomainResult` Schema、`CognitiveDomainsService` 内部读取能力和 `summarizeDomainScores()` 通用认知域汇总纯函数。
+- 当前公开 API 仍只有 `GET /health`；`scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains` 均未新增 Controller 或公开业务接口。
+- 认证、真实患者建档流程、访视管理接口、评估执行业务接口、作答提交、媒体上传 / 下载 / 签名 URL、计分触发、认知域计算触发、MMSE / MoCA 专用计分规则、MMSE / MoCA 专用认知域规则、疾病诊断、报告、AI、科研导出等业务能力仍未实现。
 
 ## 4. 必读基础文档
 

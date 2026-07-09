@@ -137,6 +137,14 @@
 - 影响范围：`backend\src\app.module.ts`、`backend\src\modules\scoring` 和后端 handoff 文档。
 - 后续复查点：后续进入 MMSE / MoCA 专用计分规则、认知域映射、报告、认证权限或公开业务 API 阶段时，应继续保持模型、Controller、DTO、权限、规则边界和测试边界清晰，并单独同步 handoff。
 
+### D-016：建设认知域结果模型与通用认知域汇总底座，不暴露公开 API
+
+- 日期：2026-07-09
+- 决策：后端 A6 落地 `cognitive-domains` 内部模块，建设 `CognitiveDomainResult` 数据模型、最小内部读取 Service 和 `summarizeDomainScores()` 通用认知域汇总纯函数；本阶段不新增 Controller，不暴露公开 HTTP API。
+- 背景：通用量表引擎在计分结果模型之后，需要保存一次 `ScaleInstance` 基于 `ScoreResult` 的认知域结果快照，并通过 `Patient` -> `AssessmentVisit` -> `ScaleInstance` -> `ScoreResult` -> `CognitiveDomainResult` 形成认知域结果追溯链；当前阶段只根据传入的单题得分快照和认知域映射快照做通用汇总，不实现 MMSE / MoCA 专用认知域规则、作答提交后自动认知域计算触发、疾病诊断、报告或 AI。
+- 影响范围：`backend\src\app.module.ts`、`backend\src\modules\cognitive-domains` 和后端 handoff 文档。
+- 后续复查点：后续进入 MMSE / MoCA 专用认知域规则、报告、认证权限或公开业务 API 阶段时，应继续保持模型、Controller、DTO、权限、规则边界和测试边界清晰，并单独同步 handoff。
+
 ## 4. 后续同步规则
 
 - 新增关键技术选型、接口设计、数据模型、测试策略或部署策略后，应追加决策记录。

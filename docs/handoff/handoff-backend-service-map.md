@@ -6,8 +6,8 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 Service / Provider，以及 `scales`、`patients`、`assessments`、`media`、`scoring` 内部读取 Service。
-- 当前没有认证、用户、医生、报告、SMS 或 LLM Service；`ScalesService`、`PatientsService`、`AssessmentsService`、`MediaEvidenceService`、`ScoringService` 仅为内部模型读取 / 汇总底座。
+- 当前存在公共底座 Service / Provider，以及 `scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains` 内部读取 Service。
+- 当前没有认证、用户、医生、报告、SMS 或 LLM Service；`ScalesService`、`PatientsService`、`AssessmentsService`、`MediaEvidenceService`、`ScoringService`、`CognitiveDomainsService` 仅为内部模型读取 / 汇总底座。
 
 ## 3. 当前 Service / Provider 清单
 
@@ -94,6 +94,15 @@
 - 下游依赖：`ScoreResult` Mongoose Model；`summarizeItemScores()` 不依赖数据库。
 - 边界：不创建、更新、删除计分结果；不实现确认、锁定、作废、状态流转、作答提交后自动计分触发、MMSE / MoCA 专用计分规则、认知域结果、报告、AI、认证、权限或公开计分 API；不修改 `ItemResponse`。
 - 测试覆盖口径：`backend\src\modules\scoring\services\scoring.service.spec.ts`，覆盖 score result code 规范化、查无返回 `null`、mapper 输出、按量表实例最新读取、按量表实例 / 访视 / 患者列表读取、schema collection、索引、内嵌子文档 `_id: false`、关键字段显式类型，以及 `summarizeItemScores()` 对计入 / 不计入总分、缺失、未评分、需复核、非有限数字、逐步计分和 group score 汇总的处理；不连接真实 MongoDB，不调用 Storage / OSS / SMS / LLM，测试数据为脱敏人工样例。
+
+- Service 名称：`CognitiveDomainsService`
+- 文件路径：`backend\src\modules\cognitive-domains\services\cognitive-domains.service.ts`
+- 职责边界：提供认知域结果快照的内部读取底座；规范化 `domainResultCode` 与 `domainCode`；按 mapper 输出 `CognitiveDomainResultSummary`，不直接返回完整 Mongoose document；提供 `summarizeDomainScores()` 通用认知域汇总纯函数。
+- 当前方法：`normalizeDomainResultCode(domainResultCode)`、`normalizeDomainCode(domainCode)`、`findDomainResultByCode(domainResultCode)`、`findLatestDomainResultByScaleInstanceId(scaleInstanceId)`、`listDomainResultsByScaleInstanceId(scaleInstanceId)`、`listDomainResultsByScoreResultId(scoreResultId)`、`listDomainResultsByVisitId(assessmentVisitId)`、`listDomainResultsByPatientId(patientId)`、`summarizeDomainScores(items)`。
+- 上游调用方：当前暂无公开 Controller；预期供后续评估、计分任务、报告或科研导出等后端业务模块内部读取认知域结果摘要或复用通用汇总。
+- 下游依赖：`CognitiveDomainResult` Mongoose Model；`summarizeDomainScores()` 不依赖数据库。
+- 边界：不创建、更新、删除认知域结果；不实现确认、锁定、作废、状态流转、作答提交后自动认知域计算触发、MMSE / MoCA 专用认知域映射规则、疾病诊断、AD 风险等级、报告、AI、认证、权限或公开认知域 API；不修改 `ScoreResult` 或 `ItemResponse`。
+- 测试覆盖口径：`backend\src\modules\cognitive-domains\services\cognitive-domains.service.spec.ts`，覆盖 domain result code / domain code 规范化、查无返回 `null`、mapper 输出、按量表实例最新读取、按量表实例 / 计分结果 / 访视 / 患者列表读取、schema collection、索引、内嵌子文档 `_id: false`、关键字段显式类型，以及 `summarizeDomainScores()` 对多认知域映射、默认映射、权重、不计入认知域、缺失、未评分、需复核和非有限数字 warning 的处理；不连接真实 MongoDB，不调用 Storage / OSS / SMS / LLM，测试数据为脱敏人工样例。
 
 ## 4. 后续同步规则
 

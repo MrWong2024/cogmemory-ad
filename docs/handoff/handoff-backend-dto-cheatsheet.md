@@ -6,7 +6,7 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 DTO、响应 type、Storage interface，以及 `scales`、`patients`、`assessments`、`media`、`scoring` 内部 Service 读取输出 type。
+- 当前存在公共底座 DTO、响应 type、Storage interface，以及 `scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains` 内部 Service 读取输出 type。
 - 当前不记录任何业务请求 DTO。
 - 当前没有认证、用户、医生、患者、量表、评估、媒体、报告或业务上传请求 DTO。
 
@@ -101,6 +101,19 @@
 - 名称：`ScoringItemInput`、`ScoringComputationSummary`、`ScoringComputationWarning`
 - 文件：`backend\src\modules\scoring\services\scoring.service.ts`
 - 用途：`summarizeItemScores()` 通用计分汇总纯函数的输入 / 输出 type，不是 HTTP DTO；只描述基于单题得分快照的内存汇总结构。
+
+- 名称：`CognitiveDomainResultSummary`
+- 文件：`backend\src\modules\cognitive-domains\services\cognitive-domains.service.ts`
+- 用途：`CognitiveDomainsService` 内部读取认知域结果快照时返回的 mapper 输出 type，不是 HTTP DTO。
+- 字段摘要：运行时引用、受试者与量表快照、认知域结果编码、运行次数、计算状态 / 映射来源 / 映射模式、版本追溯、认知域得分快照、题目贡献快照、映射快照、计算过程摘要、人工复核、质量状态、质量提示、备注、metadata、确认 / 锁定 / 作废时间。
+
+- 名称：`CognitiveDomainVersionTraceSummary`、`CognitiveDomainScoreSummary`、`CognitiveDomainItemContributionSummary`、`CognitiveDomainMappingSnapshotSummary`、`CognitiveDomainComputationSnapshotSummary`、`CognitiveDomainReviewSummary`
+- 文件：`backend\src\modules\cognitive-domains\services\cognitive-domains.service.ts`
+- 用途：`CognitiveDomainResultSummary` 的内部嵌套输出 type，承载版本追溯、认知域得分、题目贡献、映射快照、计算过程与人工复核摘要。
+
+- 名称：`CognitiveDomainItemInput`、`CognitiveDomainMappingInput`、`CognitiveDomainComputationSummary`、`CognitiveDomainComputationWarning`
+- 文件：`backend\src\modules\cognitive-domains\services\cognitive-domains.service.ts`
+- 用途：`summarizeDomainScores()` 通用认知域汇总纯函数的输入 / 输出 type，不是 HTTP DTO；只描述基于单题得分快照和认知域映射快照的内存汇总结构。
 
 ## 4. 后续同步规则
 

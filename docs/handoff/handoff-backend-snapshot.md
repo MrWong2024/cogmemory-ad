@@ -8,19 +8,20 @@
 
 - `backend\src` 公共底座已初始化。
 - 已具备 NestJS 启动入口、根模块、全局应用配置、健康检查、配置加载与校验、MongoDB 连接底座、全局 ValidationPipe、全局异常过滤器和 Storage 公共模块。
-- `backend\src\modules` 当前包含 `storage`、`scales`、`patients`、`assessments`、`media` 与 `scoring`。
+- `backend\src\modules` 当前包含 `storage`、`scales`、`patients`、`assessments`、`media`、`scoring` 与 `cognitive-domains`。
 - `StorageModule` 当前只提供 fake / OSS 底层 driver 结构和 `STORAGE_SERVICE` token，不提供业务上传接口。
 - `ScalesModule` 当前只提供量表定义 / 量表版本 Schema 与内部 `ScalesService` 读取底座，不提供公开业务接口。
 - `PatientsModule` 当前只提供患者 / 受试者基础档案 Schema 与内部 `PatientsService` 读取底座，不提供公开业务接口。
 - `AssessmentsModule` 当前只提供访视 / 量表实例运行时 Schema、题目作答数据 Schema 与内部 `AssessmentsService` 读取底座，不提供公开业务接口。
 - `MediaModule` 当前只提供媒体证据元数据 Schema 与内部 `MediaEvidenceService` 读取底座，不提供公开媒体上传、下载、查询、删除或签名 URL 接口。
 - `ScoringModule` 当前只提供计分结果快照 Schema、内部 `ScoringService` 读取底座和 `summarizeItemScores()` 通用计分汇总纯函数，不提供公开计分触发、查询、复核或报告接口。
+- `CognitiveDomainsModule` 当前只提供认知域结果快照 Schema、内部 `CognitiveDomainsService` 读取底座和 `summarizeDomainScores()` 通用认知域汇总纯函数，不提供公开认知域计算触发、查询、复核或报告接口。
 - OSS 业务上传服务、SMS Service、LLM Service 均未实现。
 - 本地默认后端端口为 `5002`。
 - 本地默认前端 origin 为 `http://localhost:3002`。
 - `GET /health` 是当前唯一公共接口。
 - 已完成后端公共底座基础闭环本地验证：`npm install` 成功、`npm run build` 成功、`npm test -- --runInBand` 成功、`npm run start:prod` 启动成功。
-- 单元测试验证结果为 8 个测试套件通过、67 个测试通过。
+- 单元测试验证结果为 9 个测试套件通过、79 个测试通过。
 - 后端 TypeScript 编译根目录为 `.`，`outDir` 保持 `./dist`，因此 `src/main.ts` 编译后的主入口产物为 `dist/src/main.js`。
 - `package.json` 中 `start:prod` 保持指向 `./dist/src/main.js`，当前 build 产物路径已与该启动路径对齐。
 - `tsBuildInfoFile` 保持 `./dist/tsconfig.build.tsbuildinfo`；`dist` 与 `*.tsbuildinfo` 均作为生成物处理，不作为项目源文件纳入版本库。
@@ -37,7 +38,7 @@
 - development / test 默认 `STORAGE_DRIVER=fake`，production 默认 `STORAGE_DRIVER=oss`。
 - OSS、SMS、LLM 配置均为占位或示例口径，不包含真实密钥。
 - OSS 业务上传服务、SMS Service、LLM Service、业务上传接口均未实现。
-- 当前已有 `scales`、`patients`、`assessments`、`media` 与 `scoring` 内部模型底座，其中 `assessments` 已包含 `AssessmentVisit`、`ScaleInstance` 与 `ItemResponse`，`media` 已包含 `MediaEvidence`，`scoring` 已包含 `ScoreResult`；但无公开业务 API、认证、真实患者建档流程、评估执行业务接口、作答提交、媒体上传 / 下载 / 签名 URL、计分触发、MMSE / MoCA 专用计分规则或报告。
+- 当前已有 `scales`、`patients`、`assessments`、`media`、`scoring` 与 `cognitive-domains` 内部模型底座，其中 `assessments` 已包含 `AssessmentVisit`、`ScaleInstance` 与 `ItemResponse`，`media` 已包含 `MediaEvidence`，`scoring` 已包含 `ScoreResult`，`cognitive-domains` 已包含 `CognitiveDomainResult`；但无公开业务 API、认证、真实患者建档流程、评估执行业务接口、作答提交、媒体上传 / 下载 / 签名 URL、计分触发、认知域计算触发、MMSE / MoCA 专用计分规则、MMSE / MoCA 专用认知域规则、疾病诊断或报告。
 - 当前 `start:prod` 与 TypeScript build 主入口产物路径均指向 `dist/src/main.js`，并已完成本地启动验证。
 - 本次仅使用指定外部 GitHub commit `b302b8af7b7ac9cc558939dc1b38ace0976c65b3` 作为后端公共底座来源，不继承其业务事实。
 
@@ -101,7 +102,20 @@
 - `ScoringService.summarizeItemScores()` 当前为不落库的通用计分汇总纯函数，只根据输入的单题得分快照汇总总分、分组分、计入 / 不计入总分数量、未评分数量、缺失数量、需复核数量和非有限数字 warning；不读取或修改 `ItemResponse`，不根据 `itemCode` 写死 MMSE / MoCA 专用规则，不从 raw response 推断单题对错。
 - `ScoreResult` 与 `ScoringService` 仅为计分结果模型和通用计分汇总底座，不包含 MMSE / MoCA 专用计分规则、认知域结果、报告、AI、认证、权限、状态流转、计分触发或公开接口。
 
-## 8. 当前尚未实现
+## 8. 当前 cognitive-domains 认知域结果模型与通用汇总底座
+
+- `CognitiveDomainResult` Schema 位于 `backend\src\modules\cognitive-domains\schemas\cognitive-domain-result.schema.ts`。
+- `CognitiveDomainResult` collection 为 `cognitive_domain_results`，使用 `timestamps: true`，不在 class 中重复声明 `createdAt` / `updatedAt`。
+- `CognitiveDomainResult` 当前覆盖患者、访视、量表实例、计分结果、量表定义和量表版本引用，并在题目贡献快照中可引用 `ItemResponse` 与 `ScoreResult`。
+- 当前已通过 `CognitiveDomainResult.patientId`、`assessmentVisitId`、`scaleInstanceId`、`scoreResultId`、`itemContributions.itemResponseId` 建立 `Patient` -> `AssessmentVisit` -> `ScaleInstance` -> `ScoreResult` -> `CognitiveDomainResult` 的认知域结果引用关系，并保留必要题目作答引用。
+- `CognitiveDomainResult` 当前保存受试者编码、量表 code / version、实例编码、认知域结果编码、运行次数、计算状态、映射来源、映射模式、版本追溯、认知域得分快照、题目贡献快照、映射规则快照、计算过程摘要、人工复核状态、质量状态、质量提示、操作者备注、metadata、确认 / 锁定 / 作废时间。
+- `CognitiveDomainResult` 当前内嵌 `CognitiveDomainVersionTrace`、`CognitiveDomainScoreSnapshot`、`CognitiveDomainItemContributionSnapshot`、`CognitiveDomainMappingSnapshot`、`CognitiveDomainComputationSnapshot` 与 `CognitiveDomainReviewSnapshot` 子文档，均使用 `_id: false`。
+- `CognitiveDomainResult` 当前索引为 `{ domainResultCode: 1 }` unique、`{ scaleInstanceId: 1, runNo: 1 }` unique、`{ scoreResultId: 1, runNo: 1 }`、`{ scaleInstanceId: 1, status: 1, createdAt: -1 }`、`{ assessmentVisitId: 1, scaleCode: 1, createdAt: -1 }`、`{ patientId: 1, scaleCode: 1, createdAt: -1 }`、`{ status: 1, updatedAt: -1 }`、`{ scaleCode: 1, scaleVersion: 1 }`、`{ qualityStatus: 1, updatedAt: -1 }`、`{ 'domainScores.domainCode': 1 }`。
+- `CognitiveDomainsService` 当前提供最小内部读取能力：规范化 domain result code、规范化 domain code、按认知域结果编码读取、按量表实例读取最新认知域结果、按量表实例 / 计分结果 / 访视 / 患者读取认知域结果列表；返回结果经过 mapper，不直接返回完整 Mongoose document。
+- `CognitiveDomainsService.summarizeDomainScores()` 当前为不落库的通用认知域汇总纯函数，只根据输入的单题得分快照和认知域映射快照汇总认知域得分、最高分、得分率、权重、题目贡献、计入 / 不计入数量、缺失数量、未评分数量、需复核数量和非有限数字 warning；不读取或修改 `ScoreResult` / `ItemResponse`，不根据 `itemCode` 写死 MMSE / MoCA 专用规则，不从 raw response 推断认知域表现。
+- `CognitiveDomainResult` 与 `CognitiveDomainsService` 仅为认知域结果模型和通用认知域汇总底座，不包含 MMSE / MoCA 专用认知域映射规则、疾病诊断、AD 风险等级、报告、AI、认证、权限、状态流转、计算触发或公开接口。
+
+## 9. 当前尚未实现
 
 - 尚无认证体系。
 - 尚无用户管理。
@@ -109,14 +123,15 @@
 - 尚无公开患者、访视、量表实例、题目作答或量表业务接口、评估、报告或诊断建议业务。
 - 尚无公开媒体上传、媒体查询、媒体下载、媒体删除或签名 URL 业务接口。
 - 尚无公开计分触发、计分查询、计分复核或报告接口。
-- 尚无作答提交后自动计分触发、真实计分任务流、MMSE / MoCA 专用计分规则或认知域结果计算。
+- 尚无公开认知域计算触发、认知域查询、认知域复核或报告接口。
+- 尚无作答提交后自动计分触发、作答提交后自动认知域计算触发、真实计分任务流、真实认知域计算任务流、MMSE / MoCA 专用计分规则或 MMSE / MoCA 专用认知域规则。
 - 尚无短信发送接口。
 - 尚无 AI / LLM 调用接口。
 - 尚无业务 Controller 或公开业务 API。
 - 当前 E2E 未执行。
-- 已完成本次 `scoring` / `app.module.ts` 定向 lint；全量 lint 当前未执行。
+- 已完成本次 `cognitive-domains` / `app.module.ts` 定向 lint、后端 build 与全量单元测试；全量 lint 当前未执行。
 
-## 9. 后续同步规则
+## 10. 后续同步规则
 
 - 后续新增模块、接口、DTO、数据模型、Service 或测试命令后，应同步更新对应 handoff 文档。
 - 本文档只记录已确认事实，不承载未确认推测。
