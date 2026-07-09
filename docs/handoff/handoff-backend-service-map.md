@@ -6,8 +6,8 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 Service / Provider，以及 `scales` 内部读取 Service。
-- 当前没有认证、用户、医生、患者、评估、报告、SMS 或 LLM Service；`ScalesService` 仅为量表定义内部读取底座。
+- 当前存在公共底座 Service / Provider，以及 `scales`、`patients`、`assessments` 内部读取 Service。
+- 当前没有认证、用户、医生、报告、SMS 或 LLM Service；`ScalesService`、`PatientsService`、`AssessmentsService` 仅为内部模型读取底座。
 
 ## 3. 当前 Service / Provider 清单
 
@@ -56,8 +56,26 @@
 - 当前方法：`normalizeScaleCode(code)`、`findDefinitionByCode(code)`、`findVersionByScaleCodeAndVersion(scaleCode, version)`、`listActiveDefinitions()`。
 - 上游调用方：当前暂无公开 Controller；预期供后续评估、计分或配置读取模块内部调用。
 - 下游依赖：`ScaleDefinition` 与 `ScaleVersion` Mongoose Model。
-- 边界：不创建、更新、删除量表配置；不导入种子数据；不实现评估实例、作答、计分、报告、AI、认证或权限。
+- 边界：不创建、更新、删除量表配置；不导入种子数据；不实现评估执行、作答、计分、报告、AI、认证或权限。
 - 测试覆盖口径：`backend\src\modules\scales\services\scales.service.spec.ts`，覆盖 code 规范化、查无返回 `null`、mapper 输出、schema collection、索引和关键字段显式类型；不连接真实 MongoDB。
+
+- Service 名称：`PatientsService`
+- 文件路径：`backend\src\modules\patients\services\patients.service.ts`
+- 职责边界：提供患者 / 受试者基础档案的内部读取底座；规范化 `subjectCode`；按 mapper 输出 `PatientSummary`，不直接返回完整 Mongoose document。
+- 当前方法：`normalizeSubjectCode(subjectCode)`、`findPatientBySubjectCode(subjectCode)`、`listActivePatients()`。
+- 上游调用方：当前暂无公开 Controller；预期供后续评估、报告或科研导出等后端业务模块内部读取患者基础档案。
+- 下游依赖：`Patient` Mongoose Model。
+- 边界：不创建、更新、删除患者档案；不实现真实患者建档流程；不实现脱敏流程、权限、认证或公开患者管理 API。
+- 测试覆盖口径：`backend\src\modules\patients\services\patients.service.spec.ts`，覆盖 `subjectCode` 规范化、查无返回 `null`、mapper 输出、active patient 列表读取、schema collection、索引和关键字段显式类型；不连接真实 MongoDB，测试数据为脱敏人工样例。
+
+- Service 名称：`AssessmentsService`
+- 文件路径：`backend\src\modules\assessments\services\assessments.service.ts`
+- 职责边界：提供访视与量表实例运行时数据的内部读取底座；规范化 `visitCode` / `instanceCode`；按 mapper 输出 `AssessmentVisitSummary` / `ScaleInstanceSummary`，不直接返回完整 Mongoose document。
+- 当前方法：`normalizeVisitCode(visitCode)`、`normalizeInstanceCode(instanceCode)`、`findVisitByCode(visitCode)`、`listVisitsByPatientId(patientId)`、`findScaleInstanceByCode(instanceCode)`、`listScaleInstancesByVisitId(assessmentVisitId)`。
+- 上游调用方：当前暂无公开 Controller；预期供后续评估执行、计分、报告或科研导出等后端业务模块内部读取访视和量表实例。
+- 下游依赖：`AssessmentVisit` 与 `ScaleInstance` Mongoose Model。
+- 边界：不创建、更新、删除访视或量表实例；不实现状态流转、作答、媒体证据、计分、报告、AI、认证、权限或公开评估 API。
+- 测试覆盖口径：`backend\src\modules\assessments\services\assessments.service.spec.ts`，覆盖 code 规范化、访视和量表实例查无返回 `null`、mapper 输出、列表读取、schema collection、索引和关键字段显式类型；不连接真实 MongoDB，测试数据为脱敏人工样例。
 
 ## 4. 后续同步规则
 

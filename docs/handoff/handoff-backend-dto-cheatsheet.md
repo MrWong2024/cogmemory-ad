@@ -6,9 +6,9 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 DTO、响应 type、Storage interface，以及 `scales` 内部 Service 读取输出 type。
+- 当前存在公共底座 DTO、响应 type、Storage interface，以及 `scales`、`patients`、`assessments` 内部 Service 读取输出 type。
 - 当前不记录任何业务请求 DTO。
-- 当前没有认证、用户、医生、患者、量表、评估、报告或业务上传 DTO。
+- 当前没有认证、用户、医生、患者、量表、评估、报告或业务上传请求 DTO。
 
 ## 3. 当前 DTO / Type 清单
 
@@ -51,6 +51,25 @@
 - 名称：`ScaleScoreRangeSummary`、`ScaleGroupConfigSummary`、`ScaleItemConfigSummary`
 - 文件：`backend\src\modules\scales\services\scales.service.ts`
 - 用途：`ScaleVersionSummary` 的内部配置输出 type，承载题目分组、题目配置、作答类型、得分范围、证据要求和展示 / 导出规则。
+
+- 名称：`PatientSummary`
+- 文件：`backend\src\modules\patients\services\patients.service.ts`
+- 用途：`PatientsService` 内部读取患者 / 受试者基础档案时返回的 mapper 输出 type，不是 HTTP DTO。
+- 字段摘要：`id`、`subjectCode`、`displayName`、`sourceType`、`sex`、`birthDate`、`educationYears`、`handedness`、`status`、`tags`、`notes`、`externalRefs`、`metadata`。
+
+- 名称：`AssessmentVisitSummary`
+- 文件：`backend\src\modules\assessments\services\assessments.service.ts`
+- 用途：`AssessmentsService` 内部读取访视时返回的 mapper 输出 type，不是 HTTP DTO。
+- 字段摘要：访视引用输出、患者引用、受试者编码快照、访视编码、访视类型、状态、评估日期、开始 / 完成 / 锁定 / 作废时间、操作者快照、临床上下文、备注和 metadata。
+
+- 名称：`ScaleInstanceSummary`
+- 文件：`backend\src\modules\assessments\services\assessments.service.ts`
+- 用途：`AssessmentsService` 内部读取量表实例时返回的 mapper 输出 type，不是 HTTP DTO。
+- 字段摘要：访视引用、患者引用、量表定义引用、量表版本引用、量表 code、量表版本、实例编码、实例序号、状态、施测模式、版本追溯快照、时间字段、用时、操作者快照、进度摘要占位、质控摘要占位、备注和 metadata。
+
+- 名称：`AssessmentOperatorSnapshotSummary`、`ScaleVersionTraceSummary`
+- 文件：`backend\src\modules\assessments\services\assessments.service.ts`
+- 用途：`AssessmentVisitSummary` / `ScaleInstanceSummary` 的内部嵌套输出 type，承载操作者快照和量表版本追溯快照。
 
 ## 4. 后续同步规则
 

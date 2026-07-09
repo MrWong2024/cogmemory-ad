@@ -105,6 +105,14 @@
 - 影响范围：`backend\src\app.module.ts`、`backend\src\modules\scales` 和后端 handoff 文档。
 - 后续复查点：后续进入评估实例、作答记录、计分引擎、报告或 MMSE / MoCA 种子数据阶段时，应继续保持公开 API、数据模型、DTO、权限和测试边界清晰，并单独同步 handoff。
 
+### D-012：建设患者 / 访视 / 量表实例运行时模型底座，不暴露公开 API
+
+- 日期：2026-07-09
+- 决策：后端 A2 落地 `patients` 与 `assessments` 内部模块，建设 `Patient`、`AssessmentVisit` 与 `ScaleInstance` 数据模型和最小内部读取 Service；本阶段不新增 Controller，不暴露公开 HTTP API。
+- 背景：通用量表引擎在量表定义模型底座之后，需要具备患者 / 受试者、一次评估 / 访视、一次访视中的量表执行实例，以及量表定义和版本追溯快照的运行时承载能力，但当前阶段不实现真实患者建档流程、访视创建流程、MMSE / MoCA 种子数据、作答、媒体证据、计分、报告或 AI。
+- 影响范围：`backend\src\app.module.ts`、`backend\src\modules\patients`、`backend\src\modules\assessments` 和后端 handoff 文档。
+- 后续复查点：后续进入题目作答、媒体证据、计分引擎、报告、认证权限或公开业务 API 阶段时，应继续保持 Controller、DTO、数据模型、权限和测试边界清晰，并单独同步 handoff。
+
 ## 4. 后续同步规则
 
 - 新增关键技术选型、接口设计、数据模型、测试策略或部署策略后，应追加决策记录。

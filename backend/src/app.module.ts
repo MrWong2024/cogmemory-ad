@@ -7,6 +7,8 @@ import { AppService } from './app.service';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import configuration from './config/configuration';
 import { envValidationSchema } from './config/env.validation';
+import { AssessmentsModule } from './modules/assessments/assessments.module';
+import { PatientsModule } from './modules/patients/patients.module';
 import { ScalesModule } from './modules/scales/scales.module';
 import { StorageModule } from './modules/storage/storage.module';
 
@@ -28,6 +30,8 @@ import { StorageModule } from './modules/storage/storage.module';
         ),
       }),
     }),
+    PatientsModule,
+    AssessmentsModule,
     ScalesModule,
     StorageModule,
   ],

@@ -9,6 +9,7 @@
 - 当前只实现一个公共健康检查接口。
 - 当前没有认证、用户、医生、患者、量表、评估、报告、短信、AI / LLM 或业务上传接口。
 - 本次新增的 `ScalesModule` 仅为内部模型和 Service 底座，不新增 scale controller，不暴露公开业务 API。
+- 本次新增的 `PatientsModule` 与 `AssessmentsModule` 仅为内部模型和 Service 底座，不新增 patient / assessment controller，不暴露患者、访视或量表实例公开业务 API。
 - 当前 API 事实以 `backend\src\app.controller.ts` 和对应测试为准。
 
 ## 3. 当前 API 清单
@@ -27,6 +28,10 @@
 
 - `backend\src\modules\scales` 当前没有 Controller。
 - `ScalesService` 仅供后续后端业务模块内部读取量表定义与版本配置。
+- `backend\src\modules\patients` 当前没有 Controller。
+- `PatientsService` 仅供后续后端业务模块内部读取患者 / 受试者基础档案。
+- `backend\src\modules\assessments` 当前没有 Controller。
+- `AssessmentsService` 仅供后续后端业务模块内部读取访视与量表实例运行时数据。
 - 当前不定义前端调用契约，不定义认证或权限，不提供 MMSE / MoCA 填写、计分、报告或种子数据接口。
 
 ## 5. 后续同步规则
