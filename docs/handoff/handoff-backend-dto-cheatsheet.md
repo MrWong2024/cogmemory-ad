@@ -6,7 +6,7 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 DTO、响应 type、Storage interface，以及 `scales`、`patients`、`assessments`、`media` 内部 Service 读取输出 type。
+- 当前存在公共底座 DTO、响应 type、Storage interface，以及 `scales`、`patients`、`assessments`、`media`、`scoring` 内部 Service 读取输出 type。
 - 当前不记录任何业务请求 DTO。
 - 当前没有认证、用户、医生、患者、量表、评估、媒体、报告或业务上传请求 DTO。
 
@@ -88,6 +88,19 @@
 - 名称：`MediaEvidenceVersionTraceSummary`、`MediaStorageSummary`、`MediaImageMetadataSummary`、`HandwritingTraceSummary`、`MediaCaptureContextSummary`、`MediaOperatorSnapshotSummary`
 - 文件：`backend\src\modules\media\services\media-evidence.service.ts`
 - 用途：`MediaEvidenceSummary` 的内部嵌套输出 type，承载版本追溯、存储对象、图片、手写轨迹、采集上下文和操作者快照摘要。
+
+- 名称：`ScoreResultSummary`
+- 文件：`backend\src\modules\scoring\services\scoring.service.ts`
+- 用途：`ScoringService` 内部读取计分结果快照时返回的 mapper 输出 type，不是 HTTP DTO。
+- 字段摘要：运行时引用、受试者与量表快照、计分结果编码、运行次数、计分状态 / 来源 / 模式、版本追溯、总分、单题得分快照、分项 / 分组得分、计算过程摘要、人工复核、质量状态、质量提示、备注、metadata、确认 / 锁定 / 作废时间。
+
+- 名称：`ScoreVersionTraceSummary`、`TotalScoreSummary`、`ScoreItemSummary`、`ScoreGroupSummary`、`ScoringComputationSnapshotSummary`、`ScoreReviewSummary`
+- 文件：`backend\src\modules\scoring\services\scoring.service.ts`
+- 用途：`ScoreResultSummary` 的内部嵌套输出 type，承载版本追溯、总分、单题得分、分组得分、计算过程与人工复核摘要。
+
+- 名称：`ScoringItemInput`、`ScoringComputationSummary`、`ScoringComputationWarning`
+- 文件：`backend\src\modules\scoring\services\scoring.service.ts`
+- 用途：`summarizeItemScores()` 通用计分汇总纯函数的输入 / 输出 type，不是 HTTP DTO；只描述基于单题得分快照的内存汇总结构。
 
 ## 4. 后续同步规则
 

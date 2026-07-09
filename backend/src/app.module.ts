@@ -11,6 +11,7 @@ import { AssessmentsModule } from './modules/assessments/assessments.module';
 import { MediaModule } from './modules/media/media.module';
 import { PatientsModule } from './modules/patients/patients.module';
 import { ScalesModule } from './modules/scales/scales.module';
+import { ScoringModule } from './modules/scoring/scoring.module';
 import { StorageModule } from './modules/storage/storage.module';
 
 @Module({
@@ -35,6 +36,7 @@ import { StorageModule } from './modules/storage/storage.module';
     AssessmentsModule,
     MediaModule,
     ScalesModule,
+    ScoringModule,
     StorageModule,
   ],
   controllers: [AppController],

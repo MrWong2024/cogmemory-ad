@@ -13,6 +13,7 @@
 - 本次新增的 `PatientsModule` 与 `AssessmentsModule` 仅为内部模型和 Service 底座，不新增 patient / assessment controller，不暴露患者、访视或量表实例公开业务 API。
 - 本次新增的 `ItemResponse` 仅为 `assessments` 内部题目作答数据模型和 Service 读取底座，不新增 item-response controller，不暴露作答提交、作答查询、计分或媒体上传公开业务 API。
 - 本次新增的 `MediaModule` 仅为内部媒体证据元数据模型和 Service 读取底座，不新增 media controller，不暴露媒体上传、媒体查询、媒体下载、媒体删除或签名 URL 公开业务 API。
+- 本次新增的 `ScoringModule` 仅为内部计分结果模型和 Service 底座，不新增 scoring controller，不暴露计分触发、计分查询、计分复核、报告或其他公开业务 API。
 - 当前 API 事实以 `backend\src\app.controller.ts` 和对应测试为准。
 
 ## 3. 当前 API 清单
@@ -37,7 +38,9 @@
 - `AssessmentsService` 仅供后续后端业务模块内部读取访视、量表实例运行时数据与题目作答数据。
 - `backend\src\modules\media` 当前没有 Controller。
 - `MediaEvidenceService` 仅供后续后端业务模块内部读取媒体证据元数据摘要。
-- 当前不定义前端调用契约，不定义认证或权限，不提供 MMSE / MoCA 填写、作答提交、计分、报告、媒体上传或种子数据接口。
+- `backend\src\modules\scoring` 当前没有 Controller。
+- `ScoringService` 仅供后续后端业务模块内部读取计分结果摘要，并提供不落库的通用计分汇总纯函数。
+- 当前不定义前端调用契约，不定义认证或权限，不提供 MMSE / MoCA 填写、作答提交、计分触发、计分查询、计分复核、报告、媒体上传或种子数据接口。
 
 ## 5. 后续同步规则
 
