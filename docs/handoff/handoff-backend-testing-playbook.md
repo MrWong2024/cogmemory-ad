@@ -50,6 +50,10 @@
   - `npm run lint:file -- src/modules/patients src/modules/assessments src/app.module.ts`
   - `npm run build`
   - `npm test -- --runInBand`
+- 本次后端 A3 已验证命令：
+  - `npm run lint:file -- src/modules/assessments`
+  - `npm run build`
+  - `npm test -- --runInBand`
 - 当前路径对齐验证命令：
   - `npm run build`
   - 检查 `dist/src/main.js` 存在
@@ -60,7 +64,7 @@
   - build 后 `dist/src/main.js` 已确认存在。
   - `npm test -- --runInBand` 成功。
   - 当前单元测试为 6 个测试套件通过。
-  - 当前单元测试为 36 个测试通过。
+  - 当前单元测试为 44 个测试通过。
   - 用户已补充验证 `npm run start:prod` 本地启动成功。
   - `dist/src/main.js` 与 `start:prod` 指向的 `./dist/src/main.js` 路径匹配。
 - 当前未验证命令：
@@ -80,7 +84,7 @@
 - `backend\src\common\utils\uploaded-filename.util.spec.ts`：验证上传文件名的编码修复、空值 fallback 与路径字符清理。
 - `backend\src\modules\scales\services\scales.service.spec.ts`：验证 `ScaleDefinition` / `ScaleVersion` schema 的 collection、索引、枚举 / ObjectId / Date / Mixed 显式类型，验证 `ScalesService` 的 code 规范化、查无返回 `null`、mapper 输出和 active definition 列表读取；不连接真实 MongoDB。
 - `backend\src\modules\patients\services\patients.service.spec.ts`：验证 `Patient` schema 的 collection、索引、枚举 / Date / Number / Mixed 显式类型，验证 `PatientsService` 的 `subjectCode` 规范化、查无返回 `null`、mapper 输出和 active patient 列表读取；不连接真实 MongoDB，测试数据为 `SUBJ-TEST-*` 等脱敏人工样例。
-- `backend\src\modules\assessments\services\assessments.service.spec.ts`：验证 `AssessmentVisit` / `ScaleInstance` schema 的 collection、索引、枚举 / ObjectId / Date / Number / Mixed 显式类型，验证 `AssessmentsService` 的 `visitCode` / `instanceCode` 规范化、访视和量表实例查无返回 `null`、mapper 输出和列表读取；不连接真实 MongoDB，测试数据为 `SUBJ-TEST-*`、`VISIT-TEST-*`、`INST-TEST-*` 等脱敏人工样例。
+- `backend\src\modules\assessments\services\assessments.service.spec.ts`：验证 `AssessmentVisit` / `ScaleInstance` / `ItemResponse` schema 的 collection、索引、枚举 / ObjectId / Date / Number / Boolean / Mixed 显式类型，验证 `ItemResponse` 内嵌子文档 `_id: false`，验证 `AssessmentsService` 的 `visitCode` / `instanceCode` / `itemCode` 规范化、访视 / 量表实例 / 题目作答查无返回 `null`、mapper 输出、按量表实例读取、按已计分条件读取和按访视读取；不连接真实 MongoDB，测试数据为 `SUBJ-TEST-*`、`VISIT-TEST-*`、`INST-TEST-*`、`moca.memory.immediate.trial_1.face`、`mmse.attention.serial_sevens.step_1` 等脱敏人工样例。
 
 ## 6. E2E 测试口径
 

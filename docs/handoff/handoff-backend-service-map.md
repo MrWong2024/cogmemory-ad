@@ -70,12 +70,12 @@
 
 - Service 名称：`AssessmentsService`
 - 文件路径：`backend\src\modules\assessments\services\assessments.service.ts`
-- 职责边界：提供访视与量表实例运行时数据的内部读取底座；规范化 `visitCode` / `instanceCode`；按 mapper 输出 `AssessmentVisitSummary` / `ScaleInstanceSummary`，不直接返回完整 Mongoose document。
-- 当前方法：`normalizeVisitCode(visitCode)`、`normalizeInstanceCode(instanceCode)`、`findVisitByCode(visitCode)`、`listVisitsByPatientId(patientId)`、`findScaleInstanceByCode(instanceCode)`、`listScaleInstancesByVisitId(assessmentVisitId)`。
-- 上游调用方：当前暂无公开 Controller；预期供后续评估执行、计分、报告或科研导出等后端业务模块内部读取访视和量表实例。
-- 下游依赖：`AssessmentVisit` 与 `ScaleInstance` Mongoose Model。
-- 边界：不创建、更新、删除访视或量表实例；不实现状态流转、作答、媒体证据、计分、报告、AI、认证、权限或公开评估 API。
-- 测试覆盖口径：`backend\src\modules\assessments\services\assessments.service.spec.ts`，覆盖 code 规范化、访视和量表实例查无返回 `null`、mapper 输出、列表读取、schema collection、索引和关键字段显式类型；不连接真实 MongoDB，测试数据为脱敏人工样例。
+- 职责边界：提供访视、量表实例运行时数据与题目作答数据的内部读取底座；规范化 `visitCode` / `instanceCode` / `itemCode`；按 mapper 输出 `AssessmentVisitSummary` / `ScaleInstanceSummary` / `ItemResponseSummary`，不直接返回完整 Mongoose document。
+- 当前方法：`normalizeVisitCode(visitCode)`、`normalizeInstanceCode(instanceCode)`、`normalizeItemCode(itemCode)`、`findVisitByCode(visitCode)`、`listVisitsByPatientId(patientId)`、`findScaleInstanceByCode(instanceCode)`、`listScaleInstancesByVisitId(assessmentVisitId)`、`findItemResponseByScaleInstanceAndItemCode(scaleInstanceId, itemCode)`、`listItemResponsesByScaleInstanceId(scaleInstanceId)`、`listScoredItemResponsesByScaleInstanceId(scaleInstanceId)`、`listItemResponsesByVisitId(assessmentVisitId)`。
+- 上游调用方：当前暂无公开 Controller；预期供后续评估执行、计分、报告或科研导出等后端业务模块内部读取访视、量表实例和题目作答。
+- 下游依赖：`AssessmentVisit`、`ScaleInstance` 与 `ItemResponse` Mongoose Model。
+- 边界：不创建、更新、删除访视、量表实例或题目作答；不实现状态流转、作答提交、媒体证据、计分、报告、AI、认证、权限或公开评估 API。
+- 测试覆盖口径：`backend\src\modules\assessments\services\assessments.service.spec.ts`，覆盖 code 规范化、访视 / 量表实例 / 题目作答查无返回 `null`、mapper 输出、列表读取、schema collection、索引、内嵌子文档 `_id: false` 和关键字段显式类型；不连接真实 MongoDB，测试数据为脱敏人工样例。
 
 ## 4. 后续同步规则
 

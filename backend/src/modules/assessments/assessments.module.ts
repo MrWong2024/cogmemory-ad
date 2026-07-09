@@ -6,6 +6,10 @@ import {
   AssessmentVisitSchema,
 } from './schemas/assessment-visit.schema';
 import {
+  ItemResponse,
+  ItemResponseSchema,
+} from './schemas/item-response.schema';
+import {
   ScaleInstance,
   ScaleInstanceSchema,
 } from './schemas/scale-instance.schema';
@@ -16,6 +20,7 @@ import { AssessmentsService } from './services/assessments.service';
     MongooseModule.forFeature([
       { name: AssessmentVisit.name, schema: AssessmentVisitSchema },
       { name: ScaleInstance.name, schema: ScaleInstanceSchema },
+      { name: ItemResponse.name, schema: ItemResponseSchema },
     ]),
   ],
   providers: [AssessmentsService],

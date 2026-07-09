@@ -13,6 +13,31 @@ import {
   AssessmentVisitType,
 } from '../schemas/assessment-visit.schema';
 import {
+  ItemConfigSnapshot,
+  ItemEvidenceRef,
+  ItemEvidenceStatus,
+  ItemEvidenceType,
+  ItemQualityControlHints,
+  ItemRawResponse,
+  ItemResponse,
+  ItemResponseAnswerSource,
+  ItemResponseDocument,
+  ItemResponseMetadata,
+  ItemResponseStatus,
+  ItemResponseVersionTrace,
+  ItemScoreSnapshot,
+  ItemScoreSource,
+  ItemScoreStatus,
+  ItemStepResult,
+  ItemStepValue,
+  ItemStructuredResponse,
+  ItemTimerSource,
+  ItemTimingSnapshot,
+  PromptResponseRecord,
+  PromptResponseType,
+  PromptResponseValue,
+} from '../schemas/item-response.schema';
+import {
   ScaleAdministrationMode,
   ScaleInstance,
   ScaleInstanceDocument,
@@ -21,6 +46,7 @@ import {
   ScaleQualityControlSummary,
   ScaleVersionTrace,
 } from '../schemas/scale-instance.schema';
+import { ScaleResponseType } from '../../scales/schemas/scale-version.schema';
 
 export type AssessmentOperatorSnapshotSummary = {
   operatorId: string | null;
@@ -79,6 +105,103 @@ export type ScaleInstanceSummary = {
   metadata: ScaleInstanceMetadata;
 };
 
+export type ItemResponseVersionTraceSummary = {
+  scaleVersion?: string;
+  crfVersion?: string;
+  scoringRuleVersion?: string;
+  fieldEncodingVersion?: string;
+  sourceDocument?: string;
+};
+
+export type ItemScoreSummary = {
+  scoreValue: number | null;
+  maxScore: number | null;
+  minScore: number | null;
+  scoreStatus: ItemScoreStatus;
+  scoreSource: ItemScoreSource;
+  scoredAt: Date | null;
+  scoredBy: string | null;
+  scoringNote?: string;
+};
+
+export type ItemStepResultSummary = {
+  stepCode: string;
+  crfCode?: string;
+  label?: string;
+  order: number;
+  expectedValue: ItemStepValue;
+  actualValue: ItemStepValue;
+  isCorrect: boolean | null;
+  scoreValue: number | null;
+  countsTowardItemScore: boolean;
+  note?: string;
+};
+
+export type PromptResponseRecordSummary = {
+  promptType: PromptResponseType;
+  promptText?: string;
+  responseAfterPrompt: PromptResponseValue;
+  isCorrect: boolean | null;
+  countsTowardScore: boolean;
+  order: number;
+  note?: string;
+};
+
+export type ItemResponseTimingSummary = {
+  startedAt: Date | null;
+  completedAt: Date | null;
+  durationMs: number | null;
+  timerSource: ItemTimerSource;
+};
+
+export type ItemEvidenceRefSummary = {
+  evidenceType: ItemEvidenceType;
+  mediaEvidenceId: string | null;
+  status: ItemEvidenceStatus;
+  note?: string;
+};
+
+export type ItemResponseSummary = {
+  id: string;
+  assessmentVisitId: string;
+  scaleInstanceId: string;
+  patientId: string;
+  subjectCode: string;
+  scaleDefinitionId: string;
+  scaleVersionId: string;
+  scaleCode: string;
+  scaleVersion: string;
+  instanceCode: string;
+  itemCode: string;
+  crfCode?: string;
+  groupCode?: string;
+  itemTitle?: string;
+  itemOrder: number;
+  responseType: ScaleResponseType;
+  countsTowardTotal: boolean;
+  cognitiveDomainCodes: string[];
+  itemConfigSnapshot: ItemConfigSnapshot;
+  versionTrace: ItemResponseVersionTraceSummary | null;
+  status: ItemResponseStatus;
+  answerSource: ItemResponseAnswerSource;
+  rawResponse: ItemRawResponse;
+  structuredResponse: ItemStructuredResponse;
+  responseText?: string;
+  responseSummary?: string;
+  isMissing: boolean;
+  missingReason?: string;
+  score: ItemScoreSummary | null;
+  stepResults: ItemStepResultSummary[];
+  promptResponses: PromptResponseRecordSummary[];
+  timing: ItemResponseTimingSummary | null;
+  evidenceRefs: ItemEvidenceRefSummary[];
+  operatorNote?: string;
+  qualityControlHints: ItemQualityControlHints;
+  metadata: ItemResponseMetadata;
+  lockedAt: Date | null;
+  voidedAt: Date | null;
+};
+
 @Injectable()
 export class AssessmentsService {
   constructor(
@@ -86,6 +209,8 @@ export class AssessmentsService {
     private readonly assessmentVisitModel: Model<AssessmentVisitDocument>,
     @InjectModel(ScaleInstance.name)
     private readonly scaleInstanceModel: Model<ScaleInstanceDocument>,
+    @InjectModel(ItemResponse.name)
+    private readonly itemResponseModel: Model<ItemResponseDocument>,
   ) {}
 
   normalizeVisitCode(visitCode: string): string {
@@ -94,6 +219,10 @@ export class AssessmentsService {
 
   normalizeInstanceCode(instanceCode: string): string {
     return instanceCode.trim().toUpperCase();
+  }
+
+  normalizeItemCode(itemCode: string): string {
+    return itemCode.trim().toLowerCase();
   }
 
   async findVisitByCode(
@@ -172,6 +301,96 @@ export class AssessmentsService {
     );
   }
 
+  async findItemResponseByScaleInstanceAndItemCode(
+    scaleInstanceId: Types.ObjectId | string,
+    itemCode: string,
+  ): Promise<ItemResponseSummary | null> {
+    const normalizedId = this.normalizeObjectId(scaleInstanceId);
+    const normalizedCode = this.normalizeItemCode(itemCode);
+
+    if (!normalizedId || !normalizedCode) {
+      return null;
+    }
+
+    const itemResponse = await this.itemResponseModel
+      .findOne({ scaleInstanceId: normalizedId, itemCode: normalizedCode })
+      .exec();
+
+    if (!itemResponse) {
+      return null;
+    }
+
+    return this.mapItemResponse(itemResponse);
+  }
+
+  async listItemResponsesByScaleInstanceId(
+    scaleInstanceId: Types.ObjectId | string,
+  ): Promise<ItemResponseSummary[]> {
+    const normalizedId = this.normalizeObjectId(scaleInstanceId);
+
+    if (!normalizedId) {
+      return [];
+    }
+
+    const itemResponses = await this.itemResponseModel
+      .find({ scaleInstanceId: normalizedId })
+      .sort({ itemOrder: 1 })
+      .exec();
+
+    return itemResponses.map((itemResponse) =>
+      this.mapItemResponse(itemResponse),
+    );
+  }
+
+  async listScoredItemResponsesByScaleInstanceId(
+    scaleInstanceId: Types.ObjectId | string,
+  ): Promise<ItemResponseSummary[]> {
+    const normalizedId = this.normalizeObjectId(scaleInstanceId);
+
+    if (!normalizedId) {
+      return [];
+    }
+
+    const itemResponses = await this.itemResponseModel
+      .find({
+        scaleInstanceId: normalizedId,
+        $or: [
+          { status: 'scored' },
+          {
+            'score.scoreStatus': {
+              $exists: true,
+              $ne: 'not_scored',
+            },
+          },
+        ],
+      })
+      .sort({ itemOrder: 1 })
+      .exec();
+
+    return itemResponses.map((itemResponse) =>
+      this.mapItemResponse(itemResponse),
+    );
+  }
+
+  async listItemResponsesByVisitId(
+    assessmentVisitId: Types.ObjectId | string,
+  ): Promise<ItemResponseSummary[]> {
+    const normalizedId = this.normalizeObjectId(assessmentVisitId);
+
+    if (!normalizedId) {
+      return [];
+    }
+
+    const itemResponses = await this.itemResponseModel
+      .find({ assessmentVisitId: normalizedId })
+      .sort({ scaleInstanceId: 1, itemOrder: 1 })
+      .exec();
+
+    return itemResponses.map((itemResponse) =>
+      this.mapItemResponse(itemResponse),
+    );
+  }
+
   private normalizeObjectId(
     id: Types.ObjectId | string,
   ): Types.ObjectId | null {
@@ -246,6 +465,57 @@ export class AssessmentsService {
     };
   }
 
+  private mapItemResponse(
+    itemResponse: ItemResponseDocument,
+  ): ItemResponseSummary {
+    return {
+      id: itemResponse._id.toString(),
+      assessmentVisitId: itemResponse.assessmentVisitId.toString(),
+      scaleInstanceId: itemResponse.scaleInstanceId.toString(),
+      patientId: itemResponse.patientId.toString(),
+      subjectCode: itemResponse.subjectCode,
+      scaleDefinitionId: itemResponse.scaleDefinitionId.toString(),
+      scaleVersionId: itemResponse.scaleVersionId.toString(),
+      scaleCode: itemResponse.scaleCode,
+      scaleVersion: itemResponse.scaleVersion,
+      instanceCode: itemResponse.instanceCode,
+      itemCode: itemResponse.itemCode,
+      crfCode: itemResponse.crfCode,
+      groupCode: itemResponse.groupCode,
+      itemTitle: itemResponse.itemTitle,
+      itemOrder: itemResponse.itemOrder,
+      responseType: itemResponse.responseType,
+      countsTowardTotal: itemResponse.countsTowardTotal,
+      cognitiveDomainCodes: [...(itemResponse.cognitiveDomainCodes ?? [])],
+      itemConfigSnapshot: itemResponse.itemConfigSnapshot ?? null,
+      versionTrace: this.mapItemResponseVersionTrace(itemResponse.versionTrace),
+      status: itemResponse.status,
+      answerSource: itemResponse.answerSource,
+      rawResponse: itemResponse.rawResponse ?? null,
+      structuredResponse: itemResponse.structuredResponse ?? null,
+      responseText: itemResponse.responseText,
+      responseSummary: itemResponse.responseSummary,
+      isMissing: itemResponse.isMissing,
+      missingReason: itemResponse.missingReason,
+      score: this.mapItemScore(itemResponse.score),
+      stepResults: (itemResponse.stepResults ?? []).map((stepResult) =>
+        this.mapItemStepResult(stepResult),
+      ),
+      promptResponses: (itemResponse.promptResponses ?? []).map(
+        (promptResponse) => this.mapPromptResponse(promptResponse),
+      ),
+      timing: this.mapItemTiming(itemResponse.timing),
+      evidenceRefs: (itemResponse.evidenceRefs ?? []).map((evidenceRef) =>
+        this.mapItemEvidenceRef(evidenceRef),
+      ),
+      operatorNote: itemResponse.operatorNote,
+      qualityControlHints: itemResponse.qualityControlHints ?? null,
+      metadata: itemResponse.metadata ?? null,
+      lockedAt: itemResponse.lockedAt ?? null,
+      voidedAt: itemResponse.voidedAt ?? null,
+    };
+  }
+
   private mapOperatorSnapshot(
     operatorSnapshot?: AssessmentOperatorSnapshot | null,
   ): AssessmentOperatorSnapshotSummary | null {
@@ -272,6 +542,96 @@ export class AssessmentsService {
       scoringRuleVersion: versionTrace.scoringRuleVersion,
       fieldEncodingVersion: versionTrace.fieldEncodingVersion,
       sourceDocument: versionTrace.sourceDocument,
+    };
+  }
+
+  private mapItemResponseVersionTrace(
+    versionTrace?: ItemResponseVersionTrace | null,
+  ): ItemResponseVersionTraceSummary | null {
+    if (!versionTrace) {
+      return null;
+    }
+
+    return {
+      scaleVersion: versionTrace.scaleVersion,
+      crfVersion: versionTrace.crfVersion,
+      scoringRuleVersion: versionTrace.scoringRuleVersion,
+      fieldEncodingVersion: versionTrace.fieldEncodingVersion,
+      sourceDocument: versionTrace.sourceDocument,
+    };
+  }
+
+  private mapItemScore(
+    score?: ItemScoreSnapshot | null,
+  ): ItemScoreSummary | null {
+    if (!score) {
+      return null;
+    }
+
+    return {
+      scoreValue: score.scoreValue ?? null,
+      maxScore: score.maxScore ?? null,
+      minScore: score.minScore ?? null,
+      scoreStatus: score.scoreStatus,
+      scoreSource: score.scoreSource,
+      scoredAt: score.scoredAt ?? null,
+      scoredBy: score.scoredBy?.toString() ?? null,
+      scoringNote: score.scoringNote,
+    };
+  }
+
+  private mapItemStepResult(stepResult: ItemStepResult): ItemStepResultSummary {
+    return {
+      stepCode: stepResult.stepCode,
+      crfCode: stepResult.crfCode,
+      label: stepResult.label,
+      order: stepResult.order,
+      expectedValue: stepResult.expectedValue ?? null,
+      actualValue: stepResult.actualValue ?? null,
+      isCorrect: stepResult.isCorrect ?? null,
+      scoreValue: stepResult.scoreValue ?? null,
+      countsTowardItemScore: stepResult.countsTowardItemScore,
+      note: stepResult.note,
+    };
+  }
+
+  private mapPromptResponse(
+    promptResponse: PromptResponseRecord,
+  ): PromptResponseRecordSummary {
+    return {
+      promptType: promptResponse.promptType,
+      promptText: promptResponse.promptText,
+      responseAfterPrompt: promptResponse.responseAfterPrompt ?? null,
+      isCorrect: promptResponse.isCorrect ?? null,
+      countsTowardScore: promptResponse.countsTowardScore,
+      order: promptResponse.order,
+      note: promptResponse.note,
+    };
+  }
+
+  private mapItemTiming(
+    timing?: ItemTimingSnapshot | null,
+  ): ItemResponseTimingSummary | null {
+    if (!timing) {
+      return null;
+    }
+
+    return {
+      startedAt: timing.startedAt ?? null,
+      completedAt: timing.completedAt ?? null,
+      durationMs: timing.durationMs ?? null,
+      timerSource: timing.timerSource,
+    };
+  }
+
+  private mapItemEvidenceRef(
+    evidenceRef: ItemEvidenceRef,
+  ): ItemEvidenceRefSummary {
+    return {
+      evidenceType: evidenceRef.evidenceType,
+      mediaEvidenceId: evidenceRef.mediaEvidenceId?.toString() ?? null,
+      status: evidenceRef.status,
+      note: evidenceRef.note,
     };
   }
 }

@@ -71,6 +71,15 @@
 - 文件：`backend\src\modules\assessments\services\assessments.service.ts`
 - 用途：`AssessmentVisitSummary` / `ScaleInstanceSummary` 的内部嵌套输出 type，承载操作者快照和量表版本追溯快照。
 
+- 名称：`ItemResponseSummary`
+- 文件：`backend\src\modules\assessments\services\assessments.service.ts`
+- 用途：`AssessmentsService` 内部读取题目作答记录时返回的 mapper 输出 type，不是 HTTP DTO。
+- 字段摘要：运行时引用、量表版本追溯、题目标识与快照、作答状态、原始作答、结构化作答、单题得分、分步结果、提示后表现、计时、证据引用占位、操作者备注、质控占位和 metadata。
+
+- 名称：`ItemResponseVersionTraceSummary`、`ItemScoreSummary`、`ItemStepResultSummary`、`PromptResponseRecordSummary`、`ItemResponseTimingSummary`、`ItemEvidenceRefSummary`
+- 文件：`backend\src\modules\assessments\services\assessments.service.ts`
+- 用途：`ItemResponseSummary` 的内部嵌套输出 type，承载版本追溯、单题得分、分步记录、提示后表现、计时与证据引用占位。
+
 ## 4. 后续同步规则
 
 - DTO 事实以实际 DTO 文件、校验装饰器、Controller 使用方式和测试为准。

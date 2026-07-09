@@ -113,6 +113,14 @@
 - 影响范围：`backend\src\app.module.ts`、`backend\src\modules\patients`、`backend\src\modules\assessments` 和后端 handoff 文档。
 - 后续复查点：后续进入题目作答、媒体证据、计分引擎、报告、认证权限或公开业务 API 阶段时，应继续保持 Controller、DTO、数据模型、权限和测试边界清晰，并单独同步 handoff。
 
+### D-013：建设题目作答数据模型底座，不暴露公开 API
+
+- 日期：2026-07-09
+- 决策：后端 A3 在 `assessments` 内部模块落地 `ItemResponse` 数据模型和最小内部读取 Service；本阶段不新增 Controller，不暴露公开 HTTP API。
+- 背景：通用量表引擎在患者 / 访视 / 量表实例运行时模型之后，需要保存量表实例下单题作答的原始记录、结构化记录、单题得分、版本追溯、分步结果、提示后表现、计时、操作者备注、质控占位和证据引用占位，支持后续 MMSE / MoCA 的逐题采集和追溯；但当前阶段不实现作答提交、媒体证据模型、图片上传、平板手写保存、自动计分、认知域结果、报告或 AI。
+- 影响范围：`backend\src\modules\assessments` 和后端 handoff 文档。
+- 后续复查点：后续进入媒体证据、自动计分、认知域结果、报告、认证权限或公开业务 API 阶段时，应继续保持数据模型、Controller、DTO、权限和测试边界清晰，并单独同步 handoff。
+
 ## 4. 后续同步规则
 
 - 新增关键技术选型、接口设计、数据模型、测试策略或部署策略后，应追加决策记录。
