@@ -3,13 +3,19 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { createHash, randomBytes, scrypt, timingSafeEqual } from 'crypto';
 import { Model, Types } from 'mongoose';
-import { UsersService, UserSummary } from '../../users/services/users.service';
+import {
+  UsersService,
+  UserCredentialRecord,
+  UserSummary,
+} from '../../users/services/users.service';
+import { DEFAULT_SESSION_TTL_MS } from '../auth.constants';
 import {
   Session,
   SessionDocument,
   SessionMetadata,
 } from '../schemas/session.schema';
 import type { AuthenticatedUserContext } from '../types/auth-user-context.type';
+import type { AuthUserResponse } from '../types/auth-response.types';
 
 const PASSWORD_HASH_ALGORITHM = 'scrypt';
 const PASSWORD_HASH_VERSION = 'v1';
@@ -19,7 +25,7 @@ const SESSION_TOKEN_BYTES = 32;
 
 export type CreateSessionForUserInput = {
   userId: Types.ObjectId | string;
-  expiresAt: Date;
+  expiresAt?: Date;
   userAgent?: string;
   ipAddress?: string;
   metadata?: SessionMetadata;
@@ -30,6 +36,19 @@ export type CreateSessionForUserResult = {
   rawToken: string;
   expiresAt: Date;
   user: AuthenticatedUserContext;
+};
+
+export type AuthenticateWithPasswordInput = {
+  accountName: string;
+  password: string;
+  userAgent?: string;
+  ipAddress?: string;
+};
+
+export type AuthenticateWithPasswordResult = {
+  user: AuthenticatedUserContext;
+  rawSessionToken: string;
+  expiresAt: Date;
 };
 
 function derivePasswordKey(
@@ -111,6 +130,43 @@ export class AuthService {
     return createHash('sha256').update(rawToken).digest('hex');
   }
 
+  async authenticateWithPassword(
+    input: AuthenticateWithPasswordInput,
+  ): Promise<AuthenticateWithPasswordResult | null> {
+    const credential = await this.usersService.findUserCredentialByAccountName(
+      input.accountName,
+    );
+
+    if (!credential || !this.canCredentialAuthenticate(credential)) {
+      return null;
+    }
+
+    const passwordMatches = await this.verifyPassword(
+      input.password,
+      credential.passwordHash,
+    );
+
+    if (!passwordMatches) {
+      return null;
+    }
+
+    const sessionResult = await this.createSessionForUser({
+      userId: credential.id,
+      userAgent: input.userAgent,
+      ipAddress: input.ipAddress,
+    });
+
+    if (!sessionResult) {
+      return null;
+    }
+
+    return {
+      user: sessionResult.user,
+      rawSessionToken: sessionResult.rawToken,
+      expiresAt: sessionResult.expiresAt,
+    };
+  }
+
   async createSessionForUser(
     input: CreateSessionForUserInput,
   ): Promise<CreateSessionForUserResult | null> {
@@ -128,11 +184,13 @@ export class AuthService {
 
     const rawToken = this.generateSessionToken();
     const sessionTokenHash = this.hashSessionToken(rawToken);
+    const expiresAt =
+      input.expiresAt ?? new Date(Date.now() + DEFAULT_SESSION_TTL_MS);
     const session = await this.sessionModel.create({
       userId: normalizedUserId,
       sessionTokenHash,
       status: 'active',
-      expiresAt: input.expiresAt,
+      expiresAt,
       revokedAt: null,
       lastSeenAt: null,
       userAgent: input.userAgent,
@@ -214,6 +272,21 @@ export class AuthService {
       sessionId,
       userType: user.userType,
     };
+  }
+
+  toAuthUserResponse(user: AuthenticatedUserContext): AuthUserResponse {
+    return {
+      id: user.id,
+      accountName: user.accountName,
+      displayName: user.displayName,
+      roles: [...user.roles],
+      permissions: [...user.permissions],
+      userType: user.userType,
+    };
+  }
+
+  private canCredentialAuthenticate(credential: UserCredentialRecord): boolean {
+    return credential.status === 'active';
   }
 
   private normalizeObjectId(

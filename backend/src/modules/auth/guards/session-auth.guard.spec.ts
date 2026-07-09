@@ -2,6 +2,7 @@
 import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
+import { SESSION_COOKIE_NAME } from '../auth.constants';
 import { AuthService } from '../services/auth.service';
 import type {
   AuthenticatedUserContext,
@@ -108,13 +109,13 @@ describe('SessionAuthGuard', () => {
     expect(authService.validateSessionToken).not.toHaveBeenCalled();
   });
 
-  it('reads _session from cookie-parser cookies and attaches req.user', async () => {
+  it('reads cogmemory_ad_session from cookie-parser cookies and attaches req.user', async () => {
     reflector.getAllAndOverride.mockReturnValue(false);
     const authenticatedUser = createAuthenticatedUser();
     authService.validateSessionToken.mockResolvedValue(authenticatedUser);
     const request = createRequest({
       cookies: {
-        _session: 'SESSION-TEST-COOKIE',
+        [SESSION_COOKIE_NAME]: 'SESSION-TEST-COOKIE',
       },
     });
 
@@ -128,12 +129,13 @@ describe('SessionAuthGuard', () => {
     expect(request.user).toEqual(authenticatedUser);
   });
 
-  it('parses _session from raw cookie header without cookie-parser', async () => {
+  it('parses cogmemory_ad_session from raw cookie header without cookie-parser', async () => {
     reflector.getAllAndOverride.mockReturnValue(false);
     const authenticatedUser = createAuthenticatedUser();
     authService.validateSessionToken.mockResolvedValue(authenticatedUser);
     const request = createRequest({
-      cookieHeader: 'theme=light; _session=SESSION-TEST-HEADER; other=value',
+      cookieHeader:
+        'theme=light; cogmemory_ad_session=SESSION-TEST-HEADER; other=value',
     });
 
     await expect(
@@ -150,7 +152,7 @@ describe('SessionAuthGuard', () => {
     reflector.getAllAndOverride.mockReturnValue(false);
     authService.validateSessionToken.mockResolvedValue(null);
     const request = createRequest({
-      cookieHeader: '_session=SESSION-TEST-INVALID',
+      cookieHeader: 'cogmemory_ad_session=SESSION-TEST-INVALID',
     });
 
     await expect(

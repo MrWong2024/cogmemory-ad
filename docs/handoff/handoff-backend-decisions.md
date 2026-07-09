@@ -175,7 +175,15 @@
 - 决策：后端 A10 新增 `users` 与 `auth` 内部模块，主登录态遵循服务端 Session + HttpOnly Cookie 口径；本阶段只建设 `User` / `Session` 模型、内部 `UsersService`、内部 `AuthService`、认证上下文、`@Public()` / `@Roles()` / `@CurrentUser()` 装饰器、`SessionAuthGuard` 与 `RolesGuard` 底座。
 - 背景：A1-A9 已完成量表、患者、评估、作答、媒体、计分、认知域、报告和评估执行初始化内部模型 / Service 底座，后续公开业务接口需要先具备系统账号、服务端会话、密码哈希、会话校验和角色 Guard 的后端基础能力。
 - 影响范围：`backend\src\app.module.ts`、`backend\src\modules\users`、`backend\src\modules\auth` 和后端 handoff 文档。
-- 后续复查点：本阶段不新增 Controller，不暴露登录、登出、auth me、users me、公开用户管理或权限管理 API；不使用 JWT 作为主登录态；不设置或清除 Cookie；不注册全局 Guard；不影响当前唯一公开接口 `GET /health`。后续如进入公开认证 API 或前端登录态，应单独确认 Cookie 配置口径、Controller、DTO、CSRF / CORS、权限策略、审计和 E2E 测试。
+- 后续复查点：本阶段不新增 Controller，不暴露登录、登出、auth me、users me、公开用户管理或权限管理 API；不使用 JWT 作为主登录态；不设置或清除 Cookie；不注册全局 Guard；不影响 A10 当时唯一公开接口 `GET /health`。A11 公开认证 API 决策已单独记录为 D-021。
+
+### D-021：建设最小公开认证 API 底座并统一 Session Cookie 名称
+
+- 日期：2026-07-10
+- 决策：后端 A11 在 `auth` 模块新增 `AuthController`，公开 `POST /auth/login`、`POST /auth/logout`、`GET /auth/me`；AuthModule 内部 Cookie 名称统一为 `cogmemory_ad_session`，登录成功下发 HttpOnly Cookie，主登录态继续采用服务端 Session + HttpOnly Cookie，不采用 JWT 主登录态。
+- 背景：A10 已具备 `users` / `auth` 认证、用户、会话和角色权限模型底座，但尚无公开登录、登出和认证探针接口；A11 需要形成最小后端认证 API 闭环，同时与当前项目配置默认 Cookie 口径对齐。
+- 影响范围：`backend\src\modules\auth`、`backend\src\modules\users` 相关测试和后端 handoff 文档。
+- 后续复查点：本阶段不注册全局 Guard，不影响 `GET /health`；不新增 UsersController；不实现用户管理、注册、密码重置、短信验证码、OAuth / SSO、前端登录页、前端认证态或权限菜单；后续如接入前端认证态、CSRF / CORS 策略、用户管理或业务接口鉴权，应以单独任务明确边界、测试和文档同步。
 
 ## 4. 后续同步规则
 

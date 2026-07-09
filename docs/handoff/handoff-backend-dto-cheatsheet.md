@@ -6,9 +6,9 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 DTO、响应 type、Storage interface，以及 `scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains`、`reports`、`users`、`auth` 内部 Service 读取输出 type；`scales` 当前还包含 MMSE / MoCA 初始配置 seed 内部 type，`assessments` 当前还包含评估执行初始化内部编排 type，`auth` 当前还包含认证上下文和 session 创建内部 type。
-- 当前不记录任何业务请求 DTO。
-- 当前没有认证、用户、医生、患者、量表、评估、媒体、报告或业务上传请求 DTO；当前也没有公开 API 响应 DTO。
+- 当前存在公共底座 DTO、响应 type、Storage interface，以及 `scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains`、`reports`、`users`、`auth` 内部 Service 读取输出 type；`scales` 当前还包含 MMSE / MoCA 初始配置 seed 内部 type，`assessments` 当前还包含评估执行初始化内部编排 type，`auth` 当前还包含认证上下文、session 创建内部 type、公开登录 DTO 和认证响应 type。
+- 当前新增公开认证请求 DTO：`LoginDto`。
+- 当前仍没有用户管理、注册、密码重置、医生、患者、量表、评估、媒体、报告或业务上传请求 DTO。
 
 ## 3. 当前 DTO / Type 清单
 
@@ -16,6 +16,33 @@
 - 文件：`backend\src\app.service.ts`
 - 用途：`GET /health` 响应 type。
 - 字段：`status: 'ok'`，`service: 'cogmemory-ad-backend'`。
+
+- 名称：`LoginDto`
+- 文件：`backend\src\modules\auth\dto\login.dto.ts`
+- 用途：`POST /auth/login` 请求 DTO。
+- 字段：`accountName: string`、`password: string`。
+- 校验：两者均为 string、非空；`accountName` 最长 120，`password` 最长 256。
+
+- 名称：`AuthUserResponse`
+- 文件：`backend\src\modules\auth\types\auth-response.types.ts`
+- 用途：公开认证响应中的用户公开信息 type。
+- 字段：`id`、`accountName`、`displayName`、`roles`、`permissions`、`userType`。
+- 安全口径：不包含 `passwordHash`、raw session token、session token hash、`sessionId`、secret 或 credential。
+
+- 名称：`LoginResponse`
+- 文件：`backend\src\modules\auth\types\auth-response.types.ts`
+- 用途：`POST /auth/login` 成功响应 type。
+- 字段：`authenticated: true`、`user: AuthUserResponse`。
+
+- 名称：`MeResponse`
+- 文件：`backend\src\modules\auth\types\auth-response.types.ts`
+- 用途：`GET /auth/me` 成功响应 type。
+- 字段：`authenticated: true`、`user: AuthUserResponse`。
+
+- 名称：`LogoutResponse`
+- 文件：`backend\src\modules\auth\types\auth-response.types.ts`
+- 用途：`POST /auth/logout` 稳定成功响应 type。
+- 字段：`authenticated: false`、`ok: true`。
 
 - 名称：`PaginationQueryDto`
 - 文件：`backend\src\common\dto\pagination-query.dto.ts`
@@ -179,15 +206,30 @@
 - 用途：`SessionAuthGuard`、`RolesGuard` 和 `@CurrentUser()` 内部读取 / 挂载 `req.user` 的最小 request type。
 - 字段摘要：`headers`、可选 `cookies`、可选 `user`。
 
+- 名称：`CookieLikeRequest`
+- 文件：`backend\src\modules\auth\utils\session-cookie.util.ts`
+- 用途：`SessionAuthGuard` 与 `AuthController` 复用的轻量 Cookie request type，支持 cookie-parser cookies 和原始 `cookie` header。
+- 字段摘要：可选 `cookies`、可选 `headers.cookie`、可选 `headers['user-agent']`、可选 `ip` 和 `socket.remoteAddress`。
+
 - 名称：`CreateSessionForUserInput`
 - 文件：`backend\src\modules\auth\services\auth.service.ts`
 - 用途：`AuthService.createSessionForUser()` 的内部输入 type，不是公开 API DTO。
-- 字段摘要：`userId`、`expiresAt`、可选 `userAgent`、`ipAddress` 和 `metadata`。
+- 字段摘要：`userId`、可选 `expiresAt`、可选 `userAgent`、`ipAddress` 和 `metadata`；未显式传入 `expiresAt` 时使用 `DEFAULT_SESSION_TTL_MS`。
 
 - 名称：`CreateSessionForUserResult`
 - 文件：`backend\src\modules\auth\services\auth.service.ts`
 - 用途：`AuthService.createSessionForUser()` 的内部返回 type；包含 raw token 仅供后续内部登录流程下发 Cookie 时使用，不得作为普通 mapper 输出。
 - 字段摘要：`sessionId`、`rawToken`、`expiresAt` 和 `user: AuthenticatedUserContext`；不包含 token hash。
+
+- 名称：`AuthenticateWithPasswordInput`
+- 文件：`backend\src\modules\auth\services\auth.service.ts`
+- 用途：`AuthService.authenticateWithPassword()` 的内部输入 type，由 `AuthController.login()` 调用；不是公开 API DTO。
+- 字段摘要：`accountName`、`password`、可选 `userAgent`、`ipAddress`。
+
+- 名称：`AuthenticateWithPasswordResult`
+- 文件：`backend\src\modules\auth\services\auth.service.ts`
+- 用途：`AuthService.authenticateWithPassword()` 的内部返回 type；raw session token 仅供 Controller 写入 HttpOnly Cookie。
+- 字段摘要：`user: AuthenticatedUserContext`、`rawSessionToken`、`expiresAt`；不包含 token hash。
 
 ## 4. 后续同步规则
 

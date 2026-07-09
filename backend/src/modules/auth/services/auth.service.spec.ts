@@ -2,7 +2,11 @@
 import { getModelToken } from '@nestjs/mongoose';
 import { Test } from '@nestjs/testing';
 import { Types } from 'mongoose';
-import { UsersService, UserSummary } from '../../users/services/users.service';
+import {
+  UsersService,
+  UserCredentialRecord,
+  UserSummary,
+} from '../../users/services/users.service';
 import { Session, SessionSchema } from '../schemas/session.schema';
 import { AuthService } from './auth.service';
 
@@ -48,6 +52,25 @@ function createUserSummary(overrides: Partial<UserSummary> = {}): UserSummary {
     failedLoginCount: 0,
     lockedUntil: null,
     metadata: { source: 'unit-test' },
+    ...overrides,
+  };
+}
+
+function createCredentialRecord(
+  overrides: Partial<UserCredentialRecord> = {},
+): UserCredentialRecord {
+  return {
+    id: new Types.ObjectId().toString(),
+    accountName: 'doctor-test-001',
+    displayName: 'Doctor Test 001',
+    passwordHash: 'scrypt:v1:salt-test:hash-test',
+    passwordChangedAt: new Date('2026-01-10T00:00:00.000Z'),
+    roles: ['doctor'],
+    permissions: ['assessment:read'],
+    userType: 'doctor',
+    status: 'active',
+    failedLoginCount: 0,
+    lockedUntil: null,
     ...overrides,
   };
 }
@@ -117,6 +140,7 @@ describe('AuthService', () => {
   };
   let usersService: {
     findUserById: jest.Mock;
+    findUserCredentialByAccountName: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -133,6 +157,7 @@ describe('AuthService', () => {
     };
     usersService = {
       findUserById: jest.fn(),
+      findUserCredentialByAccountName: jest.fn(),
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -242,6 +267,104 @@ describe('AuthService', () => {
     expect(sessionModel.create.mock.calls[0][0]).not.toHaveProperty('rawToken');
     expect(result?.user).not.toHaveProperty('passwordHash');
     expect(result?.user).not.toHaveProperty('sessionTokenHash');
+  });
+
+  it('authenticates account and password, creates a session, and returns raw session token only for cookie use', async () => {
+    const userId = new Types.ObjectId();
+    const sessionId = new Types.ObjectId();
+    const passwordHash = await service.hashPassword('password-test-001');
+    usersService.findUserCredentialByAccountName.mockResolvedValue(
+      createCredentialRecord({
+        id: userId.toString(),
+        passwordHash,
+      }),
+    );
+    usersService.findUserById.mockResolvedValue(
+      createUserSummary({ id: userId.toString() }),
+    );
+    sessionModel.create.mockImplementation((input) =>
+      Promise.resolve({
+        _id: sessionId,
+        ...input,
+      }),
+    );
+
+    const result = await service.authenticateWithPassword({
+      accountName: 'doctor-test-001',
+      password: 'password-test-001',
+      userAgent: 'Unit Test Agent',
+      ipAddress: '127.0.0.1',
+    });
+
+    expect(usersService.findUserCredentialByAccountName).toHaveBeenCalledWith(
+      'doctor-test-001',
+    );
+    expect(result?.rawSessionToken).toEqual(expect.any(String));
+    expect(result?.rawSessionToken.length).toBeGreaterThan(0);
+    expect(result?.expiresAt).toBeInstanceOf(Date);
+    expect(result?.user).toEqual(
+      expect.objectContaining({
+        id: userId.toString(),
+        accountName: 'doctor-test-001',
+        displayName: 'Doctor Test 001',
+        roles: ['doctor'],
+        permissions: ['assessment:read'],
+        sessionId: sessionId.toString(),
+        userType: 'doctor',
+      }),
+    );
+    expect(sessionModel.create.mock.calls[0][0]).not.toHaveProperty('rawToken');
+    expect(sessionModel.create.mock.calls[0][0]).not.toHaveProperty(
+      'rawSessionToken',
+    );
+    expect(sessionModel.create.mock.calls[0][0]).toHaveProperty(
+      'sessionTokenHash',
+      service.hashSessionToken(result?.rawSessionToken ?? ''),
+    );
+    expect(result?.user).not.toHaveProperty('passwordHash');
+    expect(result?.user).not.toHaveProperty('sessionTokenHash');
+    expect(result?.user).not.toHaveProperty('tokenHash');
+  });
+
+  it('returns null when authenticating an unknown account', async () => {
+    usersService.findUserCredentialByAccountName.mockResolvedValue(null);
+
+    await expect(
+      service.authenticateWithPassword({
+        accountName: 'doctor-test-001',
+        password: 'password-test-001',
+      }),
+    ).resolves.toBeNull();
+    expect(sessionModel.create).not.toHaveBeenCalled();
+  });
+
+  it('returns null when authenticating with a wrong password', async () => {
+    const passwordHash = await service.hashPassword('password-test-001');
+    usersService.findUserCredentialByAccountName.mockResolvedValue(
+      createCredentialRecord({ passwordHash }),
+    );
+
+    await expect(
+      service.authenticateWithPassword({
+        accountName: 'doctor-test-001',
+        password: 'wrong-password-test',
+      }),
+    ).resolves.toBeNull();
+    expect(sessionModel.create).not.toHaveBeenCalled();
+  });
+
+  it('returns null when authenticating a non-active user', async () => {
+    usersService.findUserCredentialByAccountName.mockResolvedValue(
+      createCredentialRecord({ status: 'disabled' }),
+    );
+
+    await expect(
+      service.authenticateWithPassword({
+        accountName: 'doctor-test-001',
+        password: 'password-test-001',
+      }),
+    ).resolves.toBeNull();
+    expect(sessionModel.create).not.toHaveBeenCalled();
   });
 
   it('returns null when validating a missing session token', async () => {

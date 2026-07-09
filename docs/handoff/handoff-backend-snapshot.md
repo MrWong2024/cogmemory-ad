@@ -18,13 +18,13 @@
 - `CognitiveDomainsModule` 当前只提供认知域结果快照 Schema、内部 `CognitiveDomainsService` 读取底座和 `summarizeDomainScores()` 通用认知域汇总纯函数，不提供公开认知域计算触发、查询、复核或报告接口。
 - `ReportsModule` 当前只提供临床报告快照 Schema、内部 `ReportsService` 读取底座和报告状态转换校验纯函数，不提供公开报告生成、查询、医生确认、归档、更正、作废、PDF 导出或 AI 生成接口。
 - `UsersModule` 当前只提供系统账号 `User` Schema 与内部 `UsersService` 读取、规范化和安全 mapper 底座，不提供公开用户管理接口。
-- `AuthModule` 当前只提供服务端 `Session` Schema、内部 `AuthService`、基础认证上下文、`@Public()` / `@Roles()` / `@CurrentUser()` 装饰器、`SessionAuthGuard` 与 `RolesGuard` 底座；不提供公开登录、登出、认证探针、用户管理或权限管理 API，且未注册全局 Guard。
+- `AuthModule` 当前提供服务端 `Session` Schema、内部 `AuthService`、基础认证上下文、`@Public()` / `@Roles()` / `@CurrentUser()` 装饰器、`SessionAuthGuard`、`RolesGuard` 与 `AuthController`；公开最小认证 API `POST /auth/login`、`POST /auth/logout`、`GET /auth/me`，且未注册全局 Guard。
 - OSS 业务上传服务、SMS Service、LLM Service 均未实现。
 - 本地默认后端端口为 `5002`。
 - 本地默认前端 origin 为 `http://localhost:3002`。
-- `GET /health` 是当前唯一公共接口。
+- 当前公共接口为 `GET /health`、`POST /auth/login`、`POST /auth/logout`、`GET /auth/me`。
 - 已完成后端公共底座基础闭环本地验证：`npm install` 成功、`npm run build` 成功、`npm test -- --runInBand` 成功、`npm run start:prod` 启动成功。
-- 单元测试验证结果为 16 个测试套件通过、160 个测试通过。
+- 单元测试验证结果为 18 个测试套件通过、173 个测试通过。
 - 后端 TypeScript 编译根目录为 `.`，`outDir` 保持 `./dist`，因此 `src/main.ts` 编译后的主入口产物为 `dist/src/main.js`。
 - `package.json` 中 `start:prod` 保持指向 `./dist/src/main.js`，当前 build 产物路径已与该启动路径对齐。
 - `tsBuildInfoFile` 保持 `./dist/tsconfig.build.tsbuildinfo`；`dist` 与 `*.tsbuildinfo` 均作为生成物处理，不作为项目源文件纳入版本库。
@@ -36,12 +36,12 @@
 - 项目名称为 CogMemory AD / 智忆评。
 - health 响应 service 为 `cogmemory-ad-backend`。
 - MongoDB 默认命名口径为 `cogmemory_ad_dev`、`cogmemory_ad_test` 和 `cogmemory_ad`。
-- 配置模块中的 Session cookie 默认名为 `cogmemory_ad_session`；A10 `AuthModule` 当前按任务底座定义内部 `SESSION_COOKIE_NAME = '_session'` 供 `SessionAuthGuard` 读取，当前未下发 Cookie，后续公开登录接口接入时需统一最终配置口径。
+- 配置模块中的 Session cookie 默认名为 `cogmemory_ad_session`；A11 已将 `AuthModule` 内部 `SESSION_COOKIE_NAME` 统一为 `cogmemory_ad_session`，与当前项目配置默认口径一致。
 - Storage object prefix 默认值为 `cogmemory_ad`。
 - development / test 默认 `STORAGE_DRIVER=fake`，production 默认 `STORAGE_DRIVER=oss`。
 - OSS、SMS、LLM 配置均为占位或示例口径，不包含真实密钥。
 - OSS 业务上传服务、SMS Service、LLM Service、业务上传接口均未实现。
-- 当前已有 `scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains`、`reports`、`users` 与 `auth` 内部模型底座，其中 `scales` 已包含 MMSE / MoCA 初始配置 seed 常量、只读读取 Service 和 seed 校验纯函数，`assessments` 已包含 `AssessmentVisit`、`ScaleInstance`、`ItemResponse` 与内部 `AssessmentExecutionService`，`media` 已包含 `MediaEvidence`，`scoring` 已包含 `ScoreResult`，`cognitive-domains` 已包含 `CognitiveDomainResult`，`reports` 已包含 `ClinicalReport`，`users` 已包含 `User`，`auth` 已包含 `Session`、内部认证 Service、装饰器和 Guard 底座；但无公开业务 API、公开登录 / 登出 / auth me / 用户管理 API、真实患者建档流程、公开评估执行业务接口、作答提交、媒体上传 / 下载 / 签名 URL、数据库 seed runner、seed 写库、公开 MMSE / MoCA 配置查询接口、计分触发、认知域计算触发、MMSE / MoCA 专用计分规则执行、MMSE / MoCA 专用认知域规则执行、报告生成接口、医生确认写库流程、PDF 导出、疾病诊断或 AI。
+- 当前已有 `scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains`、`reports`、`users` 与 `auth` 内部模型底座，其中 `scales` 已包含 MMSE / MoCA 初始配置 seed 常量、只读读取 Service 和 seed 校验纯函数，`assessments` 已包含 `AssessmentVisit`、`ScaleInstance`、`ItemResponse` 与内部 `AssessmentExecutionService`，`media` 已包含 `MediaEvidence`，`scoring` 已包含 `ScoreResult`，`cognitive-domains` 已包含 `CognitiveDomainResult`，`reports` 已包含 `ClinicalReport`，`users` 已包含 `User`，`auth` 已包含 `Session`、内部认证 Service、装饰器、Guard 底座和最小公开认证 API；但无公开业务 API、用户管理 API、真实患者建档流程、公开评估执行业务接口、作答提交、媒体上传 / 下载 / 签名 URL、数据库 seed runner、seed 写库、公开 MMSE / MoCA 配置查询接口、计分触发、认知域计算触发、MMSE / MoCA 专用计分规则执行、MMSE / MoCA 专用认知域规则执行、报告生成接口、医生确认写库流程、PDF 导出、疾病诊断或 AI。
 - 当前 `start:prod` 与 TypeScript build 主入口产物路径均指向 `dist/src/main.js`，并已完成本地启动验证。
 - 本次仅使用指定外部 GitHub commit `b302b8af7b7ac9cc558939dc1b38ace0976c65b3` 作为后端公共底座来源，不继承其业务事实。
 
@@ -152,17 +152,17 @@
 - `Session` 当前覆盖 userId、`sessionTokenHash`、status、expiresAt、revokedAt、lastSeenAt、userAgent、ipAddress、rolesSnapshot、permissionsSnapshot 和 metadata。
 - `Session.sessionTokenHash` 设置 `select: false`；AuthService 入库前对 raw session token 做 SHA-256 hash，不保存明文 session token。
 - `Session` 当前索引为 `{ sessionTokenHash: 1 }` unique、`{ userId: 1, status: 1 }`、`{ expiresAt: 1 }` TTL（`expireAfterSeconds: 0`）、`{ status: 1, updatedAt: -1 }`、`{ userId: 1, createdAt: -1 }`。
-- `AuthService` 当前提供内部认证底座能力：`hashPassword()`、`verifyPassword()`、`generateSessionToken()`、`hashSessionToken()`、`createSessionForUser()`、`validateSessionToken()`、`revokeSessionByToken()` 和 `buildPublicAuthUser()`；使用 Node.js 内置 `crypto`，不使用 JWT 作为主登录态。
+- `AuthService` 当前提供内部认证底座能力：`hashPassword()`、`verifyPassword()`、`generateSessionToken()`、`hashSessionToken()`、`authenticateWithPassword()`、`createSessionForUser()`、`validateSessionToken()`、`revokeSessionByToken()`、`buildPublicAuthUser()` 和 `toAuthUserResponse()`；使用 Node.js 内置 `crypto`，不使用 JWT 作为主登录态。
 - `AuthenticatedUserContext` 当前位于 `backend\src\modules\auth\types\auth-user-context.type.ts`，用于后续 Guard 或 Controller 挂载 `req.user`。
-- 当前已新增 `@Public()`、`@Roles()`、`@CurrentUser()`、`SessionAuthGuard` 与 `RolesGuard`；`SessionAuthGuard` 可从 cookie-parser cookies 或原始 `cookie` header 读取 `_session` 并调用 `AuthService.validateSessionToken()`，成功后挂载 `req.user`；`RolesGuard` 基于 `@Roles()` 和 `req.user.roles` 做角色底座校验。
+- 当前已新增 `@Public()`、`@Roles()`、`@CurrentUser()`、`SessionAuthGuard` 与 `RolesGuard`；`SessionAuthGuard` 可从 cookie-parser cookies 或原始 `cookie` header 读取 `cogmemory_ad_session` 并调用 `AuthService.validateSessionToken()`，成功后挂载 `req.user`；`RolesGuard` 基于 `@Roles()` 和 `req.user.roles` 做角色底座校验。
 - `SessionAuthGuard` 与 `RolesGuard` 当前未注册为全局 Guard，不影响 `GET /health`。
-- `UsersModule` 与 `AuthModule` 已注册到 `AppModule`；两个模块均不声明 Controller。
-- 当前不提供公开登录、登出、认证探针、用户管理或权限管理 API；不提供 Cookie 下发 / 清除 Controller 逻辑；不提供前端登录页、认证态联动或权限菜单。
+- `UsersModule` 与 `AuthModule` 已注册到 `AppModule`；`AuthModule` 声明 `AuthController`，`UsersModule` 不声明 Controller。
+- `AuthController` 当前公开 `POST /auth/login`、`POST /auth/logout`、`GET /auth/me`：登录校验账号密码、创建服务端 session 并下发 HttpOnly `cogmemory_ad_session` Cookie；登出从 Cookie 读取 session token，存在则内部撤销 session，并清除 Cookie；`GET /auth/me` 使用 `SessionAuthGuard` 显式保护并返回当前用户公开上下文。
+- 当前不提供用户管理或权限管理 API；不提供前端登录页、认证态联动或权限菜单。
 
 ## 11. 当前尚未实现
 
-- 尚无公开认证接口。
-- 尚无公开用户管理接口。
+- 尚无公开用户管理接口、角色权限管理接口、短信验证码接口、OAuth / SSO 接口或密码重置接口。
 - 尚无医生端或患者端业务。
 - 尚无公开患者、访视、量表实例、题目作答或量表业务接口、评估、报告生成 / 查询 / 医生确认 / 归档 / 更正 / 作废或诊断建议业务。
 - 尚无公开 assessment execution controller、评估创建接口、量表实例初始化接口或作答提交接口。
@@ -174,8 +174,8 @@
 - 尚无作答提交后自动计分触发、作答提交后自动认知域计算触发、真实计分任务流、真实认知域计算任务流、MMSE / MoCA 专用计分规则或 MMSE / MoCA 专用认知域规则。
 - 尚无短信发送接口。
 - 尚无 AI / LLM 调用接口。
-- 尚无业务 Controller 或公开业务 API。
-- 尚未实现登录、登出、认证探针、用户创建、用户更新、用户禁用、重置密码、角色权限管理、短信验证码、OAuth / SSO、JWT 主登录态、前端登录页、前端认证态或权限菜单。
+- 尚无患者、评估、量表、媒体、计分、认知域、报告等业务 Controller 或公开业务 API。
+- 尚未实现用户创建、用户更新、用户禁用、重置密码、角色权限管理、短信验证码、OAuth / SSO、JWT 主登录态、前端登录页、前端认证态或权限菜单。
 - 当前 E2E 未执行。
 - 已完成本次 `users` / `auth` / `app.module.ts` 定向 lint、后端 build 与全量单元测试；全量 lint 当前未执行。
 
