@@ -6,6 +6,7 @@ import { PatientsModule } from '../patients/patients.module';
 import { ScalesModule } from '../scales/scales.module';
 import { AssessmentExecutionController } from './controllers/assessment-execution.controller';
 import { AssessmentVisitsController } from './controllers/assessment-visits.controller';
+import { ScaleInstanceSubmissionController } from './controllers/scale-instance-submission.controller';
 import {
   AssessmentVisit,
   AssessmentVisitSchema,
@@ -23,6 +24,7 @@ import { AssessmentExecutionDetailService } from './services/assessment-executio
 import { AssessmentScaleWorkflowService } from './services/assessment-scale-workflow.service';
 import { AssessmentsService } from './services/assessments.service';
 import { ItemResponseDraftService } from './services/item-response-draft.service';
+import { ScaleInstanceSubmissionService } from './services/scale-instance-submission.service';
 
 @Module({
   imports: [
@@ -35,13 +37,18 @@ import { ItemResponseDraftService } from './services/item-response-draft.service
       { name: ItemResponse.name, schema: ItemResponseSchema },
     ]),
   ],
-  controllers: [AssessmentVisitsController, AssessmentExecutionController],
+  controllers: [
+    AssessmentVisitsController,
+    AssessmentExecutionController,
+    ScaleInstanceSubmissionController,
+  ],
   providers: [
     AssessmentsService,
     AssessmentExecutionService,
     AssessmentScaleWorkflowService,
     AssessmentExecutionDetailService,
     ItemResponseDraftService,
+    ScaleInstanceSubmissionService,
   ],
   exports: [
     AssessmentsService,

@@ -60,6 +60,7 @@ import type {
   ScaleInstanceListItemResponse,
   ScaleInstanceProgressResponse,
 } from '../types/assessment-execution-response.types';
+import type { ScaleSubmissionReadinessSummaryResponse } from '../types/scale-instance-submission-response.types';
 import type {
   AssessmentVisitDetailResponse,
   AssessmentVisitListItemResponse,
@@ -162,6 +163,32 @@ export type ScaleInstanceSummary = {
   qualityControlSummary: ScaleQualityControlSummary;
   notes?: string;
   metadata: ScaleInstanceMetadata;
+};
+
+export type CompleteScaleInstanceInput = {
+  submissionId: string;
+  completionTime: Date;
+  startedAtToSet?: Date;
+  durationMs: number | null;
+  submittedBy: string;
+  submittedByName: string;
+  submittedByRole: AssessmentOperatorRole;
+  readinessSummary: Pick<
+    ScaleSubmissionReadinessSummaryResponse,
+    | 'expectedItemCount'
+    | 'actualItemCount'
+    | 'completedItemCount'
+    | 'blockingIssueCount'
+    | 'warningCount'
+  >;
+};
+
+export type ScaleInstanceSubmissionAuditSummary = {
+  submissionId: string | null;
+  submittedAt: Date | null;
+  submittedBy: string | null;
+  submittedByName?: string;
+  submittedByRole?: AssessmentOperatorRole;
 };
 
 export type ItemResponseVersionTraceSummary = {
@@ -617,6 +644,105 @@ export class AssessmentsService {
       .exec();
 
     return scaleInstance ? this.mapScaleInstance(scaleInstance) : null;
+  }
+
+  async completeScaleInstanceIfEditable(
+    patientId: Types.ObjectId | string,
+    assessmentVisitId: Types.ObjectId | string,
+    scaleInstanceId: Types.ObjectId | string,
+    input: CompleteScaleInstanceInput,
+  ): Promise<ScaleInstanceSummary | null> {
+    const normalizedPatientId = this.normalizeObjectId(patientId);
+    const normalizedVisitId = this.normalizeObjectId(assessmentVisitId);
+    const normalizedScaleInstanceId = this.normalizeObjectId(scaleInstanceId);
+    const submittedBy = this.normalizeObjectId(input.submittedBy);
+
+    if (
+      !normalizedPatientId ||
+      !normalizedVisitId ||
+      !normalizedScaleInstanceId ||
+      !submittedBy
+    ) {
+      return null;
+    }
+
+    const progress = {
+      totalItemCount: input.readinessSummary.actualItemCount,
+      answeredItemCount: input.readinessSummary.completedItemCount,
+      source: 'submission',
+      finalizedAt: input.completionTime,
+    };
+    const updateFields: Record<string, unknown> = {
+      status: 'completed',
+      completedAt: input.completionTime,
+      durationMs: input.durationMs,
+      progress,
+      'metadata.submission.submissionId': input.submissionId,
+      'metadata.submission.submittedAt': input.completionTime,
+      'metadata.submission.submittedBy': submittedBy,
+      'metadata.submission.submittedByName': input.submittedByName,
+      'metadata.submission.submittedByRole': input.submittedByRole,
+      'metadata.submission.readinessSummary.expectedItemCount':
+        input.readinessSummary.expectedItemCount,
+      'metadata.submission.readinessSummary.actualItemCount':
+        input.readinessSummary.actualItemCount,
+      'metadata.submission.readinessSummary.completedItemCount':
+        input.readinessSummary.completedItemCount,
+      'metadata.submission.readinessSummary.blockingIssueCount':
+        input.readinessSummary.blockingIssueCount,
+      'metadata.submission.readinessSummary.warningCount':
+        input.readinessSummary.warningCount,
+    };
+
+    if (input.startedAtToSet) {
+      updateFields.startedAt = input.startedAtToSet;
+    }
+
+    const completed = await this.scaleInstanceModel
+      .findOneAndUpdate(
+        {
+          _id: normalizedScaleInstanceId,
+          patientId: normalizedPatientId,
+          assessmentVisitId: normalizedVisitId,
+          status: { $in: ['draft', 'in_progress'] },
+        },
+        { $set: updateFields },
+        { returnDocument: 'after', runValidators: true },
+      )
+      .exec();
+
+    return completed ? this.mapScaleInstance(completed) : null;
+  }
+
+  readScaleInstanceSubmissionAudit(
+    scaleInstance: ScaleInstanceSummary,
+  ): ScaleInstanceSubmissionAuditSummary | null {
+    if (!isRecord(scaleInstance.metadata)) {
+      return null;
+    }
+
+    const submission = scaleInstance.metadata.submission;
+    if (!isRecord(submission)) {
+      return null;
+    }
+
+    return {
+      submissionId:
+        typeof submission.submissionId === 'string' &&
+        submission.submissionId.trim()
+          ? submission.submissionId
+          : null,
+      submittedAt: this.readAuditDate(submission.submittedAt),
+      submittedBy: this.readAuditObjectId(submission.submittedBy),
+      submittedByName:
+        typeof submission.submittedByName === 'string' &&
+        submission.submittedByName.trim()
+          ? submission.submittedByName
+          : undefined,
+      submittedByRole: this.readAssessmentOperatorRole(
+        submission.submittedByRole,
+      ),
+    };
   }
 
   toPublicScaleInstanceResponse(
@@ -1093,6 +1219,35 @@ export class AssessmentsService {
       propertyValue >= 0
       ? propertyValue
       : 0;
+  }
+
+  private readAuditDate(value: unknown): Date | null {
+    if (value instanceof Date && Number.isFinite(value.getTime())) {
+      return new Date(value.getTime());
+    }
+
+    return null;
+  }
+
+  private readAuditObjectId(value: unknown): string | null {
+    if (value instanceof Types.ObjectId) {
+      return value.toString();
+    }
+
+    return typeof value === 'string' && Types.ObjectId.isValid(value)
+      ? new Types.ObjectId(value).toString()
+      : null;
+  }
+
+  private readAssessmentOperatorRole(
+    value: unknown,
+  ): AssessmentOperatorRole | undefined {
+    return typeof value === 'string' &&
+      ['doctor', 'nurse', 'research_assistant', 'admin', 'unknown'].includes(
+        value,
+      )
+      ? (value as AssessmentOperatorRole)
+      : undefined;
   }
 
   private mapVisit(visit: AssessmentVisitDocument): AssessmentVisitSummary {

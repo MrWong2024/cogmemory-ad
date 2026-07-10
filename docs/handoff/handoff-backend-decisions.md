@@ -227,6 +227,16 @@
 - 状态与非目标：上传 / 作废要求 active Patient、draft / in_progress Visit 与 ScaleInstance、not_started / in_progress / answered ItemResponse；只读允许历史状态。A15 不修改 ItemResponse / ScaleInstance / AssessmentVisit 状态，不评分；不实现前端采集、PDF / SVG / 音视频、批量 / 分片 / 客户端直传、物理删除、质量审核、OCR / AI、最终提交、认知域或报告。
 - 影响范围：`backend\src\modules\media`、`AssessmentsService` 的三项 evidenceRef 原子方法、A15 E2E 与指定 backend handoff / roadmap；未修改任何 Schema、Storage interface / driver、认证模块、全局 Guard、依赖、环境配置或前端。
 
+### D-026：提交与评分解耦，先完整性检查再完成 ScaleInstance
+
+- 决策：A16 公开只读 submission readiness 与显式确认 submit。所有 ScaleVersion 项目（包括 countsTowardTotal=false 的临床过程项）都必须完成或明确 missing；提示槽位不猜测是否施用，不强制全部填写。
+- 完整性：有效作答认 false / 0，拒绝空字符串 / 空数组 / 空对象；missing 题要求原因并跳过 step / timing / media / note；已有 countsTowardItemScore=true step 必填。requiresTimer / duration 要求有效非负整数 durationMs。
+- 媒体与备注：photo / handwriting 同时要求时视为替代采集方式 one_of，单独要求时必须对应 attached；只信任 evidenceRefs 的 attached + mediaEvidenceId 配对，不查询 MediaEvidence。requiresOperatorNote / operator_note 在提交阶段执行。
+- 状态：首次提交只把 ScaleInstance 设为 completed，不设 locked，不完成或锁定 Visit，不修改 ItemResponse。提交审计进入服务端受控 metadata.submission 点路径，保留 operatorSnapshot 与其他 metadata。
+- 幂等与一致性：completed 重复 submit 返回同一审计；提交前二次实时 readiness + 单实例条件原子更新降低竞态。当前不使用 Mongo transaction、跨集合事务或分布式锁，不宣称严格事务线性化。
+- 非目标：不撤销、reopen、lock、force submit，不执行自动 / 手工评分，不创建 ScoreResult / CognitiveDomainResult / ClinicalReport；后续 A17 才进入评分阶段。
+- 影响范围：仅 assessments 模块、A16 E2E 与指定 backend handoff / roadmap；未修改 Schema、auth / patients / scales / media / scoring / reports、依赖、环境配置、AppModule 或前端。
+
 ## 4. 后续同步规则
 
 - 新增关键技术选型、接口设计、数据模型、测试策略或部署策略后，应追加决策记录。

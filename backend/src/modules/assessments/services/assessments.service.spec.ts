@@ -293,6 +293,7 @@ describe('AssessmentsService', () => {
   };
   let scaleInstanceModel: {
     findOne: jest.Mock;
+    findOneAndUpdate: jest.Mock;
     find: jest.Mock;
   };
   let itemResponseModel: {
@@ -314,6 +315,7 @@ describe('AssessmentsService', () => {
     };
     scaleInstanceModel = {
       findOne: jest.fn(),
+      findOneAndUpdate: jest.fn(),
       find: jest.fn(),
     };
     itemResponseModel = {
@@ -1643,5 +1645,177 @@ describe('AssessmentsService', () => {
         ],
       }),
     );
+  });
+
+  it('atomically completes only an editable owned scale instance with point-path submission metadata', async () => {
+    const patientId = new Types.ObjectId();
+    const visitId = new Types.ObjectId();
+    const scaleInstanceId = new Types.ObjectId();
+    const definitionId = new Types.ObjectId();
+    const versionId = new Types.ObjectId();
+    const operatorId = new Types.ObjectId();
+    const completionTime = new Date('2026-07-11T08:00:00.000Z');
+    const startedAt = new Date('2026-07-11T07:00:00.000Z');
+    const completedDocument = {
+      _id: scaleInstanceId,
+      assessmentVisitId: visitId,
+      patientId,
+      subjectCode: 'SUBJ-A16-TEST-001',
+      scaleDefinitionId: definitionId,
+      scaleVersionId: versionId,
+      scaleCode: 'mmse',
+      scaleVersion: '1.0',
+      instanceCode: 'INST-A16-TEST-001',
+      instanceNo: 1,
+      status: 'completed',
+      administrationMode: 'clinician_administered',
+      versionTrace: null,
+      startedAt,
+      completedAt: completionTime,
+      lockedAt: null,
+      voidedAt: null,
+      durationMs: 3600000,
+      operatorSnapshot: null,
+      progress: {
+        totalItemCount: 11,
+        answeredItemCount: 11,
+        source: 'submission',
+        finalizedAt: completionTime,
+      },
+      qualityControlSummary: null,
+      metadata: { initializedFromSeed: true },
+    };
+    scaleInstanceModel.findOneAndUpdate.mockReturnValue(
+      createExecQuery(completedDocument),
+    );
+
+    await expect(
+      service.completeScaleInstanceIfEditable(
+        patientId,
+        visitId,
+        scaleInstanceId,
+        {
+          submissionId: 'submission-a16-test',
+          completionTime,
+          startedAtToSet: startedAt,
+          durationMs: 3600000,
+          submittedBy: operatorId.toString(),
+          submittedByName: 'Test Operator',
+          submittedByRole: 'doctor',
+          readinessSummary: {
+            expectedItemCount: 11,
+            actualItemCount: 11,
+            completedItemCount: 11,
+            blockingIssueCount: 0,
+            warningCount: 0,
+          },
+        },
+      ),
+    ).resolves.toEqual(expect.objectContaining({ status: 'completed' }));
+
+    expect(scaleInstanceModel.findOneAndUpdate).toHaveBeenCalledWith(
+      {
+        _id: scaleInstanceId,
+        patientId,
+        assessmentVisitId: visitId,
+        status: { $in: ['draft', 'in_progress'] },
+      },
+      {
+        $set: {
+          status: 'completed',
+          completedAt: completionTime,
+          startedAt,
+          durationMs: 3600000,
+          progress: {
+            totalItemCount: 11,
+            answeredItemCount: 11,
+            source: 'submission',
+            finalizedAt: completionTime,
+          },
+          'metadata.submission.submissionId': 'submission-a16-test',
+          'metadata.submission.submittedAt': completionTime,
+          'metadata.submission.submittedBy': operatorId,
+          'metadata.submission.submittedByName': 'Test Operator',
+          'metadata.submission.submittedByRole': 'doctor',
+          'metadata.submission.readinessSummary.expectedItemCount': 11,
+          'metadata.submission.readinessSummary.actualItemCount': 11,
+          'metadata.submission.readinessSummary.completedItemCount': 11,
+          'metadata.submission.readinessSummary.blockingIssueCount': 0,
+          'metadata.submission.readinessSummary.warningCount': 0,
+        },
+      },
+      { returnDocument: 'after', runValidators: true },
+    );
+  });
+
+  it('returns null on an atomic completion miss and safely reads controlled audit fields', async () => {
+    scaleInstanceModel.findOneAndUpdate.mockReturnValue(createExecQuery(null));
+    await expect(
+      service.completeScaleInstanceIfEditable(
+        new Types.ObjectId(),
+        new Types.ObjectId(),
+        new Types.ObjectId(),
+        {
+          submissionId: 'submission-a16-test',
+          completionTime: new Date(),
+          durationMs: null,
+          submittedBy: new Types.ObjectId().toString(),
+          submittedByName: 'Test Operator',
+          submittedByRole: 'nurse',
+          readinessSummary: {
+            expectedItemCount: 1,
+            actualItemCount: 1,
+            completedItemCount: 1,
+            blockingIssueCount: 0,
+            warningCount: 1,
+          },
+        },
+      ),
+    ).resolves.toBeNull();
+
+    const submittedAt = new Date('2026-07-11T08:00:00.000Z');
+    const submittedBy = new Types.ObjectId();
+    expect(
+      service.readScaleInstanceSubmissionAudit({
+        id: new Types.ObjectId().toString(),
+        assessmentVisitId: new Types.ObjectId().toString(),
+        patientId: new Types.ObjectId().toString(),
+        subjectCode: 'SUBJ-A16-TEST-001',
+        scaleDefinitionId: new Types.ObjectId().toString(),
+        scaleVersionId: new Types.ObjectId().toString(),
+        scaleCode: 'mmse',
+        scaleVersion: '1.0',
+        instanceCode: 'INST-A16-TEST-001',
+        instanceNo: 1,
+        status: 'completed',
+        administrationMode: 'clinician_administered',
+        versionTrace: null,
+        startedAt: null,
+        completedAt: submittedAt,
+        lockedAt: null,
+        voidedAt: null,
+        durationMs: null,
+        operatorSnapshot: null,
+        progress: null,
+        qualityControlSummary: null,
+        metadata: {
+          initializedFromSeed: true,
+          submission: {
+            submissionId: 'submission-a16-test',
+            submittedAt,
+            submittedBy,
+            submittedByName: 'Test Operator',
+            submittedByRole: 'nurse',
+            ignored: { rawResponse: 'must not be exposed' },
+          },
+        },
+      }),
+    ).toEqual({
+      submissionId: 'submission-a16-test',
+      submittedAt,
+      submittedBy: submittedBy.toString(),
+      submittedByName: 'Test Operator',
+      submittedByRole: 'nurse',
+    });
   });
 });

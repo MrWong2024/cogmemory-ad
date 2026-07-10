@@ -13,6 +13,7 @@
 - `ScalesModule` 当前提供量表定义 / 量表版本 Schema、内部 `ScalesService`、MMSE / MoCA seed、只读 `ScaleSeedDataService`、`validateScaleSeeds()`、公开只读 `ScalesController` 和 `ScaleCatalogService`。`GET /scales/available` 只返回安全摘要且不写数据库；量表初始化时才按需幂等物化对应 seed 版本。
 - `PatientsModule` 当前提供患者 / 受试者基础档案 Schema、内部读取底座，以及 `GET /patients`、`POST /patients`、`GET /patients/:patientId` 三个患者最小公开 API。
 - `AssessmentsModule` 当前提供访视 / 量表实例 / 题目作答 Schema、`AssessmentsService`、`AssessmentExecutionService`、`AssessmentScaleWorkflowService`、`AssessmentExecutionDetailService`、`ItemResponseDraftService`，以及 `AssessmentVisitsController` / `AssessmentExecutionController`。A14 在既有四个访视 / 初始化 API 之外新增单实例执行详情与单题草稿 PATCH；不自动修改访视或实例状态。
+- A16 在 `AssessmentsModule` 新增 `ScaleInstanceSubmissionController`、`ScaleInstanceSubmissionService`、纯 readiness evaluator、提交 DTO 与安全公开响应类型；开放 readiness GET 与 submit POST。
 - `MediaModule` 当前在既有媒体证据 Schema / Service 上新增 A15 公开 `MediaEvidenceController`、工作流 Service、安全 mapper、图片与轨迹纯校验；提供题目下列表、multipart 上传、短期签名访问和作废四个接口。
 - `ScoringModule` 当前只提供计分结果快照 Schema、内部 `ScoringService` 读取底座和 `summarizeItemScores()` 通用计分汇总纯函数，不提供公开计分触发、查询、复核或报告接口。
 - `CognitiveDomainsModule` 当前只提供认知域结果快照 Schema、内部 `CognitiveDomainsService` 读取底座和 `summarizeDomainScores()` 通用认知域汇总纯函数，不提供公开认知域计算触发、查询、复核或报告接口。
@@ -22,10 +23,10 @@
 - OSS 业务上传服务、SMS Service、LLM Service 均未实现。
 - 本地默认后端端口为 `5002`。
 - 本地默认前端 origin 为 `http://localhost:3002`。
-- 当前公共接口为 `GET /health`、三个认证 API、A12 五个患者 / 访视 API、A13 三个评估初始化前置 API、A14 两个评估执行草稿 API，以及 A15 四个媒体证据 API；A12 / A13 / A14 / A15 临床接口均显式使用 `SessionAuthGuard` + `RolesGuard`，允许角色为 `admin`、`doctor`、`nurse`、`research_assistant`。
+- 当前公共接口在 A15 清单上新增 A16 两个量表实例提交 API；A12-A16 临床接口均显式使用 `SessionAuthGuard` + `RolesGuard`，允许 `admin`、`doctor`、`nurse`、`research_assistant`。
 - 已完成后端公共底座基础闭环本地验证：`npm install` 成功、`npm run build` 成功、`npm test -- --runInBand` 成功、`npm run start:prod` 启动成功。
-- 单元测试验证结果为 38 个测试套件通过、350 个测试通过。
-- A12 / A13 / A14 / A15 真实 HTTP E2E 已在 `NODE_ENV=test` 和隔离 `cogmemory_ad_test` 数据库上通过：4 个测试套件、29 个测试通过；使用 fake / stub 外部服务配置和脱敏人工数据，并按各自测试前缀清理运行时数据。
+- 单元测试验证结果为 42 个测试套件通过、369 个测试通过。
+- A12-A16 真实 HTTP E2E 已在 `NODE_ENV=test` 和隔离 `cogmemory_ad_test` 数据库上通过：5 个测试套件、32 个测试通过；使用 fake / stub 外部服务配置和脱敏人工数据，并按各自测试前缀清理运行时数据。
 - 后端 TypeScript 编译根目录为 `.`，`outDir` 保持 `./dist`，因此 `src/main.ts` 编译后的主入口产物为 `dist/src/main.js`。
 - `package.json` 中 `start:prod` 保持指向 `./dist/src/main.js`，当前 build 产物路径已与该启动路径对齐。
 - `tsBuildInfoFile` 保持 `./dist/tsconfig.build.tsbuildinfo`；`dist` 与 `*.tsbuildinfo` 均作为生成物处理，不作为项目源文件纳入版本库。
@@ -42,7 +43,7 @@
 - development / test 默认 `STORAGE_DRIVER=fake`，production 默认 `STORAGE_DRIVER=oss`。
 - OSS、SMS、LLM 配置均为占位或示例口径，不包含真实密钥。
 - A15 媒体业务上传接口已通过既有 fake / OSS Storage abstraction 实现；SMS Service 与 LLM Service 仍未实现，未新增 Storage interface、driver 或配置。
-- 当前已有 `scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains`、`reports`、`users` 与 `auth` 模型 / Service 底座；A12 已开放五个患者 / 访视 API，A13 已开放安全量表目录、访视详情和量表实例初始化三个 API，A14 已开放单实例执行详情与单题草稿 PATCH，A15 已开放四个题目级媒体证据 API。仍无用户管理 API、患者编辑 / 删除 / 归档、访视编辑 / 删除 / 状态流转、整份量表最终提交、批量 / 自动保存、媒体批量 / 分片 / 客户端直传 / 物理删除 / 原子替换、全量数据库 seed runner、计分触发、认知域计算触发、报告生成、医生确认写库、PDF 导出、疾病诊断或 AI。
+- 当前 A12-A16 已开放患者 / 访视、目录 / 初始化、执行草稿、媒体证据、submission readiness 与实例最终提交 API。仍无用户管理、患者 / 访视编辑、批量 / 自动保存、媒体批量 / 分片 / 直传 / 物理删除 / 原子替换、计分触发、认知域计算、报告、医生确认、PDF、疾病诊断或 AI。
 - 当前 `start:prod` 与 TypeScript build 主入口产物路径均指向 `dist/src/main.js`，并已完成本地启动验证。
 - 本次仅使用指定外部 GitHub commit `b302b8af7b7ac9cc558939dc1b38ace0976c65b3` 作为后端公共底座来源，不继承其业务事实。
 
@@ -65,7 +66,7 @@
 - `validateScaleSeeds()` 当前为不落库的种子数据校验纯函数，覆盖量表 code、版本、group code、item code、groupCode 引用、CRF 编码重复风险、scoreRange、证据 / 计时一致性、MoCA 即刻记忆不计分、MoCA 延迟回忆提示后表现保留、MoCA 抽象项 CRF 修正、MMSE 表达第 9 项和绘图第 10 项修正，以及 MMSE / MoCA 连续减 7 分步配置。
 - MMSE seed 当前来源标识为 `MMSE+MoCA.pdf`，版本为 `1.0`，总分范围 0-30，包含定向力、即刻回忆、注意力和计算力、回忆、语言、视空间 / 绘图分组；题目覆盖时间定向、地点定向、即刻回忆、连续减 7、延迟回忆、命名、重复、阅读并执行、三步指令、表达 / 写完整句子和绘图。
 - MoCA seed 当前来源标识为 `MMSE+MoCA.pdf`，版本为 `1.0`，总分范围 0-30，包含视空间与执行功能、命名、即刻记忆、注意、语言、抽象、延迟回忆和定向分组；题目覆盖交替连线、立方体、钟表、命名、两次即刻记忆记录、数字广度、警觉性、连续减 7、句子复述、词语流畅性、两个抽象项、延迟回忆和定向；`N1.2.15` 总分字段保留在 reporting / research export 映射中。
-- 当前未实现全量数据库 seed runner、完整题目配置公开 API、完整评估执行业务流程、整份量表最终提交、批量或自动保存、媒体批量 / 分片 / 客户端直传 / 物理删除 / 原子替换、MMSE / MoCA 专用自动计分规则执行、报告或 AI；A13 仅提供安全目录摘要和初始化时按需物化，A14 仅提供单实例安全执行详情与单题手工草稿保存，A15 仅提供 photo / handwriting 的题目级最小媒体闭环。
+- 当前未实现全量 seed runner、完整题目配置公开 API、批量或自动保存、媒体批量 / 分片 / 直传 / 物理删除 / 原子替换、自动或手工评分、认知域、报告或 AI；A16 只完成实例提交，不完成访视或评分。
 
 ## 5. 当前 patients / assessments 运行时与作答模型底座
 
@@ -104,6 +105,15 @@
 - `AssessmentsService.countItemResponseProgress()` 以实例下实际 ItemResponse 数量作为 totalItemCount，以 answered / scored 状态数量作为 answeredItemCount；A13 访视详情、A14 执行详情与 PATCH 响应均使用实时派生值，不回写 `ScaleInstance.progress` Mixed 快照。
 - 当前一致性为补偿式一致性，不是严格事务原子性；未使用 Mongo transaction。后续生产环境采用 replica set 时可重新评估 transaction。
 - A14 不等于完整患者管理或完整评估执行流程；不自动修改访视 / 实例 status、不设置实例 startedAt、不提供整份量表最终提交、批量或自动保存，也不触发媒体、计分、认知域、报告或 AI。
+
+### A16 submission readiness 与实例完成
+
+- `GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/submission-readiness` 只读检查完整归属、ScaleDefinition / ScaleVersion 绑定、项目集合、answered / scored、有效作答、缺失原因、必填步骤、计时、媒体 evidenceRef 与操作者备注；不写数据库，不返回作答、expectedValue、scoringRule、分数、mediaEvidenceId、objectKey 或 metadata。
+- photo / handwriting 同时配置时为 `one_of`，单独配置时必须满足对应类型；attached 必须同时有 mediaEvidenceId，readiness 不直接查询 `MediaEvidence`。
+- `POST .../:scaleInstanceId/submit` 要求 `confirm=true`、active Patient、draft / in_progress Visit 与 ScaleInstance。提交前执行两次实时 readiness；单条 `findOneAndUpdate` 条件迁移 ScaleInstance 为 completed，设置服务端 completedAt、可派生 startedAt / durationMs、最终 progress 和受控 `metadata.submission`。
+- submission metadata 仅含 submissionId、submittedAt、submittedBy / name / role 与五项 readinessSummary；点路径写入保留既有 metadata，不覆盖 operatorSnapshot，不设置 lockedAt，不修改 AssessmentVisit 或 ItemResponse。
+- completed 重复提交幂等，不重写 submissionId、completedAt 或 durationMs；并发原子更新 miss 后重读，completed 返回幂等结果，locked / voided 或其他状态返回稳定冲突。当前不使用 Mongo transaction 或分布式锁，二次检查不是跨集合严格线性化事务。
+- startedAt 优先保留实例合法值，否则采用最早合法题目 timing.startedAt；无法确定时 durationMs 保持 null 并产生 warning，不伪造零时长。A16 不执行评分，不创建 ScoreResult、CognitiveDomainResult、ClinicalReport。
 
 ## 6. 当前 media 媒体证据模型与 A15 API
 
@@ -189,8 +199,8 @@
 
 - 尚无公开用户管理接口、角色权限管理接口、短信验证码接口、OAuth / SSO 接口或密码重置接口。
 - 尚无医生端或患者端业务。
-- 除 A12 五个患者 / 访视 API、A13 三个评估初始化前置 API、A14 两个评估执行草稿 API 与 A15 四个媒体证据 API 外，尚无计分、认知域或报告业务接口。
-- 尚无整份量表最终提交、批量作答、自动保存调度、计时动作、并发冲突检测或访视 / 实例状态流转接口。
+- 除 A12-A16 已确认 API 外，尚无计分、认知域或报告业务接口。
+- 尚无批量作答、自动保存调度、计时动作、提交撤销 / reopen / lock / force submit 或访视状态流转接口。
 - 媒体当前仅有题目下列表、服务端 multipart 上传、短期签名访问与逻辑作废；尚无全患者 / 访视 / 实例媒体列表、直接 objectKey 下载、永久 URL、物理删除、替换、批量、分片或客户端直传接口。
 - 尚无全量数据库 seed runner、量表管理或完整 MMSE / MoCA 题目配置公开接口；A13 只在初始化时按需物化并提供安全摘要。
 - 尚无公开计分触发、计分查询、计分复核或报告接口。
@@ -201,8 +211,8 @@
 - 尚无 AI / LLM 调用接口。
 - 尚无患者编辑 / 删除 / 归档、访视编辑 / 删除 / 状态流转，以及 A15 四个媒体接口之外的量表、作答、媒体、计分、认知域、报告等其他业务 Controller 或公开业务 API。
 - 尚未实现用户创建、用户更新、用户禁用、重置密码、角色权限管理、短信验证码、OAuth / SSO、JWT 主登录态、前端登录页、前端认证态或权限菜单。
-- A12 / A13 / A14 / A15 真实 HTTP E2E 已执行并通过；连接隔离 `cogmemory_ad_test`，Storage=fake、SMS / LLM=stub，未调用真实 OSS 或生产服务。
-- 已完成 A15 定向 lint、后端 build、全量单元测试与 E2E：38 个单元测试套件 / 350 个测试、4 个 E2E 套件 / 29 个测试通过；全量 lint 当前未执行。
+- A12-A16 真实 HTTP E2E 已执行并通过；连接隔离 `cogmemory_ad_test`，Storage=fake、SMS / LLM=stub，未调用真实 OSS 或生产服务。
+- 已完成 A16 定向 lint、后端 build、全量单元测试与 E2E：42 个单元测试套件 / 369 个测试、5 个 E2E 套件 / 32 个测试通过；全量 lint 未执行。
 
 ## 12. 后续同步规则
 

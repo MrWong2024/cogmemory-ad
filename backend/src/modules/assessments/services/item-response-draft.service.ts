@@ -20,6 +20,10 @@ import {
   validateAndCloneStructuredDraft,
 } from '../lib/item-response-draft-json';
 import {
+  hasMeaningfulItemResponseAnswer,
+  hasMeaningfulJsonValue,
+} from '../lib/item-response-answer-content';
+import {
   ITEM_TIMER_SOURCES,
   ItemResponse,
   type ItemResponseDocument,
@@ -234,7 +238,7 @@ export class ItemResponseDraftService {
       rawResponse = this.cloneDraftJson(input.rawResponse);
       setFields.rawResponse = rawResponse;
       hasDraftMutation = true;
-      submittedMeaningfulAnswer ||= rawResponse !== null;
+      submittedMeaningfulAnswer ||= hasMeaningfulJsonValue(rawResponse);
     }
 
     if (this.isProvided(input, 'structuredResponse')) {
@@ -435,7 +439,9 @@ export class ItemResponseDraftService {
 
       if (this.isProvided(update, 'actualValue')) {
         nextStep.actualValue = this.cloneDraftJson(update.actualValue);
-        submittedMeaningfulAnswer ||= nextStep.actualValue !== null;
+        submittedMeaningfulAnswer ||= hasMeaningfulJsonValue(
+          nextStep.actualValue,
+        );
       }
 
       if (this.isProvided(update, 'note')) {
@@ -507,7 +513,9 @@ export class ItemResponseDraftService {
         nextPrompt.responseAfterPrompt = this.cloneDraftJson(
           update.responseAfterPrompt,
         );
-        submittedMeaningfulAnswer ||= nextPrompt.responseAfterPrompt !== null;
+        submittedMeaningfulAnswer ||= hasMeaningfulJsonValue(
+          nextPrompt.responseAfterPrompt,
+        );
       }
 
       if (this.isProvided(update, 'note')) {
@@ -627,17 +635,16 @@ export class ItemResponseDraftService {
     stepResults: ItemStepResultSummary[];
     promptResponses: PromptResponseRecordSummary[];
   }): boolean {
-    return (
-      input.isMissing ||
-      input.rawResponse !== null ||
-      (isPlainRecord(input.structuredResponse) &&
-        Object.keys(input.structuredResponse).length > 0) ||
-      Boolean(input.responseText?.trim()) ||
-      input.stepResults.some((stepResult) => stepResult.actualValue !== null) ||
-      input.promptResponses.some(
-        (promptResponse) => promptResponse.responseAfterPrompt !== null,
-      )
-    );
+    return hasMeaningfulItemResponseAnswer({
+      rawResponse: input.rawResponse,
+      structuredResponse: input.structuredResponse,
+      responseText: input.responseText,
+      isMissing: input.isMissing,
+      stepValues: input.stepResults.map((stepResult) => stepResult.actualValue),
+      promptValues: input.promptResponses.map(
+        (promptResponse) => promptResponse.responseAfterPrompt,
+      ),
+    });
   }
 
   private assertNonEmptyPatch(input: UpdateItemResponseDraftDto): void {

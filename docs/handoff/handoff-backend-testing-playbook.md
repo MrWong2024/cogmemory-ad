@@ -12,7 +12,7 @@
 - 本地前端默认 origin 为 `http://localhost:3002`。
 - 测试环境默认 `STORAGE_DRIVER=fake`。
 - 测试环境 `LLM_PROVIDER=stub`，不得依赖真实大模型调用。
-- 当前存在三个真实 HTTP E2E：`backend\test\patients-assessment-visits.e2e-spec.ts`、`backend\test\assessment-execution-initialization.e2e-spec.ts`、`backend\test\item-response-draft.e2e-spec.ts`。
+- 当前存在五个真实 HTTP E2E：A12 患者 / 访视、A13 初始化、A14 草稿、A15 媒体与 A16 submission。
 - TypeScript `rootDir` 当前为 `.`，后端主入口预期 build 产物为 `dist/src/main.js`。
 - `tsBuildInfoFile` 保持 `./dist/tsconfig.build.tsbuildinfo`。
 - `dist` 与 `*.tsbuildinfo` 为生成物，不进入版本库。
@@ -106,6 +106,11 @@
   - `npm run build`
   - `npm test -- --runInBand`
   - `npm run test:e2e`
+- 本次后端 A16 已验证命令：
+  - `npm run lint:file -- src/modules/assessments test/scale-instance-submission.e2e-spec.ts`
+  - `npm run build`
+  - `npm test -- --runInBand`
+  - `npm run test:e2e`
 - 当前路径对齐验证命令：
   - `npm run build`
   - 检查 `dist/src/main.js` 存在
@@ -115,8 +120,8 @@
   - `npm run build` 成功。
   - build 后 `dist/src/main.js` 已确认存在。
   - `npm test -- --runInBand` 成功。
-  - 当前单元测试为 38 个测试套件、350 个测试通过。
-  - 当前 E2E 为 4 个测试套件、29 个测试通过。
+  - 当前单元测试为 42 个测试套件、369 个测试通过。
+  - 当前 E2E 为 5 个测试套件、32 个测试通过。
   - 用户已补充验证 `npm run start:prod` 本地启动成功。
   - `dist/src/main.js` 与 `start:prod` 指向的 `./dist/src/main.js` 路径匹配。
 - 当前未验证命令：
@@ -126,7 +131,7 @@
 - 如果 `backend\node_modules` 存在，可执行 `npm test -- --runInBand` 验证单元测试。
 - 如果 `backend\node_modules` 不存在，不应自动执行 `npm install`。
 - 当前任务不调用真实 OSS、阿里云 SMS、大模型或生产数据库。
-- `test:e2e` 脚本已通过 `test/jest-e2e.json` 执行 A12 / A13 / A14 / A15 真实 HTTP 闭环；测试运行时确认 `NODE_ENV=test`、数据库名 `cogmemory_ad_test`、Storage=fake、LLM/SMS=stub，未打印数据库凭证。
+- `test:e2e` 脚本已通过 `test/jest-e2e.json` 执行 A12-A16 真实 HTTP 闭环；测试运行时确认 `NODE_ENV=test`、数据库名 `cogmemory_ad_test`、Storage=fake、LLM/SMS=stub，未打印数据库凭证。
 
 ## 5. 当前单元测试口径
 
@@ -158,6 +163,10 @@
 - A15 新增 DTO / Controller / public mapper spec：覆盖五类 DTO、multipart number / boolean 转换、服务器字段 whitelist、Guard / Roles / 参数转发、公开字段白名单、非有限数归一化，以及 objectKey / bucket / originalFilename / checksum / metadata / trajectoryObjectKey 排除。
 - A15 新增 `media-evidence-workflow.service.spec.ts`：依赖均为 mock，覆盖完整归属、历史只读、可编辑状态、evidence requirement、captureMode、photo / handwriting、operatorRole、隐私 objectKey、Storage 上传 / 签名、创建 / 绑定补偿、并发冲突、作废与恢复补偿；不连接真实 MongoDB，不调用真实外部服务。
 - `assessments.service.spec.ts` 新增 evidenceRef 条件原子绑定、清除与补偿恢复断言，确认完整 ownership filter、数组条件和不更新 ItemResponse status。
+- A16 新增 readiness 纯函数 spec：覆盖 item set（含 countsTowardTotal=false）、answered / scored、false / 0、空 JSON 值、missing、required step、prompt 非强制、timing、photo / handwriting one_of 与单类型、evidenceRef 不一致、operatorNote、startedAt / duration warning、state 与稳定排序；不连接 MongoDB。
+- A16 新增 DTO / Controller spec：覆盖 confirm boolean / 服务器字段 whitelist、显式 SessionAuthGuard / RolesGuard、四个角色与参数传递。
+- A16 新增 submission Service spec：依赖均为 mock，覆盖归属 / 配置、readiness 阻断、Patient / Visit / Instance 状态、二次读取、startedAt 派生、原子完成、操作者角色优先级、completed 幂等和安全审计；不连接真实 MongoDB。
+- `assessments.service.spec.ts` A16 新增完整 ownership 条件、最终 progress、metadata 点路径、原子 update miss 与受控 submission audit 读取；不更新 Visit / ItemResponse。
 - `backend\src\modules\scoring\services\scoring.service.spec.ts`：验证 `ScoreResult` schema 的 collection、索引、枚举 / ObjectId / Date / Number / Boolean / Mixed 显式类型，验证计分结果内嵌子文档 `_id: false`，验证 `ScoringService` 的 `scoreResultCode` 规范化、查无返回 `null`、mapper 输出、按量表实例最新读取、按量表实例 / 访视 / 患者读取，以及 `summarizeItemScores()` 对计入 / 不计入总分、缺失、未评分、需复核、非有限数字、逐步计分和 group score 汇总的处理；不连接真实 MongoDB，不调用 Storage / OSS / SMS / LLM，测试数据为 `SUBJ-TEST-*`、`VISIT-TEST-*`、`INST-TEST-*`、`SCR-TEST-*`、`moca.memory.immediate.trial_1.face`、`moca.recall.delayed.free.face`、`mmse.attention.serial_sevens.step_1` 等脱敏人工样例。
 - `backend\src\modules\cognitive-domains\services\cognitive-domains.service.spec.ts`：验证 `CognitiveDomainResult` schema 的 collection、索引、枚举 / ObjectId / Date / Number / Boolean / Mixed 显式类型，验证认知域结果内嵌子文档 `_id: false`，验证 `CognitiveDomainsService` 的 `domainResultCode` / `domainCode` 规范化、查无返回 `null`、mapper 输出、按量表实例最新读取、按量表实例 / 计分结果 / 访视 / 患者读取，以及 `summarizeDomainScores()` 对默认映射、多认知域映射、权重、不计入认知域、缺失、未评分、需复核和非有限数字 warning 的处理；不连接真实 MongoDB，不调用 Storage / OSS / SMS / LLM，测试数据为 `SUBJ-TEST-*`、`VISIT-TEST-*`、`INST-TEST-*`、`SCR-TEST-*`、`CDR-TEST-*`、`moca.visuospatial.clock`、`moca.memory.delayed.face`、`mmse.attention.serial_sevens.step_1` 等脱敏人工样例。
 - `backend\src\modules\reports\services\reports.service.spec.ts`：验证 `ClinicalReport` schema 的 collection、索引、枚举 / ObjectId / Date / Number / Boolean / Mixed 显式类型，验证报告内嵌子文档 `_id: false`，验证 `ReportsService` 的 `reportCode` 规范化、查无返回 `null`、mapper 输出、按访视最新读取、按访视 / 患者 / 状态读取、按患者读取 confirmed / archived / corrected 报告列表，以及 `canTransitionReportStatus()` / `getAllowedReportStatusTransitions()` 对草稿、待确认、已确认、已归档、更正和作废状态的处理；不连接真实 MongoDB，不调用 Storage / OSS / SMS / LLM，测试数据为 `SUBJ-TEST-*`、`VISIT-TEST-*`、`INST-TEST-*`、`SCR-TEST-*`、`CDR-TEST-*`、`RPT-TEST-*`、`moca.visuospatial.clock` 等脱敏人工样例。
@@ -183,6 +192,8 @@
 - `media-evidence.e2e-spec.ts` 使用真实 AppModule、Cookie、Session / Roles Guard、全局 ValidationPipe、Multer、MongoDB 与 fake Storage，通过 A12 / A13 API创建脱敏患者、访视和 MoCA 实例，再通过 A14 详情定位证据题目。
 - A15 E2E 覆盖 401 / 403、空列表、photo 上传、数据库 MediaEvidence、evidenceRef attached、A14 attached=true、安全响应、primary 签名、重复 409、reason、作废、pending 恢复、voided 历史列表 / 不可访问、作废后重传、handwriting 最终 PNG + 可选 JSON trajectory、trajectory 签名、captureMode / trajectory misuse、非法 JSON、SVG / PDF 伪装、图片元数据、服务器字段、413、非 requirement、历史只读、Patient / Visit / Instance / Item 状态矩阵与跨归属 404。
 - A15 E2E 实际结果：新增 1 个测试套件、6 个测试；与 A12 / A13 / A14 合计 4 个套件、29 个测试通过。运行时确认 `NODE_ENV=test`、数据库 `cogmemory_ad_test`、Storage=fake、LLM / SMS=stub；测试图片和轨迹为代码内固定脱敏人工 Buffer，未调用真实 OSS、SMS、LLM 或生产服务。
+- `scale-instance-submission.e2e-spec.ts` 通过真实 AppModule、Cookie / Guard、全局 DTO、MongoDB 与 fake Storage，使用 A12 / A13 建实例、A14 完成全部 MMSE 项、A15 为支持照片项上传固定 1×1 PNG；覆盖 readiness 401 / 403、安全字段、confirm、未完成阻断、ready / canSubmitNow、首次 200 提交、受控 metadata / progress、Visit / ItemResponse 不变、无评分 / 认知域 / 报告结果、提交后草稿 / 上传 / 作废冻结、历史 GET / 媒体列表、重复提交幂等与 Patient / Visit / Instance 状态边界。
+- A16 E2E 实际结果：新增 1 个测试套件、3 个测试；全量合计 5 个套件、32 个测试通过。连接隔离 `cogmemory_ad_test`，Storage=fake、LLM / SMS=stub；测试账号、编号、备注、图片均为脱敏人工数据，未调用真实 OSS、SMS、LLM 或生产服务。
 
 ## 7. 医疗与量表数据测试红线
 

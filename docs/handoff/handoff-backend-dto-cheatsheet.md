@@ -6,10 +6,10 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 DTO、响应 type、Storage interface，以及各业务模块内部 Service 读取输出 type；A12 已新增患者 / 访视 DTO，A13 已新增量表目录、访视执行详情和量表实例初始化 DTO / 安全响应 type，A14 已新增单实例执行详情、单题草稿 PATCH DTO 与安全执行响应 type，A15 已新增媒体证据路径、multipart body、访问 query、作废 body 和安全公开响应 type。
+- 当前存在公共底座 DTO、响应 type、Storage interface，以及 A12-A16 业务契约；A16 新增严格确认 DTO、readiness issue / summary / response 与安全提交响应类型。
 - 当前新增公开认证请求 DTO：`LoginDto`。
 - 当前新增公开患者 / 访视 DTO：`CreatePatientDto`、`ListPatientsQueryDto`、`PatientIdParamDto`、`CreateAssessmentVisitDto`、`ListAssessmentVisitsQueryDto`、`PatientVisitsParamDto`。
-- 当前仍没有用户管理、注册、密码重置、整份量表最终提交、批量 / 分片 / 客户端直传、计分、认知域或报告请求 DTO；媒体仅定义 A15 四个题目级接口契约。
+- 当前仍没有用户管理、注册、密码重置、撤销 / reopen / force submit、批量 / 分片 / 客户端直传、计分、认知域或报告请求 DTO。
 
 ## 3. 当前 DTO / Type 清单
 
@@ -388,6 +388,27 @@
 - 文件：`backend\src\modules\auth\services\auth.service.ts`
 - 用途：`AuthService.authenticateWithPassword()` 的内部返回 type；raw session token 仅供 Controller 写入 HttpOnly Cookie。
 - 字段摘要：`user: AuthenticatedUserContext`、`rawSessionToken`、`expiresAt`；不包含 token hash。
+
+### A16 submission DTO 与公开响应
+
+- 名称：`SubmitScaleInstanceDto`
+- 用途：`POST .../:scaleInstanceId/submit` body；唯一字段 `confirm` 接受 boolean，缺失由 Service 统一转为 `SCALE_INSTANCE_SUBMISSION_CONFIRMATION_REQUIRED`，只有严格 true 可提交；所有服务器控制字段和 override 字段由全局 whitelist 拒绝。
+- 路径：readiness 与 submit 均复用 `ScaleInstanceExecutionParamDto`，不维护重复路径 DTO。
+
+- 名称：`ScaleSubmissionIssueResponse`
+- 字段：code、severity(blocking / warning)、scope(scale_instance / item)、安全题目标识 / 顺序、可选 missingItemCodes / unexpectedItemCodes / missingStepCodes / requiredEvidenceMode / requiredEvidenceTypes、稳定 message。
+- 隐私：不含作答、missingReason / operatorNote 原文、expectedValue、scoringRule、score / isCorrect / scoreValue、mediaEvidenceId 或 metadata。
+
+- 名称：`ScaleSubmissionReadinessSummaryResponse`
+- 字段：expectedItemCount、actualItemCount、completedItemCount、incompleteItemCount、missingItemCount、requiredMediaItemCount、satisfiedMediaItemCount、blockingIssueCount、warningCount。
+- 持久化边界：submission audit 的 readinessSummary 只保存 expected / actual / completed / blocking / warning 五项，不保存 issue 明细。
+
+- 名称：`ScaleSubmissionReadinessResponse`
+- 字段：安全 `ScaleInstanceListItemResponse`、checkedAt、ready、canSubmitNow、submissionState、可选 stateReason、summary、blockingIssues、warnings。
+
+- 名称：`ScaleInstanceSubmissionAuditResponse` / `SubmitScaleInstanceResponse`
+- 字段：submissionId、submittedAt、安全 submittedBy(operatorId / name / role)、alreadySubmitted、durationSource；顶层响应为 `{ scaleInstance, submission, readiness }`。
+- 历史兼容：completed 无 A16 metadata 时 submissionId=null、submittedAt=completedAt、submittedBy=null；completedAt 也缺失则 409，不猜测操作者或时间。
 
 ## 4. 后续同步规则
 

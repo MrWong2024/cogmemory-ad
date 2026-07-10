@@ -6,12 +6,12 @@
 
 ## 2. 当前状态
 
-- 当前公开 API 为 `GET /health`、三个认证 API、A12 五个患者 / 访视 API、A13 三个评估初始化前置 API、A14 的单实例执行详情 GET / 单题草稿 PATCH，以及 A15 四个题目级媒体证据 API。
+- 当前公开 API 在 A15 清单上新增 A16 的 submission readiness GET 与 submit POST。
 - `AuthModule` 当前新增 `AuthController`，仅暴露最小公开认证 API 底座；主登录态仍为服务端 Session + HttpOnly Cookie，不采用 JWT 主登录态。
 - AuthModule 内部 session cookie 名称已统一为 `cogmemory_ad_session`，登录成功下发 HttpOnly Cookie，`SameSite=Lax`，`Path=/`，production 环境启用 `Secure`。
 - 当前没有 users controller，没有公开用户管理 API，没有注册、密码重置、角色权限管理、短信验证码、OAuth / SSO 或 JWT 登录 API。
 - A12 已新增 `PatientsController` 与 `AssessmentVisitsController`，形成第一组受保护临床业务 API；所有五个接口均显式绑定 `SessionAuthGuard`、`RolesGuard` 和 `@Roles('admin', 'doctor', 'nurse', 'research_assistant')`。
-- 当前已有量表安全目录、访视执行详情、量表实例初始化、单实例执行详情、单题草稿和 photo / handwriting 媒体证据接口；仍没有整份量表最终提交、批量 / 分片 / 客户端直传、计分、认知域、报告、SMS 或 AI / LLM 公开接口。
+- 当前已有实例 submission readiness 与最终提交最小闭环；仍没有撤销 / reopen / lock / force submit、批量 / 分片 / 客户端直传、计分、认知域、报告、SMS 或 AI / LLM 公开接口。
 - 当前 API 事实以实际 Controller、DTO、response type 和对应单元 / E2E 测试为准。
 
 ## 3. 当前 API 清单
@@ -232,6 +232,32 @@
 - 错误：404 完整归属或 `MEDIA_EVIDENCE_NOT_FOUND`；409 可编辑错误 / `MEDIA_EVIDENCE_NOT_VOIDABLE`；500 `MEDIA_EVIDENCE_VOID_FAILED`
 - 删除边界：正常作废不调用 Storage.deleteObject、不物理删除对象；作废记录保留在列表中且不可签名访问，随后允许重新上传；没有原子替换接口
 
+### A16 量表实例提交 API
+
+- 接口名称：量表实例提交完整性检查
+- Method / Path：`GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/submission-readiness`
+- Controller：`ScaleInstanceSubmissionController`
+- Guard / Roles：显式 `SessionAuthGuard` + `RolesGuard`；`admin`、`doctor`、`nurse`、`research_assistant`
+- Param DTO：复用 `ScaleInstanceExecutionParamDto`，三个路径字段均 `@IsMongoId()`；无 Query / Body
+- 响应：200，`ScaleSubmissionReadinessResponse`；包含安全 `scaleInstance`、checkedAt、ready、canSubmitNow、submissionState / stateReason、summary、blockingIssues、warnings
+- 检查：Patient -> Visit -> ScaleInstance 完整归属；definition / version 四项绑定；期望 / 实际 itemCode 集合；全部题目含 countsTowardTotal=false 项的完成状态；有效作答、missing reason、必填 step、计时、photo / handwriting、operatorNote 与 evidenceRef 一致性
+- 状态：GET 允许 Patient active / inactive / archived、Visit / Instance 所有历史状态；ready 只表示无 blocking issue，canSubmitNow 还要求 active Patient 与可编辑 Visit / Instance
+- issue：稳定返回 `SCALE_INSTANCE_ITEM_SET_MISMATCH`、`ITEM_NOT_COMPLETED`、`ITEM_ANSWER_CONTENT_MISSING`、missing / step / timing / media / note 等受控 code；scale scope 在前、item 按 order / code 排序
+- 媒体：同时要求 photo / handwriting 时按 one_of，单一类型按 all；只读 ItemResponse.evidenceRefs，不查询 MediaEvidence，不返回 mediaEvidenceId
+- 错误：400 路径；401 / 403；404 `PATIENT_NOT_FOUND`、`VISIT_NOT_FOUND`、`SCALE_INSTANCE_NOT_FOUND`；409 `SCALE_INSTANCE_CONFIGURATION_UNAVAILABLE`
+- 隐私与副作用：不写数据库；不返回 ItemResponse 全量、作答、missingReason / operatorNote 原文、step / prompt 实际值、expectedValue、scoringRule、分数、mediaEvidenceId、objectKey 或 metadata
+
+- 接口名称：正式提交量表实例
+- Method / Path：`POST /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/submit`
+- Controller / Guard / Roles：同 readiness；HTTP 200
+- Param / Body DTO：`ScaleInstanceExecutionParamDto`；`SubmitScaleInstanceDto { confirm }`，只接受 boolean，业务层要求严格 `confirm === true`；其他字段由 whitelist + forbidNonWhitelisted 拒绝
+- 首次提交：要求 active Patient、draft / in_progress Visit、draft / in_progress ScaleInstance 与无 blocking issue；执行两次实时 readiness 后，以单条条件 `findOneAndUpdate` 完成 ScaleInstance
+- 写入：status=completed、服务端 completedAt、受控 startedAt / durationMs、最终 progress、点路径 `metadata.submission`；保留 operatorSnapshot 与其他 metadata，不设置 lockedAt，不修改 Visit / ItemResponse，不执行评分
+- 响应：`SubmitScaleInstanceResponse { scaleInstance, submission, readiness }`；submission 包含 submissionId、submittedAt、安全 submittedBy、alreadySubmitted、durationSource，不直接返回 metadata
+- 幂等 / 并发：completed 重复提交返回 alreadySubmitted=true，不重写 submissionId / completedAt / durationMs；历史 completed 无 A16 metadata 时使用 completedAt 且 submittedBy=null；原子 miss 重读状态。不使用 Mongo transaction 或分布式锁
+- 错误：400 `SCALE_INSTANCE_SUBMISSION_CONFIRMATION_REQUIRED`；404 归属错误；409 `PATIENT_NOT_ACTIVE`、`VISIT_NOT_EDITABLE`、`SCALE_INSTANCE_NOT_SUBMITTABLE`、`SCALE_INSTANCE_NOT_READY`、`SCALE_INSTANCE_START_TIME_INVALID`、`SCALE_INSTANCE_SUBMISSION_CONFLICT`、`SCALE_INSTANCE_SUBMISSION_AUDIT_UNAVAILABLE`；500 `SCALE_INSTANCE_SUBMISSION_FAILED`
+- 非目标：无撤销、reopen、lock、force / ignore issues、访视完成、评分、认知域、报告或 AI
+
 ## 4. 当前未暴露接口说明
 
 - `backend\src\modules\users` 当前没有 Controller。
@@ -240,12 +266,12 @@
 - `AuthService`、`SessionAuthGuard` 与 `RolesGuard` 仍为认证链路内部底座；`SessionAuthGuard` 与 `RolesGuard` 未注册为全局 Guard，不影响 `GET /health`。
 - `backend\src\modules\scales` 当前仅有公开只读 `ScalesController` 的 `GET /scales/available`；不提供完整题目配置、seed 执行、量表管理或版本编辑 API。
 - `backend\src\modules\patients` 当前仅通过 `PatientsController` 暴露 A12 三个患者接口；未暴露 PATCH、DELETE 或归档接口。
-- `backend\src\modules\assessments` 当前通过 `AssessmentVisitsController` 暴露访视列表、创建、详情和量表实例初始化，通过 `AssessmentExecutionController` 暴露 A14 单实例执行详情与单题草稿 PATCH；`AssessmentExecutionService` 仍为内部初始化能力，不暴露最终提交、批量保存、媒体上传或计分接口。
+- `backend\src\modules\assessments` 还通过 `ScaleInstanceSubmissionController` 暴露 A16 两个接口；`AssessmentExecutionService` 仍为内部初始化能力，不暴露批量保存或计分接口。
 - `backend\src\modules\media` 当前仅通过 `MediaEvidenceController` 暴露上述四个题目级媒体接口；没有全患者 / 访视 / 实例媒体列表、直接对象 key 下载、永久 URL、物理删除、替换、批量、分片、客户端直传、OCR 或 AI 接口。
 - `backend\src\modules\scoring` 当前没有 Controller；`ScoringService` 仅供后续后端业务模块内部读取计分结果摘要和复用通用计分汇总纯函数。
 - `backend\src\modules\cognitive-domains` 当前没有 Controller；`CognitiveDomainsService` 仅供后续后端业务模块内部读取认知域结果摘要和复用通用认知域汇总纯函数。
 - `backend\src\modules\reports` 当前没有 Controller；`ReportsService` 仅供后续后端业务模块内部读取临床报告摘要和复用报告状态转换校验纯函数。
-- 当前已定义 A12 / A13 / A14 / A15 对应公开 DTO 和响应类型；仍不定义最终提交、计分、认知域、报告、SMS、AI / LLM 或批量 / 分片 / 客户端直传契约；本次未更新 frontend handoff。
+- 当前已定义 A12-A16 对应公开 DTO 和响应类型；仍不定义计分、认知域、报告、SMS、AI / LLM 或批量 / 分片 / 客户端直传契约；本次未更新 frontend handoff。
 
 ## 5. 后续同步规则
 

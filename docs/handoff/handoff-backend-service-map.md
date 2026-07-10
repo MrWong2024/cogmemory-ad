@@ -6,8 +6,8 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 Service / Provider 与各业务模块内部能力；A15 新增 `MediaEvidenceController`、`MediaEvidenceWorkflowService`、安全 public mapper、图片 / 轨迹纯校验，并扩展 `MediaEvidenceService` 与 `AssessmentsService` 的证据引用职责。
-- 当前没有医生、SMS 或 LLM Service；A15 只编排 photo / handwriting Storage 与 evidenceRefs，不调用计分、认知域、报告或 AI 能力。
+- 当前存在公共底座 Service / Provider 与 A12-A16 业务能力；A16 新增 submission Controller / Service / pure evaluator，并扩展 AssessmentsService 原子完成职责。
+- 当前没有医生、SMS 或 LLM Service；A16 不调用计分、认知域、报告、MediaModule 或 AI 能力。
 
 ## 3. 当前 Service / Provider 清单
 
@@ -269,6 +269,26 @@
 - Service 名称：`AssessmentsService`（A15 证据引用扩展）
 - 新增方法：`attachItemEvidenceReference()`、`clearItemEvidenceReference()`、`restoreItemEvidenceReference()`。
 - 职责边界：使用既有 ItemResponse Model 和完整 patient / visit / instance / item 条件原子更新匹配 evidenceRefs 元素；绑定 / 清除同时限制可编辑 ItemResponse 状态，恢复仅在空 pending 引用上执行。方法不修改 ItemResponse status、作答、评分、step、prompt、timing、operatorNote、Visit 或 ScaleInstance。
+
+### A16 submission 编排
+
+- 名称：`ScaleInstanceSubmissionController`
+- 职责：绑定两个嵌套资源路径、复用路径 DTO、接收 Submit DTO / `@CurrentUser()`，显式 Session / Roles Guard；不注入 Model，不解析 Mixed，不计算 readiness。
+
+- 名称：`ScaleInstanceSubmissionService`
+- 依赖：`PatientsService`、`AssessmentsService`、`ScalesService`。
+- 职责：依次读取 Patient / Visit / ScaleInstance，校验 definition / version 与 ItemResponse 归属和追溯；编排 readiness、首次提交状态、二次实时读取、操作者优先级、startedAt / duration、原子完成、幂等与并发 miss 重读；组装安全公开响应。
+- 边界：不依赖 `MediaModule`，媒体事实只读 ItemResponse.evidenceRefs；不修改 Visit / ItemResponse，不评分，不生成报告或 AI 内容。
+
+- 名称：`evaluateScaleInstanceSubmissionReadiness()`
+- 类型：无 DI、无数据库访问的纯函数。
+- 职责：按 ScaleVersion.items + ItemResponse + 安全 snapshot 白名单计算 item set、有效作答、missing、step、timing、media、operatorNote、稳定 issue 排序、summary、earliest timing start、ready / canSubmitNow。
+- 复用：A14 与 A16 共享 `hasMeaningfulItemResponseAnswer()`，false / 0 有效，空字符串 / 数组 / 对象无效，避免两套完成语义。
+
+- 名称：`AssessmentsService`（A16 扩展）
+- 职责：`completeScaleInstanceIfEditable()` 用完整 ownership + editable status 单条 `findOneAndUpdate`，设置 completed / timing / progress 和受控 metadata 点路径；`readScaleInstanceSubmissionAudit()` 只解析允许字段。
+- 一致性：提交前两次读取 ItemResponse，再原子迁移单个 ScaleInstance；不使用 Mongo transaction、跨集合锁或分布式锁，因此不是跨集合严格线性化事务。
+- 配置：`ScalesService` 仅作为只读 definition / version 依赖；不修改 scales 或 media 模块。
 
 ## 4. 后续同步规则
 
