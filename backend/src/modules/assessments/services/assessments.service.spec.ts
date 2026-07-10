@@ -297,6 +297,7 @@ describe('AssessmentsService', () => {
   };
   let itemResponseModel: {
     findOne: jest.Mock;
+    findOneAndUpdate: jest.Mock;
     find: jest.Mock;
     countDocuments: jest.Mock;
   };
@@ -317,6 +318,7 @@ describe('AssessmentsService', () => {
     };
     itemResponseModel = {
       findOne: jest.fn(),
+      findOneAndUpdate: jest.fn(),
       find: jest.fn(),
       countDocuments: jest.fn(),
     };
@@ -1488,5 +1490,158 @@ describe('AssessmentsService', () => {
     });
     expect(sort).toHaveBeenCalledWith({ scaleInstanceId: 1, itemOrder: 1 });
     expect(result).toEqual([]);
+  });
+
+  it('atomically attaches an evidence reference only from pending or missing', async () => {
+    const patientId = new Types.ObjectId();
+    const visitId = new Types.ObjectId();
+    const scaleInstanceId = new Types.ObjectId();
+    const itemResponseId = new Types.ObjectId();
+    const mediaEvidenceId = new Types.ObjectId();
+    itemResponseModel.findOneAndUpdate.mockReturnValue(createExecQuery(null));
+
+    await expect(
+      service.attachItemEvidenceReference(
+        patientId,
+        visitId,
+        scaleInstanceId,
+        itemResponseId,
+        'photo',
+        mediaEvidenceId,
+      ),
+    ).resolves.toBeNull();
+
+    expect(itemResponseModel.findOneAndUpdate).toHaveBeenCalledWith(
+      {
+        _id: itemResponseId,
+        assessmentVisitId: visitId,
+        scaleInstanceId,
+        patientId,
+        status: { $in: ['not_started', 'in_progress', 'answered'] },
+        evidenceRefs: {
+          $elemMatch: {
+            evidenceType: 'photo',
+            mediaEvidenceId: null,
+            status: { $in: ['pending', 'missing'] },
+          },
+        },
+      },
+      {
+        $set: {
+          'evidenceRefs.$[evidenceRef].mediaEvidenceId': mediaEvidenceId,
+          'evidenceRefs.$[evidenceRef].status': 'attached',
+        },
+      },
+      {
+        arrayFilters: [
+          {
+            'evidenceRef.evidenceType': 'photo',
+            'evidenceRef.mediaEvidenceId': null,
+            'evidenceRef.status': { $in: ['pending', 'missing'] },
+          },
+        ],
+        returnDocument: 'after',
+        runValidators: true,
+      },
+    );
+  });
+
+  it('atomically clears only the matching attached media reference', async () => {
+    const patientId = new Types.ObjectId();
+    const visitId = new Types.ObjectId();
+    const scaleInstanceId = new Types.ObjectId();
+    const itemResponseId = new Types.ObjectId();
+    const mediaEvidenceId = new Types.ObjectId();
+    itemResponseModel.findOneAndUpdate.mockReturnValue(createExecQuery(null));
+
+    await service.clearItemEvidenceReference(
+      patientId,
+      visitId,
+      scaleInstanceId,
+      itemResponseId,
+      'handwriting',
+      mediaEvidenceId,
+    );
+
+    expect(itemResponseModel.findOneAndUpdate).toHaveBeenCalledWith(
+      {
+        _id: itemResponseId,
+        assessmentVisitId: visitId,
+        scaleInstanceId,
+        patientId,
+        status: { $in: ['not_started', 'in_progress', 'answered'] },
+        evidenceRefs: {
+          $elemMatch: {
+            evidenceType: 'handwriting',
+            mediaEvidenceId,
+            status: 'attached',
+          },
+        },
+      },
+      {
+        $set: {
+          'evidenceRefs.$[evidenceRef].mediaEvidenceId': null,
+          'evidenceRefs.$[evidenceRef].status': 'pending',
+        },
+      },
+      expect.objectContaining({
+        arrayFilters: [
+          {
+            'evidenceRef.evidenceType': 'handwriting',
+            'evidenceRef.mediaEvidenceId': mediaEvidenceId,
+            'evidenceRef.status': 'attached',
+          },
+        ],
+      }),
+    );
+  });
+
+  it('restores only an empty pending reference during void compensation', async () => {
+    const patientId = new Types.ObjectId();
+    const visitId = new Types.ObjectId();
+    const scaleInstanceId = new Types.ObjectId();
+    const itemResponseId = new Types.ObjectId();
+    const mediaEvidenceId = new Types.ObjectId();
+    itemResponseModel.findOneAndUpdate.mockReturnValue(createExecQuery(null));
+
+    await service.restoreItemEvidenceReference(
+      patientId,
+      visitId,
+      scaleInstanceId,
+      itemResponseId,
+      'photo',
+      mediaEvidenceId,
+    );
+
+    expect(itemResponseModel.findOneAndUpdate).toHaveBeenCalledWith(
+      {
+        _id: itemResponseId,
+        assessmentVisitId: visitId,
+        scaleInstanceId,
+        patientId,
+        evidenceRefs: {
+          $elemMatch: {
+            evidenceType: 'photo',
+            mediaEvidenceId: null,
+            status: 'pending',
+          },
+        },
+      },
+      {
+        $set: {
+          'evidenceRefs.$[evidenceRef].mediaEvidenceId': mediaEvidenceId,
+          'evidenceRefs.$[evidenceRef].status': 'attached',
+        },
+      },
+      expect.objectContaining({
+        arrayFilters: [
+          {
+            'evidenceRef.evidenceType': 'photo',
+            'evidenceRef.mediaEvidenceId': null,
+            'evidenceRef.status': 'pending',
+          },
+        ],
+      }),
+    );
   });
 });

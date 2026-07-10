@@ -13,7 +13,7 @@
 - `ScalesModule` 当前提供量表定义 / 量表版本 Schema、内部 `ScalesService`、MMSE / MoCA seed、只读 `ScaleSeedDataService`、`validateScaleSeeds()`、公开只读 `ScalesController` 和 `ScaleCatalogService`。`GET /scales/available` 只返回安全摘要且不写数据库；量表初始化时才按需幂等物化对应 seed 版本。
 - `PatientsModule` 当前提供患者 / 受试者基础档案 Schema、内部读取底座，以及 `GET /patients`、`POST /patients`、`GET /patients/:patientId` 三个患者最小公开 API。
 - `AssessmentsModule` 当前提供访视 / 量表实例 / 题目作答 Schema、`AssessmentsService`、`AssessmentExecutionService`、`AssessmentScaleWorkflowService`、`AssessmentExecutionDetailService`、`ItemResponseDraftService`，以及 `AssessmentVisitsController` / `AssessmentExecutionController`。A14 在既有四个访视 / 初始化 API 之外新增单实例执行详情与单题草稿 PATCH；不自动修改访视或实例状态。
-- `MediaModule` 当前只提供媒体证据元数据 Schema 与内部 `MediaEvidenceService` 读取底座，不提供公开媒体上传、下载、查询、删除或签名 URL 接口。
+- `MediaModule` 当前在既有媒体证据 Schema / Service 上新增 A15 公开 `MediaEvidenceController`、工作流 Service、安全 mapper、图片与轨迹纯校验；提供题目下列表、multipart 上传、短期签名访问和作废四个接口。
 - `ScoringModule` 当前只提供计分结果快照 Schema、内部 `ScoringService` 读取底座和 `summarizeItemScores()` 通用计分汇总纯函数，不提供公开计分触发、查询、复核或报告接口。
 - `CognitiveDomainsModule` 当前只提供认知域结果快照 Schema、内部 `CognitiveDomainsService` 读取底座和 `summarizeDomainScores()` 通用认知域汇总纯函数，不提供公开认知域计算触发、查询、复核或报告接口。
 - `ReportsModule` 当前只提供临床报告快照 Schema、内部 `ReportsService` 读取底座和报告状态转换校验纯函数，不提供公开报告生成、查询、医生确认、归档、更正、作废、PDF 导出或 AI 生成接口。
@@ -22,10 +22,10 @@
 - OSS 业务上传服务、SMS Service、LLM Service 均未实现。
 - 本地默认后端端口为 `5002`。
 - 本地默认前端 origin 为 `http://localhost:3002`。
-- 当前公共接口为 `GET /health`、三个认证 API、A12 五个患者 / 访视 API、A13 三个评估初始化前置 API，以及 A14 两个评估执行草稿 API；A12 / A13 / A14 临床接口均显式使用 `SessionAuthGuard` + `RolesGuard`，允许角色为 `admin`、`doctor`、`nurse`、`research_assistant`。
+- 当前公共接口为 `GET /health`、三个认证 API、A12 五个患者 / 访视 API、A13 三个评估初始化前置 API、A14 两个评估执行草稿 API，以及 A15 四个媒体证据 API；A12 / A13 / A14 / A15 临床接口均显式使用 `SessionAuthGuard` + `RolesGuard`，允许角色为 `admin`、`doctor`、`nurse`、`research_assistant`。
 - 已完成后端公共底座基础闭环本地验证：`npm install` 成功、`npm run build` 成功、`npm test -- --runInBand` 成功、`npm run start:prod` 启动成功。
-- 单元测试验证结果为 32 个测试套件通过、304 个测试通过。
-- A12 / A13 / A14 真实 HTTP E2E 已在 `NODE_ENV=test` 和隔离 `cogmemory_ad_test` 数据库上通过：3 个测试套件、23 个测试通过；使用 fake / stub 外部服务配置和脱敏人工数据，并按各自测试前缀清理运行时数据。
+- 单元测试验证结果为 38 个测试套件通过、350 个测试通过。
+- A12 / A13 / A14 / A15 真实 HTTP E2E 已在 `NODE_ENV=test` 和隔离 `cogmemory_ad_test` 数据库上通过：4 个测试套件、29 个测试通过；使用 fake / stub 外部服务配置和脱敏人工数据，并按各自测试前缀清理运行时数据。
 - 后端 TypeScript 编译根目录为 `.`，`outDir` 保持 `./dist`，因此 `src/main.ts` 编译后的主入口产物为 `dist/src/main.js`。
 - `package.json` 中 `start:prod` 保持指向 `./dist/src/main.js`，当前 build 产物路径已与该启动路径对齐。
 - `tsBuildInfoFile` 保持 `./dist/tsconfig.build.tsbuildinfo`；`dist` 与 `*.tsbuildinfo` 均作为生成物处理，不作为项目源文件纳入版本库。
@@ -41,8 +41,8 @@
 - Storage object prefix 默认值为 `cogmemory_ad`。
 - development / test 默认 `STORAGE_DRIVER=fake`，production 默认 `STORAGE_DRIVER=oss`。
 - OSS、SMS、LLM 配置均为占位或示例口径，不包含真实密钥。
-- OSS 业务上传服务、SMS Service、LLM Service、业务上传接口均未实现。
-- 当前已有 `scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains`、`reports`、`users` 与 `auth` 模型 / Service 底座；A12 已开放五个患者 / 访视 API，A13 已开放安全量表目录、访视详情和量表实例初始化三个 API，A14 已开放单实例执行详情与单题草稿 PATCH。仍无用户管理 API、患者编辑 / 删除 / 归档、访视编辑 / 删除 / 状态流转、整份量表最终提交、批量 / 自动保存、媒体上传 / 下载 / 签名 URL、全量数据库 seed runner、计分触发、认知域计算触发、报告生成、医生确认写库、PDF 导出、疾病诊断或 AI。
+- A15 媒体业务上传接口已通过既有 fake / OSS Storage abstraction 实现；SMS Service 与 LLM Service 仍未实现，未新增 Storage interface、driver 或配置。
+- 当前已有 `scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains`、`reports`、`users` 与 `auth` 模型 / Service 底座；A12 已开放五个患者 / 访视 API，A13 已开放安全量表目录、访视详情和量表实例初始化三个 API，A14 已开放单实例执行详情与单题草稿 PATCH，A15 已开放四个题目级媒体证据 API。仍无用户管理 API、患者编辑 / 删除 / 归档、访视编辑 / 删除 / 状态流转、整份量表最终提交、批量 / 自动保存、媒体批量 / 分片 / 客户端直传 / 物理删除 / 原子替换、全量数据库 seed runner、计分触发、认知域计算触发、报告生成、医生确认写库、PDF 导出、疾病诊断或 AI。
 - 当前 `start:prod` 与 TypeScript build 主入口产物路径均指向 `dist/src/main.js`，并已完成本地启动验证。
 - 本次仅使用指定外部 GitHub commit `b302b8af7b7ac9cc558939dc1b38ace0976c65b3` 作为后端公共底座来源，不继承其业务事实。
 
@@ -65,7 +65,7 @@
 - `validateScaleSeeds()` 当前为不落库的种子数据校验纯函数，覆盖量表 code、版本、group code、item code、groupCode 引用、CRF 编码重复风险、scoreRange、证据 / 计时一致性、MoCA 即刻记忆不计分、MoCA 延迟回忆提示后表现保留、MoCA 抽象项 CRF 修正、MMSE 表达第 9 项和绘图第 10 项修正，以及 MMSE / MoCA 连续减 7 分步配置。
 - MMSE seed 当前来源标识为 `MMSE+MoCA.pdf`，版本为 `1.0`，总分范围 0-30，包含定向力、即刻回忆、注意力和计算力、回忆、语言、视空间 / 绘图分组；题目覆盖时间定向、地点定向、即刻回忆、连续减 7、延迟回忆、命名、重复、阅读并执行、三步指令、表达 / 写完整句子和绘图。
 - MoCA seed 当前来源标识为 `MMSE+MoCA.pdf`，版本为 `1.0`，总分范围 0-30，包含视空间与执行功能、命名、即刻记忆、注意、语言、抽象、延迟回忆和定向分组；题目覆盖交替连线、立方体、钟表、命名、两次即刻记忆记录、数字广度、警觉性、连续减 7、句子复述、词语流畅性、两个抽象项、延迟回忆和定向；`N1.2.15` 总分字段保留在 reporting / research export 映射中。
-- 当前未实现全量数据库 seed runner、完整题目配置公开 API、完整评估执行业务流程、整份量表最终提交、批量或自动保存、媒体上传 / 下载 / 签名 URL、MMSE / MoCA 专用自动计分规则执行、报告或 AI；A13 仅提供安全目录摘要和初始化时按需物化，A14 仅提供单实例安全执行详情与单题手工草稿保存。
+- 当前未实现全量数据库 seed runner、完整题目配置公开 API、完整评估执行业务流程、整份量表最终提交、批量或自动保存、媒体批量 / 分片 / 客户端直传 / 物理删除 / 原子替换、MMSE / MoCA 专用自动计分规则执行、报告或 AI；A13 仅提供安全目录摘要和初始化时按需物化，A14 仅提供单实例安全执行详情与单题手工草稿保存，A15 仅提供 photo / handwriting 的题目级最小媒体闭环。
 
 ## 5. 当前 patients / assessments 运行时与作答模型底座
 
@@ -105,7 +105,7 @@
 - 当前一致性为补偿式一致性，不是严格事务原子性；未使用 Mongo transaction。后续生产环境采用 replica set 时可重新评估 transaction。
 - A14 不等于完整患者管理或完整评估执行流程；不自动修改访视 / 实例 status、不设置实例 startedAt、不提供整份量表最终提交、批量或自动保存，也不触发媒体、计分、认知域、报告或 AI。
 
-## 6. 当前 media 媒体证据模型底座
+## 6. 当前 media 媒体证据模型与 A15 API
 
 - `MediaEvidence` Schema 位于 `backend\src\modules\media\schemas\media-evidence.schema.ts`。
 - `MediaEvidence` collection 为 `media_evidences`，使用 `timestamps: true`，不在 class 中重复声明 `createdAt` / `updatedAt`。
@@ -114,8 +114,16 @@
 - `MediaEvidence` 当前覆盖证据稳定编码、证据类型、采集方式、证据状态、存储状态、CRF 编码、题目组、题目标题、作答类型、是否计入总分、认知域编码、题目快照、版本追溯、存储对象元数据、图片元数据、平板手写轨迹元数据、采集上下文、操作者快照、质量状态、质量提示占位、操作者备注、描述、扩展 metadata、锁定 / 作废 / 删除时间。
 - `MediaEvidence` 当前内嵌 `MediaEvidenceVersionTrace`、`MediaStorageSnapshot`、`MediaImageMetadata`、`HandwritingTraceSnapshot`、`MediaCaptureContext` 与 `MediaOperatorSnapshot` 子文档，均使用 `_id: false`。
 - `MediaEvidence` 当前索引为 `{ evidenceCode: 1 }` unique、`{ itemResponseId: 1, evidenceType: 1, status: 1 }`、`{ scaleInstanceId: 1, itemCode: 1, evidenceType: 1 }`、`{ assessmentVisitId: 1, createdAt: -1 }`、`{ patientId: 1, createdAt: -1 }`、`{ status: 1, updatedAt: -1 }`、`{ 'storage.objectKey': 1 }` sparse、`{ scaleCode: 1, itemCode: 1, evidenceType: 1 }`。
-- `MediaEvidenceService` 当前提供最小内部读取能力：规范化 evidence code、按证据编码读取、按题目作答读取、按量表实例读取、按访视读取、按患者读取、按题目作答读取 attached / locked 证据；返回结果经过 mapper，不直接返回完整 Mongoose document。
-- `MediaEvidence` 仅为媒体证据元数据模型底座，不包含真实图片上传、平板手写轨迹保存、下载、删除、签名 URL、Storage 调用、图片压缩、OCR、图像识别、手写轨迹解析、计分触发、MMSE / MoCA 专用计分规则、报告或 AI 能力。
+- `MediaEvidenceService` 在既有读取方法上新增完整 patient / visit / instance / item 归属查询、题目下未删除记录列表、当前 attached / locked 证据查询、创建、条件作废与仅供补偿的按 ID 删除；内部 Summary 不直接作为 HTTP 响应。
+- A15 四个接口统一位于 `/patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/item-responses/:itemResponseId/media-evidences`：GET 列表、POST multipart 上传、GET `:mediaEvidenceId/access-url`、POST `:mediaEvidenceId/void`。
+- 上传主文件最大 10 MiB，仅允许 JPEG / PNG / WebP；校验 MIME 白名单、JPEG / PNG / WebP 魔数和 MIME / 实际格式一致性，并拒绝 JPEG EXIF / XMP、PNG eXIf / tEXt / zTXt / iTXt、WebP EXIF / XMP。主文件由服务端计算 SHA-256；不保存客户端原始文件名。
+- objectKey 使用经 `StorageConfigService.getObjectPrefix()` 校验的前缀、固定 `clinical-evidence` 目录、内部 ObjectId 与随机 UUID；不使用姓名、受试者编号、病历号、手机号、身份证号、备注或原始文件名。公开 mapper 不返回 objectKey、bucket、objectPrefix、originalFilename、checksum、trajectoryObjectKey、metadata、qualityHints 或数据库关联 ID。
+- handwriting 必须包含最终渲染图片，可选上传最大 2 MiB、MIME `application/json` 的轨迹；trajectoryFormat 仅 json / strokes，不接受 SVG。轨迹 JSON 拒绝危险 key、非有限数、非普通对象以及超出深度 10、数组 10000、对象 100 keys、总节点 50000、单字符串 2000 的内容，解析后递归克隆并重新 `JSON.stringify()` 为规范化 Buffer 再写 Storage。
+- 上传要求 Patient active，Visit / ScaleInstance 为 draft / in_progress，ItemResponse 为 not_started / in_progress / answered，并要求 evidenceRefs 中存在同类型 pending / missing 要求。相同题目与 evidenceType 已有 attached / locked 证据时返回冲突；最终通过 evidenceRefs 条件更新原子绑定并发边界。
+- 上传顺序为 Storage 主文件、可选轨迹、MediaEvidence 创建、ItemResponse evidenceRef 绑定；任一步失败只补偿本次新建记录与本次对象，不使用 Mongo transaction，不删除其他证据或其他业务数据。上传不修改 ItemResponse / ScaleInstance / AssessmentVisit status，不触发计分。
+- access-url 仅允许 primary / trajectory，固定使用 `DEFAULT_SIGNED_URL_EXPIRES_SECONDS`；只有 attached / locked 且 storageStatus=stored 可访问。voided / deleted / pending / 存储缺失不可访问，轨迹不存在返回 `MEDIA_TRAJECTORY_NOT_FOUND`。
+- 作废要求 3-1000 字符原因，先按当前 mediaEvidenceId 原子清除 evidenceRef 并恢复 pending，再将 MediaEvidence 标记 voided；metadata 仅写 voidReason / voidedBy / voidedAt。标记失败会尝试恢复引用；正常作废保留 Storage 对象和审计记录，允许随后重新上传，不提供原子替换接口。
+- A15 不包含前端拍照 / 画布、图片重编码、PDF / SVG / 音频 / 视频、批量 / 分片 / 客户端直传、物理删除、OCR / AI、质量审核、评分、最终提交、认知域或报告。
 
 ## 7. 当前 scoring 自动计分结果模型与通用汇总底座
 
@@ -181,9 +189,9 @@
 
 - 尚无公开用户管理接口、角色权限管理接口、短信验证码接口、OAuth / SSO 接口或密码重置接口。
 - 尚无医生端或患者端业务。
-- 除 A12 五个患者 / 访视 API、A13 三个评估初始化前置 API 与 A14 两个评估执行草稿 API 外，尚无媒体、计分、认知域或报告业务接口。
+- 除 A12 五个患者 / 访视 API、A13 三个评估初始化前置 API、A14 两个评估执行草稿 API 与 A15 四个媒体证据 API 外，尚无计分、认知域或报告业务接口。
 - 尚无整份量表最终提交、批量作答、自动保存调度、计时动作、并发冲突检测或访视 / 实例状态流转接口。
-- 尚无公开媒体上传、媒体查询、媒体下载、媒体删除或签名 URL 业务接口。
+- 媒体当前仅有题目下列表、服务端 multipart 上传、短期签名访问与逻辑作废；尚无全患者 / 访视 / 实例媒体列表、直接 objectKey 下载、永久 URL、物理删除、替换、批量、分片或客户端直传接口。
 - 尚无全量数据库 seed runner、量表管理或完整 MMSE / MoCA 题目配置公开接口；A13 只在初始化时按需物化并提供安全摘要。
 - 尚无公开计分触发、计分查询、计分复核或报告接口。
 - 尚无公开认知域计算触发、认知域查询、认知域复核或报告接口。
@@ -191,10 +199,10 @@
 - 尚无作答提交后自动计分触发、作答提交后自动认知域计算触发、真实计分任务流、真实认知域计算任务流、MMSE / MoCA 专用计分规则或 MMSE / MoCA 专用认知域规则。
 - 尚无短信发送接口。
 - 尚无 AI / LLM 调用接口。
-- 尚无患者编辑 / 删除 / 归档、访视编辑 / 删除 / 状态流转，以及量表、作答、媒体、计分、认知域、报告等其他业务 Controller 或公开业务 API。
+- 尚无患者编辑 / 删除 / 归档、访视编辑 / 删除 / 状态流转，以及 A15 四个媒体接口之外的量表、作答、媒体、计分、认知域、报告等其他业务 Controller 或公开业务 API。
 - 尚未实现用户创建、用户更新、用户禁用、重置密码、角色权限管理、短信验证码、OAuth / SSO、JWT 主登录态、前端登录页、前端认证态或权限菜单。
-- A12 / A13 / A14 真实 HTTP E2E 已执行并通过；连接隔离 `cogmemory_ad_test`，未调用真实 OSS / Storage / SMS / LLM。
-- 已完成 A14 `assessments` / `test` 定向 lint、后端 build、全量单元测试与 E2E；全量 lint 当前未执行。
+- A12 / A13 / A14 / A15 真实 HTTP E2E 已执行并通过；连接隔离 `cogmemory_ad_test`，Storage=fake、SMS / LLM=stub，未调用真实 OSS 或生产服务。
+- 已完成 A15 定向 lint、后端 build、全量单元测试与 E2E：38 个单元测试套件 / 350 个测试、4 个 E2E 套件 / 29 个测试通过；全量 lint 当前未执行。
 
 ## 12. 后续同步规则
 

@@ -123,6 +123,62 @@ export type MediaEvidenceSummary = {
   lockedAt: Date | null;
   voidedAt: Date | null;
   deletedAt: Date | null;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+};
+
+export type MediaEvidenceOwnership = {
+  patientId: Types.ObjectId | string;
+  assessmentVisitId: Types.ObjectId | string;
+  scaleInstanceId: Types.ObjectId | string;
+  itemResponseId: Types.ObjectId | string;
+};
+
+export type CreateMediaEvidenceInput = {
+  patientId: Types.ObjectId;
+  assessmentVisitId: Types.ObjectId;
+  scaleInstanceId: Types.ObjectId;
+  itemResponseId: Types.ObjectId;
+  subjectCode: string;
+  scaleDefinitionId: Types.ObjectId;
+  scaleVersionId: Types.ObjectId;
+  scaleCode: string;
+  scaleVersion: string;
+  instanceCode: string;
+  itemCode: string;
+  evidenceCode: string;
+  evidenceType: MediaEvidenceType;
+  captureMode: MediaCaptureMode;
+  status: MediaEvidenceStatus;
+  storageStatus: MediaStorageStatus;
+  crfCode?: string;
+  groupCode?: string;
+  itemTitle?: string;
+  responseType?: MediaResponseType;
+  countsTowardTotal: boolean;
+  cognitiveDomainCodes: string[];
+  itemSnapshot: MediaItemSnapshot;
+  versionTrace: MediaEvidenceVersionTrace | null;
+  storage: MediaStorageSnapshot;
+  imageMetadata: MediaImageMetadata;
+  handwritingTrace: HandwritingTraceSnapshot | null;
+  captureContext: MediaCaptureContext;
+  operatorSnapshot: MediaOperatorSnapshot;
+  qualityStatus: MediaQualityStatus;
+  qualityHints: MediaQualityHints;
+  operatorNote?: string;
+  description?: string;
+  metadata: MediaEvidenceMetadata;
+  lockedAt: Date | null;
+  voidedAt: Date | null;
+  deletedAt: Date | null;
+};
+
+type NormalizedMediaEvidenceOwnership = {
+  patientId: Types.ObjectId;
+  assessmentVisitId: Types.ObjectId;
+  scaleInstanceId: Types.ObjectId;
+  itemResponseId: Types.ObjectId;
 };
 
 @Injectable()
@@ -244,6 +300,153 @@ export class MediaEvidenceService {
     return evidences.map((evidence) => this.mapEvidence(evidence));
   }
 
+  async findEvidenceByOwnership(
+    ownership: MediaEvidenceOwnership,
+    mediaEvidenceId: Types.ObjectId | string,
+  ): Promise<MediaEvidenceSummary | null> {
+    const normalizedOwnership = this.normalizeOwnership(ownership);
+    const normalizedEvidenceId = this.normalizeObjectId(mediaEvidenceId);
+
+    if (!normalizedOwnership || !normalizedEvidenceId) {
+      return null;
+    }
+
+    const evidence = await this.mediaEvidenceModel
+      .findOne({
+        _id: normalizedEvidenceId,
+        ...normalizedOwnership,
+        status: { $ne: 'deleted' },
+        deletedAt: null,
+      })
+      .exec();
+
+    return evidence ? this.mapEvidence(evidence) : null;
+  }
+
+  async listEvidenceByItemOwnership(
+    ownership: MediaEvidenceOwnership,
+  ): Promise<MediaEvidenceSummary[]> {
+    const normalizedOwnership = this.normalizeOwnership(ownership);
+
+    if (!normalizedOwnership) {
+      return [];
+    }
+
+    const evidences = await this.mediaEvidenceModel
+      .find({
+        ...normalizedOwnership,
+        status: { $ne: 'deleted' },
+        deletedAt: null,
+      })
+      .sort({ createdAt: 1, _id: 1 })
+      .exec();
+
+    return evidences.map((evidence) => this.mapEvidence(evidence));
+  }
+
+  async findActiveEvidenceByItemAndType(
+    ownership: MediaEvidenceOwnership,
+    evidenceType: MediaEvidenceType,
+  ): Promise<MediaEvidenceSummary | null> {
+    const normalizedOwnership = this.normalizeOwnership(ownership);
+
+    if (!normalizedOwnership) {
+      return null;
+    }
+
+    const evidence = await this.mediaEvidenceModel
+      .findOne({
+        ...normalizedOwnership,
+        evidenceType,
+        status: { $in: ['attached', 'locked'] },
+        deletedAt: null,
+      })
+      .sort({ createdAt: 1, _id: 1 })
+      .exec();
+
+    return evidence ? this.mapEvidence(evidence) : null;
+  }
+
+  async createEvidence(
+    input: CreateMediaEvidenceInput,
+  ): Promise<MediaEvidenceSummary> {
+    const evidence = await this.mediaEvidenceModel.create(input);
+    return this.mapEvidence(evidence);
+  }
+
+  async markEvidenceVoided(
+    ownership: MediaEvidenceOwnership,
+    mediaEvidenceId: Types.ObjectId | string,
+    voidedAt: Date,
+    metadata: MediaEvidenceMetadata,
+  ): Promise<MediaEvidenceSummary | null> {
+    const normalizedOwnership = this.normalizeOwnership(ownership);
+    const normalizedEvidenceId = this.normalizeObjectId(mediaEvidenceId);
+
+    if (!normalizedOwnership || !normalizedEvidenceId) {
+      return null;
+    }
+
+    const evidence = await this.mediaEvidenceModel
+      .findOneAndUpdate(
+        {
+          _id: normalizedEvidenceId,
+          ...normalizedOwnership,
+          status: 'attached',
+          deletedAt: null,
+        },
+        {
+          $set: {
+            status: 'voided',
+            voidedAt,
+            metadata,
+          },
+        },
+        { returnDocument: 'after', runValidators: true },
+      )
+      .exec();
+
+    return evidence ? this.mapEvidence(evidence) : null;
+  }
+
+  async deleteEvidenceForCompensation(
+    mediaEvidenceId: Types.ObjectId | string,
+  ): Promise<boolean> {
+    const normalizedEvidenceId = this.normalizeObjectId(mediaEvidenceId);
+
+    if (!normalizedEvidenceId) {
+      return false;
+    }
+
+    const result = await this.mediaEvidenceModel
+      .deleteOne({ _id: normalizedEvidenceId })
+      .exec();
+
+    return result.deletedCount === 1;
+  }
+
+  private normalizeOwnership(
+    ownership: MediaEvidenceOwnership,
+  ): NormalizedMediaEvidenceOwnership | null {
+    const patientId = this.normalizeObjectId(ownership.patientId);
+    const assessmentVisitId = this.normalizeObjectId(
+      ownership.assessmentVisitId,
+    );
+    const scaleInstanceId = this.normalizeObjectId(ownership.scaleInstanceId);
+    const itemResponseId = this.normalizeObjectId(ownership.itemResponseId);
+
+    if (
+      !patientId ||
+      !assessmentVisitId ||
+      !scaleInstanceId ||
+      !itemResponseId
+    ) {
+      return null;
+    }
+
+    return { patientId, assessmentVisitId, scaleInstanceId, itemResponseId };
+  }
+
   private normalizeObjectId(
     id: Types.ObjectId | string,
   ): Types.ObjectId | null {
@@ -306,7 +509,20 @@ export class MediaEvidenceService {
       lockedAt: evidence.lockedAt ?? null,
       voidedAt: evidence.voidedAt ?? null,
       deletedAt: evidence.deletedAt ?? null,
+      createdAt: this.readDocumentDate(evidence, 'createdAt'),
+      updatedAt: this.readDocumentDate(evidence, 'updatedAt'),
     };
+  }
+
+  private readDocumentDate(
+    evidence: MediaEvidenceDocument,
+    propertyName: 'createdAt' | 'updatedAt',
+  ): Date | null {
+    const value: unknown =
+      typeof evidence.get === 'function'
+        ? evidence.get(propertyName)
+        : Object.getOwnPropertyDescriptor(evidence, propertyName)?.value;
+    return value instanceof Date ? value : null;
   }
 
   private mapVersionTrace(

@@ -6,8 +6,8 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 Service / Provider 与各业务模块内部能力；A14 新增 `AssessmentExecutionDetailService`、`ItemResponseDraftService`、`AssessmentExecutionController`、安全执行 mapper 与草稿 JSON 纯函数，并扩展 `AssessmentsService` 的联合归属和实际进度职责。
-- 当前没有医生、SMS 或 LLM Service；A14 只读取执行配置并更新单条 ItemResponse 草稿，不调用媒体、计分、认知域、报告或 AI 能力。
+- 当前存在公共底座 Service / Provider 与各业务模块内部能力；A15 新增 `MediaEvidenceController`、`MediaEvidenceWorkflowService`、安全 public mapper、图片 / 轨迹纯校验，并扩展 `MediaEvidenceService` 与 `AssessmentsService` 的证据引用职责。
+- 当前没有医生、SMS 或 LLM Service；A15 只编排 photo / handwriting Storage 与 evidenceRefs，不调用计分、认知域、报告或 AI 能力。
 
 ## 3. 当前 Service / Provider 清单
 
@@ -151,12 +151,12 @@
 
 - Service 名称：`MediaEvidenceService`
 - 文件路径：`backend\src\modules\media\services\media-evidence.service.ts`
-- 职责边界：提供媒体证据元数据的内部读取底座；规范化 `evidenceCode`；按 mapper 输出 `MediaEvidenceSummary`，不直接返回完整 Mongoose document。
-- 当前方法：`normalizeEvidenceCode(evidenceCode)`、`findEvidenceByCode(evidenceCode)`、`listEvidenceByItemResponseId(itemResponseId)`、`listEvidenceByScaleInstanceId(scaleInstanceId)`、`listEvidenceByVisitId(assessmentVisitId)`、`listEvidenceByPatientId(patientId)`、`listAttachedEvidenceByItemResponseId(itemResponseId)`。
-- 上游调用方：当前暂无公开 Controller；预期供后续评估执行、计分、报告或科研导出等后端业务模块内部读取媒体证据元数据。
+- 职责边界：提供媒体证据内部读取和 A15 完整归属数据访问；规范化 `evidenceCode`；按 mapper 输出 `MediaEvidenceSummary`，不直接返回完整 Mongoose document。
+- 当前方法：既有 code / item / instance / visit / patient 读取方法，以及 `findEvidenceByOwnership()`、`listEvidenceByItemOwnership()`、`findActiveEvidenceByItemAndType()`、`createEvidence()`、`markEvidenceVoided()`、`deleteEvidenceForCompensation()`。
+- 上游调用方：`MediaEvidenceWorkflowService`，以及后续计分、报告或科研导出等内部能力。
 - 下游依赖：`MediaEvidence` Mongoose Model。
-- 边界：不创建、更新、删除媒体证据；不实现媒体上传、下载、签名 URL、Storage 调用、文件删除、状态流转、图片压缩、OCR、图像识别、手写轨迹解析、自动计分、报告、AI、认证、权限或公开媒体 API。
-- 测试覆盖口径：`backend\src\modules\media\services\media-evidence.service.spec.ts`，覆盖 evidence code 规范化、查无返回 `null`、mapper 输出、按题目作答 / 量表实例 / 访视 / 患者读取、attached / locked 过滤读取、schema collection、索引、内嵌子文档 `_id: false` 和关键字段显式类型；不连接真实 MongoDB，不调用 Storage / OSS，测试数据为脱敏人工样例。
+- 边界：只在内部执行 A15 所需创建 / 条件作废 / 补偿删除；没有公开物理删除方法，不直接调用 Storage，不处理 HTTP，不实现图片压缩、OCR、图像识别、自动计分、报告或 AI。
+- 测试覆盖口径：`media-evidence.service.spec.ts` 覆盖既有读取、完整归属、当前有效证据、创建、条件作废与按 ID 补偿删除；Model 为 mock，不连接真实 MongoDB。
 
 - Service 名称：`ScoringService`
 - 文件路径：`backend\src\modules\scoring\services\scoring.service.ts`
@@ -241,6 +241,34 @@
 - 下游依赖：`Reflector`。
 - 边界：不实现完整权限矩阵，不实现权限管理接口，不改变 `GET /health` 权限。
 - 测试覆盖口径：`backend\src\modules\auth\guards\roles.guard.spec.ts`，覆盖无角色要求直通、包含要求角色通过、角色不足抛 `ForbiddenException`、没有 `req.user` 抛 `ForbiddenException`。
+
+- Controller 名称：`MediaEvidenceController`
+- 文件路径：`backend\src\modules\media\controllers\media-evidence.controller.ts`
+- 职责边界：绑定 A15 四个题目级媒体路由、路径 / body / query DTO、`SessionAuthGuard`、`RolesGuard`、临床角色和 multipart 内存文件接收；Controller 不直接操作 Model 或 Storage。
+- 文件接收：`FileFieldsInterceptor` 仅接收 file / trajectory，各最多 1；总文件数 2、单文件 Multer 上限 10 MiB、文本字段最多 30。media 局部 interceptor 将 Multer / Nest 的超限异常稳定映射为 413 `MEDIA_FILE_TOO_LARGE`，不修改全局 filter。
+
+- Service 名称：`MediaEvidenceWorkflowService`
+- 文件路径：`backend\src\modules\media\services\media-evidence-workflow.service.ts`
+- 当前方法：`listEvidence()`、`uploadEvidence()`、`createAccessUrl()`、`voidEvidence()`。
+- 下游依赖：`PatientsService`、`AssessmentsService`、`MediaEvidenceService`、`STORAGE_SERVICE`、`StorageConfigService`。
+- 归属 / 状态：统一验证 Patient -> Visit -> ScaleInstance -> ItemResponse -> MediaEvidence 完整链；只读允许历史状态，上传 / 作废要求 Patient active、Visit / ScaleInstance draft 或 in_progress、ItemResponse not_started / in_progress / answered。
+- 上传编排：校验证据要求、captureMode、主文件和可选轨迹；生成不含患者隐私与原始文件名的 UUID objectKey；依次上传 Storage、创建 MediaEvidence、条件绑定 evidenceRef。绑定仅允许同 evidenceType、mediaEvidenceId 空且状态 pending / missing 的数组元素，形成并发边界。
+- 补偿边界：轨迹上传失败删除主对象；创建失败删除本次对象；绑定异常 / 冲突删除本次 MediaEvidence 与对象。补偿只使用本次 ID / key，不使用 transaction，不修改或删除其他业务数据；补偿日志仅记录固定类型、evidenceCode、driver 和成功标记。
+- 访问 / 作废：签名访问固定使用 `DEFAULT_SIGNED_URL_EXPIRES_SECONDS`；作废先清除 evidenceRef，再标记 MediaEvidence voided，失败尝试恢复引用。正常作废不调用 deleteObject。
+- 边界：不改变 ItemResponse / ScaleInstance / AssessmentVisit status，不评分，不实现前端采集、物理删除、原子替换、批量 / 分片 / 客户端直传、OCR / AI、报告或最终提交。
+
+- Service 名称：`MediaEvidenceService`（A15 扩展）
+- 文件路径：`backend\src\modules\media\services\media-evidence.service.ts`
+- 新增方法：`findEvidenceByOwnership()`、`listEvidenceByItemOwnership()`、`findActiveEvidenceByItemAndType()`、`createEvidence()`、`markEvidenceVoided()`、`deleteEvidenceForCompensation()`。
+- 职责边界：只负责完整归属数据访问与内部 Summary mapper；列表排除 deleted；作废仅条件更新 attached；补偿删除只按调用方传入的本次 evidence ID。内部 storage / metadata Summary 不直接作为 HTTP 响应。
+
+- Mapper / 纯函数：`toMediaEvidenceResponse()`、`validatePrimaryMediaFile()`、`validateHandwritingTrajectoryJson()`
+- 文件路径：`backend\src\modules\media\services\media-evidence-public.mapper.ts`、`backend\src\modules\media\lib\media-file-validation.ts`、`handwriting-trajectory-json.ts`
+- 职责边界：public mapper 显式逐字段白名单映射并把非有限数归一化为 null；图片校验负责大小 / MIME / 魔数 / 元数据 / SHA-256；轨迹校验负责 application/json、2 MiB、结构限额、危险 key、深克隆、规范化 Buffer 与 SHA-256。纯函数不依赖 Nest DI、数据库或 Storage。
+
+- Service 名称：`AssessmentsService`（A15 证据引用扩展）
+- 新增方法：`attachItemEvidenceReference()`、`clearItemEvidenceReference()`、`restoreItemEvidenceReference()`。
+- 职责边界：使用既有 ItemResponse Model 和完整 patient / visit / instance / item 条件原子更新匹配 evidenceRefs 元素；绑定 / 清除同时限制可编辑 ItemResponse 状态，恢复仅在空 pending 引用上执行。方法不修改 ItemResponse status、作答、评分、step、prompt、timing、operatorNote、Visit 或 ScaleInstance。
 
 ## 4. 后续同步规则
 

@@ -216,6 +216,17 @@
 - 并发与非目标：本阶段不新增 revision、If-Match、transaction 或多操作者冲突解决；不实现整份量表最终提交、批量 / 自动保存、媒体、计分、认知域、报告或 AI。最终提交与锁定阶段需重新评估版本控制和审计。
 - 影响范围：仅 `backend\src\modules\assessments`、A14 E2E 与指定 backend handoff / roadmap；未修改 Schema、其他业务模块、前端、依赖、环境配置或全局 Guard。
 
+### D-025：开放 photo / handwriting 题目级媒体证据最小公开闭环
+
+- 日期：2026-07-10
+- 决策：后端 A15 由服务端接收 multipart 并通过既有 Storage abstraction 写入对象；首阶段只允许 photo / handwriting。photo 只允许 photo_upload / paper_scan；handwriting 只允许 tablet_handwriting，必须有最终渲染图片，轨迹 JSON / strokes 可选且不接受 SVG。
+- 单证据决策：同一 ItemResponse、同一 evidenceType 只允许一份 attached / locked 当前有效证据；并发边界由 evidenceRefs 中 mediaEvidenceId 为空且状态 pending / missing 的条件原子更新形成，不依赖新增唯一索引。替换流程为先作废再重新上传，不提供原子替换 API。
+- 隐私与文件决策：主图只允许 JPEG / PNG / WebP，校验魔数与 MIME 一致并拒绝 EXIF / XMP / PNG 文本元数据；本阶段不重编码。服务端计算 SHA-256，不保存原始文件名；objectKey 只含受控前缀、内部 ObjectId 和 UUID，不含患者隐私。公开 mapper 不返回 objectKey、bucket、originalFilename、trajectoryObjectKey、metadata 或 Storage 凭据。
+- 访问与作废决策：访问使用固定短期签名地址，不提供永久 URL 或自定义有效期。作废把 MediaEvidence 标记 voided、evidenceRef 恢复 pending，并保留存储对象和审计记录；正常作废不调用 deleteObject，voided 证据不可签名访问。
+- 一致性决策：上传采用 Storage -> MediaEvidence -> evidenceRef 的补偿式编排，失败只清理本次记录和本次对象；作废先清引用、再标记证据，后者失败尝试恢复引用。没有使用 Mongo transaction，不宣称严格事务原子性，不删除其他证据或其他患者 / 访视 / 实例 / 题目数据。
+- 状态与非目标：上传 / 作废要求 active Patient、draft / in_progress Visit 与 ScaleInstance、not_started / in_progress / answered ItemResponse；只读允许历史状态。A15 不修改 ItemResponse / ScaleInstance / AssessmentVisit 状态，不评分；不实现前端采集、PDF / SVG / 音视频、批量 / 分片 / 客户端直传、物理删除、质量审核、OCR / AI、最终提交、认知域或报告。
+- 影响范围：`backend\src\modules\media`、`AssessmentsService` 的三项 evidenceRef 原子方法、A15 E2E 与指定 backend handoff / roadmap；未修改任何 Schema、Storage interface / driver、认证模块、全局 Guard、依赖、环境配置或前端。
+
 ## 4. 后续同步规则
 
 - 新增关键技术选型、接口设计、数据模型、测试策略或部署策略后，应追加决策记录。

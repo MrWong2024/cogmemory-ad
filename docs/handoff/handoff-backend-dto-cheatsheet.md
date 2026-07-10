@@ -6,10 +6,10 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 DTO、响应 type、Storage interface，以及各业务模块内部 Service 读取输出 type；A12 已新增患者 / 访视 DTO，A13 已新增量表目录、访视执行详情和量表实例初始化 DTO / 安全响应 type，A14 已新增单实例执行详情、单题草稿 PATCH DTO 与安全执行响应 type。
+- 当前存在公共底座 DTO、响应 type、Storage interface，以及各业务模块内部 Service 读取输出 type；A12 已新增患者 / 访视 DTO，A13 已新增量表目录、访视执行详情和量表实例初始化 DTO / 安全响应 type，A14 已新增单实例执行详情、单题草稿 PATCH DTO 与安全执行响应 type，A15 已新增媒体证据路径、multipart body、访问 query、作废 body 和安全公开响应 type。
 - 当前新增公开认证请求 DTO：`LoginDto`。
 - 当前新增公开患者 / 访视 DTO：`CreatePatientDto`、`ListPatientsQueryDto`、`PatientIdParamDto`、`CreateAssessmentVisitDto`、`ListAssessmentVisitsQueryDto`、`PatientVisitsParamDto`。
-- 当前仍没有用户管理、注册、密码重置、整份量表最终提交、批量或自动保存、媒体、计分、认知域、报告或业务上传请求 DTO。
+- 当前仍没有用户管理、注册、密码重置、整份量表最终提交、批量 / 分片 / 客户端直传、计分、认知域或报告请求 DTO；媒体仅定义 A15 四个题目级接口契约。
 
 ## 3. 当前 DTO / Type 清单
 
@@ -309,6 +309,35 @@
 - 文件：`backend\src\modules\users\schemas\user.schema.ts`
 - 用途：`User` Schema 的内部扩展 metadata type，不是 HTTP DTO。
 - 字段摘要：`Record<string, unknown> | null`。
+
+- 名称：`MediaEvidenceItemParamDto`、`MediaEvidenceParamDto`
+- 文件：`backend\src\modules\media\dto\media-evidence-item-param.dto.ts`、`media-evidence-param.dto.ts`
+- 用途：A15 题目级列表 / 上传路径，以及带单证据 ID 的访问 / 作废路径。
+- 字段：patientId、visitId、scaleInstanceId、itemResponseId；单证据 DTO 额外 mediaEvidenceId；全部使用 `@IsMongoId()`。
+
+- 名称：`UploadMediaEvidenceDto`
+- 文件：`backend\src\modules\media\dto\upload-media-evidence.dto.ts`
+- 用途：A15 multipart 上传文本字段 DTO。
+- 必填：evidenceType 仅 photo / handwriting；captureMode 仅 photo_upload / paper_scan / tablet_handwriting，业务矩阵由 Workflow 再校验。
+- 可选采集字段：capturedAt、sourceDevice / sourceApp、captureNote、description、operatorNote；图片字段 imageWidth / imageHeight、orientation、pageNo、isColor；手写字段 trajectoryFormat(json / strokes)、strokeCount、trajectoryDurationMs、canvasWidth / canvasHeight、deviceType、inputTool。
+- 转换与限制：空字符串转 undefined；数字字符串显式转有限 number，再校验整数 / 范围；boolean 只把字符串 true / false 转换为布尔值，不把 false 误转 true。全局 whitelist + forbidNonWhitelisted 拒绝关联 ID、业务编码、状态、storage、checksum、operatorSnapshot、itemSnapshot、versionTrace、quality / metadata 和审计时间等服务器字段。
+
+- 名称：`MediaEvidenceAccessQueryDto`
+- 文件：`backend\src\modules\media\dto\media-evidence-access-query.dto.ts`
+- 用途：临时访问地址 query；asset 仅 primary / trajectory，默认 primary；不声明 expiresInSeconds。
+
+- 名称：`VoidMediaEvidenceDto`
+- 文件：`backend\src\modules\media\dto\void-media-evidence.dto.ts`
+- 用途：A15 作废 body；仅允许 reason，trim 后必填且 3-1000 字符。
+
+- 名称：`UploadedMemoryFile`、`MediaEvidenceUploadedFiles`
+- 文件：`backend\src\modules\media\types\uploaded-memory-file.types.ts`
+- 用途：不依赖缺失 `@types/multer` 的内存文件安全 type；单文件仅包含 fieldname、originalname、encoding、mimetype、size、buffer，文件集合仅有 file / trajectory。
+
+- 名称：A15 媒体公开响应类型
+- 文件：`backend\src\modules\media\types\media-evidence-response.types.ts`
+- 类型：`MediaEvidenceFileResponse`、`MediaEvidenceImageMetadataResponse`、`MediaEvidenceHandwritingTraceResponse`、`MediaEvidenceCaptureContextResponse`、`MediaEvidenceOperatorResponse`、`MediaEvidenceResponse`、`MediaEvidenceListResponse`、`EvidenceRequirementStateResponse`、`UploadMediaEvidenceResponse`、`MediaEvidenceAccessUrlResponse`、`VoidMediaEvidenceResponse`。
+- 安全边界：公开文件摘要只含 MIME、扩展名、大小、storedAt；手写摘要不含 trajectoryObjectKey；证据响应不含关联 ID、subjectCode、definition / version ID、itemSnapshot、versionTrace、qualityHints、metadata、objectKey、bucket、objectPrefix、originalFilename、checksum、publicUrl 或 deletedAt。
 
 - 名称：`UserSummary`
 - 文件：`backend\src\modules\users\services\users.service.ts`

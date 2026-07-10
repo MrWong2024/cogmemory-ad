@@ -114,6 +114,13 @@ type AssessmentVisitListFilter = {
   visitType?: AssessmentVisitType;
 };
 
+type ItemResponseOwnershipFilter = {
+  _id: Types.ObjectId;
+  assessmentVisitId: Types.ObjectId;
+  scaleInstanceId: Types.ObjectId;
+  patientId: Types.ObjectId;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -708,6 +715,175 @@ export class AssessmentsService {
     return itemResponse ? this.toItemResponseSummary(itemResponse) : null;
   }
 
+  async attachItemEvidenceReference(
+    patientId: Types.ObjectId | string,
+    assessmentVisitId: Types.ObjectId | string,
+    scaleInstanceId: Types.ObjectId | string,
+    itemResponseId: Types.ObjectId | string,
+    evidenceType: ItemEvidenceType,
+    mediaEvidenceId: Types.ObjectId | string,
+  ): Promise<ItemResponseSummary | null> {
+    const ownership = this.normalizeItemResponseOwnership(
+      patientId,
+      assessmentVisitId,
+      scaleInstanceId,
+      itemResponseId,
+    );
+    const normalizedMediaEvidenceId = this.normalizeObjectId(mediaEvidenceId);
+
+    if (!ownership || !normalizedMediaEvidenceId) {
+      return null;
+    }
+
+    const itemResponse = await this.itemResponseModel
+      .findOneAndUpdate(
+        {
+          ...ownership,
+          status: { $in: ['not_started', 'in_progress', 'answered'] },
+          evidenceRefs: {
+            $elemMatch: {
+              evidenceType,
+              mediaEvidenceId: null,
+              status: { $in: ['pending', 'missing'] },
+            },
+          },
+        },
+        {
+          $set: {
+            'evidenceRefs.$[evidenceRef].mediaEvidenceId':
+              normalizedMediaEvidenceId,
+            'evidenceRefs.$[evidenceRef].status': 'attached',
+          },
+        },
+        {
+          arrayFilters: [
+            {
+              'evidenceRef.evidenceType': evidenceType,
+              'evidenceRef.mediaEvidenceId': null,
+              'evidenceRef.status': { $in: ['pending', 'missing'] },
+            },
+          ],
+          returnDocument: 'after',
+          runValidators: true,
+        },
+      )
+      .exec();
+
+    return itemResponse ? this.toItemResponseSummary(itemResponse) : null;
+  }
+
+  async clearItemEvidenceReference(
+    patientId: Types.ObjectId | string,
+    assessmentVisitId: Types.ObjectId | string,
+    scaleInstanceId: Types.ObjectId | string,
+    itemResponseId: Types.ObjectId | string,
+    evidenceType: ItemEvidenceType,
+    mediaEvidenceId: Types.ObjectId | string,
+  ): Promise<ItemResponseSummary | null> {
+    const ownership = this.normalizeItemResponseOwnership(
+      patientId,
+      assessmentVisitId,
+      scaleInstanceId,
+      itemResponseId,
+    );
+    const normalizedMediaEvidenceId = this.normalizeObjectId(mediaEvidenceId);
+
+    if (!ownership || !normalizedMediaEvidenceId) {
+      return null;
+    }
+
+    const itemResponse = await this.itemResponseModel
+      .findOneAndUpdate(
+        {
+          ...ownership,
+          status: { $in: ['not_started', 'in_progress', 'answered'] },
+          evidenceRefs: {
+            $elemMatch: {
+              evidenceType,
+              mediaEvidenceId: normalizedMediaEvidenceId,
+              status: 'attached',
+            },
+          },
+        },
+        {
+          $set: {
+            'evidenceRefs.$[evidenceRef].mediaEvidenceId': null,
+            'evidenceRefs.$[evidenceRef].status': 'pending',
+          },
+        },
+        {
+          arrayFilters: [
+            {
+              'evidenceRef.evidenceType': evidenceType,
+              'evidenceRef.mediaEvidenceId': normalizedMediaEvidenceId,
+              'evidenceRef.status': 'attached',
+            },
+          ],
+          returnDocument: 'after',
+          runValidators: true,
+        },
+      )
+      .exec();
+
+    return itemResponse ? this.toItemResponseSummary(itemResponse) : null;
+  }
+
+  async restoreItemEvidenceReference(
+    patientId: Types.ObjectId | string,
+    assessmentVisitId: Types.ObjectId | string,
+    scaleInstanceId: Types.ObjectId | string,
+    itemResponseId: Types.ObjectId | string,
+    evidenceType: ItemEvidenceType,
+    mediaEvidenceId: Types.ObjectId | string,
+  ): Promise<ItemResponseSummary | null> {
+    const ownership = this.normalizeItemResponseOwnership(
+      patientId,
+      assessmentVisitId,
+      scaleInstanceId,
+      itemResponseId,
+    );
+    const normalizedMediaEvidenceId = this.normalizeObjectId(mediaEvidenceId);
+
+    if (!ownership || !normalizedMediaEvidenceId) {
+      return null;
+    }
+
+    const itemResponse = await this.itemResponseModel
+      .findOneAndUpdate(
+        {
+          ...ownership,
+          evidenceRefs: {
+            $elemMatch: {
+              evidenceType,
+              mediaEvidenceId: null,
+              status: 'pending',
+            },
+          },
+        },
+        {
+          $set: {
+            'evidenceRefs.$[evidenceRef].mediaEvidenceId':
+              normalizedMediaEvidenceId,
+            'evidenceRefs.$[evidenceRef].status': 'attached',
+          },
+        },
+        {
+          arrayFilters: [
+            {
+              'evidenceRef.evidenceType': evidenceType,
+              'evidenceRef.mediaEvidenceId': null,
+              'evidenceRef.status': 'pending',
+            },
+          ],
+          returnDocument: 'after',
+          runValidators: true,
+        },
+      )
+      .exec();
+
+    return itemResponse ? this.toItemResponseSummary(itemResponse) : null;
+  }
+
   async listItemResponsesByScaleInstanceId(
     scaleInstanceId: Types.ObjectId | string,
   ): Promise<ItemResponseSummary[]> {
@@ -820,6 +996,34 @@ export class AssessmentsService {
     }
 
     return objectId;
+  }
+
+  private normalizeItemResponseOwnership(
+    patientId: Types.ObjectId | string,
+    assessmentVisitId: Types.ObjectId | string,
+    scaleInstanceId: Types.ObjectId | string,
+    itemResponseId: Types.ObjectId | string,
+  ): ItemResponseOwnershipFilter | null {
+    const normalizedPatientId = this.normalizeObjectId(patientId);
+    const normalizedVisitId = this.normalizeObjectId(assessmentVisitId);
+    const normalizedScaleInstanceId = this.normalizeObjectId(scaleInstanceId);
+    const normalizedItemResponseId = this.normalizeObjectId(itemResponseId);
+
+    if (
+      !normalizedPatientId ||
+      !normalizedVisitId ||
+      !normalizedScaleInstanceId ||
+      !normalizedItemResponseId
+    ) {
+      return null;
+    }
+
+    return {
+      _id: normalizedItemResponseId,
+      assessmentVisitId: normalizedVisitId,
+      scaleInstanceId: normalizedScaleInstanceId,
+      patientId: normalizedPatientId,
+    };
   }
 
   private requireObjectId(

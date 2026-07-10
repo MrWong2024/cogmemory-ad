@@ -12,7 +12,10 @@ import {
   MediaOperatorSnapshotSchema,
   MediaStorageSnapshotSchema,
 } from '../schemas/media-evidence.schema';
-import { MediaEvidenceService } from './media-evidence.service';
+import {
+  type CreateMediaEvidenceInput,
+  MediaEvidenceService,
+} from './media-evidence.service';
 
 function createExecQuery<T>(value: T) {
   return {
@@ -225,12 +228,18 @@ describe('MediaEvidenceService', () => {
   let mediaEvidenceModel: {
     findOne: jest.Mock;
     find: jest.Mock;
+    findOneAndUpdate: jest.Mock;
+    create: jest.Mock;
+    deleteOne: jest.Mock;
   };
 
   beforeEach(async () => {
     mediaEvidenceModel = {
       findOne: jest.fn(),
       find: jest.fn(),
+      findOneAndUpdate: jest.fn(),
+      create: jest.fn(),
+      deleteOne: jest.fn(),
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -415,6 +424,8 @@ describe('MediaEvidenceService', () => {
       lockedAt: null,
       voidedAt: null,
       deletedAt: null,
+      createdAt: null,
+      updatedAt: null,
     });
     expect(result).not.toHaveProperty('_id');
     expect(result).not.toHaveProperty('internalMarker');
@@ -548,5 +559,116 @@ describe('MediaEvidenceService', () => {
     });
     expect(sort).toHaveBeenCalledWith({ createdAt: 1 });
     expect(result).toEqual([]);
+  });
+
+  it('queries list and single evidence with the complete ownership chain', async () => {
+    const ownership = {
+      patientId: new Types.ObjectId(),
+      assessmentVisitId: new Types.ObjectId(),
+      scaleInstanceId: new Types.ObjectId(),
+      itemResponseId: new Types.ObjectId(),
+    };
+    const mediaEvidenceId = new Types.ObjectId();
+    const rawEvidence = createEvidenceFixture({
+      _id: mediaEvidenceId,
+      ...ownership,
+    });
+    mediaEvidenceModel.findOne.mockReturnValue(createExecQuery(rawEvidence));
+
+    const found = await service.findEvidenceByOwnership(
+      ownership,
+      mediaEvidenceId,
+    );
+
+    expect(found?.id).toBe(mediaEvidenceId.toString());
+    expect(mediaEvidenceModel.findOne).toHaveBeenCalledWith({
+      _id: mediaEvidenceId,
+      ...ownership,
+      status: { $ne: 'deleted' },
+      deletedAt: null,
+    });
+
+    const sort = jest.fn().mockReturnValue(createExecQuery([rawEvidence]));
+    mediaEvidenceModel.find.mockReturnValue({ sort });
+    await service.listEvidenceByItemOwnership(ownership);
+    expect(mediaEvidenceModel.find).toHaveBeenCalledWith({
+      ...ownership,
+      status: { $ne: 'deleted' },
+      deletedAt: null,
+    });
+    expect(sort).toHaveBeenCalledWith({ createdAt: 1, _id: 1 });
+  });
+
+  it('finds only attached or locked active evidence for the same type', async () => {
+    const ownership = {
+      patientId: new Types.ObjectId(),
+      assessmentVisitId: new Types.ObjectId(),
+      scaleInstanceId: new Types.ObjectId(),
+      itemResponseId: new Types.ObjectId(),
+    };
+    const sort = jest.fn().mockReturnValue(createExecQuery(null));
+    mediaEvidenceModel.findOne.mockReturnValue({ sort });
+
+    await expect(
+      service.findActiveEvidenceByItemAndType(ownership, 'photo'),
+    ).resolves.toBeNull();
+    expect(mediaEvidenceModel.findOne).toHaveBeenCalledWith({
+      ...ownership,
+      evidenceType: 'photo',
+      status: { $in: ['attached', 'locked'] },
+      deletedAt: null,
+    });
+  });
+
+  it('creates, conditionally voids and deletes only by compensation id', async () => {
+    const rawEvidence = createEvidenceFixture();
+    mediaEvidenceModel.create.mockResolvedValue(rawEvidence);
+    const created = await service.createEvidence(
+      rawEvidence as CreateMediaEvidenceInput,
+    );
+    expect(created.evidenceCode).toBe('EVD-TEST-001');
+
+    const ownership = {
+      patientId: rawEvidence.patientId,
+      assessmentVisitId: rawEvidence.assessmentVisitId,
+      scaleInstanceId: rawEvidence.scaleInstanceId,
+      itemResponseId: rawEvidence.itemResponseId,
+    };
+    mediaEvidenceModel.findOneAndUpdate.mockReturnValue(
+      createExecQuery({ ...rawEvidence, status: 'voided' }),
+    );
+    const voidedAt = new Date('2026-07-10T09:00:00.000Z');
+    const metadata = {
+      voidReason: 'wrong capture',
+      voidedBy: new Types.ObjectId().toString(),
+      voidedAt: voidedAt.toISOString(),
+    };
+    const voided = await service.markEvidenceVoided(
+      ownership,
+      rawEvidence._id,
+      voidedAt,
+      metadata,
+    );
+    expect(voided?.status).toBe('voided');
+    expect(mediaEvidenceModel.findOneAndUpdate).toHaveBeenCalledWith(
+      {
+        _id: rawEvidence._id,
+        ...ownership,
+        status: 'attached',
+        deletedAt: null,
+      },
+      { $set: { status: 'voided', voidedAt, metadata } },
+      { returnDocument: 'after', runValidators: true },
+    );
+
+    mediaEvidenceModel.deleteOne.mockReturnValue(
+      createExecQuery({ deletedCount: 1 }),
+    );
+    await expect(
+      service.deleteEvidenceForCompensation(rawEvidence._id),
+    ).resolves.toBe(true);
+    expect(mediaEvidenceModel.deleteOne).toHaveBeenCalledWith({
+      _id: rawEvidence._id,
+    });
   });
 });
