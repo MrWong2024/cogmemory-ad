@@ -6,12 +6,12 @@
 
 ## 2. 当前状态
 
-- 前端公共底座、B1 登录 / 认证接入、B2 患者档案与评估访视最小页面闭环、B3 访视详情与量表实例初始化，以及 B4 量表施测执行与逐题手工草稿保存已落地。
+- 前端公共底座、B1 登录 / 认证接入、B2 患者档案与评估访视最小页面闭环、B3 访视详情与量表实例初始化、B4 量表施测执行与逐题手工草稿保存，以及 B5 photo / handwriting 媒体证据闭环已落地。
 - `frontend\package.json` 已存在，自动验证命令以其中真实脚本为准。
-- B2 / B3 / B4 不新增测试代码、测试框架、E2E 或第三方依赖。
-- 当前自动验证覆盖三个认证 API、A12 五个患者 / 访视 API、A13 三个评估初始化前置 API 与 A14 两个执行草稿 API 的前端类型、调用代码和页面构建；真实 HTTP / 浏览器联调仍需手工验证。
+- B2 / B3 / B4 / B5 不新增测试代码、测试框架、E2E 或第三方依赖。
+- 当前自动验证覆盖三个认证 API、A12 五个患者 / 访视 API、A13 三个评估初始化前置 API、A14 两个执行草稿 API 与 A15 四个媒体证据 API 的前端类型、调用代码和页面构建；真实 HTTP / 浏览器联调仍需手工验证。
 
-## 3. B1 / B2 / B3 / B4 自动验证命令
+## 3. B1 / B2 / B3 / B4 / B5 自动验证命令
 
 在 `frontend` 目录、且既有 `node_modules` 存在时执行：
 
@@ -54,6 +54,16 @@
 - 未新增自动测试：当前前端没有既有测试框架，任务明确不新增测试框架或浏览器 E2E；本阶段使用 lint、typecheck 与生产构建验证。
 - E2E / 浏览器自动化：未执行；本阶段明确不执行浏览器 E2E。
 - 浏览器手工验证：未执行，以下 B4 场景均为待验证。
+- 后端命令：未执行。
+
+本次 B5 验证结果：
+
+- `npm run lint`：通过。
+- `npm run typecheck`：通过，Next 16 量表实例执行动态路由类型生成成功且 TypeScript 无错误。
+- `npm run build`：通过，生产构建包含既有量表实例动态路由，B5 未新增路由。
+- 未新增自动测试：当前前端没有既有测试框架，任务明确不新增测试框架或浏览器 E2E；本阶段继续使用 lint、typecheck 与生产构建验证。
+- E2E / 浏览器自动化：未执行；本阶段明确不执行浏览器 E2E。
+- 浏览器手工验证：未执行，以下 B5 场景均为待验证。
 - 后端命令：未执行。
 
 如后续环境中 `frontend/node_modules` 不存在，不得为验证本阶段而执行 `npm install`；应跳过上述命令并说明原因。
@@ -108,7 +118,19 @@ B4 自动验证不覆盖：
 
 - 真实 A14 HTTP、数据库写入、测试用户、HttpOnly Cookie、CORS、浏览器导航、GET 取消与 PATCH 竞态联调。
 - 浏览器 beforeunload 的实际提示样式与触发策略；该行为由浏览器决定。
-- 整份量表最终提交、批量或自动保存、媒体、实时计时、计分、认知域、报告或 AI；这些能力未实现。
+- B4 当时不覆盖媒体；媒体静态路径现由下方 B5 验证覆盖。整份量表最终提交、批量或自动保存、实时计时、计分、认知域、报告或 AI 仍未实现。
+
+B5 静态与构建验证额外覆盖：
+
+- A15 安全公开类型、四个 API Client 方法、FormData 白名单、固定安全文件名、错误 code 映射、GET AbortSignal 和 POST 不重试路径的 lint 与类型检查。
+- photo Canvas 解码 / JPEG 重编码与有界压缩代码、handwriting Pointer Events / 轨迹 / PNG 代码，以及列表 / 预览 / 作废 / 父级媒体草稿集成的生产构建。
+- 同一 B4 路由的 B5 组件集成；B5 未新增页面路由、依赖、BFF、middleware 或远程图片域名配置。
+
+B5 自动验证不覆盖：
+
+- 真实 A15 HTTP、Storage、测试用户、Cookie / CORS、浏览器文件解码差异、移动端 capture 提示、触控笔 / 触屏 Pointer Events、临时 URL 域名与过期行为。
+- 浏览器 Canvas 输出的临床可读性、不同源图格式兼容性、真实网络竞态、作废后重传和 beforeunload 提示；均需使用脱敏人工测试数据手工验证。
+- 整份量表最终提交、自动保存、评分、认知域、报告、OCR、图像识别或 AI；这些能力未实现。
 
 ## 5. B1 手工验证建议
 
@@ -193,7 +215,7 @@ B4 自动验证不覆盖：
 7. 在 MoCA 延迟回忆提示槽位中保存提示后表现；确认 promptText、提示类型和计分参与标识可见，不新增槽位或推断正确性。
 8. 开启缺失记录但不填原因，确认前端阻止保存；填写原因后可保存。确认开启时清空实际作答、step actualValue 和 prompt responseAfterPrompt，保留相关 note、timing 与 operatorNote；关闭时清空 missingReason。
 9. 确认非计时题不出现计时编辑；计时题可编辑开始 / 完成时间、秒口径用时与来源，完成时间早于开始时间时阻止保存，页面没有实时计时器操作。
-10. drawing / handwriting / photo_upload 项只显示证据要求、文字说明和操作者备注，不出现文件选择、上传、拍照、画布或手写轨迹。
+10. drawing / handwriting / photo_upload 的原始文字说明继续独立保存；含 photo / handwriting requirement 时另显示 B5 证据面板，媒体操作不触发 A14 PATCH。
 11. 保存草稿后刷新确认服务端草稿仍保留；保存成功不重新加载整页，当前题反馈稳定且 dirty 清除。
 12. 保存并标记本题完成后确认后端 progress 增加；只有 timing 或 operatorNote 时不能标记完成。
 13. answered 题继续编辑并保存后仍为 answered，不出现退回进行中操作，也不提交 status。
@@ -203,9 +225,54 @@ B4 自动验证不覆盖：
 17. 模拟患者、访视、实例或题目不存在，确认使用稳定中文 not-found；跨患者 / 访视访问不泄露资源存在性。
 18. 模拟量表实例配置不可用、访视 / 实例 / 题目不可编辑、槽位变化、计时无效和保存失败，确认映射稳定中文错误且 PATCH 不自动重试。
 19. 使用浏览器网络面板确认 A14 GET 可取消，所有路径 ID 已编码，PATCH 只含当前题变化白名单且不包含 status、score、答案、evidenceRequirements、ID 或完整响应对象。
-20. 确认页面不存在整份最终提交、批量保存、自动保存、评分、媒体、报告、认知域或 AI 入口，也未把草稿、Cookie 或 token 写入 localStorage / sessionStorage。
+20. 确认页面不存在整份最终提交、批量保存、自动保存、评分、报告、认知域或 AI 入口，也未把作答草稿、Cookie 或 token 写入 localStorage / sessionStorage。
 
-## 9. 认证与安全验证口径
+## 9. B5 手工验证建议（待验证）
+
+前置条件：后端已启动，使用脱敏人工测试账号和测试患者 / 访视 / 量表实例；不得使用真实患者图片或真实手写内容。以下场景本次未执行，均待开发者本地验证：
+
+1. 登录并进入含 photo / handwriting 要求的题目。
+2. 媒体列表正常按题加载，而不是页面初次加载批量请求全部题目。
+3. attached、locked、voided 状态显示正确且 voided 历史不隐藏。
+4. 选择已有 JPEG / PNG / WebP 源图后生成重新编码 JPEG。
+5. 页面不显示和不提交原始文件名。
+6. 手机浏览器 paper_scan 输入可提示摄像头；不支持时正常退化为文件选择，且不出现实时摄像头界面。
+7. 处理后的图片能使用本地 object URL 预览。
+8. 输出宽、高、JPEG MIME 和大小符合 2560 最长边与 10 MiB 限制。
+9. 图片无法解码、Canvas 输出失败或有界压缩仍超限时阻止上传，绝不回退上传原图。
+10. photo_upload 上传成功。
+11. paper_scan 上传成功并正确提交页码。
+12. 上传后对应 requirement 立即变为 attached。
+13. 上传不改变题目状态、作答 dirty 或 progress。
+14. 同类型存在 attached / locked 证据时上传按钮禁用并提示先作废。
+15. 后端返回 `MEDIA_EVIDENCE_ALREADY_ATTACHED` 后刷新列表，不自动重复上传。
+16. primary 临时地址仅在点击预览时获取。
+17. 图片内联预览和新窗口打开可用，且请求不依赖 next.config 永久域名。
+18. expiresAt 无效、已过期或距过期不足 30 秒时会重新获取地址。
+19. 作废必须填写 trim 后 3–1000 字符原因。
+20. 作废后记录显示 voided，且文案不称为删除。
+21. 作废后 requirement 恢复 pending / false。
+22. 作废后可重新上传同类型证据，旧历史仍保留。
+23. 平板触控笔、触屏手指和鼠标可在 1200 × 800 逻辑画布连续书写，窄屏缩放时坐标仍正确。
+24. pointer capture、`touch-action: none`、撤销上一笔和清空全部正常。
+25. 空白画布不能上传；撤销最后一笔或清空后未上传证据计数减少。
+26. 切换分组后未上传 strokes 与媒体元数据保留。
+27. handwriting 上传包含从当前 Canvas 生成的 PNG。
+28. 默认同时上传固定结构的 strokes JSON；关闭轨迹时同时省略 trajectory 与 trajectoryFormat。
+29. handwriting 有轨迹时可获取 trajectory 临时地址并在新窗口打开，但页面不渲染 JSON 内容。
+30. 轨迹超过 8000 点或 2 MiB 时前端阻止上传并显示明确提示。
+31. 页面刷新不保留未上传 JPEG Blob、strokes 或短期 URL。
+32. 未上传媒体内容时 beforeunload 生效，顶部独立显示未保存作答与未上传证据题目数。
+33. completed / locked / voided Visit 或实例只允许列表与 attached / locked 预览。
+34. scored / locked / voided ItemResponse 只允许列表与 attached / locked 预览。
+35. 401 返回登录页；403 显示无权限而不是空列表。
+36. 患者非 active 或 Storage 异常时显示稳定提示并保留本地待上传草稿。
+37. 上传与作废请求不自动重试；分组切换期间同题同类型写锁仍阻止第二个写请求。
+38. 页面与公开类型不显示内部对象定位、Storage bucket / credential、校验和、原始文件名、任意 metadata / qualityHints 或内部归属字段。
+39. 页面没有最终提交、评分、OCR、报告或 AI 入口，也不调用相关接口。
+40. 全部验证使用脱敏人工测试图片与手写内容，不使用真实医疗数据。
+
+## 10. 认证与安全验证口径
 
 - 使用浏览器网络面板确认三个认证请求均携带 credentials 语义，并由浏览器处理 HttpOnly Cookie。
 - 前端代码与存储中不得出现 raw token、token hash、`passwordHash`、JWT 或其他认证凭证。
@@ -218,15 +285,16 @@ B4 自动验证不覆盖：
 - A13 GET 必须支持取消且取消不显示服务异常；初始化 POST 不自动重试，请求 body 仅包含 scaleCode、scaleVersion、administrationMode。
 - B3 页面不得在 console、存储或 URL 中记录访视详情、目录、实例或 ItemResponse；不得展示完整 seed、scoringRule、expectedValue 或后端内部错误。
 - B4 页面不得在 console、存储或 URL 中记录作答草稿、患者、访视、实例、请求体或响应体；PATCH body 必须是变化白名单，不能包含服务器控制字段。
+- B5 页面不得在 console、存储或 URL 中记录源 File、JPEG / PNG Blob、轨迹、短期 URL、请求体或响应体；multipart 只能由 API Client 逐字段构造，不能手工设置 multipart Content-Type。
 
-## 10. 医疗与隐私展示红线
+## 11. 医疗与隐私展示红线
 
 - 不展示真实用户或患者敏感数据样本。
 - 测试截图不得包含真实姓名、邮箱、身份证号、手机号、病历号、住址、患者资料或真实文件名。
 - 不得在页面文案或测试截图中呈现未经确认的真实医疗诊断结论。
 - 核心认知评估必须保持医护或研究人员陪伴 / 监督的产品边界。
 
-## 11. 后续同步规则
+## 12. 后续同步规则
 
 - 前端新增或调整测试脚本后，应同步更新自动验证命令。
 - 新增页面、路由、组件、API 对接或权限展示后，应同步补充对应验证口径。

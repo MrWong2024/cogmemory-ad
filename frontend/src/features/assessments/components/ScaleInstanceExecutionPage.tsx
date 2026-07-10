@@ -37,6 +37,15 @@ import {
   itemDraftHasChanges,
   type ItemDraftState,
 } from '@/src/features/assessments/lib/item-response-draft';
+import {
+  mediaDraftHasPendingContent,
+  type ItemMediaDrafts,
+  type MediaEvidenceDraft,
+} from '@/src/features/assessments/types/media-evidence-draft';
+import type {
+  EvidenceRequirementState,
+  SupportedMediaEvidenceType,
+} from '@/src/features/assessments/types/media-evidence';
 import type { ScaleInstanceExecutionDetailResponse } from '@/src/features/assessments/types/item-response-execution';
 import { logout } from '@/src/features/auth/api/auth-api';
 import {
@@ -149,6 +158,44 @@ function createDraftMap(
   );
 }
 
+function buildMediaDraftKey(
+  itemResponseId: string,
+  evidenceType: SupportedMediaEvidenceType,
+): string {
+  return `${itemResponseId}:${evidenceType}`;
+}
+
+function getItemMediaDrafts(
+  mediaDrafts: Record<string, MediaEvidenceDraft | undefined>,
+  itemResponseId: string,
+): ItemMediaDrafts {
+  const photo = mediaDrafts[buildMediaDraftKey(itemResponseId, 'photo')];
+  const handwriting =
+    mediaDrafts[buildMediaDraftKey(itemResponseId, 'handwriting')];
+
+  return {
+    ...(photo?.kind === 'photo' ? { photo } : {}),
+    ...(handwriting?.kind === 'handwriting' ? { handwriting } : {}),
+  };
+}
+
+function getItemMediaWritingTypes(
+  writingKeys: ReadonlySet<string>,
+  itemResponseId: string,
+): ReadonlySet<SupportedMediaEvidenceType> {
+  const types = new Set<SupportedMediaEvidenceType>();
+
+  if (writingKeys.has(buildMediaDraftKey(itemResponseId, 'photo'))) {
+    types.add('photo');
+  }
+
+  if (writingKeys.has(buildMediaDraftKey(itemResponseId, 'handwriting'))) {
+    types.add('handwriting');
+  }
+
+  return types;
+}
+
 export function ScaleInstanceExecutionPage({
   patientId,
   scaleInstanceId,
@@ -161,6 +208,7 @@ export function ScaleInstanceExecutionPage({
   const router = useRouter();
   const mountedRef = useRef(true);
   const savingItemIdsRef = useRef(new Set<string>());
+  const mediaWritingKeysRef = useRef(new Set<string>());
   const idsAreValid =
     mongoIdPattern.test(patientId) &&
     mongoIdPattern.test(visitId) &&
@@ -168,6 +216,12 @@ export function ScaleInstanceExecutionPage({
   const [detail, setDetail] =
     useState<ScaleInstanceExecutionDetailResponse | null>(null);
   const [drafts, setDrafts] = useState<Record<string, ItemDraftState>>({});
+  const [mediaDrafts, setMediaDrafts] = useState<
+    Record<string, MediaEvidenceDraft | undefined>
+  >({});
+  const [mediaWritingKeys, setMediaWritingKeys] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
   const [feedbacks, setFeedbacks] = useState<
     Record<string, ItemSaveFeedback | undefined>
   >({});
@@ -193,6 +247,7 @@ export function ScaleInstanceExecutionPage({
     if (!idsAreValid) {
       setDetail(null);
       setDrafts({});
+      setMediaDrafts({});
       setDetailError(new AssessmentExecutionApiError('validation', 400));
       setIsLoading(false);
       return;
@@ -219,6 +274,7 @@ export function ScaleInstanceExecutionPage({
         );
         setDetail(response);
         setDrafts(createDraftMap(response));
+        setMediaDrafts({});
         setFeedbacks({});
         setActiveGroupCode(sections[0]?.code ?? '');
       })
@@ -237,6 +293,7 @@ export function ScaleInstanceExecutionPage({
 
         setDetail(null);
         setDrafts({});
+        setMediaDrafts({});
         setDetailError(
           requestError instanceof AssessmentExecutionApiError
             ? requestError
@@ -262,7 +319,7 @@ export function ScaleInstanceExecutionPage({
   const activeSection =
     sections.find((section) => section.code === activeGroupCode) ?? sections[0];
   const effectiveActiveGroupCode = activeSection?.code ?? '';
-  const unsavedItemCount = useMemo(() => {
+  const unsavedAnswerItemCount = useMemo(() => {
     if (!detail) {
       return 0;
     }
@@ -272,9 +329,22 @@ export function ScaleInstanceExecutionPage({
       return draft ? itemDraftHasChanges(item, draft) : false;
     }).length;
   }, [detail, drafts]);
+  const pendingMediaItemCount = useMemo(() => {
+    if (!detail) {
+      return 0;
+    }
+
+    return detail.itemResponses.filter((item) =>
+      (['photo', 'handwriting'] as const).some((evidenceType) => {
+        const mediaDraft =
+          mediaDrafts[buildMediaDraftKey(item.id, evidenceType)];
+        return mediaDraft ? mediaDraftHasPendingContent(mediaDraft) : false;
+      }),
+    ).length;
+  }, [detail, mediaDrafts]);
 
   useEffect(() => {
-    if (unsavedItemCount === 0) {
+    if (unsavedAnswerItemCount === 0 && pendingMediaItemCount === 0) {
       return;
     }
 
@@ -286,7 +356,7 @@ export function ScaleInstanceExecutionPage({
     window.addEventListener('beforeunload', handleBeforeUnload);
 
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [unsavedItemCount]);
+  }, [pendingMediaItemCount, unsavedAnswerItemCount]);
 
   async function handleSignOut() {
     setIsSigningOut(true);
@@ -308,6 +378,85 @@ export function ScaleInstanceExecutionPage({
       ...current,
       [itemResponseId]: undefined,
     }));
+  }
+
+  function handleMediaDraftChange(
+    itemResponseId: string,
+    evidenceType: SupportedMediaEvidenceType,
+    mediaDraft: MediaEvidenceDraft | null,
+  ) {
+    const key = buildMediaDraftKey(itemResponseId, evidenceType);
+    setMediaDrafts((current) => {
+      const next = { ...current };
+
+      if (mediaDraft) {
+        next[key] = mediaDraft;
+      } else {
+        delete next[key];
+      }
+
+      return next;
+    });
+  }
+
+  function handleEvidenceRequirementChange(
+    itemResponseId: string,
+    requirement: EvidenceRequirementState,
+  ) {
+    setDetail((current) => {
+      if (!current) {
+        return current;
+      }
+
+      return {
+        ...current,
+        itemResponses: current.itemResponses.map((item) =>
+          item.id === itemResponseId
+            ? {
+                ...item,
+                evidenceRequirements: item.evidenceRequirements.map(
+                  (currentRequirement) =>
+                    currentRequirement.evidenceType ===
+                    requirement.evidenceType
+                      ? {
+                          ...currentRequirement,
+                          status: requirement.status,
+                          attached: requirement.attached,
+                        }
+                      : currentRequirement,
+                ),
+              }
+            : item,
+        ),
+      };
+    });
+  }
+
+  function handleBeginMediaWrite(
+    itemResponseId: string,
+    evidenceType: SupportedMediaEvidenceType,
+  ): boolean {
+    const key = buildMediaDraftKey(itemResponseId, evidenceType);
+
+    if (mediaWritingKeysRef.current.has(key)) {
+      return false;
+    }
+
+    mediaWritingKeysRef.current.add(key);
+    setMediaWritingKeys(new Set(mediaWritingKeysRef.current));
+    return true;
+  }
+
+  function handleEndMediaWrite(
+    itemResponseId: string,
+    evidenceType: SupportedMediaEvidenceType,
+  ) {
+    const key = buildMediaDraftKey(itemResponseId, evidenceType);
+    mediaWritingKeysRef.current.delete(key);
+
+    if (mountedRef.current) {
+      setMediaWritingKeys(new Set(mediaWritingKeysRef.current));
+    }
   }
 
   async function handleSaveItem(
@@ -532,11 +681,12 @@ export function ScaleInstanceExecutionPage({
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone="info">量表施测执行</Badge>
             {readOnlyReason ? <Badge tone="warning">只读查看</Badge> : null}
-            {unsavedItemCount > 0 ? (
-              <Badge tone="warning">{unsavedItemCount} 题未保存</Badge>
-            ) : (
-              <Badge tone="success">没有未保存修改</Badge>
-            )}
+            <Badge tone={unsavedAnswerItemCount > 0 ? 'warning' : 'success'}>
+              未保存作答：{unsavedAnswerItemCount} 题
+            </Badge>
+            <Badge tone={pendingMediaItemCount > 0 ? 'warning' : 'success'}>
+              未上传证据：{pendingMediaItemCount} 题
+            </Badge>
           </div>
           <h1 className="mt-3 text-3xl font-semibold text-[var(--cma-text-strong)] sm:text-4xl">
             {scale.name}
@@ -567,7 +717,7 @@ export function ScaleInstanceExecutionPage({
       </header>
 
       <p className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-info-soft)] px-5 py-4 text-base leading-7 text-[var(--cma-info)]">
-        核心认知量表应由医护或研究人员陪伴或监督完成。本页仅逐题记录原始作答草稿，不提供整份提交、评分、媒体上传、报告或 AI。
+        核心认知量表应由医护或研究人员陪伴或监督完成。本页支持逐题原始作答草稿，以及 photo / handwriting 证据采集、预览和作废；整份量表提交、评分、认知域、报告与 AI 仍未实现。
       </p>
 
       {readOnlyReason ? (
@@ -732,9 +882,16 @@ export function ScaleInstanceExecutionPage({
                 分组与题目均按服务端顺序展示；切换分组不会清除本地未保存输入。
               </CardDescription>
             </div>
-            <Badge tone={unsavedItemCount > 0 ? 'warning' : 'success'}>
-              未保存题目：{unsavedItemCount}
-            </Badge>
+            <div className="flex flex-wrap gap-2">
+              <Badge
+                tone={unsavedAnswerItemCount > 0 ? 'warning' : 'success'}
+              >
+                未保存作答：{unsavedAnswerItemCount}
+              </Badge>
+              <Badge tone={pendingMediaItemCount > 0 ? 'warning' : 'success'}>
+                未上传证据：{pendingMediaItemCount}
+              </Badge>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="pt-5">
@@ -799,13 +956,37 @@ export function ScaleInstanceExecutionPage({
                   isSaving={savingItemIds.has(item.id)}
                   item={item}
                   key={item.id}
+                  mediaDrafts={getItemMediaDrafts(mediaDrafts, item.id)}
+                  mediaWritingTypes={getItemMediaWritingTypes(
+                    mediaWritingKeys,
+                    item.id,
+                  )}
                   onChange={(nextDraft) =>
                     handleDraftChange(item.id, nextDraft)
+                  }
+                  onEvidenceRequirementChange={(requirement) =>
+                    handleEvidenceRequirementChange(item.id, requirement)
+                  }
+                  onEndMediaWrite={(evidenceType) =>
+                    handleEndMediaWrite(item.id, evidenceType)
+                  }
+                  onMediaDraftChange={(evidenceType, mediaDraft) =>
+                    handleMediaDraftChange(
+                      item.id,
+                      evidenceType,
+                      mediaDraft ?? null,
+                    )
+                  }
+                  onTryBeginMediaWrite={(evidenceType) =>
+                    handleBeginMediaWrite(item.id, evidenceType)
                   }
                   onSave={(markAsAnswered) =>
                     handleSaveItem(item.id, markAsAnswered)
                   }
                   pageReadOnlyReason={readOnlyReason}
+                  patientId={patientId}
+                  scaleInstanceId={scaleInstanceId}
+                  visitId={visitId}
                 />
               );
             })

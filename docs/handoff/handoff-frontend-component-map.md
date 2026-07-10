@@ -9,9 +9,9 @@
 - `frontend\src\components\ui` 提供 `Button`、`Card`、`Badge` 三个无业务语义公共组件。
 - `frontend\src\features\auth` 提供 B1 最小认证接入能力。
 - `frontend\src\features\patients` 提供 B2 患者档案与评估访视最小业务闭环。
-- `frontend\src\features\assessments` 提供 B3 访视详情、量表安全目录与量表实例初始化，以及 B4 量表施测执行与逐题手工草稿保存能力。
+- `frontend\src\features\assessments` 提供 B3 访视详情与量表实例初始化、B4 量表施测执行与逐题手工草稿保存，以及 B5 photo / handwriting 媒体证据采集、预览和作废能力。
 - 当前组件遵循医疗系统 / 临床评估 / 低干扰 / 高可读性 / 冷静可信视觉基线。
-- B2 / B3 / B4 未新增公共 Input 组件、第三方 UI 库、状态管理库、数据请求库或权限菜单组件。
+- B2 / B3 / B4 / B5 未新增公共 Input 组件、第三方 UI 库、状态管理库、数据请求库或权限菜单组件。
 
 ## 3. 公共 UI 组件
 
@@ -187,9 +187,10 @@
 ### 6.7 `ScaleInstanceExecutionPage`
 
 - 路径：`frontend\src\features\assessments\components\ScaleInstanceExecutionPage.tsx`
-- 职责：接收 patientId / visitId / scaleInstanceId，加载 A14 安全执行详情，管理 invalid / loading / 401 / 403 / not-found / configuration-unavailable / retry、动态分组、itemResponseId 草稿、dirty 数量、beforeunload、逐题 PATCH 和实时 progress
+- 职责：接收 patientId / visitId / scaleInstanceId，加载 A14 安全执行详情，管理 invalid / loading / 401 / 403 / not-found / configuration-unavailable / retry、动态分组、itemResponseId 作答草稿、`${itemResponseId}:${evidenceType}` 媒体草稿、两类待处理计数、beforeunload、逐题 PATCH 和实时 progress
 - 保存：同一题保存期间禁止并发；成功后以响应 itemResponse 覆盖当前题、清除 dirty，并用响应 progress 更新实例摘要，不重新加载整个页面
-- 边界：GET 使用 AbortController，PATCH 不重试；组件卸载后不 setState；不使用 SWR、React Query、Redux、Zustand、localStorage 或 sessionStorage
+- 媒体父级职责：分组切换不清除 JPEG Blob / strokes；持有跨分组媒体写锁；只合并 A15 返回的同题同类型 requirement，不改作答 draft / dirty / progress；上传成功或主动清除后减少未上传证据题目数
+- 边界：GET 使用 AbortController，PATCH 与媒体 POST 不重试；组件卸载后不 setState；不使用 SWR、React Query、Redux、Zustand、localStorage 或 sessionStorage
 
 ### 6.8 `ScaleExecutionGroupNavigation`
 
@@ -202,7 +203,7 @@
 - 路径：`frontend\src\features\assessments\components\ItemResponseEditor.tsx`
 - 职责：展示题目标题、CRF、指导语、操作说明、认知域编码、计入总分标识、状态、证据要求与已有草稿；提供类型对应编辑、missing、operatorNote、保存草稿和标记本题完成
 - 普通类型：boolean 保存 null / boolean；number 保存有限 number；text 与 single / multi choice 保存 responseText；single / multi choice 只提供原始回答转录，不生成选项或判分
-- 媒体类型：drawing / photo_upload / handwriting 只提供文字说明与证据要求，不提供文件选择、拍照、上传、画布或手写轨迹
+- 媒体类型：继续保留 drawing / photo_upload / handwriting 的原始文字说明；另将归属 ID、只读状态、媒体草稿、写锁和回调传给 `ItemEvidenceRequirements`，媒体操作不触发 `onChange(draft)` 或 A14 保存
 - 安全边界：不显示 scoringRule、expectedValue、正确答案、score、isCorrect、scoreValue；已有 structuredResponse 仅显示存在性提示，不提供 JSON 编辑器
 
 ### 6.10 `ItemStepEditor`
@@ -226,8 +227,8 @@
 ### 6.13 `ItemEvidenceRequirements`
 
 - 路径：`frontend\src\features\assessments\components\ItemEvidenceRequirements.tsx`
-- 职责：展示服务端 evidenceRequirements 的类型、状态与 attached 标识，并明确媒体证据后续接入
-- 边界：不创建假的已上传状态，不调用媒体 API
+- 职责：保留服务端全部 evidenceRequirements 的类型、状态与 attached 安全文字展示；对 photo / handwriting requirement 挂载真实 `MediaEvidencePanel`，audio 与其他类型仍仅展示状态
+- 边界：不修改作答草稿，不为 duration / raw_text / operator_note / audio / other 编造媒体接口；明确上传不代表题目完成或评分
 
 ### 6.14 A14 类型与草稿纯函数
 
@@ -236,6 +237,45 @@
 - 纯函数路径：`frontend\src\features\assessments\lib\item-response-draft.ts`
 - 纯函数职责：服务端 ItemResponse 到本地 draft、missing 清空、字段级和递归值 dirty 比较、数值 / datetime-local / duration 转换、基础有效作答判断、step / prompt / timing 差异与 PATCH 构建
 - 边界：不修改原响应对象，不使用 any，不以整对象 JSON.stringify 作为 dirty 策略，不定义评分规则、答案或任意 JSON 编辑能力
+
+### 6.15 `MediaEvidencePanel`
+
+- 路径：`frontend\src\features\assessments\components\MediaEvidencePanel.tsx`
+- 职责：识别 photo / handwriting requirement，组件实际渲染时按题加载 A15 列表，管理 loading / error / retry、上传 / 作废调用、临时 URL 内存缓存和稳定错误文案
+- 写入：调用父级同题同类型写锁；成功以服务端 mediaEvidence 合并列表、以 evidenceRequirement 通知父级并清除对应媒体草稿；重复 attached 冲突刷新列表且不自动重传
+- 读取：access-url 按 evidenceId + asset 缓存，按 expiresAt 与 30 秒余量复用；组件卸载取消 GET 并清理内存状态，不取消已到达后端的 POST
+- 边界：不触发 A14 PATCH，不保存 token、文件 URL 或后端大对象到持久化存储，不泛化为全站上传框架
+
+### 6.16 `MediaEvidenceList` / `MediaEvidencePreview`
+
+- 路径：`frontend\src\features\assessments\components\MediaEvidenceList.tsx`、`MediaEvidencePreview.tsx`
+- 列表职责：展示 evidenceCode、类型、采集方式、状态、存储状态、MIME、大小、图片 / 轨迹摘要、时间、操作者、质量、说明与备注；保留 attached / locked / voided 历史
+- 预览职责：点击后请求 primary 或 trajectory；primary 可内联预览和新窗口打开，trajectory 只提供安全外链，不渲染 JSON；链接与图片使用 no-referrer / noreferrer / noopener
+- 作废：仅 attached 且可编辑时显示内联确认，原因必须 3–1000 字符；作废文案明确历史保留，不写成删除
+- 隐私边界：不展示内部归属、Storage 对象定位、原始文件名、校验和、任意 metadata / qualityHints、凭据或删除时间
+
+### 6.17 `PhotoEvidenceCapture`
+
+- 路径：`frontend\src\features\assessments\components\PhotoEvidenceCapture.tsx`
+- 职责：提供已有图片选择与 `capture="environment"` 纸笔结果提示；源 File 只进入一次异步处理，input value 立即重置，成功后父级仅保存 JPEG Blob 和安全元数据
+- 预览 / 表单：展示重编码本地预览、尺寸、大小、captureMode、paper_scan 页码、isColor、采集说明、描述与媒体操作者备注
+- 边界：不调用实时摄像头，不保留或显示源文件名，不上传原始 File / Base64，不读取 EXIF / XMP，不提供裁剪、旋转、滤镜或图像诊断
+
+### 6.18 `HandwritingEvidenceCanvas`
+
+- 路径：`frontend\src\features\assessments\components\HandwritingEvidenceCanvas.tsx`
+- 职责：1200 × 800 固定逻辑 Canvas 响应式显示，支持 Pointer Events、pointer capture、stylus / finger / mouse、撤销、清空、笔数 / 点数 / 工具文字状态和明确上传
+- 上传：至少一笔；从当前 Canvas 生成不超过 10 MiB 的 PNG；默认生成不超过 2 MiB 的 strokes JSON，可关闭轨迹；上传 metadata 按当前笔迹推导输入工具、笔数、相对时长和画布尺寸
+- 边界：`touch-action: none`；最多 8000 点；轨迹不含业务 ID、绝对时间或 userAgent；不输出 SVG，不实现颜色、图层、橡皮擦、套索、识别或任意二进制轨迹
+
+### 6.19 B5 类型、API 与纯函数
+
+- `types/media-evidence.ts`：A15 安全公开响应、access、requirement 与 multipart 白名单类型；JSON Date 使用 string / null，不定义 Storage 或内部归属字段
+- `types/handwriting-evidence.ts` / `types/media-evidence-draft.ts`：固定 trajectory 结构与 photo / handwriting React 内存草稿；不保存源 File 名称或 signed URL
+- `api/media-evidence-api.ts`：四个 A15 方法、credentials / no-store、GET AbortSignal、FormData 白名单、固定安全文件名和稳定业务错误映射；POST 不重试
+- `lib/media-evidence-image.ts`：白色 Canvas JPEG 重编码、2560 最长边、0.9 初始质量、有界压缩与 10 MiB 限制
+- `lib/handwriting-evidence.ts`：坐标 / 压力归一化、工具 / 时长推导、轨迹验证、Canvas 重绘和 PNG 生成
+- `lib/media-evidence-display.ts`：安全展示字典、文件大小、排序、active / access 有效性和中文错误映射
 
 ## 7. 后续同步规则
 

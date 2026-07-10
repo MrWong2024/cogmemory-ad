@@ -125,7 +125,7 @@ export function ScaleInitializationPanel({
       </CardHeader>
       <CardContent className="grid gap-5 pt-5">
         <div className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-info-soft)] px-4 py-3 text-sm leading-6 text-[var(--cma-info)]">
-          图片、手写、计时等标识只表示量表配置包含此类项目。当前可进入量表记录文字说明与计时草稿，但媒体上传、手写轨迹和实时计时器仍未实现。
+          图片、手写、计时等标识表示量表配置包含相应项目。进入量表后可记录文字与计时草稿，并可为已配置要求的题目采集 photo / handwriting 证据；实时计时器仍未实现。
         </div>
 
         {!visitCanInitialize ? (

@@ -1,8 +1,14 @@
 import { Badge } from '@/src/components/ui/Badge';
+import { MediaEvidencePanel } from '@/src/features/assessments/components/MediaEvidencePanel';
 import {
   itemEvidenceStatusLabels,
   itemEvidenceTypeLabels,
 } from '@/src/features/assessments/lib/assessment-execution-display';
+import type { ItemMediaDrafts } from '@/src/features/assessments/types/media-evidence-draft';
+import type {
+  EvidenceRequirementState,
+  SupportedMediaEvidenceType,
+} from '@/src/features/assessments/types/media-evidence';
 import type { ItemResponseExecution } from '@/src/features/assessments/types/item-response-execution';
 
 const mediaResponseTypes = new Set([
@@ -12,9 +18,32 @@ const mediaResponseTypes = new Set([
 ]);
 
 export function ItemEvidenceRequirements({
+  drafts,
   item,
+  onDraftChange,
+  onEndWrite,
+  onRequirementChange,
+  onTryBeginWrite,
+  pageReadOnlyReason,
+  patientId,
+  scaleInstanceId,
+  visitId,
+  writingTypes,
 }: {
+  drafts: ItemMediaDrafts;
   item: ItemResponseExecution;
+  onDraftChange: (
+    evidenceType: SupportedMediaEvidenceType,
+    draft: ItemMediaDrafts[SupportedMediaEvidenceType] | null,
+  ) => void;
+  onEndWrite: (evidenceType: SupportedMediaEvidenceType) => void;
+  onRequirementChange: (requirement: EvidenceRequirementState) => void;
+  onTryBeginWrite: (evidenceType: SupportedMediaEvidenceType) => boolean;
+  pageReadOnlyReason: string | null;
+  patientId: string;
+  scaleInstanceId: string;
+  visitId: string;
+  writingTypes: ReadonlySet<SupportedMediaEvidenceType>;
 }) {
   const hasMediaRequirement =
     mediaResponseTypes.has(item.responseType) ||
@@ -60,8 +89,27 @@ export function ItemEvidenceRequirements({
       )}
       {hasMediaRequirement ? (
         <p className="mt-3 rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-info-soft)] px-3 py-2 text-sm leading-6 text-[var(--cma-info)]">
-          媒体证据将在后续阶段接入；本页不提供文件上传、拍照、画布或手写轨迹，也不会创建虚假的已上传状态。
+          photo 与 handwriting 已支持采集、预览和作废；audio 与其他媒体类型尚未开放。上传证据不代表本题已完成或已评分。
         </p>
+      ) : null}
+      {item.evidenceRequirements.some(
+        (requirement) =>
+          requirement.evidenceType === 'photo' ||
+          requirement.evidenceType === 'handwriting',
+      ) ? (
+        <MediaEvidencePanel
+          drafts={drafts}
+          item={item}
+          onDraftChange={onDraftChange}
+          onEndWrite={onEndWrite}
+          onRequirementChange={onRequirementChange}
+          onTryBeginWrite={onTryBeginWrite}
+          pageReadOnlyReason={pageReadOnlyReason}
+          patientId={patientId}
+          scaleInstanceId={scaleInstanceId}
+          visitId={visitId}
+          writingTypes={writingTypes}
+        />
       ) : null}
     </section>
   );

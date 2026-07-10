@@ -6,9 +6,9 @@
 
 ## 2. 当前状态
 
-- 当前包含公共首页、登录页、轻量工作台、B2 四条患者 / 访视路由、B3 访视详情路由、B4 量表实例施测执行路由与 not-found 兜底。
+- 当前包含公共首页、登录页、轻量工作台、B2 四条患者 / 访视路由、B3 访视详情路由、B4 / B5 量表实例施测执行与媒体证据共用路由，以及 not-found 兜底；B5 未新增路由。
 - `/dashboard` 已提供患者档案入口，但仍不是完整医生工作台。
-- 当前不包含患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、整份量表最终提交、媒体、计分、报告、AI、用户管理或权限菜单路由。
+- 当前不包含患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、整份量表最终提交、评分、认知域、报告、AI、用户管理或权限菜单路由。
 - 当前不包含 Next middleware 或路由级服务端认证中间件。
 
 ## 3. 当前路由清单
@@ -107,20 +107,22 @@
 
 ### 3.9 `/patients/[patientId]/visits/[visitId]/scale-instances/[scaleInstanceId]`
 
-- 页面名称：量表实例施测执行与逐题草稿记录
-- 页面职责：展示患者 / 受试者编号、访视、量表身份与版本、实例、实时进度、服务端动态分组和安全题目；按题手工编辑并保存 A14 白名单草稿
+- 页面名称：量表实例施测执行、逐题草稿与媒体证据
+- 页面职责：展示患者 / 受试者编号、访视、量表身份与版本、实例、实时进度、服务端动态分组和安全题目；按题手工编辑并保存 A14 白名单草稿，并为含 photo / handwriting 要求的题目提供 A15 证据采集、历史、预览和作废
 - 动态参数：Server Component 按 Next 16 `params: Promise<{ patientId: string; visitId: string; scaleInstanceId: string }>` 等待参数后传给 `ScaleInstanceExecutionPage`；route 不 fetch、不保存表单状态
 - 访问边界：继续复用 `/patients/**` 的 `PatientsWorkspaceShell`；不新增 middleware、BFF 或 Provider，不读取 Cookie；后端 Guard 是最终权限边界
-- 数据来源：`GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId` 与单题 `PATCH /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/item-responses/:itemResponseId`
+- 数据来源：A14 执行详情 GET 与单题草稿 PATCH，以及 A15 题目媒体列表、multipart 上传、primary / trajectory 临时访问地址和作废四个接口
 - loading / 取消：执行详情 GET 使用 AbortController；重试和卸载取消旧请求，被取消请求不显示服务错误；任一动态 ID 无效时不发请求
 - 401 / 403 / 404 / 409：401 返回 `/login`；403 展示无权限与返回 / 退出入口；患者、访视、实例不存在分别使用稳定状态；配置不可用不渲染空白题目页
 - 分组：groups 按 order、题目按 itemOrder 排序，使用 groupCode 动态归组；无匹配分组题目进入“其他项目”；button 导航显示每组完成数并支持键盘 focus
-- 草稿状态：以 itemResponseId 为 key 存于组件内存，切换分组不丢失；顶部显示未保存题目数量，有 dirty 时注册 beforeunload，不写 localStorage / sessionStorage
+- 草稿状态：作答以 itemResponseId 为 key、媒体以 `${itemResponseId}:${evidenceType}` 为 key 存于父级组件内存，切换分组不丢失；顶部区分未保存作答与未上传证据，任一非零时注册 beforeunload，不写 localStorage / sessionStorage
 - 作答：支持 boolean、number、text、single / multi choice 原始转录、分步实际回答、提示后表现、媒体类文字说明、缺失原因、计时草稿和操作者备注；不生成选项、答案或评分
 - 保存：每题提供保存草稿与保存并标记本题完成；只 PATCH 变化白名单，无变化不请求；成功以服务端 itemResponse 覆盖当前题并用 progress 更新页面，不重新加载整页
-- 只读：completed / locked / voided 访视或实例全页只读；scored / locked / voided 题目只读；保留历史安全草稿和明确原因
-- 当前非目标：不提供整份量表最终提交、批量或自动保存、实时计时器、媒体上传 / 画布 / 手写轨迹、自动或手工评分、认知域、报告或 AI
-- 关联组件：`ScaleInstanceExecutionPage`、`ScaleExecutionGroupNavigation`、`ItemResponseEditor`、`ItemStepEditor`、`ItemPromptEditor`、`ItemTimingEditor`、`ItemEvidenceRequirements`
+- 媒体：photo 支持本地选择和移动端 capture 提示，源图经 Canvas 重新编码为 JPEG；handwriting 支持响应式 1200 × 800 逻辑画布、Pointer Events、最终 PNG 和默认 strokes JSON；证据列表保留 attached / locked / voided 历史，按点击获取短期 URL，attached 可内联确认后作废并重传
+- 只读：completed / locked / voided 访视或实例全页只读；scored / locked / voided 题目只读；保留历史安全草稿、证据列表和 attached / locked 预览，但禁用媒体采集、上传和作废
+- 隔离：媒体操作不触发 A14 PATCH，不改变作答 dirty、progress、题目完成状态或访视 / 实例 / 题目状态；后端 Guard 与状态校验仍是最终边界
+- 当前非目标：不提供整份量表最终提交、批量或自动保存、实时计时器、自动或手工评分、认知域、报告、OCR 或 AI；不提供实时摄像头、音频 / 视频 / PDF / SVG、批量 / 分片 / 客户端直传、物理删除或直接替换
+- 关联组件：`ScaleInstanceExecutionPage`、`ScaleExecutionGroupNavigation`、`ItemResponseEditor`、step / prompt / timing 子组件，以及 `ItemEvidenceRequirements`、`MediaEvidencePanel`、`MediaEvidenceList`、`MediaEvidencePreview`、`PhotoEvidenceCapture`、`HandwritingEvidenceCanvas`
 
 ### 3.10 `not-found`
 

@@ -6,13 +6,13 @@
 
 ## 2. 当前状态与边界
 
-- 前端 B1 已新增 `frontend\src\features\auth\api\auth-api.ts`；B2 已新增 `frontend\src\features\patients\api\patients-api.ts`；B3 / B4 使用 `frontend\src\features\assessments\api\assessment-execution-api.ts` 对接评估执行 API。
-- 当前对接后端 A11 三个认证 API、A12 五个患者 / 访视 API、A13 三个评估初始化前置 API 与 A14 两个评估执行草稿 API，不调用其他业务 API。
+- 前端 B1 已新增 `frontend\src\features\auth\api\auth-api.ts`；B2 已新增 `frontend\src\features\patients\api\patients-api.ts`；B3 / B4 使用 `frontend\src\features\assessments\api\assessment-execution-api.ts` 对接评估执行 API；B5 新增 `frontend\src\features\assessments\api\media-evidence-api.ts` 对接题目媒体证据 API。
+- 当前对接后端 A11 三个认证 API、A12 五个患者 / 访视 API、A13 三个评估初始化前置 API、A14 两个评估执行草稿 API与 A15 四个题目媒体证据 API，不调用其他业务 API。
 - API Client 使用 `frontendEnv.apiBaseUrl` 作为后端基础地址。
 - 所有请求统一使用 `credentials: 'include'`，由浏览器携带或接收 HttpOnly Cookie。
 - 所有认证、患者和访视请求使用 `cache: 'no-store'`。
 - 前端不读取 Cookie，不保存 token，不使用 JWT，也不记录密码或认证响应体。
-- 当前没有 BFF 代理；B1 / B2 / B3 / B4 按明确任务口径由浏览器直接请求既有公开 API base URL。
+- 当前没有 BFF 代理；B1 / B2 / B3 / B4 / B5 按明确任务口径由浏览器直接请求既有公开 API base URL。
 
 ## 3. 环境变量读取
 
@@ -20,7 +20,7 @@
 - 读取项：既有 `NEXT_PUBLIC_API_BASE_URL`
 - 安全默认值：`http://localhost:5002`
 - 导出对象：`frontendEnv.apiBaseUrl`
-- B1 / B2 / B3 / B4 未新增、删除或修改环境变量与环境变量文件。
+- B1 / B2 / B3 / B4 / B5 未新增、删除或修改环境变量与环境变量文件。
 
 ## 4. 当前 API 对接清单
 
@@ -187,6 +187,49 @@
 - A14 资源 / 状态 code UI：`PATIENT_NOT_FOUND` -> 患者不存在；`PATIENT_NOT_ACTIVE` -> 当前患者不是活动状态；`VISIT_NOT_FOUND` -> 访视不存在或不属于患者；`VISIT_NOT_EDITABLE` -> 当前访视状态不允许修改；`SCALE_INSTANCE_NOT_FOUND` -> 实例不存在或不属于当前访视；`SCALE_INSTANCE_NOT_EDITABLE` -> 实例状态不允许修改；`SCALE_INSTANCE_CONFIGURATION_UNAVAILABLE` -> 版本配置暂时不可用；`ITEM_RESPONSE_NOT_FOUND` -> 题目记录不存在并提示重新加载；`ITEM_RESPONSE_NOT_EDITABLE` -> 当前题目不可修改。
 - A14 草稿 code UI：`ITEM_RESPONSE_EMPTY_PATCH` -> 没有需要保存的修改；`ITEM_RESPONSE_PAYLOAD_INVALID` -> 作答格式无效；`ITEM_RESPONSE_MISSING_REASON_REQUIRED` -> 缺失原因必填；`ITEM_RESPONSE_CANNOT_MARK_ANSWERED` -> 先记录有效作答或缺失原因；`ITEM_RESPONSE_STEP_NOT_FOUND` / `ITEM_RESPONSE_PROMPT_NOT_FOUND` -> 槽位已变化并提示重新加载；`ITEM_RESPONSE_DUPLICATE_STEP` / `ITEM_RESPONSE_DUPLICATE_PROMPT` -> 槽位重复并提示检查；`ITEM_RESPONSE_TIMING_NOT_ALLOWED` -> 本题不允许计时草稿；`ITEM_RESPONSE_INVALID_TIMING` -> 检查开始、完成时间与用时；`ITEM_RESPONSE_SAVE_FAILED` -> 保存失败稍后重试。
 
+### 4.14 `listItemMediaEvidences()` -> `GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/item-responses/:itemResponseId/media-evidences`
+
+- Client：`frontend\src\features\assessments\api\media-evidence-api.ts`
+- 调用方：`MediaEvidencePanel`；仅当当前实际渲染题目包含 photo / handwriting requirement 时按需调用，不在页面初次加载时批量请求全部题目。
+- Path：patientId、visitId、scaleInstanceId、itemResponseId 全部逐段 `encodeURIComponent()`；无 Query / Body。
+- 响应：`MediaEvidenceListResponse { items }`，Date JSON 字段按 `string | null` 建模；UI 展示 attached / locked / voided 历史和 A15 安全摘要。
+- 凭证 / 缓存 / 取消：`frontendEnv.apiBaseUrl`、`credentials: 'include'`、`cache: 'no-store'`；支持 AbortSignal，切换分组或卸载取消旧请求，取消不显示服务错误；失败提供手工重试，不自动重试。
+- 错误：400 -> 请求参数无效；401 -> `/login`；403 -> 当前账号无媒体权限且不伪装为空列表；404 的 `PATIENT_NOT_FOUND`、`VISIT_NOT_FOUND`、`SCALE_INSTANCE_NOT_FOUND`、`ITEM_RESPONSE_NOT_FOUND` -> 对应资源不存在并提示重新加载；网络错误 -> 媒体服务暂不可用。
+- 隐私边界：公开类型与 UI 不定义或展示内部归属、对象定位、Storage 驱动凭据、原始文件名、校验和、内部 metadata / qualityHints 或删除时间。
+
+### 4.15 `uploadItemMediaEvidence()` -> `POST /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/item-responses/:itemResponseId/media-evidences`
+
+- Client / 调用方：`media-evidence-api.ts`，由 `MediaEvidencePanel` 调用；photo 输入来自 `PhotoEvidenceCapture` 的重编码 JPEG，handwriting 输入来自 `HandwritingEvidenceCanvas` 的最终 PNG 与可选 strokes JSON。
+- Path：四个 ID 全部编码且不进入 multipart 文本字段。
+- multipart：必填 `file`；handwriting 默认附加 `trajectory`；不手工设置 `Content-Type`，由浏览器生成 boundary。
+- FormData 白名单：`evidenceType`、`captureMode`、`capturedAt`、`sourceDevice`、`sourceApp`、`captureNote`、`description`、`operatorNote`、`imageWidth`、`imageHeight`、`orientation`、`pageNo`、`isColor`、`trajectoryFormat`、`strokeCount`、`trajectoryDurationMs`、`canvasWidth`、`canvasHeight`、`deviceType`、`inputTool`、`file`、`trajectory`；数字使用十进制字符串、boolean 使用 `true` / `false`，undefined 和空可选文本不附加。
+- 固定文件名：photo 为 `photo-evidence.jpg`，handwriting 为 `handwriting-evidence.png`，trajectory 为 `handwriting-trajectory.json`；不读取或传递源文件名。
+- 响应：201 `UploadMediaEvidenceResponse { mediaEvidence, evidenceRequirement }`；以服务端媒体记录合并列表，以 evidenceRequirement 更新同 itemResponseId + evidenceType，清除对应内存媒体草稿；不重新加载整份实例。
+- 凭证 / 缓存 / 重试：`credentials: 'include'`、`cache: 'no-store'`；POST 不自动重试、不做覆盖或乐观 attached。同一 itemResponseId + evidenceType 的父级内存写锁阻止分组切换期间的并发写。
+- 400 code UI：`MEDIA_PRIMARY_FILE_REQUIRED` -> 请选择 / 生成图片；`MEDIA_FILE_EMPTY` -> 图片为空；`MEDIA_FILE_TYPE_NOT_ALLOWED` -> 格式不支持；`MEDIA_FILE_SIGNATURE_INVALID` -> 内容与格式不一致；`MEDIA_FILE_EMBEDDED_METADATA_NOT_ALLOWED` -> 隐私元数据检查失败；`MEDIA_TRAJECTORY_INVALID` -> 轨迹无效或超限；`MEDIA_CAPTURE_MODE_INVALID` -> 类型与采集方式不匹配；普通 400 -> 参数无效。
+- 401 / 403 / 404：401 返回登录；403 显示无媒体权限；`PATIENT_NOT_FOUND`、`VISIT_NOT_FOUND`、`SCALE_INSTANCE_NOT_FOUND`、`ITEM_RESPONSE_NOT_FOUND` 映射安全资源提示。
+- 409 code UI：`PATIENT_NOT_ACTIVE`、`VISIT_NOT_EDITABLE`、`SCALE_INSTANCE_NOT_EDITABLE`、`ITEM_RESPONSE_NOT_EDITABLE` 显示稳定只读原因；`ITEM_EVIDENCE_TYPE_NOT_REQUIRED` 提示要求已变化；`MEDIA_EVIDENCE_ALREADY_ATTACHED` 提示先作废，并重新加载媒体列表、按 attached / locked 事实更新 requirement，不自动重复上传。
+- 413 / 500 / 503：`MEDIA_FILE_TOO_LARGE` -> 处理后仍超限；`MEDIA_EVIDENCE_CREATE_FAILED` / `MEDIA_EVIDENCE_ATTACH_FAILED` -> 创建 / 关联失败；`MEDIA_STORAGE_UNAVAILABLE` -> 存储暂不可用并保留本地 Blob / strokes；网络错误 -> 手工稍后重试。
+- 隔离边界：上传不触发 A14 PATCH，不修改 answer dirty、progress、题目完成状态、ItemResponse / ScaleInstance / Visit 状态或评分。
+
+### 4.16 `getMediaEvidenceAccessUrl()` -> `GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/item-responses/:itemResponseId/media-evidences/:mediaEvidenceId/access-url`
+
+- 调用方：`MediaEvidencePanel` / `MediaEvidencePreview`；仅用户点击预览或轨迹入口时调用，不在列表加载后批量签名。
+- Path / Query：五个 ID 全部编码；asset 白名单为 `primary` / `trajectory`，不提交客户端有效期。
+- 响应：`MediaEvidenceAccessUrlResponse { asset, url, expiresAt }`；URL 以 evidenceId + asset 缓存在当前组件内存，按 expiresAt 与 30 秒安全余量判断是否复用，解析失败或临近过期时重新请求。
+- 凭证 / 缓存 / 取消：`credentials: 'include'`、`cache: 'no-store'`、GET AbortSignal；卸载取消。图片内联使用普通 img 以避免永久远程域名配置，图片和外部链接使用 no-referrer / noreferrer / noopener。
+- 错误：401 返回登录；403 显示无权限；404 资源归属、`MEDIA_EVIDENCE_NOT_FOUND`、`MEDIA_TRAJECTORY_NOT_FOUND` 使用稳定提示；409 `MEDIA_EVIDENCE_NOT_ACCESSIBLE` 提示证据状态 / 存储不可访问；503 `MEDIA_STORAGE_UNAVAILABLE` 与网络错误提供手工重试。
+- 安全边界：不渲染轨迹 JSON；短期 URL 不写 localStorage、sessionStorage、路由参数、日志或 handoff，不当作永久公开链接，也不返回任何 Storage 内部字段。
+
+### 4.17 `voidItemMediaEvidence()` -> `POST /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/item-responses/:itemResponseId/media-evidences/:mediaEvidenceId/void`
+
+- 调用方：`MediaEvidencePanel`，内联确认 UI 由 `MediaEvidenceList` 提供。
+- Path / Body：五个 ID 全部编码；JSON body 只构造 `{ reason }`，trim 后必须 3–1000 字符，不接受空原因或服务端字段。
+- 操作边界：仅 attached 且当前页面可编辑时显示；locked / voided / deleted 不允许。POST 不自动重试，同类型父级写锁同时禁用上传与其他作废操作。
+- 响应：200 `VoidMediaEvidenceResponse { mediaEvidence, evidenceRequirement }`；以服务端 voided 记录更新列表，将对应 requirement 更新为 pending / false，清除该 evidence 的内存访问 URL，并重新开放上传。历史记录仍保留，语义是作废而非删除。
+- 错误：401 返回登录；403 显示无权限；404 归属 / `MEDIA_EVIDENCE_NOT_FOUND` 提示重新加载；409 的患者 / 访视 / 实例 / 题目只读 code 显示稳定原因，`MEDIA_EVIDENCE_NOT_VOIDABLE` 提示刷新列表；500 `MEDIA_EVIDENCE_VOID_FAILED` 显示作废失败；网络错误不自动重试。
+- 隔离边界：作废不调用物理删除或替换接口，不触发 A14 PATCH、progress、题目状态、访视 / 实例状态或评分变化。
+
 ## 5. 当前认证公开类型
 
 - `AuthUserResponse`：`id`、`accountName`、`displayName`、`roles`、`permissions`、可选 `userType`。
@@ -205,11 +248,13 @@
 - B4 扩展错误 kind：`scale_instance_not_found`、`scale_instance_not_editable`、`scale_instance_configuration_unavailable`、`visit_not_editable`、`item_response_not_found`、`item_response_not_editable`、`item_response_empty_patch`、`item_response_payload_invalid`、`item_response_missing_reason_required`、`item_response_cannot_mark_answered`、`item_response_step_not_found`、`item_response_duplicate_step`、`item_response_prompt_not_found`、`item_response_duplicate_prompt`、`item_response_timing_not_allowed`、`item_response_invalid_timing`、`item_response_save_failed`。
 - `ScaleInstanceListItem` 的时间字段按 JSON 传输事实定义为 `string | null`；`InitializeScaleInstanceRequest` 只包含三个允许字段，不定义任何服务器控制字段。
 - `item-response-execution.ts` 定义 A14 安全响应和 PATCH 白名单类型；所有 Date JSON 字段使用 `string | null`，不定义 scoringRule、expectedValue、score、isCorrect、scoreValue、metadata、qualityControlHints 或内部配置引用。
+- `media-evidence.ts` 定义 A15 安全公开响应、access asset、requirement 状态和上传白名单；所有 Date JSON 字段使用 `string` / `string | null`。该类型没有内部患者 / 访视 / 实例 / 题目关联、对象定位、Storage credential、源文件名、校验和、任意 metadata 或删除时间字段。
+- `MediaEvidenceApiError.kind` 覆盖 unauthenticated / forbidden / validation、完整资源 / 状态 code、文件 / 轨迹 / captureMode code、重复 / 不可访问 / 不可作废、Storage、创建 / 关联 / 作废内部失败、网络错误和 unknown；UI 不直接显示后端英文 message。
 
 ## 7. 当前未对接 API
 
 - 当前没有 A12 / A13 / A14 已接接口之外的患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转调用。
-- 当前没有整份量表最终提交、ItemResponse 批量或自动保存、量表开始 / 暂停 / 结束、媒体、计分、认知域、报告、AI、用户管理、角色权限管理或科研导出 API 调用。
+- 当前没有整份量表最终提交、ItemResponse 批量或自动保存、量表开始 / 暂停 / 结束、媒体批量 / 分片 / 客户端直传 / 替换 / 物理删除、质量审核、OCR、计分、认知域、报告、AI、用户管理、角色权限管理或科研导出 API 调用。
 - 不得在后端 API 未确认并进入明确任务范围前编造前端对接事实。
 
 ## 8. 后续同步规则

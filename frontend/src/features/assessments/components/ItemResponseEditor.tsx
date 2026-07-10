@@ -19,6 +19,11 @@ import type {
   ItemResponseExecution,
   ItemResponseStatus,
 } from '@/src/features/assessments/types/item-response-execution';
+import type { ItemMediaDrafts } from '@/src/features/assessments/types/media-evidence-draft';
+import type {
+  EvidenceRequirementState,
+  SupportedMediaEvidenceType,
+} from '@/src/features/assessments/types/media-evidence';
 
 export type ItemSaveFeedback = {
   kind: 'success' | 'error' | 'info';
@@ -91,18 +96,43 @@ export function ItemResponseEditor({
   isDirty,
   isSaving,
   item,
+  mediaDrafts,
+  mediaWritingTypes,
   onChange,
+  onEndMediaWrite,
+  onEvidenceRequirementChange,
+  onMediaDraftChange,
   onSave,
+  onTryBeginMediaWrite,
   pageReadOnlyReason,
+  patientId,
+  scaleInstanceId,
+  visitId,
 }: {
   draft: ItemDraftState;
   feedback: ItemSaveFeedback | null;
   isDirty: boolean;
   isSaving: boolean;
   item: ItemResponseExecution;
+  mediaDrafts: ItemMediaDrafts;
+  mediaWritingTypes: ReadonlySet<SupportedMediaEvidenceType>;
   onChange: (draft: ItemDraftState) => void;
+  onEndMediaWrite: (evidenceType: SupportedMediaEvidenceType) => void;
+  onEvidenceRequirementChange: (
+    requirement: EvidenceRequirementState,
+  ) => void;
+  onMediaDraftChange: (
+    evidenceType: SupportedMediaEvidenceType,
+    draft: ItemMediaDrafts[SupportedMediaEvidenceType] | null,
+  ) => void;
   onSave: (markAsAnswered: boolean) => Promise<void>;
+  onTryBeginMediaWrite: (
+    evidenceType: SupportedMediaEvidenceType,
+  ) => boolean;
   pageReadOnlyReason: string | null;
+  patientId: string;
+  scaleInstanceId: string;
+  visitId: string;
 }) {
   const itemReadOnlyReason = getItemResponseReadOnlyReason(item.status);
   const readOnlyReason = pageReadOnlyReason ?? itemReadOnlyReason;
@@ -208,7 +238,19 @@ export function ItemResponseEditor({
         </section>
       ) : null}
 
-      <ItemEvidenceRequirements item={item} />
+      <ItemEvidenceRequirements
+        drafts={mediaDrafts}
+        item={item}
+        onDraftChange={onMediaDraftChange}
+        onEndWrite={onEndMediaWrite}
+        onRequirementChange={onEvidenceRequirementChange}
+        onTryBeginWrite={onTryBeginMediaWrite}
+        pageReadOnlyReason={pageReadOnlyReason}
+        patientId={patientId}
+        scaleInstanceId={scaleInstanceId}
+        visitId={visitId}
+        writingTypes={mediaWritingTypes}
+      />
 
       {readOnlyReason ? (
         <p

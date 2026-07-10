@@ -10,29 +10,30 @@
 
 本文档是 CogMemory AD 前端 handoff 文档入口，用于索引前端事实快照、设计基线、路由、API 对接、组件和验证手册。
 
-当前内容记录前端公共底座、B1 认证接入、B2 患者档案与评估访视最小页面闭环、B3 访视详情与量表实例初始化，以及 B4 量表施测执行与逐题手工作答草稿保存。当前仍未实现患者完整管理、整份量表最终提交、自动或手工评分、媒体、报告、AI、用户管理或权限菜单。
+当前内容记录前端公共底座、B1 认证接入、B2 患者档案与评估访视最小页面闭环、B3 访视详情与量表实例初始化、B4 量表施测执行与逐题手工作答草稿保存，以及 B5 题目 photo / handwriting 媒体证据闭环。当前仍未实现患者完整管理、整份量表最终提交、自动或手工评分、认知域、报告、AI、用户管理或权限菜单。
 
 ## 3. 当前状态
 
 - `frontend\` 根目录公共骨架配置与 `frontend\app` / `frontend\src` 公共底座已初始化。
-- 前端已从 B1 认证接入底座、B2 患者 / 访视最小业务闭环和 B3 量表实例初始化推进到 B4 真实单题草稿记录阶段。
+- 前端已从 B1 认证接入底座、B2 患者 / 访视最小业务闭环、B3 量表实例初始化和 B4 真实单题草稿记录推进到 B5 photo / handwriting 证据采集阶段。
 - 当前路由包含 `/login`、`/dashboard`、`/patients`、`/patients/new`、`/patients/[patientId]`、`/patients/[patientId]/visits/new`、`/patients/[patientId]/visits/[visitId]` 与 `/patients/[patientId]/visits/[visitId]/scale-instances/[scaleInstanceId]`。
 - 当前已新增 Auth 类型、Auth API Client、`useAuth()` 认证状态 Hook、`LoginForm` 和 `AuthDashboard`。
 - 当前已新增 patients feature：患者 / 访视公开类型、Patients API Client、展示与日期纯函数、认证工作区、患者列表 / 创建 / 详情及访视列表 / 创建组件。
-- 当前 assessments feature 已包含 A13 / A14 安全公开类型、API Client、草稿转换纯函数、访视详情与初始化、实例入口、分组导航、题目编辑和单题保存组件。
-- 当前前端对接三个 Auth API、A12 五个业务 API、A13 三个初始化前置 API，以及 A14 的 `GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId` 与单题草稿 `PATCH`。
+- 当前 assessments feature 已包含 A13 / A14 / A15 安全公开类型、评估与媒体 API Client、草稿转换、photo Canvas 重编码、handwriting 轨迹纯函数、访视详情与初始化、实例入口、分组导航、题目编辑、单题保存和媒体证据组件。
+- 当前前端对接三个 Auth API、A12 五个业务 API、A13 三个初始化前置 API、A14 两个执行草稿 API，以及 A15 的题目媒体列表、multipart 上传、短期访问地址与作废四个接口。
 - Auth、Patients 与 Assessment Execution API Client 均使用 `frontendEnv.apiBaseUrl`、`credentials: 'include'` 和 `cache: 'no-store'`。
 - 主登录态由后端 Session + HttpOnly Cookie 维护；前端不读取 Cookie，不保存 raw token、token hash 或 `passwordHash`，也不使用 localStorage / sessionStorage 保存认证凭证。
 - `/dashboard` 已提供真实患者档案入口，但仍是轻量工作区入口，不是完整医生工作台。
 - `/patients/**` 使用现有 `useAuth()` 处理认证 loading、会话失效与认证服务错误；患者 API 的 401 返回登录页，403 显示无权限，最终权限边界仍由后端 Guard 提供。
 - 患者详情访视列表已提供“打开访视”入口；访视详情页可展示安全访视与量表实例摘要，并为 `draft` / `in_progress` 访视初始化尚未存在的 MMSE / MoCA 实例。
 - 每个量表实例都有“打开量表”或“查看量表”入口；B4 执行页按服务端分组和题目顺序展示安全配置，支持普通、分步、提示后、缺失、计时与备注草稿的逐题手工保存。
-- 可用量表目录只展示名称、版本、总分范围、题目 / 分组数量和配置能力摘要，不展示完整题目、评分规则、expectedValue 或内部 ObjectId；图片、手写、计时标识不代表媒体上传、手写轨迹或实时计时器已实现。
+- B5 在同一执行页按题懒加载媒体历史，支持 photo 文件选择 / 移动端 capture 提示、Canvas JPEG 重编码、1200 × 800 手写画布、最终 PNG / 默认 strokes JSON、临时预览、作废与重传；媒体草稿与短期 URL 只存在于当前 React 内存。
+- 可用量表目录只展示名称、版本、总分范围、题目 / 分组数量和配置能力摘要，不展示完整题目、评分规则、expectedValue 或内部 ObjectId；进入实例后，只有真实 photo / handwriting requirement 才开放 B5 采集，计时标识仍不代表实时计时器已实现。
 - 当前不包含 Next middleware、完整前端权限矩阵、角色权限管理页面或权限菜单。
 - 当前首页仍为公共占位，只增加 `/login` 与 `/dashboard` 入口，不调用后端。
 - 页面继续遵循医疗系统 / 临床评估 / 低干扰 / 高可读性 / 冷静可信设计基线，不继承 ReviewX 视觉风格。
-- B4 未新增测试代码、测试框架或第三方依赖；现有 lint、typecheck、build 已通过，真实浏览器联调仍待执行。
-- 当前仍未实现患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、整份量表最终提交、批量或自动保存、媒体、计分、报告、AI、用户管理或权限菜单。
+- B5 未新增测试代码、测试框架或第三方依赖；lint、typecheck 与 build 结果记录在事实快照和验证手册，真实浏览器联调仍待执行。
+- 当前仍未实现患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、整份量表最终提交、批量或自动保存、评分、认知域、报告、AI、用户管理或权限菜单。
 
 ## 4. 必读基础文档
 
