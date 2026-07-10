@@ -185,6 +185,16 @@
 - 影响范围：`backend\src\modules\auth`、`backend\src\modules\users` 相关测试和后端 handoff 文档。
 - 后续复查点：本阶段不注册全局 Guard，不影响 `GET /health`；不新增 UsersController；不实现用户管理、注册、密码重置、短信验证码、OAuth / SSO、前端登录页、前端认证态或权限菜单；后续如接入前端认证态、CSRF / CORS 策略、用户管理或业务接口鉴权，应以单独任务明确边界、测试和文档同步。
 
+### D-022：建设第一组受保护临床业务 API
+
+- 日期：2026-07-10
+- 决策：后端 A12 在 `patients` / `assessments` 模块公开患者列表、创建、详情和患者访视列表、创建五个最小 API；所有接口统一使用服务端 Session，并显式绑定 `SessionAuthGuard`、`RolesGuard` 与 `@Roles('admin', 'doctor', 'nurse', 'research_assistant')`。
+- 背景：A2 已具备 Patient / AssessmentVisit 模型底座，A10 / A11 已具备服务端 Session 和角色 Guard，需要形成第一组可由临床工作流角色访问的真实业务 HTTP 闭环。
+- 影响范围：`backend\src\modules\patients`、`backend\src\modules\assessments`、`backend\test` 和指定 backend handoff / roadmap 文档；不修改 Schema、认证 API、全局 Guard、前端或配置。
+- 安全决策：患者 / 访视公开响应使用显式 mapper，不暴露 arbitrary Mixed 字段 `externalRefs`、`metadata`、`clinicalContext`；访视 patientId / subjectCode / status / operatorSnapshot 由服务端所有，其中 operatorSnapshot 从当前认证用户生成。
+- 错误与并发决策：患者编号和访视编号既做创建前检查，也捕获 MongoDB duplicate key 竞态，并分别稳定映射为 `PATIENT_SUBJECT_CODE_CONFLICT`、`VISIT_CODE_CONFLICT`；患者不存在、非 active 和非法日期范围使用稳定业务 code。
+- 后续复查点：本阶段不开放患者或访视更新、删除、归档 / 状态流转，不开放量表实例初始化、作答提交、媒体上传、计分、认知域计算、报告或 AI；后续扩展必须以单独任务确认 DTO、权限、事务 / 幂等和审计边界。
+
 ## 4. 后续同步规则
 
 - 新增关键技术选型、接口设计、数据模型、测试策略或部署策略后，应追加决策记录。

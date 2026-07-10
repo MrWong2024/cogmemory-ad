@@ -1,7 +1,15 @@
 // backend/src/modules/assessments/services/assessments.service.ts
-import { Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { PatientsService } from '../../patients/services/patients.service';
+import type { CreateAssessmentVisitDto } from '../dto/create-assessment-visit.dto';
+import type { ListAssessmentVisitsQueryDto } from '../dto/list-assessment-visits-query.dto';
 import {
   AssessmentClinicalContext,
   AssessmentOperatorRole,
@@ -47,6 +55,11 @@ import {
   ScaleVersionTrace,
 } from '../schemas/scale-instance.schema';
 import { ScaleResponseType } from '../../scales/schemas/scale-version.schema';
+import type {
+  AssessmentVisitDetailResponse,
+  AssessmentVisitListItemResponse,
+  AssessmentVisitListResponse,
+} from '../types/assessment-visit-response.types';
 
 export type AssessmentOperatorSnapshotSummary = {
   operatorId: string | null;
@@ -71,6 +84,40 @@ export type AssessmentVisitSummary = {
   notes?: string;
   metadata: AssessmentVisitMetadata;
 };
+
+export type CreateVisitOperatorSnapshot = {
+  operatorId: string;
+  operatorName: string;
+  operatorRole: AssessmentOperatorRole;
+};
+
+export type CreateVisitForPatientInput = CreateAssessmentVisitDto & {
+  operatorSnapshot: CreateVisitOperatorSnapshot;
+};
+
+type MongoDuplicateKeyError = {
+  code: number;
+};
+
+type AssessmentVisitListFilter = {
+  assessmentDate?: {
+    $gte?: Date;
+    $lte?: Date;
+  };
+  patientId: Types.ObjectId;
+  status?: AssessmentStatus;
+  visitType?: AssessmentVisitType;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isMongoDuplicateKeyError(
+  error: unknown,
+): error is MongoDuplicateKeyError {
+  return isRecord(error) && error.code === 11000;
+}
 
 export type ScaleVersionTraceSummary = {
   crfVersion?: string;
@@ -211,6 +258,7 @@ export class AssessmentsService {
     private readonly scaleInstanceModel: Model<ScaleInstanceDocument>,
     @InjectModel(ItemResponse.name)
     private readonly itemResponseModel: Model<ItemResponseDocument>,
+    private readonly patientsService: PatientsService,
   ) {}
 
   normalizeVisitCode(visitCode: string): string {
@@ -245,6 +293,22 @@ export class AssessmentsService {
     return this.mapVisit(visit);
   }
 
+  async findVisitById(
+    visitId: Types.ObjectId | string,
+  ): Promise<AssessmentVisitSummary | null> {
+    const normalizedId = this.normalizeObjectId(visitId);
+
+    if (!normalizedId) {
+      return null;
+    }
+
+    const visit = await this.assessmentVisitModel
+      .findOne({ _id: normalizedId })
+      .exec();
+
+    return visit ? this.mapVisit(visit) : null;
+  }
+
   async listVisitsByPatientId(
     patientId: Types.ObjectId | string,
   ): Promise<AssessmentVisitSummary[]> {
@@ -260,6 +324,142 @@ export class AssessmentsService {
       .exec();
 
     return visits.map((visit) => this.mapVisit(visit));
+  }
+
+  async listVisitsByPatientIdPaginated(
+    patientId: Types.ObjectId | string,
+    query: ListAssessmentVisitsQueryDto,
+  ): Promise<AssessmentVisitListResponse> {
+    const normalizedId = this.requireObjectId(patientId, 'patientId');
+    await this.requirePatient(normalizedId);
+    this.assertValidDateRange(query.dateFrom, query.dateTo);
+
+    const filter: AssessmentVisitListFilter = {
+      patientId: normalizedId,
+    };
+
+    if (query.status) {
+      filter.status = query.status;
+    }
+
+    if (query.visitType) {
+      filter.visitType = query.visitType;
+    }
+
+    if (query.dateFrom || query.dateTo) {
+      filter.assessmentDate = {
+        ...(query.dateFrom ? { $gte: query.dateFrom } : {}),
+        ...(query.dateTo ? { $lte: query.dateTo } : {}),
+      };
+    }
+
+    const skip = (query.page - 1) * query.pageSize;
+    const [visits, total] = await Promise.all([
+      this.assessmentVisitModel
+        .find(filter)
+        .sort({ assessmentDate: -1, _id: -1 })
+        .skip(skip)
+        .limit(query.pageSize)
+        .exec(),
+      this.assessmentVisitModel.countDocuments(filter).exec(),
+    ]);
+
+    return {
+      items: visits.map((visit) =>
+        this.toAssessmentVisitListItemResponse(this.mapVisit(visit)),
+      ),
+      page: query.page,
+      pageSize: query.pageSize,
+      total,
+    };
+  }
+
+  async createVisitForPatient(
+    patientId: Types.ObjectId | string,
+    input: CreateVisitForPatientInput,
+  ): Promise<AssessmentVisitDetailResponse> {
+    const normalizedPatientId = this.requireObjectId(patientId, 'patientId');
+    const patient = await this.requirePatient(normalizedPatientId);
+
+    if (patient.status !== 'active') {
+      throw new ConflictException({
+        code: 'PATIENT_NOT_ACTIVE',
+        message: 'Patient is not active',
+      });
+    }
+
+    const visitCode = this.normalizeVisitCode(input.visitCode);
+    const existingVisit = await this.assessmentVisitModel
+      .findOne({ visitCode })
+      .exec();
+
+    if (existingVisit) {
+      this.throwVisitCodeConflict();
+    }
+
+    const operatorId = this.requireObjectId(
+      input.operatorSnapshot.operatorId,
+      'operatorSnapshot.operatorId',
+    );
+
+    try {
+      const visit = await this.assessmentVisitModel.create({
+        patientId: normalizedPatientId,
+        subjectCode: patient.subjectCode,
+        visitCode,
+        visitType: input.visitType ?? 'baseline',
+        status: 'draft',
+        assessmentDate: input.assessmentDate,
+        startedAt: null,
+        completedAt: null,
+        lockedAt: null,
+        voidedAt: null,
+        operatorSnapshot: {
+          operatorId,
+          operatorName: input.operatorSnapshot.operatorName.trim(),
+          operatorRole: input.operatorSnapshot.operatorRole,
+        },
+        clinicalContext: null,
+        notes: input.notes?.trim() || undefined,
+        metadata: null,
+      });
+
+      return this.toAssessmentVisitDetailResponse(this.mapVisit(visit));
+    } catch (error: unknown) {
+      if (isMongoDuplicateKeyError(error)) {
+        this.throwVisitCodeConflict();
+      }
+
+      throw error;
+    }
+  }
+
+  toAssessmentVisitListItemResponse(
+    visit: AssessmentVisitSummary,
+  ): AssessmentVisitListItemResponse {
+    return {
+      id: visit.id,
+      patientId: visit.patientId,
+      subjectCode: visit.subjectCode,
+      visitCode: visit.visitCode,
+      visitType: visit.visitType,
+      status: visit.status,
+      assessmentDate: visit.assessmentDate,
+      startedAt: visit.startedAt,
+      completedAt: visit.completedAt,
+      lockedAt: visit.lockedAt,
+      voidedAt: visit.voidedAt,
+      operatorSnapshot: visit.operatorSnapshot
+        ? { ...visit.operatorSnapshot }
+        : null,
+      notes: visit.notes,
+    };
+  }
+
+  toAssessmentVisitDetailResponse(
+    visit: AssessmentVisitSummary,
+  ): AssessmentVisitDetailResponse {
+    return this.toAssessmentVisitListItemResponse(visit);
   }
 
   async findScaleInstanceByCode(
@@ -411,6 +611,48 @@ export class AssessmentsService {
     }
 
     return objectId;
+  }
+
+  private requireObjectId(
+    id: Types.ObjectId | string,
+    fieldName: string,
+  ): Types.ObjectId {
+    const objectId = this.normalizeObjectId(id);
+
+    if (!objectId) {
+      throw new BadRequestException(`${fieldName} must be a valid ObjectId`);
+    }
+
+    return objectId;
+  }
+
+  private async requirePatient(patientId: Types.ObjectId) {
+    const patient = await this.patientsService.findPatientById(patientId);
+
+    if (!patient) {
+      throw new NotFoundException({
+        code: 'PATIENT_NOT_FOUND',
+        message: 'Patient not found',
+      });
+    }
+
+    return patient;
+  }
+
+  private assertValidDateRange(dateFrom?: Date, dateTo?: Date): void {
+    if (dateFrom && dateTo && dateFrom.getTime() > dateTo.getTime()) {
+      throw new BadRequestException({
+        code: 'INVALID_DATE_RANGE',
+        message: 'dateFrom must not be later than dateTo',
+      });
+    }
+  }
+
+  private throwVisitCodeConflict(): never {
+    throw new ConflictException({
+      code: 'VISIT_CODE_CONFLICT',
+      message: 'Assessment visit code already exists',
+    });
   }
 
   private mapVisit(visit: AssessmentVisitDocument): AssessmentVisitSummary {

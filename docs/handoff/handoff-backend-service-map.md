@@ -6,8 +6,8 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 Service / Provider，以及 `scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains`、`reports`、`users`、`auth` 内部读取或认证底座 Service；`scales` 还包含 MMSE / MoCA 初始配置 seed 只读 Service，`assessments` 还包含评估执行初始化内部编排 Service，`auth` 还包含 `AuthController`、session 认证 Guard 和角色 Guard 底座。
-- 当前没有医生、SMS 或 LLM Service；`ScalesService`、`ScaleSeedDataService`、`PatientsService`、`AssessmentsService`、`AssessmentExecutionService`、`MediaEvidenceService`、`ScoringService`、`CognitiveDomainsService`、`ReportsService`、`UsersService`、`AuthService` 仅为内部模型读取 / seed 读取 / 初始化编排 / 汇总 / 状态校验 / 认证会话底座；`AuthController` 仅暴露最小公开认证 API。
+- 当前存在公共底座 Service / Provider，以及各业务模块内部读取或认证底座 Service；A12 已扩展 `PatientsService` 与 `AssessmentsService`，并新增 `PatientsController`、`AssessmentVisitsController` 作为五个受保护公开 API 的 HTTP 边界。
+- 当前没有医生、SMS 或 LLM Service；`AssessmentExecutionService`、媒体、计分、认知域和报告能力仍为内部底座，A12 不调用量表初始化、作答、媒体、计分、报告或 AI 能力。
 
 ## 3. 当前 Service / Provider 清单
 
@@ -70,21 +70,24 @@
 
 - Service 名称：`PatientsService`
 - 文件路径：`backend\src\modules\patients\services\patients.service.ts`
-- 职责边界：提供患者 / 受试者基础档案的内部读取底座；规范化 `subjectCode`；按 mapper 输出 `PatientSummary`，不直接返回完整 Mongoose document。
-- 当前方法：`normalizeSubjectCode(subjectCode)`、`findPatientBySubjectCode(subjectCode)`、`listActivePatients()`。
-- 上游调用方：当前暂无公开 Controller；预期供后续评估、报告或科研导出等后端业务模块内部读取患者基础档案。
+- 职责边界：保留患者 / 受试者基础档案内部读取能力，并承担 A12 患者分页、创建、详情读取和公开响应映射；不直接返回完整 Mongoose document。
+- 当前方法：既有 `normalizeSubjectCode()`、`findPatientBySubjectCode()`、`listActivePatients()`；A12 新增 `findPatientById()`、`listPatients()`、`createPatient()`、`toPatientListItemResponse()`、`toPatientDetailResponse()`。
+- 上游调用方：`PatientsController`；`AssessmentsService` 通过 `findPatientById()` 确认患者存在、状态和 subjectCode。
 - 下游依赖：`Patient` Mongoose Model。
-- 边界：不创建、更新、删除患者档案；不实现真实患者建档流程；不实现脱敏流程、权限、认证或公开患者管理 API。
-- 测试覆盖口径：`backend\src\modules\patients\services\patients.service.spec.ts`，覆盖 `subjectCode` 规范化、查无返回 `null`、mapper 输出、active patient 列表读取、schema collection、索引和关键字段显式类型；不连接真实 MongoDB，测试数据为脱敏人工样例。
+- 规则与异常：subjectCode trim + uppercase；keyword 经 `escapeRegExp()` 转义；分页使用 find + countDocuments；重复编号预检查并捕获 MongoDB 11000，统一抛 409 / `PATIENT_SUBJECT_CODE_CONFLICT`。
+- 边界：A12 只创建患者，不更新、删除或归档；公开 mapper 不返回 externalRefs / metadata。
+- 测试覆盖口径：service spec 覆盖规范化、ID 查无、分页与过滤、安全 keyword、创建默认值、预检查冲突、duplicate key 竞态和公开 mapper；不连接真实 MongoDB。
 
 - Service 名称：`AssessmentsService`
 - 文件路径：`backend\src\modules\assessments\services\assessments.service.ts`
-- 职责边界：提供访视、量表实例运行时数据与题目作答数据的内部读取底座；规范化 `visitCode` / `instanceCode` / `itemCode`；按 mapper 输出 `AssessmentVisitSummary` / `ScaleInstanceSummary` / `ItemResponseSummary`，不直接返回完整 Mongoose document。
-- 当前方法：`normalizeVisitCode(visitCode)`、`normalizeInstanceCode(instanceCode)`、`normalizeItemCode(itemCode)`、`findVisitByCode(visitCode)`、`listVisitsByPatientId(patientId)`、`findScaleInstanceByCode(instanceCode)`、`listScaleInstancesByVisitId(assessmentVisitId)`、`findItemResponseByScaleInstanceAndItemCode(scaleInstanceId, itemCode)`、`listItemResponsesByScaleInstanceId(scaleInstanceId)`、`listScoredItemResponsesByScaleInstanceId(scaleInstanceId)`、`listItemResponsesByVisitId(assessmentVisitId)`。
-- 上游调用方：当前暂无公开 Controller；预期供后续评估执行、计分、报告或科研导出等后端业务模块内部读取访视、量表实例和题目作答。
-- 下游依赖：`AssessmentVisit`、`ScaleInstance` 与 `ItemResponse` Mongoose Model。
-- 边界：不创建、更新、删除访视、量表实例或题目作答；不实现状态流转、作答提交、媒体证据读写流程、计分、报告、AI、认证、权限或公开评估 API。
-- 测试覆盖口径：`backend\src\modules\assessments\services\assessments.service.spec.ts`，覆盖 code 规范化、访视 / 量表实例 / 题目作答查无返回 `null`、mapper 输出、列表读取、schema collection、索引、内嵌子文档 `_id: false` 和关键字段显式类型；不连接真实 MongoDB，测试数据为脱敏人工样例。
+- 职责边界：保留访视、量表实例和题目作答内部读取底座，并承担 A12 患者访视分页、访视创建和安全公开响应映射。
+- 当前方法：保留既有所有方法；A12 新增 `findVisitById()`、`listVisitsByPatientIdPaginated()`、`createVisitForPatient()`、`toAssessmentVisitListItemResponse()`、`toAssessmentVisitDetailResponse()`。
+- 上游调用方：`AssessmentVisitsController`；既有内部调用方可继续复用旧方法。
+- 下游依赖：`AssessmentVisit`、`ScaleInstance`、`ItemResponse` Mongoose Model 和 `PatientsService`；`AssessmentsModule` 导入 `PatientsModule`、`AuthModule`、`ScalesModule`。
+- 规则与异常：先确认患者存在；非 active 返回 409 / `PATIENT_NOT_ACTIVE`；visitCode trim + uppercase；重复编号预检查并捕获 MongoDB 11000，统一为 `VISIT_CODE_CONFLICT`；dateFrom 晚于 dateTo 返回 400 / `INVALID_DATE_RANGE`。
+- 创建所有权：patientId 来自路径，subjectCode 来自 Patient，status 固定 draft，operatorSnapshot 由 Controller 认证上下文生成；不接受客户端状态时间、clinicalContext 或 metadata。
+- 边界：不更新、删除访视或流转状态；不调用 `AssessmentExecutionService`，不创建量表实例或题目作答，不触发媒体、计分、认知域、报告或 AI；公开 mapper 不返回 clinicalContext / metadata。
+- 测试覆盖口径：service spec 覆盖分页过滤、日期范围、患者不存在 / 非 active、规范化、冲突预检查 / duplicate key、服务端字段所有权和公开 mapper；不连接真实 MongoDB。
 
 - Service 名称：`AssessmentExecutionService`
 - 文件路径：`backend\src\modules\assessments\services\assessment-execution.service.ts`
@@ -150,6 +153,21 @@
 - 边界：不设置 Cookie，不清除 Cookie，不实现公开用户管理 API、短信验证码、OAuth / SSO、JWT 主登录态、max active session 回收、前端认证或权限页面。
 - 测试覆盖口径：`backend\src\modules\auth\services\auth.service.spec.ts`，覆盖 `Session` schema collection、索引、`sessionTokenHash select: false`、TTL 索引、ObjectId / Date / Mixed 显式类型，覆盖密码 hash / verify、损坏 hash、session token 随机性、token hash 稳定性、账号密码认证成功创建 session、账号不存在 / 密码错误 / 用户非 active 返回 `null`、session 创建写入 token hash 而非 raw token、session 不存在 / revoked / expired / 用户不存在 / 用户非 active 返回 `null`、正常返回 `AuthenticatedUserContext` 且不含 passwordHash、raw token 或 token hash；不连接真实 MongoDB，不调用 OSS / Storage / SMS / LLM。
 
+- Controller 名称：`PatientsController`
+- 文件路径：`backend\src\modules\patients\controllers\patients.controller.ts`
+- 职责边界：绑定患者列表 / 创建 / 详情路由、DTO、`SessionAuthGuard`、`RolesGuard` 和患者工作流角色；只调用 `PatientsService`，不直接操作 Model。
+- 公开接口：`GET /patients`、`POST /patients`、`GET /patients/:patientId`。
+- 权限：仅 `admin`、`doctor`、`nurse`、`research_assistant`；未认证 401，角色不足 403；没有注册全局 Guard。
+- 测试覆盖口径：controller spec 覆盖 Guards / Roles metadata、Service 参数传递、创建 / 详情响应和患者不存在；DTO spec 覆盖分页默认值 / 边界、枚举、MongoId、转换和非白名单字段。
+
+- Controller 名称：`AssessmentVisitsController`
+- 文件路径：`backend\src\modules\assessments\controllers\assessment-visits.controller.ts`
+- 职责边界：绑定患者访视列表 / 创建路由、DTO、Guard 和角色；从 `@CurrentUser()` 构建 operatorSnapshot 后调用 `AssessmentsService`。
+- 公开接口：`GET /patients/:patientId/visits`、`POST /patients/:patientId/visits`。
+- operatorRole 优先级：doctor > nurse > research_assistant > admin > unknown；客户端不能传入或覆盖 operatorSnapshot。
+- 权限：仅 `admin`、`doctor`、`nurse`、`research_assistant`；未认证 401，角色不足 403；没有注册全局 Guard。
+- 测试覆盖口径：controller spec 覆盖 Guards / Roles metadata、列表 / 创建参数和角色优先级；DTO spec 覆盖 MongoId、assessmentDate、枚举、分页、日期参数和非白名单服务端字段。
+
 - Controller 名称：`AuthController`
 - 文件路径：`backend\src\modules\auth\auth.controller.ts`
 - 职责边界：定义公开认证 HTTP API 边界；`POST /auth/login` 调用 `AuthService.authenticateWithPassword()` 并设置 HttpOnly `cogmemory_ad_session` Cookie；`POST /auth/logout` 从 Cookie 读取 session token、内部撤销 session 并清除 Cookie；`GET /auth/me` 使用 `SessionAuthGuard` 显式保护并返回当前用户公开信息。
@@ -161,7 +179,7 @@
 - Guard 名称：`SessionAuthGuard`
 - 文件路径：`backend\src\modules\auth\guards\session-auth.guard.ts`
 - 职责边界：支持 `@Public()` 路由直通；从 cookie-parser cookies 或原始 `cookie` header 读取 `cogmemory_ad_session`；调用 `AuthService.validateSessionToken()`；校验成功后挂载 `req.user`，失败抛 `UnauthorizedException`。
-- 上游调用方：当前未注册为全局 Guard，未来由具体 Controller 或模块按需启用。
+- 上游调用方：`AuthController.getMe()`、`PatientsController`、`AssessmentVisitsController` 显式启用；未注册为全局 Guard。
 - 下游依赖：`Reflector`、`AuthService`。
 - 边界：不下发 Cookie，不清除 Cookie，不改变 `GET /health` 权限。
 - 测试覆盖口径：`backend\src\modules\auth\guards\session-auth.guard.spec.ts`，覆盖 public 路由直通、缺少 Cookie 抛 `UnauthorizedException`、`cogmemory_ad_session` cookie-parser cookies 读取、原始 cookie header 解析、校验成功挂载 `req.user`、校验失败抛 `UnauthorizedException`。
@@ -169,7 +187,7 @@
 - Guard 名称：`RolesGuard`
 - 文件路径：`backend\src\modules\auth\guards\roles.guard.ts`
 - 职责边界：读取 `@Roles()` 元数据；无角色要求时直通；有角色要求时基于 `req.user.roles` 校验，角色不足或缺少 `req.user` 时抛 `ForbiddenException`。
-- 上游调用方：当前未注册为全局 Guard，未来由具体 Controller 或模块按需启用。
+- 上游调用方：`PatientsController`、`AssessmentVisitsController` 与 `@Roles()` 配合显式启用；未注册为全局 Guard。
 - 下游依赖：`Reflector`。
 - 边界：不实现完整权限矩阵，不实现权限管理接口，不改变 `GET /health` 权限。
 - 测试覆盖口径：`backend\src\modules\auth\guards\roles.guard.spec.ts`，覆盖无角色要求直通、包含要求角色通过、角色不足抛 `ForbiddenException`、没有 `req.user` 抛 `ForbiddenException`。

@@ -6,9 +6,10 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 DTO、响应 type、Storage interface，以及 `scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains`、`reports`、`users`、`auth` 内部 Service 读取输出 type；`scales` 当前还包含 MMSE / MoCA 初始配置 seed 内部 type，`assessments` 当前还包含评估执行初始化内部编排 type，`auth` 当前还包含认证上下文、session 创建内部 type、公开登录 DTO 和认证响应 type。
+- 当前存在公共底座 DTO、响应 type、Storage interface，以及各业务模块内部 Service 读取输出 type；A12 已新增患者档案与评估访视的公开请求 DTO 和安全响应 type。
 - 当前新增公开认证请求 DTO：`LoginDto`。
-- 当前仍没有用户管理、注册、密码重置、医生、患者、量表、评估、媒体、报告或业务上传请求 DTO。
+- 当前新增公开患者 / 访视 DTO：`CreatePatientDto`、`ListPatientsQueryDto`、`PatientIdParamDto`、`CreateAssessmentVisitDto`、`ListAssessmentVisitsQueryDto`、`PatientVisitsParamDto`。
+- 当前仍没有用户管理、注册、密码重置、量表实例、作答、媒体、计分、认知域、报告或业务上传请求 DTO。
 
 ## 3. 当前 DTO / Type 清单
 
@@ -59,6 +60,54 @@
 - 文件：`backend\src\common\dto\pagination-query.dto.ts`
 - 用途：公共分页响应 type。
 - 字段：`items`、`page`、`pageSize`、`total`。
+
+- 名称：`CreatePatientDto`
+- 文件：`backend\src\modules\patients\dto\create-patient.dto.ts`
+- 用途：`POST /patients` 请求 DTO。
+- 允许字段：必填 `subjectCode`；可选 `displayName`、`sourceType`、`sex`、`birthDate`、`educationYears`、`handedness`、`tags`、`notes`。
+- 校验摘要：subjectCode trim、非空、最大 80；displayName 最大 120；birthDate 转为 Date；educationYears 为 0-40 整数；tags 最多 20 项、单项 trim 且最大 50、移除空字符串；notes 最大 2000。
+- 白名单边界：不声明 status、externalRefs、metadata、operator 或 timestamps，非白名单字段由全局 ValidationPipe 拒绝。
+
+- 名称：`ListPatientsQueryDto`
+- 文件：`backend\src\modules\patients\dto\list-patients-query.dto.ts`
+- 用途：`GET /patients` query DTO。
+- 字段：`page` 默认 1；`pageSize` 默认 20、最大 100；可选 `keyword`、`status`、`sourceType`。
+- 校验摘要：keyword trim、最大 100；status 仅 active / inactive / archived；sourceType 仅 clinical / research。
+
+- 名称：`PatientIdParamDto`
+- 文件：`backend\src\modules\patients\dto\patient-id-param.dto.ts`
+- 用途：`GET /patients/:patientId` path DTO。
+- 字段与校验：`patientId: string`，使用 `@IsMongoId()`。
+
+- 名称：`PatientListItemResponse`、`PatientDetailResponse`、`PatientListResponse`
+- 文件：`backend\src\modules\patients\types\patient-response.types.ts`
+- 用途：患者公开响应 type。
+- 字段摘要：列表项包含 id、subjectCode、displayName、sourceType、sex、birthDate、educationYears、handedness、status、tags；详情额外包含 notes；分页响应包含 items、page、pageSize、total。
+- 安全边界：不包含 externalRefs、metadata、`__v` 或 Mongoose document 方法。
+
+- 名称：`CreateAssessmentVisitDto`
+- 文件：`backend\src\modules\assessments\dto\create-assessment-visit.dto.ts`
+- 用途：`POST /patients/:patientId/visits` 请求 DTO。
+- 允许字段：必填 `visitCode`、`assessmentDate`；可选 `visitType`、`notes`。
+- 校验摘要：visitCode trim、非空、最大 80；visitType 仅 baseline / follow_up / screening / unscheduled / other；assessmentDate 转为 Date；notes trim、最大 2000。
+- 白名单边界：不声明 patientId、subjectCode、status、operatorSnapshot、状态时间、clinicalContext、metadata 或 timestamps。
+
+- 名称：`ListAssessmentVisitsQueryDto`
+- 文件：`backend\src\modules\assessments\dto\list-assessment-visits-query.dto.ts`
+- 用途：`GET /patients/:patientId/visits` query DTO。
+- 字段：`page` 默认 1；`pageSize` 默认 20、最大 100；可选 `status`、`visitType`、`dateFrom`、`dateTo`。
+- 校验摘要：status / visitType 使用既有 Schema 枚举口径；dateFrom / dateTo 转为 Date；日期先后关系由 Service 形成 `INVALID_DATE_RANGE` 业务语义。
+
+- 名称：`PatientVisitsParamDto`
+- 文件：`backend\src\modules\assessments\dto\patient-visits-param.dto.ts`
+- 用途：两个患者访视接口的 path DTO。
+- 字段与校验：`patientId: string`，使用 `@IsMongoId()`。
+
+- 名称：`AssessmentVisitListItemResponse`、`AssessmentVisitDetailResponse`、`AssessmentVisitListResponse`
+- 文件：`backend\src\modules\assessments\types\assessment-visit-response.types.ts`
+- 用途：访视公开响应 type。
+- 字段摘要：id、patientId、subjectCode、visitCode、visitType、status、assessmentDate、状态时间、operatorSnapshot、notes；分页响应包含 items、page、pageSize、total。
+- 安全边界：不包含 clinicalContext、metadata、`__v` 或 Mongoose document 方法。
 
 - 名称：`StorageService` 及相关输入输出 type
 - 文件：`backend\src\modules\storage\storage.interface.ts`

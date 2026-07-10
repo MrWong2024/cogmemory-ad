@@ -11,8 +11,8 @@
 - `backend\src\modules` 当前包含 `storage`、`scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains`、`reports`、`users` 与 `auth`。
 - `StorageModule` 当前只提供 fake / OSS 底层 driver 结构和 `STORAGE_SERVICE` token，不提供业务上传接口。
 - `ScalesModule` 当前提供量表定义 / 量表版本 Schema、内部 `ScalesService` 读取底座、MMSE / MoCA 初始配置 seed 常量、内部只读 `ScaleSeedDataService` 和 `validateScaleSeeds()` 种子校验纯函数，不提供公开业务接口。
-- `PatientsModule` 当前只提供患者 / 受试者基础档案 Schema 与内部 `PatientsService` 读取底座，不提供公开业务接口。
-- `AssessmentsModule` 当前提供访视 / 量表实例运行时 Schema、题目作答数据 Schema、内部 `AssessmentsService` 读取底座，以及内部 `AssessmentExecutionService` 评估执行初始化编排底座，不提供公开业务接口。
+- `PatientsModule` 当前提供患者 / 受试者基础档案 Schema、内部读取底座，以及 `GET /patients`、`POST /patients`、`GET /patients/:patientId` 三个患者最小公开 API。
+- `AssessmentsModule` 当前提供访视 / 量表实例运行时 Schema、题目作答数据 Schema、内部 `AssessmentsService` 读取底座、内部 `AssessmentExecutionService` 评估执行初始化编排底座，以及 `GET /patients/:patientId/visits`、`POST /patients/:patientId/visits` 两个访视最小公开 API；A12 访视创建不调用 `AssessmentExecutionService`。
 - `MediaModule` 当前只提供媒体证据元数据 Schema 与内部 `MediaEvidenceService` 读取底座，不提供公开媒体上传、下载、查询、删除或签名 URL 接口。
 - `ScoringModule` 当前只提供计分结果快照 Schema、内部 `ScoringService` 读取底座和 `summarizeItemScores()` 通用计分汇总纯函数，不提供公开计分触发、查询、复核或报告接口。
 - `CognitiveDomainsModule` 当前只提供认知域结果快照 Schema、内部 `CognitiveDomainsService` 读取底座和 `summarizeDomainScores()` 通用认知域汇总纯函数，不提供公开认知域计算触发、查询、复核或报告接口。
@@ -22,9 +22,10 @@
 - OSS 业务上传服务、SMS Service、LLM Service 均未实现。
 - 本地默认后端端口为 `5002`。
 - 本地默认前端 origin 为 `http://localhost:3002`。
-- 当前公共接口为 `GET /health`、`POST /auth/login`、`POST /auth/logout`、`GET /auth/me`。
+- 当前公共接口为 `GET /health`、三个认证 API，以及 A12 五个患者 / 访视 API；A12 五个接口均显式使用 `SessionAuthGuard` + `RolesGuard`，允许角色为 `admin`、`doctor`、`nurse`、`research_assistant`。
 - 已完成后端公共底座基础闭环本地验证：`npm install` 成功、`npm run build` 成功、`npm test -- --runInBand` 成功、`npm run start:prod` 启动成功。
-- 单元测试验证结果为 18 个测试套件通过、173 个测试通过。
+- 单元测试验证结果为 22 个测试套件通过、213 个测试通过。
+- A12 首个真实 HTTP E2E 已在 `NODE_ENV=test` 和隔离 `cogmemory_ad_test` 数据库上通过：1 个测试套件、7 个测试通过；使用 fake / stub 外部服务配置并只清理 A12 前缀测试数据。
 - 后端 TypeScript 编译根目录为 `.`，`outDir` 保持 `./dist`，因此 `src/main.ts` 编译后的主入口产物为 `dist/src/main.js`。
 - `package.json` 中 `start:prod` 保持指向 `./dist/src/main.js`，当前 build 产物路径已与该启动路径对齐。
 - `tsBuildInfoFile` 保持 `./dist/tsconfig.build.tsbuildinfo`；`dist` 与 `*.tsbuildinfo` 均作为生成物处理，不作为项目源文件纳入版本库。
@@ -41,7 +42,7 @@
 - development / test 默认 `STORAGE_DRIVER=fake`，production 默认 `STORAGE_DRIVER=oss`。
 - OSS、SMS、LLM 配置均为占位或示例口径，不包含真实密钥。
 - OSS 业务上传服务、SMS Service、LLM Service、业务上传接口均未实现。
-- 当前已有 `scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains`、`reports`、`users` 与 `auth` 内部模型底座，其中 `scales` 已包含 MMSE / MoCA 初始配置 seed 常量、只读读取 Service 和 seed 校验纯函数，`assessments` 已包含 `AssessmentVisit`、`ScaleInstance`、`ItemResponse` 与内部 `AssessmentExecutionService`，`media` 已包含 `MediaEvidence`，`scoring` 已包含 `ScoreResult`，`cognitive-domains` 已包含 `CognitiveDomainResult`，`reports` 已包含 `ClinicalReport`，`users` 已包含 `User`，`auth` 已包含 `Session`、内部认证 Service、装饰器、Guard 底座和最小公开认证 API；但无公开业务 API、用户管理 API、真实患者建档流程、公开评估执行业务接口、作答提交、媒体上传 / 下载 / 签名 URL、数据库 seed runner、seed 写库、公开 MMSE / MoCA 配置查询接口、计分触发、认知域计算触发、MMSE / MoCA 专用计分规则执行、MMSE / MoCA 专用认知域规则执行、报告生成接口、医生确认写库流程、PDF 导出、疾病诊断或 AI。
+- 当前已有 `scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains`、`reports`、`users` 与 `auth` 模型 / Service 底座；A12 已开放患者列表 / 创建 / 详情和患者访视列表 / 创建五个最小公开业务 API。仍无用户管理 API、患者编辑 / 删除 / 归档、访视编辑 / 删除 / 状态流转、量表实例公开创建、作答提交、媒体上传 / 下载 / 签名 URL、数据库 seed runner、计分触发、认知域计算触发、报告生成、医生确认写库、PDF 导出、疾病诊断或 AI。
 - 当前 `start:prod` 与 TypeScript build 主入口产物路径均指向 `dist/src/main.js`，并已完成本地启动验证。
 - 本次仅使用指定外部 GitHub commit `b302b8af7b7ac9cc558939dc1b38ace0976c65b3` 作为后端公共底座来源，不继承其业务事实。
 
@@ -69,10 +70,15 @@
 - `Patient` collection 为 `patients`，使用 `timestamps: true`，不在 class 中重复声明 `createdAt` / `updatedAt`。
 - `Patient` 当前覆盖受试者稳定编码、展示名、来源类型、性别、出生日期、受教育年限、利手、状态、标签、备注、脱敏外部引用和扩展 metadata。
 - `Patient` 当前索引为 `{ subjectCode: 1 }` unique、`{ status: 1, subjectCode: 1 }`、`{ sourceType: 1, status: 1 }`。
+- `PatientsController` 当前公开患者分页列表、创建和详情读取；列表支持 `page`、`pageSize`、`keyword`、`status`、`sourceType`，默认按 `subjectCode` 升序。创建只接受确认的结构化字段，`subjectCode` 使用 trim + uppercase，`status` 固定为 `active`，重复编号统一为 `PATIENT_SUBJECT_CODE_CONFLICT`。
+- 患者公开 mapper 不返回内部 `externalRefs`、`metadata`、Mongoose document 字段或 `__v`；详情相较列表额外返回 `notes`。
 - `AssessmentVisit` Schema 位于 `backend\src\modules\assessments\schemas\assessment-visit.schema.ts`。
 - `AssessmentVisit` collection 为 `assessment_visits`，使用 `timestamps: true`，不在 class 中重复声明 `createdAt` / `updatedAt`。
 - `AssessmentVisit` 当前覆盖患者引用、受试者编码快照、访视编码、访视类型、状态、评估日期、开始 / 完成 / 锁定 / 作废时间、操作者快照、临床上下文、备注和扩展 metadata。
 - `AssessmentVisit` 当前索引为 `{ visitCode: 1 }` unique、`{ patientId: 1, assessmentDate: -1 }`、`{ subjectCode: 1, assessmentDate: -1 }`、`{ status: 1, assessmentDate: -1 }`。
+- `AssessmentVisitsController` 当前公开患者下访视分页列表和创建；列表支持 `page`、`pageSize`、`status`、`visitType`、`dateFrom`、`dateTo`，默认按 `assessmentDate` 和 `_id` 倒序。
+- 访视创建从路径取得 patientId、从患者档案取得 subjectCode、固定初始化 `draft`，并由当前认证用户生成 operatorSnapshot；客户端不能写 operatorSnapshot、状态、状态时间、clinicalContext 或 metadata。稳定业务错误包括 `PATIENT_NOT_FOUND`、`PATIENT_NOT_ACTIVE`、`VISIT_CODE_CONFLICT`、`INVALID_DATE_RANGE`。
+- 访视公开 mapper 不返回 `clinicalContext`、`metadata`、Mongoose document 字段或 `__v`。
 - `ScaleInstance` Schema 位于 `backend\src\modules\assessments\schemas\scale-instance.schema.ts`。
 - `ScaleInstance` collection 为 `scale_instances`，使用 `timestamps: true`，不在 class 中重复声明 `createdAt` / `updatedAt`。
 - `ScaleInstance` 当前覆盖访视引用、患者引用、受试者编码快照、量表定义引用、量表版本引用、量表 code、量表版本、实例编码、实例序号、状态、施测模式、版本追溯快照、时间字段、用时、操作者快照、进度摘要占位、质控摘要占位、备注和扩展 metadata。
@@ -86,7 +92,7 @@
 - `AssessmentExecutionService` 当前提供内部评估执行初始化编排能力：规范化 subject / instance / scale code，基于 `ScaleSeedDataService` 读取并校验 MMSE / MoCA seed，构建不写库的 `ScaleExecutionPlan`，并在内部写库方法中先创建 `ScaleInstance`、再批量创建初始 `ItemResponse` 骨架。
 - `AssessmentExecutionService` 生成的初始 `ItemResponse` 骨架会从 seed 复制 itemCode、CRF 编码、分组、标题、顺序、作答类型、是否计入总分、认知域、item 配置快照、版本追溯、score 初始快照、连续减 7 / 钟表等分步结果占位、MoCA 延迟回忆提示后表现占位、计时占位和 photo / handwriting / duration / raw_text / operator_note 等 evidenceRefs 占位。
 - `AssessmentExecutionService` 当前仅为内部底座，不提供公开 API；不创建 Patient、AssessmentVisit、MediaEvidence、ScoreResult、CognitiveDomainResult 或 ClinicalReport；不实现事务、幂等、并发控制、作答提交、媒体上传、自动计分触发、认知域计算触发、报告生成、AI、认证或权限。
-- 当前未实现真实患者建档流程、访视创建流程、公开评估执行接口、真实作答提交、作答提交后自动计分触发、MMSE / MoCA 专用计分规则、认知域结果生成流程、报告生成流程、AI、认证或权限。
+- 当前仅实现患者档案和访视最小公开 API，不等于完整患者管理或完整评估执行流程；患者编辑 / 删除 / 归档、访视编辑 / 删除 / 状态流转、公开量表实例初始化、真实作答提交、自动计分触发、认知域计算触发、报告生成和 AI 仍未实现。
 
 ## 6. 当前 media 媒体证据模型底座
 
@@ -164,7 +170,7 @@
 
 - 尚无公开用户管理接口、角色权限管理接口、短信验证码接口、OAuth / SSO 接口或密码重置接口。
 - 尚无医生端或患者端业务。
-- 尚无公开患者、访视、量表实例、题目作答或量表业务接口、评估、报告生成 / 查询 / 医生确认 / 归档 / 更正 / 作废或诊断建议业务。
+- 除 A12 五个患者 / 访视最小公开 API 外，尚无量表实例、题目作答、媒体、计分、认知域或报告业务接口。
 - 尚无公开 assessment execution controller、评估创建接口、量表实例初始化接口或作答提交接口。
 - 尚无公开媒体上传、媒体查询、媒体下载、媒体删除或签名 URL 业务接口。
 - 尚无数据库 seed runner、seed 写库或公开 MMSE / MoCA 配置查询接口。
@@ -174,10 +180,10 @@
 - 尚无作答提交后自动计分触发、作答提交后自动认知域计算触发、真实计分任务流、真实认知域计算任务流、MMSE / MoCA 专用计分规则或 MMSE / MoCA 专用认知域规则。
 - 尚无短信发送接口。
 - 尚无 AI / LLM 调用接口。
-- 尚无患者、评估、量表、媒体、计分、认知域、报告等业务 Controller 或公开业务 API。
+- 尚无患者编辑 / 删除 / 归档、访视编辑 / 删除 / 状态流转，以及量表、作答、媒体、计分、认知域、报告等其他业务 Controller 或公开业务 API。
 - 尚未实现用户创建、用户更新、用户禁用、重置密码、角色权限管理、短信验证码、OAuth / SSO、JWT 主登录态、前端登录页、前端认证态或权限菜单。
-- 当前 E2E 未执行。
-- 已完成本次 `users` / `auth` / `app.module.ts` 定向 lint、后端 build 与全量单元测试；全量 lint 当前未执行。
+- A12 真实 HTTP E2E 已执行并通过；连接隔离 `cogmemory_ad_test`，未调用真实 OSS / Storage / SMS / LLM。
+- 已完成 A12 `patients` / `assessments` / `test` 定向 lint、后端 build、全量单元测试与 E2E；全量 lint 当前未执行。
 
 ## 12. 后续同步规则
 

@@ -1,7 +1,13 @@
 // backend/src/modules/assessments/services/assessments.service.spec.ts
+import {
+  ConflictException,
+  HttpException,
+  NotFoundException,
+} from '@nestjs/common';
 import { getModelToken } from '@nestjs/mongoose';
 import { Test } from '@nestjs/testing';
 import { Types } from 'mongoose';
+import { PatientsService } from '../../patients/services/patients.service';
 import {
   AssessmentVisit,
   AssessmentVisitSchema,
@@ -25,6 +31,57 @@ import { AssessmentsService } from './assessments.service';
 function createExecQuery<T>(value: T) {
   return {
     exec: jest.fn().mockResolvedValue(value),
+  };
+}
+
+function createPaginatedQuery<T>(value: T) {
+  const exec = jest.fn().mockResolvedValue(value);
+  const limit = jest.fn().mockReturnValue({ exec });
+  const skip = jest.fn().mockReturnValue({ limit });
+  const sort = jest.fn().mockReturnValue({ skip });
+
+  return { sort, skip, limit, exec };
+}
+
+async function expectHttpExceptionCode(
+  promise: Promise<unknown>,
+  status: number,
+  code: string,
+): Promise<void> {
+  let caughtError: unknown;
+
+  try {
+    await promise;
+  } catch (error: unknown) {
+    caughtError = error;
+  }
+
+  expect(caughtError).toBeInstanceOf(HttpException);
+
+  if (!(caughtError instanceof HttpException)) {
+    throw caughtError;
+  }
+
+  expect(caughtError.getStatus()).toBe(status);
+  expect(caughtError.getResponse()).toEqual(expect.objectContaining({ code }));
+}
+
+function createPatientSummary(
+  patientId: Types.ObjectId,
+  status: 'active' | 'inactive' | 'archived' = 'active',
+) {
+  return {
+    id: patientId.toString(),
+    subjectCode: 'SUBJ-TEST-A12',
+    sourceType: 'clinical' as const,
+    sex: 'unknown' as const,
+    birthDate: null,
+    educationYears: null,
+    handedness: 'unknown' as const,
+    status,
+    tags: [],
+    externalRefs: null,
+    metadata: null,
   };
 }
 
@@ -231,6 +288,8 @@ describe('AssessmentsService', () => {
   let assessmentVisitModel: {
     findOne: jest.Mock;
     find: jest.Mock;
+    countDocuments: jest.Mock;
+    create: jest.Mock;
   };
   let scaleInstanceModel: {
     findOne: jest.Mock;
@@ -240,11 +299,16 @@ describe('AssessmentsService', () => {
     findOne: jest.Mock;
     find: jest.Mock;
   };
+  let patientsService: {
+    findPatientById: jest.Mock;
+  };
 
   beforeEach(async () => {
     assessmentVisitModel = {
       findOne: jest.fn(),
       find: jest.fn(),
+      countDocuments: jest.fn(),
+      create: jest.fn(),
     };
     scaleInstanceModel = {
       findOne: jest.fn(),
@@ -253,6 +317,9 @@ describe('AssessmentsService', () => {
     itemResponseModel = {
       findOne: jest.fn(),
       find: jest.fn(),
+    };
+    patientsService = {
+      findPatientById: jest.fn(),
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -269,6 +336,10 @@ describe('AssessmentsService', () => {
         {
           provide: getModelToken(ItemResponse.name),
           useValue: itemResponseModel,
+        },
+        {
+          provide: PatientsService,
+          useValue: patientsService,
         },
       ],
     }).compile();
@@ -301,6 +372,14 @@ describe('AssessmentsService', () => {
     expect(assessmentVisitModel.findOne).toHaveBeenCalledWith({
       visitCode: 'VISIT-UNKNOWN-001',
     });
+  });
+
+  it('returns null when visit id is not found', async () => {
+    const visitId = new Types.ObjectId();
+    assessmentVisitModel.findOne.mockReturnValue(createExecQuery(null));
+
+    await expect(service.findVisitById(visitId)).resolves.toBeNull();
+    expect(assessmentVisitModel.findOne).toHaveBeenCalledWith({ _id: visitId });
   });
 
   it('maps visit results instead of returning raw documents', async () => {
@@ -414,6 +493,259 @@ describe('AssessmentsService', () => {
       },
     ]);
     expect(result[0]).not.toHaveProperty('internalMarker');
+  });
+
+  it('lists patient visits with pagination and confirmed filters', async () => {
+    const visitId = new Types.ObjectId();
+    const patientId = new Types.ObjectId();
+    const dateFrom = new Date('2026-01-01T00:00:00.000Z');
+    const dateTo = new Date('2026-01-31T23:59:59.999Z');
+    const assessmentDate = new Date('2026-01-15T08:00:00.000Z');
+    const queryChain = createPaginatedQuery([
+      {
+        _id: visitId,
+        patientId,
+        subjectCode: 'SUBJ-TEST-A12',
+        visitCode: 'VISIT-TEST-A12-LIST',
+        visitType: 'follow_up',
+        status: 'completed',
+        assessmentDate,
+        startedAt: null,
+        completedAt: assessmentDate,
+        lockedAt: null,
+        voidedAt: null,
+        operatorSnapshot: null,
+        clinicalContext: { hidden: true },
+        notes: 'Visit note',
+        metadata: { hidden: true },
+      },
+    ]);
+    patientsService.findPatientById.mockResolvedValue(
+      createPatientSummary(patientId),
+    );
+    assessmentVisitModel.find.mockReturnValue(queryChain);
+    assessmentVisitModel.countDocuments.mockReturnValue(createExecQuery(1));
+
+    const result = await service.listVisitsByPatientIdPaginated(patientId, {
+      page: 2,
+      pageSize: 5,
+      status: 'completed',
+      visitType: 'follow_up',
+      dateFrom,
+      dateTo,
+    });
+
+    const expectedFilter = {
+      patientId,
+      status: 'completed',
+      visitType: 'follow_up',
+      assessmentDate: { $gte: dateFrom, $lte: dateTo },
+    };
+    expect(assessmentVisitModel.find).toHaveBeenCalledWith(expectedFilter);
+    expect(assessmentVisitModel.countDocuments).toHaveBeenCalledWith(
+      expectedFilter,
+    );
+    expect(queryChain.sort).toHaveBeenCalledWith({
+      assessmentDate: -1,
+      _id: -1,
+    });
+    expect(queryChain.skip).toHaveBeenCalledWith(5);
+    expect(queryChain.limit).toHaveBeenCalledWith(5);
+    expect(result).toEqual({
+      items: [
+        expect.objectContaining({
+          id: visitId.toString(),
+          patientId: patientId.toString(),
+          visitCode: 'VISIT-TEST-A12-LIST',
+        }),
+      ],
+      page: 2,
+      pageSize: 5,
+      total: 1,
+    });
+    expect(result.items[0]).not.toHaveProperty('clinicalContext');
+    expect(result.items[0]).not.toHaveProperty('metadata');
+  });
+
+  it('rejects an invalid visit date range after confirming the patient', async () => {
+    const patientId = new Types.ObjectId();
+    patientsService.findPatientById.mockResolvedValue(
+      createPatientSummary(patientId),
+    );
+
+    await expectHttpExceptionCode(
+      service.listVisitsByPatientIdPaginated(patientId, {
+        page: 1,
+        pageSize: 20,
+        dateFrom: new Date('2026-02-01T00:00:00.000Z'),
+        dateTo: new Date('2026-01-01T00:00:00.000Z'),
+      }),
+      400,
+      'INVALID_DATE_RANGE',
+    );
+    expect(patientsService.findPatientById).toHaveBeenCalledWith(patientId);
+    expect(assessmentVisitModel.find).not.toHaveBeenCalled();
+  });
+
+  it('returns stable not found semantics when listing visits for an unknown patient', async () => {
+    patientsService.findPatientById.mockResolvedValue(null);
+
+    await expect(
+      service.listVisitsByPatientIdPaginated(new Types.ObjectId(), {
+        page: 1,
+        pageSize: 20,
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    await expectHttpExceptionCode(
+      service.listVisitsByPatientIdPaginated(new Types.ObjectId(), {
+        page: 1,
+        pageSize: 20,
+      }),
+      404,
+      'PATIENT_NOT_FOUND',
+    );
+  });
+
+  it('creates a draft visit from patient and operator snapshots', async () => {
+    const patientId = new Types.ObjectId();
+    const visitId = new Types.ObjectId();
+    const operatorId = new Types.ObjectId();
+    const assessmentDate = new Date('2026-03-01T08:00:00.000Z');
+    patientsService.findPatientById.mockResolvedValue(
+      createPatientSummary(patientId),
+    );
+    assessmentVisitModel.findOne.mockReturnValue(createExecQuery(null));
+    assessmentVisitModel.create.mockImplementation(
+      (input: Record<string, unknown>) =>
+        Promise.resolve({ _id: visitId, ...input }),
+    );
+
+    const result = await service.createVisitForPatient(patientId, {
+      visitCode: ' visit-test-a12-create ',
+      assessmentDate,
+      notes: ' visit note ',
+      operatorSnapshot: {
+        operatorId: operatorId.toString(),
+        operatorName: 'Sample Operator',
+        operatorRole: 'doctor',
+      },
+    });
+
+    expect(assessmentVisitModel.create).toHaveBeenCalledWith({
+      patientId,
+      subjectCode: 'SUBJ-TEST-A12',
+      visitCode: 'VISIT-TEST-A12-CREATE',
+      visitType: 'baseline',
+      status: 'draft',
+      assessmentDate,
+      startedAt: null,
+      completedAt: null,
+      lockedAt: null,
+      voidedAt: null,
+      operatorSnapshot: {
+        operatorId,
+        operatorName: 'Sample Operator',
+        operatorRole: 'doctor',
+      },
+      clinicalContext: null,
+      notes: 'visit note',
+      metadata: null,
+    });
+    expect(result).toEqual(
+      expect.objectContaining({
+        id: visitId.toString(),
+        patientId: patientId.toString(),
+        subjectCode: 'SUBJ-TEST-A12',
+        visitCode: 'VISIT-TEST-A12-CREATE',
+        status: 'draft',
+      }),
+    );
+    expect(result).not.toHaveProperty('clinicalContext');
+    expect(result).not.toHaveProperty('metadata');
+  });
+
+  it('rejects visit creation for a missing or non-active patient', async () => {
+    const patientId = new Types.ObjectId();
+    const input = {
+      visitCode: 'VISIT-TEST-A12-BLOCKED',
+      assessmentDate: new Date(),
+      operatorSnapshot: {
+        operatorId: new Types.ObjectId().toString(),
+        operatorName: 'Sample Operator',
+        operatorRole: 'nurse' as const,
+      },
+    };
+    patientsService.findPatientById.mockResolvedValueOnce(null);
+
+    await expectHttpExceptionCode(
+      service.createVisitForPatient(patientId, input),
+      404,
+      'PATIENT_NOT_FOUND',
+    );
+
+    patientsService.findPatientById.mockResolvedValueOnce(
+      createPatientSummary(patientId, 'inactive'),
+    );
+    await expectHttpExceptionCode(
+      service.createVisitForPatient(patientId, input),
+      409,
+      'PATIENT_NOT_ACTIVE',
+    );
+    expect(assessmentVisitModel.create).not.toHaveBeenCalled();
+  });
+
+  it('converts visit code precheck and duplicate key conflicts to stable 409 semantics', async () => {
+    const patientId = new Types.ObjectId();
+    const input = {
+      visitCode: 'VISIT-TEST-A12-DUPLICATE',
+      assessmentDate: new Date(),
+      operatorSnapshot: {
+        operatorId: new Types.ObjectId().toString(),
+        operatorName: 'Sample Operator',
+        operatorRole: 'research_assistant' as const,
+      },
+    };
+    patientsService.findPatientById.mockResolvedValue(
+      createPatientSummary(patientId),
+    );
+    assessmentVisitModel.findOne.mockReturnValueOnce(
+      createExecQuery({ _id: new Types.ObjectId() }),
+    );
+
+    await expectHttpExceptionCode(
+      service.createVisitForPatient(patientId, input),
+      409,
+      'VISIT_CODE_CONFLICT',
+    );
+
+    assessmentVisitModel.findOne.mockReturnValueOnce(createExecQuery(null));
+    assessmentVisitModel.create.mockRejectedValueOnce({ code: 11000 });
+    await expect(
+      service.createVisitForPatient(patientId, input),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(assessmentVisitModel.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('maps public visit responses without clinical context or metadata', () => {
+    const response = service.toAssessmentVisitDetailResponse({
+      id: new Types.ObjectId().toString(),
+      patientId: new Types.ObjectId().toString(),
+      subjectCode: 'SUBJ-TEST-A12',
+      visitCode: 'VISIT-TEST-A12-PUBLIC',
+      visitType: 'baseline',
+      status: 'draft',
+      assessmentDate: new Date(),
+      startedAt: null,
+      completedAt: null,
+      lockedAt: null,
+      voidedAt: null,
+      operatorSnapshot: null,
+      clinicalContext: { hidden: true },
+      metadata: { hidden: true },
+    });
+
+    expect(response).not.toHaveProperty('clinicalContext');
+    expect(response).not.toHaveProperty('metadata');
   });
 
   it('returns null when scale instance is not found', async () => {

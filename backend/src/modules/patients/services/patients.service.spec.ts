@@ -1,6 +1,7 @@
 // backend/src/modules/patients/services/patients.service.spec.ts
 import { getModelToken } from '@nestjs/mongoose';
 import { Test } from '@nestjs/testing';
+import { ConflictException } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { Patient, PatientSchema } from '../schemas/patient.schema';
 import { PatientsService } from './patients.service';
@@ -9,6 +10,36 @@ function createExecQuery<T>(value: T) {
   return {
     exec: jest.fn().mockResolvedValue(value),
   };
+}
+
+function createPaginatedQuery<T>(value: T) {
+  const exec = jest.fn().mockResolvedValue(value);
+  const limit = jest.fn().mockReturnValue({ exec });
+  const skip = jest.fn().mockReturnValue({ limit });
+  const sort = jest.fn().mockReturnValue({ skip });
+
+  return { sort, skip, limit, exec };
+}
+
+async function expectConflictCode(
+  promise: Promise<unknown>,
+  code: string,
+): Promise<void> {
+  let caughtError: unknown;
+
+  try {
+    await promise;
+  } catch (error: unknown) {
+    caughtError = error;
+  }
+
+  expect(caughtError).toBeInstanceOf(ConflictException);
+
+  if (!(caughtError instanceof ConflictException)) {
+    throw caughtError;
+  }
+
+  expect(caughtError.getResponse()).toEqual(expect.objectContaining({ code }));
 }
 
 describe('Patient schema', () => {
@@ -40,12 +71,16 @@ describe('PatientsService', () => {
   let patientModel: {
     findOne: jest.Mock;
     find: jest.Mock;
+    countDocuments: jest.Mock;
+    create: jest.Mock;
   };
 
   beforeEach(async () => {
     patientModel = {
       findOne: jest.fn(),
       find: jest.fn(),
+      countDocuments: jest.fn(),
+      create: jest.fn(),
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -80,6 +115,14 @@ describe('PatientsService', () => {
     expect(patientModel.findOne).toHaveBeenCalledWith({
       subjectCode: 'SUBJ-UNKNOWN-001',
     });
+  });
+
+  it('returns null when patient id is not found', async () => {
+    const patientId = new Types.ObjectId();
+    patientModel.findOne.mockReturnValue(createExecQuery(null));
+
+    await expect(service.findPatientById(patientId)).resolves.toBeNull();
+    expect(patientModel.findOne).toHaveBeenCalledWith({ _id: patientId });
   });
 
   it('maps patient results instead of returning raw documents', async () => {
@@ -171,5 +214,158 @@ describe('PatientsService', () => {
       },
     ]);
     expect(result[0]).not.toHaveProperty('internalMarker');
+  });
+
+  it('lists patients with pagination, escaped keyword, and filters', async () => {
+    const patientId = new Types.ObjectId();
+    const queryChain = createPaginatedQuery([
+      {
+        _id: patientId,
+        subjectCode: 'SUBJ-TEST-[001]',
+        displayName: 'Sample [001]',
+        sourceType: 'research',
+        sex: 'unknown',
+        birthDate: null,
+        educationYears: null,
+        handedness: 'unknown',
+        status: 'inactive',
+        tags: [],
+        externalRefs: { hidden: true },
+        metadata: { hidden: true },
+      },
+    ]);
+    patientModel.find.mockReturnValue(queryChain);
+    patientModel.countDocuments.mockReturnValue(createExecQuery(1));
+
+    const result = await service.listPatients({
+      page: 2,
+      pageSize: 5,
+      keyword: '[001]',
+      status: 'inactive',
+      sourceType: 'research',
+    });
+
+    const expectedFilter = {
+      status: 'inactive',
+      sourceType: 'research',
+      $or: [{ subjectCode: /\[001\]/i }, { displayName: /\[001\]/i }],
+    };
+    expect(patientModel.find).toHaveBeenCalledWith(expectedFilter);
+    expect(queryChain.sort).toHaveBeenCalledWith({ subjectCode: 1 });
+    expect(queryChain.skip).toHaveBeenCalledWith(5);
+    expect(queryChain.limit).toHaveBeenCalledWith(5);
+    expect(patientModel.countDocuments).toHaveBeenCalledWith(expectedFilter);
+    expect(result).toEqual({
+      items: [
+        {
+          id: patientId.toString(),
+          subjectCode: 'SUBJ-TEST-[001]',
+          displayName: 'Sample [001]',
+          sourceType: 'research',
+          sex: 'unknown',
+          birthDate: null,
+          educationYears: null,
+          handedness: 'unknown',
+          status: 'inactive',
+          tags: [],
+        },
+      ],
+      page: 2,
+      pageSize: 5,
+      total: 1,
+    });
+    expect(result.items[0]).not.toHaveProperty('externalRefs');
+    expect(result.items[0]).not.toHaveProperty('metadata');
+  });
+
+  it('does not add keyword conditions for a blank keyword', async () => {
+    const queryChain = createPaginatedQuery([]);
+    patientModel.find.mockReturnValue(queryChain);
+    patientModel.countDocuments.mockReturnValue(createExecQuery(0));
+
+    await service.listPatients({ page: 1, pageSize: 20, keyword: '   ' });
+
+    expect(patientModel.find).toHaveBeenCalledWith({});
+  });
+
+  it('creates an active patient with normalized defaults and public response', async () => {
+    const patientId = new Types.ObjectId();
+    patientModel.findOne.mockReturnValue(createExecQuery(null));
+    patientModel.create.mockImplementation((input: Record<string, unknown>) =>
+      Promise.resolve({ _id: patientId, ...input }),
+    );
+
+    const result = await service.createPatient({
+      subjectCode: ' subj-test-create ',
+      tags: [' sample ', ''],
+    });
+
+    expect(patientModel.create).toHaveBeenCalledWith({
+      subjectCode: 'SUBJ-TEST-CREATE',
+      displayName: undefined,
+      sourceType: 'clinical',
+      sex: 'unknown',
+      birthDate: null,
+      educationYears: null,
+      handedness: 'unknown',
+      status: 'active',
+      tags: ['sample'],
+      notes: undefined,
+    });
+    expect(result).toEqual(
+      expect.objectContaining({
+        id: patientId.toString(),
+        subjectCode: 'SUBJ-TEST-CREATE',
+        status: 'active',
+      }),
+    );
+    expect(result).not.toHaveProperty('externalRefs');
+    expect(result).not.toHaveProperty('metadata');
+  });
+
+  it('converts a subject code precheck conflict to a stable 409 exception', async () => {
+    patientModel.findOne.mockReturnValue(
+      createExecQuery({
+        _id: new Types.ObjectId(),
+      }),
+    );
+
+    await expectConflictCode(
+      service.createPatient({ subjectCode: 'SUBJ-TEST-DUPLICATE' }),
+      'PATIENT_SUBJECT_CODE_CONFLICT',
+    );
+    expect(patientModel.create).not.toHaveBeenCalled();
+  });
+
+  it('converts a Mongo duplicate key race to a stable 409 exception', async () => {
+    patientModel.findOne.mockReturnValue(createExecQuery(null));
+    patientModel.create.mockRejectedValue({ code: 11000 });
+
+    await expectConflictCode(
+      service.createPatient({ subjectCode: 'SUBJ-TEST-RACE' }),
+      'PATIENT_SUBJECT_CODE_CONFLICT',
+    );
+  });
+
+  it('maps a public detail without externalRefs or metadata', () => {
+    const response = service.toPatientDetailResponse({
+      id: new Types.ObjectId().toString(),
+      subjectCode: 'SUBJ-TEST-PUBLIC',
+      displayName: 'Sample Public',
+      sourceType: 'clinical',
+      sex: 'unknown',
+      birthDate: null,
+      educationYears: null,
+      handedness: 'unknown',
+      status: 'active',
+      tags: [],
+      notes: 'Public note',
+      externalRefs: { hidden: true },
+      metadata: { hidden: true },
+    });
+
+    expect(response).toEqual(expect.objectContaining({ notes: 'Public note' }));
+    expect(response).not.toHaveProperty('externalRefs');
+    expect(response).not.toHaveProperty('metadata');
   });
 });

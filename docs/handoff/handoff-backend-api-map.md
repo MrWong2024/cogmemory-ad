@@ -6,13 +6,13 @@
 
 ## 2. 当前状态
 
-- 当前公开 API 为 `GET /health`、`POST /auth/login`、`POST /auth/logout`、`GET /auth/me`。
+- 当前公开 API 为 `GET /health`、`POST /auth/login`、`POST /auth/logout`、`GET /auth/me`、`GET /patients`、`POST /patients`、`GET /patients/:patientId`、`GET /patients/:patientId/visits`、`POST /patients/:patientId/visits`。
 - `AuthModule` 当前新增 `AuthController`，仅暴露最小公开认证 API 底座；主登录态仍为服务端 Session + HttpOnly Cookie，不采用 JWT 主登录态。
 - AuthModule 内部 session cookie 名称已统一为 `cogmemory_ad_session`，登录成功下发 HttpOnly Cookie，`SameSite=Lax`，`Path=/`，production 环境启用 `Secure`。
 - 当前没有 users controller，没有公开用户管理 API，没有注册、密码重置、角色权限管理、短信验证码、OAuth / SSO 或 JWT 登录 API。
-- 当前没有医生、患者、量表、评估、媒体、计分、认知域、报告、SMS、AI / LLM 或业务上传公开接口。
-- 本次新增的 `ScalesModule`、`PatientsModule`、`AssessmentsModule`、`MediaModule`、`ScoringModule`、`CognitiveDomainsModule`、`ReportsModule`、`UsersModule` 仍不新增 Controller，不暴露公开业务 API。
-- 当前 API 事实以 `backend\src\app.controller.ts`、`backend\src\modules\auth\auth.controller.ts` 和对应测试为准。
+- A12 已新增 `PatientsController` 与 `AssessmentVisitsController`，形成第一组受保护临床业务 API；所有五个接口均显式绑定 `SessionAuthGuard`、`RolesGuard` 和 `@Roles('admin', 'doctor', 'nurse', 'research_assistant')`。
+- 当前仍没有量表实例、题目作答、媒体、计分、认知域、报告、SMS、AI / LLM 或业务上传公开接口。
+- 当前 API 事实以实际 Controller、DTO、response type 和对应单元 / E2E 测试为准。
 
 ## 3. 当前 API 清单
 
@@ -36,6 +36,72 @@
 - Cookie 语义：登录成功创建服务端 Session，只把 raw session token 写入 HttpOnly `cogmemory_ad_session` Cookie；响应体不返回 raw token
 - 错误语义：账号不存在、密码错误、用户非 active 或 session 创建失败统一返回 `401 Unauthorized`，不泄露具体失败原因
 - 敏感字段：不返回 `password`、`passwordHash`、raw session token、session token hash、reset token、secret 或 credential
+
+- 接口名称：患者分页列表
+- Method：`GET`
+- Path：`/patients`
+- Guard：`SessionAuthGuard` + `RolesGuard`
+- Roles：`admin`、`doctor`、`nurse`、`research_assistant`
+- Param DTO：无
+- Query DTO：`ListPatientsQueryDto`；`page` 默认 1、`pageSize` 默认 20 且最大 100；可选 `keyword`、`status`、`sourceType`
+- Body DTO：无
+- 响应：`PatientListResponse`，结构为 `{ items, page, pageSize, total }`；items 为 `PatientListItemResponse[]`
+- 排序：`subjectCode` 升序；不接受客户端自定义排序
+- 错误状态：DTO 校验失败 400；未认证 401；角色不足 403
+- 错误 code：DTO 校验使用统一 ValidationPipe 语义，无专用业务 code
+- 敏感字段边界：不返回 `externalRefs`、`metadata`、数据库内部字段或认证敏感字段；keyword 使用转义后的正则表达式
+
+- 接口名称：创建患者
+- Method：`POST`
+- Path：`/patients`
+- Guard：`SessionAuthGuard` + `RolesGuard`
+- Roles：`admin`、`doctor`、`nurse`、`research_assistant`
+- Param DTO：无
+- Query DTO：无
+- Body DTO：`CreatePatientDto`；允许 `subjectCode`、`displayName`、`sourceType`、`sex`、`birthDate`、`educationYears`、`handedness`、`tags`、`notes`
+- 禁止字段：`id`、`_id`、`status`、`externalRefs`、`metadata`、`createdAt`、`updatedAt` 等非白名单字段由全局 ValidationPipe 拒绝
+- 响应：201，`PatientDetailResponse`
+- 错误状态与 code：DTO 校验失败 400；重复 subjectCode 为 409 / `PATIENT_SUBJECT_CODE_CONFLICT`；未认证 401；角色不足 403
+- 敏感字段边界：status 由服务端固定为 `active`；响应不返回 `externalRefs`、`metadata` 或数据库内部字段
+
+- 接口名称：患者详情
+- Method：`GET`
+- Path：`/patients/:patientId`
+- Guard：`SessionAuthGuard` + `RolesGuard`
+- Roles：`admin`、`doctor`、`nurse`、`research_assistant`
+- Param DTO：`PatientIdParamDto`，patientId 使用 `@IsMongoId()`
+- Query DTO：无
+- Body DTO：无
+- 响应：200，`PatientDetailResponse`
+- 错误状态与 code：patientId 格式无效为 400；患者不存在为 404 / `PATIENT_NOT_FOUND`；未认证 401；角色不足 403
+- 敏感字段边界：不返回 `externalRefs`、`metadata`、数据库内部字段或认证敏感字段
+
+- 接口名称：患者访视分页列表
+- Method：`GET`
+- Path：`/patients/:patientId/visits`
+- Guard：`SessionAuthGuard` + `RolesGuard`
+- Roles：`admin`、`doctor`、`nurse`、`research_assistant`
+- Param DTO：`PatientVisitsParamDto`，patientId 使用 `@IsMongoId()`
+- Query DTO：`ListAssessmentVisitsQueryDto`；`page` 默认 1、`pageSize` 默认 20 且最大 100；可选 `status`、`visitType`、`dateFrom`、`dateTo`
+- Body DTO：无
+- 响应：`AssessmentVisitListResponse`，结构为 `{ items, page, pageSize, total }`；items 为 `AssessmentVisitListItemResponse[]`
+- 排序：`assessmentDate` 倒序、同日期 `_id` 倒序；不接受客户端自定义排序
+- 错误状态与 code：DTO / patientId 校验失败 400；日期倒置为 400 / `INVALID_DATE_RANGE`；患者不存在为 404 / `PATIENT_NOT_FOUND`；未认证 401；角色不足 403
+- 敏感字段边界：不返回 `clinicalContext`、`metadata`、数据库内部字段或认证敏感字段
+
+- 接口名称：创建患者访视
+- Method：`POST`
+- Path：`/patients/:patientId/visits`
+- Guard：`SessionAuthGuard` + `RolesGuard`
+- Roles：`admin`、`doctor`、`nurse`、`research_assistant`
+- Param DTO：`PatientVisitsParamDto`
+- Query DTO：无
+- Body DTO：`CreateAssessmentVisitDto`；只允许 `visitCode`、`visitType`、`assessmentDate`、`notes`
+- 禁止字段：`patientId`、`subjectCode`、`status`、`operatorSnapshot`、`startedAt`、`completedAt`、`lockedAt`、`voidedAt`、`clinicalContext`、`metadata`、`createdAt`、`updatedAt`
+- 响应：201，`AssessmentVisitDetailResponse`
+- 服务端所有权：patientId 来自路径，subjectCode 来自 Patient，status 固定 `draft`，operatorSnapshot 从当前认证用户生成；operatorRole 优先级为 doctor > nurse > research_assistant > admin > unknown
+- 错误状态与 code：DTO / patientId 校验失败 400；患者不存在 404 / `PATIENT_NOT_FOUND`；患者非 active 409 / `PATIENT_NOT_ACTIVE`；重复 visitCode 409 / `VISIT_CODE_CONFLICT`；未认证 401；角色不足 403
+- 敏感字段边界：不返回 `clinicalContext`、`metadata`、数据库内部字段、Cookie 或认证凭证
 
 - 接口名称：登出
 - Method：`POST`
@@ -63,13 +129,13 @@
 - `backend\src\modules\auth` 当前仅有 `AuthController` 的登录、登出和 auth me 三个公开认证 API；不暴露 users me、注册、密码重置、短信验证码、OAuth / SSO、JWT 登录态、角色权限管理或权限矩阵 API。
 - `AuthService`、`SessionAuthGuard` 与 `RolesGuard` 仍为认证链路内部底座；`SessionAuthGuard` 与 `RolesGuard` 未注册为全局 Guard，不影响 `GET /health`。
 - `backend\src\modules\scales` 当前没有 Controller；`ScalesService` 与 `ScaleSeedDataService` 仅供后续后端业务模块内部读取量表定义、版本配置和 MMSE / MoCA 初始 seed，不暴露公开 MMSE / MoCA 配置查询 API，不提供 seed 执行接口，不写数据库。
-- `backend\src\modules\patients` 当前没有 Controller；`PatientsService` 仅供后续后端业务模块内部读取患者 / 受试者基础档案。
-- `backend\src\modules\assessments` 当前没有 Controller；`AssessmentsService` 与 `AssessmentExecutionService` 仅供后续后端业务模块内部读取访视、量表实例、题目作答和构建评估执行初始化计划，不暴露评估创建、量表实例初始化、作答提交或媒体上传公开接口。
+- `backend\src\modules\patients` 当前仅通过 `PatientsController` 暴露 A12 三个患者接口；未暴露 PATCH、DELETE 或归档接口。
+- `backend\src\modules\assessments` 当前仅通过 `AssessmentVisitsController` 暴露 A12 两个访视接口；`AssessmentExecutionService` 仍为内部能力，不暴露量表实例初始化、作答提交或媒体上传接口。
 - `backend\src\modules\media` 当前没有 Controller；`MediaEvidenceService` 仅供后续后端业务模块内部读取媒体证据元数据摘要。
 - `backend\src\modules\scoring` 当前没有 Controller；`ScoringService` 仅供后续后端业务模块内部读取计分结果摘要和复用通用计分汇总纯函数。
 - `backend\src\modules\cognitive-domains` 当前没有 Controller；`CognitiveDomainsService` 仅供后续后端业务模块内部读取认知域结果摘要和复用通用认知域汇总纯函数。
 - `backend\src\modules\reports` 当前没有 Controller；`ReportsService` 仅供后续后端业务模块内部读取临床报告摘要和复用报告状态转换校验纯函数。
-- 当前不定义患者、访视、量表、评估、作答、媒体、计分、认知域、报告、SMS、AI / LLM 或业务上传的前端调用契约。
+- 除 A12 患者 / 访视公开 DTO 和响应类型外，当前不定义量表实例、作答、媒体、计分、认知域、报告、SMS、AI / LLM 或业务上传的前端调用契约；本次未更新 frontend handoff。
 
 ## 5. 后续同步规则
 
