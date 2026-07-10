@@ -18,7 +18,7 @@ export default function NotFoundPage() {
           <Badge tone="warning">404</Badge>
           <CardTitle>页面未找到</CardTitle>
           <CardDescription>
-            当前地址不存在或尚未开放。智忆评当前仅提供公共首页占位，真实业务页面将在后续阶段实现。
+            当前地址不存在或尚未开放。请返回公共首页，真实业务页面将在后续阶段逐步实现。
           </CardDescription>
         </CardHeader>
         <CardContent>
