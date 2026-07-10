@@ -18,12 +18,12 @@ import { useAuth } from '@/src/features/auth/hooks/use-auth';
 
 const futureCapabilities = [
   {
-    title: '评估执行',
+    title: 'MMSE / MoCA 评估执行',
     description: '后续接入 MMSE / MoCA 评估执行流程。',
   },
   {
-    title: '历史记录',
-    description: '后续接入可追溯的评估记录。',
+    title: '历史评估结果深化',
+    description: '后续深化量表结果、认知域与随访趋势。',
   },
   {
     title: '报告确认',
@@ -113,7 +113,7 @@ export function AuthDashboard() {
             <Badge tone="success">认证状态已连接</Badge>
             <CardTitle>{user.displayName}</CardTitle>
             <CardDescription>
-              当前页面仅用于验证前端认证状态和 HttpOnly Cookie 会话接入。
+              当前工作台已接入患者档案与评估访视；其他临床能力仍在后续建设。
             </CardDescription>
           </div>
           <Button
@@ -172,6 +172,34 @@ export function AuthDashboard() {
         </CardContent>
       </Card>
 
+      <section aria-labelledby="available-capabilities-title">
+        <div className="mb-4">
+          <h2
+            className="text-2xl font-semibold text-[var(--cma-text-strong)]"
+            id="available-capabilities-title"
+          >
+            已接入能力
+          </h2>
+          <p className="mt-2 text-base leading-7 text-[var(--cma-muted)]">
+            可进入患者档案，查看或创建患者 / 受试者档案并建立评估访视。
+          </p>
+        </div>
+        <Card>
+          <CardHeader className="gap-3 sm:flex sm:flex-row sm:items-center sm:justify-between">
+            <div className="grid gap-2">
+              <Badge tone="success">已接入</Badge>
+              <CardTitle className="text-xl">患者档案</CardTitle>
+              <CardDescription>
+                查看患者 / 受试者档案并建立评估访视。
+              </CardDescription>
+            </div>
+            <Link className={linkClassName} href="/patients">
+              进入患者档案
+            </Link>
+          </CardHeader>
+        </Card>
+      </section>
+
       <section aria-labelledby="future-capabilities-title">
         <div className="mb-4">
           <h2
@@ -181,7 +209,7 @@ export function AuthDashboard() {
             后续能力占位
           </h2>
           <p className="mt-2 text-base leading-7 text-[var(--cma-muted)]">
-            以下功能尚未实现，本页不调用任何认证以外的业务接口。
+            以下能力尚未实现，当前入口仅作范围提示。
           </p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">

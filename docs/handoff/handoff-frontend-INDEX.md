@@ -10,22 +10,25 @@
 
 本文档是 CogMemory AD 前端 handoff 文档入口，用于索引前端事实快照、设计基线、路由、API 对接、组件和验证手册。
 
-当前内容记录前端公共底座与 B1 登录页、认证状态、Auth API Client 和工作台认证占位能力。当前仍未实现患者、评估、量表执行、媒体、计分、报告、AI、用户管理或权限菜单等业务 MVP 能力。
+当前内容记录前端公共底座、B1 认证接入，以及 B2 患者档案与评估访视最小页面闭环。当前仍未实现患者完整管理、完整评估工作流、量表执行、媒体、计分、报告、AI、用户管理或权限菜单。
 
 ## 3. 当前状态
 
 - `frontend\` 根目录公共骨架配置与 `frontend\app` / `frontend\src` 公共底座已初始化。
-- 前端 B1 已从公共底座推进到“登录页、认证状态与 Auth API 接入底座”阶段。
-- 当前已新增公开登录页 `/login` 和最小受保护工作台占位页 `/dashboard`。
+- 前端已从 B1 认证接入底座推进到 B2 患者 / 访视最小业务闭环阶段。
+- 当前路由包含 `/login`、`/dashboard`、`/patients`、`/patients/new`、`/patients/[patientId]` 与 `/patients/[patientId]/visits/new`。
 - 当前已新增 Auth 类型、Auth API Client、`useAuth()` 认证状态 Hook、`LoginForm` 和 `AuthDashboard`。
-- 当前前端只对接 `POST /auth/login`、`POST /auth/logout`、`GET /auth/me`。
-- Auth API Client 使用 `frontendEnv.apiBaseUrl`，所有请求均使用 `credentials: 'include'`。
+- 当前已新增 patients feature：患者 / 访视公开类型、Patients API Client、展示与日期纯函数、认证工作区、患者列表 / 创建 / 详情及访视列表 / 创建组件。
+- 当前前端对接三个 Auth API 与 A12 五个业务 API：`GET /patients`、`POST /patients`、`GET /patients/:patientId`、`GET /patients/:patientId/visits`、`POST /patients/:patientId/visits`。
+- Auth 与 Patients API Client 均使用 `frontendEnv.apiBaseUrl`、`credentials: 'include'` 和 `cache: 'no-store'`。
 - 主登录态由后端 Session + HttpOnly Cookie 维护；前端不读取 Cookie，不保存 raw token、token hash 或 `passwordHash`，也不使用 localStorage / sessionStorage 保存认证凭证。
-- `/dashboard` 只用于验证登录态恢复、公开用户信息展示和登出，不是完整医生工作台。
+- `/dashboard` 已提供真实患者档案入口，但仍是轻量工作区入口，不是完整医生工作台。
+- `/patients/**` 使用现有 `useAuth()` 处理认证 loading、会话失效与认证服务错误；患者 API 的 401 返回登录页，403 显示无权限，最终权限边界仍由后端 Guard 提供。
 - 当前不包含 Next middleware、完整前端权限矩阵、角色权限管理页面或权限菜单。
 - 当前首页仍为公共占位，只增加 `/login` 与 `/dashboard` 入口，不调用后端。
 - 页面继续遵循医疗系统 / 临床评估 / 低干扰 / 高可读性 / 冷静可信设计基线，不继承 ReviewX 视觉风格。
-- B1 未新增测试代码、测试框架或第三方依赖；现有 lint、typecheck、build 已通过。
+- B2 未新增测试代码、测试框架或第三方依赖；现有 lint、typecheck、build 已通过。
+- 当前仍未实现患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 详情 / 状态流转、MMSE / MoCA 执行、作答、媒体、计分、报告、AI、用户管理或权限菜单。
 
 ## 4. 必读基础文档
 
@@ -49,15 +52,15 @@
 ## 6. 设计基线使用规则
 
 - `handoff-frontend-design-baseline.md` 是后续前端 `app` / `src`、页面、组件和样式迁移前必须阅读的基线文档。
-- 登录与认证页面继续使用浅色背景、低饱和蓝绿、清晰分区、大字号和少装饰的医疗系统视觉。
+- 登录、工作台与 patients 页面继续使用浅色背景、低饱和蓝绿、清晰分区、大字号和少装饰的医疗系统视觉。
 - 后续迁移前端结构时，只继承 ReviewX 的工程结构、配置经验和组件治理方法，不继承其视觉风格、颜色体系、页面布局、业务文案或管理后台气质。
-- 当前设计基线已用于公共底座和认证接入页面，但不代表完整设计系统或业务页面已经实现。
+- 当前设计基线已用于公共底座、认证接入和 patients 页面，但不代表完整设计系统或完整业务 MVP 已实现。
 
 ## 7. 后续同步规则
 
 - 后续调整前端 `src` / `app` 时，应同步更新事实快照、路由地图、组件地图、API 对接地图和验证手册。
 - 新增或调整页面、路由、API 对接、复用组件、测试脚本或关键交互时，应同步更新对应 handoff 文档。
 - 新增或调整页面、组件、布局、样式和关键交互时，应同步检查 `handoff-frontend-design-baseline.md`。
-- 进入业务 MVP 前，应以当前认证接入边界为基线，不得把认证状态 Hook 扩写成未经确认的完整权限系统。
+- 后续业务页面应以当前认证和 patients feature 边界为基线，不得把认证状态 Hook 扩写成未经确认的完整权限系统。
 - 未在业务文档和实际代码中确认的内容，只能标记为“待确认”或“待后续业务文档确定”。
 - 不得在 handoff 中提前写入未实现的前端能力。
