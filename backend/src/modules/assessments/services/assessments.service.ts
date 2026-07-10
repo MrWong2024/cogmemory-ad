@@ -358,11 +358,16 @@ export class AssessmentsService {
     const scaleInstances =
       await this.listScaleInstancesByVisitId(normalizedVisitId);
 
+    const publicScaleInstances = await Promise.all(
+      scaleInstances.map(async (scaleInstance) => {
+        const progress = await this.countItemResponseProgress(scaleInstance.id);
+        return this.toPublicScaleInstanceResponse(scaleInstance, progress);
+      }),
+    );
+
     return {
       visit: this.toAssessmentVisitDetailResponse(visit),
-      scaleInstances: scaleInstances.map((scaleInstance) =>
-        this.toPublicScaleInstanceResponse(scaleInstance),
-      ),
+      scaleInstances: publicScaleInstances,
     };
   }
 
@@ -579,8 +584,37 @@ export class AssessmentsService {
     return scaleInstance ? this.mapScaleInstance(scaleInstance) : null;
   }
 
+  async findScaleInstanceByPatientVisitAndId(
+    patientId: Types.ObjectId | string,
+    assessmentVisitId: Types.ObjectId | string,
+    scaleInstanceId: Types.ObjectId | string,
+  ): Promise<ScaleInstanceSummary | null> {
+    const normalizedPatientId = this.normalizeObjectId(patientId);
+    const normalizedVisitId = this.normalizeObjectId(assessmentVisitId);
+    const normalizedScaleInstanceId = this.normalizeObjectId(scaleInstanceId);
+
+    if (
+      !normalizedPatientId ||
+      !normalizedVisitId ||
+      !normalizedScaleInstanceId
+    ) {
+      return null;
+    }
+
+    const scaleInstance = await this.scaleInstanceModel
+      .findOne({
+        _id: normalizedScaleInstanceId,
+        assessmentVisitId: normalizedVisitId,
+        patientId: normalizedPatientId,
+      })
+      .exec();
+
+    return scaleInstance ? this.mapScaleInstance(scaleInstance) : null;
+  }
+
   toPublicScaleInstanceResponse(
     scaleInstance: ScaleInstanceSummary,
+    actualProgress?: ScaleInstanceProgressResponse,
   ): ScaleInstanceListItemResponse {
     return {
       id: scaleInstance.id,
@@ -614,7 +648,9 @@ export class AssessmentsService {
             operatorRole: scaleInstance.operatorSnapshot.operatorRole,
           }
         : null,
-      progress: this.toPublicScaleInstanceProgress(scaleInstance.progress),
+      progress:
+        actualProgress ??
+        this.toPublicScaleInstanceProgress(scaleInstance.progress),
     };
   }
 
@@ -637,7 +673,39 @@ export class AssessmentsService {
       return null;
     }
 
-    return this.mapItemResponse(itemResponse);
+    return this.toItemResponseSummary(itemResponse);
+  }
+
+  async findItemResponseByOwnership(
+    patientId: Types.ObjectId | string,
+    assessmentVisitId: Types.ObjectId | string,
+    scaleInstanceId: Types.ObjectId | string,
+    itemResponseId: Types.ObjectId | string,
+  ): Promise<ItemResponseSummary | null> {
+    const normalizedPatientId = this.normalizeObjectId(patientId);
+    const normalizedVisitId = this.normalizeObjectId(assessmentVisitId);
+    const normalizedScaleInstanceId = this.normalizeObjectId(scaleInstanceId);
+    const normalizedItemResponseId = this.normalizeObjectId(itemResponseId);
+
+    if (
+      !normalizedPatientId ||
+      !normalizedVisitId ||
+      !normalizedScaleInstanceId ||
+      !normalizedItemResponseId
+    ) {
+      return null;
+    }
+
+    const itemResponse = await this.itemResponseModel
+      .findOne({
+        _id: normalizedItemResponseId,
+        assessmentVisitId: normalizedVisitId,
+        scaleInstanceId: normalizedScaleInstanceId,
+        patientId: normalizedPatientId,
+      })
+      .exec();
+
+    return itemResponse ? this.toItemResponseSummary(itemResponse) : null;
   }
 
   async listItemResponsesByScaleInstanceId(
@@ -655,7 +723,7 @@ export class AssessmentsService {
       .exec();
 
     return itemResponses.map((itemResponse) =>
-      this.mapItemResponse(itemResponse),
+      this.toItemResponseSummary(itemResponse),
     );
   }
 
@@ -685,7 +753,7 @@ export class AssessmentsService {
       .exec();
 
     return itemResponses.map((itemResponse) =>
-      this.mapItemResponse(itemResponse),
+      this.toItemResponseSummary(itemResponse),
     );
   }
 
@@ -704,8 +772,32 @@ export class AssessmentsService {
       .exec();
 
     return itemResponses.map((itemResponse) =>
-      this.mapItemResponse(itemResponse),
+      this.toItemResponseSummary(itemResponse),
     );
+  }
+
+  async countItemResponseProgress(
+    scaleInstanceId: Types.ObjectId | string,
+  ): Promise<ScaleInstanceProgressResponse> {
+    const normalizedId = this.normalizeObjectId(scaleInstanceId);
+
+    if (!normalizedId) {
+      return { totalItemCount: 0, answeredItemCount: 0 };
+    }
+
+    const [totalItemCount, answeredItemCount] = await Promise.all([
+      this.itemResponseModel
+        .countDocuments({ scaleInstanceId: normalizedId })
+        .exec(),
+      this.itemResponseModel
+        .countDocuments({
+          scaleInstanceId: normalizedId,
+          status: { $in: ['answered', 'scored'] },
+        })
+        .exec(),
+    ]);
+
+    return { totalItemCount, answeredItemCount };
   }
 
   private normalizeObjectId(
@@ -851,7 +943,7 @@ export class AssessmentsService {
     };
   }
 
-  private mapItemResponse(
+  toItemResponseSummary(
     itemResponse: ItemResponseDocument,
   ): ItemResponseSummary {
     return {

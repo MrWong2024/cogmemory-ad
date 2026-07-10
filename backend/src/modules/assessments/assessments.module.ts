@@ -4,6 +4,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { AuthModule } from '../auth/auth.module';
 import { PatientsModule } from '../patients/patients.module';
 import { ScalesModule } from '../scales/scales.module';
+import { AssessmentExecutionController } from './controllers/assessment-execution.controller';
 import { AssessmentVisitsController } from './controllers/assessment-visits.controller';
 import {
   AssessmentVisit,
@@ -18,8 +19,10 @@ import {
   ScaleInstanceSchema,
 } from './schemas/scale-instance.schema';
 import { AssessmentExecutionService } from './services/assessment-execution.service';
+import { AssessmentExecutionDetailService } from './services/assessment-execution-detail.service';
 import { AssessmentScaleWorkflowService } from './services/assessment-scale-workflow.service';
 import { AssessmentsService } from './services/assessments.service';
+import { ItemResponseDraftService } from './services/item-response-draft.service';
 
 @Module({
   imports: [
@@ -32,12 +35,19 @@ import { AssessmentsService } from './services/assessments.service';
       { name: ItemResponse.name, schema: ItemResponseSchema },
     ]),
   ],
-  controllers: [AssessmentVisitsController],
+  controllers: [AssessmentVisitsController, AssessmentExecutionController],
   providers: [
     AssessmentsService,
     AssessmentExecutionService,
     AssessmentScaleWorkflowService,
+    AssessmentExecutionDetailService,
+    ItemResponseDraftService,
   ],
-  exports: [AssessmentsService, AssessmentExecutionService],
+  exports: [
+    AssessmentsService,
+    AssessmentExecutionService,
+    AssessmentExecutionDetailService,
+    ItemResponseDraftService,
+  ],
 })
 export class AssessmentsModule {}

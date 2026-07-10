@@ -206,6 +206,16 @@
 - 影响范围：`backend\src\modules\scales`、`backend\src\modules\assessments`、A13 E2E 和指定 backend handoff / roadmap；未修改 Schema、认证 API、全局 Guard、前端、依赖或环境配置。
 - 后续复查点：前端访视详情 / 量表初始化尚未接入；本阶段不开放单实例执行详情、作答查询 / 保存 / 提交、媒体、计时、状态流转、计分、认知域、报告或 AI。
 
+### D-024：开放单实例执行详情与单题作答草稿保存最小公开 API
+
+- 日期：2026-07-10
+- 决策：后端 A14 新增单实例执行详情 GET 与单题 ItemResponse 草稿 PATCH；两个接口显式使用 `SessionAuthGuard`、`RolesGuard` 和四个临床工作流角色。执行详情可读历史状态，PATCH 只允许 active Patient、draft / in_progress Visit 与 ScaleInstance、not_started / in_progress / answered ItemResponse。
+- 安全决策：公开 mapper 只输出施测所需的题目身份、显式安全 config、现有草稿、既有 step / prompt 槽位、timing 和证据要求状态；不开放完整 itemConfigSnapshot / scoringRule，不返回 expectedValue、正确答案、score、isCorrect、scoreValue、metadata 或内部引用。客户端非白名单字段由全局 ValidationPipe 拒绝，JSON 草稿经过递归安全校验和克隆。
+- 写入与状态决策：草稿只原子更新单条 ItemResponse；not_started 在有效草稿后进入 in_progress，markAsAnswered=true 且存在有效作答后进入 answered，answered 后编辑不回退。本阶段不产生 scored，不修改评分字段，不自动修改 AssessmentVisit / ScaleInstance 状态或 startedAt。
+- 进度决策：totalItemCount 使用实例下实际 ItemResponse 数量，answeredItemCount 统计 answered / scored；A13 访视详情、A14 详情与 PATCH 响应实时派生，不依赖或回写 ScaleInstance.progress Mixed 快照。
+- 并发与非目标：本阶段不新增 revision、If-Match、transaction 或多操作者冲突解决；不实现整份量表最终提交、批量 / 自动保存、媒体、计分、认知域、报告或 AI。最终提交与锁定阶段需重新评估版本控制和审计。
+- 影响范围：仅 `backend\src\modules\assessments`、A14 E2E 与指定 backend handoff / roadmap；未修改 Schema、其他业务模块、前端、依赖、环境配置或全局 Guard。
+
 ## 4. 后续同步规则
 
 - 新增关键技术选型、接口设计、数据模型、测试策略或部署策略后，应追加决策记录。

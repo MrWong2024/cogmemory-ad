@@ -6,8 +6,8 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 Service / Provider 与各业务模块内部能力；A13 新增 `ScaleCatalogService` / `ScalesController` 和 `AssessmentScaleWorkflowService`，并扩展 `AssessmentsService`、`AssessmentExecutionService`、`AssessmentVisitsController`。
-- 当前没有医生、SMS 或 LLM Service；A13 只受控调用 `AssessmentExecutionService` 初始化实例和作答骨架，不调用媒体、计分、认知域、报告或 AI 能力。
+- 当前存在公共底座 Service / Provider 与各业务模块内部能力；A14 新增 `AssessmentExecutionDetailService`、`ItemResponseDraftService`、`AssessmentExecutionController`、安全执行 mapper 与草稿 JSON 纯函数，并扩展 `AssessmentsService` 的联合归属和实际进度职责。
+- 当前没有医生、SMS 或 LLM Service；A14 只读取执行配置并更新单条 ItemResponse 草稿，不调用媒体、计分、认知域、报告或 AI 能力。
 
 ## 3. 当前 Service / Provider 清单
 
@@ -95,14 +95,14 @@
 
 - Service 名称：`AssessmentsService`
 - 文件路径：`backend\src\modules\assessments\services\assessments.service.ts`
-- 职责边界：保留访视、量表实例和题目作答内部读取底座，并承担 A12 患者访视分页、访视创建和安全公开响应映射。
-- 当前方法：保留既有所有方法；A12 方法之外，A13 新增 `findVisitByPatientAndId()`、`getVisitExecutionDetail()`、`findScaleInstanceByVisitAndScaleCode()`、`toPublicScaleInstanceResponse()`，并将访视下实例排序固定为 scaleCode、instanceNo。
+- 职责边界：保留访视、量表实例和题目作答内部读取底座，并承担 A12 患者访视分页、访视创建、安全公开响应映射、A14 联合归属读取和实际进度统计。
+- 当前方法：保留既有所有方法；A14 新增 `findScaleInstanceByPatientVisitAndId()`、`findItemResponseByOwnership()`、`countItemResponseProgress()` 与公开内部 mapper 入口，A13 `getVisitExecutionDetail()` 改用实际 ItemResponse 计数而非 ScaleInstance.progress Mixed 快照。
 - 上游调用方：`AssessmentVisitsController`；既有内部调用方可继续复用旧方法。
 - 下游依赖：`AssessmentVisit`、`ScaleInstance`、`ItemResponse` Mongoose Model 和 `PatientsService`；`AssessmentsModule` 导入 `PatientsModule`、`AuthModule`、`ScalesModule`。
 - 规则与异常：先确认患者存在；非 active 返回 409 / `PATIENT_NOT_ACTIVE`；visitCode trim + uppercase；重复编号预检查并捕获 MongoDB 11000，统一为 `VISIT_CODE_CONFLICT`；dateFrom 晚于 dateTo 返回 400 / `INVALID_DATE_RANGE`。
 - 创建所有权：patientId 来自路径，subjectCode 来自 Patient，status 固定 draft，operatorSnapshot 由 Controller 认证上下文生成；不接受客户端状态时间、clinicalContext 或 metadata。
-- 边界：自身不更新、删除访视或流转状态；A13 初始化由独立 workflow 编排。访视详情先确认患者，再联合 patientId + visitId 查询；ScaleInstance 公开 mapper 不返回 definition / version ID、metadata、qualityControlSummary 或 Mixed 原始字段。
-- 测试覆盖口径：service spec 除 A12 覆盖外，新增联合归属、详情、实例查重、排序、安全 mapper 和 progress 非法值归零；不连接真实 MongoDB。
+- 边界：自身不更新、删除访视或流转状态；A13 初始化与 A14 草稿写入均由独立 Service 编排。访视详情先确认患者，再联合 patientId + visitId 查询；ScaleInstance 公开 mapper 不返回 definition / version ID、metadata、qualityControlSummary 或 Mixed 原始字段；实际进度不持久化回写。
+- 测试覆盖口径：service spec 覆盖联合归属、详情、实例查重、排序、安全 mapper，以及实际 total / answered 计数与 A13 进度修正；不连接真实 MongoDB。
 
 - Service 名称：`AssessmentExecutionService`
 - 文件路径：`backend\src\modules\assessments\services\assessment-execution.service.ts`
@@ -121,6 +121,33 @@
 - 并发语义：初始化前查重；只把明确命中 ScaleInstance 唯一键的 Mongo duplicate key 映射为 `SCALE_INSTANCE_ALREADY_EXISTS`，其他内部失败映射为 `SCALE_EXECUTION_INITIALIZATION_FAILED`。
 - 边界：不改变访视状态，不启动计时，不保存作答，不创建媒体 / 计分 / 认知域 / 报告结果。
 - 测试覆盖口径：workflow spec 覆盖患者 active、访视归属 / 状态、scale 错误、查重、稳定 instanceCode、operatorSnapshot、并发 duplicate key 和安全内部错误。
+
+- Service 名称：`AssessmentExecutionDetailService`
+- 文件路径：`backend\src\modules\assessments\services\assessment-execution-detail.service.ts`
+- 职责边界：只读编排 patient / visit / scaleInstance 归属、已物化 ScaleDefinition / ScaleVersion、groups、ItemResponse 列表与实际进度，组装 `ScaleInstanceExecutionDetailResponse`。
+- 下游依赖：`PatientsService`、`AssessmentsService`、`ScalesService`；不直接操作 Model，不写数据库。
+- 安全边界：允许读取所有实例状态和 inactive / archived 患者历史；配置引用不可用统一 409；公开输出通过显式 mapper，不返回完整量表或题目规则。
+- 测试覆盖口径：detail service spec 覆盖历史读取、逐级归属错误、配置缺失 / 引用不匹配、分组排序与实际进度传递；不连接真实 MongoDB。
+
+- Service 名称：`ItemResponseDraftService`
+- 文件路径：`backend\src\modules\assessments\services\item-response-draft.service.ts`
+- 职责边界：依次校验 Patient / Visit / ScaleInstance / ItemResponse 归属与可编辑状态，校验并克隆草稿 JSON，精确合并既有 step / prompt 槽位，处理 missing / timing / answered 语义，并以单条 `findOneAndUpdate` 原子保存 ItemResponse。
+- 下游依赖：`PatientsService`、`AssessmentsService`、`ItemResponse` Model；不依赖 Scoring / Media / Reports / Storage。
+- 写库边界：只写允许的 ItemResponse 草稿字段与 status；不修改 score、expectedValue、正确性、counts 标记、Visit / ScaleInstance 状态或 startedAt，不使用 transaction，不实现 revision / If-Match / 多操作者冲突控制。
+- 测试覆盖口径：draft service spec 覆盖空 PATCH、完整归属、状态、JSON、missing、markAsAnswered、step / prompt 精确合并、timing、原子更新与安全保存失败；Model / Service 均为 mock，不连接真实 MongoDB。
+
+- 纯函数：`validateAndCloneDraftJsonValue()` / `validateAndCloneStructuredDraft()`
+- 文件路径：`backend\src\modules\assessments\lib\item-response-draft-json.ts`
+- 职责边界：递归验证 JSON 类型、普通对象原型、危险 key、深度 / 长度 / 字节限制并生成新对象引用；不读取数据库或环境，不记录原始作答。
+
+- Mapper：`toItemResponseExecutionResponse()`
+- 文件路径：`backend\src\modules\assessments\services\item-response-execution.mapper.ts`
+- 职责边界：从内部 ItemResponse summary 和 itemConfigSnapshot 中逐字段提取允许的执行配置与草稿；invalid legacy Mixed 草稿回退 null；不透传 scoringRule、expectedValue、评分结果、metadata 或媒体对象标识。
+
+- Controller 名称：`AssessmentExecutionController`
+- 文件路径：`backend\src\modules\assessments\controllers\assessment-execution.controller.ts`
+- 公开接口：A14 单实例 GET 与单题 PATCH。
+- 职责边界：绑定路径 / body DTO、`SessionAuthGuard`、`RolesGuard` 和四个临床工作流角色，只调用 detail / draft Service，不操作 Model、不递归校验 JSON、不计算进度。
 
 - Service 名称：`MediaEvidenceService`
 - 文件路径：`backend\src\modules\media\services\media-evidence.service.ts`

@@ -6,10 +6,10 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 DTO、响应 type、Storage interface，以及各业务模块内部 Service 读取输出 type；A12 已新增患者 / 访视 DTO，A13 已新增量表目录、访视执行详情和量表实例初始化 DTO / 安全响应 type。
+- 当前存在公共底座 DTO、响应 type、Storage interface，以及各业务模块内部 Service 读取输出 type；A12 已新增患者 / 访视 DTO，A13 已新增量表目录、访视执行详情和量表实例初始化 DTO / 安全响应 type，A14 已新增单实例执行详情、单题草稿 PATCH DTO 与安全执行响应 type。
 - 当前新增公开认证请求 DTO：`LoginDto`。
 - 当前新增公开患者 / 访视 DTO：`CreatePatientDto`、`ListPatientsQueryDto`、`PatientIdParamDto`、`CreateAssessmentVisitDto`、`ListAssessmentVisitsQueryDto`、`PatientVisitsParamDto`。
-- 当前仍没有用户管理、注册、密码重置、单个量表实例执行详情、作答查询 / 保存 / 提交、媒体、计分、认知域、报告或业务上传请求 DTO。
+- 当前仍没有用户管理、注册、密码重置、整份量表最终提交、批量或自动保存、媒体、计分、认知域、报告或业务上传请求 DTO。
 
 ## 3. 当前 DTO / Type 清单
 
@@ -146,6 +146,48 @@
 - 文件：`backend\src\modules\assessments\types\assessment-execution-response.types.ts`
 - 用途：A13 初始化成功响应。
 - 字段：安全 `scale` 摘要、安全 `scaleInstance` 摘要、`createdItemResponseCount`；不包含 ItemResponse 全量骨架。
+
+- 名称：`ScaleInstanceExecutionParamDto`
+- 文件：`backend\src\modules\assessments\dto\scale-instance-execution-param.dto.ts`
+- 用途：A14 单实例执行详情 path DTO。
+- 字段与校验：`patientId`、`visitId`、`scaleInstanceId` 均使用 `@IsMongoId()`。
+
+- 名称：`ItemResponseDraftParamDto`
+- 文件：`backend\src\modules\assessments\dto\item-response-draft-param.dto.ts`
+- 用途：A14 单题草稿 PATCH path DTO。
+- 字段与校验：`patientId`、`visitId`、`scaleInstanceId`、`itemResponseId` 均使用 `@IsMongoId()`。
+
+- 名称：`UpdateItemResponseDraftDto`
+- 文件：`backend\src\modules\assessments\dto\update-item-response-draft.dto.ts`
+- 用途：A14 单题草稿 PATCH body DTO。
+- 允许字段：rawResponse、structuredResponse、responseText（nullable，最大 10000）、isMissing、missingReason（nullable，最大 1000）、stepResponses、promptResponses、timing（nullable）、operatorNote（nullable，最大 4000）、markAsAnswered。
+- 白名单边界：不声明 item 身份 / 配置 / 版本、status、answerSource、score / 正确性、evidence、metadata、锁定 / 作废、所有权 ID 或 timestamps；非白名单字段由全局 ValidationPipe 拒绝。
+
+- 名称：`UpdateItemStepDraftDto`
+- 文件：`backend\src\modules\assessments\dto\update-item-response-draft.dto.ts`
+- 字段：必填 stepCode（trim + lowercase、最大 200），可选 actualValue 与 note（nullable、最大 2000）；不允许 expectedValue、isCorrect、scoreValue 或 countsTowardItemScore。
+
+- 名称：`UpdatePromptResponseDraftDto`
+- 文件：`backend\src\modules\assessments\dto\update-item-response-draft.dto.ts`
+- 字段：必填现有 PROMPT_RESPONSE_TYPES 中的 promptType、正整数 order；可选 responseAfterPrompt 与 note（nullable、最大 2000）；不允许 promptText、isCorrect 或 countsTowardScore。
+
+- 名称：`UpdateItemTimingDraftDto`
+- 文件：`backend\src\modules\assessments\dto\update-item-response-draft.dto.ts`
+- 字段：nullable ISO startedAt / completedAt、nullable 非负整数 durationMs、timerSource（system / manual / imported / none）；跨字段先后关系由 Service 校验。
+
+- 名称：`ItemResponseDraftJsonValue`
+- 文件：`backend\src\modules\assessments\types\item-response-execution-response.types.ts`
+- 类型：null、string、finite number、boolean、递归数组或普通对象；模块内纯函数限制最大深度 5、数组 100 项、对象 100 keys、字符串 4000、raw / structured 序列化 32768 字节，并拒绝危险 key 和非 JSON 值。
+
+- 名称：`ScaleExecutionIdentityResponse`、`ScaleExecutionGroupResponse`、`ItemExecutionConfigResponse`、`ItemResponseExecutionResponse`
+- 文件：`backend\src\modules\assessments\types\item-response-execution-response.types.ts`
+- 用途：A14 执行详情与 PATCH 成功响应的安全公开结构。
+- 字段摘要：安全量表身份与分组；题目身份、作答类型、计分参与 / 认知域、显式 config、版本追溯、草稿值、step / prompt 槽位、timing、证据要求和 operatorNote。
+- 安全边界：不包含完整 Mixed 配置、scoringRule、expectedValue、正确答案、score / isCorrect / scoreValue、metadata、qualityControlHints、内部 ObjectId 或 Mongoose document。
+
+- 名称：`ScaleInstanceExecutionDetailResponse`、`UpdateItemResponseDraftResponse`
+- 文件：`backend\src\modules\assessments\types\item-response-execution-response.types.ts`
+- 字段：详情为 `{ visit, scale, scaleInstance, groups, itemResponses }`；PATCH 为 `{ itemResponse, progress }`。progress 使用 `ScaleInstanceProgressResponse`，由实际 ItemResponse 状态派生。
 
 - 名称：`StorageService` 及相关输入输出 type
 - 文件：`backend\src\modules\storage\storage.interface.ts`

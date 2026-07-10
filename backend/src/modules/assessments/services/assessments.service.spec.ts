@@ -298,6 +298,7 @@ describe('AssessmentsService', () => {
   let itemResponseModel: {
     findOne: jest.Mock;
     find: jest.Mock;
+    countDocuments: jest.Mock;
   };
   let patientsService: {
     findPatientById: jest.Mock;
@@ -317,6 +318,7 @@ describe('AssessmentsService', () => {
     itemResponseModel = {
       findOne: jest.fn(),
       find: jest.fn(),
+      countDocuments: jest.fn(),
     };
     patientsService = {
       findPatientById: jest.fn(),
@@ -1078,13 +1080,16 @@ describe('AssessmentsService', () => {
           voidedAt: null,
           durationMs: null,
           operatorSnapshot: null,
-          progress: { totalItemCount: 11, answeredItemCount: 0 },
+          progress: { totalItemCount: 99, answeredItemCount: 99 },
           qualityControlSummary: { hidden: true },
           metadata: { hidden: true },
         },
       ]),
     );
     scaleInstanceModel.find.mockReturnValue({ sort });
+    itemResponseModel.countDocuments
+      .mockReturnValueOnce(createExecQuery(11))
+      .mockReturnValueOnce(createExecQuery(2));
 
     const result = await service.getVisitExecutionDetail(patientId, visitId);
 
@@ -1101,10 +1106,17 @@ describe('AssessmentsService', () => {
       expect.objectContaining({
         id: instanceId.toString(),
         scaleCode: 'mmse',
-        progress: { totalItemCount: 11, answeredItemCount: 0 },
+        progress: { totalItemCount: 11, answeredItemCount: 2 },
       }),
     ]);
     expect(result.scaleInstances[0]).not.toHaveProperty('metadata');
+    expect(itemResponseModel.countDocuments).toHaveBeenNthCalledWith(1, {
+      scaleInstanceId: instanceId,
+    });
+    expect(itemResponseModel.countDocuments).toHaveBeenNthCalledWith(2, {
+      scaleInstanceId: instanceId,
+      status: { $in: ['answered', 'scored'] },
+    });
   });
 
   it('returns stable patient and visit errors for execution detail', async () => {
