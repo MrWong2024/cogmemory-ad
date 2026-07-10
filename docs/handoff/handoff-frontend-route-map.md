@@ -6,9 +6,9 @@
 
 ## 2. 当前状态
 
-- 当前包含公共首页、登录页、轻量工作台、B2 四条患者 / 访视路由、B3 访视详情路由与 not-found 兜底。
+- 当前包含公共首页、登录页、轻量工作台、B2 四条患者 / 访视路由、B3 访视详情路由、B4 量表实例施测执行路由与 not-found 兜底。
 - `/dashboard` 已提供患者档案入口，但仍不是完整医生工作台。
-- 当前不包含患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、MMSE / MoCA 题目作答、ItemResponse、媒体、计分、报告、AI、用户管理或权限菜单路由。
+- 当前不包含患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、整份量表最终提交、媒体、计分、报告、AI、用户管理或权限菜单路由。
 - 当前不包含 Next middleware 或路由级服务端认证中间件。
 
 ## 3. 当前路由清单
@@ -102,10 +102,27 @@
 - 初始化能力：仅 `draft` / `in_progress` 可操作；选择三种已确认施测方式之一，只提交 scaleCode / scaleVersion / administrationMode；已初始化 scaleCode 禁用按钮；重复冲突刷新详情
 - 成功：以服务端返回的 ScaleInstance 更新列表并展示 `createdItemResponseCount` 题目记录骨架数量，不展示 ItemResponse 全量
 - 安全边界：目录不展示完整 groups / items、指导语、答案、scoringRule、expectedValue 或内部 ObjectId；能力标识不表示媒体、手写或计时已实现
-- 当前非目标：不提供题目作答、量表实例详情、开始 / 暂停 / 结束、访视状态流转、媒体、计分、认知域、报告或 AI 操作
+- 当前非目标：不在访视详情内读取或保存题目，不提供整份提交、开始 / 暂停 / 结束、访视状态流转、媒体、计分、认知域、报告或 AI 操作
 - 关联组件：`AssessmentVisitExecutionPage`、`ScaleInstanceList`、`ScaleInitializationPanel`
 
-### 3.9 `not-found`
+### 3.9 `/patients/[patientId]/visits/[visitId]/scale-instances/[scaleInstanceId]`
+
+- 页面名称：量表实例施测执行与逐题草稿记录
+- 页面职责：展示患者 / 受试者编号、访视、量表身份与版本、实例、实时进度、服务端动态分组和安全题目；按题手工编辑并保存 A14 白名单草稿
+- 动态参数：Server Component 按 Next 16 `params: Promise<{ patientId: string; visitId: string; scaleInstanceId: string }>` 等待参数后传给 `ScaleInstanceExecutionPage`；route 不 fetch、不保存表单状态
+- 访问边界：继续复用 `/patients/**` 的 `PatientsWorkspaceShell`；不新增 middleware、BFF 或 Provider，不读取 Cookie；后端 Guard 是最终权限边界
+- 数据来源：`GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId` 与单题 `PATCH /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/item-responses/:itemResponseId`
+- loading / 取消：执行详情 GET 使用 AbortController；重试和卸载取消旧请求，被取消请求不显示服务错误；任一动态 ID 无效时不发请求
+- 401 / 403 / 404 / 409：401 返回 `/login`；403 展示无权限与返回 / 退出入口；患者、访视、实例不存在分别使用稳定状态；配置不可用不渲染空白题目页
+- 分组：groups 按 order、题目按 itemOrder 排序，使用 groupCode 动态归组；无匹配分组题目进入“其他项目”；button 导航显示每组完成数并支持键盘 focus
+- 草稿状态：以 itemResponseId 为 key 存于组件内存，切换分组不丢失；顶部显示未保存题目数量，有 dirty 时注册 beforeunload，不写 localStorage / sessionStorage
+- 作答：支持 boolean、number、text、single / multi choice 原始转录、分步实际回答、提示后表现、媒体类文字说明、缺失原因、计时草稿和操作者备注；不生成选项、答案或评分
+- 保存：每题提供保存草稿与保存并标记本题完成；只 PATCH 变化白名单，无变化不请求；成功以服务端 itemResponse 覆盖当前题并用 progress 更新页面，不重新加载整页
+- 只读：completed / locked / voided 访视或实例全页只读；scored / locked / voided 题目只读；保留历史安全草稿和明确原因
+- 当前非目标：不提供整份量表最终提交、批量或自动保存、实时计时器、媒体上传 / 画布 / 手写轨迹、自动或手工评分、认知域、报告或 AI
+- 关联组件：`ScaleInstanceExecutionPage`、`ScaleExecutionGroupNavigation`、`ItemResponseEditor`、`ItemStepEditor`、`ItemPromptEditor`、`ItemTimingEditor`、`ItemEvidenceRequirements`
+
+### 3.10 `not-found`
 
 - 页面名称：404 兜底页
 - 页面职责：处理未匹配地址并提供返回首页入口

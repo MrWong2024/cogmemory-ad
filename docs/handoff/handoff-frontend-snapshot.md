@@ -7,21 +7,21 @@
 ## 2. 当前工程状态
 
 - `frontend\` 根目录公共骨架配置与 `frontend\app` / `frontend\src` 公共底座已初始化。
-- 前端 B1 已落地登录页、认证状态 Hook、Auth API Client 和受保护工作台入口；前端 B2 已落地患者档案与评估访视最小页面闭环；前端 B3 已落地访视详情与量表实例初始化页面接入。
+- 前端 B1 已落地登录页、认证状态 Hook、Auth API Client 和受保护工作台入口；前端 B2 已落地患者档案与评估访视最小页面闭环；前端 B3 已落地访视详情与量表实例初始化；前端 B4 已落地量表施测执行页与逐题手工作答草稿保存。
 - 当前首页仍为公共占位，只增加登录页与工作台入口，不调用后端。
 - `/login` 提供账号密码登录，并在登录前通过 `GET /auth/me` 检查已有会话。
 - `/dashboard` 通过 `GET /auth/me` 验证会话、展示当前用户公开信息、提供患者档案入口和登出入口。
-- `/patients/**` 通过轻量认证工作区复用 `useAuth()`；当前包含患者列表 / 创建、患者详情 / 访视列表、访视创建，以及访视详情 / 量表实例初始化页面。
+- `/patients/**` 通过轻量认证工作区复用 `useAuth()`；当前包含患者列表 / 创建、患者详情 / 访视列表、访视创建、访视详情 / 量表实例初始化，以及量表实例施测执行页面。
 - Patients API Client 真实调用 A12 五个患者 / 访视 API，支持分页、过滤、GET 请求取消、稳定错误映射和安全请求字段白名单。
-- Assessment Execution API Client 真实调用 A13 三个 API，访视详情与量表目录使用独立 AbortController；初始化 POST 不自动重试且只构造 `scaleCode`、`scaleVersion`、`administrationMode` 请求字段。
+- Assessment Execution API Client 真实调用 A13 三个 API 与 A14 两个 API；执行详情 GET 使用 AbortController，初始化 POST 与单题 PATCH 均不自动重试，写请求均重新构造白名单字段。
 - 当前视觉遵循医疗系统 / 临床评估 / 低干扰 / 高可读性 / 冷静可信口径，不继承 ReviewX 视觉风格。
-- 当前没有患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、MMSE / MoCA 题目作答、ItemResponse 查询 / 保存 / 提交、媒体上传、计分、认知域结果、报告、AI、用户管理或权限菜单页面。
+- 当前没有患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、整份量表最终提交、批量或自动保存、媒体上传、自动或手工计分、认知域结果、报告、AI、用户管理或权限菜单页面。
 
 ## 3. 当前已确认前端事实
 
 - 项目名称为 CogMemory AD / 智忆评，前端默认本地端口为 `3002`。
 - `frontendEnv.apiBaseUrl` 读取既有 `NEXT_PUBLIC_API_BASE_URL`，安全默认值为 `http://localhost:5002`。
-- 当前路由为 `/`、`/login`、`/dashboard`、`/patients`、`/patients/new`、`/patients/[patientId]`、`/patients/[patientId]/visits/new`、`/patients/[patientId]/visits/[visitId]` 与 `not-found` 兜底页面。
+- 当前路由为 `/`、`/login`、`/dashboard`、`/patients`、`/patients/new`、`/patients/[patientId]`、`/patients/[patientId]/visits/new`、`/patients/[patientId]/visits/[visitId]`、`/patients/[patientId]/visits/[visitId]/scale-instances/[scaleInstanceId]` 与 `not-found` 兜底页面。
 - 当前公共 UI 组件为 `Button`、`Card`、`Badge`；B1 未新增 Input 组件或第三方 UI 库。
 - 当前 auth feature 包含：
   - `types/auth.ts`：认证公开类型与状态类型。
@@ -41,11 +41,15 @@
   - `PaginationControls`、`PatientStatusBadge`：patients feature 内局部复用组件。
 - 当前 assessments feature 包含：
   - `types/assessment-execution.ts`：按 JSON 传输事实定义安全量表目录、访视执行详情、量表实例摘要和初始化白名单类型。
-  - `api/assessment-execution-api.ts`：只对接 A13 三个 API，统一 credentials / no-store、GET AbortSignal、POST 白名单和业务错误码映射。
+  - `api/assessment-execution-api.ts`：只对接 A13 三个 API 与 A14 两个 API，统一 credentials / no-store、GET AbortSignal、POST / PATCH 白名单和业务错误码映射。
   - `lib/assessment-execution-display.ts`：集中维护施测方式、实例状态、操作者角色、能力摘要、用时和访视初始化状态纯函数。
   - `components/AssessmentVisitExecutionPage.tsx`：独立管理访视详情与目录加载、401 / 403 / not-found、初始化与重复冲突刷新。
   - `components/ScaleInstanceList.tsx`：展示实例进度、操作者、状态时间与版本追溯安全摘要，不展示 ItemResponse。
   - `components/ScaleInitializationPanel.tsx`：展示安全量表目录、施测方式选择、禁用规则和初始化反馈。
+  - `types/item-response-execution.ts`：严格对齐 A14 安全执行详情、单题 PATCH 白名单与 JSON 传输日期口径，不定义答案或评分字段。
+  - `lib/item-response-draft.ts`：负责服务端题目到本地草稿、字段级 dirty、数值 / 时间转换、有效作答判断与差异 PATCH 构建。
+  - `components/ScaleInstanceExecutionPage.tsx`：管理 A14 GET、分组切换、本地草稿、beforeunload、逐题 PATCH、服务端响应覆盖与进度更新。
+  - `components/ScaleExecutionGroupNavigation.tsx`、`ItemResponseEditor.tsx` 及 step / prompt / timing / evidence 子组件：动态展示和编辑安全题目，不生成选项、答案或评分。
 - Auth API Client 仅调用：
   - `POST /auth/login`
   - `POST /auth/logout`
@@ -54,6 +58,8 @@
   - `GET /scales/available`
   - `GET /patients/:patientId/visits/:visitId`
   - `POST /patients/:patientId/visits/:visitId/scale-instances`
+  - `GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId`
+  - `PATCH /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/item-responses/:itemResponseId`
 - 所有认证请求使用 `frontendEnv.apiBaseUrl`、`credentials: 'include'` 和 `cache: 'no-store'`。
 - 所有患者 / 访视请求同样使用 `frontendEnv.apiBaseUrl`、`credentials: 'include'` 和 `cache: 'no-store'`；GET 请求在筛选变化或卸载时取消旧请求。
 - A13 三个请求同样使用 `frontendEnv.apiBaseUrl`、`credentials: 'include'` 和 `cache: 'no-store'`；访视详情与目录 GET 独立取消旧请求，初始化 POST 不自动重试，组件卸载后不更新状态。
@@ -68,6 +74,7 @@
 - 患者创建请求不含 status、externalRefs、metadata 或时间戳；访视创建请求不含 operatorSnapshot、clinicalContext、metadata、状态或状态时间。
 - 页面不展示 externalRefs、metadata 或 clinicalContext；所有患者 / 访视错误使用稳定中文 UI 文案，不直接展示后端 message。
 - B3 量表目录不定义或展示完整 groups / items、指导语、答案、scoringRule、expectedValue 或 ObjectId；配置能力摘要不表示媒体、手写或计时 UI 已实现。前端不读取 Cookie、不保存 token，也不使用 localStorage / sessionStorage 保存访视、目录、实例或表单状态。
+- B4 执行页只使用 A14 安全 groups / itemResponses；按 itemResponseId 保存内存草稿，切换分组不丢失，未保存时使用浏览器 beforeunload 基础提示，不写 localStorage / sessionStorage。页面不定义或展示 scoringRule、expectedValue、正确答案、score、isCorrect、scoreValue，不提供任意 JSON 编辑器。
 
 ## 4. 当前文件清单
 
@@ -81,6 +88,7 @@
 - `frontend\app\patients\[patientId]\page.tsx`
 - `frontend\app\patients\[patientId]\visits\new\page.tsx`
 - `frontend\app\patients\[patientId]\visits\[visitId]\page.tsx`
+- `frontend\app\patients\[patientId]\visits\[visitId]\scale-instances\[scaleInstanceId]\page.tsx`
 - `frontend\app\not-found.tsx`
 - `frontend\src\styles\globals.css`
 - `frontend\src\lib\env.ts`
@@ -104,11 +112,20 @@
 - `frontend\src\features\patients\components\PaginationControls.tsx`
 - `frontend\src\features\patients\components\PatientStatusBadge.tsx`
 - `frontend\src\features\assessments\types\assessment-execution.ts`
+- `frontend\src\features\assessments\types\item-response-execution.ts`
 - `frontend\src\features\assessments\api\assessment-execution-api.ts`
 - `frontend\src\features\assessments\lib\assessment-execution-display.ts`
+- `frontend\src\features\assessments\lib\item-response-draft.ts`
 - `frontend\src\features\assessments\components\AssessmentVisitExecutionPage.tsx`
 - `frontend\src\features\assessments\components\ScaleInstanceList.tsx`
 - `frontend\src\features\assessments\components\ScaleInitializationPanel.tsx`
+- `frontend\src\features\assessments\components\ScaleInstanceExecutionPage.tsx`
+- `frontend\src\features\assessments\components\ScaleExecutionGroupNavigation.tsx`
+- `frontend\src\features\assessments\components\ItemResponseEditor.tsx`
+- `frontend\src\features\assessments\components\ItemStepEditor.tsx`
+- `frontend\src\features\assessments\components\ItemPromptEditor.tsx`
+- `frontend\src\features\assessments\components\ItemTimingEditor.tsx`
+- `frontend\src\features\assessments\components\ItemEvidenceRequirements.tsx`
 - `frontend\README.md`
 
 ## 5. 当前验证状态
@@ -130,14 +147,24 @@
 - 未新增自动测试或测试框架；E2E、浏览器自动化和手工浏览器联调未执行，B3 真实 Cookie / CORS 与 A13 三个 API 页面交互仍待开发者本地验证。
 - 后端命令未执行。
 
+本次 B4 验证结果：
+
+- 未新增自动测试或测试框架。
+- `npm run lint`：通过。
+- `npm run typecheck`：通过，Next 16 量表实例动态路由类型生成成功。
+- `npm run build`：通过，生产构建包含 `/patients/[patientId]/visits/[visitId]/scale-instances/[scaleInstanceId]`。
+- E2E 与浏览器自动化未执行；本阶段明确不执行浏览器 E2E。
+- 浏览器手工联调未执行，真实 Cookie / CORS、A14 GET / PATCH、分组切换、逐题保存与只读状态仍待开发者本地验证。
+- 后端命令未执行。
+
 ## 6. 当前未实现前端事实
 
 - `/dashboard` 已有患者档案入口，但不是完整医生工作台。
 - 患者编辑 / 删除 / 归档 / 合并尚未实现。
-- 访视编辑 / 删除 / 状态流转尚未实现；访视详情仅支持查看和初始化量表实例。
-- MMSE / MoCA 题目页面、ItemResponse 查询 / 保存 / 提交、媒体上传、自动计分和认知域结果尚未实现。
+- 访视编辑 / 删除 / 状态流转尚未实现；访视详情支持查看、初始化量表实例和进入 B4 执行页。
+- B4 已支持安全 MMSE / MoCA 题目查看与逐题手工草稿保存，但整份量表最终提交、批量或自动保存、媒体上传、自动或手工计分和认知域结果尚未实现。
 - 报告生成、医生确认、AI、用户管理、角色权限管理和权限菜单尚未实现。
-- 当前除 A12 五个患者 / 访视 API 与 A13 三个评估初始化前置 API 外，没有其他业务 API 调用。
+- 当前除 A12 五个患者 / 访视 API、A13 三个评估初始化前置 API 与 A14 两个评估执行草稿 API 外，没有其他业务 API 调用。
 - 当前不包含路由级服务端认证中间件。
 
 ## 7. 后续同步规则

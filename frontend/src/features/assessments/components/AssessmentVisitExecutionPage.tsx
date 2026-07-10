@@ -372,7 +372,7 @@ export function AssessmentVisitExecutionPage({
       });
       setInitializationFeedback({
         kind: 'success',
-        message: `已初始化 ${response.scale.shortName || response.scale.code.toUpperCase()}，共创建 ${response.createdItemResponseCount} 条题目记录骨架。题目作答页面将在后续阶段接入。`,
+        message: `已初始化 ${response.scale.shortName || response.scale.code.toUpperCase()}，共创建 ${response.createdItemResponseCount} 条题目记录骨架。现在可从实例列表打开量表进行逐题草稿记录。`,
       });
     } catch (requestError: unknown) {
       if (!mountedRef.current) {

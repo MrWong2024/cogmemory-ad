@@ -6,6 +6,14 @@ import type {
   InitializeScaleInstanceRequest,
   InitializeScaleInstanceResponse,
 } from '@/src/features/assessments/types/assessment-execution';
+import type {
+  ScaleInstanceExecutionDetailResponse,
+  UpdateItemResponseDraftRequest,
+  UpdateItemResponseDraftResponse,
+  UpdateItemStepDraftRequest,
+  UpdateItemTimingDraftRequest,
+  UpdatePromptResponseDraftRequest,
+} from '@/src/features/assessments/types/item-response-execution';
 
 export type AssessmentExecutionApiErrorKind =
   | 'unauthenticated'
@@ -22,6 +30,23 @@ export type AssessmentExecutionApiErrorKind =
   | 'scale_catalog_invalid'
   | 'scale_catalog_version_conflict'
   | 'scale_instance_already_exists'
+  | 'scale_instance_not_found'
+  | 'scale_instance_not_editable'
+  | 'scale_instance_configuration_unavailable'
+  | 'visit_not_editable'
+  | 'item_response_not_found'
+  | 'item_response_not_editable'
+  | 'item_response_empty_patch'
+  | 'item_response_payload_invalid'
+  | 'item_response_missing_reason_required'
+  | 'item_response_cannot_mark_answered'
+  | 'item_response_step_not_found'
+  | 'item_response_duplicate_step'
+  | 'item_response_prompt_not_found'
+  | 'item_response_duplicate_prompt'
+  | 'item_response_timing_not_allowed'
+  | 'item_response_invalid_timing'
+  | 'item_response_save_failed'
   | 'scale_execution_initialization_failed'
   | 'service_unavailable'
   | 'unknown';
@@ -74,61 +99,52 @@ function mapHttpError(
     return new AssessmentExecutionApiError('forbidden', status, backendCode);
   }
 
-  if (status === 400) {
-    return new AssessmentExecutionApiError('validation', status, backendCode);
-  }
-
-  const notFoundKinds: Record<
-    string,
-    AssessmentExecutionApiErrorKind
-  > = {
+  const businessKinds: Record<string, AssessmentExecutionApiErrorKind> = {
     PATIENT_NOT_FOUND: 'patient_not_found',
+    PATIENT_NOT_ACTIVE: 'patient_not_active',
     VISIT_NOT_FOUND: 'visit_not_found',
+    VISIT_NOT_INITIALIZABLE: 'visit_not_initializable',
+    VISIT_NOT_EDITABLE: 'visit_not_editable',
     SCALE_NOT_AVAILABLE: 'scale_not_available',
     SCALE_VERSION_NOT_AVAILABLE: 'scale_version_not_available',
-  };
-  const conflictKinds: Record<
-    string,
-    AssessmentExecutionApiErrorKind
-  > = {
-    PATIENT_NOT_ACTIVE: 'patient_not_active',
-    VISIT_NOT_INITIALIZABLE: 'visit_not_initializable',
     SCALE_NOT_ACTIVE: 'scale_not_active',
     SCALE_VERSION_NOT_ACTIVE: 'scale_version_not_active',
+    SCALE_CATALOG_INVALID: 'scale_catalog_invalid',
     SCALE_CATALOG_VERSION_CONFLICT: 'scale_catalog_version_conflict',
     SCALE_INSTANCE_ALREADY_EXISTS: 'scale_instance_already_exists',
-  };
-  const serverErrorKinds: Record<
-    string,
-    AssessmentExecutionApiErrorKind
-  > = {
-    SCALE_CATALOG_INVALID: 'scale_catalog_invalid',
+    SCALE_INSTANCE_NOT_FOUND: 'scale_instance_not_found',
+    SCALE_INSTANCE_NOT_EDITABLE: 'scale_instance_not_editable',
+    SCALE_INSTANCE_CONFIGURATION_UNAVAILABLE:
+      'scale_instance_configuration_unavailable',
+    ITEM_RESPONSE_NOT_FOUND: 'item_response_not_found',
+    ITEM_RESPONSE_NOT_EDITABLE: 'item_response_not_editable',
+    ITEM_RESPONSE_EMPTY_PATCH: 'item_response_empty_patch',
+    ITEM_RESPONSE_PAYLOAD_INVALID: 'item_response_payload_invalid',
+    ITEM_RESPONSE_MISSING_REASON_REQUIRED:
+      'item_response_missing_reason_required',
+    ITEM_RESPONSE_CANNOT_MARK_ANSWERED:
+      'item_response_cannot_mark_answered',
+    ITEM_RESPONSE_STEP_NOT_FOUND: 'item_response_step_not_found',
+    ITEM_RESPONSE_DUPLICATE_STEP: 'item_response_duplicate_step',
+    ITEM_RESPONSE_PROMPT_NOT_FOUND: 'item_response_prompt_not_found',
+    ITEM_RESPONSE_DUPLICATE_PROMPT: 'item_response_duplicate_prompt',
+    ITEM_RESPONSE_TIMING_NOT_ALLOWED: 'item_response_timing_not_allowed',
+    ITEM_RESPONSE_INVALID_TIMING: 'item_response_invalid_timing',
+    ITEM_RESPONSE_SAVE_FAILED: 'item_response_save_failed',
     SCALE_EXECUTION_INITIALIZATION_FAILED:
       'scale_execution_initialization_failed',
   };
 
-  if (status === 404 && backendCode && notFoundKinds[backendCode]) {
+  if (backendCode && businessKinds[backendCode]) {
     return new AssessmentExecutionApiError(
-      notFoundKinds[backendCode],
+      businessKinds[backendCode],
       status,
       backendCode,
     );
   }
 
-  if (status === 409 && backendCode && conflictKinds[backendCode]) {
-    return new AssessmentExecutionApiError(
-      conflictKinds[backendCode],
-      status,
-      backendCode,
-    );
-  }
-
-  if (status === 500 && backendCode && serverErrorKinds[backendCode]) {
-    return new AssessmentExecutionApiError(
-      serverErrorKinds[backendCode],
-      status,
-      backendCode,
-    );
+  if (status === 400) {
+    return new AssessmentExecutionApiError('validation', status, backendCode);
   }
 
   return new AssessmentExecutionApiError('unknown', status, backendCode);
@@ -224,3 +240,120 @@ export async function initializeScaleInstance(
   return readJson<InitializeScaleInstanceResponse>(response);
 }
 
+export async function getScaleInstanceExecutionDetail(
+  patientId: string,
+  visitId: string,
+  scaleInstanceId: string,
+  options: RequestOptions = {},
+): Promise<ScaleInstanceExecutionDetailResponse> {
+  const response = await assessmentExecutionFetch(
+    `/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/scale-instances/${encodeURIComponent(scaleInstanceId)}`,
+    {
+      method: 'GET',
+      signal: options.signal,
+    },
+  );
+
+  return readJson<ScaleInstanceExecutionDetailResponse>(response);
+}
+
+function buildStepRequest(
+  step: UpdateItemStepDraftRequest,
+): UpdateItemStepDraftRequest {
+  return {
+    stepCode: step.stepCode,
+    ...(step.actualValue !== undefined
+      ? { actualValue: step.actualValue }
+      : {}),
+    ...(step.note !== undefined ? { note: step.note } : {}),
+  };
+}
+
+function buildPromptRequest(
+  prompt: UpdatePromptResponseDraftRequest,
+): UpdatePromptResponseDraftRequest {
+  return {
+    promptType: prompt.promptType,
+    order: prompt.order,
+    ...(prompt.responseAfterPrompt !== undefined
+      ? { responseAfterPrompt: prompt.responseAfterPrompt }
+      : {}),
+    ...(prompt.note !== undefined ? { note: prompt.note } : {}),
+  };
+}
+
+function buildTimingRequest(
+  timing: UpdateItemTimingDraftRequest,
+): UpdateItemTimingDraftRequest {
+  return {
+    ...(timing.startedAt !== undefined ? { startedAt: timing.startedAt } : {}),
+    ...(timing.completedAt !== undefined
+      ? { completedAt: timing.completedAt }
+      : {}),
+    ...(timing.durationMs !== undefined
+      ? { durationMs: timing.durationMs }
+      : {}),
+    ...(timing.timerSource !== undefined
+      ? { timerSource: timing.timerSource }
+      : {}),
+  };
+}
+
+function buildItemResponseDraftRequest(
+  input: UpdateItemResponseDraftRequest,
+): UpdateItemResponseDraftRequest {
+  return {
+    ...(input.rawResponse !== undefined
+      ? { rawResponse: input.rawResponse }
+      : {}),
+    ...(input.structuredResponse !== undefined
+      ? { structuredResponse: input.structuredResponse }
+      : {}),
+    ...(input.responseText !== undefined
+      ? { responseText: input.responseText }
+      : {}),
+    ...(input.isMissing !== undefined ? { isMissing: input.isMissing } : {}),
+    ...(input.missingReason !== undefined
+      ? { missingReason: input.missingReason }
+      : {}),
+    ...(input.stepResponses !== undefined
+      ? { stepResponses: input.stepResponses.map(buildStepRequest) }
+      : {}),
+    ...(input.promptResponses !== undefined
+      ? { promptResponses: input.promptResponses.map(buildPromptRequest) }
+      : {}),
+    ...(input.timing !== undefined
+      ? {
+          timing:
+            input.timing === null ? null : buildTimingRequest(input.timing),
+        }
+      : {}),
+    ...(input.operatorNote !== undefined
+      ? { operatorNote: input.operatorNote }
+      : {}),
+    ...(input.markAsAnswered !== undefined
+      ? { markAsAnswered: input.markAsAnswered }
+      : {}),
+  };
+}
+
+export async function saveItemResponseDraft(
+  patientId: string,
+  visitId: string,
+  scaleInstanceId: string,
+  itemResponseId: string,
+  input: UpdateItemResponseDraftRequest,
+): Promise<UpdateItemResponseDraftResponse> {
+  const response = await assessmentExecutionFetch(
+    `/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/scale-instances/${encodeURIComponent(scaleInstanceId)}/item-responses/${encodeURIComponent(itemResponseId)}`,
+    {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(buildItemResponseDraftRequest(input)),
+    },
+  );
+
+  return readJson<UpdateItemResponseDraftResponse>(response);
+}

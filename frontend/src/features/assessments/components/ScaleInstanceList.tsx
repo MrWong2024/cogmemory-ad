@@ -1,3 +1,5 @@
+import Link from 'next/link';
+
 import { Badge, type BadgeTone } from '@/src/components/ui/Badge';
 import {
   Card,
@@ -26,6 +28,9 @@ const instanceStatusTones: Record<AssessmentVisitStatus, BadgeTone> = {
   locked: 'warning',
   voided: 'warning',
 };
+
+const scaleLinkClassName =
+  'inline-flex min-h-11 items-center justify-center rounded-md border border-[var(--cma-primary)] bg-[var(--cma-primary)] px-4 py-2 text-base font-semibold text-white transition-colors hover:bg-[var(--cma-primary-strong)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cma-ring)]';
 
 function getScaleDisplayName(
   instance: ScaleInstanceListItem,
@@ -67,7 +72,7 @@ export function ScaleInstanceList({
       <CardHeader className="border-b border-[var(--cma-line)]">
         <CardTitle>已初始化量表实例</CardTitle>
         <CardDescription>
-          这里仅展示量表实例与进度安全摘要，不读取或展示题目作答记录。
+          这里展示量表实例与进度安全摘要，并可进入逐题草稿记录或只读查看。
         </CardDescription>
       </CardHeader>
       {sortedInstances.length === 0 ? (
@@ -206,14 +211,24 @@ export function ScaleInstanceList({
                   </dd>
                 </div>
               </dl>
+              <div className="mt-5 border-t border-[var(--cma-line)] pt-4">
+                <Link
+                  className={scaleLinkClassName}
+                  href={`/patients/${encodeURIComponent(instance.patientId)}/visits/${encodeURIComponent(instance.assessmentVisitId)}/scale-instances/${encodeURIComponent(instance.id)}`}
+                >
+                  {instance.status === 'draft' ||
+                  instance.status === 'in_progress'
+                    ? '打开量表'
+                    : '查看量表'}
+                </Link>
+              </div>
             </article>
           ))}
           <p className="text-sm leading-6 text-[var(--cma-muted)]">
-            题目作答页面将在后续阶段接入。
+            可打开量表进行逐题草稿记录；整份提交、计分和报告仍在后续阶段接入。
           </p>
         </CardContent>
       )}
     </Card>
   );
 }
-

@@ -6,13 +6,13 @@
 
 ## 2. 当前状态与边界
 
-- 前端 B1 已新增 `frontend\src\features\auth\api\auth-api.ts`；B2 已新增 `frontend\src\features\patients\api\patients-api.ts`；B3 已新增 `frontend\src\features\assessments\api\assessment-execution-api.ts`。
-- 当前对接后端 A11 三个认证 API、A12 五个患者 / 访视 API 与 A13 三个评估初始化前置 API，不调用其他业务 API。
+- 前端 B1 已新增 `frontend\src\features\auth\api\auth-api.ts`；B2 已新增 `frontend\src\features\patients\api\patients-api.ts`；B3 / B4 使用 `frontend\src\features\assessments\api\assessment-execution-api.ts` 对接评估执行 API。
+- 当前对接后端 A11 三个认证 API、A12 五个患者 / 访视 API、A13 三个评估初始化前置 API 与 A14 两个评估执行草稿 API，不调用其他业务 API。
 - API Client 使用 `frontendEnv.apiBaseUrl` 作为后端基础地址。
 - 所有请求统一使用 `credentials: 'include'`，由浏览器携带或接收 HttpOnly Cookie。
 - 所有认证、患者和访视请求使用 `cache: 'no-store'`。
 - 前端不读取 Cookie，不保存 token，不使用 JWT，也不记录密码或认证响应体。
-- 当前没有 BFF 代理；B1 / B2 / B3 按明确任务口径由浏览器直接请求既有公开 API base URL。
+- 当前没有 BFF 代理；B1 / B2 / B3 / B4 按明确任务口径由浏览器直接请求既有公开 API base URL。
 
 ## 3. 环境变量读取
 
@@ -20,7 +20,7 @@
 - 读取项：既有 `NEXT_PUBLIC_API_BASE_URL`
 - 安全默认值：`http://localhost:5002`
 - 导出对象：`frontendEnv.apiBaseUrl`
-- B1 / B2 / B3 未新增、删除或修改环境变量与环境变量文件。
+- B1 / B2 / B3 / B4 未新增、删除或修改环境变量与环境变量文件。
 
 ## 4. 当前 API 对接清单
 
@@ -154,6 +154,39 @@
 - 安全字段边界：请求不包含 patientId、assessmentVisitId、subjectCode、scaleDefinitionId、scaleVersionId、instanceCode、instanceNo、status、operatorSnapshot、状态时间、durationMs、progress、metadata 或 itemResponses；响应不展示 ItemResponse 全量数据、完整 seed、scoringRule、expectedValue、数据库内部错误或认证信息。
 - 行为边界：不自动修改访视状态，不跳转题目页面，不开始计时，不保存作答，不触发媒体、计分、认知域、报告或 AI。
 
+### 4.12 `getScaleInstanceExecutionDetail()` -> `GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId`
+
+- Client：`frontend\src\features\assessments\api\assessment-execution-api.ts`
+- 调用方：`ScaleInstanceExecutionPage`。
+- Path：patientId、visitId、scaleInstanceId 均来自 Next 16 动态路由并使用 `encodeURIComponent()`；任一值不符合 24 位 MongoId 时页面不发送 GET。
+- 请求体：无；支持 `AbortSignal`，重试或组件卸载时取消旧请求；取消请求不展示服务错误。
+- 响应：`ScaleInstanceExecutionDetailResponse`，结构为 `{ visit, scale, scaleInstance, groups, itemResponses }`；Date JSON 字段在前端统一建模为 `string | null`。
+- 凭证 / 缓存：`frontendEnv.apiBaseUrl`、`credentials: 'include'`、`cache: 'no-store'`。
+- loading / 401 / 403：loading 使用文字状态；401 返回 `/login`；403 显示无权限，并提供返回访视、患者列表、工作台与退出登录入口。
+- 400 / 404 / 409：400 映射量表实例链接无效；`PATIENT_NOT_FOUND`、`VISIT_NOT_FOUND`、`SCALE_INSTANCE_NOT_FOUND` 分别显示稳定资源不存在状态；409 + `SCALE_INSTANCE_CONFIGURATION_UNAVAILABLE` 显示版本配置不可用，不渲染空白题目页。
+- 网络 / 500：网络错误显示评估服务暂时不可用并提供手工重试；未知错误不展示后端 message、path、堆栈或数据库信息。
+- 安全字段边界：只读取 A14 安全身份、分组、题目配置、草稿、槽位、计时、证据要求和进度；前端类型不定义 itemConfigSnapshot、scoringRule、expectedValue、score、isCorrect、scoreValue、metadata 或 qualityControlHints。
+
+### 4.13 `saveItemResponseDraft()` -> `PATCH /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/item-responses/:itemResponseId`
+
+- Client：`frontend\src\features\assessments\api\assessment-execution-api.ts`
+- 调用方：`ScaleInstanceExecutionPage`；单题交互由 `ItemResponseEditor` 及其 step / prompt / timing 子组件提供。
+- Path：patientId、visitId、scaleInstanceId、itemResponseId 全部使用 `encodeURIComponent()`，不进入请求体。
+- 请求白名单：只允许 `rawResponse`、`structuredResponse`、`responseText`、`isMissing`、`missingReason`、`stepResponses`、`promptResponses`、`timing`、`operatorNote`、`markAsAnswered`。API Client 再次逐字段重建 body，不提交 undefined，不透传 React 状态或完整 ItemResponse。
+- 结构化草稿边界：B4 UI 不提供任意 JSON 编辑器；服务端已有非空 structuredResponse 时只显示存在性提示，普通保存不提交该字段并保留服务端值。
+- step / prompt：step 仅重建 stepCode、变化的 actualValue / note；prompt 仅重建 promptType、order、变化的 responseAfterPrompt / note；不提交 expectedValue、isCorrect、scoreValue、counts 标识或服务器字段。
+- timing：仅重建变化的 startedAt、completedAt、durationMs、timerSource；UI 用秒编辑 duration，提交前转换为非负整数毫秒并校验完成时间不早于开始时间。
+- 凭证 / 缓存 / 重试：JSON PATCH，使用 `frontendEnv.apiBaseUrl`、`credentials: 'include'`、`cache: 'no-store'`；PATCH 不自动重试，不乐观更新，不批量保存。同一题保存中不并发发送第二个 PATCH。
+- 成功响应：`UpdateItemResponseDraftResponse`，结构为 `{ itemResponse, progress }`；页面使用服务端 itemResponse 覆盖当前题、清除 dirty，并用 progress 更新顶部和实例摘要，不重新加载整页或修改 Visit / ScaleInstance 状态。
+- 400：普通 DTO 校验映射 validation；A14 业务 code 映射 `ITEM_RESPONSE_EMPTY_PATCH`、`ITEM_RESPONSE_PAYLOAD_INVALID`、`ITEM_RESPONSE_MISSING_REASON_REQUIRED`、`ITEM_RESPONSE_STEP_NOT_FOUND`、`ITEM_RESPONSE_DUPLICATE_STEP`、`ITEM_RESPONSE_PROMPT_NOT_FOUND`、`ITEM_RESPONSE_DUPLICATE_PROMPT`、`ITEM_RESPONSE_TIMING_NOT_ALLOWED`、`ITEM_RESPONSE_INVALID_TIMING`。
+- 401 / 403：401 返回 `/login`；403 显示稳定无权限保存提示，后端 Guard 仍是最终权限边界。
+- 404：`PATIENT_NOT_FOUND`、`VISIT_NOT_FOUND`、`SCALE_INSTANCE_NOT_FOUND`、`ITEM_RESPONSE_NOT_FOUND` 使用稳定资源不存在 / 重新加载提示，不泄露跨归属资源存在性。
+- 409：映射 `PATIENT_NOT_ACTIVE`、`VISIT_NOT_EDITABLE`、`SCALE_INSTANCE_NOT_EDITABLE`、`ITEM_RESPONSE_NOT_EDITABLE`、`ITEM_RESPONSE_CANNOT_MARK_ANSWERED`。
+- 500 / 网络：`ITEM_RESPONSE_SAVE_FAILED` 映射稳定保存失败文案；网络错误映射 service_unavailable；PATCH 不自动重试。
+- 保存语义：保存草稿只发送变化字段；无变化不发 PATCH 并显示“没有需要保存的更改”。标记完成仅增加 `markAsAnswered: true`，不提交 status；answered 后可继续修改且不会回退。本接口不触发最终提交、评分、媒体、认知域、报告或 AI。
+- A14 资源 / 状态 code UI：`PATIENT_NOT_FOUND` -> 患者不存在；`PATIENT_NOT_ACTIVE` -> 当前患者不是活动状态；`VISIT_NOT_FOUND` -> 访视不存在或不属于患者；`VISIT_NOT_EDITABLE` -> 当前访视状态不允许修改；`SCALE_INSTANCE_NOT_FOUND` -> 实例不存在或不属于当前访视；`SCALE_INSTANCE_NOT_EDITABLE` -> 实例状态不允许修改；`SCALE_INSTANCE_CONFIGURATION_UNAVAILABLE` -> 版本配置暂时不可用；`ITEM_RESPONSE_NOT_FOUND` -> 题目记录不存在并提示重新加载；`ITEM_RESPONSE_NOT_EDITABLE` -> 当前题目不可修改。
+- A14 草稿 code UI：`ITEM_RESPONSE_EMPTY_PATCH` -> 没有需要保存的修改；`ITEM_RESPONSE_PAYLOAD_INVALID` -> 作答格式无效；`ITEM_RESPONSE_MISSING_REASON_REQUIRED` -> 缺失原因必填；`ITEM_RESPONSE_CANNOT_MARK_ANSWERED` -> 先记录有效作答或缺失原因；`ITEM_RESPONSE_STEP_NOT_FOUND` / `ITEM_RESPONSE_PROMPT_NOT_FOUND` -> 槽位已变化并提示重新加载；`ITEM_RESPONSE_DUPLICATE_STEP` / `ITEM_RESPONSE_DUPLICATE_PROMPT` -> 槽位重复并提示检查；`ITEM_RESPONSE_TIMING_NOT_ALLOWED` -> 本题不允许计时草稿；`ITEM_RESPONSE_INVALID_TIMING` -> 检查开始、完成时间与用时；`ITEM_RESPONSE_SAVE_FAILED` -> 保存失败稍后重试。
+
 ## 5. 当前认证公开类型
 
 - `AuthUserResponse`：`id`、`accountName`、`displayName`、`roles`、`permissions`、可选 `userType`。
@@ -169,12 +202,14 @@
 - 业务 code 映射：`PATIENT_NOT_FOUND`、`PATIENT_SUBJECT_CODE_CONFLICT`、`PATIENT_NOT_ACTIVE`、`VISIT_CODE_CONFLICT`、`INVALID_DATE_RANGE`。
 - 后端英文 message、path、堆栈和内部错误对象不作为 UI 主文案或页面输出。
 - `AssessmentExecutionApiError.kind` 覆盖 unauthenticated、forbidden、validation、patient / visit 状态与不存在、scale / version 不可用或停用、catalog 非法或版本冲突、实例重复、初始化失败、网络错误和 unknown。
+- B4 扩展错误 kind：`scale_instance_not_found`、`scale_instance_not_editable`、`scale_instance_configuration_unavailable`、`visit_not_editable`、`item_response_not_found`、`item_response_not_editable`、`item_response_empty_patch`、`item_response_payload_invalid`、`item_response_missing_reason_required`、`item_response_cannot_mark_answered`、`item_response_step_not_found`、`item_response_duplicate_step`、`item_response_prompt_not_found`、`item_response_duplicate_prompt`、`item_response_timing_not_allowed`、`item_response_invalid_timing`、`item_response_save_failed`。
 - `ScaleInstanceListItem` 的时间字段按 JSON 传输事实定义为 `string | null`；`InitializeScaleInstanceRequest` 只包含三个允许字段，不定义任何服务器控制字段。
+- `item-response-execution.ts` 定义 A14 安全响应和 PATCH 白名单类型；所有 Date JSON 字段使用 `string | null`，不定义 scoringRule、expectedValue、score、isCorrect、scoreValue、metadata、qualityControlHints 或内部配置引用。
 
 ## 7. 当前未对接 API
 
-- 当前没有 A12 / A13 已接接口之外的患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转调用。
-- 当前没有单个 ScaleInstance 详情、ItemResponse 查询 / 保存 / 提交、量表开始 / 暂停 / 结束、媒体、计分、认知域、报告、AI、用户管理、角色权限管理或科研导出 API 调用。
+- 当前没有 A12 / A13 / A14 已接接口之外的患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转调用。
+- 当前没有整份量表最终提交、ItemResponse 批量或自动保存、量表开始 / 暂停 / 结束、媒体、计分、认知域、报告、AI、用户管理、角色权限管理或科研导出 API 调用。
 - 不得在后端 API 未确认并进入明确任务范围前编造前端对接事实。
 
 ## 8. 后续同步规则

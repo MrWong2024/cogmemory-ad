@@ -6,12 +6,12 @@
 
 ## 2. 当前状态
 
-- 前端公共底座、B1 登录 / 认证接入、B2 患者档案与评估访视最小页面闭环，以及 B3 访视详情与量表实例初始化接入已落地。
+- 前端公共底座、B1 登录 / 认证接入、B2 患者档案与评估访视最小页面闭环、B3 访视详情与量表实例初始化，以及 B4 量表施测执行与逐题手工草稿保存已落地。
 - `frontend\package.json` 已存在，自动验证命令以其中真实脚本为准。
-- B2 / B3 不新增测试代码、测试框架、E2E 或第三方依赖。
-- 当前自动验证覆盖三个认证 API、A12 五个患者 / 访视 API 与 A13 三个评估初始化前置 API 的前端类型、调用代码和页面构建；真实 HTTP / 浏览器联调仍需手工验证。
+- B2 / B3 / B4 不新增测试代码、测试框架、E2E 或第三方依赖。
+- 当前自动验证覆盖三个认证 API、A12 五个患者 / 访视 API、A13 三个评估初始化前置 API 与 A14 两个执行草稿 API 的前端类型、调用代码和页面构建；真实 HTTP / 浏览器联调仍需手工验证。
 
-## 3. B1 / B2 / B3 自动验证命令
+## 3. B1 / B2 / B3 / B4 自动验证命令
 
 在 `frontend` 目录、且既有 `node_modules` 存在时执行：
 
@@ -44,6 +44,16 @@
 - 未新增自动测试：当前前端没有既有测试框架，任务明确不新增测试框架或浏览器 E2E；本阶段使用 lint、typecheck 与生产构建验证。
 - E2E / 浏览器自动化：未执行；本阶段明确不新增或执行 E2E。
 - 浏览器手工验证：未执行，以下 B3 手工场景均为待验证。
+- 后端命令：未执行。
+
+本次 B4 验证结果：
+
+- `npm run lint`：通过。
+- `npm run typecheck`：通过，Next 16 量表实例执行动态路由类型生成成功且 TypeScript 无错误。
+- `npm run build`：通过，生产构建包含 `/patients/[patientId]/visits/[visitId]/scale-instances/[scaleInstanceId]`。
+- 未新增自动测试：当前前端没有既有测试框架，任务明确不新增测试框架或浏览器 E2E；本阶段使用 lint、typecheck 与生产构建验证。
+- E2E / 浏览器自动化：未执行；本阶段明确不执行浏览器 E2E。
+- 浏览器手工验证：未执行，以下 B4 场景均为待验证。
 - 后端命令：未执行。
 
 如后续环境中 `frontend/node_modules` 不存在，不得为验证本阶段而执行 `npm install`；应跳过上述命令并说明原因。
@@ -87,6 +97,18 @@ B3 自动验证不覆盖：
 
 - 真实 A13 HTTP、数据库写入、测试用户、HttpOnly Cookie、CORS、浏览器导航和重复请求竞态联调。
 - ItemResponse 查询 / 保存 / 提交、真实 MMSE / MoCA 题目作答、媒体、计时、计分、认知域、报告或 AI。
+
+B4 静态与构建验证额外覆盖：
+
+- A14 安全公开类型、错误 code 映射、执行详情 GET、逐题 PATCH 白名单和草稿转换纯函数的 lint 与类型检查。
+- `/patients/[patientId]/visits/[visitId]/scale-instances/[scaleInstanceId]` 的 Next 16 Promise params 路由类型与生产构建。
+- 动态分组、逐题编辑器、step / prompt / timing / evidence 子组件、dirty / beforeunload、只读状态和 B3 实例入口的静态代码路径。
+
+B4 自动验证不覆盖：
+
+- 真实 A14 HTTP、数据库写入、测试用户、HttpOnly Cookie、CORS、浏览器导航、GET 取消与 PATCH 竞态联调。
+- 浏览器 beforeunload 的实际提示样式与触发策略；该行为由浏览器决定。
+- 整份量表最终提交、批量或自动保存、媒体、实时计时、计分、认知域、报告或 AI；这些能力未实现。
 
 ## 5. B1 手工验证建议
 
@@ -156,9 +178,34 @@ B3 自动验证不覆盖：
 12. 使会话失效后确认页面返回 `/login`，且不无限重试。
 13. 使用无 A13 权限账号确认显示 403，而不是空目录或空实例，并可返回工作台或退出登录。
 14. 模拟患者不存在、访视不存在或归属不符、无效 ID、目录单独失败、量表不可用、目录冲突和服务错误，确认使用稳定中文状态且不展示后端 message。
-15. 确认页面没有可用的题目作答、实例详情、媒体、计时、计分、报告或 AI 入口。
+15. 确认实例列表提供“打开量表 / 查看量表”入口，但访视详情页自身不读取或保存题目，也没有最终提交、媒体、计分、报告或 AI 操作。
 
-## 8. 认证与安全验证口径
+## 8. B4 手工验证建议（待验证）
+
+前置条件：后端已启动，使用脱敏人工测试账号和测试患者 / 访视 / MMSE / MoCA 实例；不得使用真实患者信息。以下场景本次未执行，均待开发者本地验证：
+
+1. 登录后打开患者、访视与 MMSE / MoCA 实例，确认 draft / in_progress 显示“打开量表”，completed / locked / voided 显示“查看量表”。
+2. 确认执行详情加载访视、量表版本、实例、实时进度、服务端分组和题目；分组 / 题目按 order / itemOrder 排序，无匹配 groupCode 的题目进入“其他项目”。
+3. 确认页面不显示完整评分规则、expectedValue、正确答案、score、isCorrect、scoreValue 或任意 JSON 编辑器。
+4. 分别保存 boolean、number、text 草稿；确认 boolean 文案是原始布尔记录，number 空值为 null 且非空必须为有限 number，text 不自动匹配或判分。
+5. 确认 single_choice / multi_choice 只显示原始回答转录 textarea，不出现前端虚构选项或评分结果。
+6. 在 MMSE / MoCA 连续减 7 等项目中保存分步实际回答和备注；确认页面不显示预期值、正确性或步骤分数。
+7. 在 MoCA 延迟回忆提示槽位中保存提示后表现；确认 promptText、提示类型和计分参与标识可见，不新增槽位或推断正确性。
+8. 开启缺失记录但不填原因，确认前端阻止保存；填写原因后可保存。确认开启时清空实际作答、step actualValue 和 prompt responseAfterPrompt，保留相关 note、timing 与 operatorNote；关闭时清空 missingReason。
+9. 确认非计时题不出现计时编辑；计时题可编辑开始 / 完成时间、秒口径用时与来源，完成时间早于开始时间时阻止保存，页面没有实时计时器操作。
+10. drawing / handwriting / photo_upload 项只显示证据要求、文字说明和操作者备注，不出现文件选择、上传、拍照、画布或手写轨迹。
+11. 保存草稿后刷新确认服务端草稿仍保留；保存成功不重新加载整页，当前题反馈稳定且 dirty 清除。
+12. 保存并标记本题完成后确认后端 progress 增加；只有 timing 或 operatorNote 时不能标记完成。
+13. answered 题继续编辑并保存后仍为 answered，不出现退回进行中操作，也不提交 status。
+14. scored / locked / voided 题只读；completed / locked / voided 访视或实例全页只读，历史安全草稿仍展示。
+15. 修改多个分组中的题目并切换分组，确认未保存输入不丢失、顶部未保存数量正确；刷新或关闭页面触发浏览器 beforeunload 基础提示。
+16. 使会话失效后确认 401 返回 `/login`；使用无 A14 权限账号确认 403 显示无权限，而不是空题目页。
+17. 模拟患者、访视、实例或题目不存在，确认使用稳定中文 not-found；跨患者 / 访视访问不泄露资源存在性。
+18. 模拟量表实例配置不可用、访视 / 实例 / 题目不可编辑、槽位变化、计时无效和保存失败，确认映射稳定中文错误且 PATCH 不自动重试。
+19. 使用浏览器网络面板确认 A14 GET 可取消，所有路径 ID 已编码，PATCH 只含当前题变化白名单且不包含 status、score、答案、evidenceRequirements、ID 或完整响应对象。
+20. 确认页面不存在整份最终提交、批量保存、自动保存、评分、媒体、报告、认知域或 AI 入口，也未把草稿、Cookie 或 token 写入 localStorage / sessionStorage。
+
+## 9. 认证与安全验证口径
 
 - 使用浏览器网络面板确认三个认证请求均携带 credentials 语义，并由浏览器处理 HttpOnly Cookie。
 - 前端代码与存储中不得出现 raw token、token hash、`passwordHash`、JWT 或其他认证凭证。
@@ -170,15 +217,16 @@ B3 自动验证不覆盖：
 - 页面、console、localStorage、sessionStorage 和 URL 不得泄露患者请求体、Cookie、token、token hash、JWT、passwordHash 或 Mixed 内部字段。
 - A13 GET 必须支持取消且取消不显示服务异常；初始化 POST 不自动重试，请求 body 仅包含 scaleCode、scaleVersion、administrationMode。
 - B3 页面不得在 console、存储或 URL 中记录访视详情、目录、实例或 ItemResponse；不得展示完整 seed、scoringRule、expectedValue 或后端内部错误。
+- B4 页面不得在 console、存储或 URL 中记录作答草稿、患者、访视、实例、请求体或响应体；PATCH body 必须是变化白名单，不能包含服务器控制字段。
 
-## 9. 医疗与隐私展示红线
+## 10. 医疗与隐私展示红线
 
 - 不展示真实用户或患者敏感数据样本。
 - 测试截图不得包含真实姓名、邮箱、身份证号、手机号、病历号、住址、患者资料或真实文件名。
 - 不得在页面文案或测试截图中呈现未经确认的真实医疗诊断结论。
 - 核心认知评估必须保持医护或研究人员陪伴 / 监督的产品边界。
 
-## 10. 后续同步规则
+## 11. 后续同步规则
 
 - 前端新增或调整测试脚本后，应同步更新自动验证命令。
 - 新增页面、路由、组件、API 对接或权限展示后，应同步补充对应验证口径。

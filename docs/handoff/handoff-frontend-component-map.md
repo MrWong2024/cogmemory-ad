@@ -9,9 +9,9 @@
 - `frontend\src\components\ui` 提供 `Button`、`Card`、`Badge` 三个无业务语义公共组件。
 - `frontend\src\features\auth` 提供 B1 最小认证接入能力。
 - `frontend\src\features\patients` 提供 B2 患者档案与评估访视最小业务闭环。
-- `frontend\src\features\assessments` 提供 B3 访视详情、量表安全目录与量表实例初始化能力。
+- `frontend\src\features\assessments` 提供 B3 访视详情、量表安全目录与量表实例初始化，以及 B4 量表施测执行与逐题手工草稿保存能力。
 - 当前组件遵循医疗系统 / 临床评估 / 低干扰 / 高可读性 / 冷静可信视觉基线。
-- B2 / B3 未新增公共 Input 组件、第三方 UI 库、状态管理库、数据请求库或权限菜单组件。
+- B2 / B3 / B4 未新增公共 Input 组件、第三方 UI 库、状态管理库、数据请求库或权限菜单组件。
 
 ## 3. 公共 UI 组件
 
@@ -155,7 +155,8 @@
 - 职责：按 scaleCode / instanceNo 排序并展示量表名称、版本、实例编号、状态、施测方式、progress、操作者、状态时间、用时和 versionTrace
 - 输入：`instances`、可选目录摘要、访视能否初始化
 - 空态：未初始化时根据访视状态引导选择目录或说明不可新增
-- 边界：目录不可用时只用 scaleCode 大写兜底；不展示数据库内部 ID、ItemResponse、metadata、qualityControlSummary、scoringRule 或 expectedValue；不提供题目入口
+- B4 入口：每个实例链接到 `/patients/[patientId]/visits/[visitId]/scale-instances/[scaleInstanceId]`；draft / in_progress 显示“打开量表”，completed / locked / voided 显示“查看量表”
+- 边界：目录不可用时只用 scaleCode 大写兜底；列表自身不读取 ItemResponse、不发送 PATCH，不展示 metadata、qualityControlSummary、scoringRule 或 expectedValue，不提供最终提交
 
 ### 6.3 `ScaleInitializationPanel`
 
@@ -163,13 +164,13 @@
 - 职责：展示真实 MMSE / MoCA 安全目录、每张卡片的施测方式选择、已初始化 / 访视状态禁用、提交中与 success / conflict / error 状态
 - 输入：目录 loading / error / retry、既有 scaleCode、当前初始化 code、反馈、访视状态与初始化回调
 - 可访问性：select 有可见 label；错误使用 alert，成功使用 polite live region；按钮禁用时保留明确文字
-- 边界：用户不能输入 scaleCode / version；只提供三种确认施测方式；能力摘要明确是配置要求，不表示上传、手写、计时或作答已实现
+- 边界：用户不能输入 scaleCode / version；只提供三种确认施测方式；能力摘要明确当前可进入 B4 记录文字说明与计时草稿，但不表示媒体上传、手写轨迹或实时计时器已实现
 
 ### 6.4 Assessment Execution API Client
 
 - 路径：`frontend\src\features\assessments\api\assessment-execution-api.ts`
-- 职责：提供 `listAvailableScales()`、`getAssessmentVisitExecutionDetail()`、`initializeScaleInstance()` 与稳定 `AssessmentExecutionApiError`
-- 边界：只调用 A13 三个 API；统一 `frontendEnv.apiBaseUrl`、credentials、no-store，GET 支持 AbortSignal，POST 重建三个字段白名单且不自动重试；不记录请求 / 响应或泛化为完整 SDK
+- 职责：提供 `listAvailableScales()`、`getAssessmentVisitExecutionDetail()`、`initializeScaleInstance()`、`getScaleInstanceExecutionDetail()`、`saveItemResponseDraft()` 与稳定 `AssessmentExecutionApiError`
+- 边界：只调用 A13 三个 API 与 A14 两个 API；统一 `frontendEnv.apiBaseUrl`、credentials、no-store，GET 支持 AbortSignal，POST / PATCH 重建白名单且不自动重试；不记录请求 / 响应或泛化为完整 SDK
 
 ### 6.5 Assessment Execution 类型
 
@@ -180,8 +181,61 @@
 ### 6.6 Assessment Execution 展示纯函数
 
 - 路径：`frontend\src\features\assessments\lib\assessment-execution-display.ts`
-- 职责：集中维护施测方式、实例状态、操作者角色、配置能力中文摘要、用时格式化和访视可初始化状态判断
+- 职责：集中维护施测方式、实例 / 题目 / responseType / prompt / timer / evidence 中文摘要、动态分组、只读原因、保存错误文案、用时格式化和访视可初始化状态判断
 - 边界：纯展示与状态辅助函数，不是权限矩阵；`draft` / `in_progress` 前端判断不替代后端最终校验
+
+### 6.7 `ScaleInstanceExecutionPage`
+
+- 路径：`frontend\src\features\assessments\components\ScaleInstanceExecutionPage.tsx`
+- 职责：接收 patientId / visitId / scaleInstanceId，加载 A14 安全执行详情，管理 invalid / loading / 401 / 403 / not-found / configuration-unavailable / retry、动态分组、itemResponseId 草稿、dirty 数量、beforeunload、逐题 PATCH 和实时 progress
+- 保存：同一题保存期间禁止并发；成功后以响应 itemResponse 覆盖当前题、清除 dirty，并用响应 progress 更新实例摘要，不重新加载整个页面
+- 边界：GET 使用 AbortController，PATCH 不重试；组件卸载后不 setState；不使用 SWR、React Query、Redux、Zustand、localStorage 或 sessionStorage
+
+### 6.8 `ScaleExecutionGroupNavigation`
+
+- 路径：`frontend\src\features\assessments\components\ScaleExecutionGroupNavigation.tsx`
+- 职责：用 button 展示服务端动态分组及每组已完成 / 总题数，支持键盘 focus 与文字状态
+- 边界：不写死 MMSE / MoCA 分组；无匹配 groupCode 的题目由展示纯函数放入“其他项目”；切换只改变当前可见分组，不清理草稿
+
+### 6.9 `ItemResponseEditor`
+
+- 路径：`frontend\src\features\assessments\components\ItemResponseEditor.tsx`
+- 职责：展示题目标题、CRF、指导语、操作说明、认知域编码、计入总分标识、状态、证据要求与已有草稿；提供类型对应编辑、missing、operatorNote、保存草稿和标记本题完成
+- 普通类型：boolean 保存 null / boolean；number 保存有限 number；text 与 single / multi choice 保存 responseText；single / multi choice 只提供原始回答转录，不生成选项或判分
+- 媒体类型：drawing / photo_upload / handwriting 只提供文字说明与证据要求，不提供文件选择、拍照、上传、画布或手写轨迹
+- 安全边界：不显示 scoringRule、expectedValue、正确答案、score、isCorrect、scoreValue；已有 structuredResponse 仅显示存在性提示，不提供 JSON 编辑器
+
+### 6.10 `ItemStepEditor`
+
+- 路径：`frontend\src\features\assessments\components\ItemStepEditor.tsx`
+- 职责：只渲染服务端已有 stepResponses 槽位，只编辑 actualValue 与 note；number / multi_step_calculation 的非空 actualValue 转有限 number，其他类型保存 string
+- 边界：不新增槽位，不显示 expectedValue、isCorrect、scoreValue，不判断连续减 7 等步骤是否正确
+
+### 6.11 `ItemPromptEditor`
+
+- 路径：`frontend\src\features\assessments\components\ItemPromptEditor.tsx`
+- 职责：展示 promptText、提示类型中文名和服务端 countsTowardScore 标识，只编辑 responseAfterPrompt 与 note
+- 边界：不新增服务端未返回槽位，不推断或显示 isCorrect
+
+### 6.12 `ItemTimingEditor`
+
+- 路径：`frontend\src\features\assessments\components\ItemTimingEditor.tsx`
+- 职责：为 timed_task、requiresTimer 或 duration evidence 题目编辑 startedAt、completedAt、秒口径 duration 和 timerSource 草稿
+- 边界：不是实时计时器，不提供开始 / 暂停 / 继续 / 结束；提交前由纯函数转非负整数毫秒并校验时间先后
+
+### 6.13 `ItemEvidenceRequirements`
+
+- 路径：`frontend\src\features\assessments\components\ItemEvidenceRequirements.tsx`
+- 职责：展示服务端 evidenceRequirements 的类型、状态与 attached 标识，并明确媒体证据后续接入
+- 边界：不创建假的已上传状态，不调用媒体 API
+
+### 6.14 A14 类型与草稿纯函数
+
+- 类型路径：`frontend\src\features\assessments\types\item-response-execution.ts`
+- 类型职责：严格定义 A14 安全执行响应、JsonValue、response / status / prompt / timer / evidence 枚举和 PATCH 白名单；Date JSON 使用 string / null
+- 纯函数路径：`frontend\src\features\assessments\lib\item-response-draft.ts`
+- 纯函数职责：服务端 ItemResponse 到本地 draft、missing 清空、字段级和递归值 dirty 比较、数值 / datetime-local / duration 转换、基础有效作答判断、step / prompt / timing 差异与 PATCH 构建
+- 边界：不修改原响应对象，不使用 any，不以整对象 JSON.stringify 作为 dirty 策略，不定义评分规则、答案或任意 JSON 编辑能力
 
 ## 7. 后续同步规则
 
