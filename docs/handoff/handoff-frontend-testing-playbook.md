@@ -6,12 +6,12 @@
 
 ## 2. 当前状态
 
-- 前端公共底座、B1 登录 / 认证接入，以及 B2 患者档案与评估访视最小页面闭环已落地。
+- 前端公共底座、B1 登录 / 认证接入、B2 患者档案与评估访视最小页面闭环，以及 B3 访视详情与量表实例初始化接入已落地。
 - `frontend\package.json` 已存在，自动验证命令以其中真实脚本为准。
-- B2 不新增测试代码、测试框架、E2E 或第三方依赖。
-- 当前自动验证覆盖三个认证 API 与 A12 五个患者 / 访视 API 的前端类型、调用代码和页面构建；真实 HTTP / 浏览器联调仍需手工验证。
+- B2 / B3 不新增测试代码、测试框架、E2E 或第三方依赖。
+- 当前自动验证覆盖三个认证 API、A12 五个患者 / 访视 API 与 A13 三个评估初始化前置 API 的前端类型、调用代码和页面构建；真实 HTTP / 浏览器联调仍需手工验证。
 
-## 3. B1 / B2 自动验证命令
+## 3. B1 / B2 / B3 自动验证命令
 
 在 `frontend` 目录、且既有 `node_modules` 存在时执行：
 
@@ -34,6 +34,16 @@
 - `npm run build`：通过，生产构建包含 `/patients`、`/patients/new`、`/patients/[patientId]`、`/patients/[patientId]/visits/new`。
 - E2E / 浏览器自动化：未执行；本阶段明确不新增或执行 E2E。
 - 浏览器手工验证：未执行，以下 B2 手工场景均为待验证。
+- 后端命令：未执行。
+
+本次 B3 验证结果：
+
+- `npm run lint`：通过。
+- `npm run typecheck`：通过，Next 16 route types 生成成功且 TypeScript 无错误。
+- `npm run build`：通过，生产构建包含 `/patients/[patientId]/visits/[visitId]`。
+- 未新增自动测试：当前前端没有既有测试框架，任务明确不新增测试框架或浏览器 E2E；本阶段使用 lint、typecheck 与生产构建验证。
+- E2E / 浏览器自动化：未执行；本阶段明确不新增或执行 E2E。
+- 浏览器手工验证：未执行，以下 B3 手工场景均为待验证。
 - 后端命令：未执行。
 
 如后续环境中 `frontend/node_modules` 不存在，不得为验证本阶段而执行 `npm install`；应跳过上述命令并说明原因。
@@ -66,6 +76,17 @@ B2 自动验证不覆盖：
 - 真实患者 / 访视 API、数据库、测试用户、HttpOnly Cookie、CORS 与浏览器导航联调。
 - 患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 详情 / 状态流转。
 - MMSE / MoCA 执行、作答、媒体、计分、认知域、报告、AI、用户管理和权限菜单。
+
+B3 静态与构建验证额外覆盖：
+
+- assessment execution 公开类型、API Client、展示纯函数与三个业务组件的 lint 和类型检查。
+- `/patients/[patientId]/visits/[visitId]` 的 Next 16 Promise params 路由类型与生产构建。
+- PatientDetailPage 新增访视入口，以及目录 / 详情独立状态和初始化交互的静态代码路径。
+
+B3 自动验证不覆盖：
+
+- 真实 A13 HTTP、数据库写入、测试用户、HttpOnly Cookie、CORS、浏览器导航和重复请求竞态联调。
+- ItemResponse 查询 / 保存 / 提交、真实 MMSE / MoCA 题目作答、媒体、计时、计分、认知域、报告或 AI。
 
 ## 5. B1 手工验证建议
 
@@ -117,7 +138,27 @@ B2 自动验证不覆盖：
 11. 模拟患者不存在、无效 patientId、服务不可用与访视列表单独失败，确认 not-found / invalid / error / retry 状态稳定，访视失败不抹掉患者详情。
 12. 使用浏览器网络面板确认五个业务请求指向 `frontendEnv.apiBaseUrl`，携带 credentials 语义且不自动重试 POST。
 
-## 7. 认证与安全验证口径
+## 7. B3 手工验证建议（待验证）
+
+前置条件：后端已启动，使用脱敏人工测试账号与测试患者 / 访视；不得使用真实患者信息。以下场景本次未执行，均待开发者本地验证：
+
+1. 登录并进入患者详情。
+2. 从访视列表点击“打开访视”。
+3. 确认访视详情正常加载并展示公开访视字段与状态时间。
+4. 确认 MMSE / MoCA 真实目录正常显示。
+5. 确认目录不显示完整题目、指导语、答案、评分规则、expectedValue 或 ObjectId，能力标识不宣称媒体 / 手写 / 计时已实现。
+6. 在 `draft` 或 `in_progress` 访视初始化 MMSE 成功。
+7. 确认成功后显示服务端返回实例与 ItemResponse 题目记录骨架创建数量，但不显示 ItemResponse 全量。
+8. 确认同一 MMSE 再次初始化按钮禁用；竞态返回 `SCALE_INSTANCE_ALREADY_EXISTS` 时显示稳定提示并刷新详情。
+9. 使用另一种已确认施测方式初始化 MoCA 成功。
+10. 刷新页面后确认 MMSE / MoCA 两个实例仍存在并按 scaleCode / instanceNo 排序。
+11. 确认 `completed` / `locked` / `voided` 访视禁用全部初始化操作并显示原因。
+12. 使会话失效后确认页面返回 `/login`，且不无限重试。
+13. 使用无 A13 权限账号确认显示 403，而不是空目录或空实例，并可返回工作台或退出登录。
+14. 模拟患者不存在、访视不存在或归属不符、无效 ID、目录单独失败、量表不可用、目录冲突和服务错误，确认使用稳定中文状态且不展示后端 message。
+15. 确认页面没有可用的题目作答、实例详情、媒体、计时、计分、报告或 AI 入口。
+
+## 8. 认证与安全验证口径
 
 - 使用浏览器网络面板确认三个认证请求均携带 credentials 语义，并由浏览器处理 HttpOnly Cookie。
 - 前端代码与存储中不得出现 raw token、token hash、`passwordHash`、JWT 或其他认证凭证。
@@ -127,15 +168,17 @@ B2 自动验证不覆盖：
 - 患者 / 访视 API 的 401 必须返回登录页，403 必须显示无权限；页面角色显示不替代后端 Guard。
 - 患者创建请求不得包含 status、externalRefs、metadata 或 timestamps；访视创建请求不得包含 operatorSnapshot、clinicalContext、metadata、状态或状态时间。
 - 页面、console、localStorage、sessionStorage 和 URL 不得泄露患者请求体、Cookie、token、token hash、JWT、passwordHash 或 Mixed 内部字段。
+- A13 GET 必须支持取消且取消不显示服务异常；初始化 POST 不自动重试，请求 body 仅包含 scaleCode、scaleVersion、administrationMode。
+- B3 页面不得在 console、存储或 URL 中记录访视详情、目录、实例或 ItemResponse；不得展示完整 seed、scoringRule、expectedValue 或后端内部错误。
 
-## 8. 医疗与隐私展示红线
+## 9. 医疗与隐私展示红线
 
 - 不展示真实用户或患者敏感数据样本。
 - 测试截图不得包含真实姓名、邮箱、身份证号、手机号、病历号、住址、患者资料或真实文件名。
 - 不得在页面文案或测试截图中呈现未经确认的真实医疗诊断结论。
 - 核心认知评估必须保持医护或研究人员陪伴 / 监督的产品边界。
 
-## 9. 后续同步规则
+## 10. 后续同步规则
 
 - 前端新增或调整测试脚本后，应同步更新自动验证命令。
 - 新增页面、路由、组件、API 对接或权限展示后，应同步补充对应验证口径。

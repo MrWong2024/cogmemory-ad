@@ -635,7 +635,7 @@ export function PatientDetailPage({ patientId }: { patientId: string }) {
         <CardHeader>
           <CardTitle>评估访视</CardTitle>
           <CardDescription>
-            可按访视状态、类型和评估日期范围筛选。当前仅支持查看列表和创建访视。
+            可按访视状态、类型和评估日期范围筛选，并打开访视查看已初始化量表。
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -859,7 +859,7 @@ export function PatientDetailPage({ patientId }: { patientId: string }) {
             </CardContent>
           ) : (
             <div className="overflow-x-auto">
-              <table className="min-w-[1160px] w-full border-collapse text-left">
+              <table className="min-w-[1280px] w-full border-collapse text-left">
                 <thead className="bg-[var(--cma-surface-muted)] text-sm text-[var(--cma-muted)]">
                   <tr>
                     <th className="px-5 py-3 font-semibold">访视编号</th>
@@ -871,6 +871,7 @@ export function PatientDetailPage({ patientId }: { patientId: string }) {
                     <th className="px-4 py-3 font-semibold">开始时间</th>
                     <th className="px-4 py-3 font-semibold">完成时间</th>
                     <th className="px-5 py-3 font-semibold">备注</th>
+                    <th className="px-5 py-3 font-semibold">操作</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -912,6 +913,14 @@ export function PatientDetailPage({ patientId }: { patientId: string }) {
                       <td className="max-w-72 whitespace-pre-wrap px-5 py-4">
                         {visit.notes || '—'}
                       </td>
+                      <td className="px-5 py-4 whitespace-nowrap">
+                        <Link
+                          className={secondaryLinkClassName}
+                          href={`/patients/${encodeURIComponent(patient.id)}/visits/${encodeURIComponent(visit.id)}`}
+                        >
+                          打开访视
+                        </Link>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -926,7 +935,8 @@ export function PatientDetailPage({ patientId }: { patientId: string }) {
             total={visits.total}
           />
           <p className="border-t border-[var(--cma-line)] px-5 py-4 text-sm leading-6 text-[var(--cma-muted)]">
-            量表执行将在后续阶段接入；当前列表不提供访视详情或评估执行入口。
+            打开访视可查看已初始化量表并新增 MMSE / MoCA
+            实例；题目作答将在后续阶段接入。
           </p>
         </Card>
       ) : null}

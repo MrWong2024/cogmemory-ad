@@ -6,9 +6,9 @@
 
 ## 2. 当前状态
 
-- 当前包含公共首页、登录页、轻量工作台、四条患者 / 访视路由与 not-found 兜底。
+- 当前包含公共首页、登录页、轻量工作台、B2 四条患者 / 访视路由、B3 访视详情路由与 not-found 兜底。
 - `/dashboard` 已提供患者档案入口，但仍不是完整医生工作台。
-- 当前不包含患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 详情 / 状态流转、MMSE / MoCA、媒体、计分、报告、AI、用户管理或权限菜单路由。
+- 当前不包含患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、MMSE / MoCA 题目作答、ItemResponse、媒体、计分、报告、AI、用户管理或权限菜单路由。
 - 当前不包含 Next middleware 或路由级服务端认证中间件。
 
 ## 3. 当前路由清单
@@ -71,13 +71,13 @@
 ### 3.6 `/patients/[patientId]`
 
 - 页面名称：患者详情与评估访视列表
-- 页面职责：展示患者公开档案，在同页分页查看访视并按 status / visitType / dateFrom / dateTo 筛选
+- 页面职责：展示患者公开档案，在同页分页查看访视并按 status / visitType / dateFrom / dateTo 筛选；每条访视提供“打开访视”入口
 - 动态参数：Server Component 按 Next 16 `params: Promise<{ patientId: string }>` 等待参数后传入 Client Component
 - 访问边界：复用 `/patients/**` 认证工作区；400 显示链接无效，404 显示患者不存在，401 返回登录，403 显示无权限
 - 数据来源：`GET /patients/:patientId`、`GET /patients/:patientId/visits`
 - 状态：患者与访视独立 loading / error；访视失败保留患者详情；空访视、筛选无结果、分页、日期范围前端校验
 - 关联组件：`PatientDetailPage`、`PaginationControls`、`PatientStatusBadge`
-- 当前非目标：不展示 externalRefs、metadata、clinicalContext；不提供访视详情、访视编辑 / 删除 / 状态流转或 MMSE / MoCA 执行入口
+- 当前非目标：不展示 externalRefs、metadata、clinicalContext；不在列表页直接初始化量表，不提供“开始评估”、访视编辑 / 删除 / 状态流转入口
 
 ### 3.7 `/patients/[patientId]/visits/new`
 
@@ -89,7 +89,23 @@
 - 关联组件：`AssessmentVisitCreateForm`、`PatientStatusBadge`
 - 当前非目标：不提交 operatorSnapshot、clinicalContext、metadata、状态或状态时间；不自动创建量表实例，不启动计分或报告
 
-### 3.8 `not-found`
+### 3.8 `/patients/[patientId]/visits/[visitId]`
+
+- 页面名称：访视详情与量表初始化
+- 页面职责：展示访视公开详情、已有量表实例安全摘要、MMSE / MoCA 可用目录，并为尚未存在的量表初始化实例
+- 动态参数：Server Component 按 Next 16 `params: Promise<{ patientId: string; visitId: string }>` 等待参数后传给 `AssessmentVisitExecutionPage`
+- 访问边界：复用 `/patients/**` 的 `PatientsWorkspaceShell`；不新增 middleware / Provider，不读取 Cookie；后端 Guard 是最终安全边界
+- 数据来源：`GET /patients/:patientId/visits/:visitId`、`GET /scales/available`、`POST /patients/:patientId/visits/:visitId/scale-instances`
+- loading：认证检查由工作区承担；访视详情和量表目录各自独立 loading、AbortController、错误与重试；目录失败仍保留访视和既有实例
+- 链接无效：任一动态参数不符合 24 位 MongoId 时不发送 A13 请求，显示“访视链接无效”并提供返回入口
+- 401 / 403 / 404：401 返回 `/login`；403 显示无权限及工作台 / 退出登录入口；患者不存在与访视不存在或归属不符使用不同稳定文案
+- 初始化能力：仅 `draft` / `in_progress` 可操作；选择三种已确认施测方式之一，只提交 scaleCode / scaleVersion / administrationMode；已初始化 scaleCode 禁用按钮；重复冲突刷新详情
+- 成功：以服务端返回的 ScaleInstance 更新列表并展示 `createdItemResponseCount` 题目记录骨架数量，不展示 ItemResponse 全量
+- 安全边界：目录不展示完整 groups / items、指导语、答案、scoringRule、expectedValue 或内部 ObjectId；能力标识不表示媒体、手写或计时已实现
+- 当前非目标：不提供题目作答、量表实例详情、开始 / 暂停 / 结束、访视状态流转、媒体、计分、认知域、报告或 AI 操作
+- 关联组件：`AssessmentVisitExecutionPage`、`ScaleInstanceList`、`ScaleInitializationPanel`
+
+### 3.9 `not-found`
 
 - 页面名称：404 兜底页
 - 页面职责：处理未匹配地址并提供返回首页入口

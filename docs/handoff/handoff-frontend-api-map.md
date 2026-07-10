@@ -6,13 +6,13 @@
 
 ## 2. 当前状态与边界
 
-- 前端 B1 已新增 `frontend\src\features\auth\api\auth-api.ts`；B2 已新增 `frontend\src\features\patients\api\patients-api.ts`。
-- 当前对接后端 A11 三个认证 API 与 A12 五个患者 / 访视 API，不调用其他业务 API。
+- 前端 B1 已新增 `frontend\src\features\auth\api\auth-api.ts`；B2 已新增 `frontend\src\features\patients\api\patients-api.ts`；B3 已新增 `frontend\src\features\assessments\api\assessment-execution-api.ts`。
+- 当前对接后端 A11 三个认证 API、A12 五个患者 / 访视 API 与 A13 三个评估初始化前置 API，不调用其他业务 API。
 - API Client 使用 `frontendEnv.apiBaseUrl` 作为后端基础地址。
 - 所有请求统一使用 `credentials: 'include'`，由浏览器携带或接收 HttpOnly Cookie。
 - 所有认证、患者和访视请求使用 `cache: 'no-store'`。
 - 前端不读取 Cookie，不保存 token，不使用 JWT，也不记录密码或认证响应体。
-- 当前没有 BFF 代理；B1 / B2 按明确任务口径由浏览器直接请求既有公开 API base URL。
+- 当前没有 BFF 代理；B1 / B2 / B3 按明确任务口径由浏览器直接请求既有公开 API base URL。
 
 ## 3. 环境变量读取
 
@@ -20,7 +20,7 @@
 - 读取项：既有 `NEXT_PUBLIC_API_BASE_URL`
 - 安全默认值：`http://localhost:5002`
 - 导出对象：`frontendEnv.apiBaseUrl`
-- B1 / B2 未新增、删除或修改环境变量与环境变量文件。
+- B1 / B2 / B3 未新增、删除或修改环境变量与环境变量文件。
 
 ## 4. 当前 API 对接清单
 
@@ -96,7 +96,7 @@
 - 凭证 / 缓存：`credentials: 'include'`、`cache: 'no-store'`；GET 支持 `AbortSignal` 与旧请求取消。
 - loading / 空态：访视区域独立 loading / error，不抹掉已加载患者详情；区分暂无访视与筛选无结果，支持简单上一页 / 下一页。
 - 错误：401 返回登录页；403 显示无权限；400 + `INVALID_DATE_RANGE` 及其他 400 映射稳定筛选提示；404 + `PATIENT_NOT_FOUND` 映射患者不存在；网络错误提供访视区域重试。
-- 安全边界：仅展示公开访视字段，不展示 clinicalContext、metadata，不提供不存在的访视详情或量表执行调用。
+- 安全边界：仅展示公开访视字段，不展示 clinicalContext、metadata；访视行只生成 B3 详情路由链接，不在列表页发起初始化调用。
 
 ### 4.8 `createPatientVisit()` -> `POST /patients/:patientId/visits`
 
@@ -108,6 +108,52 @@
 - loading / 错误：提交时禁用按钮；401 返回登录页；403 显示无权限；其他 400 映射表单校验提示；404 + `PATIENT_NOT_FOUND` 显示患者不存在；409 + `VISIT_CODE_CONFLICT` 映射访视编号冲突；409 + `PATIENT_NOT_ACTIVE` 映射患者非活动状态；Client 仍保留 `INVALID_DATE_RANGE` 稳定映射。
 - 安全边界：不提交 patientId、subjectCode、status、operatorSnapshot、状态时间、clinicalContext、metadata 或 timestamps；操作者由后端认证上下文生成。
 
+### 4.9 `listAvailableScales()` -> `GET /scales/available`
+
+- Client：`frontend\src\features\assessments\api\assessment-execution-api.ts`
+- 调用方：`AssessmentVisitExecutionPage`，展示由 `ScaleInitializationPanel` 承担。
+- 参数 / 请求体：无；GET 支持 `AbortSignal`，与访视详情使用独立 AbortController。
+- 响应：`AvailableScaleListResponse`，包含 `AvailableScaleOption[]` 安全摘要。
+- 凭证 / 缓存：`frontendEnv.apiBaseUrl`、`credentials: 'include'`、`cache: 'no-store'`。
+- loading：目录区域独立显示加载状态；目录失败不移除已成功加载的访视详情与既有实例；支持单独重试。
+- 错误：401 返回 `/login`；403 显示量表目录无权限；500 + `SCALE_CATALOG_INVALID` 映射“量表目录暂时不可用”；网络错误映射评估服务暂不可用；其他错误使用稳定目录加载失败文案。
+- 安全字段边界：只读取 code、name、shortName、description、category、version 追溯、totalScoreRange、groupCount、itemCount、capabilities；前端类型不定义完整 groups / items、prompt / instruction、答案、scoringRule、expectedValue、researchExportMappings 或 ObjectId。
+- UI 口径：图片、手写、计时等 capabilities 只写成“量表配置包含此类项目”，不表示当前前端已实现对应采集能力。
+
+### 4.10 `getAssessmentVisitExecutionDetail()` -> `GET /patients/:patientId/visits/:visitId`
+
+- Client：`frontend\src\features\assessments\api\assessment-execution-api.ts`
+- 调用方：`AssessmentVisitExecutionPage`，实例安全摘要由 `ScaleInstanceList` 展示。
+- Path：patientId、visitId 均来自当前动态路由并使用 `encodeURIComponent()`；两个值不符合 24 位 MongoId 时前端不发送请求。
+- 请求体：无；GET 支持 `AbortSignal`，重试与组件卸载会取消旧请求。
+- 响应：`AssessmentVisitExecutionDetailResponse`，结构为 `{ visit, scaleInstances }`；Date JSON 字段在前端统一建模为 `string | null`。
+- 凭证 / 缓存：`frontendEnv.apiBaseUrl`、`credentials: 'include'`、`cache: 'no-store'`。
+- loading：访视详情有独立首次加载和刷新状态；详情失败时不展示量表初始化表单，也不允许发送 POST。
+- 400：映射“访视链接无效”；本地 MongoId 校验失败直接显示该状态。
+- 401：`router.replace('/login')`，不无限重试。
+- 403：显示“当前账号没有访问评估访视的权限”，提供工作台与退出登录入口。
+- 404：`PATIENT_NOT_FOUND` 映射患者不存在；`VISIT_NOT_FOUND` 映射访视不存在或不属于当前患者。
+- 409 / 500：该 GET 契约未定义业务 409；未知 500 使用稳定加载失败文案，不展示后端 message。
+- 网络错误：显示评估服务暂不可用并提供重试。
+- 安全字段边界：实例仅读取公开 id、归属摘要、scale / instance 编号、状态、施测方式、版本追溯、状态时间、用时、操作者与 progress；不读取或显示 scaleDefinitionId、scaleVersionId、metadata、qualityControlSummary、ItemResponse、scoringRule 或 expectedValue。
+
+### 4.11 `initializeScaleInstance()` -> `POST /patients/:patientId/visits/:visitId/scale-instances`
+
+- Client：`frontend\src\features\assessments\api\assessment-execution-api.ts`
+- 调用方：`AssessmentVisitExecutionPage`，交互由 `ScaleInitializationPanel` 提供。
+- Path：patientId、visitId 来自当前动态路由并使用 `encodeURIComponent()`；不进入请求 body。
+- 请求体：按白名单重新构造 `{ scaleCode, scaleVersion?, administrationMode? }`；实际页面固定提交目录返回的 code / version 和用户选择的 `clinician_administered`、`supervised_patient_input` 或 `paper_import`。
+- 响应：`InitializeScaleInstanceResponse`，结构为 `{ scale, scaleInstance, createdItemResponseCount }`；成功后用服务端 `scaleInstance` 更新并按 scaleCode / instanceNo 排序，展示创建的题目记录骨架数量。
+- 凭证 / 缓存：`frontendEnv.apiBaseUrl`、`credentials: 'include'`、`cache: 'no-store'`、JSON POST；POST 不自动重试、不做乐观创建。
+- loading：全页同一时间只允许一个初始化请求；提交中禁用所有目录卡片的 select 和按钮，组件卸载后不 setState。
+- 400：`validation` 映射初始化参数无效。
+- 401：返回 `/login`；403：切换为访视无权限状态。
+- 404：`PATIENT_NOT_FOUND` / `VISIT_NOT_FOUND` 切换为对应详情错误；`SCALE_NOT_AVAILABLE` / `SCALE_VERSION_NOT_AVAILABLE` 映射量表或版本不可用并刷新目录。
+- 409：`PATIENT_NOT_ACTIVE`、`VISIT_NOT_INITIALIZABLE`、`SCALE_NOT_ACTIVE`、`SCALE_VERSION_NOT_ACTIVE`、`SCALE_CATALOG_VERSION_CONFLICT` 分别映射稳定中文状态；`SCALE_INSTANCE_ALREADY_EXISTS` 显示“当前访视已初始化该量表”并刷新访视详情。
+- 500：`SCALE_CATALOG_INVALID` 映射目录暂不可用；`SCALE_EXECUTION_INITIALIZATION_FAILED` 映射初始化失败且不暗示半成品数据；网络错误映射评估服务暂不可用。
+- 安全字段边界：请求不包含 patientId、assessmentVisitId、subjectCode、scaleDefinitionId、scaleVersionId、instanceCode、instanceNo、status、operatorSnapshot、状态时间、durationMs、progress、metadata 或 itemResponses；响应不展示 ItemResponse 全量数据、完整 seed、scoringRule、expectedValue、数据库内部错误或认证信息。
+- 行为边界：不自动修改访视状态，不跳转题目页面，不开始计时，不保存作答，不触发媒体、计分、认知域、报告或 AI。
+
 ## 5. 当前认证公开类型
 
 - `AuthUserResponse`：`id`、`accountName`、`displayName`、`roles`、`permissions`、可选 `userType`。
@@ -116,17 +162,19 @@
 - `LogoutResponse`：`ok: true` 与 `authenticated: false`。
 - 所有前端认证类型均不包含 token、token hash、`passwordHash`、secret 或 credential 字段。
 
-## 6. 当前 Patients 公开类型与错误映射
+## 6. 当前 Patients / Assessment Execution 公开类型与错误映射
 
 - 患者响应 Date 字段、访视响应时间字段均按 JSON 传输事实建模为 `string` 或 `string | null`，不建模为浏览器收到的 `Date` 对象。
 - `PatientsApiError.kind` 覆盖 `unauthenticated`、`forbidden`、`validation`、`patient_not_found`、`patient_code_conflict`、`patient_not_active`、`visit_code_conflict`、`invalid_date_range`、`service_unavailable`、`unknown`。
 - 业务 code 映射：`PATIENT_NOT_FOUND`、`PATIENT_SUBJECT_CODE_CONFLICT`、`PATIENT_NOT_ACTIVE`、`VISIT_CODE_CONFLICT`、`INVALID_DATE_RANGE`。
 - 后端英文 message、path、堆栈和内部错误对象不作为 UI 主文案或页面输出。
+- `AssessmentExecutionApiError.kind` 覆盖 unauthenticated、forbidden、validation、patient / visit 状态与不存在、scale / version 不可用或停用、catalog 非法或版本冲突、实例重复、初始化失败、网络错误和 unknown。
+- `ScaleInstanceListItem` 的时间字段按 JSON 传输事实定义为 `string | null`；`InitializeScaleInstanceRequest` 只包含三个允许字段，不定义任何服务器控制字段。
 
 ## 7. 当前未对接 API
 
-- 当前没有 A12 五个接口之外的患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 详情 / 状态流转调用。
-- 当前没有量表实例、作答、媒体、计分、认知域、报告、AI、用户管理、角色权限管理或科研导出 API 调用。
+- 当前没有 A12 / A13 已接接口之外的患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转调用。
+- 当前没有单个 ScaleInstance 详情、ItemResponse 查询 / 保存 / 提交、量表开始 / 暂停 / 结束、媒体、计分、认知域、报告、AI、用户管理、角色权限管理或科研导出 API 调用。
 - 不得在后端 API 未确认并进入明确任务范围前编造前端对接事实。
 
 ## 8. 后续同步规则
