@@ -56,6 +56,11 @@ import {
 } from '../schemas/scale-instance.schema';
 import { ScaleResponseType } from '../../scales/schemas/scale-version.schema';
 import type {
+  AssessmentVisitExecutionDetailResponse,
+  ScaleInstanceListItemResponse,
+  ScaleInstanceProgressResponse,
+} from '../types/assessment-execution-response.types';
+import type {
   AssessmentVisitDetailResponse,
   AssessmentVisitListItemResponse,
   AssessmentVisitListResponse,
@@ -110,7 +115,7 @@ type AssessmentVisitListFilter = {
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function isMongoDuplicateKeyError(
@@ -273,6 +278,10 @@ export class AssessmentsService {
     return itemCode.trim().toLowerCase();
   }
 
+  normalizeScaleCode(scaleCode: string): string {
+    return scaleCode.trim().toLowerCase();
+  }
+
   async findVisitByCode(
     visitCode: string,
   ): Promise<AssessmentVisitSummary | null> {
@@ -307,6 +316,54 @@ export class AssessmentsService {
       .exec();
 
     return visit ? this.mapVisit(visit) : null;
+  }
+
+  async findVisitByPatientAndId(
+    patientId: Types.ObjectId | string,
+    visitId: Types.ObjectId | string,
+  ): Promise<AssessmentVisitSummary | null> {
+    const normalizedPatientId = this.normalizeObjectId(patientId);
+    const normalizedVisitId = this.normalizeObjectId(visitId);
+
+    if (!normalizedPatientId || !normalizedVisitId) {
+      return null;
+    }
+
+    const visit = await this.assessmentVisitModel
+      .findOne({ _id: normalizedVisitId, patientId: normalizedPatientId })
+      .exec();
+
+    return visit ? this.mapVisit(visit) : null;
+  }
+
+  async getVisitExecutionDetail(
+    patientId: Types.ObjectId | string,
+    visitId: Types.ObjectId | string,
+  ): Promise<AssessmentVisitExecutionDetailResponse> {
+    const normalizedPatientId = this.requireObjectId(patientId, 'patientId');
+    const normalizedVisitId = this.requireObjectId(visitId, 'visitId');
+    await this.requirePatient(normalizedPatientId);
+    const visit = await this.findVisitByPatientAndId(
+      normalizedPatientId,
+      normalizedVisitId,
+    );
+
+    if (!visit) {
+      throw new NotFoundException({
+        code: 'VISIT_NOT_FOUND',
+        message: 'Assessment visit not found',
+      });
+    }
+
+    const scaleInstances =
+      await this.listScaleInstancesByVisitId(normalizedVisitId);
+
+    return {
+      visit: this.toAssessmentVisitDetailResponse(visit),
+      scaleInstances: scaleInstances.map((scaleInstance) =>
+        this.toPublicScaleInstanceResponse(scaleInstance),
+      ),
+    };
   }
 
   async listVisitsByPatientId(
@@ -493,12 +550,72 @@ export class AssessmentsService {
 
     const scaleInstances = await this.scaleInstanceModel
       .find({ assessmentVisitId: normalizedId })
-      .sort({ instanceNo: 1, scaleCode: 1 })
+      .sort({ scaleCode: 1, instanceNo: 1 })
       .exec();
 
     return scaleInstances.map((scaleInstance) =>
       this.mapScaleInstance(scaleInstance),
     );
+  }
+
+  async findScaleInstanceByVisitAndScaleCode(
+    assessmentVisitId: Types.ObjectId | string,
+    scaleCode: string,
+  ): Promise<ScaleInstanceSummary | null> {
+    const normalizedVisitId = this.normalizeObjectId(assessmentVisitId);
+    const normalizedScaleCode = this.normalizeScaleCode(scaleCode);
+
+    if (!normalizedVisitId || !normalizedScaleCode) {
+      return null;
+    }
+
+    const scaleInstance = await this.scaleInstanceModel
+      .findOne({
+        assessmentVisitId: normalizedVisitId,
+        scaleCode: normalizedScaleCode,
+      })
+      .exec();
+
+    return scaleInstance ? this.mapScaleInstance(scaleInstance) : null;
+  }
+
+  toPublicScaleInstanceResponse(
+    scaleInstance: ScaleInstanceSummary,
+  ): ScaleInstanceListItemResponse {
+    return {
+      id: scaleInstance.id,
+      assessmentVisitId: scaleInstance.assessmentVisitId,
+      patientId: scaleInstance.patientId,
+      subjectCode: scaleInstance.subjectCode,
+      scaleCode: scaleInstance.scaleCode,
+      scaleVersion: scaleInstance.scaleVersion,
+      instanceCode: scaleInstance.instanceCode,
+      instanceNo: scaleInstance.instanceNo,
+      status: scaleInstance.status,
+      administrationMode: scaleInstance.administrationMode,
+      versionTrace: scaleInstance.versionTrace
+        ? {
+            crfVersion: scaleInstance.versionTrace.crfVersion,
+            scoringRuleVersion: scaleInstance.versionTrace.scoringRuleVersion,
+            fieldEncodingVersion:
+              scaleInstance.versionTrace.fieldEncodingVersion,
+            sourceDocument: scaleInstance.versionTrace.sourceDocument,
+          }
+        : null,
+      startedAt: scaleInstance.startedAt,
+      completedAt: scaleInstance.completedAt,
+      lockedAt: scaleInstance.lockedAt,
+      voidedAt: scaleInstance.voidedAt,
+      durationMs: scaleInstance.durationMs,
+      operatorSnapshot: scaleInstance.operatorSnapshot
+        ? {
+            operatorId: scaleInstance.operatorSnapshot.operatorId,
+            operatorName: scaleInstance.operatorSnapshot.operatorName,
+            operatorRole: scaleInstance.operatorSnapshot.operatorRole,
+          }
+        : null,
+      progress: this.toPublicScaleInstanceProgress(scaleInstance.progress),
+    };
   }
 
   async findItemResponseByScaleInstanceAndItemCode(
@@ -653,6 +770,33 @@ export class AssessmentsService {
       code: 'VISIT_CODE_CONFLICT',
       message: 'Assessment visit code already exists',
     });
+  }
+
+  private toPublicScaleInstanceProgress(
+    progress: ScaleInstanceProgress,
+  ): ScaleInstanceProgressResponse {
+    return {
+      totalItemCount: this.readNonNegativeInteger(progress, 'totalItemCount'),
+      answeredItemCount: this.readNonNegativeInteger(
+        progress,
+        'answeredItemCount',
+      ),
+    };
+  }
+
+  private readNonNegativeInteger(value: unknown, propertyName: string): number {
+    if (!isRecord(value)) {
+      return 0;
+    }
+
+    const propertyValue = value[propertyName];
+
+    return typeof propertyValue === 'number' &&
+      Number.isFinite(propertyValue) &&
+      Number.isInteger(propertyValue) &&
+      propertyValue >= 0
+      ? propertyValue
+      : 0;
   }
 
   private mapVisit(visit: AssessmentVisitDocument): AssessmentVisitSummary {

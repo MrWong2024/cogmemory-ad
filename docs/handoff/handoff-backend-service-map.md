@@ -6,8 +6,8 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 Service / Provider，以及各业务模块内部读取或认证底座 Service；A12 已扩展 `PatientsService` 与 `AssessmentsService`，并新增 `PatientsController`、`AssessmentVisitsController` 作为五个受保护公开 API 的 HTTP 边界。
-- 当前没有医生、SMS 或 LLM Service；`AssessmentExecutionService`、媒体、计分、认知域和报告能力仍为内部底座，A12 不调用量表初始化、作答、媒体、计分、报告或 AI 能力。
+- 当前存在公共底座 Service / Provider 与各业务模块内部能力；A13 新增 `ScaleCatalogService` / `ScalesController` 和 `AssessmentScaleWorkflowService`，并扩展 `AssessmentsService`、`AssessmentExecutionService`、`AssessmentVisitsController`。
+- 当前没有医生、SMS 或 LLM Service；A13 只受控调用 `AssessmentExecutionService` 初始化实例和作答骨架，不调用媒体、计分、认知域、报告或 AI 能力。
 
 ## 3. 当前 Service / Provider 清单
 
@@ -68,6 +68,21 @@
 - 边界：不创建、更新、删除数据库记录；不提供 import / upsert / seed runner；不执行写库；不暴露公开 MMSE / MoCA 配置查询 API；不实现评估执行、作答提交、媒体上传、自动计分触发、报告、AI、认证或权限。
 - 测试覆盖口径：`backend\src\modules\scales\seeds\scale-seed-data.service.spec.ts`，覆盖 MMSE / MoCA seed 读取、code 规范化、版本读取、definition / version 列表、内置 seed 校验、总分范围、PDF / CRF 编号修正规则、MoCA 即刻记忆和延迟回忆记录规则、连续减 7 分步规则、图片 / 手写 / 用时证据要求、item code 唯一、groupCode 引用和校验错误分支；不连接真实 MongoDB，不调用 Storage / OSS / SMS / LLM，测试数据为配置样例或脱敏人工样例。
 
+- Service 名称：`ScaleCatalogService`
+- 文件路径：`backend\src\modules\scales\services\scale-catalog.service.ts`
+- 职责边界：提供经校验 seed 的安全目录摘要、可用 scale / version 解析，以及初始化时 `ScaleDefinition` / `ScaleVersion` 按需幂等物化。
+- 当前方法：`listAvailableScaleOptions()`、`getAvailableScaleOption(scaleCode, version?)`、`ensureSeedScaleVersionMaterialized(scaleCode, version?)`。
+- 上游调用方：`ScalesController` 调用只读目录；`AssessmentScaleWorkflowService` 调用解析与按需物化。
+- 下游依赖：`ScaleSeedDataService`、`ScaleDefinition` / `ScaleVersion` Model。
+- 写库与冲突边界：GET 目录不写库；物化使用 `$setOnInsert`，复用时不覆盖已有临床配置；校验状态、追溯字段和 group / item 数量；duplicate key 竞态后重新读取；currentVersionId 仅空值时设置。
+- 错误语义：`SCALE_NOT_AVAILABLE`、`SCALE_VERSION_NOT_AVAILABLE`、`SCALE_NOT_ACTIVE`、`SCALE_VERSION_NOT_ACTIVE`、`SCALE_CATALOG_INVALID`、`SCALE_CATALOG_VERSION_CONFLICT`。
+- 测试覆盖口径：`scale-catalog.service.spec.ts` 覆盖摘要、seed 校验失败、创建 / 复用、冲突、inactive、duplicate key 竞态和不覆盖语义；不连接真实 MongoDB。
+
+- Controller 名称：`ScalesController`
+- 文件路径：`backend\src\modules\scales\controllers\scales.controller.ts`
+- 职责边界：公开只读 `GET /scales/available`；显式绑定 Session / Roles Guard 和四个临床工作流角色，只调用 `ScaleCatalogService`。
+- 测试覆盖口径：controller spec 覆盖 Guard / Roles metadata 和安全列表传递。
+
 - Service 名称：`PatientsService`
 - 文件路径：`backend\src\modules\patients\services\patients.service.ts`
 - 职责边界：保留患者 / 受试者基础档案内部读取能力，并承担 A12 患者分页、创建、详情读取和公开响应映射；不直接返回完整 Mongoose document。
@@ -81,13 +96,13 @@
 - Service 名称：`AssessmentsService`
 - 文件路径：`backend\src\modules\assessments\services\assessments.service.ts`
 - 职责边界：保留访视、量表实例和题目作答内部读取底座，并承担 A12 患者访视分页、访视创建和安全公开响应映射。
-- 当前方法：保留既有所有方法；A12 新增 `findVisitById()`、`listVisitsByPatientIdPaginated()`、`createVisitForPatient()`、`toAssessmentVisitListItemResponse()`、`toAssessmentVisitDetailResponse()`。
+- 当前方法：保留既有所有方法；A12 方法之外，A13 新增 `findVisitByPatientAndId()`、`getVisitExecutionDetail()`、`findScaleInstanceByVisitAndScaleCode()`、`toPublicScaleInstanceResponse()`，并将访视下实例排序固定为 scaleCode、instanceNo。
 - 上游调用方：`AssessmentVisitsController`；既有内部调用方可继续复用旧方法。
 - 下游依赖：`AssessmentVisit`、`ScaleInstance`、`ItemResponse` Mongoose Model 和 `PatientsService`；`AssessmentsModule` 导入 `PatientsModule`、`AuthModule`、`ScalesModule`。
 - 规则与异常：先确认患者存在；非 active 返回 409 / `PATIENT_NOT_ACTIVE`；visitCode trim + uppercase；重复编号预检查并捕获 MongoDB 11000，统一为 `VISIT_CODE_CONFLICT`；dateFrom 晚于 dateTo 返回 400 / `INVALID_DATE_RANGE`。
 - 创建所有权：patientId 来自路径，subjectCode 来自 Patient，status 固定 draft，operatorSnapshot 由 Controller 认证上下文生成；不接受客户端状态时间、clinicalContext 或 metadata。
-- 边界：不更新、删除访视或流转状态；不调用 `AssessmentExecutionService`，不创建量表实例或题目作答，不触发媒体、计分、认知域、报告或 AI；公开 mapper 不返回 clinicalContext / metadata。
-- 测试覆盖口径：service spec 覆盖分页过滤、日期范围、患者不存在 / 非 active、规范化、冲突预检查 / duplicate key、服务端字段所有权和公开 mapper；不连接真实 MongoDB。
+- 边界：自身不更新、删除访视或流转状态；A13 初始化由独立 workflow 编排。访视详情先确认患者，再联合 patientId + visitId 查询；ScaleInstance 公开 mapper 不返回 definition / version ID、metadata、qualityControlSummary 或 Mixed 原始字段。
+- 测试覆盖口径：service spec 除 A12 覆盖外，新增联合归属、详情、实例查重、排序、安全 mapper 和 progress 非法值归零；不连接真实 MongoDB。
 
 - Service 名称：`AssessmentExecutionService`
 - 文件路径：`backend\src\modules\assessments\services\assessment-execution.service.ts`
@@ -96,8 +111,16 @@
 - 上游调用方：当前暂无公开 Controller；预期供后续后端评估执行工作流内部调用。
 - 下游依赖：`ScaleInstance` 与 `ItemResponse` Mongoose Model、`ScaleSeedDataService`。`AssessmentsModule` 为此最小导入 `ScalesModule`。
 - 边界：不注入 Patients / Media / Scoring / CognitiveDomains / Reports / Storage Service；不创建 Patient 或 AssessmentVisit；不创建 MediaEvidence、ScoreResult、CognitiveDomainResult 或 ClinicalReport；不提供公开 API；不实现作答提交、媒体上传、自动计分触发、认知域计算触发、报告生成、AI、认证或权限。
-- 写库策略：`createScaleExecutionFromPlan()` 当前先创建 `ScaleInstance`，再批量创建初始 `ItemResponse`；本阶段不使用 Mongo session / transaction，不实现幂等、并发控制或补偿删除。后续公开业务 API 如需要原子性，应引入 transaction 或补偿策略。
-- 测试覆盖口径：`backend\src\modules\assessments\services\assessment-execution.service.spec.ts`，覆盖 MMSE / MoCA 执行计划、MMSE 修正 CRF、MoCA 即刻记忆不计分、MoCA 延迟回忆提示记录、MMSE / MoCA 连续减 7 stepResults、绘图 / 连线图片与手写证据占位、计时占位、score 初始占位、normalize 方法、seed 不存在、seed 校验失败、非法输入、写库调用顺序和 mapper 输出；不连接真实 MongoDB，不调用 OSS / Storage / SMS / LLM，测试数据为配置样例或脱敏人工样例。
+- 写库策略：`createScaleExecutionFromPlan()` 先创建 `ScaleInstance`，再批量创建初始 `ItemResponse`；insertMany 失败时按本次 scaleInstanceId 尝试删除可能已创建的题目和实例，然后重新抛出原始错误。当前不使用 Mongo session / transaction；这是补偿式一致性，不是严格事务原子性。
+- 测试覆盖口径：原有执行计划与 mapper 覆盖之外，新增 insertMany 失败时的精确清理、补偿继续尝试和原始错误重抛；不连接真实 MongoDB，不调用外部服务。
+
+- Service 名称：`AssessmentScaleWorkflowService`
+- 文件路径：`backend\src\modules\assessments\services\assessment-scale-workflow.service.ts`
+- 职责边界：编排 A13 初始化，依次校验患者、访视联合归属 / 状态、可用 scale / version、同访视同量表唯一性，调用目录按需物化与 `AssessmentExecutionService`，最后返回安全响应。
+- 服务端所有权：subjectCode、definition / version 引用、instanceCode、instanceNo=1、status、operatorSnapshot、版本追溯均由服务端来源生成；不接受客户端伪造。
+- 并发语义：初始化前查重；只把明确命中 ScaleInstance 唯一键的 Mongo duplicate key 映射为 `SCALE_INSTANCE_ALREADY_EXISTS`，其他内部失败映射为 `SCALE_EXECUTION_INITIALIZATION_FAILED`。
+- 边界：不改变访视状态，不启动计时，不保存作答，不创建媒体 / 计分 / 认知域 / 报告结果。
+- 测试覆盖口径：workflow spec 覆盖患者 active、访视归属 / 状态、scale 错误、查重、稳定 instanceCode、operatorSnapshot、并发 duplicate key 和安全内部错误。
 
 - Service 名称：`MediaEvidenceService`
 - 文件路径：`backend\src\modules\media\services\media-evidence.service.ts`
@@ -163,10 +186,10 @@
 - Controller 名称：`AssessmentVisitsController`
 - 文件路径：`backend\src\modules\assessments\controllers\assessment-visits.controller.ts`
 - 职责边界：绑定患者访视列表 / 创建路由、DTO、Guard 和角色；从 `@CurrentUser()` 构建 operatorSnapshot 后调用 `AssessmentsService`。
-- 公开接口：`GET /patients/:patientId/visits`、`POST /patients/:patientId/visits`。
+- 公开接口：`GET /patients/:patientId/visits`、`POST /patients/:patientId/visits`、`GET /patients/:patientId/visits/:visitId`、`POST /patients/:patientId/visits/:visitId/scale-instances`。
 - operatorRole 优先级：doctor > nurse > research_assistant > admin > unknown；客户端不能传入或覆盖 operatorSnapshot。
 - 权限：仅 `admin`、`doctor`、`nurse`、`research_assistant`；未认证 401，角色不足 403；没有注册全局 Guard。
-- 测试覆盖口径：controller spec 覆盖 Guards / Roles metadata、列表 / 创建参数和角色优先级；DTO spec 覆盖 MongoId、assessmentDate、枚举、分页、日期参数和非白名单服务端字段。
+- 测试覆盖口径：controller spec 覆盖 Guards / Roles metadata、四个路由参数、当前用户映射和角色优先级；DTO spec 覆盖双 MongoId、scale code / version 转换、施测模式和全部服务器字段白名单拒绝。
 
 - Controller 名称：`AuthController`
 - 文件路径：`backend\src\modules\auth\auth.controller.ts`

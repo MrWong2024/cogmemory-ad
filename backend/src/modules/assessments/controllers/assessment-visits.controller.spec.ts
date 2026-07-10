@@ -7,6 +7,7 @@ import { SessionAuthGuard } from '../../auth/guards/session-auth.guard';
 import type { AuthenticatedUserContext } from '../../auth/types/auth-user-context.type';
 import { PATIENT_WORKFLOW_ROLES } from '../../patients/patients.constants';
 import type { AssessmentOperatorRole } from '../schemas/assessment-visit.schema';
+import { AssessmentScaleWorkflowService } from '../services/assessment-scale-workflow.service';
 import { AssessmentsService } from '../services/assessments.service';
 import { AssessmentVisitsController } from './assessment-visits.controller';
 
@@ -32,12 +33,20 @@ describe('AssessmentVisitsController', () => {
   let assessmentsService: {
     listVisitsByPatientIdPaginated: jest.Mock;
     createVisitForPatient: jest.Mock;
+    getVisitExecutionDetail: jest.Mock;
+  };
+  let assessmentScaleWorkflowService: {
+    initializeScaleInstance: jest.Mock;
   };
 
   beforeEach(async () => {
     assessmentsService = {
       listVisitsByPatientIdPaginated: jest.fn(),
       createVisitForPatient: jest.fn(),
+      getVisitExecutionDetail: jest.fn(),
+    };
+    assessmentScaleWorkflowService = {
+      initializeScaleInstance: jest.fn(),
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -46,6 +55,10 @@ describe('AssessmentVisitsController', () => {
         {
           provide: AssessmentsService,
           useValue: assessmentsService,
+        },
+        {
+          provide: AssessmentScaleWorkflowService,
+          useValue: assessmentScaleWorkflowService,
         },
       ],
     })
@@ -91,6 +104,57 @@ describe('AssessmentVisitsController', () => {
       assessmentsService.listVisitsByPatientIdPaginated,
     ).toHaveBeenCalledWith(params.patientId, query);
   });
+
+  it('passes both path ids to the visit execution detail service', async () => {
+    const params = {
+      patientId: '507f1f77bcf86cd799439011',
+      visitId: '507f1f77bcf86cd799439012',
+    };
+    assessmentsService.getVisitExecutionDetail.mockResolvedValue({
+      visit: { id: params.visitId },
+      scaleInstances: [],
+    });
+
+    await expect(controller.getVisitDetail(params)).resolves.toEqual({
+      visit: { id: params.visitId },
+      scaleInstances: [],
+    });
+    expect(assessmentsService.getVisitExecutionDetail).toHaveBeenCalledWith(
+      params.patientId,
+      params.visitId,
+    );
+  });
+
+  it.each(OPERATOR_ROLE_CASES)(
+    'initializes a scale with roles %j mapped to operator role %s',
+    async (roles, expectedRole) => {
+      const params = {
+        patientId: '507f1f77bcf86cd799439012',
+        visitId: '507f1f77bcf86cd799439013',
+      };
+      const input = {
+        scaleCode: 'mmse',
+        administrationMode: 'clinician_administered' as const,
+      };
+      assessmentScaleWorkflowService.initializeScaleInstance.mockResolvedValue({
+        createdItemResponseCount: 11,
+      });
+
+      await controller.initializeScaleInstance(
+        params,
+        input,
+        createUser(roles),
+      );
+
+      expect(
+        assessmentScaleWorkflowService.initializeScaleInstance,
+      ).toHaveBeenCalledWith(params.patientId, params.visitId, input, {
+        operatorId: '507f1f77bcf86cd799439011',
+        operatorName: 'Operator A12 Test',
+        operatorRole: expectedRole,
+      });
+    },
+  );
 
   it.each(OPERATOR_ROLE_CASES)(
     'maps roles %j to operator role %s using the confirmed priority',
@@ -160,5 +224,21 @@ describe('AssessmentVisitsController', () => {
       ),
     ).toThrow(UnauthorizedException);
     expect(assessmentsService.createVisitForPatient).not.toHaveBeenCalled();
+  });
+
+  it('does not initialize a scale without authenticated user context', () => {
+    expect(() =>
+      controller.initializeScaleInstance(
+        {
+          patientId: '507f1f77bcf86cd799439012',
+          visitId: '507f1f77bcf86cd799439013',
+        },
+        { scaleCode: 'mmse' },
+        undefined,
+      ),
+    ).toThrow(UnauthorizedException);
+    expect(
+      assessmentScaleWorkflowService.initializeScaleInstance,
+    ).not.toHaveBeenCalled();
   });
 });

@@ -7,12 +7,12 @@
 ## 2. 当前状态
 
 - `backend\src` 公共底座已初始化。
-- 当前存在既有 health / Storage / scales / patients / assessments / media / scoring / cognitive-domains / reports / users / auth 单元测试；A12 新增患者 Controller / DTO spec、访视 Controller / DTO spec，并扩展两个 Service spec。
+- 当前存在既有 health / Storage / scales / patients / assessments / media / scoring / cognitive-domains / reports / users / auth 单元测试；A13 新增 ScaleCatalog Service / Controller、assessment execution DTO、workflow spec，并扩展 Assessments / AssessmentExecution / Controller spec。
 - 后端默认端口为 `5002`。
 - 本地前端默认 origin 为 `http://localhost:3002`。
 - 测试环境默认 `STORAGE_DRIVER=fake`。
 - 测试环境 `LLM_PROVIDER=stub`，不得依赖真实大模型调用。
-- 当前存在首个真实 HTTP E2E：`backend\test\patients-assessment-visits.e2e-spec.ts`。
+- 当前存在两个真实 HTTP E2E：`backend\test\patients-assessment-visits.e2e-spec.ts`、`backend\test\assessment-execution-initialization.e2e-spec.ts`。
 - TypeScript `rootDir` 当前为 `.`，后端主入口预期 build 产物为 `dist/src/main.js`。
 - `tsBuildInfoFile` 保持 `./dist/tsconfig.build.tsbuildinfo`。
 - `dist` 与 `*.tsbuildinfo` 为生成物，不进入版本库。
@@ -91,6 +91,11 @@
   - `npm run build`
   - `npm test -- --runInBand`
   - `npm run test:e2e`
+- 本次后端 A13 已验证命令：
+  - `npm run lint:file -- src/modules/scales src/modules/assessments test`
+  - `npm run build`
+  - `npm test -- --runInBand`
+  - `npm run test:e2e`
 - 当前路径对齐验证命令：
   - `npm run build`
   - 检查 `dist/src/main.js` 存在
@@ -100,8 +105,8 @@
   - `npm run build` 成功。
   - build 后 `dist/src/main.js` 已确认存在。
   - `npm test -- --runInBand` 成功。
-  - 当前单元测试为 22 个测试套件、213 个测试通过。
-  - 当前 E2E 为 1 个测试套件、7 个测试通过。
+  - 当前单元测试为 26 个测试套件、252 个测试通过。
+  - 当前 E2E 为 2 个测试套件、14 个测试通过。
   - 用户已补充验证 `npm run start:prod` 本地启动成功。
   - `dist/src/main.js` 与 `start:prod` 指向的 `./dist/src/main.js` 路径匹配。
 - 当前未验证命令：
@@ -111,7 +116,7 @@
 - 如果 `backend\node_modules` 存在，可执行 `npm test -- --runInBand` 验证单元测试。
 - 如果 `backend\node_modules` 不存在，不应自动执行 `npm install`。
 - 当前任务不调用真实 OSS、阿里云 SMS、大模型或生产数据库。
-- `test:e2e` 脚本已通过 `test/jest-e2e.json` 执行 A12 真实 HTTP 闭环；测试运行时确认 `NODE_ENV=test`、数据库名 `cogmemory_ad_test`、Storage=fake、LLM/SMS=stub，未打印数据库凭证。
+- `test:e2e` 脚本已通过 `test/jest-e2e.json` 执行 A12 / A13 真实 HTTP 闭环；测试运行时确认 `NODE_ENV=test`、数据库名 `cogmemory_ad_test`、Storage=fake、LLM/SMS=stub，未打印数据库凭证。
 
 ## 5. 当前单元测试口径
 
@@ -120,13 +125,17 @@
 - `backend\src\common\utils\uploaded-filename.util.spec.ts`：验证上传文件名的编码修复、空值 fallback 与路径字符清理。
 - `backend\src\modules\scales\services\scales.service.spec.ts`：验证 `ScaleDefinition` / `ScaleVersion` schema 的 collection、索引、枚举 / ObjectId / Date / Mixed 显式类型，验证 `ScalesService` 的 code 规范化、查无返回 `null`、mapper 输出和 active definition 列表读取；不连接真实 MongoDB。
 - `backend\src\modules\scales\seeds\scale-seed-data.service.spec.ts`：验证 `ScaleSeedDataService` 对 MMSE / MoCA 初始配置 seed 的只读读取、trim + lowercase code 规范化、版本读取、definition / version 列表、内置 seed 校验、总分范围、MMSE 表达第 9 项与绘图第 10 项修正、MoCA 抽象项 `N1.2.12.1` / `N1.2.12.2` 修正、MoCA 即刻记忆不计分但保留原始记录、MoCA 延迟回忆保留分类提示和多选提示记录、MMSE / MoCA 连续减 7 分步独立计分、MoCA 连线 / 立方体 / 钟表图片与手写证据、连线计时要求、item code 唯一、groupCode 引用存在，以及重复 item code、无效 groupCode、无效 scoreRange 和错误 MoCA 抽象 CRF 编码的校验错误分支；不连接真实 MongoDB，不调用 Storage / OSS / SMS / LLM，测试数据为配置样例或脱敏人工样例。
+- `backend\src\modules\scales\services\scale-catalog.service.spec.ts`：验证 MMSE / MoCA 安全摘要、排序和 GET 不写库，验证 seed 非法安全错误、definition / version 创建与复用、不覆盖已有配置、inactive、追溯 / 数量冲突、currentVersionId 空值更新和 duplicate key 竞态后重读；Model 均为 mock，不连接真实 MongoDB。
+- `backend\src\modules\scales\controllers\scales.controller.spec.ts`：验证显式 Session / Roles Guard、四个允许角色和目录响应传递。
 - `backend\src\modules\patients\services\patients.service.spec.ts`：除既有 schema / 内部读取覆盖外，A12 新增 patientId 查无、分页、keyword 安全转义、status / sourceType 过滤、创建默认值、重复预检查、Mongo duplicate key、公开 mapper 排除 externalRefs / metadata；不连接真实 MongoDB。
 - `backend\src\modules\patients\controllers\patients.controller.spec.ts`：覆盖 Session / Roles Guard metadata、允许角色、列表 / 创建参数传递、详情 mapper 和 `PATIENT_NOT_FOUND`。
 - `backend\src\modules\patients\dto\patient-dto.spec.ts`：覆盖 page / pageSize 默认值与边界、keyword trim、枚举、patientId、CreatePatientDto 转换 / 校验，以及 status / externalRefs / metadata 等非白名单字段拒绝。
-- `backend\src\modules\assessments\services\assessments.service.spec.ts`：除既有 schema / 内部读取覆盖外，A12 新增访视分页与状态 / 类型 / 日期过滤、日期范围错误、患者不存在 / 非 active、visitCode 规范化、冲突预检查 / duplicate key、draft / subjectCode / operatorSnapshot 服务端所有权和公开 mapper 安全；不连接真实 MongoDB。
-- `backend\src\modules\assessments\controllers\assessment-visits.controller.spec.ts`：覆盖 Session / Roles Guard metadata、列表 / 创建参数、当前用户映射和 doctor > nurse > research_assistant > admin > unknown 角色优先级。
+- `backend\src\modules\assessments\services\assessments.service.spec.ts`：除既有 / A12 覆盖外，A13 新增 patientId + visitId 联合归属、访视详情、实例查重与排序、安全 ScaleInstance mapper、progress 非法值归零和内部 Mixed 字段排除；不连接真实 MongoDB。
+- `backend\src\modules\assessments\controllers\assessment-visits.controller.spec.ts`：覆盖 Session / Roles Guard metadata、列表 / 创建 / 详情 / 初始化参数、当前用户映射和 doctor > nurse > research_assistant > admin > unknown 角色优先级。
 - `backend\src\modules\assessments\dto\assessment-visit-dto.spec.ts`：覆盖 patientId、assessmentDate、visitType、status、分页、dateFrom / dateTo，以及 operatorSnapshot / 状态时间 / Mixed 字段等非白名单字段拒绝。
-- `backend\src\modules\assessments\services\assessment-execution.service.spec.ts`：验证 `AssessmentExecutionService` 基于 MMSE / MoCA seed 构建执行计划、MMSE 写句子 `MMSE.9` 修正、绘图 / 连线 photo 与 handwriting 证据占位、MoCA 即刻记忆不计入总分但保留骨架、MoCA 延迟回忆分类提示 / 多选提示记录追溯、MMSE / MoCA 连续减 7 stepResults、MoCA 连线 timing、score 初始快照、normalize 方法、seed 不存在、seed 校验失败、非法 ObjectId / 空 subjectCode / 不支持施测模式、`ScaleInstance` 先于 `ItemResponse` 创建、创建数量与 seed item 数量一致，以及 mapper summary 不暴露原始 Mongoose document；不连接真实 MongoDB，不调用 Storage / OSS / SMS / LLM，测试数据为配置样例或 `SUBJ-TEST-*`、`VISIT-TEST-*`、`INST-TEST-*` 等脱敏人工样例。
+- `backend\src\modules\assessments\services\assessment-execution.service.spec.ts`：在原覆盖基础上验证 insertMany 失败时只按本次 scaleInstanceId 清理 ItemResponse / ScaleInstance、补偿步骤继续尝试并重新抛出原始错误；不连接真实 MongoDB。
+- `backend\src\modules\assessments\services\assessment-scale-workflow.service.spec.ts`：验证患者 active、访视联合归属和状态、scale / version 安全错误、同访视同量表查重、服务端 instanceCode / instanceNo / operatorSnapshot、明确 ScaleInstance duplicate key 竞态和内部错误安全转换；不连接真实 MongoDB。
+- `backend\src\modules\assessments\dto\assessment-execution-dto.spec.ts`：验证 patientId / visitId、scaleCode lowercase、scaleVersion trim、三种施测模式、默认值，以及所有服务器所有字段通过 whitelist / forbidNonWhitelisted 拒绝。
 - `backend\src\modules\media\services\media-evidence.service.spec.ts`：验证 `MediaEvidence` schema 的 collection、索引、枚举 / ObjectId / Date / Number / Boolean / Mixed 显式类型，验证媒体证据内嵌子文档 `_id: false`，验证 `MediaEvidenceService` 的 `evidenceCode` 规范化、查无返回 `null`、mapper 输出、按题目作答 / 量表实例 / 访视 / 患者读取和 attached / locked 过滤读取；不连接真实 MongoDB，不调用 Storage / OSS，测试数据为 `SUBJ-TEST-*`、`VISIT-TEST-*`、`INST-TEST-*`、`EVD-TEST-*`、`moca.visuospatial.trail_making`、`moca.visuospatial.clock`、`mmse.language.drawing` 等脱敏人工样例。
 - `backend\src\modules\scoring\services\scoring.service.spec.ts`：验证 `ScoreResult` schema 的 collection、索引、枚举 / ObjectId / Date / Number / Boolean / Mixed 显式类型，验证计分结果内嵌子文档 `_id: false`，验证 `ScoringService` 的 `scoreResultCode` 规范化、查无返回 `null`、mapper 输出、按量表实例最新读取、按量表实例 / 访视 / 患者读取，以及 `summarizeItemScores()` 对计入 / 不计入总分、缺失、未评分、需复核、非有限数字、逐步计分和 group score 汇总的处理；不连接真实 MongoDB，不调用 Storage / OSS / SMS / LLM，测试数据为 `SUBJ-TEST-*`、`VISIT-TEST-*`、`INST-TEST-*`、`SCR-TEST-*`、`moca.memory.immediate.trial_1.face`、`moca.recall.delayed.free.face`、`mmse.attention.serial_sevens.step_1` 等脱敏人工样例。
 - `backend\src\modules\cognitive-domains\services\cognitive-domains.service.spec.ts`：验证 `CognitiveDomainResult` schema 的 collection、索引、枚举 / ObjectId / Date / Number / Boolean / Mixed 显式类型，验证认知域结果内嵌子文档 `_id: false`，验证 `CognitiveDomainsService` 的 `domainResultCode` / `domainCode` 规范化、查无返回 `null`、mapper 输出、按量表实例最新读取、按量表实例 / 计分结果 / 访视 / 患者读取，以及 `summarizeDomainScores()` 对默认映射、多认知域映射、权重、不计入认知域、缺失、未评分、需复核和非有限数字 warning 的处理；不连接真实 MongoDB，不调用 Storage / OSS / SMS / LLM，测试数据为 `SUBJ-TEST-*`、`VISIT-TEST-*`、`INST-TEST-*`、`SCR-TEST-*`、`CDR-TEST-*`、`moca.visuospatial.clock`、`moca.memory.delayed.face`、`mmse.attention.serial_sevens.step_1` 等脱敏人工样例。
@@ -146,6 +155,8 @@
 - 测试使用 `AuthService.hashPassword()` 创建脱敏人工测试用户，通过 `POST /auth/login` 获取并由 Supertest agent 保留 HttpOnly Cookie；结束后仅清理 A12 账号和 `SUBJ-A12-TEST-*` / `VISIT-A12-TEST-*` 数据。
 - 覆盖 401、403、患者创建 / 重复 / 分页 / keyword / 详情 / 路径校验、访视创建 / 重复 / 分页过滤、operatorSnapshot、患者非 active、日期范围、DTO 白名单和敏感字段排除。
 - 本次实际结果：1 个 E2E 测试套件、7 个测试通过；未调用真实 OSS / Storage / SMS / LLM 或生产服务。
+- `assessment-execution-initialization.e2e-spec.ts` 使用真实 AppModule、Cookie、Session / Roles Guard、全局 DTO 校验和真实 test database，覆盖目录 401 / 403、安全 MMSE / MoCA 摘要与 GET 不写库、A12 创建患者 / 访视、初始详情、MMSE / MoCA 按需物化与实例 / ItemResponse 数量、重复 409、详情排序与敏感字段排除、患者 / 访视状态、联合归属、MongoId、scale / version 不存在和服务器字段伪造拒绝。
+- A13 E2E 实际结果：1 个测试套件、7 个测试通过；与 A12 合计 2 个套件、14 个测试通过。连接隔离 `cogmemory_ad_test`，使用 fake / stub 外部服务和脱敏人工数据，未调用真实 OSS / Storage / SMS / LLM 或生产服务。
 
 ## 7. 医疗与量表数据测试红线
 

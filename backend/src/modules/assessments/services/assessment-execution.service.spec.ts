@@ -1,5 +1,5 @@
 // backend/src/modules/assessments/services/assessment-execution.service.spec.ts
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
 import { getModelToken } from '@nestjs/mongoose';
 import { Test } from '@nestjs/testing';
 import { Types } from 'mongoose';
@@ -71,17 +71,21 @@ describe('AssessmentExecutionService', () => {
   let seedDataService: ScaleSeedDataService;
   let scaleInstanceModel: {
     create: jest.Mock;
+    deleteOne: jest.Mock;
   };
   let itemResponseModel: {
     insertMany: jest.Mock;
+    deleteMany: jest.Mock;
   };
 
   beforeEach(async () => {
     scaleInstanceModel = {
       create: jest.fn(),
+      deleteOne: jest.fn(),
     };
     itemResponseModel = {
       insertMany: jest.fn(),
+      deleteMany: jest.fn(),
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -451,6 +455,63 @@ describe('AssessmentExecutionService', () => {
     expect(result.itemResponses[0].scaleInstanceId).toBe(
       scaleInstanceId.toString(),
     );
+  });
+
+  it('compensates only the current execution when ItemResponse creation fails', async () => {
+    const plan = service.buildScaleExecutionPlan(buildPlanInput('mmse'));
+    const scaleInstanceId = new Types.ObjectId();
+    const originalError = new Error('insertMany failed');
+    scaleInstanceModel.create.mockResolvedValue({
+      _id: scaleInstanceId,
+      ...plan.scaleInstanceDraft,
+    });
+    itemResponseModel.insertMany.mockRejectedValue(originalError);
+    itemResponseModel.deleteMany.mockReturnValue({
+      exec: jest.fn().mockResolvedValue({ deletedCount: 2 }),
+    });
+    scaleInstanceModel.deleteOne.mockReturnValue({
+      exec: jest.fn().mockResolvedValue({ deletedCount: 1 }),
+    });
+
+    await expect(service.createScaleExecutionFromPlan(plan)).rejects.toBe(
+      originalError,
+    );
+    expect(itemResponseModel.deleteMany).toHaveBeenCalledWith({
+      scaleInstanceId,
+    });
+    expect(scaleInstanceModel.deleteOne).toHaveBeenCalledWith({
+      _id: scaleInstanceId,
+    });
+    expect(itemResponseModel.deleteMany).not.toHaveBeenCalledWith({});
+    expect(scaleInstanceModel.deleteOne).not.toHaveBeenCalledWith({});
+  });
+
+  it('continues compensation attempts and rethrows the original error if cleanup fails', async () => {
+    jest.spyOn(Logger.prototype, 'error').mockImplementation();
+    const plan = service.buildScaleExecutionPlan(buildPlanInput('moca'));
+    const scaleInstanceId = new Types.ObjectId();
+    const originalError = new Error('insertMany failed');
+    scaleInstanceModel.create.mockResolvedValue({
+      _id: scaleInstanceId,
+      ...plan.scaleInstanceDraft,
+    });
+    itemResponseModel.insertMany.mockRejectedValue(originalError);
+    itemResponseModel.deleteMany.mockReturnValue({
+      exec: jest.fn().mockRejectedValue(new Error('item cleanup failed')),
+    });
+    scaleInstanceModel.deleteOne.mockReturnValue({
+      exec: jest.fn().mockRejectedValue(new Error('instance cleanup failed')),
+    });
+
+    await expect(service.createScaleExecutionFromPlan(plan)).rejects.toBe(
+      originalError,
+    );
+    expect(itemResponseModel.deleteMany).toHaveBeenCalledWith({
+      scaleInstanceId,
+    });
+    expect(scaleInstanceModel.deleteOne).toHaveBeenCalledWith({
+      _id: scaleInstanceId,
+    });
   });
 
   it('creates execution from seed by composing plan and create', async () => {

@@ -15,13 +15,20 @@ import { SessionAuthGuard } from '../../auth/guards/session-auth.guard';
 import type { AuthenticatedUserContext } from '../../auth/types/auth-user-context.type';
 import { PATIENT_WORKFLOW_ROLES } from '../../patients/patients.constants';
 import { CreateAssessmentVisitDto } from '../dto/create-assessment-visit.dto';
+import { InitializeScaleInstanceDto } from '../dto/initialize-scale-instance.dto';
 import { ListAssessmentVisitsQueryDto } from '../dto/list-assessment-visits-query.dto';
+import { PatientVisitParamDto } from '../dto/patient-visit-param.dto';
 import { PatientVisitsParamDto } from '../dto/patient-visits-param.dto';
 import type { AssessmentOperatorRole } from '../schemas/assessment-visit.schema';
+import { AssessmentScaleWorkflowService } from '../services/assessment-scale-workflow.service';
 import {
   AssessmentsService,
   type CreateVisitOperatorSnapshot,
 } from '../services/assessments.service';
+import type {
+  AssessmentVisitExecutionDetailResponse,
+  InitializeScaleInstanceResponse,
+} from '../types/assessment-execution-response.types';
 import type {
   AssessmentVisitDetailResponse,
   AssessmentVisitListResponse,
@@ -38,7 +45,10 @@ const OPERATOR_ROLE_PRIORITY: AssessmentOperatorRole[] = [
 @UseGuards(SessionAuthGuard, RolesGuard)
 @Roles(...PATIENT_WORKFLOW_ROLES)
 export class AssessmentVisitsController {
-  constructor(private readonly assessmentsService: AssessmentsService) {}
+  constructor(
+    private readonly assessmentsService: AssessmentsService,
+    private readonly assessmentScaleWorkflowService: AssessmentScaleWorkflowService,
+  ) {}
 
   @Get()
   listVisits(
@@ -61,6 +71,30 @@ export class AssessmentVisitsController {
       ...createAssessmentVisitDto,
       operatorSnapshot: this.buildOperatorSnapshot(currentUser),
     });
+  }
+
+  @Get(':visitId')
+  getVisitDetail(
+    @Param() params: PatientVisitParamDto,
+  ): Promise<AssessmentVisitExecutionDetailResponse> {
+    return this.assessmentsService.getVisitExecutionDetail(
+      params.patientId,
+      params.visitId,
+    );
+  }
+
+  @Post(':visitId/scale-instances')
+  initializeScaleInstance(
+    @Param() params: PatientVisitParamDto,
+    @Body() initializeScaleInstanceDto: InitializeScaleInstanceDto,
+    @CurrentUser() currentUser: AuthenticatedUserContext | undefined,
+  ): Promise<InitializeScaleInstanceResponse> {
+    return this.assessmentScaleWorkflowService.initializeScaleInstance(
+      params.patientId,
+      params.visitId,
+      initializeScaleInstanceDto,
+      this.buildOperatorSnapshot(currentUser),
+    );
   }
 
   private buildOperatorSnapshot(

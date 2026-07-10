@@ -10,9 +10,9 @@
 - 已具备 NestJS 启动入口、根模块、全局应用配置、健康检查、配置加载与校验、MongoDB 连接底座、全局 ValidationPipe、全局异常过滤器和 Storage 公共模块。
 - `backend\src\modules` 当前包含 `storage`、`scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains`、`reports`、`users` 与 `auth`。
 - `StorageModule` 当前只提供 fake / OSS 底层 driver 结构和 `STORAGE_SERVICE` token，不提供业务上传接口。
-- `ScalesModule` 当前提供量表定义 / 量表版本 Schema、内部 `ScalesService` 读取底座、MMSE / MoCA 初始配置 seed 常量、内部只读 `ScaleSeedDataService` 和 `validateScaleSeeds()` 种子校验纯函数，不提供公开业务接口。
+- `ScalesModule` 当前提供量表定义 / 量表版本 Schema、内部 `ScalesService`、MMSE / MoCA seed、只读 `ScaleSeedDataService`、`validateScaleSeeds()`、公开只读 `ScalesController` 和 `ScaleCatalogService`。`GET /scales/available` 只返回安全摘要且不写数据库；量表初始化时才按需幂等物化对应 seed 版本。
 - `PatientsModule` 当前提供患者 / 受试者基础档案 Schema、内部读取底座，以及 `GET /patients`、`POST /patients`、`GET /patients/:patientId` 三个患者最小公开 API。
-- `AssessmentsModule` 当前提供访视 / 量表实例运行时 Schema、题目作答数据 Schema、内部 `AssessmentsService` 读取底座、内部 `AssessmentExecutionService` 评估执行初始化编排底座，以及 `GET /patients/:patientId/visits`、`POST /patients/:patientId/visits` 两个访视最小公开 API；A12 访视创建不调用 `AssessmentExecutionService`。
+- `AssessmentsModule` 当前提供访视 / 量表实例 / 题目作答 Schema、`AssessmentsService`、`AssessmentExecutionService`、`AssessmentScaleWorkflowService`，以及访视列表、创建、详情和量表实例初始化四个公开 API。A13 初始化受控创建 `ScaleInstance` 与初始 `ItemResponse` 骨架；不自动修改访视状态。
 - `MediaModule` 当前只提供媒体证据元数据 Schema 与内部 `MediaEvidenceService` 读取底座，不提供公开媒体上传、下载、查询、删除或签名 URL 接口。
 - `ScoringModule` 当前只提供计分结果快照 Schema、内部 `ScoringService` 读取底座和 `summarizeItemScores()` 通用计分汇总纯函数，不提供公开计分触发、查询、复核或报告接口。
 - `CognitiveDomainsModule` 当前只提供认知域结果快照 Schema、内部 `CognitiveDomainsService` 读取底座和 `summarizeDomainScores()` 通用认知域汇总纯函数，不提供公开认知域计算触发、查询、复核或报告接口。
@@ -22,10 +22,10 @@
 - OSS 业务上传服务、SMS Service、LLM Service 均未实现。
 - 本地默认后端端口为 `5002`。
 - 本地默认前端 origin 为 `http://localhost:3002`。
-- 当前公共接口为 `GET /health`、三个认证 API，以及 A12 五个患者 / 访视 API；A12 五个接口均显式使用 `SessionAuthGuard` + `RolesGuard`，允许角色为 `admin`、`doctor`、`nurse`、`research_assistant`。
+- 当前公共接口为 `GET /health`、三个认证 API、A12 五个患者 / 访视 API，以及 A13 三个评估初始化前置 API；A12 / A13 临床接口均显式使用 `SessionAuthGuard` + `RolesGuard`，允许角色为 `admin`、`doctor`、`nurse`、`research_assistant`。
 - 已完成后端公共底座基础闭环本地验证：`npm install` 成功、`npm run build` 成功、`npm test -- --runInBand` 成功、`npm run start:prod` 启动成功。
-- 单元测试验证结果为 22 个测试套件通过、213 个测试通过。
-- A12 首个真实 HTTP E2E 已在 `NODE_ENV=test` 和隔离 `cogmemory_ad_test` 数据库上通过：1 个测试套件、7 个测试通过；使用 fake / stub 外部服务配置并只清理 A12 前缀测试数据。
+- 单元测试验证结果为 26 个测试套件通过、252 个测试通过。
+- A12 / A13 真实 HTTP E2E 已在 `NODE_ENV=test` 和隔离 `cogmemory_ad_test` 数据库上通过：2 个测试套件、14 个测试通过；使用 fake / stub 外部服务配置和脱敏人工数据，并按各自测试前缀清理运行时数据。
 - 后端 TypeScript 编译根目录为 `.`，`outDir` 保持 `./dist`，因此 `src/main.ts` 编译后的主入口产物为 `dist/src/main.js`。
 - `package.json` 中 `start:prod` 保持指向 `./dist/src/main.js`，当前 build 产物路径已与该启动路径对齐。
 - `tsBuildInfoFile` 保持 `./dist/tsconfig.build.tsbuildinfo`；`dist` 与 `*.tsbuildinfo` 均作为生成物处理，不作为项目源文件纳入版本库。
@@ -42,7 +42,7 @@
 - development / test 默认 `STORAGE_DRIVER=fake`，production 默认 `STORAGE_DRIVER=oss`。
 - OSS、SMS、LLM 配置均为占位或示例口径，不包含真实密钥。
 - OSS 业务上传服务、SMS Service、LLM Service、业务上传接口均未实现。
-- 当前已有 `scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains`、`reports`、`users` 与 `auth` 模型 / Service 底座；A12 已开放患者列表 / 创建 / 详情和患者访视列表 / 创建五个最小公开业务 API。仍无用户管理 API、患者编辑 / 删除 / 归档、访视编辑 / 删除 / 状态流转、量表实例公开创建、作答提交、媒体上传 / 下载 / 签名 URL、数据库 seed runner、计分触发、认知域计算触发、报告生成、医生确认写库、PDF 导出、疾病诊断或 AI。
+- 当前已有 `scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains`、`reports`、`users` 与 `auth` 模型 / Service 底座；A12 已开放五个患者 / 访视 API，A13 已开放安全量表目录、访视详情和量表实例初始化三个 API。仍无用户管理 API、患者编辑 / 删除 / 归档、访视编辑 / 删除 / 状态流转、作答查询 / 保存 / 提交、媒体上传 / 下载 / 签名 URL、全量数据库 seed runner、计分触发、认知域计算触发、报告生成、医生确认写库、PDF 导出、疾病诊断或 AI。
 - 当前 `start:prod` 与 TypeScript build 主入口产物路径均指向 `dist/src/main.js`，并已完成本地启动验证。
 - 本次仅使用指定外部 GitHub commit `b302b8af7b7ac9cc558939dc1b38ace0976c65b3` 作为后端公共底座来源，不继承其业务事实。
 
@@ -59,10 +59,13 @@
 - 内嵌 group / item 配置已预留指导语、作答类型、得分范围、是否计入总分、认知域、证据类型、计时、图片上传、平板手写、操作者备注、质控规则、报告规则和科研导出映射等字段。
 - `backend\src\modules\scales\seeds` 当前已新增内部 MMSE / MoCA 初始配置 seed 类型与常量，覆盖 `ScaleDefinition` 配置、`ScaleVersion` 配置、分组、题目、指导语摘要、作答类型、分值范围、是否计入总分、图片 / 手写 / 计时 / 原始文本 / 操作者备注要求、自动计分规则元数据占位、认知域映射、质控规则占位、报告展示规则占位和科研导出字段映射。
 - `ScaleSeedDataService` 当前提供内存 seed 的只读读取能力：`normalizeScaleCode()`、`getAllScaleSeeds()`、`getScaleSeedByCode()`、`getScaleVersionSeed()`、`listSeedScaleDefinitions()`、`listSeedScaleVersions()` 和 `validateScaleSeeds()`；不注入 Mongoose model，不读取数据库，不写数据库。
+- `ScaleCatalogService` 当前提供 `listAvailableScaleOptions()`、`getAvailableScaleOption()`、`ensureSeedScaleVersionMaterialized()`：前两者只读取经 `validateScaleSeeds()` 校验的 seed；公开目录按 `sortOrder` / code 排序，只返回名称、版本追溯、总分范围、分组 / 题目数量和能力布尔值，不返回完整题目、指导语、评分规则、正确答案、ObjectId 或 Mixed 字段。
+- `ensureSeedScaleVersionMaterialized()` 以 definition code 和 definitionId + version 为业务键，使用 `$setOnInsert` upsert 创建或复用记录；已有 definition / version 配置不被覆盖。非 active 记录分别返回 `SCALE_NOT_ACTIVE` / `SCALE_VERSION_NOT_ACTIVE`；追溯字段或分组 / 题目数量冲突返回 `SCALE_CATALOG_VERSION_CONFLICT`；duplicate key 竞态后重新读取。`currentVersionId` 仅在为空或缺失时设置，不覆盖已有引用。
+- 该物化能力仅由 A13 初始化调用，不是全量 seed runner，不在应用启动时执行，也没有 CLI、管理 API 或配置编辑能力。
 - `validateScaleSeeds()` 当前为不落库的种子数据校验纯函数，覆盖量表 code、版本、group code、item code、groupCode 引用、CRF 编码重复风险、scoreRange、证据 / 计时一致性、MoCA 即刻记忆不计分、MoCA 延迟回忆提示后表现保留、MoCA 抽象项 CRF 修正、MMSE 表达第 9 项和绘图第 10 项修正，以及 MMSE / MoCA 连续减 7 分步配置。
 - MMSE seed 当前来源标识为 `MMSE+MoCA.pdf`，版本为 `1.0`，总分范围 0-30，包含定向力、即刻回忆、注意力和计算力、回忆、语言、视空间 / 绘图分组；题目覆盖时间定向、地点定向、即刻回忆、连续减 7、延迟回忆、命名、重复、阅读并执行、三步指令、表达 / 写完整句子和绘图。
 - MoCA seed 当前来源标识为 `MMSE+MoCA.pdf`，版本为 `1.0`，总分范围 0-30，包含视空间与执行功能、命名、即刻记忆、注意、语言、抽象、延迟回忆和定向分组；题目覆盖交替连线、立方体、钟表、命名、两次即刻记忆记录、数字广度、警觉性、连续减 7、句子复述、词语流畅性、两个抽象项、延迟回忆和定向；`N1.2.15` 总分字段保留在 reporting / research export 映射中。
-- 当前未实现数据库 seed runner、seed 写库、公开 MMSE / MoCA 配置查询 API、完整公开评估执行业务流程、作答提交流程、媒体上传 / 下载 / 签名 URL、MMSE / MoCA 专用自动计分规则执行、报告或 AI。
+- 当前未实现全量数据库 seed runner、完整题目配置公开 API、完整评估执行业务流程、作答查询 / 保存 / 提交、媒体上传 / 下载 / 签名 URL、MMSE / MoCA 专用自动计分规则执行、报告或 AI；A13 仅提供安全目录摘要和初始化时按需物化。
 
 ## 5. 当前 patients / assessments 运行时与作答模型底座
 
@@ -76,7 +79,7 @@
 - `AssessmentVisit` collection 为 `assessment_visits`，使用 `timestamps: true`，不在 class 中重复声明 `createdAt` / `updatedAt`。
 - `AssessmentVisit` 当前覆盖患者引用、受试者编码快照、访视编码、访视类型、状态、评估日期、开始 / 完成 / 锁定 / 作废时间、操作者快照、临床上下文、备注和扩展 metadata。
 - `AssessmentVisit` 当前索引为 `{ visitCode: 1 }` unique、`{ patientId: 1, assessmentDate: -1 }`、`{ subjectCode: 1, assessmentDate: -1 }`、`{ status: 1, assessmentDate: -1 }`。
-- `AssessmentVisitsController` 当前公开患者下访视分页列表和创建；列表支持 `page`、`pageSize`、`status`、`visitType`、`dateFrom`、`dateTo`，默认按 `assessmentDate` 和 `_id` 倒序。
+- `AssessmentVisitsController` 当前公开患者下访视分页列表、创建、访视详情和量表实例初始化；列表支持 `page`、`pageSize`、`status`、`visitType`、`dateFrom`、`dateTo`，默认按 `assessmentDate` 和 `_id` 倒序。
 - 访视创建从路径取得 patientId、从患者档案取得 subjectCode、固定初始化 `draft`，并由当前认证用户生成 operatorSnapshot；客户端不能写 operatorSnapshot、状态、状态时间、clinicalContext 或 metadata。稳定业务错误包括 `PATIENT_NOT_FOUND`、`PATIENT_NOT_ACTIVE`、`VISIT_CODE_CONFLICT`、`INVALID_DATE_RANGE`。
 - 访视公开 mapper 不返回 `clinicalContext`、`metadata`、Mongoose document 字段或 `__v`。
 - `ScaleInstance` Schema 位于 `backend\src\modules\assessments\schemas\scale-instance.schema.ts`。
@@ -91,8 +94,11 @@
 - `AssessmentsService` 当前提供 `ItemResponse` 的最小内部读取能力：规范化 item code、按量表实例和题目编码读取单条作答、按量表实例读取作答列表、按量表实例读取已计分作答列表、按访视读取作答列表；返回结果经过 mapper，不直接返回完整 Mongoose document。
 - `AssessmentExecutionService` 当前提供内部评估执行初始化编排能力：规范化 subject / instance / scale code，基于 `ScaleSeedDataService` 读取并校验 MMSE / MoCA seed，构建不写库的 `ScaleExecutionPlan`，并在内部写库方法中先创建 `ScaleInstance`、再批量创建初始 `ItemResponse` 骨架。
 - `AssessmentExecutionService` 生成的初始 `ItemResponse` 骨架会从 seed 复制 itemCode、CRF 编码、分组、标题、顺序、作答类型、是否计入总分、认知域、item 配置快照、版本追溯、score 初始快照、连续减 7 / 钟表等分步结果占位、MoCA 延迟回忆提示后表现占位、计时占位和 photo / handwriting / duration / raw_text / operator_note 等 evidenceRefs 占位。
-- `AssessmentExecutionService` 当前仅为内部底座，不提供公开 API；不创建 Patient、AssessmentVisit、MediaEvidence、ScoreResult、CognitiveDomainResult 或 ClinicalReport；不实现事务、幂等、并发控制、作答提交、媒体上传、自动计分触发、认知域计算触发、报告生成、AI、认证或权限。
-- 当前仅实现患者档案和访视最小公开 API，不等于完整患者管理或完整评估执行流程；患者编辑 / 删除 / 归档、访视编辑 / 删除 / 状态流转、公开量表实例初始化、真实作答提交、自动计分触发、认知域计算触发、报告生成和 AI 仍未实现。
+- `AssessmentExecutionService` 仍是内部写库能力，由 `AssessmentScaleWorkflowService` 调用；不创建 Patient、AssessmentVisit、MediaEvidence、ScoreResult、CognitiveDomainResult 或 ClinicalReport。`ItemResponse.insertMany()` 失败时，会按本次 `scaleInstanceId` 尝试删除可能已创建的 ItemResponse，再删除本次 ScaleInstance，并重新抛出原始错误供上层转换；不删除其他实例、访视、患者或目录数据。
+- `AssessmentScaleWorkflowService` 依次校验患者存在且 active、访视联合归属与 draft / in_progress 状态、可用 seed / version、同访视同 scaleCode 不重复；服务端生成 subjectCode、definition / version 引用、`INST-{VISIT_ID_UPPERCASE}-{SCALE_CODE_UPPERCASE}-1`、instanceNo=1、draft 状态和操作者快照，再调用执行 Service。响应仅返回安全 scale / ScaleInstance 摘要与创建题目数量。
+- `GET /patients/:patientId/visits/:visitId` 先确认患者存在，再以 patientId + visitId 联合查询访视，不泄露跨患者归属；量表实例按 scaleCode、instanceNo 排序。公开 mapper 只输出版本追溯、操作者和有限非负 progress 字段，不返回 definition / version ObjectId、metadata、qualityControlSummary 或 ItemResponse 全量数据。
+- 当前一致性为补偿式一致性，不是严格事务原子性；未使用 Mongo transaction。后续生产环境采用 replica set 时可重新评估 transaction。
+- A13 不等于完整患者管理或完整评估执行流程；不自动修改访视 status、不设置 startedAt、不启动计时，不提供真实作答查询 / 保存 / 提交，也不触发媒体、计分、认知域、报告或 AI。
 
 ## 6. 当前 media 媒体证据模型底座
 
@@ -170,10 +176,10 @@
 
 - 尚无公开用户管理接口、角色权限管理接口、短信验证码接口、OAuth / SSO 接口或密码重置接口。
 - 尚无医生端或患者端业务。
-- 除 A12 五个患者 / 访视最小公开 API 外，尚无量表实例、题目作答、媒体、计分、认知域或报告业务接口。
-- 尚无公开 assessment execution controller、评估创建接口、量表实例初始化接口或作答提交接口。
+- 除 A12 五个患者 / 访视 API 与 A13 三个评估初始化前置 API 外，尚无题目作答、媒体、计分、认知域或报告业务接口。
+- 尚无单个 ScaleInstance 执行详情、ItemResponse 查询 / 更新 / 提交、计时或状态流转接口。
 - 尚无公开媒体上传、媒体查询、媒体下载、媒体删除或签名 URL 业务接口。
-- 尚无数据库 seed runner、seed 写库或公开 MMSE / MoCA 配置查询接口。
+- 尚无全量数据库 seed runner、量表管理或完整 MMSE / MoCA 题目配置公开接口；A13 只在初始化时按需物化并提供安全摘要。
 - 尚无公开计分触发、计分查询、计分复核或报告接口。
 - 尚无公开认知域计算触发、认知域查询、认知域复核或报告接口。
 - 尚无公开报告 API、真实报告生成任务流、医生确认写库流程、报告锁定写库流程、报告归档 / 更正 / 作废接口、PDF / Word / 打印导出、AuditLog 模型或公开认证权限接口。
@@ -182,8 +188,8 @@
 - 尚无 AI / LLM 调用接口。
 - 尚无患者编辑 / 删除 / 归档、访视编辑 / 删除 / 状态流转，以及量表、作答、媒体、计分、认知域、报告等其他业务 Controller 或公开业务 API。
 - 尚未实现用户创建、用户更新、用户禁用、重置密码、角色权限管理、短信验证码、OAuth / SSO、JWT 主登录态、前端登录页、前端认证态或权限菜单。
-- A12 真实 HTTP E2E 已执行并通过；连接隔离 `cogmemory_ad_test`，未调用真实 OSS / Storage / SMS / LLM。
-- 已完成 A12 `patients` / `assessments` / `test` 定向 lint、后端 build、全量单元测试与 E2E；全量 lint 当前未执行。
+- A12 / A13 真实 HTTP E2E 已执行并通过；连接隔离 `cogmemory_ad_test`，未调用真实 OSS / Storage / SMS / LLM。
+- 已完成 A13 `scales` / `assessments` / `test` 定向 lint、后端 build、全量单元测试与 E2E；全量 lint 当前未执行。
 
 ## 12. 后续同步规则
 

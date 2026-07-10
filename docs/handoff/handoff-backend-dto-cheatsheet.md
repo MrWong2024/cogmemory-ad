@@ -6,10 +6,10 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 DTO、响应 type、Storage interface，以及各业务模块内部 Service 读取输出 type；A12 已新增患者档案与评估访视的公开请求 DTO 和安全响应 type。
+- 当前存在公共底座 DTO、响应 type、Storage interface，以及各业务模块内部 Service 读取输出 type；A12 已新增患者 / 访视 DTO，A13 已新增量表目录、访视执行详情和量表实例初始化 DTO / 安全响应 type。
 - 当前新增公开认证请求 DTO：`LoginDto`。
 - 当前新增公开患者 / 访视 DTO：`CreatePatientDto`、`ListPatientsQueryDto`、`PatientIdParamDto`、`CreateAssessmentVisitDto`、`ListAssessmentVisitsQueryDto`、`PatientVisitsParamDto`。
-- 当前仍没有用户管理、注册、密码重置、量表实例、作答、媒体、计分、认知域、报告或业务上传请求 DTO。
+- 当前仍没有用户管理、注册、密码重置、单个量表实例执行详情、作答查询 / 保存 / 提交、媒体、计分、认知域、报告或业务上传请求 DTO。
 
 ## 3. 当前 DTO / Type 清单
 
@@ -103,11 +103,49 @@
 - 用途：两个患者访视接口的 path DTO。
 - 字段与校验：`patientId: string`，使用 `@IsMongoId()`。
 
+- 名称：`PatientVisitParamDto`
+- 文件：`backend\src\modules\assessments\dto\patient-visit-param.dto.ts`
+- 用途：`GET /patients/:patientId/visits/:visitId` 与 `POST /patients/:patientId/visits/:visitId/scale-instances` path DTO。
+- 字段与校验：`patientId: string`、`visitId: string`，均使用 `@IsMongoId()`。
+
+- 名称：`InitializeScaleInstanceDto`
+- 文件：`backend\src\modules\assessments\dto\initialize-scale-instance.dto.ts`
+- 用途：A13 量表实例初始化请求 DTO。
+- 允许字段：必填 `scaleCode`；可选 `scaleVersion`、`administrationMode`。
+- 校验摘要：scaleCode trim + lowercase、非空、最长 50；scaleVersion trim、非空、最长 40；administrationMode 仅 `clinician_administered`、`supervised_patient_input`、`paper_import`，默认 `clinician_administered`。
+- 白名单边界：不声明 patientId、visitId、subjectCode、definition / version ID、instanceCode、instanceNo、status、operatorSnapshot、状态时间、progress、qualityControlSummary、metadata、itemResponses、score、report 或 timestamps；这些字段由全局 ValidationPipe 拒绝。
+
 - 名称：`AssessmentVisitListItemResponse`、`AssessmentVisitDetailResponse`、`AssessmentVisitListResponse`
 - 文件：`backend\src\modules\assessments\types\assessment-visit-response.types.ts`
 - 用途：访视公开响应 type。
 - 字段摘要：id、patientId、subjectCode、visitCode、visitType、status、assessmentDate、状态时间、operatorSnapshot、notes；分页响应包含 items、page、pageSize、total。
 - 安全边界：不包含 clinicalContext、metadata、`__v` 或 Mongoose document 方法。
+
+- 名称：`ScaleScoreRangeResponse`、`ScaleCapabilityResponse`、`AvailableScaleOptionResponse`、`AvailableScaleListResponse`
+- 文件：`backend\src\modules\scales\types\scale-catalog-response.types.ts`
+- 用途：`GET /scales/available` 公开安全目录响应。
+- 字段摘要：量表 code / name / shortName / description / category、版本追溯、totalScoreRange、groupCount、itemCount，以及 photo / handwriting / timer / raw text / operator note 能力布尔值。
+- 安全边界：不包含完整 groups / items、prompt / instruction、scoringRule、正确答案 / expectedValue、ObjectId、Mixed 原始字段、metadata 或 Mongoose document。
+
+- 名称：`MaterializedScaleVersionReference`
+- 文件：`backend\src\modules\scales\types\scale-catalog-response.types.ts`
+- 用途：`ScaleCatalogService` 向内部初始化工作流返回已解析 definition / version ID 和安全 option；仅内部使用，不是 HTTP 响应 type。
+
+- 名称：`ScaleInstanceVersionTraceResponse`、`ScaleInstanceOperatorResponse`、`ScaleInstanceProgressResponse`、`ScaleInstanceListItemResponse`
+- 文件：`backend\src\modules\assessments\types\assessment-execution-response.types.ts`
+- 用途：访视详情与初始化响应中的安全 ScaleInstance 摘要。
+- 字段摘要：公开运行时标识、subject / scale / instance 快照、状态、施测模式、限定版本追溯、状态时间、durationMs、限定操作者快照，以及 totalItemCount / answeredItemCount。
+- 安全边界：不包含 scaleDefinitionId、scaleVersionId、metadata、qualityControlSummary、notes、任意完整 Mixed 对象或 ItemResponse 全量数据；非法 progress 值映射为 0。
+
+- 名称：`AssessmentVisitExecutionDetailResponse`
+- 文件：`backend\src\modules\assessments\types\assessment-execution-response.types.ts`
+- 用途：A13 访视执行详情响应。
+- 字段：`visit: AssessmentVisitDetailResponse`、`scaleInstances: ScaleInstanceListItemResponse[]`。
+
+- 名称：`InitializeScaleInstanceResponse`
+- 文件：`backend\src\modules\assessments\types\assessment-execution-response.types.ts`
+- 用途：A13 初始化成功响应。
+- 字段：安全 `scale` 摘要、安全 `scaleInstance` 摘要、`createdItemResponseCount`；不包含 ItemResponse 全量骨架。
 
 - 名称：`StorageService` 及相关输入输出 type
 - 文件：`backend\src\modules\storage\storage.interface.ts`

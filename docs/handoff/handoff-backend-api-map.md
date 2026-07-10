@@ -6,12 +6,12 @@
 
 ## 2. 当前状态
 
-- 当前公开 API 为 `GET /health`、`POST /auth/login`、`POST /auth/logout`、`GET /auth/me`、`GET /patients`、`POST /patients`、`GET /patients/:patientId`、`GET /patients/:patientId/visits`、`POST /patients/:patientId/visits`。
+- 当前公开 API 为 `GET /health`、三个认证 API、A12 五个患者 / 访视 API，以及 A13 的 `GET /scales/available`、`GET /patients/:patientId/visits/:visitId`、`POST /patients/:patientId/visits/:visitId/scale-instances`。
 - `AuthModule` 当前新增 `AuthController`，仅暴露最小公开认证 API 底座；主登录态仍为服务端 Session + HttpOnly Cookie，不采用 JWT 主登录态。
 - AuthModule 内部 session cookie 名称已统一为 `cogmemory_ad_session`，登录成功下发 HttpOnly Cookie，`SameSite=Lax`，`Path=/`，production 环境启用 `Secure`。
 - 当前没有 users controller，没有公开用户管理 API，没有注册、密码重置、角色权限管理、短信验证码、OAuth / SSO 或 JWT 登录 API。
 - A12 已新增 `PatientsController` 与 `AssessmentVisitsController`，形成第一组受保护临床业务 API；所有五个接口均显式绑定 `SessionAuthGuard`、`RolesGuard` 和 `@Roles('admin', 'doctor', 'nurse', 'research_assistant')`。
-- 当前仍没有量表实例、题目作答、媒体、计分、认知域、报告、SMS、AI / LLM 或业务上传公开接口。
+- 当前已有量表安全目录、访视执行详情和量表实例初始化接口；仍没有单个量表实例执行详情、题目作答查询 / 保存 / 提交、媒体、计分、认知域、报告、SMS、AI / LLM 或业务上传公开接口。
 - 当前 API 事实以实际 Controller、DTO、response type 和对应单元 / E2E 测试为准。
 
 ## 3. 当前 API 清单
@@ -122,15 +122,52 @@
 - 错误语义：未登录、session 缺失、session 无效、session 过期、session 撤销、用户不存在或用户非 active 统一返回 `401 Unauthorized`
 - 敏感字段：不返回 `password`、`passwordHash`、raw session token、session token hash、reset token、secret 或 credential
 
+- 接口名称：可用量表目录
+- Method：`GET`
+- Path：`/scales/available`
+- Guard：`SessionAuthGuard` + `RolesGuard`
+- Roles：`admin`、`doctor`、`nurse`、`research_assistant`
+- Param / Query / Body DTO：无
+- 响应：`AvailableScaleListResponse`，结构为 `{ items }`；当前 items 为经 `validateScaleSeeds()` 校验的 MMSE / MoCA 摘要，包含 code、name、shortName、description、category、version 追溯、totalScoreRange、groupCount、itemCount、capabilities
+- 排序：definition sortOrder 升序，相同 sortOrder 时 code 升序
+- 写库边界：只读取内存 seed，不查询或写入 `ScaleDefinition` / `ScaleVersion`
+- 错误状态与 code：DTO 不涉及；未认证 401；角色不足 403；内置 seed 非法 500 / `SCALE_CATALOG_INVALID`
+- 敏感字段边界：不返回完整 groups / items、prompt / instruction、scoringRule、qualityControlRule、reportingRule、researchExportMappings、正确答案 / expectedValue、ObjectId、metadata、Mongoose document 或 `__v`
+
+- 接口名称：患者访视执行详情
+- Method：`GET`
+- Path：`/patients/:patientId/visits/:visitId`
+- Guard：`SessionAuthGuard` + `RolesGuard`
+- Roles：`admin`、`doctor`、`nurse`、`research_assistant`
+- Param DTO：`PatientVisitParamDto`；patientId / visitId 均使用 `@IsMongoId()`
+- Query / Body DTO：无
+- 响应：`AssessmentVisitExecutionDetailResponse`，结构为 `{ visit, scaleInstances }`；visit 对齐 A12 `AssessmentVisitDetailResponse`，scaleInstances 为 `ScaleInstanceListItemResponse[]`
+- 归属与排序：先确认患者存在，再以 patientId + visitId 联合查询；跨患者访问同样返回 `VISIT_NOT_FOUND`；实例按 scaleCode、instanceNo 排序
+- 错误状态与 code：路径无效 400；未认证 401；角色不足 403；患者不存在 404 / `PATIENT_NOT_FOUND`；访视不存在或不属于患者 404 / `VISIT_NOT_FOUND`
+- 敏感字段边界：实例不返回 scaleDefinitionId、scaleVersionId、metadata、qualityControlSummary、ItemResponse 全量数据、Mixed 原始字段、scoringRule、externalRefs、clinicalContext 或 `__v`；progress 仅输出安全整数 totalItemCount / answeredItemCount
+
+- 接口名称：初始化访视量表实例
+- Method：`POST`
+- Path：`/patients/:patientId/visits/:visitId/scale-instances`
+- Guard：`SessionAuthGuard` + `RolesGuard`
+- Roles：`admin`、`doctor`、`nurse`、`research_assistant`
+- Param DTO：`PatientVisitParamDto`
+- Body DTO：`InitializeScaleInstanceDto`；只允许 scaleCode、可选 scaleVersion、可选 administrationMode（clinician_administered / supervised_patient_input / paper_import）
+- 服务端所有权：patientId / visitId 来自路径，subjectCode 来自 Patient；definition / version 引用由 `ScaleCatalogService` 解析或按需物化；instanceCode 固定为 `INST-{VISIT_ID_UPPERCASE}-{SCALE_CODE_UPPERCASE}-1`，instanceNo 固定 1，status 固定 draft，operatorSnapshot 来自当前认证用户
+- 响应：201，`InitializeScaleInstanceResponse`，结构为 `{ scale, scaleInstance, createdItemResponseCount }`；不返回 ItemResponse 全量骨架
+- 错误状态与 code：DTO / 路径无效 400；未认证 401；角色不足 403；患者 / 访视 / scale / version 不存在分别为 404 / `PATIENT_NOT_FOUND`、`VISIT_NOT_FOUND`、`SCALE_NOT_AVAILABLE`、`SCALE_VERSION_NOT_AVAILABLE`；患者非 active、访视不可初始化、目录记录非 active / 冲突、实例重复为 409 / `PATIENT_NOT_ACTIVE`、`VISIT_NOT_INITIALIZABLE`、`SCALE_NOT_ACTIVE`、`SCALE_VERSION_NOT_ACTIVE`、`SCALE_CATALOG_VERSION_CONFLICT`、`SCALE_INSTANCE_ALREADY_EXISTS`；seed 非法或内部初始化失败为 500 / `SCALE_CATALOG_INVALID`、`SCALE_EXECUTION_INITIALIZATION_FAILED`
+- 副作用边界：初始化创建 `ScaleInstance` 与对应 seed items 的初始 `ItemResponse` 骨架；不修改访视状态，不设置 startedAt，不启动计时，不保存作答，不创建媒体 / 计分 / 认知域 / 报告结果
+- 敏感字段边界：客户端不能提交服务器所有字段；响应不返回完整 seed、scoringRule、expectedValue、metadata、qualityControlSummary、Cookie、token、passwordHash 或数据库内部错误
+
 ## 4. 当前未暴露接口说明
 
 - `backend\src\modules\users` 当前没有 Controller。
 - `UsersService` 仅供后端认证或后续业务模块内部读取系统账号摘要或认证必要字段；当前不暴露用户创建、更新、禁用、重置密码或公开用户管理 API。
 - `backend\src\modules\auth` 当前仅有 `AuthController` 的登录、登出和 auth me 三个公开认证 API；不暴露 users me、注册、密码重置、短信验证码、OAuth / SSO、JWT 登录态、角色权限管理或权限矩阵 API。
 - `AuthService`、`SessionAuthGuard` 与 `RolesGuard` 仍为认证链路内部底座；`SessionAuthGuard` 与 `RolesGuard` 未注册为全局 Guard，不影响 `GET /health`。
-- `backend\src\modules\scales` 当前没有 Controller；`ScalesService` 与 `ScaleSeedDataService` 仅供后续后端业务模块内部读取量表定义、版本配置和 MMSE / MoCA 初始 seed，不暴露公开 MMSE / MoCA 配置查询 API，不提供 seed 执行接口，不写数据库。
+- `backend\src\modules\scales` 当前仅有公开只读 `ScalesController` 的 `GET /scales/available`；不提供完整题目配置、seed 执行、量表管理或版本编辑 API。
 - `backend\src\modules\patients` 当前仅通过 `PatientsController` 暴露 A12 三个患者接口；未暴露 PATCH、DELETE 或归档接口。
-- `backend\src\modules\assessments` 当前仅通过 `AssessmentVisitsController` 暴露 A12 两个访视接口；`AssessmentExecutionService` 仍为内部能力，不暴露量表实例初始化、作答提交或媒体上传接口。
+- `backend\src\modules\assessments` 当前通过 `AssessmentVisitsController` 暴露访视列表、创建、详情和量表实例初始化；`AssessmentExecutionService` 仍为内部能力，不暴露单个实例执行详情、作答查询 / 保存 / 提交或媒体上传接口。
 - `backend\src\modules\media` 当前没有 Controller；`MediaEvidenceService` 仅供后续后端业务模块内部读取媒体证据元数据摘要。
 - `backend\src\modules\scoring` 当前没有 Controller；`ScoringService` 仅供后续后端业务模块内部读取计分结果摘要和复用通用计分汇总纯函数。
 - `backend\src\modules\cognitive-domains` 当前没有 Controller；`CognitiveDomainsService` 仅供后续后端业务模块内部读取认知域结果摘要和复用通用认知域汇总纯函数。

@@ -18,6 +18,7 @@ import {
   ScaleInstanceSchema,
 } from './schemas/scale-instance.schema';
 import { AssessmentExecutionService } from './services/assessment-execution.service';
+import { AssessmentScaleWorkflowService } from './services/assessment-scale-workflow.service';
 import { AssessmentsService } from './services/assessments.service';
 
 @Module({
@@ -32,7 +33,11 @@ import { AssessmentsService } from './services/assessments.service';
     ]),
   ],
   controllers: [AssessmentVisitsController],
-  providers: [AssessmentsService, AssessmentExecutionService],
+  providers: [
+    AssessmentsService,
+    AssessmentExecutionService,
+    AssessmentScaleWorkflowService,
+  ],
   exports: [AssessmentsService, AssessmentExecutionService],
 })
 export class AssessmentsModule {}

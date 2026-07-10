@@ -2,6 +2,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -151,6 +152,8 @@ type CreatedItemResponseDocumentLike = Omit<
 
 @Injectable()
 export class AssessmentExecutionService {
+  private readonly logger = new Logger(AssessmentExecutionService.name);
+
   constructor(
     @InjectModel(ScaleInstance.name)
     private readonly scaleInstanceModel: Model<ScaleInstanceDocument>,
@@ -275,12 +278,6 @@ export class AssessmentExecutionService {
 
     this.assertUniquePlanDraftItemCodes(plan.itemResponseDrafts);
 
-    /*
-     * This internal foundation intentionally does not open a Mongo session.
-     * A future public workflow that needs atomic ScaleInstance + ItemResponse
-     * creation should add a transaction or a compensating cleanup strategy.
-     * This stage also does not implement concurrency handling or idempotency.
-     */
     const scaleInstance = await this.scaleInstanceModel.create(
       plan.scaleInstanceDraft,
     );
@@ -289,10 +286,17 @@ export class AssessmentExecutionService {
       ...draft,
       scaleInstanceId,
     }));
-    const itemResponses = await this.itemResponseModel.insertMany(
-      itemResponseDrafts,
-      { ordered: true },
-    );
+    let itemResponses: CreatedItemResponseDocumentLike[];
+
+    try {
+      itemResponses = await this.itemResponseModel.insertMany(
+        itemResponseDrafts,
+        { ordered: true },
+      );
+    } catch (error: unknown) {
+      await this.compensateFailedItemResponseCreation(scaleInstanceId);
+      throw error;
+    }
 
     return {
       scaleInstance: this.mapCreatedScaleInstance(scaleInstance),
@@ -304,6 +308,26 @@ export class AssessmentExecutionService {
       scaleVersion: plan.seedSummary.scaleVersion,
       instanceCode: plan.scaleInstanceDraft.instanceCode,
     };
+  }
+
+  private async compensateFailedItemResponseCreation(
+    scaleInstanceId: Types.ObjectId,
+  ): Promise<void> {
+    try {
+      await this.itemResponseModel.deleteMany({ scaleInstanceId }).exec();
+    } catch {
+      this.logger.error(
+        'Failed to remove item responses during scale execution compensation',
+      );
+    }
+
+    try {
+      await this.scaleInstanceModel.deleteOne({ _id: scaleInstanceId }).exec();
+    } catch {
+      this.logger.error(
+        'Failed to remove scale instance during scale execution compensation',
+      );
+    }
   }
 
   async createScaleExecutionFromSeed(

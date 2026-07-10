@@ -358,6 +358,7 @@ describe('AssessmentsService', () => {
     expect(service.normalizeInstanceCode('  inst-test-001  ')).toBe(
       'INST-TEST-001',
     );
+    expect(service.normalizeScaleCode(' MoCA ')).toBe('moca');
     expect(
       service.normalizeItemCode('  MMSE.Attention.Serial_Sevens.Step_1  '),
     ).toBe('mmse.attention.serial_sevens.step_1');
@@ -890,7 +891,7 @@ describe('AssessmentsService', () => {
     expect(scaleInstanceModel.find).toHaveBeenCalledWith({
       assessmentVisitId: visitId,
     });
-    expect(sort).toHaveBeenCalledWith({ instanceNo: 1, scaleCode: 1 });
+    expect(sort).toHaveBeenCalledWith({ scaleCode: 1, instanceNo: 1 });
     expect(result).toEqual([
       {
         id: instanceId.toString(),
@@ -919,6 +920,213 @@ describe('AssessmentsService', () => {
       },
     ]);
     expect(result[0]).not.toHaveProperty('internalMarker');
+  });
+
+  it('finds a visit only through the patient and visit ownership pair', async () => {
+    const patientId = new Types.ObjectId();
+    const visitId = new Types.ObjectId();
+    const visit = {
+      _id: visitId,
+      patientId,
+      subjectCode: 'SUBJ-TEST-A13',
+      visitCode: 'VISIT-TEST-A13',
+      visitType: 'baseline',
+      status: 'draft',
+      assessmentDate: new Date('2026-05-01T08:00:00.000Z'),
+      startedAt: null,
+      completedAt: null,
+      lockedAt: null,
+      voidedAt: null,
+      operatorSnapshot: null,
+      clinicalContext: null,
+      metadata: null,
+    };
+    assessmentVisitModel.findOne.mockReturnValue(createExecQuery(visit));
+
+    const result = await service.findVisitByPatientAndId(patientId, visitId);
+
+    expect(assessmentVisitModel.findOne).toHaveBeenCalledWith({
+      _id: visitId,
+      patientId,
+    });
+    expect(result).toEqual(
+      expect.objectContaining({
+        id: visitId.toString(),
+        patientId: patientId.toString(),
+        visitCode: 'VISIT-TEST-A13',
+      }),
+    );
+  });
+
+  it('finds an existing scale by visit and normalized scale code', async () => {
+    const visitId = new Types.ObjectId();
+    scaleInstanceModel.findOne.mockReturnValue(createExecQuery(null));
+
+    await expect(
+      service.findScaleInstanceByVisitAndScaleCode(visitId, ' MMSE '),
+    ).resolves.toBeNull();
+    expect(scaleInstanceModel.findOne).toHaveBeenCalledWith({
+      assessmentVisitId: visitId,
+      scaleCode: 'mmse',
+    });
+  });
+
+  it('maps only safe scale-instance fields and sanitizes progress', () => {
+    const instanceId = new Types.ObjectId().toString();
+    const visitId = new Types.ObjectId().toString();
+    const patientId = new Types.ObjectId().toString();
+    const response = service.toPublicScaleInstanceResponse({
+      id: instanceId,
+      assessmentVisitId: visitId,
+      patientId,
+      subjectCode: 'SUBJ-TEST-A13',
+      scaleDefinitionId: new Types.ObjectId().toString(),
+      scaleVersionId: new Types.ObjectId().toString(),
+      scaleCode: 'mmse',
+      scaleVersion: '1.0',
+      instanceCode: 'INST-TEST-A13-MMSE-1',
+      instanceNo: 1,
+      status: 'draft',
+      administrationMode: 'clinician_administered',
+      versionTrace: {
+        crfVersion: '1.0',
+        scoringRuleVersion: 'mmse-crf-1.0',
+        fieldEncodingVersion: 'mmse-semantic-1.0',
+        sourceDocument: 'MMSE+MoCA.pdf',
+      },
+      startedAt: null,
+      completedAt: null,
+      lockedAt: null,
+      voidedAt: null,
+      durationMs: null,
+      operatorSnapshot: {
+        operatorId: new Types.ObjectId().toString(),
+        operatorName: 'A13 Test Operator',
+        operatorRole: 'doctor',
+      },
+      progress: {
+        totalItemCount: 11,
+        answeredItemCount: Number.POSITIVE_INFINITY,
+        hiddenProgressField: true,
+      },
+      qualityControlSummary: { hidden: true },
+      notes: 'hidden note',
+      metadata: { hidden: true },
+    });
+
+    expect(response).toEqual(
+      expect.objectContaining({
+        id: instanceId,
+        assessmentVisitId: visitId,
+        patientId,
+        scaleCode: 'mmse',
+        progress: { totalItemCount: 11, answeredItemCount: 0 },
+      }),
+    );
+    expect(response).not.toHaveProperty('scaleDefinitionId');
+    expect(response).not.toHaveProperty('scaleVersionId');
+    expect(response).not.toHaveProperty('metadata');
+    expect(response).not.toHaveProperty('qualityControlSummary');
+    expect(response).not.toHaveProperty('notes');
+    expect(response.progress).not.toHaveProperty('hiddenProgressField');
+  });
+
+  it('returns visit execution detail with patient-first ownership checks and safe instances', async () => {
+    const patientId = new Types.ObjectId();
+    const visitId = new Types.ObjectId();
+    const instanceId = new Types.ObjectId();
+    patientsService.findPatientById.mockResolvedValue(
+      createPatientSummary(patientId),
+    );
+    assessmentVisitModel.findOne.mockReturnValue(
+      createExecQuery({
+        _id: visitId,
+        patientId,
+        subjectCode: 'SUBJ-TEST-A13',
+        visitCode: 'VISIT-TEST-A13-DETAIL',
+        visitType: 'baseline',
+        status: 'draft',
+        assessmentDate: new Date('2026-05-01T08:00:00.000Z'),
+        startedAt: null,
+        completedAt: null,
+        lockedAt: null,
+        voidedAt: null,
+        operatorSnapshot: null,
+        clinicalContext: { hidden: true },
+        metadata: { hidden: true },
+      }),
+    );
+    const sort = jest.fn().mockReturnValue(
+      createExecQuery([
+        {
+          _id: instanceId,
+          assessmentVisitId: visitId,
+          patientId,
+          subjectCode: 'SUBJ-TEST-A13',
+          scaleDefinitionId: new Types.ObjectId(),
+          scaleVersionId: new Types.ObjectId(),
+          scaleCode: 'mmse',
+          scaleVersion: '1.0',
+          instanceCode: 'INST-TEST-A13-MMSE-1',
+          instanceNo: 1,
+          status: 'draft',
+          administrationMode: 'clinician_administered',
+          versionTrace: null,
+          startedAt: null,
+          completedAt: null,
+          lockedAt: null,
+          voidedAt: null,
+          durationMs: null,
+          operatorSnapshot: null,
+          progress: { totalItemCount: 11, answeredItemCount: 0 },
+          qualityControlSummary: { hidden: true },
+          metadata: { hidden: true },
+        },
+      ]),
+    );
+    scaleInstanceModel.find.mockReturnValue({ sort });
+
+    const result = await service.getVisitExecutionDetail(patientId, visitId);
+
+    expect(patientsService.findPatientById).toHaveBeenCalledWith(patientId);
+    expect(assessmentVisitModel.findOne).toHaveBeenCalledWith({
+      _id: visitId,
+      patientId,
+    });
+    expect(result.visit).toEqual(
+      expect.objectContaining({ id: visitId.toString() }),
+    );
+    expect(result.visit).not.toHaveProperty('clinicalContext');
+    expect(result.scaleInstances).toEqual([
+      expect.objectContaining({
+        id: instanceId.toString(),
+        scaleCode: 'mmse',
+        progress: { totalItemCount: 11, answeredItemCount: 0 },
+      }),
+    ]);
+    expect(result.scaleInstances[0]).not.toHaveProperty('metadata');
+  });
+
+  it('returns stable patient and visit errors for execution detail', async () => {
+    const patientId = new Types.ObjectId();
+    const visitId = new Types.ObjectId();
+    patientsService.findPatientById.mockResolvedValueOnce(null);
+
+    await expectHttpExceptionCode(
+      service.getVisitExecutionDetail(patientId, visitId),
+      404,
+      'PATIENT_NOT_FOUND',
+    );
+
+    patientsService.findPatientById.mockResolvedValueOnce(
+      createPatientSummary(patientId),
+    );
+    assessmentVisitModel.findOne.mockReturnValueOnce(createExecQuery(null));
+    await expectHttpExceptionCode(
+      service.getVisitExecutionDetail(patientId, visitId),
+      404,
+      'VISIT_NOT_FOUND',
+    );
   });
 
   it('returns null when item response is not found', async () => {

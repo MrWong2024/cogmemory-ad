@@ -195,6 +195,17 @@
 - 错误与并发决策：患者编号和访视编号既做创建前检查，也捕获 MongoDB duplicate key 竞态，并分别稳定映射为 `PATIENT_SUBJECT_CODE_CONFLICT`、`VISIT_CODE_CONFLICT`；患者不存在、非 active 和非法日期范围使用稳定业务 code。
 - 后续复查点：本阶段不开放患者或访视更新、删除、归档 / 状态流转，不开放量表实例初始化、作答提交、媒体上传、计分、认知域计算、报告或 AI；后续扩展必须以单独任务确认 DTO、权限、事务 / 幂等和审计边界。
 
+### D-023：建设访视详情、可用量表目录与量表执行初始化最小公开 API
+
+- 日期：2026-07-10
+- 决策：后端 A13 新增 `GET /scales/available`、`GET /patients/:patientId/visits/:visitId`、`POST /patients/:patientId/visits/:visitId/scale-instances`；三个接口显式使用 `SessionAuthGuard`、`RolesGuard` 和四个临床工作流角色。
+- 目录与物化决策：可用目录来自经 `validateScaleSeeds()` 校验的 MMSE / MoCA seed，GET 目录不写数据库；第一次初始化对应版本时按 definition code 和 definitionId + version 使用 `$setOnInsert` 幂等物化，已有配置只复用不覆盖，追溯或 group / item 数量冲突直接返回 409。该能力不是全量 seed runner，不在应用启动时执行。
+- 运行时决策：同访视同 scaleCode 在 A13 只允许一份实例；instanceNo 固定 1，instanceCode、subjectCode、definition / version 引用、状态、版本追溯和 operatorSnapshot 均由服务端生成。只有 active 患者和 draft / in_progress 访视可以初始化。
+- 一致性决策：`ScaleInstance` 创建后如 `ItemResponse.insertMany()` 失败，按本次 scaleInstanceId 尝试清理题目和实例并重新抛错；当前使用补偿式一致性，没有使用 Mongo transaction，也不宣称严格事务原子性。后续生产部署采用 replica set 时可重新评估 transaction。
+- 安全决策：所有公开响应使用显式 mapper；目录不返回完整题目、评分规则或 expectedValue，访视 / 初始化不返回 definition / version ObjectId、Mixed 内部字段或 ItemResponse 全量骨架。
+- 影响范围：`backend\src\modules\scales`、`backend\src\modules\assessments`、A13 E2E 和指定 backend handoff / roadmap；未修改 Schema、认证 API、全局 Guard、前端、依赖或环境配置。
+- 后续复查点：前端访视详情 / 量表初始化尚未接入；本阶段不开放单实例执行详情、作答查询 / 保存 / 提交、媒体、计时、状态流转、计分、认知域、报告或 AI。
+
 ## 4. 后续同步规则
 
 - 新增关键技术选型、接口设计、数据模型、测试策略或部署策略后，应追加决策记录。
