@@ -179,6 +179,8 @@ function createReportFixture(overrides: Record<string, unknown> = {}) {
     qualityHints: { needsReview: false },
     operatorNote: 'De-identified operator note',
     metadata: { source: 'unit-test' },
+    createdAt: new Date('2026-01-09T08:00:00.000Z'),
+    updatedAt: new Date('2026-01-10T08:00:00.000Z'),
     internalMarker: 'not returned',
     ...overrides,
   };
@@ -380,12 +382,14 @@ describe('ReportsService', () => {
   let clinicalReportModel: {
     findOne: jest.Mock;
     find: jest.Mock;
+    create: jest.Mock;
   };
 
   beforeEach(async () => {
     clinicalReportModel = {
       findOne: jest.fn(),
       find: jest.fn(),
+      create: jest.fn(),
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -615,6 +619,156 @@ describe('ReportsService', () => {
         reportVersion: 2,
       }),
     );
+  });
+
+  it('finds a report by visit, type and version', async () => {
+    const assessmentVisitId = new Types.ObjectId();
+    const sort = jest.fn().mockReturnValue(
+      createExecQuery(
+        createReportFixture({
+          assessmentVisitId,
+          reportType: 'cognitive_assessment',
+          reportVersion: 1,
+        }),
+      ),
+    );
+    clinicalReportModel.findOne.mockReturnValue({ sort });
+
+    const result = await service.findReportByVisitTypeVersion(
+      assessmentVisitId,
+      'cognitive_assessment',
+      1,
+    );
+
+    expect(clinicalReportModel.findOne).toHaveBeenCalledWith({
+      assessmentVisitId,
+      reportType: 'cognitive_assessment',
+      reportVersion: 1,
+    });
+    expect(sort).toHaveBeenCalledWith({ createdAt: -1 });
+    expect(result?.createdAt).toEqual(new Date('2026-01-09T08:00:00.000Z'));
+  });
+
+  it('creates one complete version-one cognitive assessment document', async () => {
+    const patientId = new Types.ObjectId().toString();
+    const assessmentVisitId = new Types.ObjectId().toString();
+    const scaleInstanceId = new Types.ObjectId().toString();
+    const scoreResultId = new Types.ObjectId().toString();
+    const cognitiveDomainResultId = new Types.ObjectId().toString();
+    const generatedBy = new Types.ObjectId().toString();
+    clinicalReportModel.create.mockResolvedValue(
+      createReportFixture({
+        patientId: new Types.ObjectId(patientId),
+        assessmentVisitId: new Types.ObjectId(assessmentVisitId),
+        primaryScaleInstanceIds: [new Types.ObjectId(scaleInstanceId)],
+        scoreResultIds: [new Types.ObjectId(scoreResultId)],
+        cognitiveDomainResultIds: [new Types.ObjectId(cognitiveDomainResultId)],
+        mediaEvidenceIds: [],
+        reportCode: 'RPT-0123456789ABCDEF01234567',
+        status: 'draft',
+        source: 'system_draft',
+      }),
+    );
+
+    const result = await service.createVersionOneCognitiveAssessmentReport({
+      patientId,
+      assessmentVisitId,
+      primaryScaleInstanceIds: [scaleInstanceId],
+      scoreResultIds: [scoreResultId],
+      cognitiveDomainResultIds: [cognitiveDomainResultId],
+      mediaEvidenceIds: [],
+      subjectCode: 'SUBJ-A20-TEST-001',
+      reportCode: 'RPT-0123456789ABCDEF01234567',
+      reportType: 'cognitive_assessment',
+      status: 'draft',
+      reportVersion: 1,
+      source: 'system_draft',
+      patientSnapshot: {
+        subjectCode: 'SUBJ-A20-TEST-001',
+        birthDate: null,
+        educationYears: 12,
+      },
+      visitSnapshot: {
+        visitCode: 'VISIT-A20-TEST-001',
+        assessmentDate: new Date('2026-07-11T08:00:00.000Z'),
+        clinicalContext: null,
+      },
+      scaleTraces: [
+        { scaleInstanceId, scaleCode: 'moca', scaleVersion: '1.0' },
+      ],
+      scoreSnapshots: [
+        {
+          scoreResultId,
+          scaleCode: 'moca',
+          totalScoreValue: 20,
+          totalMaxScore: 30,
+          totalMinScore: 0,
+          scorePercent: 66.67,
+          scoreDetails: null,
+        },
+      ],
+      domainSnapshots: [
+        {
+          cognitiveDomainResultId,
+          scaleCode: 'moca',
+          domainCode: 'memory',
+          scoreValue: 4,
+          maxScore: 5,
+          scorePercent: 80,
+          weightedScore: 4,
+          weightedMaxScore: 5,
+          itemCount: 5,
+          needsReviewItemCount: 0,
+        },
+      ],
+      evidenceSnapshots: [],
+      narrative: { chiefSummary: '规则化草稿' },
+      aiDraft: { status: 'not_requested', doctorEdited: false },
+      confirmation: null,
+      lockedAt: null,
+      archivedAt: null,
+      correctionRecords: [],
+      voidedAt: null,
+      auditLogRefs: [],
+      qualityStatus: 'unchecked',
+      qualityHints: null,
+      metadata: {
+        a20Generation: {
+          version: 1,
+          generationId: 'generation-a20-test',
+          generatedAt: new Date('2026-07-11T09:00:00.000Z'),
+          generatedBy,
+          generatedByName: '脱敏医生',
+          generatedByRole: 'doctor',
+          engineVersion: 'a20-clinical-report-draft-1.0',
+          reportScope: 'explicit_primary_scale_instances',
+          primaryScaleInstanceIds: [scaleInstanceId],
+          scoreResultIds: [scoreResultId],
+          cognitiveDomainResultIds: [cognitiveDomainResultId],
+          mediaEvidenceCount: 0,
+          aiUsed: false,
+        },
+      },
+    });
+
+    expect(clinicalReportModel.create).toHaveBeenCalledTimes(1);
+    expect(clinicalReportModel.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reportVersion: 1,
+        status: 'draft',
+        source: 'system_draft',
+        confirmation: null,
+        correctionRecords: [],
+      }),
+    );
+    expect(result.reportCode).toBe('RPT-0123456789ABCDEF01234567');
+  });
+
+  it('recognizes duplicate key errors without leaking database details', () => {
+    expect(service.isDuplicateKeyError({ code: 11000, keyPattern: {} })).toBe(
+      true,
+    );
+    expect(service.isDuplicateKeyError(new Error('not duplicate'))).toBe(false);
   });
 
   it('lists reports by visit id ordered by report version and createdAt', async () => {

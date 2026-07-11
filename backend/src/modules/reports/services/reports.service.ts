@@ -185,6 +185,56 @@ export type ClinicalReportSummary = {
   qualityHints: ClinicalReportQualityHints;
   operatorNote?: string;
   metadata: ClinicalReportMetadata;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+};
+
+export type ClinicalReportGenerationMetadata = {
+  version: 1;
+  generationId: string;
+  generatedAt: Date;
+  generatedBy: string;
+  generatedByName: string;
+  generatedByRole: ReportOperatorRole;
+  engineVersion: string;
+  reportScope: string;
+  primaryScaleInstanceIds: string[];
+  scoreResultIds: string[];
+  cognitiveDomainResultIds: string[];
+  mediaEvidenceCount: number;
+  aiUsed: false;
+};
+
+export type CreateClinicalReportInput = {
+  patientId: string;
+  assessmentVisitId: string;
+  primaryScaleInstanceIds: string[];
+  scoreResultIds: string[];
+  cognitiveDomainResultIds: string[];
+  mediaEvidenceIds: string[];
+  subjectCode: string;
+  reportCode: string;
+  reportType: Extract<ClinicalReportType, 'cognitive_assessment'>;
+  status: Extract<ClinicalReportStatus, 'draft'>;
+  reportVersion: 1;
+  source: Extract<ClinicalReportSource, 'system_draft'>;
+  patientSnapshot: ReportPatientSnapshotSummary;
+  visitSnapshot: ReportVisitSnapshotSummary;
+  scaleTraces: ReportScaleTraceSummary[];
+  scoreSnapshots: ReportScoreSnapshotSummary[];
+  domainSnapshots: ReportDomainSnapshotSummary[];
+  evidenceSnapshots: ReportEvidenceSnapshotSummary[];
+  narrative: ReportNarrativeSummary;
+  aiDraft: Pick<ReportAiDraftSummary, 'status' | 'doctorEdited'>;
+  confirmation: null;
+  lockedAt: null;
+  archivedAt: null;
+  correctionRecords: [];
+  voidedAt: null;
+  auditLogRefs: [];
+  qualityStatus: Extract<ReportQualityStatus, 'unchecked' | 'needs_review'>;
+  qualityHints: null;
+  metadata: { a20Generation: ClinicalReportGenerationMetadata };
 };
 
 const REPORT_STATUS_TRANSITIONS = {
@@ -253,6 +303,107 @@ export class ReportsService {
     }
 
     return this.mapReport(report);
+  }
+
+  async findReportByVisitTypeVersion(
+    assessmentVisitId: Types.ObjectId | string,
+    reportType: ClinicalReportType,
+    reportVersion: number,
+  ): Promise<ClinicalReportSummary | null> {
+    const normalizedId = this.normalizeObjectId(assessmentVisitId);
+    if (
+      !normalizedId ||
+      !Number.isInteger(reportVersion) ||
+      reportVersion < 1
+    ) {
+      return null;
+    }
+    const report = await this.clinicalReportModel
+      .findOne({
+        assessmentVisitId: normalizedId,
+        reportType,
+        reportVersion,
+      })
+      .sort({ createdAt: -1 })
+      .exec();
+    return report ? this.mapReport(report) : null;
+  }
+
+  async createClinicalReport(
+    input: CreateClinicalReportInput,
+  ): Promise<ClinicalReportSummary> {
+    const created = await this.clinicalReportModel.create({
+      patientId: new Types.ObjectId(input.patientId),
+      assessmentVisitId: new Types.ObjectId(input.assessmentVisitId),
+      primaryScaleInstanceIds: this.toObjectIds(input.primaryScaleInstanceIds),
+      scoreResultIds: this.toObjectIds(input.scoreResultIds),
+      cognitiveDomainResultIds: this.toObjectIds(
+        input.cognitiveDomainResultIds,
+      ),
+      mediaEvidenceIds: this.toObjectIds(input.mediaEvidenceIds),
+      subjectCode: input.subjectCode,
+      reportCode: input.reportCode,
+      reportType: input.reportType,
+      status: input.status,
+      reportVersion: input.reportVersion,
+      source: input.source,
+      patientSnapshot: input.patientSnapshot,
+      visitSnapshot: input.visitSnapshot,
+      scaleTraces: input.scaleTraces.map((trace) => ({
+        ...trace,
+        scaleInstanceId: trace.scaleInstanceId
+          ? new Types.ObjectId(trace.scaleInstanceId)
+          : null,
+      })),
+      scoreSnapshots: input.scoreSnapshots.map((snapshot) => ({
+        ...snapshot,
+        scoreResultId: snapshot.scoreResultId
+          ? new Types.ObjectId(snapshot.scoreResultId)
+          : null,
+      })),
+      domainSnapshots: input.domainSnapshots.map((snapshot) => ({
+        ...snapshot,
+        cognitiveDomainResultId: snapshot.cognitiveDomainResultId
+          ? new Types.ObjectId(snapshot.cognitiveDomainResultId)
+          : null,
+      })),
+      evidenceSnapshots: input.evidenceSnapshots.map((snapshot) => ({
+        ...snapshot,
+        mediaEvidenceId: snapshot.mediaEvidenceId
+          ? new Types.ObjectId(snapshot.mediaEvidenceId)
+          : null,
+        itemResponseId: snapshot.itemResponseId
+          ? new Types.ObjectId(snapshot.itemResponseId)
+          : null,
+      })),
+      narrative: input.narrative,
+      aiDraft: input.aiDraft,
+      confirmation: null,
+      lockedAt: null,
+      archivedAt: null,
+      correctionRecords: [],
+      voidedAt: null,
+      auditLogRefs: [],
+      qualityStatus: input.qualityStatus,
+      qualityHints: null,
+      metadata: input.metadata,
+    });
+    return this.mapReport(created);
+  }
+
+  async createVersionOneCognitiveAssessmentReport(
+    input: CreateClinicalReportInput,
+  ): Promise<ClinicalReportSummary> {
+    return this.createClinicalReport(input);
+  }
+
+  isDuplicateKeyError(error: unknown): boolean {
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      error.code === 11000
+    );
   }
 
   async listReportsByVisitId(
@@ -359,6 +510,10 @@ export class ReportsService {
     return objectId;
   }
 
+  private toObjectIds(ids: string[]): Types.ObjectId[] {
+    return ids.map((id) => new Types.ObjectId(id));
+  }
+
   private normalizeReportStatus(status: string): ClinicalReportStatus | null {
     const normalizedStatus = status.trim().toLowerCase();
 
@@ -421,7 +576,23 @@ export class ReportsService {
       qualityHints: report.qualityHints ?? null,
       operatorNote: report.operatorNote,
       metadata: report.metadata ?? null,
+      createdAt: this.readTimestamp(report, 'createdAt'),
+      updatedAt: this.readTimestamp(report, 'updatedAt'),
     };
+  }
+
+  private readTimestamp(
+    report: ClinicalReportDocument,
+    field: 'createdAt' | 'updatedAt',
+  ): Date | null {
+    const timestamped = report as ClinicalReportDocument & {
+      createdAt?: unknown;
+      updatedAt?: unknown;
+    };
+    const value: unknown = timestamped[field];
+    return value instanceof Date && Number.isFinite(value.getTime())
+      ? value
+      : null;
   }
 
   private mapObjectIds(ids?: Types.ObjectId[]): string[] {

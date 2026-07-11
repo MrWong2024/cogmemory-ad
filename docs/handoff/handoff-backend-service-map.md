@@ -6,8 +6,8 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 Service / Provider 与 A12-A19 业务能力；A19 在既有 CognitiveDomainsService / summarizeDomainScores() 上新增 Controller、Workflow、确认评分纯映射 / 校验和 public mapper。
-- 当前没有医生、SMS 或 LLM Service；A16 不调用计分、认知域、报告、MediaModule 或 AI 能力。
+- 当前存在公共底座 Service / Provider 与 A12-A20 业务能力；A20 在既有 ReportsService / ClinicalReport Schema 上新增 Controller、Workflow、纯 draft builder 和 public mapper。
+- 当前没有医生、SMS 或 LLM Service；A20 不调用计分 / 认知域 compute、Storage、PDF 或 AI 能力。
 
 ## 3. 当前 Service / Provider 清单
 
@@ -181,11 +181,12 @@
 - Service 名称：`ReportsService`
 - 文件路径：`backend\src\modules\reports\services\reports.service.ts`
 - 职责边界：提供临床报告摘要的内部读取底座；规范化 `reportCode`；按 mapper 输出 `ClinicalReportSummary`，不直接返回完整 Mongoose document；提供报告状态转换校验纯函数。
-- 当前方法：`normalizeReportCode(reportCode)`、`findReportByCode(reportCode)`、`findLatestReportByVisitId(assessmentVisitId)`、`listReportsByVisitId(assessmentVisitId)`、`listReportsByPatientId(patientId)`、`listReportsByStatus(status)`、`listConfirmedReportsByPatientId(patientId)`、`canTransitionReportStatus(from, to)`、`getAllowedReportStatusTransitions(from)`。
-- 上游调用方：当前暂无公开 Controller；预期供后续评估、报告生成、医生复核或科研导出等后端业务模块内部读取临床报告摘要或复用状态校验口径。
+- 当前方法：保留全部规范化、code / latest / visit / patient / status / confirmed 列表读取和状态转换方法；A20 新增 `findReportByVisitTypeVersion()`、`createClinicalReport()` / `createVersionOneCognitiveAssessmentReport()` 与 `isDuplicateKeyError()`。
+- 上游调用方：`ClinicalReportGenerationWorkflowService`；既有内部调用方可继续读取报告摘要或复用状态校验口径。
 - 下游依赖：`ClinicalReport` Mongoose Model；状态转换校验纯函数不依赖数据库。
-- 边界：不创建、更新、删除报告；不实现报告生成、医生确认写库、锁定写库、归档写库、更正写库、作废写库、PDF / Word / 打印导出、AI 报告生成、AuditLog、AiAnalysisResult、认证、权限或公开报告 API；不修改 `ScoreResult`、`CognitiveDomainResult`、`ItemResponse`、`MediaEvidence` 或其他既有模型。
-- 测试覆盖口径：`backend\src\modules\reports\services\reports.service.spec.ts`，覆盖 report code 规范化、查无返回 `null`、mapper 输出、按访视最新读取、按访视 / 患者 / 状态读取、按患者读取 confirmed / archived / corrected 报告列表、schema collection、索引、内嵌子文档 `_id: false`、关键字段显式类型，以及 `canTransitionReportStatus()` / `getAllowedReportStatusTransitions()` 对 draft、pending_confirmation、confirmed、archived、corrected、voided 的处理；不连接真实 MongoDB，不调用 Storage / OSS / SMS / LLM，测试数据为脱敏人工样例。
+- A20 写入边界：ObjectId 转换由 Service 完成，一次 `create()` 写入完整 version 1 draft；不创建临时记录、不更新报告、不写状态流转、不跨集合写入。返回显式 `ClinicalReportSummary`（含安全 timestamps），不返回 Mongoose document；duplicate key 判断不泄露 Mongo 细节。
+- 边界：除 A20 首次 draft create 外，不更新或删除报告；不实现医生确认、锁定、归档、更正、作废、重生成、version 2、PDF / Word / 打印、AI、AuditLog 或 AiAnalysisResult；不修改任何来源数据。
+- 测试覆盖口径：既有 schema / 读取 / 状态转换覆盖之外，A20 增加 visit + type + version 查询、单文档 create、ObjectId 转换、timestamps 与 duplicate key；Model 为 mock，不连接真实 MongoDB。
 
 - Service 名称：`UsersService`
 - 文件路径：`backend\src\modules\users\services\users.service.ts`
@@ -352,6 +353,27 @@
 - 安全：不透传 subjectCode、数据库关系大包、metadata、qualityHints、computedBy、原始 Mixed mappingRules、内部 notes、评分 / 确认意见、作答、媒体、阈值或诊断内容。
 
 - 模块依赖：`CognitiveDomainsModule` 单向导入 AuthModule、PatientsModule、AssessmentsModule、ScalesModule、ScoringModule；ScoringModule 不导入 CognitiveDomainsModule，无循环、forwardRef 或其他模块 Schema 重复注册。
+
+### A20 访视级规则化报告编排
+
+- 名称：`ClinicalReportsController`
+- 职责：绑定 visit 级 generate / latest、Path / Body DTO、显式 Session / Roles Guard 与四个临床角色。generate 使用 `@CurrentUser()`；latest 不使用。Controller 不注入 Model、不读来源、不构造快照 / narrative、不解析 metadata 或处理 duplicate key。
+
+- 名称：`ClinicalReportGenerationWorkflowService`
+- 依赖：`PatientsService`、`AssessmentsService`、`ScalesService`、`ScoringService`、`CognitiveDomainsService`、`MediaEvidenceService`、`ReportsService`、`ClinicalReportPublicMapper`。
+- 职责：确认 + scope 规范化；Patient / Visit 联合归属；既有 version 1 报告幂等 / scope / voided / incomplete；首次状态；所选 ScaleInstance / 历史配置；最终 ScoreResult；确定性 CognitiveDomainResult；媒体筛选 / 质量；actor 角色优先级；纯 builder；单文档 create；duplicate key 恢复；latest 历史读取和安全响应。
+- 幂等：既有同 scope 报告不重读 ScoreResult / CognitiveDomainResult / media，也不重新构建或修改；不同 scope 冲突。duplicate key 后按同一 visit / type / version 重读并复用相同规则；仍无记录返回生成冲突。
+- 写入边界：只调用 ReportsService 创建一条完整 ClinicalReport；不调用 A17-A19 compute / review / confirm，不修改 Patient / Visit / ScaleInstance / ItemResponse / ScoreResult / CognitiveDomainResult / MediaEvidence，不使用 transaction / 分布式锁。
+
+- 名称：`buildClinicalReportCode()` / `buildClinicalReportDraft()`
+- 类型：reports 模块内无 Nest DI、无数据库 / Storage / 网络访问的纯函数。
+- 职责：SHA-256 确定性 reportCode、稳定 scope / score / domain / evidence 顺序、白名单 patient / visit / scale / score / domain / evidence snapshots、固定五段非 AI narrative、aiDraft not_requested、quality 派生和 a20Generation metadata。scoreDetails 固定 null、visit clinicalContext 固定 null、domain 不编造 minScore；不读取原始作答 / 自由文本 / 媒体 Buffer，不评分、不计算认知域、不生成诊断 / 建议。
+
+- 名称：`ClinicalReportPublicMapper`
+- 职责：逐字段输出安全 patient / visit / scale / score / domain / evidence / narrative / generation / confirmation / timestamps，finite / null 归一化、数组复制 / 稳定排序和 isFinal 派生；非法 generation metadata 返回 null。
+- 安全：不透传内部 Summary、Mixed、clinicalContext、metadata、qualityHints、source ID 数组、scoreResultId / scoreDetails、domain result ID、media / item ID、storageObjectKey、AI provider / model / draftText、signatureText 或 correction / audit 内部字段。
+
+- 模块依赖：`ReportsModule` 单向导入 Auth、Patients、Assessments、Scales、Scoring、CognitiveDomains、Media；来源模块均不导入 ReportsModule。无循环依赖、forwardRef 或来源 Schema 重复注册；一致性边界为单 ClinicalReport 文档 create + 既有 reportCode unique 索引。
 
 ## 4. 后续同步规则
 

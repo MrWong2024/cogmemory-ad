@@ -17,16 +17,16 @@
 - `MediaModule` 当前在既有媒体证据 Schema / Service 上新增 A15 公开 `MediaEvidenceController`、工作流 Service、安全 mapper、图片与轨迹纯校验；提供题目下列表、multipart 上传、短期签名访问和作废四个接口。
 - `ScoringModule` 当前在计分结果快照 Schema、`ScoringService` 与 `summarizeItemScores()` 通用汇总基础上，提供 A17 阶段性 workflow、A18 `ScoreReviewWorkflowService`、纯评分 / 人工复核函数与安全 public mapper；公开 compute / latest / manual-review / confirm，不提供 lock、void、重跑、认知域或报告接口。
 - `CognitiveDomainsModule` 当前在认知域结果 Schema、内部读取和 `summarizeDomainScores()` 基础上，新增 A19 Controller、Workflow、确认评分纯映射 / 校验、安全 public mapper 与 runNo=1 创建能力；公开认知域 compute / latest，不提供人工修改、确认、锁定、作废、重算或报告接口。
-- `ReportsModule` 当前只提供临床报告快照 Schema、内部 `ReportsService` 读取底座和报告状态转换校验纯函数，不提供公开报告生成、查询、医生确认、归档、更正、作废、PDF 导出或 AI 生成接口。
+- `ReportsModule` 当前在临床报告快照 Schema、内部 `ReportsService` 读取底座和报告状态转换纯函数上新增 A20 Controller、Workflow、纯 draft builder 与 public mapper，公开访视级规则化报告 draft generate / latest；仍不提供编辑、医生确认、锁定、归档、更正、作废、重生成、reportVersion=2、PDF 或 AI。
 - `UsersModule` 当前只提供系统账号 `User` Schema 与内部 `UsersService` 读取、规范化和安全 mapper 底座，不提供公开用户管理接口。
 - `AuthModule` 当前提供服务端 `Session` Schema、内部 `AuthService`、基础认证上下文、`@Public()` / `@Roles()` / `@CurrentUser()` 装饰器、`SessionAuthGuard`、`RolesGuard` 与 `AuthController`；公开最小认证 API `POST /auth/login`、`POST /auth/logout`、`GET /auth/me`，且未注册全局 Guard。
 - OSS 业务上传服务、SMS Service、LLM Service 均未实现。
 - 本地默认后端端口为 `5002`。
 - 本地默认前端 origin 为 `http://localhost:3002`。
-- 当前公共接口在 A18 清单上新增 A19 两个认知域 API；A12-A19 临床接口均显式使用 `SessionAuthGuard` + `RolesGuard`，允许 `admin`、`doctor`、`nurse`、`research_assistant`。
+- 当前公共接口在 A19 清单上新增 A20 两个报告 API；A12-A20 临床接口均显式使用 `SessionAuthGuard` + `RolesGuard`，允许 `admin`、`doctor`、`nurse`、`research_assistant`。
 - 已完成后端公共底座基础闭环本地验证：`npm install` 成功、`npm run build` 成功、`npm test -- --runInBand` 成功、`npm run start:prod` 启动成功。
-- 单元测试验证结果为 55 个测试套件通过、472 个测试通过。
-- A12-A19 真实 HTTP E2E 已在 `NODE_ENV=test` 和隔离 `cogmemory_ad_test` 数据库上通过：8 个测试套件、40 个测试通过；使用 fake / stub 外部服务配置和脱敏人工数据，并按各自测试前缀清理运行时数据。
+- 单元测试验证结果为 60 个测试套件通过、513 个测试通过。
+- A12-A20 真实 HTTP E2E 已在 `NODE_ENV=test` 和隔离 `cogmemory_ad_test` 数据库上通过：9 个测试套件、43 个测试通过；使用 fake / stub 外部服务配置和脱敏人工数据，并按各自测试前缀清理运行时数据。
 - 后端 TypeScript 编译根目录为 `.`，`outDir` 保持 `./dist`，因此 `src/main.ts` 编译后的主入口产物为 `dist/src/main.js`。
 - `package.json` 中 `start:prod` 保持指向 `./dist/src/main.js`，当前 build 产物路径已与该启动路径对齐。
 - `tsBuildInfoFile` 保持 `./dist/tsconfig.build.tsbuildinfo`；`dist` 与 `*.tsbuildinfo` 均作为生成物处理，不作为项目源文件纳入版本库。
@@ -43,7 +43,7 @@
 - development / test 默认 `STORAGE_DRIVER=fake`，production 默认 `STORAGE_DRIVER=oss`。
 - OSS、SMS、LLM 配置均为占位或示例口径，不包含真实密钥。
 - A15 媒体业务上传接口已通过既有 fake / OSS Storage abstraction 实现；SMS Service 与 LLM Service 仍未实现，未新增 Storage interface、driver 或配置。
-- 当前 A12-A19 已开放患者 / 访视、目录 / 初始化、执行草稿、媒体证据、submission readiness / submit、阶段性评分 compute / latest、单题 manual-review、ScoreResult confirm 与认知域 compute / latest API。仍无用户管理、患者 / 访视编辑、批量 / 自动保存、媒体批量 / 分片 / 直传 / 物理删除 / 原子替换、评分 lock / void / 重跑、认知域人工修改 / 确认 / 锁定 / 重算、报告、PDF、疾病诊断或 AI。
+- 当前 A12-A20 已开放患者 / 访视、目录 / 初始化、执行草稿、媒体证据、submission readiness / submit、阶段性评分 compute / latest、单题 manual-review、ScoreResult confirm、认知域 compute / latest 与访视级报告 draft generate / latest API。仍无用户管理、患者 / 访视编辑、批量 / 自动保存、媒体批量 / 分片 / 直传 / 物理删除 / 原子替换、评分 lock / void / 重跑、认知域人工修改 / 确认 / 锁定 / 重算、报告编辑 / 医生确认 / PDF、疾病诊断或 AI。
 - 当前 `start:prod` 与 TypeScript build 主入口产物路径均指向 `dist/src/main.js`，并已完成本地启动验证。
 - 本次仅使用指定外部 GitHub commit `b302b8af7b7ac9cc558939dc1b38ace0976c65b3` 作为后端公共底座来源，不继承其业务事实。
 
@@ -191,7 +191,13 @@
 - `ClinicalReport` 当前索引为 `{ reportCode: 1 }` unique、`{ assessmentVisitId: 1, reportType: 1, reportVersion: -1 }`、`{ patientId: 1, createdAt: -1 }`、`{ subjectCode: 1, createdAt: -1 }`、`{ status: 1, updatedAt: -1 }`、`{ reportType: 1, status: 1 }`、`{ 'scoreSnapshots.scaleCode': 1 }`、`{ 'domainSnapshots.domainCode': 1 }`、`{ qualityStatus: 1, updatedAt: -1 }`。
 - `ReportsService` 当前提供最小内部读取能力：规范化 `reportCode`、按报告编码读取、按访视读取最新报告、按访视 / 患者 / 状态读取报告列表、按患者读取 confirmed / archived / corrected 报告列表；返回结果经过 mapper，不直接返回完整 Mongoose document。
 - `ReportsService` 当前提供不落库的报告状态转换校验纯函数：支持 `draft -> pending_confirmation / voided`、`pending_confirmation -> draft / confirmed / voided`、`confirmed -> archived / corrected / voided`、`archived -> corrected`，`corrected` 与 `voided` 默认不再流转。
-- `ClinicalReport` 与 `ReportsService` 仅为临床报告模型与医生确认流程底座，不包含公开报告 API、真实报告生成、医生确认写库、锁定写库、归档写库、更正写库、作废写库、AuditLog 模型、AiAnalysisResult 模型、AI 报告生成、PDF 导出、认证或权限。
+- A20 新增 `POST /patients/:patientId/visits/:visitId/clinical-reports/generate` 和 `GET /patients/:patientId/visits/:visitId/clinical-reports/latest`。报告资源边界为 AssessmentVisit，generate 由客户端显式选择 1-10 个不重复的同访视 ScaleInstance；请求顺序不构成业务差异。
+- 首次生成要求 active Patient、draft / in_progress / completed Visit、completed / locked ScaleInstance、绑定 ScaleDefinition / ScaleVersion 一致、runNo=1 confirmed / locked 且 passed / reviewed / 完整无 warning 的 ScoreResult，以及 runNo=1 computed / confirmed / locked、scale_config + item_domain_codes、有效无 warning 的 CognitiveDomainResult；不自动调用 A17-A19，也不修改来源。
+- A20 媒体只纳入 selected instance 下 attached / locked、stored、未删除的 photo / handwriting 索引；unchecked / acceptable 可纳入，needs_review 派生报告 needs_review，unusable 或有效证据缺失 objectKey / ownership 字段时阻断。系统不读取 Buffer / 轨迹、不做 OCR、图像识别、媒体评分或 AI。
+- A20 单次创建 patientSnapshot、visitSnapshot（clinicalContext 固定 null）、历史 scaleTraces、scoreSnapshots（scoreDetails=null）、domainSnapshots（不编造 minScore）、evidenceSnapshots（storageObjectKey 仅内部）、五段固定 narrative、`aiDraft={ status: 'not_requested', doctorEdited: false }` 与受控 `metadata.a20Generation`。公开 mapper 不返回 metadata、source result ID、media / item ID、storageObjectKey、scoreDetails、clinicalContext、qualityHints 或 AI draftText。
+- 新报告固定 reportType=cognitive_assessment、reportVersion=1、status=draft、source=system_draft、confirmation=null、isFinal=false；reportCode 为 `RPT-{SHA256 前 24 位大写十六进制}` 的确定性非隐私编码。metadata 记录 UUID generationId、generatedAt / actor、engineVersion=`a20-clinical-report-draft-1.0`、显式 scope、内部 source ID 和 `aiUsed=false`。
+- 同一 Visit / type / version 只允许一个结果：同 scope 返回 `alreadyGenerated=true` 且不重读来源或修改报告；不同 scope 返回 `CLINICAL_REPORT_SCOPE_CONFLICT`；voided 返回 `CLINICAL_REPORT_VOIDED`；不完整历史报告拒绝自动修复。并发由既有 reportCode unique 索引兜底，duplicate key 后重读；没有 transaction、分布式锁、临时 draft、覆盖、重生成或 version 2。
+- latest 按 reportVersion、createdAt 倒序只读，允许 inactive / archived Patient 和 locked / voided Visit 的历史读取；公开支持安全展示 draft / pending_confirmation / confirmed / archived / corrected / voided。A20 不实现医生确认、状态写流转、签名、锁定、归档、更正、作废、PDF、Storage 文件或 AI。
 
 ## 10. 当前 users / auth 认证、用户、会话与角色权限底座
 
@@ -218,20 +224,20 @@
 
 - 尚无公开用户管理接口、角色权限管理接口、短信验证码接口、OAuth / SSO 接口或密码重置接口。
 - 尚无医生端或患者端业务。
-- 除 A12-A19 已确认 API 外，尚无评分 lock / void / 撤销确认 / reopen / 重跑、认知域人工修改 / 确认 / 锁定 / 作废 / 重算或报告业务接口。
+- 除 A12-A20 已确认 API 外，尚无评分 lock / void / 撤销确认 / reopen / 重跑、认知域人工修改 / 确认 / 锁定 / 作废 / 重算或报告编辑 / 医生确认 / PDF 业务接口。
 - 尚无批量作答、自动保存调度、计时动作、提交撤销 / reopen / lock / force submit 或访视状态流转接口。
 - 媒体当前仅有题目下列表、服务端 multipart 上传、短期签名访问与逻辑作废；尚无全患者 / 访视 / 实例媒体列表、直接 objectKey 下载、永久 URL、物理删除、替换、批量、分片或客户端直传接口。
 - 尚无全量数据库 seed runner、量表管理或完整 MMSE / MoCA 题目配置公开接口；A13 只在初始化时按需物化并提供安全摘要。
 - 已有 A17 compute / latest 与 A18 单题人工复核 / 确认；尚无批量人工评分、锁定、作废、撤销确认、reopen、重跑或历史列表接口。
 - 已有 A19 认知域 compute / latest；尚无认知域人工复核、确认、锁定、作废、重算、历史列表、跨量表合并或报告接口。
-- 尚无公开报告 API、真实报告生成任务流、医生确认写库流程、报告锁定写库流程、报告归档 / 更正 / 作废接口、PDF / Word / 打印导出、AuditLog 模型或公开认证权限接口。
+- 已有 A20 访视级规则化报告 draft generate / latest；尚无报告编辑、医生确认写库、签名、锁定、归档 / 更正 / 作废、重生成、version 2、历史列表、PDF / Word / 打印导出、AuditLog 模型或 AI 报告。
 - 尚无作答提交后自动计分或自动认知域计算触发；A17 / A19 均由显式 compute 触发，不包含 MMSE / MoCA itemCode、domain title 或诊断规则硬编码。
 - 尚无短信发送接口。
 - 尚无 AI / LLM 调用接口。
-- 尚无患者编辑 / 删除 / 归档、访视编辑 / 删除 / 状态流转，以及 A12-A19 已列接口之外的量表、作答、媒体、计分、认知域、报告等其他业务 Controller 或公开业务 API。
+- 尚无患者编辑 / 删除 / 归档、访视编辑 / 删除 / 状态流转，以及 A12-A20 已列接口之外的量表、作答、媒体、计分、认知域、报告等其他业务 Controller 或公开业务 API。
 - 尚未实现用户创建、用户更新、用户禁用、重置密码、角色权限管理、短信验证码、OAuth / SSO、JWT 主登录态、前端登录页、前端认证态或权限菜单。
-- A12-A19 真实 HTTP E2E 已执行并通过；连接隔离 `cogmemory_ad_test`，Storage=fake、SMS / LLM=stub，未调用真实 OSS 或生产服务。
-- 已完成 A19 定向 lint、后端 build、全量单元测试与 E2E：55 个单元测试套件 / 472 个测试、8 个 E2E 套件 / 40 个测试通过；全量 lint 未执行。
+- A12-A20 真实 HTTP E2E 已执行并通过；连接隔离 `cogmemory_ad_test`，Storage=fake、SMS / LLM=stub，未调用真实 OSS 或生产服务。
+- 已完成 A20 定向 lint、后端 build、全量单元测试与 E2E：60 个单元测试套件 / 513 个测试、9 个 E2E 套件 / 43 个测试通过；全量 lint 未执行。
 
 ## 12. 后续同步规则
 

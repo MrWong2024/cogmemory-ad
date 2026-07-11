@@ -270,6 +270,18 @@
 - 安全与隔离：public mapper 不返回 subjectCode、原始作答、规则、评分 / 确认意见、metadata、qualityHints、computedBy、原始 Mixed mappingRules、媒体地址、阈值或诊断。A19 不修改 Patient / Visit / ScaleInstance / ItemResponse / MediaEvidence / ScoreResult，不创建 ClinicalReport，不实现认知域人工修改、确认、锁定、作废、报告或 AI。
 - 影响范围：仅 cognitive-domains 模块、A19 E2E 与指定 backend handoff / roadmap；未修改任何 Schema、seed、auth / patients / assessments / scales / scoring / media / reports / storage、AppModule、依赖、环境配置或前端。
 
+### D-030：访视级报告由显式多量表 scope 生成规则化非 AI version 1 快照
+
+- 日期：2026-07-11
+- 资源与 scope：ClinicalReport 是 AssessmentVisit 级资源；一份报告可纳入同一访视 1-10 个 ScaleInstance。A20 由调用方显式选择 `primaryScaleInstanceIds`，服务端规范化、去重、验证完整归属并按 scaleCode / instanceNo / id 稳定排序；请求顺序不构成差异。
+- 来源决策：首次生成只允许 active Patient、draft / in_progress / completed Visit、completed / locked Instance。每个实例必须有与历史 definition / version 完整绑定的 runNo=1 confirmed / locked 最终 ScoreResult，以及 runNo=1 computed / confirmed / locked、scale_config + item_domain_codes 的有效 CognitiveDomainResult。computed 域结果允许进入 draft，但报告必须明确其尚未独立确认；A20 不自动 compute、人工复核、确认或修复来源。
+- 快照与解释：报告保存 patient / visit 白名单、历史量表 trace、确认评分、认知域和有效 photo / handwriting 媒体索引快照；visit clinicalContext 不复制、scoreDetails 固定 null、storageObjectKey 只内部。认知域沿用完整题分重叠归因，不跨域求和，scorePercent 不是诊断概率。
+- 文本与 AI：narrative 为固定规则模板，只含 chief / score / domain / evidence / limitations；不读取原始作答、人工评分 / 确认意见、媒体备注、clinicalContext 或任意来源 Mixed 自由文本。`aiDraft.status=not_requested`、source=system_draft；不调用 LLM、不创建 AI 分析、不生成诊断阈值 / 结论、治疗建议或趋势分析。
+- 版本与并发：A20 固定 reportType=cognitive_assessment、reportVersion=1、status=draft、isFinal=false。reportCode 由 `a20 + patientId + visitId + type + version` 的 SHA-256 前 24 位生成，不含隐私，并复用既有 unique 索引作为并发边界。同 scope 返回既有历史快照；不同 scope 冲突，不覆盖、不重生成、不创建 version 2。duplicate key 后重读；不使用 transaction、分布式锁或临时记录。
+- 安全响应：public mapper 明确白名单，不返回 metadata、source ID 数组、scoreDetails、clinicalContext、storageObjectKey、AI draftText 或内部审计对象。generate / latest 显式使用 SessionAuthGuard、RolesGuard 与四个临床工作流角色；未注册全局 Guard。
+- 影响范围：仅 reports 模块、A20 E2E 与指定 backend handoff / roadmap；未修改任何 Schema、来源业务模块、AppModule、依赖、配置或前端。
+- 后续复查点：A20 不实现报告编辑、pending_confirmation、医生确认、签名、锁定、归档、更正、作废、历史列表、重生成、PDF 或 AI。前端 B10 可先接入 draft generate / latest；A21 / 后续阶段再单独设计编辑与医生确认边界。
+
 ## 4. 后续同步规则
 
 - 新增关键技术选型、接口设计、数据模型、测试策略或部署策略后，应追加决策记录。

@@ -6,10 +6,10 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 DTO、响应 type、Storage interface，以及 A12-A19 业务契约；A19 新增认知域 compute DTO 与安全 domain result 响应类型。
+- 当前存在公共底座 DTO、响应 type、Storage interface，以及 A12-A20 业务契约；A20 新增访视级报告 generate DTO 与完整安全报告响应类型。
 - 当前新增公开认证请求 DTO：`LoginDto`。
 - 当前新增公开患者 / 访视 DTO：`CreatePatientDto`、`ListPatientsQueryDto`、`PatientIdParamDto`、`CreateAssessmentVisitDto`、`ListAssessmentVisitsQueryDto`、`PatientVisitsParamDto`。
-- 当前仍没有用户管理、注册、密码重置、撤销 / reopen / force submit、批量 / 分片 / 客户端直传、认知域人工修改 / 确认 / 锁定 / 重算或报告请求 DTO。
+- 当前仍没有用户管理、注册、密码重置、撤销 / reopen / force submit、批量 / 分片 / 客户端直传、认知域人工修改 / 确认 / 锁定 / 重算或报告编辑 / 确认 / PDF 请求 DTO。
 
 ## 3. 当前 DTO / Type 清单
 
@@ -493,6 +493,41 @@
 
 - 名称：`CognitiveDomainResultDetailResponse` / `ComputeCognitiveDomainResultResponse`
 - latest：`{ scale, scaleInstance, sourceScoreResult, cognitiveDomainResult }`；compute 额外 `alreadyComputed`。数组由 public mapper 复制并稳定排序；响应不含 subjectCode、metadata、qualityHints、computedBy、原始 mappingRules、阈值或诊断结论。
+
+### A20 临床报告 DTO 与公开响应
+
+- 名称：`ClinicalReportVisitParamDto`
+- 文件：`backend\src\modules\reports\dto\clinical-report-visit-param.dto.ts`
+- 用途：generate / latest path；patientId、visitId 均使用 `@IsMongoId()`，不从 body 接受路径 ID。
+
+- 名称：`GenerateClinicalReportDto`
+- 文件：`backend\src\modules\reports\dto\generate-clinical-report.dto.ts`
+- 字段：`confirm?: boolean`，业务层要求严格 true；`primaryScaleInstanceIds: string[]` 必填，转换时逐项 trim + lowercase，校验 ArrayMinSize(1)、ArrayMaxSize(10)、ArrayUnique 和逐项 MongoId。
+- 白名单：不声明 report identity / type / version / status / source、patient / visit / scale / score / domain / evidence snapshot、narrative、AI、confirmation、quality、metadata、source result IDs、force / regenerate / override / createPdf / useAi / diagnosis；全局 whitelist + forbidNonWhitelisted 拒绝。
+
+- 名称：`ClinicalReportGenerationActorResponse` / `ClinicalReportGenerationResponse`
+- generation actor：operatorId、可选 operatorName / operatorRole；不返回 currentUser、Session 或 token。
+- generation：generationId、generatedAt、安全 generatedBy、engineVersion、reportScope、includedScaleInstanceCount、scoreResultCount、cognitiveDomainResultCount、mediaEvidenceCount、aiUsed。公开只返回计数，不返回内部 source ID 数组；非法 metadata 返回 generation=null，不透传原始 Mixed。
+
+- 名称：`ClinicalReportPatientSnapshotResponse` / `ClinicalReportVisitSnapshotResponse`
+- patient：subjectCode、可选 displayName / sex、birthDate、educationYears；不含 externalRefs、tags、notes 或 metadata。
+- visit：visitCode、visitType、assessmentDate、operatorName / role；不含 clinicalContext、notes 或 metadata。
+
+- 名称：`ClinicalReportScaleTraceResponse` / `ClinicalReportScoreSnapshotResponse`
+- scale：scaleInstanceId、scaleCode、历史 scale / CRF / scoring / encoding / domain mapping version 和 sourceDocument。
+- score：scaleCode / name / version、totalScoreValue / max / min / percent、scoreStatus、qualityStatus、固定安全 summary；不含 scoreResultId、scoreDetails、itemScores、原始作答或评分意见。
+
+- 名称：`ClinicalReportDomainSnapshotResponse` / `ClinicalReportEvidenceSnapshotResponse`
+- domain：scaleCode、domainCode / title、score / max / percent、weighted score / max、item / needs-review count 与固定安全 summary；Schema 无 minScore，响应不编造 minScore，也不返回 cognitiveDomainResultId。
+- evidence：scaleCode、itemCode / title、evidenceType、captureMode、转换后的 qualityStatus 与固定安全 summary；不返回 mediaEvidenceId、itemResponseId、storageObjectKey、文件名、bucket、checksum 或 URL。
+
+- 名称：`ClinicalReportNarrativeResponse` / `ClinicalReportConfirmationResponse`
+- narrative 只含 chiefSummary、scoreSummary、domainSummary、evidenceSummary、limitations；不返回 trendSummary、recommendationText、doctorOpinion。
+- confirmation 仅为历史兼容安全字段 confirmedAt、confirmedByName / role、confirmationNote；不返回 confirmedBy ObjectId 或 signatureText。A20 新报告 confirmation=null。
+
+- 名称：`ClinicalReportResponse` / `ClinicalReportDetailResponse` / `GenerateClinicalReportResponse`
+- report：id、reportCode / no / type / status / version / source / quality、六类安全快照、narrative、generation、安全 confirmation、locked / archived / voided timestamps / reason、createdAt / updatedAt 与 isFinal。
+- latest：`{ report }`；generate：`{ report, alreadyGenerated }`。draft / pending_confirmation / voided 的 isFinal=false，confirmed / archived / corrected 为 true。响应不含 metadata、qualityHints、source ID 数组、scoreDetails、storageObjectKey、AI draftText、clinicalContext 或 Mongoose 字段。
 
 ## 4. 后续同步规则
 

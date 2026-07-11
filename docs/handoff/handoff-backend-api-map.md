@@ -6,12 +6,12 @@
 
 ## 2. 当前状态
 
-- 当前公开 API 在 A18 清单上新增 A19 的认知域 compute POST 与 latest GET。
+- 当前公开 API 在 A19 清单上新增 A20 的访视级 ClinicalReport draft generate POST 与 latest GET。
 - `AuthModule` 当前新增 `AuthController`，仅暴露最小公开认证 API 底座；主登录态仍为服务端 Session + HttpOnly Cookie，不采用 JWT 主登录态。
 - AuthModule 内部 session cookie 名称已统一为 `cogmemory_ad_session`，登录成功下发 HttpOnly Cookie，`SameSite=Lax`，`Path=/`，production 环境启用 `Secure`。
 - 当前没有 users controller，没有公开用户管理 API，没有注册、密码重置、角色权限管理、短信验证码、OAuth / SSO 或 JWT 登录 API。
 - A12 已新增 `PatientsController` 与 `AssessmentVisitsController`，形成第一组受保护临床业务 API；所有五个接口均显式绑定 `SessionAuthGuard`、`RolesGuard` 和 `@Roles('admin', 'doctor', 'nurse', 'research_assistant')`。
-- 当前已有实例 submission readiness / submit、评分 compute / latest / manual-review / confirm，以及认知域 compute / latest 最小闭环；仍没有认知域人工修改 / 确认 / 锁定 / 重算、报告、SMS 或 AI / LLM 公开接口。
+- 当前已有实例 submission readiness / submit、评分 compute / latest / manual-review / confirm、认知域 compute / latest，以及报告 draft generate / latest 最小闭环；仍没有认知域人工修改 / 确认 / 锁定 / 重算、报告编辑 / 医生确认 / PDF、SMS 或 AI / LLM 公开接口。
 - 当前 API 事实以实际 Controller、DTO、response type 和对应单元 / E2E 测试为准。
 
 ## 3. 当前 API 清单
@@ -325,6 +325,27 @@
 - 响应：200，`CognitiveDomainResultDetailResponse { scale, scaleInstance, sourceScoreResult, cognitiveDomainResult }`；只读不写数据库，不提供重算或历史列表
 - mapping / 安全 / 非诊断：与 compute 相同；domainScores 和 itemContributions 稳定排序，mapping policy 明确 overlappingDomains=true 与 domainScoresAreScaleTotalPartition=false
 
+### A20 访视级规则化临床报告 API
+
+- 接口名称：生成规则化临床报告草稿
+- Method / Path：`POST /patients/:patientId/visits/:visitId/clinical-reports/generate`
+- Controller / Guard / Roles：`ClinicalReportsController`；显式 `SessionAuthGuard` + `RolesGuard`；`admin`、`doctor`、`nurse`、`research_assistant`；通过 `@CurrentUser()` 取得 generation actor
+- Param / Body DTO：`ClinicalReportVisitParamDto` 的 patientId / visitId 均 `@IsMongoId()`；`GenerateClinicalReportDto { confirm, primaryScaleInstanceIds }`。confirm 必须严格 true；scope 必须为 1-10 个 trim + lowercase 后唯一 MongoId。客户端 snapshot、source result、narrative、status、report code / version、quality、AI、metadata、force / regenerate / PDF 字段由 whitelist 拒绝
+- 首次状态与来源：Patient active；Visit draft / in_progress / completed；所选同访视 ScaleInstance completed / locked 且绑定 definition / version 一致。每个实例必须有 runNo=1 confirmed / locked、confirmedAt 完整、passed / reviewed、全部计分项目最终且无 warning 的 ScoreResult，以及 runNo=1 computed / confirmed / locked、scale_config + item_domain_codes、有效无 warning的 CognitiveDomainResult；不自动 compute / review / confirm
+- 媒体：只纳入 selected instance 下 attached / locked、stored、未删除的 photo / handwriting。needs_review 派生报告 needs_review；unusable、所有权 / item / objectKey 缺失或有效证据存储异常返回 `CLINICAL_REPORT_SOURCE_MEDIA_INVALID`。只保存索引快照，不读媒体内容，不做 OCR / 识别 / AI
+- 生成结果：HTTP 200，`GenerateClinicalReportResponse { report, alreadyGenerated }`。新建固定 cognitive_assessment / version 1 / draft / system_draft / isFinal=false；reportCode 为确定性 `RPT-{HASH24}`。患者 / 访视 / 历史 scale / confirmed score / domain / evidence 使用受控快照，scoreDetails=null、visit clinicalContext=null；narrative 只有 chief / score / domain / evidence / limitations，明确未医生确认、认知域未独立确认、重叠归因、非诊断、非 AI
+- 幂等 / 并发：同 Visit + type + version 只有一个结果；同 scope 返回 alreadyGenerated=true，不重读来源、不修改报告；不同 scope 409 `CLINICAL_REPORT_SCOPE_CONFLICT`；voided 409 `CLINICAL_REPORT_VOIDED`；不完整历史报告 409 `CLINICAL_REPORT_INCOMPLETE`。reportCode unique 处理并发，duplicate key 后重读；仍无结果为 `CLINICAL_REPORT_GENERATION_CONFLICT`。不使用 transaction / 分布式锁，不覆盖、不重生成、不生成 version 2
+- 错误：400 `CLINICAL_REPORT_GENERATION_CONFIRMATION_REQUIRED` / `CLINICAL_REPORT_SCOPE_INVALID`；401 / 403；404 `PATIENT_NOT_FOUND` / `VISIT_NOT_FOUND` / `SCALE_INSTANCE_NOT_FOUND`；409 patient / visit / configuration / source score / domain / media / existing / scope 错误；500 `CLINICAL_REPORT_GENERATION_FAILED`
+- 公开隐私边界：显式 mapper 不返回 patientId / visitId、原始 scope、scoreResultIds、cognitiveDomainResultIds、mediaEvidenceIds、score / domain source ID、mediaEvidenceId / itemResponseId、storageObjectKey、scoreDetails、clinicalContext、metadata、qualityHints、原始作答 / 评分意见、AI provider / model / draftText 或签名
+
+- 接口名称：查询访视最新临床报告
+- Method / Path：`GET /patients/:patientId/visits/:visitId/clinical-reports/latest`
+- Controller / Guard / Roles：同一 `ClinicalReportsController`、显式 Session / Roles Guard 和四个临床角色；不使用 `@CurrentUser()`
+- Param / Body：`ClinicalReportVisitParamDto`；无 Query / Body
+- 读取：先确认 Patient 存在，再联合确认 Visit 归属；按 reportVersion、createdAt 倒序读取。允许 active / inactive / archived Patient 和 draft / in_progress / completed / locked / voided Visit 历史读取；允许安全返回 draft / pending_confirmation / confirmed / archived / corrected / voided
+- 响应：HTTP 200，`ClinicalReportDetailResponse { report }`；与 generate 使用同一完整安全 mapper；只读不写库。无结果 404 `CLINICAL_REPORT_NOT_FOUND`，关键快照 / timestamps 不可安全读取为 409 `CLINICAL_REPORT_INCOMPLETE`
+- 非目标：无 reportId 查询、列表、编辑、pending_confirmation 写流转、医生确认、签名、锁定、归档、更正、作废、重生成、PDF、Storage 文件、AI、诊断阈值 / 结论或治疗建议
+
 ## 4. 当前未暴露接口说明
 
 - `backend\src\modules\users` 当前没有 Controller。
@@ -337,8 +358,8 @@
 - `backend\src\modules\media` 当前仅通过 `MediaEvidenceController` 暴露上述四个题目级媒体接口；没有全患者 / 访视 / 实例媒体列表、直接对象 key 下载、永久 URL、物理删除、替换、批量、分片、客户端直传、OCR 或 AI 接口。
 - `backend\src\modules\scoring` 当前通过同一 `ScoringController` 暴露 A17 compute / latest 与 A18 manual-review / confirm；没有 lock、void、撤销确认、reopen、重跑、列表、患者级或访视级评分 API。
 - `backend\src\modules\cognitive-domains` 当前通过 `CognitiveDomainResultsController` 暴露 A19 compute / latest；没有人工修改、确认、锁定、作废、重算、历史列表、患者 / 访视级列表或报告 API。
-- `backend\src\modules\reports` 当前没有 Controller；`ReportsService` 仅供后续后端业务模块内部读取临床报告摘要和复用报告状态转换校验纯函数。
-- 当前已定义 A12-A19 对应公开 DTO 和响应类型；仍不定义评分 lock / void / 重跑、认知域人工修改 / 确认 / 锁定 / 重算、报告、SMS、AI / LLM 或批量 / 分片 / 客户端直传契约；本次未更新 frontend handoff。
+- `backend\src\modules\reports` 当前只通过 `ClinicalReportsController` 暴露 A20 generate / latest；没有 reportId 查询、列表、编辑、医生确认、签名、锁定、归档、更正、作废、重生成、PDF 或 AI API。
+- 当前已定义 A12-A20 对应公开 DTO 和响应类型；仍不定义评分 lock / void / 重跑、认知域人工修改 / 确认 / 锁定 / 重算、报告编辑 / 确认 / PDF、SMS、AI / LLM 或批量 / 分片 / 客户端直传契约；A20 未更新 frontend handoff。
 
 ## 5. 后续同步规则
 
