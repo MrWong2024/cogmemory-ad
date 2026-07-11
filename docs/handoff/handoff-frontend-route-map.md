@@ -6,9 +6,9 @@
 
 ## 2. 当前状态
 
-- 当前包含公共首页、登录页、轻量工作台、B2 四条患者 / 访视路由、B3 访视详情路由、B4 / B5 / B6 量表实例施测、媒体证据、完整性检查与正式提交共用路由，以及 not-found 兜底；B5 / B6 均未新增路由。
+- 当前包含公共首页、登录页、轻量工作台、B2 四条患者 / 访视路由、B3 访视详情路由、B4-B7 量表实例施测、媒体证据、正式提交与阶段性评分共用路由，以及 not-found 兜底；B5-B7 均未新增路由。
 - `/dashboard` 已提供患者档案入口，但仍不是完整医生工作台。
-- 当前不包含患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、评分、认知域、报告、AI、用户管理或权限菜单路由。
+- 当前不包含患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、独立评分、人工评分确认、认知域、报告、AI、用户管理或权限菜单路由。
 - 当前不包含 Next middleware 或路由级服务端认证中间件。
 
 ## 3. 当前路由清单
@@ -107,11 +107,11 @@
 
 ### 3.9 `/patients/[patientId]/visits/[visitId]/scale-instances/[scaleInstanceId]`
 
-- 页面名称：量表实例施测执行、逐题草稿、媒体证据与正式提交
-- 页面职责：展示患者 / 受试者编号、访视、量表身份与版本、实例、实时进度、服务端动态分组和安全题目；按题手工编辑并保存 A14 白名单草稿，为含 photo / handwriting 要求的题目提供 A15 证据采集、历史、预览和作废，并通过 A16 完成 readiness 检查、问题定位、二次确认和正式实例提交
+- 页面名称：量表实例施测执行、媒体证据、正式提交与阶段性评分
+- 页面职责：展示患者 / 受试者编号、访视、量表身份与版本、实例、实时进度、服务端动态分组和安全题目；按题手工编辑并保存 A14 白名单草稿，为含 photo / handwriting 要求的题目提供 A15 证据采集、历史、预览和作废，通过 A16 完成 readiness / 正式提交，并通过 A17 查询或明确确认后计算阶段性评分、展示 total / group / item 与 reviewQueue
 - 动态参数：Server Component 按 Next 16 `params: Promise<{ patientId: string; visitId: string; scaleInstanceId: string }>` 等待参数后传给 `ScaleInstanceExecutionPage`；route 不 fetch、不保存表单状态
 - 访问边界：继续复用 `/patients/**` 的 `PatientsWorkspaceShell`；不新增 middleware、BFF 或 Provider，不读取 Cookie；后端 Guard 是最终权限边界
-- 数据来源：A14 执行详情 GET 与单题草稿 PATCH、A15 题目媒体列表 / multipart 上传 / primary 与 trajectory 临时访问地址 / 作废，以及 A16 submission-readiness GET 与 submit POST
+- 数据来源：A14 执行详情 GET 与单题草稿 PATCH、A15 题目媒体列表 / multipart 上传 / primary 与 trajectory 临时访问地址 / 作废、A16 submission-readiness GET 与 submit POST，以及 A17 latest GET / compute POST
 - loading / 取消：执行详情 GET 使用 AbortController；重试和卸载取消旧请求，被取消请求不显示服务错误；任一动态 ID 无效时不发请求
 - 401 / 403 / 404 / 409：401 返回 `/login`；403 展示无权限与返回 / 退出入口；患者、访视、实例不存在分别使用稳定状态；配置不可用不渲染空白题目页
 - 分组：groups 按 order、题目按 itemOrder 排序，使用 groupCode 动态归组；无匹配分组题目进入“其他项目”；button 导航显示每组完成数并支持键盘 focus
@@ -126,9 +126,14 @@
 - 问题定位：带 itemResponseId 的 issue 在当前内存中切换分组、滚动并聚焦题目容器，不修改 URL 或路由参数，不清除其他分组草稿；scale_instance scope issue 不提供定位按钮
 - 提交：只有最新 readiness 的 ready / canSubmitNow 为 true、无 blocking 且无本地阻断时展开内联 checkbox；POST 只发送 confirm=true，不自动重试。warning 可展开查看但不阻断
 - 成功 / 历史：提交响应或 readiness 服务端状态驱动 completed 只读；不模拟状态，不修改 Visit / ItemResponse。`alreadySubmitted=true` 作为成功处理；completed 初始加载不自动 POST，也不以施测 operatorSnapshot 冒充历史提交操作者
+- 阶段性评分查询：仅 completed / locked / voided 实例自动查询一次 latest；draft / in_progress 不请求。查询状态独立于执行详情，失败保留题目、提交回执与媒体历史，支持手工重新加载但不轮询或自动重试
+- 阶段性评分计算：仅 completed、Visit 为 draft / in_progress / completed 且 latest 无结果时提供入口；本地 dirty、媒体草稿、题目 / 媒体写请求或 submit 阻断。用户必须展开说明并勾选 checkbox，compute 只发送 confirm=true；页面不自动计算、不自动重试、不支持重算
+- 结果展示：直接展示服务端阶段性总分、分组得分、题目分值、结果 / 来源 / review / quality 状态、版本、计算 warning 和 reviewQueue；不重新求和、聚合、补算比例或构造队列。所有结果明确未确认，不输出临床解释
+- 原题定位：reviewQueue 仅在 itemResponseId 能匹配当前安全题目时提供“查看原题”，复用 B6 分组切换、滚动与键盘 focus，不修改 URL、不清理其他分组草稿；null / 无法匹配不虚假跳转
+- 评分隔离：compute / latest 只允许同步服务端 scaleInstance 摘要，不覆盖 Visit、ItemResponse、作答 / 媒体草稿或 submission readiness，不触发 A14 / A15 写操作
 - 只读：completed / locked / voided 实例仍可查看 readiness、作答和历史证据；submit 期间题目保存、图片 / 手写采集、上传与作废临时真实禁用
-- 当前非目标：不提供撤销、reopen、lock、force submit、批量或自动保存、实时计时器、自动或手工评分、认知域、报告、OCR 或 AI；不提供实时摄像头、音频 / 视频 / PDF / SVG、批量 / 分片 / 客户端直传、物理删除或直接替换
-- 关联组件：`ScaleInstanceExecutionPage`、`ScaleInstanceSubmissionPanel`、`ScaleSubmissionIssueList`、`ScaleExecutionGroupNavigation`、`ItemResponseEditor`、step / prompt / timing 子组件，以及 `ItemEvidenceRequirements`、`MediaEvidencePanel`、`MediaEvidenceList`、`MediaEvidencePreview`、`PhotoEvidenceCapture`、`HandwritingEvidenceCanvas`
+- 当前非目标：不提供撤销、reopen、lock、force submit、批量或自动保存、实时计时器、人工评分录入 / 确认 / 锁定 / 作废 / 重算 / 历史、认知域、报告、OCR 或 AI；不提供实时摄像头、音频 / 视频 / PDF / SVG、批量 / 分片 / 客户端直传、物理删除或直接替换
+- 关联组件：`ScaleInstanceExecutionPage`、`ScaleInstanceSubmissionPanel`、`ScaleSubmissionIssueList`、`ProvisionalScoringPanel`、`ProvisionalScoreSummary`、`ProvisionalScoreGroupList`、`ProvisionalScoreItemList`、`ScoreReviewQueue`、`ScaleExecutionGroupNavigation`、`ItemResponseEditor`、step / prompt / timing 子组件，以及媒体证据组件
 
 ### 3.10 `not-found`
 

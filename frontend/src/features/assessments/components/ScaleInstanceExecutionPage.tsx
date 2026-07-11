@@ -21,9 +21,18 @@ import {
   submitScaleInstance,
 } from '@/src/features/assessments/api/assessment-execution-api';
 import {
+  computeProvisionalScoreResult,
+  getLatestProvisionalScoreResult,
+  ProvisionalScoringApiError,
+} from '@/src/features/assessments/api/provisional-scoring-api';
+import {
   ItemResponseEditor,
   type ItemSaveFeedback,
 } from '@/src/features/assessments/components/ItemResponseEditor';
+import {
+  ProvisionalScoringPanel,
+  type ProvisionalScoreQueryStatus,
+} from '@/src/features/assessments/components/ProvisionalScoringPanel';
 import { ScaleExecutionGroupNavigation } from '@/src/features/assessments/components/ScaleExecutionGroupNavigation';
 import { ScaleInstanceSubmissionPanel } from '@/src/features/assessments/components/ScaleInstanceSubmissionPanel';
 import {
@@ -50,9 +59,9 @@ import type {
   SupportedMediaEvidenceType,
 } from '@/src/features/assessments/types/media-evidence';
 import type { ScaleInstanceExecutionDetailResponse } from '@/src/features/assessments/types/item-response-execution';
-import {
-  getScaleSubmissionApiErrorMessage,
-} from '@/src/features/assessments/lib/scale-instance-submission-display';
+import { getProvisionalScoringApiErrorMessage } from '@/src/features/assessments/lib/provisional-scoring-display';
+import { getScaleSubmissionApiErrorMessage } from '@/src/features/assessments/lib/scale-instance-submission-display';
+import type { ScoreResultDetailResponse } from '@/src/features/assessments/types/provisional-scoring';
 import type {
   ScaleInstanceSubmissionAudit,
   ScaleSubmissionIssue,
@@ -78,6 +87,18 @@ const statusTones: Record<AssessmentVisitStatus, BadgeTone> = {
   locked: 'warning',
   voided: 'warning',
 };
+
+const scoreQueryableInstanceStatuses = new Set<AssessmentVisitStatus>([
+  'completed',
+  'locked',
+  'voided',
+]);
+
+const scoreComputableVisitStatuses = new Set<AssessmentVisitStatus>([
+  'draft',
+  'in_progress',
+  'completed',
+]);
 
 type ExecutionDetailErrorState = {
   badge: string;
@@ -221,12 +242,14 @@ export function ScaleInstanceExecutionPage({
   const savingItemIdsRef = useRef(new Set<string>());
   const mediaWritingKeysRef = useRef(new Set<string>());
   const readinessControllerRef = useRef<AbortController | null>(null);
+  const scoreResultControllerRef = useRef<AbortController | null>(null);
   const readinessRef = useRef<ScaleSubmissionReadinessResponse | null>(null);
   const localBlockersRef = useRef({
     unsavedAnswerItemCount: 0,
     pendingMediaItemCount: 0,
   });
   const submittingRef = useRef(false);
+  const computingScoreRef = useRef(false);
   const idsAreValid =
     mongoIdPattern.test(patientId) &&
     mongoIdPattern.test(visitId) &&
@@ -267,6 +290,95 @@ export function ScaleInstanceExecutionPage({
   const [pendingFocusItemId, setPendingFocusItemId] = useState<string | null>(
     null,
   );
+  const [pendingFocusSource, setPendingFocusSource] = useState<
+    'submission' | 'scoring' | null
+  >(null);
+  const [scoreResult, setScoreResult] =
+    useState<ScoreResultDetailResponse | null>(null);
+  const [scoreQueryStatus, setScoreQueryStatus] =
+    useState<ProvisionalScoreQueryStatus>('idle');
+  const [scoreQueryError, setScoreQueryError] = useState<string | null>(null);
+  const [scoreConfirmationVisible, setScoreConfirmationVisible] =
+    useState(false);
+  const [isComputingScore, setIsComputingScore] = useState(false);
+  const [scoreComputationError, setScoreComputationError] = useState<
+    string | null
+  >(null);
+  const [scoreComputationStatus, setScoreComputationStatus] = useState<
+    string | null
+  >(null);
+  const [scoreAlreadyComputed, setScoreAlreadyComputed] = useState<
+    boolean | null
+  >(null);
+
+  const loadLatestScoreResult = useCallback(async () => {
+    scoreResultControllerRef.current?.abort();
+    const controller = new AbortController();
+    scoreResultControllerRef.current = controller;
+    setScoreQueryStatus('loading');
+    setScoreQueryError(null);
+
+    try {
+      const response = await getLatestProvisionalScoreResult(
+        patientId,
+        visitId,
+        scaleInstanceId,
+        { signal: controller.signal },
+      );
+
+      if (controller.signal.aborted || !mountedRef.current) {
+        return null;
+      }
+
+      setScoreResult(response);
+      setScoreQueryStatus('loaded');
+      setScoreConfirmationVisible(false);
+      setDetail((current) =>
+        current
+          ? {
+              ...current,
+              scaleInstance: response.scaleInstance,
+            }
+          : current,
+      );
+      return response;
+    } catch (requestError: unknown) {
+      if (controller.signal.aborted || !mountedRef.current) {
+        return null;
+      }
+
+      const error =
+        requestError instanceof ProvisionalScoringApiError
+          ? requestError
+          : new ProvisionalScoringApiError('unknown');
+
+      if (error.kind === 'unauthenticated') {
+        setScoreConfirmationVisible(false);
+        router.replace('/login');
+        return null;
+      }
+
+      setScoreResult(null);
+      setScoreConfirmationVisible(false);
+
+      if (error.kind === 'score_result_not_found') {
+        setScoreQueryStatus('no_result');
+        setScoreQueryError(null);
+      } else if (error.kind === 'forbidden') {
+        setScoreQueryStatus('forbidden');
+        setScoreQueryError(getProvisionalScoringApiErrorMessage(error.kind));
+      } else {
+        setScoreQueryStatus('error');
+        setScoreQueryError(getProvisionalScoringApiErrorMessage(error.kind));
+      }
+
+      return null;
+    } finally {
+      if (scoreResultControllerRef.current === controller) {
+        scoreResultControllerRef.current = null;
+      }
+    }
+  }, [patientId, router, scaleInstanceId, visitId]);
 
   const loadSubmissionReadiness = useCallback(async () => {
     readinessControllerRef.current?.abort();
@@ -335,12 +447,15 @@ export function ScaleInstanceExecutionPage({
       mountedRef.current = false;
       readinessControllerRef.current?.abort();
       readinessControllerRef.current = null;
+      scoreResultControllerRef.current?.abort();
+      scoreResultControllerRef.current = null;
     };
   }, []);
 
   useEffect(() => {
     if (!idsAreValid) {
       readinessControllerRef.current?.abort();
+      scoreResultControllerRef.current?.abort();
       readinessRef.current = null;
       setDetail(null);
       setDrafts({});
@@ -349,6 +464,13 @@ export function ScaleInstanceExecutionPage({
       setReadinessError(null);
       setIsReadinessLoading(false);
       setSubmissionReceipt(null);
+      setScoreResult(null);
+      setScoreQueryStatus('idle');
+      setScoreQueryError(null);
+      setScoreConfirmationVisible(false);
+      setScoreComputationError(null);
+      setScoreComputationStatus(null);
+      setScoreAlreadyComputed(null);
       setDetailError(new AssessmentExecutionApiError('validation', 400));
       setIsLoading(false);
       return;
@@ -356,6 +478,7 @@ export function ScaleInstanceExecutionPage({
 
     const controller = new AbortController();
     readinessControllerRef.current?.abort();
+    scoreResultControllerRef.current?.abort();
     readinessRef.current = null;
     setIsLoading(true);
     setDetailError(null);
@@ -367,6 +490,13 @@ export function ScaleInstanceExecutionPage({
     setSubmissionError(null);
     setSubmissionStatus(null);
     setConfirmationVisible(false);
+    setScoreResult(null);
+    setScoreQueryStatus('idle');
+    setScoreQueryError(null);
+    setScoreConfirmationVisible(false);
+    setScoreComputationError(null);
+    setScoreComputationStatus(null);
+    setScoreAlreadyComputed(null);
 
     void getScaleInstanceExecutionDetail(
       patientId,
@@ -389,6 +519,9 @@ export function ScaleInstanceExecutionPage({
         setFeedbacks({});
         setActiveGroupCode(sections[0]?.code ?? '');
         void loadSubmissionReadiness();
+        if (scoreQueryableInstanceStatuses.has(response.scaleInstance.status)) {
+          void loadLatestScoreResult();
+        }
       })
       .catch((requestError: unknown) => {
         if (controller.signal.aborted) {
@@ -421,6 +554,7 @@ export function ScaleInstanceExecutionPage({
     return () => controller.abort();
   }, [
     idsAreValid,
+    loadLatestScoreResult,
     loadSubmissionReadiness,
     patientId,
     retryKey,
@@ -481,20 +615,48 @@ export function ScaleInstanceExecutionPage({
       );
 
       if (!element) {
-        setSubmissionStatus(
-          '未能定位该题目，请重新加载量表后再试。',
-        );
+        if (pendingFocusSource === 'scoring') {
+          setScoreComputationStatus('未能定位该题目，请重新加载量表后再试。');
+        } else {
+          setSubmissionStatus('未能定位该题目，请重新加载量表后再试。');
+        }
         setPendingFocusItemId(null);
+        setPendingFocusSource(null);
         return;
       }
 
       element.scrollIntoView({ behavior: 'smooth', block: 'start' });
       element.focus({ preventScroll: true });
       setPendingFocusItemId(null);
+      setPendingFocusSource(null);
     });
 
     return () => window.cancelAnimationFrame(frame);
-  }, [activeGroupCode, pendingFocusItemId]);
+  }, [activeGroupCode, pendingFocusItemId, pendingFocusSource]);
+
+  useEffect(() => {
+    if (
+      unsavedAnswerItemCount > 0 ||
+      pendingMediaItemCount > 0 ||
+      savingItemIds.size > 0 ||
+      mediaWritingKeys.size > 0 ||
+      isSubmitting ||
+      detail?.scaleInstance.status !== 'completed' ||
+      !scoreComputableVisitStatuses.has(detail?.visit.status ?? 'voided') ||
+      scoreQueryStatus !== 'no_result'
+    ) {
+      setScoreConfirmationVisible(false);
+    }
+  }, [
+    detail?.scaleInstance.status,
+    detail?.visit.status,
+    isSubmitting,
+    mediaWritingKeys.size,
+    pendingMediaItemCount,
+    savingItemIds.size,
+    scoreQueryStatus,
+    unsavedAnswerItemCount,
+  ]);
 
   useEffect(() => {
     if (
@@ -801,23 +963,37 @@ export function ScaleInstanceExecutionPage({
     }
   }
 
-  function handleLocateSubmissionIssue(issue: ScaleSubmissionIssue) {
-    if (!issue.itemResponseId) {
-      return;
-    }
-
+  function locateItemResponse(
+    itemResponseId: string,
+    source: 'submission' | 'scoring',
+  ) {
     const section = sections.find((candidate) =>
-      candidate.itemResponses.some((item) => item.id === issue.itemResponseId),
+      candidate.itemResponses.some((item) => item.id === itemResponseId),
     );
 
     if (!section) {
-      setSubmissionStatus('未能定位该题目，请重新加载量表后再试。');
+      if (source === 'scoring') {
+        setScoreComputationStatus('未能定位该题目，请重新加载量表后再试。');
+      } else {
+        setSubmissionStatus('未能定位该题目，请重新加载量表后再试。');
+      }
       return;
     }
 
-    setSubmissionStatus(null);
+    if (source === 'scoring') {
+      setScoreComputationStatus(null);
+    } else {
+      setSubmissionStatus(null);
+    }
     setActiveGroupCode(section.code);
-    setPendingFocusItemId(issue.itemResponseId);
+    setPendingFocusSource(source);
+    setPendingFocusItemId(itemResponseId);
+  }
+
+  function handleLocateSubmissionIssue(issue: ScaleSubmissionIssue) {
+    if (issue.itemResponseId) {
+      locateItemResponse(issue.itemResponseId, 'submission');
+    }
   }
 
   function hasLocalSubmissionBlockers(): boolean {
@@ -827,6 +1003,10 @@ export function ScaleInstanceExecutionPage({
       savingItemIdsRef.current.size > 0 ||
       mediaWritingKeysRef.current.size > 0
     );
+  }
+
+  function hasLocalScoreBlockers(): boolean {
+    return hasLocalSubmissionBlockers() || submittingRef.current;
   }
 
   async function handlePrepareSubmission() {
@@ -920,13 +1100,17 @@ export function ScaleInstanceExecutionPage({
       setSubmissionStatus(
         response.submission.alreadySubmitted
           ? '服务器确认该量表实例此前已经提交，本次没有重复写入。'
-          : '量表实例已正式提交并切换为只读；本阶段未执行评分，访视状态未改变。',
+          : '量表实例已正式提交并切换为只读；本次提交未自动执行评分，访视状态未改变。',
       );
 
       if (hasLocalSubmissionBlockers()) {
         setSubmissionStatus(
           '量表实例已完成；当前仍有本地未保存内容，无法继续保存，且这些内容没有被静默清除。',
         );
+      }
+
+      if (scoreQueryableInstanceStatuses.has(response.scaleInstance.status)) {
+        void loadLatestScoreResult();
       }
     } catch (requestError: unknown) {
       if (!mountedRef.current) {
@@ -972,6 +1156,140 @@ export function ScaleInstanceExecutionPage({
 
       if (mountedRef.current) {
         setIsSubmitting(false);
+      }
+    }
+  }
+
+  function getScoreComputeBlockReason(): string | null {
+    if (!detail) {
+      return '量表执行详情尚未加载完成。';
+    }
+    if (detail.scaleInstance.status !== 'completed') {
+      return '只有已完成的量表实例可以首次计算阶段性评分。';
+    }
+    if (!scoreComputableVisitStatuses.has(detail.visit.status)) {
+      return '当前访视状态不允许首次生成评分结果。';
+    }
+    if (unsavedAnswerItemCount > 0 || pendingMediaItemCount > 0) {
+      return '存在本地未保存作答或未上传媒体，请先处理或离开这些本地内容；系统不会静默清除。';
+    }
+    if (savingItemIds.size > 0 || mediaWritingKeys.size > 0) {
+      return '当前仍有题目保存或媒体写请求，请等待完成后再计算。';
+    }
+    if (isSubmitting) {
+      return '当前正在正式提交量表实例，请等待提交完成后再计算。';
+    }
+    return null;
+  }
+
+  function handlePrepareScoreComputation() {
+    setScoreComputationError(null);
+    setScoreComputationStatus(null);
+
+    const blockReason = getScoreComputeBlockReason();
+    if (
+      computingScoreRef.current ||
+      scoreQueryStatus !== 'no_result' ||
+      blockReason
+    ) {
+      setScoreConfirmationVisible(false);
+      if (blockReason) {
+        setScoreComputationStatus(blockReason);
+      }
+      return;
+    }
+
+    setScoreConfirmationVisible(true);
+  }
+
+  async function handleConfirmScoreComputation() {
+    const blockReason = getScoreComputeBlockReason();
+
+    if (
+      computingScoreRef.current ||
+      scoreQueryStatus !== 'no_result' ||
+      blockReason ||
+      hasLocalScoreBlockers()
+    ) {
+      setScoreConfirmationVisible(false);
+      setScoreComputationError(
+        blockReason ?? '当前评分依据已变化，请重新加载最新评分结果。',
+      );
+      return;
+    }
+
+    computingScoreRef.current = true;
+    setIsComputingScore(true);
+    setScoreConfirmationVisible(false);
+    setScoreComputationError(null);
+    setScoreComputationStatus(null);
+    setScoreAlreadyComputed(null);
+
+    try {
+      const response = await computeProvisionalScoreResult(
+        patientId,
+        visitId,
+        scaleInstanceId,
+        { confirm: true },
+      );
+
+      if (!mountedRef.current) {
+        return;
+      }
+
+      const nextResult: ScoreResultDetailResponse = {
+        scale: response.scale,
+        scaleInstance: response.scaleInstance,
+        scoreResult: response.scoreResult,
+        reviewQueue: response.reviewQueue,
+      };
+      setScoreResult(nextResult);
+      setScoreQueryStatus('loaded');
+      setScoreQueryError(null);
+      setScoreAlreadyComputed(response.alreadyComputed);
+      setDetail((current) =>
+        current
+          ? {
+              ...current,
+              scaleInstance: response.scaleInstance,
+            }
+          : current,
+      );
+    } catch (requestError: unknown) {
+      if (!mountedRef.current) {
+        return;
+      }
+
+      const error =
+        requestError instanceof ProvisionalScoringApiError
+          ? requestError
+          : new ProvisionalScoringApiError('unknown');
+
+      if (error.kind === 'unauthenticated') {
+        router.replace('/login');
+        return;
+      }
+
+      setScoreComputationError(
+        getProvisionalScoringApiErrorMessage(error.kind),
+      );
+
+      if (
+        error.kind === 'score_computation_conflict' ||
+        error.kind === 'score_result_voided'
+      ) {
+        await loadLatestScoreResult();
+      } else if (error.kind === 'forbidden') {
+        setScoreQueryStatus('forbidden');
+      } else if (error.kind === 'score_result_incomplete') {
+        setScoreQueryStatus('error');
+        setScoreQueryError(getProvisionalScoringApiErrorMessage(error.kind));
+      }
+    } finally {
+      computingScoreRef.current = false;
+
+      if (mountedRef.current) {
+        setIsComputingScore(false);
       }
     }
   }
@@ -1044,6 +1362,11 @@ export function ScaleInstanceExecutionPage({
   const effectiveReadOnlyReason = isSubmitting
     ? '正在正式提交量表，暂时不能修改记录。'
     : readOnlyReason;
+  const scoreComputeBlockReason = getScoreComputeBlockReason();
+  const canComputeScore =
+    scoreQueryStatus === 'no_result' &&
+    scoreComputeBlockReason === null &&
+    !isComputingScore;
   const progressPercent =
     scaleInstance.progress.totalItemCount > 0
       ? Math.min(
@@ -1100,7 +1423,7 @@ export function ScaleInstanceExecutionPage({
       </header>
 
       <p className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-info-soft)] px-5 py-4 text-base leading-7 text-[var(--cma-info)]">
-        核心认知量表应由医护或研究人员陪伴或监督完成。当前已支持提交完整性检查与正式完成量表实例；评分、认知域、报告与 AI 仍未实现。
+        核心认知量表应由医护或研究人员陪伴或监督完成。当前支持阶段性评分计算和待人工复核结果展示；人工评分确认、认知域、报告与 AI 仍未实现。
       </p>
 
       {readOnlyReason ? (
@@ -1285,6 +1608,38 @@ export function ScaleInstanceExecutionPage({
         submissionError={submissionError}
         submissionReceipt={submissionReceipt}
         submitting={isSubmitting}
+      />
+
+      <ProvisionalScoringPanel
+        alreadyComputed={scoreAlreadyComputed}
+        canCompute={canComputeScore}
+        canLocateItem={(itemResponseId) =>
+          sections.some((section) =>
+            section.itemResponses.some((item) => item.id === itemResponseId),
+          )
+        }
+        computationError={scoreComputationError}
+        computationStatus={isComputingScore ? 'computing' : 'idle'}
+        computeBlockReason={scoreComputeBlockReason}
+        confirmationVisible={scoreConfirmationVisible}
+        instanceStatus={scaleInstance.status}
+        onConfirmCompute={() => void handleConfirmScoreComputation()}
+        onLocateItem={(itemResponseId) =>
+          locateItemResponse(itemResponseId, 'scoring')
+        }
+        onPrepareCompute={handlePrepareScoreComputation}
+        onRefresh={() => {
+          setScoreComputationError(null);
+          setScoreComputationStatus(null);
+          setScoreAlreadyComputed(null);
+          setScoreConfirmationVisible(false);
+          void loadLatestScoreResult();
+        }}
+        queryError={scoreQueryError}
+        queryStatus={scoreQueryStatus}
+        result={scoreResult}
+        statusMessage={scoreComputationStatus}
+        visitStatus={visit.status}
       />
 
       <Card>

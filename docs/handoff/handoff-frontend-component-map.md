@@ -9,9 +9,9 @@
 - `frontend\src\components\ui` 提供 `Button`、`Card`、`Badge` 三个无业务语义公共组件。
 - `frontend\src\features\auth` 提供 B1 最小认证接入能力。
 - `frontend\src\features\patients` 提供 B2 患者档案与评估访视最小业务闭环。
-- `frontend\src\features\assessments` 提供 B3 访视详情与量表实例初始化、B4 量表施测执行与逐题手工草稿保存、B5 photo / handwriting 媒体证据采集 / 预览 / 作废，以及 B6 submission readiness、问题定位和正式实例提交能力。
+- `frontend\src\features\assessments` 提供 B3 访视详情与量表实例初始化、B4 量表施测执行与逐题手工草稿保存、B5 photo / handwriting 媒体证据采集 / 预览 / 作废、B6 submission readiness / 正式实例提交，以及 B7 阶段性评分和待人工复核展示能力。
 - 当前组件遵循医疗系统 / 临床评估 / 低干扰 / 高可读性 / 冷静可信视觉基线。
-- B2 / B3 / B4 / B5 / B6 未新增公共 Input 组件、第三方 UI 库、状态管理库、数据请求库或权限菜单组件。
+- B2-B7 未新增公共 Input 组件、第三方 UI 库、状态管理库、数据请求库或权限菜单组件。
 
 ## 3. 公共 UI 组件
 
@@ -191,6 +191,9 @@
 - 保存：同一题保存期间禁止并发；成功后以响应 itemResponse 覆盖当前题、清除 dirty，并用响应 progress 更新实例摘要，不重新加载整个页面
 - 媒体父级职责：分组切换不清除 JPEG Blob / strokes；持有跨分组媒体写锁；只合并 A15 返回的同题同类型 requirement，不改作答 draft / dirty / progress；上传成功或主动清除后减少未上传证据题目数
 - B6 合并边界：readiness 成功只替换 ScaleInstance；submit 成功只替换 ScaleInstance、readiness 与 receipt，不修改 Visit、itemResponses 或 drafts。completed 由服务端响应驱动；历史操作者不从 operatorSnapshot 推断
+- B7 评分职责：仅在 completed / locked / voided 自动查询 latest；管理独立 AbortController、no_result / forbidden / error、compute 确认 / 写锁 / 幂等回执和稳定错误。submit 成功只触发 latest，不自动 compute
+- B7 合并边界：latest / compute 成功使用服务端 ScoreResult 并只同步 ScaleInstance；不修改 Visit、ItemResponse、answer / media drafts、progress 或 readiness，不调用 A14 / A15 写接口
+- 通用题目定位：B6 submission issue 与 B7 reviewQueue 共用 itemResponseId -> 分组切换 -> `scrollIntoView()` -> focus 流程；不改 URL 或清理其他分组内存草稿
 - 边界：GET 使用独立 AbortController，PATCH 与媒体 / submit POST 不重试；组件卸载后不 setState；不使用 SWR、React Query、Redux、Zustand、localStorage 或 sessionStorage
 
 ### 6.8 `ScaleExecutionGroupNavigation`
@@ -304,6 +307,55 @@
 
 - `ItemResponseEditor` -> `ItemEvidenceRequirements` -> `MediaEvidencePanel` 最小新增 `onEvidencePersisted` 回调，只在 A15 上传或作废成功后通知父级标记 readiness stale
 - 媒体列表 GET、access URL GET 和 requirement 只读对齐不会触发该回调；A14 / A15 请求体、媒体草稿、写锁和既有保存语义不变
+
+### 6.24 `ProvisionalScoringPanel`
+
+- 路径：`frontend\src\features\assessments\components\ProvisionalScoringPanel.tsx`
+- 职责：展示 idle / loading / no_result / loaded / forbidden / error、手工重试、首次计算入口、内联说明 / checkbox、计算写锁 / 回执和阶段性结果子组件
+- 状态边界：draft / in_progress 只提示先提交；completed 无结果且 Visit / 本地状态允许时才可计算；locked / voided 只读查询。没有自动 compute、轮询、重算或人工评分输入
+- 可访问性：错误使用 alert，查询 / 计算 / 成功使用 polite live region；checkbox 有可见 label，按钮 disabled 不只依赖颜色
+
+### 6.25 `ProvisionalScoreSummary`
+
+- 路径：`frontend\src\features\assessments\components\ProvisionalScoreSummary.tsx`
+- 职责：直接展示后端 totalScore 的 provisionalScoreValue、范围、scorePercent、五项计数、isComplete 与 isFinal
+- 边界：不求和、不补算比例；部分得分只写“当前已可靠计算”，null 不显示为 0，结果始终保留未确认声明
+
+### 6.26 `ProvisionalScoreGroupList`
+
+- 路径：`frontend\src\features\assessments\components\ProvisionalScoreGroupList.tsx`
+- 职责：按 order（缺失末尾）/ groupCode 排序副本，展示服务端 groupScores 的标题、编码、分值范围、四项计数和完整性
+- 边界：不重新聚合、不写死 MMSE / MoCA 分组、不称为认知域结果、不输出临床解释
+
+### 6.27 `ProvisionalScoreItemList`
+
+- 路径：`frontend\src\features\assessments\components\ProvisionalScoreItemList.tsx`
+- 职责：展示服务端 itemScores 的安全题目标识、配置标识、阶段性分值、范围、状态、来源、缺失、认知域编码和受控复核原因
+- 边界：null 不显示为 0，needs_review 不渲染为系统错误，countsTowardTotal=false 显示过程记录；不显示正确 / 错误、作答或评分依据
+
+### 6.28 `ScoreReviewQueue`
+
+- 路径：`frontend\src\features\assessments\components\ScoreReviewQueue.tsx`
+- 职责：按后端原顺序展示 reviewQueue 安全题目标识与 reason code 中文映射；仅对可匹配 itemResponseId 提供“查看原题”
+- 边界：不从 itemScores 构造队列；null / 无法匹配不提供虚假定位；不展示作答、图片 / 轨迹、媒体地址、expectedValue、正确答案、评分规则或内部依据，不提供人工评分输入
+
+### 6.29 B7 类型
+
+- 路径：`frontend\src\features\assessments\types\provisional-scoring.ts`
+- 职责：严格定义 A17 真实 result / source / mode / item / review / quality 枚举、12 个 reason code、2 个 warning、scale / version / total / group / item / computation / reviewQueue 和请求 / 响应
+- 边界：Date JSON 使用 string / null；不定义作答、expectedValue、scoringRule、metadata、qualityHints、reviewer 或媒体内部字段
+
+### 6.30 Provisional Scoring API Client
+
+- 路径：`frontend\src\features\assessments\api\provisional-scoring-api.ts`
+- 职责：提供 `getLatestProvisionalScoreResult()`、`computeProvisionalScoreResult()` 与稳定 `ProvisionalScoringApiError`
+- 边界：只调用 A17 latest / compute；credentials / no-store，GET 支持 AbortSignal，POST 只重建 `{ confirm: true }` 且不重试；不记录请求 / 响应或泛化为评分 SDK
+
+### 6.31 B7 展示纯函数
+
+- 路径：`frontend\src\features\assessments\lib\provisional-scoring-display.ts`
+- 职责：集中维护结果、来源、模式、题目、review、quality、reason、warning、错误和 number / percent / Date 安全展示
+- 边界：未知枚举 / code 使用稳定兜底且不输出内部字符串；不计算分数 / 比例、不构造 reviewQueue、不推断诊断
 
 ## 7. 后续同步规则
 

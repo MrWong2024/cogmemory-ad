@@ -6,13 +6,13 @@
 
 ## 2. 当前状态与边界
 
-- 前端 B1 已新增 `frontend\src\features\auth\api\auth-api.ts`；B2 已新增 `frontend\src\features\patients\api\patients-api.ts`；B3 / B4 / B6 使用 `frontend\src\features\assessments\api\assessment-execution-api.ts` 对接评估执行与实例提交 API；B5 新增 `frontend\src\features\assessments\api\media-evidence-api.ts` 对接题目媒体证据 API。
-- 当前对接后端 A11 三个认证 API、A12 五个患者 / 访视 API、A13 三个评估初始化前置 API、A14 两个评估执行草稿 API、A15 四个题目媒体证据 API与 A16 两个实例提交 API，不调用其他业务 API。
+- 前端 B1 已新增 `frontend\src\features\auth\api\auth-api.ts`；B2 已新增 `frontend\src\features\patients\api\patients-api.ts`；B3 / B4 / B6 使用 `frontend\src\features\assessments\api\assessment-execution-api.ts` 对接评估执行与实例提交 API；B5 新增 `frontend\src\features\assessments\api\media-evidence-api.ts` 对接题目媒体证据 API；B7 新增 `frontend\src\features\assessments\api\provisional-scoring-api.ts` 独立对接阶段性评分。
+- 当前对接后端 A11 三个认证 API、A12 五个患者 / 访视 API、A13 三个评估初始化前置 API、A14 两个评估执行草稿 API、A15 四个题目媒体证据 API、A16 两个实例提交 API与 A17 两个阶段性评分 API，不调用其他业务 API。
 - API Client 使用 `frontendEnv.apiBaseUrl` 作为后端基础地址。
 - 所有请求统一使用 `credentials: 'include'`，由浏览器携带或接收 HttpOnly Cookie。
 - 所有认证、患者和访视请求使用 `cache: 'no-store'`。
 - 前端不读取 Cookie，不保存 token，不使用 JWT，也不记录密码或认证响应体。
-- 当前没有 BFF 代理；B1 / B2 / B3 / B4 / B5 / B6 按明确任务口径由浏览器直接请求既有公开 API base URL。
+- 当前没有 BFF 代理；B1-B7 按明确任务口径由浏览器直接请求既有公开 API base URL。
 
 ## 3. 环境变量读取
 
@@ -20,7 +20,7 @@
 - 读取项：既有 `NEXT_PUBLIC_API_BASE_URL`
 - 安全默认值：`http://localhost:5002`
 - 导出对象：`frontendEnv.apiBaseUrl`
-- B1 / B2 / B3 / B4 / B5 / B6 未新增、删除或修改环境变量与环境变量文件。
+- B1-B7 未新增、删除或修改环境变量与环境变量文件。
 
 ## 4. 当前 API 对接清单
 
@@ -251,6 +251,28 @@
 - 幂等 / 历史：`alreadySubmitted=true` 作为成功处理并切换只读，不重复 POST。completed 初始页面只显示 completedAt；当前会话没有 receipt 时明确只读 API 未提供历史提交操作者，不以 `operatorSnapshot` 冒充。
 - 安全边界：没有 force / ignore / override；blocking 不能绕过，warning 不阻断；不修改 Visit 或 ItemResponse，不执行评分、认知域、报告或 AI。
 
+### 4.20 `getLatestProvisionalScoreResult()` -> `GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/score-results/latest`
+
+- Client / 调用方：`provisional-scoring-api.ts` / `ScaleInstanceExecutionPage`，展示由 `ProvisionalScoringPanel` 及其子组件承担；只在实例为 completed / locked / voided 时自动读取一次，draft / in_progress 不调用。
+- Path / 请求：patientId、visitId、scaleInstanceId 全部 `encodeURIComponent()`；无 Query / Body。使用 `frontendEnv.apiBaseUrl`、`credentials: 'include'`、`cache: 'no-store'` 和独立 AbortSignal；新请求取消旧请求，卸载取消，Abort 不显示错误。
+- 响应：`ScoreResultDetailResponse { scale, scaleInstance, scoreResult, reviewQueue }`；Date JSON 字段使用 string / null。成功使用响应 ScoreResult 作为事实源并只同步 `detail.scaleInstance`，不覆盖 visit、itemResponses、作答草稿或媒体草稿。
+- 状态：loading / no_result / loaded / forbidden / error 独立于执行详情；失败不移除题目、submission 回执或媒体历史。提供手工重试 / 重新加载，不轮询、不自动重试。
+- 错误：401 返回 `/login`；403 明确显示无评分权限；400 validation；404 `PATIENT_NOT_FOUND`、`VISIT_NOT_FOUND`、`SCALE_INSTANCE_NOT_FOUND`、`SCORE_RESULT_NOT_FOUND`；409 `SCALE_INSTANCE_CONFIGURATION_UNAVAILABLE`、`SCORE_INPUT_INVALID`、`SCORE_RESULT_INCOMPLETE`。`SCORE_RESULT_NOT_FOUND` 映射正常“尚未计算”状态，`SCORE_RESULT_INCOMPLETE` 显示联系管理员且不自动修复；500 / 网络错误提供评分区域手工重试。
+- 历史：computed / needs_review / confirmed / locked / voided 均按服务端事实只读展示；GET 不写数据库，不通过 POST 查询历史，不提供多 run、重算或规则刷新。
+- 安全边界：响应类型和 UI 不包含或展示作答、expectedValue、正确答案、scoringRule、ItemResponse.score、媒体地址、metadata / qualityHints 或 reviewer；前端不重新计算 total / group / item / scorePercent / reviewQueue / status / source / quality。
+
+### 4.21 `computeProvisionalScoreResult()` -> `POST /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/score-results/compute`
+
+- Client / 调用方：`provisional-scoring-api.ts` / `ScaleInstanceExecutionPage`；仅 completed 实例、Visit 为 draft / in_progress / completed、latest 为 no_result、无本地未保存作答 / 未上传媒体 / 题目保存 / 媒体写入 / B6 submit 时提供首次计算入口。
+- 交互：页面加载、latest、readiness 和 B6 submit 均不会自动调用 compute。用户先展开内联说明，再勾选可见 checkbox；只有确认后才发送 POST。当前不支持重算。
+- Path / Body：三个路径 ID 全部编码且不进入 body；`ComputeScoreResultRequest` 严格为 `{ confirm: true }`，API Client 再次重建白名单，不接受或透传 runNo、status、scoreResultCode、itemScores、groupScores、totalScore、scoringSource、scoringMode、review、qualityStatus、force / rerun / override、确认 / 锁定字段、score、expectedValue、scoringRule 或 metadata。
+- 凭证 / 缓存 / 重试：`credentials: 'include'`、`cache: 'no-store'`、JSON POST。单一 compute 写锁禁用重复操作；POST 不自动重试，组件卸载后不 setState。
+- 响应：`ComputeScoreResultResponse { scale, scaleInstance, scoreResult, reviewQueue, alreadyComputed }`。成功直接使用响应结果、只同步 `detail.scaleInstance`，关闭确认，不重载页面、不跳转；不覆盖 Visit / ItemResponse / drafts / mediaDrafts，不调用 A14 PATCH、A15 写接口或 readiness。
+- 幂等：`alreadyComputed=false` 显示“阶段性评分计算完成，结果仍未最终确认”；`alreadyComputed=true` 显示此前已有结果且本次未重复计算，作为正常成功处理，不再次 POST。
+- 错误状态 / code：400 validation / `SCORE_COMPUTATION_CONFIRMATION_REQUIRED`；401 返回登录；403 显示无权限；404 `PATIENT_NOT_FOUND` / `VISIT_NOT_FOUND` / `SCALE_INSTANCE_NOT_FOUND`；409 `PATIENT_NOT_ACTIVE`、`VISIT_NOT_EDITABLE`、`SCALE_INSTANCE_CONFIGURATION_UNAVAILABLE`、`SCORE_INSTANCE_NOT_COMPUTABLE`、`SCORE_INPUT_INVALID`、`SCORE_RESULT_NOT_FOUND`、`SCORE_RESULT_INCOMPLETE`、`SCORE_RESULT_VOIDED`、`SCORE_COMPUTATION_CONFLICT`；500 `SCORE_COMPUTATION_FAILED`；网络 / 其他 500 映射 service_unavailable。
+- 错误行为：CONFLICT 与 VOIDED 自动读取一次 latest 但绝不重发 POST；INCOMPLETE 显示管理员处理提示；FAILED 保留页面并只允许用户手工重新加载 latest；后端英文 message 不作为 UI 文案。
+- 安全边界：不提交客户端分数、状态或规则，不修改 Visit / ItemResponse / submission readiness，不生成认知域、报告或诊断，不输出请求 / 响应或临床数据到 console。
+
 ## 5. 当前认证公开类型
 
 - `AuthUserResponse`：`id`、`accountName`、`displayName`、`roles`、`permissions`、可选 `userType`。
@@ -273,11 +295,13 @@
 - `MediaEvidenceApiError.kind` 覆盖 unauthenticated / forbidden / validation、完整资源 / 状态 code、文件 / 轨迹 / captureMode code、重复 / 不可访问 / 不可作废、Storage、创建 / 关联 / 作废内部失败、网络错误和 unknown；UI 不直接显示后端英文 message。
 - B6 新增 `scale-instance-submission.ts`：Date JSON 字段均为 string / string | null；类型定义 15 个 issue code、8 个 submissionState、summary、安全提交操作者和严格 `{ confirm: true }`。不定义作答原文、评分、expectedValue、mediaEvidenceId 或 metadata。
 - `AssessmentExecutionApiError.kind` 新增 `scale_instance_not_submittable`、`scale_instance_not_ready`、`scale_instance_start_time_invalid`、`scale_instance_submission_confirmation_required`、`scale_instance_submission_conflict`、`scale_instance_submission_audit_unavailable`、`scale_instance_submission_failed`，对应全部 A16 提交业务 code。
+- B7 新增 `provisional-scoring.ts`：严格定义真实 ScoreResult / scoring source / mode / item status / source / review / quality 枚举、12 个复核原因、2 个 computation warning、total / group / item / computation / reviewQueue，以及严格 `{ confirm: true }`；Date JSON 使用 string / null，不定义作答、expectedValue、scoringRule、metadata 或 reviewer。
+- `ProvisionalScoringApiError.kind` 覆盖 unauthenticated、forbidden、validation、患者 / 访视 / 实例 / 配置状态和 A17 全部 `SCORE_*` 业务 code、service_unavailable 与 unknown；UI 使用稳定中文映射。
 
 ## 7. 当前未对接 API
 
 - 当前没有 A12 / A13 / A14 已接接口之外的患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转调用。
-- 当前除 A16 readiness 与 submit 外，没有撤销提交、reopen、lock、force submit、ItemResponse 批量或自动保存、量表开始 / 暂停 / 结束、访视完成、媒体批量 / 分片 / 客户端直传 / 替换 / 物理删除、质量审核、OCR、计分、认知域、报告、AI、用户管理、角色权限管理或科研导出 API 调用。
+- 当前除 A16 readiness / submit 与 A17 provisional latest / compute 外，没有撤销提交、reopen、lock、force submit、ItemResponse 批量或自动保存、量表开始 / 暂停 / 结束、访视完成、媒体批量 / 分片 / 客户端直传 / 替换 / 物理删除、人工评分、评分确认 / 锁定 / 作废 / 重算 / 历史、认知域、报告、AI、用户管理、角色权限管理或科研导出 API 调用。
 - 不得在后端 API 未确认并进入明确任务范围前编造前端对接事实。
 
 ## 8. 后续同步规则

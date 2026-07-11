@@ -6,12 +6,12 @@
 
 ## 2. 当前状态
 
-- 前端公共底座、B1 登录 / 认证接入、B2 患者档案与评估访视最小页面闭环、B3 访视详情与量表实例初始化、B4 量表施测执行与逐题手工草稿保存、B5 photo / handwriting 媒体证据闭环，以及 B6 submission readiness 与正式实例提交已落地。
+- 前端公共底座、B1 登录 / 认证接入、B2 患者档案与评估访视最小页面闭环、B3 访视详情与量表实例初始化、B4 量表施测执行与逐题手工草稿保存、B5 photo / handwriting 媒体证据闭环、B6 submission readiness / 正式实例提交，以及 B7 阶段性评分与待人工复核展示已落地。
 - `frontend\package.json` 已存在，自动验证命令以其中真实脚本为准。
-- B2 / B3 / B4 / B5 / B6 不新增测试代码、测试框架、E2E 或第三方依赖。
-- 当前自动验证覆盖三个认证 API、A12 五个患者 / 访视 API、A13 三个评估初始化前置 API、A14 两个执行草稿 API、A15 四个媒体证据 API 与 A16 两个提交 API 的前端类型、调用代码和页面构建；真实 HTTP / 浏览器联调仍需手工验证。
+- B2-B7 不新增测试代码、测试框架、E2E 或第三方依赖。
+- 当前自动验证覆盖三个认证 API、A12 五个患者 / 访视 API、A13 三个评估初始化前置 API、A14 两个执行草稿 API、A15 四个媒体证据 API、A16 两个提交 API 与 A17 两个阶段性评分 API 的前端类型、调用代码和页面构建；真实 HTTP / 浏览器联调仍需手工验证。
 
-## 3. B1 / B2 / B3 / B4 / B5 / B6 自动验证命令
+## 3. B1 / B2 / B3 / B4 / B5 / B6 / B7 自动验证命令
 
 在 `frontend` 目录、且既有 `node_modules` 存在时执行：
 
@@ -74,6 +74,16 @@
 - 未新增自动测试：当前前端没有既有测试框架，任务明确不新增测试框架或浏览器 E2E；本阶段继续使用 lint、typecheck 与生产构建验证。
 - E2E / 浏览器自动化：未执行；本阶段明确不执行浏览器 E2E。
 - 浏览器手工验证：未执行，以下 B6 场景均为待验证。
+- 后端命令：未执行。
+
+本次 B7 验证结果：
+
+- `npm run lint`：通过。
+- `npm run typecheck`：通过，Next 16 量表实例执行动态路由类型生成成功且 TypeScript 无错误。
+- `npm run build`：通过，生产构建包含既有量表实例动态路由，B7 未新增路由。
+- 未新增自动测试：当前前端没有既有测试框架，任务明确不新增测试框架或浏览器 E2E；本阶段继续使用 lint、typecheck 与生产构建验证。
+- E2E / 浏览器自动化：未执行；本阶段明确不执行浏览器 E2E。
+- 浏览器手工验证：未执行，以下 B7 场景均为待验证。
 - 后端命令：未执行。
 
 如后续环境中 `frontend/node_modules` 不存在，不得为验证本阶段而执行 `npm install`；应跳过上述命令并说明原因。
@@ -153,6 +163,18 @@ B6 自动验证不覆盖：
 - 真实 A16 HTTP、数据库状态迁移、Cookie / CORS、并发提交、已提交历史审计差异、滚动 / focus 和浏览器可访问性行为。
 - 真实本地草稿与上传竞态、submit 期间各浏览器控件 disabled 表现、网络中断后的服务器最终状态；均需使用脱敏人工测试数据手工验证。
 - 自动或手工评分、认知域、访视完成 / 锁定、报告、撤销 / reopen / lock / force submit 或 AI；这些能力未实现。
+
+B7 静态与构建验证额外覆盖：
+
+- A17 安全类型、独立 API Client、latest AbortSignal、compute confirm 白名单、全部受控业务错误映射和 POST 不重试路径的 lint 与类型检查。
+- 阶段性 total / group / item、reviewQueue、12 个 reason、2 个 warning、状态 / 来源 / review / quality、版本追溯、内联确认、本地阻断、幂等回执和通用题目定位代码路径。
+- 同一 B4-B6 动态路由的 B7 集成；B7 未新增路由、依赖、BFF、middleware、持久化状态或配置。
+
+B7 自动验证不覆盖：
+
+- 真实 A17 HTTP、数据库 ScoreResult、Cookie / CORS、并发计算、幂等重读、各种历史状态、滚动 / focus 和浏览器可访问性行为。
+- 真实网络中断后的服务器最终状态、窄屏布局和后端数据组合；均需使用脱敏人工测试数据手工验证。
+- 人工评分录入 / 复核提交、评分确认 / 锁定 / 作废 / 重算 / 历史、认知域、报告或 AI；这些能力未实现。
 
 ## 5. B1 手工验证建议
 
@@ -335,7 +357,52 @@ B6 自动验证不覆盖：
 35. B6 没有新增路由、修改 URL 或增加路由参数。
 36. 全部验证使用脱敏人工测试数据，不使用真实患者或医疗信息。
 
-## 11. 认证与安全验证口径
+## 11. B7 手工验证建议（待验证）
+
+前置条件：后端已启动，使用脱敏人工测试账号和测试患者 / 访视 / MMSE / MoCA 实例；不得使用真实患者或医疗数据。以下场景本次未执行，均待开发者本地验证：
+
+1. draft / in_progress 实例不请求 latest。
+2. completed 实例自动查询 latest。
+3. latest 无结果显示“尚未计算”，不显示系统错误。
+4. 页面加载不自动 compute。
+5. 计算前出现内联说明和 checkbox。
+6. 未勾选不能计算。
+7. compute 只发送 confirm=true。
+8. compute 期间重复按钮禁用。
+9. compute 成功展示 provisional 结果。
+10. alreadyComputed=true 按成功处理。
+11. 页面刷新后 latest 能重新加载同一结果。
+12. 有待复核项时 scorePercent 不显示。
+13. 部分得分不显示成最终总分。
+14. null 得分不显示成 0。
+15. countsTowardTotal=false 显示过程记录。
+16. groupScores 不标记为认知域。
+17. reviewQueue reason 中文映射正确。
+18. reviewQueue 能定位原题。
+19. itemResponseId=null 不提供虚假定位。
+20. 评分结果不显示原始作答。
+21. 不显示 expectedValue。
+22. 不显示 scoringRule。
+23. 不显示正确答案或 isCorrect。
+24. 不显示 reviewer 内部信息。
+25. warning 不显示成诊断风险。
+26. completed / locked / voided 历史结果只读。
+27. locked / voided 且无结果时不能首次计算。
+28. SCORE_RESULT_INCOMPLETE 显示管理员处理提示。
+29. SCORE_RESULT_VOIDED 不提供重算。
+30. SCORE_COMPUTATION_CONFLICT 后重新加载 latest。
+31. 401 返回登录页。
+32. 403 显示无权限而不是无结果。
+33. 网络错误不影响题目和媒体历史展示。
+34. 页面不存在重新计算按钮。
+35. 页面不存在人工分数输入。
+36. 页面不存在评分确认、认知域或报告入口。
+37. 页面不显示诊断阈值或疾病判断。
+38. 小屏幕评分区域可正常使用。
+39. 未使用真实患者或医疗数据。
+40. 页面没有新增路由。
+
+## 12. 认证与安全验证口径
 
 - 使用浏览器网络面板确认三个认证请求均携带 credentials 语义，并由浏览器处理 HttpOnly Cookie。
 - 前端代码与存储中不得出现 raw token、token hash、`passwordHash`、JWT 或其他认证凭证。
@@ -349,15 +416,16 @@ B6 自动验证不覆盖：
 - B3 页面不得在 console、存储或 URL 中记录访视详情、目录、实例或 ItemResponse；不得展示完整 seed、scoringRule、expectedValue 或后端内部错误。
 - B4 页面不得在 console、存储或 URL 中记录作答草稿、患者、访视、实例、请求体或响应体；PATCH body 必须是变化白名单，不能包含服务器控制字段。
 - B5 页面不得在 console、存储或 URL 中记录源 File、JPEG / PNG Blob、轨迹、短期 URL、请求体或响应体；multipart 只能由 API Client 逐字段构造，不能手工设置 multipart Content-Type。
+- B7 页面不得在 console、存储或 URL 中记录评分结果、reviewQueue、请求体或响应体；compute 只能由独立 API Client 构造 `{ confirm: true }`，不得提交任何分数、规则、状态或服务器字段。
 
-## 12. 医疗与隐私展示红线
+## 13. 医疗与隐私展示红线
 
 - 不展示真实用户或患者敏感数据样本。
 - 测试截图不得包含真实姓名、邮箱、身份证号、手机号、病历号、住址、患者资料或真实文件名。
 - 不得在页面文案或测试截图中呈现未经确认的真实医疗诊断结论。
 - 核心认知评估必须保持医护或研究人员陪伴 / 监督的产品边界。
 
-## 13. 后续同步规则
+## 14. 后续同步规则
 
 - 前端新增或调整测试脚本后，应同步更新自动验证命令。
 - 新增页面、路由、组件、API 对接或权限展示后，应同步补充对应验证口径。
