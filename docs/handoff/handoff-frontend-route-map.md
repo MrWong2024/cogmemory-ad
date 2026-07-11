@@ -6,9 +6,9 @@
 
 ## 2. 当前状态
 
-- 当前包含公共首页、登录页、轻量工作台、B2 四条患者 / 访视路由、B3 访视详情路由、B4-B7 量表实例施测、媒体证据、正式提交与阶段性评分共用路由，以及 not-found 兜底；B5-B7 均未新增路由。
+- 当前包含既有公共、认证、患者 / 访视路由与 B4-B8 共用量表实例路由；B8 未新增路由。
 - `/dashboard` 已提供患者档案入口，但仍不是完整医生工作台。
-- 当前不包含患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、独立评分、人工评分确认、认知域、报告、AI、用户管理或权限菜单路由。
+- 当前不包含患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、独立评分、评分锁定、认知域、报告、AI、用户管理或权限菜单路由。
 - 当前不包含 Next middleware 或路由级服务端认证中间件。
 
 ## 3. 当前路由清单
@@ -107,11 +107,11 @@
 
 ### 3.9 `/patients/[patientId]/visits/[visitId]/scale-instances/[scaleInstanceId]`
 
-- 页面名称：量表实例施测执行、媒体证据、正式提交与阶段性评分
-- 页面职责：展示患者 / 受试者编号、访视、量表身份与版本、实例、实时进度、服务端动态分组和安全题目；按题手工编辑并保存 A14 白名单草稿，为含 photo / handwriting 要求的题目提供 A15 证据采集、历史、预览和作废，通过 A16 完成 readiness / 正式提交，并通过 A17 查询或明确确认后计算阶段性评分、展示 total / group / item 与 reviewQueue
+- 页面名称：量表实例施测执行、媒体证据、正式提交、阶段性评分、人工复核与评分确认
+- 页面职责：在既有 A14-A17 能力上接入 A18 单题人工评分与 ScoreResult 显式确认；不新增独立评分路由。
 - 动态参数：Server Component 按 Next 16 `params: Promise<{ patientId: string; visitId: string; scaleInstanceId: string }>` 等待参数后传给 `ScaleInstanceExecutionPage`；route 不 fetch、不保存表单状态
 - 访问边界：继续复用 `/patients/**` 的 `PatientsWorkspaceShell`；不新增 middleware、BFF 或 Provider，不读取 Cookie；后端 Guard 是最终权限边界
-- 数据来源：A14 执行详情 GET 与单题草稿 PATCH、A15 题目媒体列表 / multipart 上传 / primary 与 trajectory 临时访问地址 / 作废、A16 submission-readiness GET 与 submit POST，以及 A17 latest GET / compute POST
+- 数据来源：既有 A14-A17 请求，以及 A18 manual-review PATCH / confirm POST；评分只读刷新仍只使用 latest GET。
 - loading / 取消：执行详情 GET 使用 AbortController；重试和卸载取消旧请求，被取消请求不显示服务错误；任一动态 ID 无效时不发请求
 - 401 / 403 / 404 / 409：401 返回 `/login`；403 展示无权限与返回 / 退出入口；患者、访视、实例不存在分别使用稳定状态；配置不可用不渲染空白题目页
 - 分组：groups 按 order、题目按 itemOrder 排序，使用 groupCode 动态归组；无匹配分组题目进入“其他项目”；button 导航显示每组完成数并支持键盘 focus
@@ -130,10 +130,17 @@
 - 阶段性评分计算：仅 completed、Visit 为 draft / in_progress / completed 且 latest 无结果时提供入口；本地 dirty、媒体草稿、题目 / 媒体写请求或 submit 阻断。用户必须展开说明并勾选 checkbox，compute 只发送 confirm=true；页面不自动计算、不自动重试、不支持重算
 - 结果展示：直接展示服务端阶段性总分、分组得分、题目分值、结果 / 来源 / review / quality 状态、版本、计算 warning 和 reviewQueue；不重新求和、聚合、补算比例或构造队列。所有结果明确未确认，不输出临床解释
 - 原题定位：reviewQueue 仅在 itemResponseId 能匹配当前安全题目时提供“查看原题”，复用 B6 分组切换、滚动与键盘 focus，不修改 URL、不清理其他分组草稿；null / 无法匹配不虚假跳转
+- 人工评分：needs_review 与确认前 manual_scored 计分项可打开单一活动表单；0 合法，前端校验 finite number 与服务端 min / max，step 不公开且不猜测。reviewNote trim 后 3–2000；auto_scored、not_scored、过程项、空 itemResponseId 与只读结果无入口。
+- 修订与安全摘要：manual_scored 表单一致预填最新服务端人工分值与公开 reviewNote；只展示最新 manualReview 摘要，不展示原始作答、previousScoreValue、metadata 或完整历史。查看作答只能通过“查看原题”定位。
+- 乐观并发：表单展开冻结 ScoreResult.updatedAt；latest 或其他完整响应导致版本变化时草稿 stale 并禁止提交。冲突保留输入、自动刷新一次 latest，但不自动重试 PATCH；用户明确“基于最新结果继续”后才更新基线。
+- 草稿：人工评分与确认意见只保存在 React 内存；页面刷新丢失。顶部与 beforeunload 独立区分作答、媒体、人工评分和确认意见，不把评分草稿计入题目或媒体数量。
+- 确认：仅 computed、isFinal=false、无 pending / queue / warning、total complete、实例 / 访视状态允许且无任何本地草稿或写请求时显示“准备确认评分结果”。第二步要求 3–2000 字确认意见与 checkbox，POST 只发送 confirm=true、reviewNote、expectedUpdatedAt。
+- 确认并发：确认区展开冻结 updatedAt；版本变化时保留意见、清除 checkbox、标记 stale。confirmation conflict 刷新 latest 且不重发；warning 不能忽略；alreadyConfirmed=true 按成功处理。
+- 最终只读：confirmed / locked 不显示人工评分输入或确认按钮；按服务端 isFinal / totalScore.isFinal 显示确认得分、确认分组得分与确认项目分值，并展示 confirmation 安全摘要。confirmed 不称为 locked，qualityStatus=passed 只称评分复核流程已通过。
 - 评分隔离：compute / latest 只允许同步服务端 scaleInstance 摘要，不覆盖 Visit、ItemResponse、作答 / 媒体草稿或 submission readiness，不触发 A14 / A15 写操作
 - 只读：completed / locked / voided 实例仍可查看 readiness、作答和历史证据；submit 期间题目保存、图片 / 手写采集、上传与作废临时真实禁用
-- 当前非目标：不提供撤销、reopen、lock、force submit、批量或自动保存、实时计时器、人工评分录入 / 确认 / 锁定 / 作废 / 重算 / 历史、认知域、报告、OCR 或 AI；不提供实时摄像头、音频 / 视频 / PDF / SVG、批量 / 分片 / 客户端直传、物理删除或直接替换
-- 关联组件：`ScaleInstanceExecutionPage`、`ScaleInstanceSubmissionPanel`、`ScaleSubmissionIssueList`、`ProvisionalScoringPanel`、`ProvisionalScoreSummary`、`ProvisionalScoreGroupList`、`ProvisionalScoreItemList`、`ScoreReviewQueue`、`ScaleExecutionGroupNavigation`、`ItemResponseEditor`、step / prompt / timing 子组件，以及媒体证据组件
+- 当前非目标：不提供批量评分、lock、void、撤销确认、reopen、rerun、runNo=2、完整评分历史、认知域、报告、诊断、OCR 或 AI；媒体与既有执行非目标不变。
+- 关联组件：既有执行与评分组件，以及 `ManualScoreReviewForm`、`ScoreResultConfirmationPanel`。
 
 ### 3.10 `not-found`
 

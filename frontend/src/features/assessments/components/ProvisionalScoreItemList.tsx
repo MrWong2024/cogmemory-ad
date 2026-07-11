@@ -1,5 +1,6 @@
 import { Badge } from '@/src/components/ui/Badge';
 import {
+  formatProvisionalScoreDate,
   formatProvisionalScoreNumber,
   getScoreReviewReasonMessage,
   isScoreReviewReasonCode,
@@ -7,6 +8,8 @@ import {
   scoreItemStatusLabels,
 } from '@/src/features/assessments/lib/provisional-scoring-display';
 import type { ProvisionalScoreItem } from '@/src/features/assessments/types/provisional-scoring';
+import { assessmentOperatorRoleLabels } from '@/src/features/assessments/lib/assessment-execution-display';
+import { Button } from '@/src/components/ui/Button';
 
 function sortItems(items: ProvisionalScoreItem[]): ProvisionalScoreItem[] {
   return [...items].sort(
@@ -17,14 +20,20 @@ function sortItems(items: ProvisionalScoreItem[]): ProvisionalScoreItem[] {
 }
 
 export function ProvisionalScoreItemList({
+  canReviewItem,
+  isFinal,
   items,
+  onReviewItem,
 }: {
+  canReviewItem: (item: ProvisionalScoreItem) => boolean;
+  isFinal: boolean;
   items: ProvisionalScoreItem[];
+  onReviewItem: (itemResponseId: string) => void;
 }) {
   return (
     <details className="rounded-md border border-[var(--cma-line)] p-4">
       <summary className="cursor-pointer text-lg font-semibold text-[var(--cma-text-strong)]">
-        题目级阶段性分值（{items.length}）
+        {isFinal ? '确认项目分值' : '题目级阶段性分值'}（{items.length}）
       </summary>
       <p className="mt-2 text-sm leading-6 text-[var(--cma-muted)]">
         题目分值和状态均来自服务端；本页不根据作答推导或修正。
@@ -67,7 +76,7 @@ export function ProvisionalScoreItemList({
                 {!item.countsTowardTotal
                   ? '过程记录，不计入总分'
                   : item.provisionalScoreValue !== null
-                    ? `阶段性题目分值：${formatProvisionalScoreNumber(item.provisionalScoreValue)}`
+                    ? `${isFinal ? '确认项目分值' : '阶段性题目分值'}：${formatProvisionalScoreNumber(item.provisionalScoreValue)}`
                     : item.reviewRequired
                       ? '待人工复核'
                       : '当前尚未评分'}
@@ -121,6 +130,52 @@ export function ProvisionalScoreItemList({
                     <p>复核原因编码：{item.reviewReasonCode}</p>
                   ) : null}
                   <p>{getScoreReviewReasonMessage(item.reviewReasonCode)}</p>
+                </div>
+              ) : null}
+
+              {item.scoreStatus === 'auto_scored' ? (
+                <p className="text-sm leading-6 text-[var(--cma-muted)]">
+                  规则自动计算，不允许人工覆盖。
+                </p>
+              ) : null}
+
+              {item.scoreStatus === 'not_scored' ? (
+                <p className="text-sm leading-6 text-[var(--cma-muted)]">
+                  过程记录，不计分，不允许人工评分。
+                </p>
+              ) : null}
+
+              {item.manualReview ? (
+                <div className="grid gap-1 rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface)] p-3 text-sm leading-6">
+                  <p className="font-semibold text-[var(--cma-text-strong)]">
+                    最新人工评分摘要
+                  </p>
+                  <p>
+                    操作者：{item.manualReview.reviewer.operatorName || '未提供'}
+                    {item.manualReview.reviewer.operatorRole
+                      ? `（${assessmentOperatorRoleLabels[item.manualReview.reviewer.operatorRole]}）`
+                      : ''}
+                  </p>
+                  <p>
+                    时间：{formatProvisionalScoreDate(item.manualReview.reviewedAt)}
+                  </p>
+                  <p className="whitespace-pre-wrap break-words">
+                    评分依据：{item.manualReview.reviewNote}
+                  </p>
+                </div>
+              ) : null}
+
+              {item.itemResponseId && canReviewItem(item) ? (
+                <div>
+                  <Button
+                    onClick={() => onReviewItem(item.itemResponseId!)}
+                    size="sm"
+                    variant="secondary"
+                  >
+                    {item.scoreStatus === 'manual_scored'
+                      ? '修订人工评分'
+                      : '人工评分'}
+                  </Button>
                 </div>
               ) : null}
             </li>

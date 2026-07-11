@@ -15,6 +15,9 @@ import { ProvisionalScoreGroupList } from '@/src/features/assessments/components
 import { ProvisionalScoreItemList } from '@/src/features/assessments/components/ProvisionalScoreItemList';
 import { ProvisionalScoreSummary } from '@/src/features/assessments/components/ProvisionalScoreSummary';
 import { ScoreReviewQueue } from '@/src/features/assessments/components/ScoreReviewQueue';
+import { ManualScoreReviewForm } from '@/src/features/assessments/components/ManualScoreReviewForm';
+import { ScoreResultConfirmationPanel } from '@/src/features/assessments/components/ScoreResultConfirmationPanel';
+import { assessmentOperatorRoleLabels } from '@/src/features/assessments/lib/assessment-execution-display';
 import {
   formatProvisionalScoreDate,
   getScoreComputationWarningMessage,
@@ -25,7 +28,16 @@ import {
   scoringModeLabels,
   scoringSourceLabels,
 } from '@/src/features/assessments/lib/provisional-scoring-display';
-import type { ScoreResultDetailResponse } from '@/src/features/assessments/types/provisional-scoring';
+import type {
+  ManualScoreReviewReceipt,
+  ProvisionalScoreItem,
+  ScoreResultConfirmationReceipt,
+  ScoreResultDetailResponse,
+} from '@/src/features/assessments/types/provisional-scoring';
+import type {
+  ManualScoreReviewDraft,
+  ScoreResultConfirmationDraft,
+} from '@/src/features/assessments/lib/score-review-draft';
 import type { AssessmentVisitStatus } from '@/src/features/patients/types/patient';
 
 export type ProvisionalScoreQueryStatus =
@@ -46,45 +58,94 @@ const resultStatusTones: Record<string, BadgeTone> = {
 };
 
 export function ProvisionalScoringPanel({
+  activeManualReviewDraft,
   alreadyComputed,
   canCompute,
   canLocateItem,
+  canReviewItem,
   computationError,
   computationStatus,
   computeBlockReason,
+  confirmationBlockReason,
+  confirmationDraft,
+  confirmationError,
   confirmationVisible,
   instanceStatus,
+  latestConfirmationReceipt,
+  latestReviewReceipt,
+  manualReviewError,
+  manualReviewStatus,
+  manualReviewWriteBlockedReason,
+  onChangeConfirmationDraft,
+  onChangeManualReviewDraft,
+  onCloseConfirmation,
+  onConfirmScoreResult,
   onConfirmCompute,
+  onDiscardManualReviewDraft,
   onLocateItem,
   onPrepareCompute,
+  onPrepareConfirmation,
   onRefresh,
+  onStartManualReview,
+  onSubmitManualReview,
+  onUseLatestForConfirmation,
+  onUseLatestForManualReview,
   queryError,
   queryStatus,
   result,
+  scoreWriteState,
   statusMessage,
   visitStatus,
 }: {
+  activeManualReviewDraft: ManualScoreReviewDraft | null;
   alreadyComputed: boolean | null;
   canCompute: boolean;
   canLocateItem: (itemResponseId: string) => boolean;
+  canReviewItem: (item: ProvisionalScoreItem) => boolean;
   computationError: string | null;
   computationStatus: 'idle' | 'computing';
   computeBlockReason: string | null;
+  confirmationBlockReason: string | null;
+  confirmationDraft: ScoreResultConfirmationDraft | null;
+  confirmationError: string | null;
   confirmationVisible: boolean;
   instanceStatus: AssessmentVisitStatus;
+  latestConfirmationReceipt: ScoreResultConfirmationReceipt | null;
+  latestReviewReceipt: ManualScoreReviewReceipt | null;
+  manualReviewError: string | null;
+  manualReviewStatus: string | null;
+  manualReviewWriteBlockedReason: string | null;
+  onChangeConfirmationDraft: (draft: ScoreResultConfirmationDraft) => void;
+  onChangeManualReviewDraft: (draft: ManualScoreReviewDraft) => void;
+  onCloseConfirmation: () => void;
+  onConfirmScoreResult: () => void;
   onConfirmCompute: () => void;
+  onDiscardManualReviewDraft: () => void;
   onLocateItem: (itemResponseId: string) => void;
   onPrepareCompute: () => void;
+  onPrepareConfirmation: () => void;
   onRefresh: () => void;
+  onStartManualReview: (itemResponseId: string) => void;
+  onSubmitManualReview: () => void;
+  onUseLatestForConfirmation: () => void;
+  onUseLatestForManualReview: () => void;
   queryError: string | null;
   queryStatus: ProvisionalScoreQueryStatus;
   result: ScoreResultDetailResponse | null;
+  scoreWriteState: 'idle' | 'reviewing' | 'confirming';
   statusMessage: string | null;
   visitStatus: AssessmentVisitStatus;
 }) {
   const [confirmed, setConfirmed] = useState(false);
   const isQueryable = ['completed', 'locked', 'voided'].includes(instanceStatus);
   const isComputing = computationStatus === 'computing';
+  const activeReviewItem =
+    activeManualReviewDraft && result
+      ? result.scoreResult.itemScores.find(
+          (item) =>
+            item.itemResponseId === activeManualReviewDraft.itemResponseId,
+        )
+      : undefined;
 
   useEffect(() => {
     setConfirmed(false);
@@ -102,9 +163,13 @@ export function ProvisionalScoringPanel({
       <CardHeader className="border-b border-[var(--cma-line)]">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <CardTitle>阶段性评分与待人工复核</CardTitle>
+            <CardTitle>
+              {result?.scoreResult.isFinal
+                ? '已确认评分结果'
+                : '阶段性评分、人工复核与确认'}
+            </CardTitle>
             <CardDescription>
-              查询既有结果；无结果时仅在明确确认后生成一次阶段性评分。
+              查询既有结果；人工评分与确认均使用服务端版本进行并发保护。
             </CardDescription>
           </div>
           {result ? (
@@ -123,9 +188,15 @@ export function ProvisionalScoringPanel({
 
       <CardContent className="grid gap-5 pt-5">
         <div className="grid gap-1 rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-info-soft)] p-4 text-sm leading-6 text-[var(--cma-info)]">
-          <p className="font-semibold">阶段性评分，尚未最终确认</p>
-          <p>不得单独作为诊断结论。</p>
-          <p>待人工复核项目尚未计入最终得分。</p>
+          <p className="font-semibold">
+            {result?.scoreResult.isFinal
+              ? '服务端已标记为最终评分结果'
+              : '阶段性评分，尚未最终确认'}
+          </p>
+          <p>评分结果不得脱离临床背景单独形成诊断结论。</p>
+          {!result?.scoreResult.isFinal ? (
+            <p>待人工复核项目尚未计入最终得分。</p>
+          ) : null}
         </div>
 
         {!isQueryable ? (
@@ -283,19 +354,136 @@ export function ProvisionalScoringPanel({
         {result ? (
           <div className="grid gap-6">
             <ProvisionalScoreSummary total={result.scoreResult.totalScore} />
-            <ProvisionalScoreGroupList groups={result.scoreResult.groupScores} />
+            <ProvisionalScoreGroupList
+              groups={result.scoreResult.groupScores}
+              isFinal={result.scoreResult.isFinal}
+            />
             <ScoreReviewQueue
               canLocateItem={canLocateItem}
+              canReviewItem={canReviewItem}
               items={result.reviewQueue}
               onLocateItem={onLocateItem}
+              onReviewItem={onStartManualReview}
+              scoreItems={result.scoreResult.itemScores}
             />
-            <ProvisionalScoreItemList items={result.scoreResult.itemScores} />
+
+            {activeManualReviewDraft &&
+            activeReviewItem &&
+            !['confirmed', 'locked', 'voided'].includes(
+              result.scoreResult.status,
+            ) ? (
+              <ManualScoreReviewForm
+                canLocateItem={canLocateItem(activeManualReviewDraft.itemResponseId)}
+                draft={activeManualReviewDraft}
+                error={manualReviewError}
+                isDirty={
+                  activeManualReviewDraft.scoreValue !==
+                    activeManualReviewDraft.initialScoreValue ||
+                  activeManualReviewDraft.reviewNote !==
+                    activeManualReviewDraft.initialReviewNote
+                }
+                isSubmitting={scoreWriteState === 'reviewing'}
+                item={activeReviewItem}
+                onChange={onChangeManualReviewDraft}
+                onDiscard={onDiscardManualReviewDraft}
+                onLocateItem={() =>
+                  onLocateItem(activeManualReviewDraft.itemResponseId)
+                }
+                onSubmit={onSubmitManualReview}
+                onUseLatest={onUseLatestForManualReview}
+                writeBlockedReason={
+                  manualReviewWriteBlockedReason ??
+                  (scoreWriteState === 'idle' &&
+                  !canReviewItem(activeReviewItem)
+                    ? '最新服务端状态不允许继续人工评分，请重新加载并核对。'
+                    : null)
+                }
+              />
+            ) : activeManualReviewDraft ? (
+              <div
+                className="grid gap-3 rounded-md border border-[var(--cma-danger)] bg-[var(--cma-danger-soft)] p-4 text-[var(--cma-danger)]"
+                role="alert"
+              >
+                <p>
+                  {['confirmed', 'locked', 'voided'].includes(
+                    result.scoreResult.status,
+                  )
+                    ? '评分结果已进入最终或只读状态，本地人工评分输入不会再发送。'
+                    : '当前人工评分草稿无法匹配最新评分项目，请放弃草稿后重新加载。'}
+                </p>
+                <div>
+                  <Button onClick={onDiscardManualReviewDraft} size="sm" variant="secondary">
+                    放弃本地人工评分输入
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+
+            {manualReviewStatus ? (
+              <p
+                aria-live="polite"
+                className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-info-soft)] p-4 text-[var(--cma-info)]"
+              >
+                {manualReviewStatus}
+              </p>
+            ) : null}
+
+            {latestReviewReceipt ? (
+              <div
+                aria-live="polite"
+                className="grid gap-1 rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] p-4 text-sm leading-6"
+              >
+                <p className="font-semibold text-[var(--cma-text-strong)]">
+                  当前会话人工评分回执
+                </p>
+                <p>
+                  操作者：{latestReviewReceipt.reviewer.operatorName || '未提供'}
+                  {latestReviewReceipt.reviewer.operatorRole
+                    ? `（${assessmentOperatorRoleLabels[latestReviewReceipt.reviewer.operatorRole]}）`
+                    : ''}
+                </p>
+                <p>
+                  时间：{formatProvisionalScoreDate(latestReviewReceipt.reviewedAt)}
+                </p>
+                <p>剩余待复核：{latestReviewReceipt.pendingItemCount} 项</p>
+                <p className="break-all text-[var(--cma-muted)]">
+                  当前会话事件标识：{latestReviewReceipt.eventId}
+                </p>
+              </div>
+            ) : null}
+
+            <ProvisionalScoreItemList
+              canReviewItem={canReviewItem}
+              isFinal={result.scoreResult.isFinal}
+              items={result.scoreResult.itemScores}
+              onReviewItem={onStartManualReview}
+            />
+
+            <ScoreResultConfirmationPanel
+              blockReason={confirmationBlockReason}
+              draft={confirmationDraft}
+              error={confirmationError}
+              isConfirming={scoreWriteState === 'confirming'}
+              onChange={onChangeConfirmationDraft}
+              onClose={onCloseConfirmation}
+              onConfirm={onConfirmScoreResult}
+              onPrepare={onPrepareConfirmation}
+              onUseLatest={onUseLatestForConfirmation}
+              receipt={latestConfirmationReceipt}
+              result={result.scoreResult}
+            />
 
             <details className="rounded-md border border-[var(--cma-line)] p-4">
               <summary className="cursor-pointer font-semibold text-[var(--cma-text-strong)]">
                 技术信息 / 计算记录
               </summary>
               <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                <div>
+                  <dt className="text-[var(--cma-muted)]">评分结果更新时间</dt>
+                  <dd>
+                    {formatProvisionalScoreDate(result.scoreResult.updatedAt)}
+                  </dd>
+                </div>
                 <div>
                   <dt className="text-[var(--cma-muted)]">评分结果状态</dt>
                   <dd>
@@ -433,7 +621,11 @@ export function ProvisionalScoringPanel({
         {isQueryable ? (
           <div className="border-t border-[var(--cma-line)] pt-4">
             <Button
-              disabled={queryStatus === 'loading' || isComputing}
+              disabled={
+                queryStatus === 'loading' ||
+                isComputing ||
+                scoreWriteState !== 'idle'
+              }
               onClick={onRefresh}
               variant="secondary"
             >

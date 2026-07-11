@@ -9,9 +9,9 @@
 - `frontend\src\components\ui` 提供 `Button`、`Card`、`Badge` 三个无业务语义公共组件。
 - `frontend\src\features\auth` 提供 B1 最小认证接入能力。
 - `frontend\src\features\patients` 提供 B2 患者档案与评估访视最小业务闭环。
-- `frontend\src\features\assessments` 提供 B3 访视详情与量表实例初始化、B4 量表施测执行与逐题手工草稿保存、B5 photo / handwriting 媒体证据采集 / 预览 / 作废、B6 submission readiness / 正式实例提交，以及 B7 阶段性评分和待人工复核展示能力。
+- `frontend\src\features\assessments` 在 B3-B7 既有能力上新增 B8 单题人工评分、乐观并发、显式确认与最终只读展示。
 - 当前组件遵循医疗系统 / 临床评估 / 低干扰 / 高可读性 / 冷静可信视觉基线。
-- B2-B7 未新增公共 Input 组件、第三方 UI 库、状态管理库、数据请求库或权限菜单组件。
+- B2-B8 未新增公共 Input 组件、第三方 UI 库、状态管理库、数据请求库或权限菜单组件。
 
 ## 3. 公共 UI 组件
 
@@ -311,8 +311,8 @@
 ### 6.24 `ProvisionalScoringPanel`
 
 - 路径：`frontend\src\features\assessments\components\ProvisionalScoringPanel.tsx`
-- 职责：展示 idle / loading / no_result / loaded / forbidden / error、手工重试、首次计算入口、内联说明 / checkbox、计算写锁 / 回执和阶段性结果子组件
-- 状态边界：draft / in_progress 只提示先提交；completed 无结果且 Visit / 本地状态允许时才可计算；locked / voided 只读查询。没有自动 compute、轮询、重算或人工评分输入
+- 职责：展示查询 / 首次计算状态，并组合 B8 人工评分表单、回执、显式确认与 final / provisional 子组件。
+- 状态边界：draft / in_progress 只提示先提交；completed 无结果且 Visit / 本地状态允许时才可计算；有结果后严格按服务端状态开放人工复核 / 确认；locked / voided 只读。没有自动 compute、轮询或重算。
 - 可访问性：错误使用 alert，查询 / 计算 / 成功使用 polite live region；checkbox 有可见 label，按钮 disabled 不只依赖颜色
 
 ### 6.25 `ProvisionalScoreSummary`
@@ -356,6 +356,50 @@
 - 路径：`frontend\src\features\assessments\lib\provisional-scoring-display.ts`
 - 职责：集中维护结果、来源、模式、题目、review、quality、reason、warning、错误和 number / percent / Date 安全展示
 - 边界：未知枚举 / code 使用稳定兜底且不输出内部字符串；不计算分数 / 比例、不构造 reviewQueue、不推断诊断
+
+### 6.32 `ManualScoreReviewForm`
+
+- 路径：`frontend\src\features\assessments\components\ManualScoreReviewForm.tsx`
+- 职责：展示安全题目标识、状态 / 来源、min / max、当前 manualReview、复核原因、冻结的 updatedAt 基线，以及人工分值与 reviewNote 输入；提供保存、放弃、查看原题和 stale 后“基于最新结果继续”。
+- 校验：0 合法；空值、非 finite、超出 min / max 与 note 非 3–2000 字符阻止提交。input 使用 `step="any"`，不猜测服务端未公开的 step。
+- 边界：同一时刻由父级只允许一个活动表单；不展示原始作答、正确答案、expectedValue、scoringRule、metadata、previousScoreValue 或完整审计历史。
+
+### 6.33 `ScoreResultConfirmationPanel`
+
+- 路径：`frontend\src\features\assessments\components\ScoreResultConfirmationPanel.tsx`
+- 职责：提供“准备确认 → 确认意见 + checkbox → 确认评分结果”两步内联交互，展示 stale、warning / eligibility 阻断、confirmation 安全摘要和当前会话 confirmationReceipt。
+- 最终展示：confirmed / locked 只读；显示确认时间、操作者、角色、意见与弱化 confirmationId。confirmation 缺失时不以施测或 review 操作者冒充。
+- 边界：不 force confirm、不忽略 warning、不自动完成访视、不生成认知域、报告或诊断。
+
+### 6.34 B8 评分草稿纯函数
+
+- 路径：`frontend\src\features\assessments\lib\score-review-draft.ts`
+- 职责：定义人工评分 / 确认 React 内存草稿，处理 dirty、finite number、min / max、reviewNote、expectedUpdatedAt 请求构建与确认资格判断。
+- 修订口径：一致预填当前服务端公开人工分值与最新 reviewNote，便于小修；初始预填本身不计 dirty，用户修改后才计入 beforeunload。
+- 边界：不推导 score step，不计算题目、分组、总分、百分比或 reviewQueue，不修改后端响应，不使用浏览器持久化存储。
+
+### 6.35 B8 `ScoreReviewQueue` / `ProvisionalScoreItemList`
+
+- `ScoreReviewQueue`：在后端原队列上为可关联、状态允许的项目提供“人工评分”，继续提供统一“查看原题”；找不到 itemScore 或 itemResponseId 时显示安全异常，不猜测范围。
+- `ProvisionalScoreItemList`：展示最新 manualReview 摘要；manual_scored 在确认前提供修订，auto_scored 明确不可人工覆盖，not_scored 明确为过程记录；final 时显示确认项目分值。
+- 两者均不直接调用 API，不自行修改队列或汇总。
+
+### 6.36 B8 `ProvisionalScoringPanel`
+
+- 职责：组合人工评分表单、人工回执、确认面板、确认回执与 provisional / final 文案；final 时主标题切换为已确认评分结果。
+- 边界：底层 fetch 和写状态仍由 `ScaleInstanceExecutionPage` 管理；面板不在 JSX 中求和或构造汇总。
+
+### 6.37 B8 `ScaleInstanceExecutionPage`
+
+- 状态职责：管理单活动人工评分草稿、确认草稿、baseUpdatedAt、dirty / stale、统一评分写锁、reviewUpdate / confirmationReceipt、fatal 审计阻断与 beforeunload 扩展。
+- 结果合并：latest、compute、manual-review、confirm 均通过统一等价路径替换 ScoreResult detail 并只同步 ScaleInstance 摘要；不覆盖 Visit / ItemResponse，不清理作答或媒体草稿。
+- 并发：manual / confirm conflict 不自动重试，保留相应输入并刷新 latest；版本变化只标记 stale，用户明确操作后才更新基线。
+- 定位：B6 issue、B7/B8 reviewQueue 与人工评分继续共用 itemResponseId -> 分组切换 -> scrollIntoView -> focus；不修改 URL。
+
+### 6.38 B8 Provisional Scoring API Client
+
+- 新增：`reviewScoreItemManually()` 与 `confirmScoreResult()`。
+- 边界：五个 / 四个 Path ID 分别编码；credentials / no-store；PATCH / POST 请求体逐字段白名单构建且不重试；完整 A18 错误 code 使用稳定中文映射，不记录临床数据到 console。
 
 ## 7. 后续同步规则
 

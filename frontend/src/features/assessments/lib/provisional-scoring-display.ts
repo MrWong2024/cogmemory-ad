@@ -56,7 +56,7 @@ export const scoreReviewStatusLabels: Record<ScoreReviewStatus, string> = {
 
 export const scoreQualityStatusLabels: Record<ScoreQualityStatus, string> = {
   unchecked: '尚未进行进一步质量确认',
-  passed: '服务端标记为已通过质量检查',
+  passed: '评分复核流程已通过',
   needs_review: '结果需要复核',
   failed: '服务端标记为质量检查未通过',
 };
@@ -170,6 +170,33 @@ export function getProvisionalScoringApiErrorMessage(
     score_result_incomplete:
       '当前存在未完成的内部评分记录，系统不能自动修复，请联系管理员。',
     score_result_voided: '当前评分结果已作废，现阶段不支持重新计算。',
+    score_result_not_reviewable: '当前评分结果状态不允许继续人工复核。',
+    score_item_not_found: '未找到该评分项目，请重新加载评分结果。',
+    score_item_not_reviewable:
+      '当前项目不允许人工评分；自动评分和过程记录不能被人工覆盖。',
+    score_item_review_target_unavailable:
+      '当前评分项目无法关联到原题，请重新加载或联系管理员。',
+    score_manual_value_out_of_range: '人工分值超出该题允许范围。',
+    score_manual_value_step_invalid:
+      '人工分值不符合该题的计分步长，请按量表规则调整。',
+    score_result_metadata_unsupported:
+      '评分审计数据结构异常，当前不能继续写入，请联系管理员。',
+    score_review_audit_limit_reached:
+      '当前评分结果已达到人工修订审计上限，不能继续修改。',
+    score_result_review_conflict:
+      '评分结果已被其他操作更新，请重新核对最新结果后再提交。',
+    score_result_review_failed: '人工评分保存失败，请保留当前输入并稍后重试。',
+    score_result_confirmation_required: '请明确勾选确认后再提交评分确认。',
+    score_result_not_ready_for_confirmation:
+      '当前仍有项目未完成评分，暂不能确认。',
+    score_result_confirmation_warnings_present:
+      '当前评分结果仍存在计算警告，不能完成最终确认。',
+    score_result_confirmation_conflict:
+      '评分结果已发生变化，请重新核对最新结果后再确认。',
+    score_result_confirmation_audit_unavailable:
+      '历史确认审计信息不完整，不能安全推断确认记录。',
+    score_result_confirmation_failed:
+      '评分结果确认失败，请重新加载最新结果后重试。',
     score_computation_conflict:
       '评分状态发生并发变化，请重新加载最新结果。',
     score_computation_failed:

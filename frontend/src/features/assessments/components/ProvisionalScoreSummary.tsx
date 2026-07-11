@@ -29,7 +29,7 @@ export function ProvisionalScoreSummary({
             className="text-xl font-semibold text-[var(--cma-text-strong)]"
             id="provisional-total-title"
           >
-            阶段性总分摘要
+            {total.isFinal ? '确认得分' : '阶段性总分摘要'}
           </h3>
           <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
             以下数值直接来自服务端，本页不重新求和或补算比例。
@@ -52,7 +52,7 @@ export function ProvisionalScoreSummary({
           </p>
         ) : total.isComplete ? (
           <p className="text-2xl font-semibold text-[var(--cma-text-strong)]">
-            阶段性计算得分：
+            {total.isFinal ? '确认得分：' : '阶段性计算得分：'}
             {formatProvisionalScoreNumber(total.provisionalScoreValue)} /{' '}
             {formatProvisionalScoreNumber(total.maxScore)}
           </p>
@@ -70,7 +70,7 @@ export function ProvisionalScoreSummary({
 
         {total.isComplete && total.scorePercent !== null ? (
           <p className="mt-2 text-sm text-[var(--cma-muted)]">
-            服务端阶段性比例：
+            {total.isFinal ? '服务端确认比例：' : '服务端阶段性比例：'}
             {formatProvisionalScorePercent(total.scorePercent)}
           </p>
         ) : null}

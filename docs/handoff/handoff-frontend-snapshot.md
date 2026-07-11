@@ -7,15 +7,15 @@
 ## 2. 当前工程状态
 
 - `frontend\` 根目录公共骨架配置与 `frontend\app` / `frontend\src` 公共底座已初始化。
-- 前端 B1 已落地登录页、认证状态 Hook、Auth API Client 和受保护工作台入口；前端 B2 已落地患者档案与评估访视最小页面闭环；前端 B3 已落地访视详情与量表实例初始化；前端 B4 已落地量表施测执行页与逐题手工作答草稿保存；前端 B5 已在同一执行页落地 photo / handwriting 媒体证据采集、预览与作废闭环；前端 B6 已在同一路由落地 A16 readiness、问题定位和正式实例提交；前端 B7 已继续在同一路由落地 A17 latest / compute、阶段性结果和待人工复核清单。
+- 前端 B1-B7 已落地既有认证、患者 / 访视、执行、媒体、提交与阶段性评分能力；前端 B8 已在同一量表实例路由接入 A18 manual-review / confirm，完成单题人工评分、确认前修订、updatedAt 乐观并发、冲突刷新、显式确认与 confirmed 最终只读展示。
 - 当前首页仍为公共占位，只增加登录页与工作台入口，不调用后端。
 - `/login` 提供账号密码登录，并在登录前通过 `GET /auth/me` 检查已有会话。
 - `/dashboard` 通过 `GET /auth/me` 验证会话、展示当前用户公开信息、提供患者档案入口和登出入口。
 - `/patients/**` 通过轻量认证工作区复用 `useAuth()`；当前包含患者列表 / 创建、患者详情 / 访视列表、访视创建、访视详情 / 量表实例初始化，以及量表实例施测执行页面。
 - Patients API Client 真实调用 A12 五个患者 / 访视 API，支持分页、过滤、GET 请求取消、稳定错误映射和安全请求字段白名单。
-- Assessment Execution API Client 真实调用 A13 三个、A14 两个与 A16 两个 API；独立 Provisional Scoring API Client 调用 A17 latest / compute。latest 使用独立 AbortController；compute 只重建 `{ confirm: true }` 且不自动重试。
+- Assessment Execution API Client 继续调用 A13 / A14 / A16；独立 Provisional Scoring API Client 调用 A17 latest / compute 与 A18 manual-review / confirm。写请求逐字段重建白名单且不自动重试，latest 使用独立 AbortController。
 - 当前视觉遵循医疗系统 / 临床评估 / 低干扰 / 高可读性 / 冷静可信口径，不继承 ReviewX 视觉风格。
-- 当前没有患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、批量或自动保存、人工评分录入 / 确认、认知域结果、报告、AI、用户管理或权限菜单页面；B7 只展示阶段性未确认评分，不完成 Visit 或后续临床结论。
+- 当前没有患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、批量或自动保存、评分 lock / void / rerun、认知域结果、报告、AI、用户管理或权限菜单页面；B8 确认不完成 Visit，也不形成临床诊断结论。
 
 ## 3. 当前已确认前端事实
 
@@ -49,10 +49,10 @@
   - `types/item-response-execution.ts`：严格对齐 A14 安全执行详情、单题 PATCH 白名单与 JSON 传输日期口径，不定义答案或评分字段。
   - `lib/item-response-draft.ts`：负责服务端题目到本地草稿、字段级 dirty、数值 / 时间转换、有效作答判断与差异 PATCH 构建。
   - `components/ScaleInstanceExecutionPage.tsx`：管理 A14 GET、分组切换、本地草稿、beforeunload、逐题 PATCH，以及 B6 独立 readiness AbortController、stale、本地阻断、题目定位、二次确认、submit 写锁、成功状态合并与内存回执。
-  - `types/provisional-scoring.ts`：严格对齐 A17 安全 JSON，定义真实 result / source / mode / item / review / quality 枚举、total / group / item、computation 与 reviewQueue；Date 使用 string / null，不定义作答、正确答案、评分规则或 metadata。
-  - `api/provisional-scoring-api.ts`：独立接入 latest GET 与 compute POST；统一 credentials / no-store、latest AbortSignal、完整业务错误映射与严格 confirm 白名单，不自动重试 POST。
-  - `lib/provisional-scoring-display.ts`：集中维护结果、来源、模式、题目、复核、质量、12 个 reason code、2 个 warning code 和稳定错误中文映射；不计算分数、比例、状态或复核队列。
-  - `components/ProvisionalScoringPanel.tsx`、`ProvisionalScoreSummary.tsx`、`ProvisionalScoreGroupList.tsx`、`ProvisionalScoreItemList.tsx`、`ScoreReviewQueue.tsx`：独立展示 latest 状态、no-result、计算确认、幂等回执、阶段性 total / group / item、warning、版本与后端 reviewQueue。
+  - `types/provisional-scoring.ts`：在 A17 安全 JSON 上真实扩展 updatedAt、manualReview、confirmation、reviewUpdate 与 confirmationReceipt；所有 Date JSON 使用 string / null，不定义作答、正确答案、评分规则、metadata 或 previousScoreValue。
+  - `api/provisional-scoring-api.ts`：独立接入 latest / compute / manual-review / confirm；统一 credentials / no-store、完整 A18 错误映射与严格请求白名单，写请求不自动重试。
+  - `lib/score-review-draft.ts`：维护人工评分 / 确认 React 内存草稿、dirty、stale、数值与 reviewNote 校验、expectedUpdatedAt 请求构建和确认资格；不计算任何题目、分组、总分或百分比。
+  - `components/ManualScoreReviewForm.tsx`、`ScoreResultConfirmationPanel.tsx` 与评分展示组件：提供单活动人工评分表单、修订时预填最新服务端分值和公开意见、min / max 基础校验、step="any"、确认两步交互、安全审计摘要与 final / provisional 文案切换。
   - `types/scale-instance-submission.ts`、`lib/scale-instance-submission-display.ts`：严格对齐 A16 安全 readiness / issue / submission JSON 类型和稳定中文展示映射；Date 使用 string，不定义作答原文、评分、expectedValue 或 metadata。
   - `components/ScaleInstanceSubmissionPanel.tsx`、`ScaleSubmissionIssueList.tsx`：展示 submissionState、ready / canSubmitNow、检查时间、九项统计、阻断问题、可展开警告、本地 dirty、readiness stale、内联确认和当前会话回执。
   - `types/media-evidence.ts`、`types/handwriting-evidence.ts`、`types/media-evidence-draft.ts`：严格对齐 A15 安全响应、上传白名单、固定 strokes 结构与页面内存草稿；JSON Date 字段仍使用 string / null。
@@ -75,6 +75,8 @@
 - Provisional Scoring API Client 仅调用：
   - `GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/score-results/latest`
   - `POST /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/score-results/compute`
+  - `PATCH /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/score-results/:scoreResultId/item-scores/:itemResponseId/manual-review`
+  - `POST /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/score-results/:scoreResultId/confirm`
 - Media Evidence API Client 仅调用：
   - `GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/item-responses/:itemResponseId/media-evidences`
   - `POST /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/item-responses/:itemResponseId/media-evidences`
@@ -112,6 +114,11 @@
 - compute 成功只使用响应 ScoreResult 作为事实源，并同步 `detail.scaleInstance`；不覆盖 Visit、ItemResponse、作答草稿或媒体草稿，不调用 A14 PATCH、A15 写接口或 readiness。B6 submit 成功后只触发一次 latest，不自动 compute。
 - total / group / item、scorePercent、status、scoringSource、qualityStatus 和 reviewQueue 均直接读取后端响应；前端不求和、不聚合、不补算比例、不从作答或题目编码推断评分。reviewQueue 复用 B6 itemResponseId 分组切换、滚动和 focus 机制；null 或无法匹配时不提供虚假跳转。
 - B7 页面只显示安全题目标识、阶段性分值、受控复核原因和计算版本 / warning，不显示作答、expectedValue、正确答案、评分规则、媒体地址、reviewer 或内部 metadata。
+- B8 人工评分只允许 needs_review / manual_scored 且计入总分、可关联 ItemResponse 的项目；auto_scored、not_scored 与过程项不可覆盖。表单展开冻结服务端 updatedAt，冲突后保留输入、刷新 latest 并标记 stale，只有用户明确“基于最新结果继续”才更新基线。
+- 人工评分分值允许 0，只转换并发送 finite number；前端仅校验公开 min / max。A18 未公开 step，页面固定使用 step="any"，服务端 `SCORE_MANUAL_VALUE_STEP_INVALID` 是最终步长边界。
+- 人工评分成功使用完整响应替换 ScoreResult detail 与 ScaleInstance 摘要，不自行减少 reviewQueue，不重新计算 total / group / item / percentage；reviewUpdate 只保存在当前页面内存。修订表单一致预填最新公开人工分值与 reviewNote，不展示完整历史或 previousScoreValue。
+- 确认入口仅在 computed、无 pending / queue / warning、total complete、实例 / 访视状态允许且没有本地草稿或写请求时出现；确认只发送 confirm=true、trim 后 reviewNote 与表单基线 updatedAt。confirmed 后显示安全 confirmation 摘要并只读，confirmed 不等于 locked，qualityStatus=passed 显示“评分复核流程已通过”。
+- 人工评分与确认草稿只存在 React 内存，不写 localStorage / sessionStorage / URL；人工评分与确认意见 dirty 独立于作答 / 媒体计数，并扩展 beforeunload。latest 刷新不清除本地草稿，版本变化会标记 stale 并取消确认 checkbox。
 - 前端媒体公开类型没有定义 Storage 对象定位、校验和、原始文件名、内部患者关联或删除时间字段；页面也不显示这些字段。
 
 ## 4. 当前文件清单
@@ -156,6 +163,7 @@
 - `frontend\src\features\assessments\types\media-evidence-draft.ts`
 - `frontend\src\features\assessments\types\scale-instance-submission.ts`
 - `frontend\src\features\assessments\types\provisional-scoring.ts`
+- `frontend\src\features\assessments\lib\score-review-draft.ts`
 - `frontend\src\features\assessments\api\assessment-execution-api.ts`
 - `frontend\src\features\assessments\api\media-evidence-api.ts`
 - `frontend\src\features\assessments\api\provisional-scoring-api.ts`
@@ -177,6 +185,8 @@
 - `frontend\src\features\assessments\components\ProvisionalScoreGroupList.tsx`
 - `frontend\src\features\assessments\components\ProvisionalScoreItemList.tsx`
 - `frontend\src\features\assessments\components\ScoreReviewQueue.tsx`
+- `frontend\src\features\assessments\components\ManualScoreReviewForm.tsx`
+- `frontend\src\features\assessments\components\ScoreResultConfirmationPanel.tsx`
 - `frontend\src\features\assessments\components\ScaleExecutionGroupNavigation.tsx`
 - `frontend\src\features\assessments\components\ItemResponseEditor.tsx`
 - `frontend\src\features\assessments\components\ItemStepEditor.tsx`
@@ -249,14 +259,23 @@
 - 浏览器手工联调未执行，A17 latest / compute、幂等、并发、错误状态、滚动 / focus 和窄屏展示均待开发者使用脱敏数据本地验证。
 - 后端命令未执行。
 
+本次 B8 验证结果：
+
+- 未新增自动测试或测试框架；当前前端无既有测试框架，本阶段按边界使用 lint、typecheck 与生产构建验证。
+- `npm run lint`：通过。
+- `npm run typecheck`：通过，Next 16 量表实例动态路由类型生成成功。
+- `npm run build`：通过，生产构建包含既有量表实例动态路由，B8 未新增路由。
+- E2E 与浏览器自动化未执行；浏览器手工联调未执行，A18 真实 HTTP、并发冲突、手工输入、窄屏与可访问性行为均待开发者使用脱敏数据验证。
+- 后端命令未执行。
+
 ## 6. 当前未实现前端事实
 
 - `/dashboard` 已有患者档案入口，但不是完整医生工作台。
 - 患者编辑 / 删除 / 归档 / 合并尚未实现。
 - 访视编辑 / 删除 / 状态流转尚未实现；访视详情支持查看、初始化量表实例和进入 B4 执行页。
-- B4-B7 已支持安全 MMSE / MoCA 题目查看、逐题手工草稿保存、photo / handwriting 题目证据、完整性检查、正式实例提交、阶段性评分与待人工复核展示；批量 / 自动保存、人工评分录入 / 确认和认知域结果尚未实现。
+- B4-B8 已支持安全题目记录、photo / handwriting 证据、完整性检查、正式实例提交、阶段性评分、人工评分与评分确认；批量 / 自动保存、评分锁定、认知域结果尚未实现。
 - 报告生成、医生确认、AI、用户管理、角色权限管理和权限菜单尚未实现。
-- 当前除 A12 五个患者 / 访视 API、A13 三个评估初始化前置 API、A14 两个评估执行草稿 API、A15 四个题目媒体证据 API、A16 两个实例提交 API 与 A17 两个阶段性评分 API 外，没有其他业务 API 调用。
+- 当前在既有 API 上只新增 A18 manual-review / confirm；没有评分 lock / void / reopen / rerun、认知域、报告或 AI API 调用。
 - 当前不包含路由级服务端认证中间件。
 
 ## 7. 后续同步规则

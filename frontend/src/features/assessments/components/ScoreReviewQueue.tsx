@@ -4,15 +4,22 @@ import {
   isScoreReviewReasonCode,
 } from '@/src/features/assessments/lib/provisional-scoring-display';
 import type { ScoreReviewQueueItem } from '@/src/features/assessments/types/provisional-scoring';
+import type { ProvisionalScoreItem } from '@/src/features/assessments/types/provisional-scoring';
 
 export function ScoreReviewQueue({
   canLocateItem,
+  canReviewItem,
   items,
   onLocateItem,
+  onReviewItem,
+  scoreItems,
 }: {
   canLocateItem: (itemResponseId: string) => boolean;
+  canReviewItem: (item: ProvisionalScoreItem) => boolean;
   items: ScoreReviewQueueItem[];
   onLocateItem: (itemResponseId: string) => void;
+  onReviewItem: (itemResponseId: string) => void;
+  scoreItems: ProvisionalScoreItem[];
 }) {
   return (
     <section aria-labelledby="score-review-queue-title" className="grid gap-4">
@@ -38,6 +45,12 @@ export function ScoreReviewQueue({
             const itemResponseId = item.itemResponseId;
             const locatable =
               itemResponseId !== null && canLocateItem(itemResponseId);
+            const scoreItem = itemResponseId
+              ? scoreItems.find(
+                  (candidate) => candidate.itemResponseId === itemResponseId,
+                )
+              : undefined;
+            const reviewable = scoreItem ? canReviewItem(scoreItem) : false;
 
             return (
               <li
@@ -61,8 +74,17 @@ export function ScoreReviewQueue({
                   ) : null}
                   <p>{getScoreReviewReasonMessage(item.reasonCode)}</p>
                 </div>
-                {locatable && itemResponseId ? (
-                  <div>
+                {itemResponseId && (locatable || reviewable) ? (
+                  <div className="flex flex-wrap gap-3">
+                    {reviewable ? (
+                      <Button
+                        onClick={() => onReviewItem(itemResponseId)}
+                        size="sm"
+                      >
+                        人工评分
+                      </Button>
+                    ) : null}
+                    {locatable ? (
                     <Button
                       onClick={() => onLocateItem(itemResponseId)}
                       size="sm"
@@ -70,10 +92,13 @@ export function ScoreReviewQueue({
                     >
                       查看原题
                     </Button>
+                    ) : null}
                   </div>
                 ) : (
                   <p className="text-sm text-[var(--cma-muted)]">
-                    当前结果未提供可定位的题目记录。
+                    {itemResponseId && !scoreItem
+                      ? '当前待复核项无法匹配评分项目，请重新加载结果。'
+                      : '当前结果未提供可人工评分或定位的题目记录。'}
                   </p>
                 )}
               </li>

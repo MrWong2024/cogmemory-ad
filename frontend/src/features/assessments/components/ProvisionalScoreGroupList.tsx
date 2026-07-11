@@ -13,8 +13,10 @@ function sortGroups(groups: ProvisionalScoreGroup[]): ProvisionalScoreGroup[] {
 
 export function ProvisionalScoreGroupList({
   groups,
+  isFinal,
 }: {
   groups: ProvisionalScoreGroup[];
+  isFinal: boolean;
 }) {
   return (
     <section aria-labelledby="provisional-groups-title" className="grid gap-4">
@@ -23,7 +25,7 @@ export function ProvisionalScoreGroupList({
           className="text-xl font-semibold text-[var(--cma-text-strong)]"
           id="provisional-groups-title"
         >
-          阶段性分组得分
+          {isFinal ? '确认分组得分' : '阶段性分组得分'}
         </h3>
         <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
           分组汇总由服务端提供，不代表认知域结果。
@@ -58,7 +60,7 @@ export function ProvisionalScoreGroupList({
               <p className="text-xl font-semibold text-[var(--cma-text-strong)]">
                 {group.provisionalScoreValue === null
                   ? '本组当前无可靠阶段性分值'
-                  : `阶段性分值：${formatProvisionalScoreNumber(group.provisionalScoreValue)}`}
+                  : `${isFinal ? '确认分组得分' : '阶段性分值'}：${formatProvisionalScoreNumber(group.provisionalScoreValue)}`}
               </p>
               <p className="text-sm text-[var(--cma-muted)]">
                 服务端分值范围：{formatProvisionalScoreNumber(group.minScore)} 至{' '}

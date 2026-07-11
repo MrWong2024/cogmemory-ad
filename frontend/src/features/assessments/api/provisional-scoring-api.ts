@@ -1,8 +1,12 @@
 import { frontendEnv } from '@/src/lib/env';
 
 import type {
+  ConfirmScoreResultRequest,
+  ConfirmScoreResultResponse,
   ComputeScoreResultRequest,
   ComputeScoreResultResponse,
+  ReviewScoreItemRequest,
+  ReviewScoreItemResponse,
   ScoreResultDetailResponse,
 } from '@/src/features/assessments/types/provisional-scoring';
 
@@ -22,6 +26,22 @@ export type ProvisionalScoringApiErrorKind =
   | 'score_result_not_found'
   | 'score_result_incomplete'
   | 'score_result_voided'
+  | 'score_result_not_reviewable'
+  | 'score_item_not_found'
+  | 'score_item_not_reviewable'
+  | 'score_item_review_target_unavailable'
+  | 'score_manual_value_out_of_range'
+  | 'score_manual_value_step_invalid'
+  | 'score_result_metadata_unsupported'
+  | 'score_review_audit_limit_reached'
+  | 'score_result_review_conflict'
+  | 'score_result_review_failed'
+  | 'score_result_confirmation_required'
+  | 'score_result_not_ready_for_confirmation'
+  | 'score_result_confirmation_warnings_present'
+  | 'score_result_confirmation_conflict'
+  | 'score_result_confirmation_audit_unavailable'
+  | 'score_result_confirmation_failed'
   | 'score_computation_conflict'
   | 'score_computation_failed'
   | 'service_unavailable'
@@ -90,6 +110,27 @@ function mapHttpError(
     SCORE_RESULT_NOT_FOUND: 'score_result_not_found',
     SCORE_RESULT_INCOMPLETE: 'score_result_incomplete',
     SCORE_RESULT_VOIDED: 'score_result_voided',
+    SCORE_RESULT_NOT_REVIEWABLE: 'score_result_not_reviewable',
+    SCORE_ITEM_NOT_FOUND: 'score_item_not_found',
+    SCORE_ITEM_NOT_REVIEWABLE: 'score_item_not_reviewable',
+    SCORE_ITEM_REVIEW_TARGET_UNAVAILABLE:
+      'score_item_review_target_unavailable',
+    SCORE_MANUAL_VALUE_OUT_OF_RANGE: 'score_manual_value_out_of_range',
+    SCORE_MANUAL_VALUE_STEP_INVALID: 'score_manual_value_step_invalid',
+    SCORE_RESULT_METADATA_UNSUPPORTED: 'score_result_metadata_unsupported',
+    SCORE_REVIEW_AUDIT_LIMIT_REACHED: 'score_review_audit_limit_reached',
+    SCORE_RESULT_REVIEW_CONFLICT: 'score_result_review_conflict',
+    SCORE_RESULT_REVIEW_FAILED: 'score_result_review_failed',
+    SCORE_RESULT_CONFIRMATION_REQUIRED: 'score_result_confirmation_required',
+    SCORE_RESULT_NOT_READY_FOR_CONFIRMATION:
+      'score_result_not_ready_for_confirmation',
+    SCORE_RESULT_CONFIRMATION_WARNINGS_PRESENT:
+      'score_result_confirmation_warnings_present',
+    SCORE_RESULT_CONFIRMATION_CONFLICT:
+      'score_result_confirmation_conflict',
+    SCORE_RESULT_CONFIRMATION_AUDIT_UNAVAILABLE:
+      'score_result_confirmation_audit_unavailable',
+    SCORE_RESULT_CONFIRMATION_FAILED: 'score_result_confirmation_failed',
     SCORE_COMPUTATION_CONFLICT: 'score_computation_conflict',
     SCORE_COMPUTATION_FAILED: 'score_computation_failed',
   };
@@ -206,4 +247,57 @@ export async function computeProvisionalScoreResult(
   );
 
   return readJson<ComputeScoreResultResponse>(response);
+}
+
+export async function reviewScoreItemManually(
+  patientId: string,
+  visitId: string,
+  scaleInstanceId: string,
+  scoreResultId: string,
+  itemResponseId: string,
+  input: ReviewScoreItemRequest,
+): Promise<ReviewScoreItemResponse> {
+  const requestBody: ReviewScoreItemRequest = {
+    scoreValue: input.scoreValue,
+    reviewNote: input.reviewNote.trim(),
+    expectedUpdatedAt: input.expectedUpdatedAt,
+  };
+  const response = await provisionalScoringFetch(
+    `${buildScoreResultPath(patientId, visitId, scaleInstanceId)}/${encodeURIComponent(scoreResultId)}/item-scores/${encodeURIComponent(itemResponseId)}/manual-review`,
+    {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    },
+  );
+
+  return readJson<ReviewScoreItemResponse>(response);
+}
+
+export async function confirmScoreResult(
+  patientId: string,
+  visitId: string,
+  scaleInstanceId: string,
+  scoreResultId: string,
+  input: ConfirmScoreResultRequest,
+): Promise<ConfirmScoreResultResponse> {
+  const requestBody: ConfirmScoreResultRequest = {
+    confirm: true,
+    reviewNote: input.reviewNote.trim(),
+    expectedUpdatedAt: input.expectedUpdatedAt,
+  };
+  const response = await provisionalScoringFetch(
+    `${buildScoreResultPath(patientId, visitId, scaleInstanceId)}/${encodeURIComponent(scoreResultId)}/confirm`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    },
+  );
+
+  return readJson<ConfirmScoreResultResponse>(response);
 }

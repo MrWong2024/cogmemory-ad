@@ -1,4 +1,5 @@
 import type { ScaleInstanceListItem } from '@/src/features/assessments/types/assessment-execution';
+import type { AssessmentOperatorRole } from '@/src/features/patients/types/patient';
 
 export type ScoreReviewReasonCode =
   | 'MANUAL_SCORING_REQUIRED'
@@ -114,6 +115,26 @@ export type ProvisionalScoreItem = {
   reviewRequired: boolean;
   reviewReasonCode?: ScoreReviewReasonCode;
   reviewReasonMessage?: string;
+  manualReview?: ManualScoreReviewSummary;
+};
+
+export type ScoreResultActor = {
+  operatorId: string | null;
+  operatorName?: string;
+  operatorRole?: AssessmentOperatorRole;
+};
+
+export type ManualScoreReviewSummary = {
+  reviewedAt: string;
+  reviewer: ScoreResultActor;
+  reviewNote: string;
+};
+
+export type ScoreResultConfirmationSummary = {
+  confirmationId: string | null;
+  confirmedAt: string;
+  confirmedBy: ScoreResultActor;
+  reviewNote?: string;
 };
 
 export type ProvisionalScoreComputation = {
@@ -146,6 +167,8 @@ export type ProvisionalScoreResult = {
   review: ProvisionalScoreReview;
   qualityStatus: ScoreQualityStatus;
   isFinal: boolean;
+  updatedAt: string;
+  confirmation?: ScoreResultConfirmationSummary | null;
 };
 
 export type ScoreReviewQueueItem = {
@@ -174,4 +197,37 @@ export type ComputeScoreResultRequest = {
 
 export type ComputeScoreResultResponse = ScoreResultDetailResponse & {
   alreadyComputed: boolean;
+};
+
+export type ReviewScoreItemRequest = {
+  scoreValue: number;
+  reviewNote: string;
+  expectedUpdatedAt: string;
+};
+
+export type ManualScoreReviewReceipt = {
+  eventId: string;
+  itemResponseId: string;
+  reviewedAt: string;
+  reviewer: ScoreResultActor;
+  pendingItemCount: number;
+};
+
+export type ReviewScoreItemResponse = ScoreResultDetailResponse & {
+  reviewUpdate: ManualScoreReviewReceipt;
+};
+
+export type ConfirmScoreResultRequest = {
+  confirm: true;
+  reviewNote: string;
+  expectedUpdatedAt: string;
+};
+
+export type ScoreResultConfirmationReceipt =
+  ScoreResultConfirmationSummary & {
+    alreadyConfirmed: boolean;
+  };
+
+export type ConfirmScoreResultResponse = ScoreResultDetailResponse & {
+  confirmationReceipt: ScoreResultConfirmationReceipt;
 };

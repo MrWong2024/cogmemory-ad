@@ -21,9 +21,11 @@ import {
   submitScaleInstance,
 } from '@/src/features/assessments/api/assessment-execution-api';
 import {
+  confirmScoreResult,
   computeProvisionalScoreResult,
   getLatestProvisionalScoreResult,
   ProvisionalScoringApiError,
+  reviewScoreItemManually,
 } from '@/src/features/assessments/api/provisional-scoring-api';
 import {
   ItemResponseEditor,
@@ -60,8 +62,23 @@ import type {
 } from '@/src/features/assessments/types/media-evidence';
 import type { ScaleInstanceExecutionDetailResponse } from '@/src/features/assessments/types/item-response-execution';
 import { getProvisionalScoringApiErrorMessage } from '@/src/features/assessments/lib/provisional-scoring-display';
+import {
+  buildManualScoreReviewRequest,
+  buildScoreResultConfirmationRequest,
+  confirmationDraftIsDirty,
+  createManualScoreReviewDraft,
+  getScoreConfirmationBlockReason,
+  manualScoreReviewDraftIsDirty,
+  type ManualScoreReviewDraft,
+  type ScoreResultConfirmationDraft,
+} from '@/src/features/assessments/lib/score-review-draft';
 import { getScaleSubmissionApiErrorMessage } from '@/src/features/assessments/lib/scale-instance-submission-display';
-import type { ScoreResultDetailResponse } from '@/src/features/assessments/types/provisional-scoring';
+import type {
+  ManualScoreReviewReceipt,
+  ProvisionalScoreItem,
+  ScoreResultConfirmationReceipt,
+  ScoreResultDetailResponse,
+} from '@/src/features/assessments/types/provisional-scoring';
 import type {
   ScaleInstanceSubmissionAudit,
   ScaleSubmissionIssue,
@@ -250,6 +267,9 @@ export function ScaleInstanceExecutionPage({
   });
   const submittingRef = useRef(false);
   const computingScoreRef = useRef(false);
+  const scoreWriteStateRef = useRef<'idle' | 'reviewing' | 'confirming'>(
+    'idle',
+  );
   const idsAreValid =
     mongoIdPattern.test(patientId) &&
     mongoIdPattern.test(visitId) &&
@@ -310,6 +330,57 @@ export function ScaleInstanceExecutionPage({
   const [scoreAlreadyComputed, setScoreAlreadyComputed] = useState<
     boolean | null
   >(null);
+  const [manualReviewDraft, setManualReviewDraft] =
+    useState<ManualScoreReviewDraft | null>(null);
+  const [manualReviewError, setManualReviewError] = useState<string | null>(
+    null,
+  );
+  const [manualReviewStatus, setManualReviewStatus] = useState<string | null>(
+    null,
+  );
+  const [latestReviewReceipt, setLatestReviewReceipt] =
+    useState<ManualScoreReviewReceipt | null>(null);
+  const [confirmationDraft, setConfirmationDraft] =
+    useState<ScoreResultConfirmationDraft | null>(null);
+  const [confirmationError, setConfirmationError] = useState<string | null>(
+    null,
+  );
+  const [latestConfirmationReceipt, setLatestConfirmationReceipt] =
+    useState<ScoreResultConfirmationReceipt | null>(null);
+  const [scoreWriteState, setScoreWriteState] = useState<
+    'idle' | 'reviewing' | 'confirming'
+  >('idle');
+  const [scoreWriteSafetyBlock, setScoreWriteSafetyBlock] = useState<
+    'metadata' | 'audit_limit' | null
+  >(null);
+  const [confirmationSafetyBlock, setConfirmationSafetyBlock] = useState<
+    'warnings' | 'audit_unavailable' | null
+  >(null);
+
+  const applyScoreResultDetail = useCallback(
+    (response: ScoreResultDetailResponse) => {
+      setScoreResult(response);
+      setDetail((current) =>
+        current
+          ? {
+              ...current,
+              scaleInstance: response.scaleInstance,
+            }
+          : current,
+      );
+      setManualReviewDraft((current) =>
+        current && current.baseUpdatedAt !== response.scoreResult.updatedAt
+          ? { ...current, stale: true }
+          : current,
+      );
+      setConfirmationDraft((current) =>
+        current && current.baseUpdatedAt !== response.scoreResult.updatedAt
+          ? { ...current, confirmed: false, stale: true }
+          : current,
+      );
+    },
+    [],
+  );
 
   const loadLatestScoreResult = useCallback(async () => {
     scoreResultControllerRef.current?.abort();
@@ -330,17 +401,10 @@ export function ScaleInstanceExecutionPage({
         return null;
       }
 
-      setScoreResult(response);
+      applyScoreResultDetail(response);
+      setConfirmationSafetyBlock(null);
       setScoreQueryStatus('loaded');
       setScoreConfirmationVisible(false);
-      setDetail((current) =>
-        current
-          ? {
-              ...current,
-              scaleInstance: response.scaleInstance,
-            }
-          : current,
-      );
       return response;
     } catch (requestError: unknown) {
       if (controller.signal.aborted || !mountedRef.current) {
@@ -358,10 +422,10 @@ export function ScaleInstanceExecutionPage({
         return null;
       }
 
-      setScoreResult(null);
       setScoreConfirmationVisible(false);
 
       if (error.kind === 'score_result_not_found') {
+        setScoreResult(null);
         setScoreQueryStatus('no_result');
         setScoreQueryError(null);
       } else if (error.kind === 'forbidden') {
@@ -378,7 +442,7 @@ export function ScaleInstanceExecutionPage({
         scoreResultControllerRef.current = null;
       }
     }
-  }, [patientId, router, scaleInstanceId, visitId]);
+  }, [applyScoreResultDetail, patientId, router, scaleInstanceId, visitId]);
 
   const loadSubmissionReadiness = useCallback(async () => {
     readinessControllerRef.current?.abort();
@@ -471,6 +535,17 @@ export function ScaleInstanceExecutionPage({
       setScoreComputationError(null);
       setScoreComputationStatus(null);
       setScoreAlreadyComputed(null);
+      setManualReviewDraft(null);
+      setManualReviewError(null);
+      setManualReviewStatus(null);
+      setLatestReviewReceipt(null);
+      setConfirmationDraft(null);
+      setConfirmationError(null);
+      setLatestConfirmationReceipt(null);
+      scoreWriteStateRef.current = 'idle';
+      setScoreWriteState('idle');
+      setScoreWriteSafetyBlock(null);
+      setConfirmationSafetyBlock(null);
       setDetailError(new AssessmentExecutionApiError('validation', 400));
       setIsLoading(false);
       return;
@@ -497,6 +572,17 @@ export function ScaleInstanceExecutionPage({
     setScoreComputationError(null);
     setScoreComputationStatus(null);
     setScoreAlreadyComputed(null);
+    setManualReviewDraft(null);
+    setManualReviewError(null);
+    setManualReviewStatus(null);
+    setLatestReviewReceipt(null);
+    setConfirmationDraft(null);
+    setConfirmationError(null);
+    setLatestConfirmationReceipt(null);
+    scoreWriteStateRef.current = 'idle';
+    setScoreWriteState('idle');
+    setScoreWriteSafetyBlock(null);
+    setConfirmationSafetyBlock(null);
 
     void getScaleInstanceExecutionDetail(
       patientId,
@@ -680,8 +766,16 @@ export function ScaleInstanceExecutionPage({
     unsavedAnswerItemCount,
   ]);
 
+  const manualReviewDraftDirty = manualScoreReviewDraftIsDirty(manualReviewDraft);
+  const confirmationDraftDirty = confirmationDraftIsDirty(confirmationDraft);
+
   useEffect(() => {
-    if (unsavedAnswerItemCount === 0 && pendingMediaItemCount === 0) {
+    if (
+      unsavedAnswerItemCount === 0 &&
+      pendingMediaItemCount === 0 &&
+      !manualReviewDraftDirty &&
+      !confirmationDraftDirty
+    ) {
       return;
     }
 
@@ -693,7 +787,12 @@ export function ScaleInstanceExecutionPage({
     window.addEventListener('beforeunload', handleBeforeUnload);
 
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [pendingMediaItemCount, unsavedAnswerItemCount]);
+  }, [
+    confirmationDraftDirty,
+    manualReviewDraftDirty,
+    pendingMediaItemCount,
+    unsavedAnswerItemCount,
+  ]);
 
   async function handleSignOut() {
     setIsSigningOut(true);
@@ -1243,18 +1342,10 @@ export function ScaleInstanceExecutionPage({
         scoreResult: response.scoreResult,
         reviewQueue: response.reviewQueue,
       };
-      setScoreResult(nextResult);
+      applyScoreResultDetail(nextResult);
       setScoreQueryStatus('loaded');
       setScoreQueryError(null);
       setScoreAlreadyComputed(response.alreadyComputed);
-      setDetail((current) =>
-        current
-          ? {
-              ...current,
-              scaleInstance: response.scaleInstance,
-            }
-          : current,
-      );
     } catch (requestError: unknown) {
       if (!mountedRef.current) {
         return;
@@ -1290,6 +1381,368 @@ export function ScaleInstanceExecutionPage({
 
       if (mountedRef.current) {
         setIsComputingScore(false);
+      }
+    }
+  }
+
+  function canReviewScoreItem(item: ProvisionalScoreItem): boolean {
+    if (!detail || !scoreResult || confirmationDraft) {
+      return false;
+    }
+    return (
+      scoreWriteState === 'idle' &&
+      scoreQueryStatus === 'loaded' &&
+      scoreWriteSafetyBlock === null &&
+      detail.scaleInstance.status === 'completed' &&
+      scoreComputableVisitStatuses.has(detail.visit.status) &&
+      ['needs_review', 'computed'].includes(scoreResult.scoreResult.status) &&
+      !scoreResult.scoreResult.isFinal &&
+      Boolean(scoreResult.scoreResult.updatedAt.trim()) &&
+      Boolean(item.itemResponseId) &&
+      item.countsTowardTotal &&
+      (item.scoreStatus === 'needs_review' ||
+        item.scoreStatus === 'manual_scored')
+    );
+  }
+
+  function getManualReviewWriteBlockedReason(): string | null {
+    if (scoreWriteSafetyBlock === 'metadata') {
+      return '评分审计数据结构异常，当前不能继续写入，请联系管理员。';
+    }
+    if (confirmationSafetyBlock === 'warnings') {
+      return '当前评分结果仍存在计算警告，不能忽略后继续确认。请重新加载最新结果。';
+    }
+    if (confirmationSafetyBlock === 'audit_unavailable') {
+      return '历史确认审计信息不完整，当前不能安全重新确认。';
+    }
+    if (scoreWriteSafetyBlock === 'audit_limit') {
+      return '当前评分结果已达到人工修订审计上限，不能继续修改。';
+    }
+    if (scoreWriteState === 'confirming') {
+      return '正在确认评分结果，暂不能进行人工评分。';
+    }
+    return null;
+  }
+
+  function handleStartManualReview(itemResponseId: string) {
+    if (!scoreResult) {
+      return;
+    }
+    const item = scoreResult.scoreResult.itemScores.find(
+      (candidate) => candidate.itemResponseId === itemResponseId,
+    );
+    if (!item || !canReviewScoreItem(item)) {
+      setManualReviewStatus('当前项目状态不允许打开人工评分表单。');
+      return;
+    }
+    if (
+      manualReviewDraft &&
+      manualReviewDraft.itemResponseId !== itemResponseId &&
+      manualScoreReviewDraftIsDirty(manualReviewDraft)
+    ) {
+      setManualReviewStatus(
+        '当前人工评分表单存在未保存修改。请先保存或明确放弃本地人工评分输入。',
+      );
+      return;
+    }
+    if (manualReviewDraft?.itemResponseId === itemResponseId) {
+      return;
+    }
+    const nextDraft = createManualScoreReviewDraft(
+      item,
+      scoreResult.scoreResult.updatedAt,
+    );
+    if (!nextDraft) {
+      setManualReviewStatus('当前评分项目缺少可用题目记录，不能人工评分。');
+      return;
+    }
+    setManualReviewDraft(nextDraft);
+    setManualReviewError(null);
+    setManualReviewStatus(null);
+  }
+
+  function handleUseLatestForManualReview() {
+    if (!manualReviewDraft || !scoreResult?.scoreResult.updatedAt) {
+      return;
+    }
+    setManualReviewDraft({
+      ...manualReviewDraft,
+      baseUpdatedAt: scoreResult.scoreResult.updatedAt,
+      stale: false,
+    });
+    setManualReviewError(null);
+    setManualReviewStatus('已保留本地输入，并改为基于最新评分结果继续。');
+  }
+
+  async function handleSubmitManualReview() {
+    if (
+      !detail ||
+      !scoreResult ||
+      !manualReviewDraft ||
+      scoreWriteStateRef.current !== 'idle'
+    ) {
+      return;
+    }
+    const item = scoreResult.scoreResult.itemScores.find(
+      (candidate) =>
+        candidate.itemResponseId === manualReviewDraft.itemResponseId,
+    );
+    if (!item) {
+      setManualReviewError('当前人工评分草稿无法匹配最新评分项目。');
+      return;
+    }
+    if (!canReviewScoreItem(item)) {
+      setManualReviewError('最新服务端状态不允许继续人工评分，请重新加载并核对。');
+      return;
+    }
+    if (
+      manualReviewDraft.baseUpdatedAt !== scoreResult.scoreResult.updatedAt
+    ) {
+      setManualReviewDraft({ ...manualReviewDraft, stale: true });
+      setManualReviewError('评分结果已经变化，请核对后基于最新结果继续。');
+      return;
+    }
+    const buildResult = buildManualScoreReviewRequest(manualReviewDraft, item);
+    if (!buildResult.ok) {
+      setManualReviewError(buildResult.message);
+      return;
+    }
+
+    scoreWriteStateRef.current = 'reviewing';
+    setScoreWriteState('reviewing');
+    setManualReviewError(null);
+    setManualReviewStatus(null);
+
+    try {
+      const response = await reviewScoreItemManually(
+        patientId,
+        visitId,
+        scaleInstanceId,
+        scoreResult.scoreResult.id,
+        manualReviewDraft.itemResponseId,
+        buildResult.input,
+      );
+      if (!mountedRef.current) {
+        return;
+      }
+      const nextResult: ScoreResultDetailResponse = {
+        scale: response.scale,
+        scaleInstance: response.scaleInstance,
+        scoreResult: response.scoreResult,
+        reviewQueue: response.reviewQueue,
+      };
+      setManualReviewDraft(null);
+      applyScoreResultDetail(nextResult);
+      setScoreQueryStatus('loaded');
+      setScoreQueryError(null);
+      setLatestReviewReceipt(response.reviewUpdate);
+      setManualReviewStatus(
+        response.reviewUpdate.pendingItemCount > 0
+          ? `人工评分已保存，剩余待复核 ${response.reviewUpdate.pendingItemCount} 项。`
+          : response.scoreResult.status === 'computed'
+            ? '人工评分项目已全部处理，请核对结果后进行最终确认。'
+            : '人工评分已保存，请以服务端返回状态为准。',
+      );
+    } catch (requestError: unknown) {
+      if (!mountedRef.current) {
+        return;
+      }
+      const error =
+        requestError instanceof ProvisionalScoringApiError
+          ? requestError
+          : new ProvisionalScoringApiError('unknown');
+      if (error.kind === 'unauthenticated') {
+        router.replace('/login');
+        return;
+      }
+      setManualReviewError(getProvisionalScoringApiErrorMessage(error.kind));
+      if (error.kind === 'forbidden') {
+        setScoreQueryStatus('forbidden');
+      }
+      if (error.kind === 'score_result_metadata_unsupported') {
+        setScoreWriteSafetyBlock('metadata');
+      } else if (error.kind === 'score_review_audit_limit_reached') {
+        setScoreWriteSafetyBlock('audit_limit');
+      }
+      const refreshKinds = new Set<ProvisionalScoringApiError['kind']>([
+        'score_result_review_conflict',
+        'score_result_not_reviewable',
+        'score_result_voided',
+        'score_item_not_found',
+        'score_item_not_reviewable',
+        'score_item_review_target_unavailable',
+      ]);
+      if (refreshKinds.has(error.kind)) {
+        setManualReviewDraft((current) =>
+          current ? { ...current, stale: true } : current,
+        );
+        await loadLatestScoreResult();
+      }
+    } finally {
+      scoreWriteStateRef.current = 'idle';
+      if (mountedRef.current) {
+        setScoreWriteState('idle');
+      }
+    }
+  }
+
+  function getConfirmationBlockReason(): string | null {
+    if (!detail || !scoreResult) {
+      return '评分结果尚未加载完成。';
+    }
+    if (scoreQueryStatus !== 'loaded') {
+      return scoreQueryStatus === 'forbidden'
+        ? '当前账号没有评分写入权限。'
+        : '请先完成最新评分结果加载。';
+    }
+    if (scoreWriteSafetyBlock === 'metadata') {
+      return '评分审计数据结构异常，当前不能继续写入，请联系管理员。';
+    }
+    return getScoreConfirmationBlockReason({
+      result: scoreResult.scoreResult,
+      reviewQueueLength: scoreResult.reviewQueue.length,
+      instanceStatus: detail.scaleInstance.status,
+      visitStatus: detail.visit.status,
+      hasManualReviewDraft: manualReviewDraft !== null,
+      scoreWriteInProgress: scoreWriteState !== 'idle',
+      submitInProgress: isSubmitting,
+      answerWriteCount: savingItemIds.size,
+      mediaWriteCount: mediaWritingKeys.size,
+      unsavedAnswerCount: unsavedAnswerItemCount,
+      pendingMediaCount: pendingMediaItemCount,
+    });
+  }
+
+  function handlePrepareScoreConfirmation() {
+    const blockReason = getConfirmationBlockReason();
+    setConfirmationError(null);
+    if (!scoreResult || blockReason) {
+      setConfirmationError(blockReason);
+      return;
+    }
+    setConfirmationDraft({
+      reviewNote: '',
+      confirmed: false,
+      baseUpdatedAt: scoreResult.scoreResult.updatedAt,
+      stale: false,
+    });
+  }
+
+  function handleUseLatestForConfirmation() {
+    if (!confirmationDraft || !scoreResult?.scoreResult.updatedAt) {
+      return;
+    }
+    setConfirmationDraft({
+      ...confirmationDraft,
+      confirmed: false,
+      baseUpdatedAt: scoreResult.scoreResult.updatedAt,
+      stale: false,
+    });
+    setConfirmationError(null);
+  }
+
+  async function handleConfirmFinalScoreResult() {
+    if (
+      !scoreResult ||
+      !confirmationDraft ||
+      scoreWriteStateRef.current !== 'idle'
+    ) {
+      return;
+    }
+    const blockReason = getConfirmationBlockReason();
+    if (blockReason) {
+      setConfirmationError(blockReason);
+      return;
+    }
+    if (
+      confirmationDraft.baseUpdatedAt !== scoreResult.scoreResult.updatedAt
+    ) {
+      setConfirmationDraft({
+        ...confirmationDraft,
+        confirmed: false,
+        stale: true,
+      });
+      setConfirmationError('评分结果已经变化，请重新核对最新结果。');
+      return;
+    }
+    const buildResult =
+      buildScoreResultConfirmationRequest(confirmationDraft);
+    if (!buildResult.ok) {
+      setConfirmationError(buildResult.message);
+      return;
+    }
+
+    scoreWriteStateRef.current = 'confirming';
+    setScoreWriteState('confirming');
+    setConfirmationError(null);
+
+    try {
+      const response = await confirmScoreResult(
+        patientId,
+        visitId,
+        scaleInstanceId,
+        scoreResult.scoreResult.id,
+        buildResult.input,
+      );
+      if (!mountedRef.current) {
+        return;
+      }
+      const nextResult: ScoreResultDetailResponse = {
+        scale: response.scale,
+        scaleInstance: response.scaleInstance,
+        scoreResult: response.scoreResult,
+        reviewQueue: response.reviewQueue,
+      };
+      setConfirmationDraft(null);
+      applyScoreResultDetail(nextResult);
+      setScoreQueryStatus('loaded');
+      setScoreQueryError(null);
+      setLatestConfirmationReceipt(response.confirmationReceipt);
+      setManualReviewStatus(
+        response.confirmationReceipt.alreadyConfirmed
+          ? '该评分结果此前已经确认，本次未重复写入。'
+          : '评分结果已确认。confirmed 不等于 locked；本阶段未生成认知域结果或报告。',
+      );
+    } catch (requestError: unknown) {
+      if (!mountedRef.current) {
+        return;
+      }
+      const error =
+        requestError instanceof ProvisionalScoringApiError
+          ? requestError
+          : new ProvisionalScoringApiError('unknown');
+      if (error.kind === 'unauthenticated') {
+        router.replace('/login');
+        return;
+      }
+      setConfirmationError(getProvisionalScoringApiErrorMessage(error.kind));
+      if (error.kind === 'forbidden') {
+        setScoreQueryStatus('forbidden');
+      } else if (error.kind === 'score_result_confirmation_conflict') {
+        setConfirmationDraft((current) =>
+          current ? { ...current, confirmed: false, stale: true } : current,
+        );
+        await loadLatestScoreResult();
+      } else if (error.kind === 'score_result_not_ready_for_confirmation') {
+        setConfirmationDraft(null);
+        await loadLatestScoreResult();
+      } else if (
+        error.kind === 'score_result_confirmation_warnings_present'
+      ) {
+        setConfirmationDraft(null);
+        setConfirmationSafetyBlock('warnings');
+        await loadLatestScoreResult();
+      } else if (
+        error.kind === 'score_result_confirmation_audit_unavailable'
+      ) {
+        setConfirmationSafetyBlock('audit_unavailable');
+      } else if (error.kind === 'score_result_metadata_unsupported') {
+        setScoreWriteSafetyBlock('metadata');
+      }
+    } finally {
+      scoreWriteStateRef.current = 'idle';
+      if (mountedRef.current) {
+        setScoreWriteState('idle');
       }
     }
   }
@@ -1367,6 +1820,8 @@ export function ScaleInstanceExecutionPage({
     scoreQueryStatus === 'no_result' &&
     scoreComputeBlockReason === null &&
     !isComputingScore;
+  const confirmationBlockReason = getConfirmationBlockReason();
+  const manualReviewWriteBlockedReason = getManualReviewWriteBlockedReason();
   const progressPercent =
     scaleInstance.progress.totalItemCount > 0
       ? Math.min(
@@ -1392,6 +1847,12 @@ export function ScaleInstanceExecutionPage({
             </Badge>
             <Badge tone={pendingMediaItemCount > 0 ? 'warning' : 'success'}>
               未上传证据：{pendingMediaItemCount} 题
+            </Badge>
+            <Badge tone={manualReviewDraftDirty ? 'warning' : 'success'}>
+              未保存人工评分：{manualReviewDraftDirty ? 1 : 0} 项
+            </Badge>
+            <Badge tone={confirmationDraftDirty ? 'warning' : 'success'}>
+              未保存确认意见：{confirmationDraftDirty ? 1 : 0} 项
             </Badge>
           </div>
           <h1 className="mt-3 text-3xl font-semibold text-[var(--cma-text-strong)] sm:text-4xl">
@@ -1423,7 +1884,7 @@ export function ScaleInstanceExecutionPage({
       </header>
 
       <p className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-info-soft)] px-5 py-4 text-base leading-7 text-[var(--cma-info)]">
-        核心认知量表应由医护或研究人员陪伴或监督完成。当前支持阶段性评分计算和待人工复核结果展示；人工评分确认、认知域、报告与 AI 仍未实现。
+        核心认知量表应由医护或研究人员陪伴或监督完成。当前已支持受控人工评分复核和显式评分确认；评分锁定、认知域、报告与 AI 仍未实现。
       </p>
 
       {readOnlyReason ? (
@@ -1611,6 +2072,7 @@ export function ScaleInstanceExecutionPage({
       />
 
       <ProvisionalScoringPanel
+        activeManualReviewDraft={manualReviewDraft}
         alreadyComputed={scoreAlreadyComputed}
         canCompute={canComputeScore}
         canLocateItem={(itemResponseId) =>
@@ -1618,16 +2080,41 @@ export function ScaleInstanceExecutionPage({
             section.itemResponses.some((item) => item.id === itemResponseId),
           )
         }
+        canReviewItem={canReviewScoreItem}
         computationError={scoreComputationError}
         computationStatus={isComputingScore ? 'computing' : 'idle'}
         computeBlockReason={scoreComputeBlockReason}
+        confirmationBlockReason={confirmationBlockReason}
+        confirmationDraft={confirmationDraft}
+        confirmationError={confirmationError}
         confirmationVisible={scoreConfirmationVisible}
         instanceStatus={scaleInstance.status}
+        latestConfirmationReceipt={latestConfirmationReceipt}
+        latestReviewReceipt={latestReviewReceipt}
+        manualReviewError={manualReviewError}
+        manualReviewStatus={manualReviewStatus}
+        manualReviewWriteBlockedReason={manualReviewWriteBlockedReason}
+        onChangeConfirmationDraft={setConfirmationDraft}
+        onChangeManualReviewDraft={(nextDraft) => {
+          setManualReviewDraft(nextDraft);
+          setManualReviewError(null);
+        }}
+        onCloseConfirmation={() => {
+          setConfirmationDraft(null);
+          setConfirmationError(null);
+        }}
+        onConfirmScoreResult={() => void handleConfirmFinalScoreResult()}
         onConfirmCompute={() => void handleConfirmScoreComputation()}
+        onDiscardManualReviewDraft={() => {
+          setManualReviewDraft(null);
+          setManualReviewError(null);
+          setManualReviewStatus('已放弃本地人工评分输入。');
+        }}
         onLocateItem={(itemResponseId) =>
           locateItemResponse(itemResponseId, 'scoring')
         }
         onPrepareCompute={handlePrepareScoreComputation}
+        onPrepareConfirmation={handlePrepareScoreConfirmation}
         onRefresh={() => {
           setScoreComputationError(null);
           setScoreComputationStatus(null);
@@ -1635,9 +2122,14 @@ export function ScaleInstanceExecutionPage({
           setScoreConfirmationVisible(false);
           void loadLatestScoreResult();
         }}
+        onStartManualReview={handleStartManualReview}
+        onSubmitManualReview={() => void handleSubmitManualReview()}
+        onUseLatestForConfirmation={handleUseLatestForConfirmation}
+        onUseLatestForManualReview={handleUseLatestForManualReview}
         queryError={scoreQueryError}
         queryStatus={scoreQueryStatus}
         result={scoreResult}
+        scoreWriteState={scoreWriteState}
         statusMessage={scoreComputationStatus}
         visitStatus={visit.status}
       />

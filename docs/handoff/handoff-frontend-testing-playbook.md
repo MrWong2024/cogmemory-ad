@@ -6,12 +6,12 @@
 
 ## 2. 当前状态
 
-- 前端公共底座、B1 登录 / 认证接入、B2 患者档案与评估访视最小页面闭环、B3 访视详情与量表实例初始化、B4 量表施测执行与逐题手工草稿保存、B5 photo / handwriting 媒体证据闭环、B6 submission readiness / 正式实例提交，以及 B7 阶段性评分与待人工复核展示已落地。
+- 前端公共底座与 B1-B7 既有闭环已落地；B8 题目人工评分、乐观并发、显式评分确认与最终只读展示已落地。
 - `frontend\package.json` 已存在，自动验证命令以其中真实脚本为准。
-- B2-B7 不新增测试代码、测试框架、E2E 或第三方依赖。
+- B2-B8 不新增测试代码、测试框架、E2E 或第三方依赖。
 - 当前自动验证覆盖三个认证 API、A12 五个患者 / 访视 API、A13 三个评估初始化前置 API、A14 两个执行草稿 API、A15 四个媒体证据 API、A16 两个提交 API 与 A17 两个阶段性评分 API 的前端类型、调用代码和页面构建；真实 HTTP / 浏览器联调仍需手工验证。
 
-## 3. B1 / B2 / B3 / B4 / B5 / B6 / B7 自动验证命令
+## 3. B1 / B2 / B3 / B4 / B5 / B6 / B7 / B8 自动验证命令
 
 在 `frontend` 目录、且既有 `node_modules` 存在时执行：
 
@@ -84,6 +84,16 @@
 - 未新增自动测试：当前前端没有既有测试框架，任务明确不新增测试框架或浏览器 E2E；本阶段继续使用 lint、typecheck 与生产构建验证。
 - E2E / 浏览器自动化：未执行；本阶段明确不执行浏览器 E2E。
 - 浏览器手工验证：未执行，以下 B7 场景均为待验证。
+- 后端命令：未执行。
+
+本次 B8 验证结果：
+
+- `npm run lint`：通过。
+- `npm run typecheck`：通过，Next 16 量表实例执行动态路由类型生成成功且 TypeScript 无错误。
+- `npm run build`：通过，生产构建包含既有量表实例动态路由，B8 未新增路由。
+- 未新增自动测试：当前前端没有既有测试框架，任务明确不新增测试框架或浏览器 E2E；本阶段使用 lint、typecheck 与生产构建验证。
+- E2E / 浏览器自动化：未执行。
+- 浏览器手工验证：未执行，以下 B8 场景均为待验证。
 - 后端命令：未执行。
 
 如后续环境中 `frontend/node_modules` 不存在，不得为验证本阶段而执行 `npm install`；应跳过上述命令并说明原因。
@@ -162,7 +172,7 @@ B6 自动验证不覆盖：
 
 - 真实 A16 HTTP、数据库状态迁移、Cookie / CORS、并发提交、已提交历史审计差异、滚动 / focus 和浏览器可访问性行为。
 - 真实本地草稿与上传竞态、submit 期间各浏览器控件 disabled 表现、网络中断后的服务器最终状态；均需使用脱敏人工测试数据手工验证。
-- 自动或手工评分、认知域、访视完成 / 锁定、报告、撤销 / reopen / lock / force submit 或 AI；这些能力未实现。
+- B6 自动验证当时不覆盖评分；A17 / A18 当前静态路径分别由 B7 / B8 覆盖。访视完成 / 锁定、报告、撤销 / reopen / lock / force submit 或 AI 仍未实现。
 
 B7 静态与构建验证额外覆盖：
 
@@ -174,7 +184,20 @@ B7 自动验证不覆盖：
 
 - 真实 A17 HTTP、数据库 ScoreResult、Cookie / CORS、并发计算、幂等重读、各种历史状态、滚动 / focus 和浏览器可访问性行为。
 - 真实网络中断后的服务器最终状态、窄屏布局和后端数据组合；均需使用脱敏人工测试数据手工验证。
-- 人工评分录入 / 复核提交、评分确认 / 锁定 / 作废 / 重算 / 历史、认知域、报告或 AI；这些能力未实现。
+- B7 自动验证当时不覆盖人工评分与确认；这些静态路径当前由 B8 覆盖。评分锁定 / 作废 / 重算 / 历史、认知域、报告或 AI 仍未实现。
+
+B8 静态与构建验证额外覆盖：
+
+- A18 安全类型、manual-review / confirm 请求白名单、credentials / no-store、全部错误 code 映射和写请求不重试路径。
+- 人工评分 finite number / 0 / min / max、reviewNote、step="any"、单活动草稿、dirty / stale、updatedAt 基线、冲突刷新、回执与 beforeunload 静态路径。
+- 确认 eligibility、warning 阻断、两步内联交互、checkbox、确认冲突、alreadyConfirmed、安全 confirmation 摘要和 final 文案。
+- 同一既有动态路由集成；未新增依赖、路由、BFF、middleware、持久化状态或配置。
+
+B8 自动验证不覆盖：
+
+- 真实 A18 HTTP、数据库更新、Cookie / CORS、多操作者并发、审计上限与历史异常组合。
+- 浏览器 beforeunload、滚动 / focus、窄屏、屏幕阅读器 live region 与真实表单控件行为。
+- 评分 lock / void / reopen / rerun、认知域、报告、诊断或 AI；这些能力未实现。
 
 ## 5. B1 手工验证建议
 
@@ -402,7 +425,72 @@ B7 自动验证不覆盖：
 39. 未使用真实患者或医疗数据。
 40. 页面没有新增路由。
 
-## 12. 认证与安全验证口径
+## 12. B8 手工验证建议（待验证）
+
+前置条件：后端已启动，使用脱敏人工测试账号与测试数据；不得使用真实患者或医疗数据。以下场景本次未执行：
+
+1. needs_review 项出现人工评分入口。
+2. auto_scored 项不允许人工评分。
+3. not_scored 项不允许人工评分。
+4. itemResponseId 为空不显示人工评分入口。
+5. 人工评分输入 0 可正常提交。
+6. 空分值不能提交。
+7. 非有限数值不能提交。
+8. 超出 min / max 前端阻止。
+9. 前端不猜测 step，number input 使用 step="any"。
+10. 后端 step 错误稳定显示并保留输入。
+11. reviewNote 少于 3 字符不能提交。
+12. reviewNote 超过 2000 字符不能提交。
+13. manual-review 只发送 scoreValue、reviewNote、expectedUpdatedAt。
+14. 成功后 reviewQueue 使用服务端返回并减少。
+15. 成功后 total / group / item 使用服务端返回值。
+16. 成功后 updatedAt 变化。
+17. manualReview 显示操作者、时间和意见。
+18. manual_scored 在确认前可修订，预填最新服务端分值与公开意见。
+19. 同时只能打开一个人工评分表单。
+20. dirty 表单阻止直接切换目标，并提供明确放弃操作。
+21. dirty 人工评分或确认意见触发 beforeunload，且计数与作答 / 媒体分开。
+22. SCORE_RESULT_REVIEW_CONFLICT 后保留输入。
+23. 人工评分并发冲突后自动刷新一次 latest。
+24. 冲突后不会自动重发 PATCH。
+25. 基于旧版本的表单禁用提交。
+26. 用户明确基于最新结果继续后可再次提交，且不重置输入。
+27. metadata 异常禁止继续写入并提示管理员。
+28. 审计上限禁止继续人工评分或修订。
+29. 最后一项人工评分成功后只按服务端 computed 展示。
+30. reviewQueue 清空且全部资格满足后显示确认入口。
+31. 有 warning 时不显示可用确认。
+32. 有 pending 项时不能确认。
+33. 确认意见少于 3 字符不能提交。
+34. 未勾选 checkbox 不能确认。
+35. confirm 只发送 confirm、reviewNote、expectedUpdatedAt。
+36. confirm 期间人工评分与重复 confirm 禁用。
+37. 确认成功后 status=confirmed。
+38. 确认成功后 isFinal=true 与 totalScore.isFinal 使用服务端事实。
+39. qualityStatus=passed 只显示“评分复核流程已通过”。
+40. 确认成功后 confirmation 安全摘要正确。
+41. alreadyConfirmed=true 按成功处理且不再次 POST。
+42. confirmed 页面不显示人工评分输入和确认按钮。
+43. locked 页面只读，且不把 confirmed 称为 locked。
+44. confirmation 缺失时不冒充施测或复核操作者。
+45. confirmation conflict 后保留意见、清除 checkbox 并刷新 latest。
+46. confirmation warning 不允许忽略。
+47. confirmed 不显示成 locked。
+48. confirmed 总分显示为确认得分。
+49. groupScores 显示为分组得分，不称为认知域。
+50. 评分区域不显示原始作答、expectedValue、scoringRule、正确答案或 isCorrect。
+51. 页面不显示 previousScoreValue、metadata 或完整审计历史。
+52. 页面不输出诊断阈值、正常 / 异常或疾病判断。
+53. 页面不存在 lock、void、reopen、rerun 或 runNo=2 入口。
+54. A18 401 返回登录页。
+55. A18 403 显示无权限，保留已有安全结果与本地输入。
+56. 网络失败保留本地人工评分与确认输入。
+57. 页面刷新不保留未提交人工评分、确认意见、updatedAt 或回执。
+58. 全部验证不使用真实患者或医疗数据。
+59. 页面没有新增路由，题目定位不修改 URL 且不丢失各类草稿。
+60. lint、typecheck、build 均通过。
+
+## 13. 认证与安全验证口径
 
 - 使用浏览器网络面板确认三个认证请求均携带 credentials 语义，并由浏览器处理 HttpOnly Cookie。
 - 前端代码与存储中不得出现 raw token、token hash、`passwordHash`、JWT 或其他认证凭证。
@@ -418,14 +506,14 @@ B7 自动验证不覆盖：
 - B5 页面不得在 console、存储或 URL 中记录源 File、JPEG / PNG Blob、轨迹、短期 URL、请求体或响应体；multipart 只能由 API Client 逐字段构造，不能手工设置 multipart Content-Type。
 - B7 页面不得在 console、存储或 URL 中记录评分结果、reviewQueue、请求体或响应体；compute 只能由独立 API Client 构造 `{ confirm: true }`，不得提交任何分数、规则、状态或服务器字段。
 
-## 13. 医疗与隐私展示红线
+## 14. 医疗与隐私展示红线
 
 - 不展示真实用户或患者敏感数据样本。
 - 测试截图不得包含真实姓名、邮箱、身份证号、手机号、病历号、住址、患者资料或真实文件名。
 - 不得在页面文案或测试截图中呈现未经确认的真实医疗诊断结论。
 - 核心认知评估必须保持医护或研究人员陪伴 / 监督的产品边界。
 
-## 14. 后续同步规则
+## 15. 后续同步规则
 
 - 前端新增或调整测试脚本后，应同步更新自动验证命令。
 - 新增页面、路由、组件、API 对接或权限展示后，应同步补充对应验证口径。
