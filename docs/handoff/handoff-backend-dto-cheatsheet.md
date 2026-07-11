@@ -6,10 +6,10 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 DTO、响应 type、Storage interface，以及 A12-A18 业务契约；A18 新增路径、单题人工复核、评分确认 DTO，以及 updatedAt / manualReview / confirmation / receipt 安全响应扩展。
+- 当前存在公共底座 DTO、响应 type、Storage interface，以及 A12-A19 业务契约；A19 新增认知域 compute DTO 与安全 domain result 响应类型。
 - 当前新增公开认证请求 DTO：`LoginDto`。
 - 当前新增公开患者 / 访视 DTO：`CreatePatientDto`、`ListPatientsQueryDto`、`PatientIdParamDto`、`CreateAssessmentVisitDto`、`ListAssessmentVisitsQueryDto`、`PatientVisitsParamDto`。
-- 当前仍没有用户管理、注册、密码重置、撤销 / reopen / force submit、批量 / 分片 / 客户端直传、计分、认知域或报告请求 DTO。
+- 当前仍没有用户管理、注册、密码重置、撤销 / reopen / force submit、批量 / 分片 / 客户端直传、认知域人工修改 / 确认 / 锁定 / 重算或报告请求 DTO。
 
 ## 3. 当前 DTO / Type 清单
 
@@ -466,6 +466,33 @@
 - A17 兼容扩展：`ProvisionalScoreResultResponse` 增加 `updatedAt: Date` 和可选 confirmation；`ProvisionalScoreItemResponse` 增加可选 manualReview。JSON 中 Date 序列化为 ISO string；既有字段未删除或改名。
 - 并发口径：latest / compute / manual-review / confirm 的 scoreResult.updatedAt 是下一次 A18 写请求 expectedUpdatedAt 的事实源；不是客户端 revision，也不是分布式锁。
 - 安全：响应不含 metadata、全部审计事件、previousScoreValue、作答、expectedValue、scoringRule、正确答案、Session 或 token。
+
+### A19 认知域计算 DTO 与公开响应
+
+- 名称：`ComputeCognitiveDomainResultDto`
+- 用途：`POST .../:scaleInstanceId/cognitive-domain-results/compute` body；唯一字段 `confirm` 只接受 boolean，缺失 / false 由 Workflow 统一为 `COGNITIVE_DOMAIN_COMPUTATION_CONFIRMATION_REQUIRED`。scoreResultId、domainResultCode、runNo、status、domainScores、itemContributions、domainCodes、weights、mappingRules、metadata、force / rerun / override 和路径 ID 均不声明，由全局 whitelist 拒绝。
+- 路径：compute 与 latest 复用 assessments 的 `ScaleInstanceExecutionParamDto`；patientId / visitId / scaleInstanceId 均 `@IsMongoId()`，未新增重复路径 DTO。
+
+- 名称：`CognitiveDomainScaleResponse` / `CognitiveDomainScaleInstanceResponse` / `CognitiveDomainSourceScoreResultResponse`
+- 字段：安全量表身份；实例只含 id / instanceCode / scaleCode / version / status /历史时间，不含 subjectCode、patientId、visitId 或 operator；fresh / latest source score 返回安全 code / run / status / confirmedAt / updatedAt，既有幂等 compute 为避免重读 ScoreResult 只返回 source id。
+
+- 名称：`CognitiveDomainScoreResponse`
+- 字段：domainCode、可选 domainTitle、scoreValue、minScore、maxScore、scorePercent、weightedScore、weightedMaxScore，以及 item / scored / unscored / missing / needsReview / excluded 计数。scorePercent 只表示映射项目区间得分比例，不是正常率或疾病概率。
+
+- 名称：`CognitiveDomainItemContributionResponse`
+- 字段：itemResponseId、安全题目标识 / 顺序、domainCode / 可选 title、weight、countsTowardDomain、score / max / weighted score / max、scoreStatus / source、isMissing；现有 Schema 未持久化 contribution min / weightedMin，因此 A19 不在该响应编造字段。
+- 安全：不含 scoreResultId、作答、missingReason、operatorNote、scoringRule、expectedValue、isCorrect、review / confirmation 意见、metadata、qualityHints、媒体对象或签名地址。
+
+- 名称：`CognitiveDomainMappingPolicyResponse` / `CognitiveDomainMappingResponse`
+- policy：固定 `{ strategy: 'full_item_score_per_domain', weight: 1, deduplicatePerItem: true, overlappingDomains: true }`；不透传内部 Mixed mappingRules。
+- interpretation：固定声明 overlapping full-item attribution、domainScores 不是量表总分互斥拆分、scorePercent 不是诊断概率、结果不是诊断结论。
+
+- 名称：`CognitiveDomainComputationResponse` / `CognitiveDomainReviewResponse` / `CognitiveDomainResultResponse`
+- computation：computedAt、ruleSet / engine version、input / contribution / domain / included / excluded / warning 计数与受控 warningCodes；不含 computedBy。
+- result：id、domainResultCode、runNo、status、source / mode、versionTrace、domainScores、itemContributions、mapping、computation、review、qualityStatus、确认 / 锁定 / 作废 / timestamps 与 isFinal；A19 新建 computed 的 isFinal=false。
+
+- 名称：`CognitiveDomainResultDetailResponse` / `ComputeCognitiveDomainResultResponse`
+- latest：`{ scale, scaleInstance, sourceScoreResult, cognitiveDomainResult }`；compute 额外 `alreadyComputed`。数组由 public mapper 复制并稳定排序；响应不含 subjectCode、metadata、qualityHints、computedBy、原始 mappingRules、阈值或诊断结论。
 
 ## 4. 后续同步规则
 

@@ -125,6 +125,8 @@ function createDomainResultFixture(overrides: Record<string, unknown> = {}) {
     confirmedAt: null,
     lockedAt: null,
     voidedAt: null,
+    createdAt: new Date('2026-01-08T08:00:00.000Z'),
+    updatedAt: new Date('2026-01-08T08:00:00.000Z'),
     internalMarker: 'not returned',
     ...overrides,
   };
@@ -327,12 +329,14 @@ describe('CognitiveDomainsService', () => {
   let cognitiveDomainResultModel: {
     findOne: jest.Mock;
     find: jest.Mock;
+    create: jest.Mock;
   };
 
   beforeEach(async () => {
     cognitiveDomainResultModel = {
       findOne: jest.fn(),
       find: jest.fn(),
+      create: jest.fn(),
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -384,6 +388,8 @@ describe('CognitiveDomainsService', () => {
     const computedAt = new Date('2026-01-08T08:00:00.000Z');
     const computedBy = new Types.ObjectId();
     const reviewerId = new Types.ObjectId();
+    const createdAt = new Date('2026-01-08T07:00:00.000Z');
+    const updatedAt = new Date('2026-01-08T09:00:00.000Z');
     const rawDomainResult = createDomainResultFixture({
       _id: domainResultId,
       patientId,
@@ -433,6 +439,8 @@ describe('CognitiveDomainsService', () => {
         reviewerName: 'Sample Reviewer',
         reviewNote: 'De-identified review note',
       },
+      createdAt,
+      updatedAt,
     });
     cognitiveDomainResultModel.findOne.mockReturnValue(
       createExecQuery(rawDomainResult),
@@ -542,6 +550,8 @@ describe('CognitiveDomainsService', () => {
       confirmedAt: null,
       lockedAt: null,
       voidedAt: null,
+      createdAt,
+      updatedAt,
     });
     expect(result).not.toHaveProperty('_id');
     expect(result).not.toHaveProperty('internalMarker');
@@ -574,6 +584,95 @@ describe('CognitiveDomainsService', () => {
         runNo: 2,
       }),
     );
+  });
+
+  it('finds the exact run-one result for the computation boundary', async () => {
+    const scaleInstanceId = new Types.ObjectId();
+    cognitiveDomainResultModel.findOne.mockReturnValue(
+      createExecQuery(createDomainResultFixture({ scaleInstanceId })),
+    );
+
+    const result = await service.findDomainResultByScaleInstanceAndRunNo(
+      scaleInstanceId,
+      1,
+    );
+
+    expect(cognitiveDomainResultModel.findOne).toHaveBeenCalledWith({
+      scaleInstanceId,
+      runNo: 1,
+    });
+    expect(result?.runNo).toBe(1);
+  });
+
+  it('creates a controlled run-one result with converted ObjectIds', async () => {
+    const patientId = new Types.ObjectId();
+    const assessmentVisitId = new Types.ObjectId();
+    const scaleInstanceId = new Types.ObjectId();
+    const scoreResultId = new Types.ObjectId();
+    const scaleDefinitionId = new Types.ObjectId();
+    const scaleVersionId = new Types.ObjectId();
+    const computedBy = new Types.ObjectId();
+    cognitiveDomainResultModel.create.mockResolvedValue(
+      createDomainResultFixture({
+        patientId,
+        assessmentVisitId,
+        scaleInstanceId,
+        scoreResultId,
+        scaleDefinitionId,
+        scaleVersionId,
+      }),
+    );
+
+    const result = await service.createRunOneDomainResult({
+      patientId: patientId.toString(),
+      assessmentVisitId: assessmentVisitId.toString(),
+      scaleInstanceId: scaleInstanceId.toString(),
+      scoreResultId: scoreResultId.toString(),
+      subjectCode: 'SUBJ-A19-TEST-SERVICE',
+      scaleDefinitionId: scaleDefinitionId.toString(),
+      scaleVersionId: scaleVersionId.toString(),
+      scaleCode: 'moca',
+      scaleVersion: '1.0',
+      instanceCode: 'INST-A19-TEST-SERVICE',
+      domainResultCode: 'CDR-A19-TEST-SERVICE',
+      runNo: 1,
+      status: 'computed',
+      mappingSource: 'scale_config',
+      mappingMode: 'item_domain_codes',
+      versionTrace: { domainMappingVersion: 'a19-item-domain-codes-1.0' },
+      domainScores: [],
+      itemContributions: [],
+      mappingSnapshot: {
+        mappingVersion: 'a19-item-domain-codes-1.0',
+        mappingSource: 'scale_config',
+        domainCodes: [],
+        mappingRules: null,
+      },
+      computation: {
+        computedAt: new Date('2026-07-11T04:00:00.000Z'),
+        computedBy: computedBy.toString(),
+        inputItemCount: 0,
+        contributionCount: 0,
+        domainCount: 0,
+        includedContributionCount: 0,
+        excludedContributionCount: 0,
+        warningCount: 0,
+      },
+      review: { reviewStatus: 'not_required' },
+      qualityStatus: 'unchecked',
+    });
+
+    expect(cognitiveDomainResultModel.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        patientId,
+        assessmentVisitId,
+        scaleInstanceId,
+        scoreResultId,
+        runNo: 1,
+        status: 'computed',
+      }),
+    );
+    expect(result.runNo).toBe(1);
   });
 
   it('lists domain results by scale instance id ordered by run number and createdAt', async () => {
@@ -823,57 +922,67 @@ describe('CognitiveDomainsService', () => {
         }),
       ]),
     );
-    expect(summary.domainScores).toEqual([
-      expect.objectContaining({
-        domainCode: 'attention',
-        scoreValue: 1,
-        maxScore: 1,
-        scorePercent: 100,
-        itemCount: 1,
-        scoredItemCount: 1,
-        excludedItemCount: 0,
-      }),
-      expect.objectContaining({
-        domainCode: 'executive_function',
-        scoreValue: 2,
-        maxScore: 2.5,
-        scorePercent: 80,
-        itemCount: 2,
-        scoredItemCount: 2,
-      }),
-      expect.objectContaining({
-        domainCode: 'visuospatial',
-        domainTitle: 'Visuospatial sample',
-        scoreValue: 4,
-        maxScore: 6,
-        scorePercent: 66.66666666666666,
-      }),
-      expect.objectContaining({
-        domainCode: 'memory',
-        scoreValue: null,
-        maxScore: 1,
-        scorePercent: null,
-        itemCount: 2,
-        scoredItemCount: 1,
-        unscoredItemCount: 1,
-        missingItemCount: 1,
-        needsReviewItemCount: 1,
-        excludedItemCount: 1,
-      }),
-      expect.objectContaining({
-        domainCode: 'language',
-        scoreValue: null,
-        maxScore: null,
-        itemCount: 1,
-        unscoredItemCount: 1,
-      }),
-      expect.objectContaining({
-        domainCode: 'attention_calculation',
-        scoreValue: null,
-        maxScore: null,
-        itemCount: 1,
-        unscoredItemCount: 1,
-      }),
+    expect(summary.domainScores).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          domainCode: 'attention',
+          scoreValue: 1,
+          maxScore: 1,
+          scorePercent: 100,
+          itemCount: 1,
+          scoredItemCount: 1,
+          excludedItemCount: 0,
+        }),
+        expect.objectContaining({
+          domainCode: 'executive_function',
+          scoreValue: 2,
+          maxScore: 2.5,
+          scorePercent: 80,
+          itemCount: 2,
+          scoredItemCount: 2,
+        }),
+        expect.objectContaining({
+          domainCode: 'visuospatial',
+          domainTitle: 'Visuospatial sample',
+          scoreValue: 4,
+          maxScore: 6,
+          scorePercent: 66.66666666666666,
+        }),
+        expect.objectContaining({
+          domainCode: 'memory',
+          scoreValue: null,
+          maxScore: 1,
+          scorePercent: null,
+          itemCount: 2,
+          scoredItemCount: 1,
+          unscoredItemCount: 1,
+          missingItemCount: 1,
+          needsReviewItemCount: 1,
+          excludedItemCount: 1,
+        }),
+        expect.objectContaining({
+          domainCode: 'language',
+          scoreValue: null,
+          maxScore: null,
+          itemCount: 1,
+          unscoredItemCount: 1,
+        }),
+        expect.objectContaining({
+          domainCode: 'attention_calculation',
+          scoreValue: null,
+          maxScore: null,
+          itemCount: 1,
+          unscoredItemCount: 1,
+        }),
+      ]),
+    );
+    expect(summary.domainScores.map((score) => score.domainCode)).toEqual([
+      'attention',
+      'attention_calculation',
+      'executive_function',
+      'language',
+      'memory',
+      'visuospatial',
     ]);
     expect(summary.warnings).toEqual([
       {
@@ -898,5 +1007,55 @@ describe('CognitiveDomainsService', () => {
     expect(summary).not.toHaveProperty('diseaseClassification');
     expect(cognitiveDomainResultModel.find).not.toHaveBeenCalled();
     expect(cognitiveDomainResultModel.findOne).not.toHaveBeenCalled();
+  });
+
+  it('aggregates non-zero minimums and excludes process contributions from the range', () => {
+    const summary = service.summarizeDomainScores([
+      {
+        itemCode: 'item.b',
+        itemOrder: 2,
+        scoreValue: 4,
+        minScore: 2,
+        maxScore: 6,
+        scoreStatus: 'manual_scored',
+        cognitiveDomainCodes: [' Memory '],
+      },
+      {
+        itemCode: 'item.a',
+        itemOrder: 1,
+        scoreValue: 3,
+        minScore: 1,
+        maxScore: 5,
+        scoreStatus: 'auto_scored',
+        cognitiveDomainCodes: ['memory'],
+      },
+      {
+        itemCode: 'item.process',
+        itemOrder: 3,
+        scoreValue: null,
+        minScore: 100,
+        maxScore: 200,
+        scoreStatus: 'not_scored',
+        domainMappings: [
+          { domainCode: 'memory', countsTowardDomain: false, weight: 1 },
+        ],
+      },
+    ]);
+
+    expect(summary.domainScores).toEqual([
+      expect.objectContaining({
+        domainCode: 'memory',
+        scoreValue: 7,
+        minScore: 3,
+        maxScore: 11,
+        scorePercent: 50,
+        excludedItemCount: 1,
+      }),
+    ]);
+    expect(summary.itemContributions.map((item) => item.itemCode)).toEqual([
+      'item.a',
+      'item.b',
+      'item.process',
+    ]);
   });
 });

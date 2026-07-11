@@ -132,6 +132,8 @@ export type CognitiveDomainResultSummary = {
   confirmedAt: Date | null;
   lockedAt: Date | null;
   voidedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
 };
 
 export type CognitiveDomainMappingInput = {
@@ -149,6 +151,7 @@ export type CognitiveDomainItemInput = {
   itemTitle?: string;
   itemOrder?: number;
   scoreValue?: number | null;
+  minScore?: number | null;
   maxScore?: number | null;
   scoreStatus?: CognitiveDomainItemScoreStatus;
   scoreSource?: string;
@@ -161,7 +164,7 @@ export type CognitiveDomainItemInput = {
 export type CognitiveDomainComputationWarning = {
   itemCode: string;
   domainCode?: string;
-  field: 'domainCode' | 'scoreValue' | 'maxScore' | 'weight';
+  field: 'domainCode' | 'scoreValue' | 'minScore' | 'maxScore' | 'weight';
   message: string;
 };
 
@@ -184,15 +187,45 @@ type CognitiveDomainAccumulator = {
   domainCode: string;
   domainTitle?: string;
   scoreValue: number;
+  minScore: number;
   maxScore: number;
   hasScoreValue: boolean;
+  hasMinScore: boolean;
   hasMaxScore: boolean;
+  includedItemCount: number;
+  includedMinScoreCount: number;
+  includedUnscoredItemCount: number;
   itemCount: number;
   scoredItemCount: number;
   unscoredItemCount: number;
   missingItemCount: number;
   needsReviewItemCount: number;
   excludedItemCount: number;
+};
+
+export type CreateCognitiveDomainResultInput = {
+  patientId: string;
+  assessmentVisitId: string;
+  scaleInstanceId: string;
+  scoreResultId: string;
+  subjectCode: string;
+  scaleDefinitionId: string;
+  scaleVersionId: string;
+  scaleCode: string;
+  scaleVersion: string;
+  instanceCode: string;
+  domainResultCode: string;
+  runNo: 1;
+  status: Extract<CognitiveDomainResultStatus, 'computed'>;
+  mappingSource: Extract<CognitiveDomainMappingSource, 'scale_config'>;
+  mappingMode: Extract<CognitiveDomainMappingMode, 'item_domain_codes'>;
+  versionTrace: CognitiveDomainVersionTraceSummary;
+  domainScores: CognitiveDomainScoreSummary[];
+  itemContributions: CognitiveDomainItemContributionSummary[];
+  mappingSnapshot: CognitiveDomainMappingSnapshotSummary;
+  computation: CognitiveDomainComputationSnapshotSummary;
+  review: Pick<CognitiveDomainReviewSummary, 'reviewStatus'>;
+  qualityStatus: Extract<CognitiveDomainQualityStatus, 'unchecked'>;
 };
 
 @Injectable()
@@ -249,6 +282,61 @@ export class CognitiveDomainsService {
     }
 
     return this.mapDomainResult(domainResult);
+  }
+
+  async findDomainResultByScaleInstanceAndRunNo(
+    scaleInstanceId: Types.ObjectId | string,
+    runNo: number,
+  ): Promise<CognitiveDomainResultSummary | null> {
+    const normalizedId = this.normalizeObjectId(scaleInstanceId);
+    if (!normalizedId || !Number.isInteger(runNo) || runNo < 1) {
+      return null;
+    }
+    const domainResult = await this.cognitiveDomainResultModel
+      .findOne({ scaleInstanceId: normalizedId, runNo })
+      .exec();
+    return domainResult ? this.mapDomainResult(domainResult) : null;
+  }
+
+  async createRunOneDomainResult(
+    input: CreateCognitiveDomainResultInput,
+  ): Promise<CognitiveDomainResultSummary> {
+    const created = await this.cognitiveDomainResultModel.create({
+      patientId: new Types.ObjectId(input.patientId),
+      assessmentVisitId: new Types.ObjectId(input.assessmentVisitId),
+      scaleInstanceId: new Types.ObjectId(input.scaleInstanceId),
+      scoreResultId: new Types.ObjectId(input.scoreResultId),
+      subjectCode: input.subjectCode,
+      scaleDefinitionId: new Types.ObjectId(input.scaleDefinitionId),
+      scaleVersionId: new Types.ObjectId(input.scaleVersionId),
+      scaleCode: input.scaleCode,
+      scaleVersion: input.scaleVersion,
+      instanceCode: input.instanceCode,
+      domainResultCode: input.domainResultCode,
+      runNo: 1,
+      status: input.status,
+      mappingSource: input.mappingSource,
+      mappingMode: input.mappingMode,
+      versionTrace: input.versionTrace,
+      domainScores: input.domainScores,
+      itemContributions: input.itemContributions.map((contribution) => ({
+        ...contribution,
+        itemResponseId: contribution.itemResponseId
+          ? new Types.ObjectId(contribution.itemResponseId)
+          : null,
+        scoreResultId: new Types.ObjectId(input.scoreResultId),
+      })),
+      mappingSnapshot: input.mappingSnapshot,
+      computation: {
+        ...input.computation,
+        computedBy: input.computation.computedBy
+          ? new Types.ObjectId(input.computation.computedBy)
+          : null,
+      },
+      review: input.review,
+      qualityStatus: input.qualityStatus,
+    });
+    return this.mapDomainResult(created);
   }
 
   async listDomainResultsByScaleInstanceId(
@@ -343,6 +431,7 @@ export class CognitiveDomainsService {
     items.forEach((item, index) => {
       const itemCode = this.normalizeItemCode(item.itemCode);
       const scoreValue = this.toFiniteNumberOrNull(item.scoreValue);
+      const minScore = this.toFiniteNumberOrNull(item.minScore);
       const maxScore = this.toFiniteNumberOrNull(item.maxScore);
       const scoreStatus = item.scoreStatus ?? 'not_scored';
       const isMissing = item.isMissing === true;
@@ -361,6 +450,14 @@ export class CognitiveDomainsService {
           itemCode,
           field: 'maxScore',
           message: 'maxScore is not a finite number.',
+        });
+      }
+
+      if (this.isNonFiniteNumber(item.minScore)) {
+        warnings.push({
+          itemCode,
+          field: 'minScore',
+          message: 'minScore is not a finite number.',
         });
       }
 
@@ -384,6 +481,7 @@ export class CognitiveDomainsService {
         );
         const countsTowardDomain = mapping.countsTowardDomain !== false;
         const weightedScore = scoreValue !== null ? scoreValue * weight : null;
+        const weightedMinScore = minScore !== null ? minScore * weight : null;
         const weightedMaxScore = maxScore !== null ? maxScore * weight : null;
 
         if (countsTowardDomain) {
@@ -414,8 +512,10 @@ export class CognitiveDomainsService {
         this.applyContributionToDomain(domain, {
           countsTowardDomain,
           scoreValue,
+          minScore,
           maxScore,
           weightedScore,
+          weightedMinScore,
           weightedMaxScore,
           scoreStatus,
           isMissing,
@@ -445,8 +545,14 @@ export class CognitiveDomainsService {
       });
     });
 
-    const domainScores = Array.from(domainMap.values()).map((domain) =>
-      this.mapDomainAccumulator(domain),
+    const domainScores = Array.from(domainMap.values())
+      .map((domain) => this.mapDomainAccumulator(domain))
+      .sort((left, right) => left.domainCode.localeCompare(right.domainCode));
+    itemContributions.sort(
+      (left, right) =>
+        left.itemOrder - right.itemOrder ||
+        left.itemCode.localeCompare(right.itemCode) ||
+        left.domainCode.localeCompare(right.domainCode),
     );
 
     return {
@@ -580,9 +686,14 @@ export class CognitiveDomainsService {
       domainCode,
       domainTitle,
       scoreValue: 0,
+      minScore: 0,
       maxScore: 0,
       hasScoreValue: false,
+      hasMinScore: false,
       hasMaxScore: false,
+      includedItemCount: 0,
+      includedMinScoreCount: 0,
+      includedUnscoredItemCount: 0,
       itemCount: 0,
       scoredItemCount: 0,
       unscoredItemCount: 0,
@@ -600,8 +711,10 @@ export class CognitiveDomainsService {
     contribution: {
       countsTowardDomain: boolean;
       scoreValue: number | null;
+      minScore: number | null;
       maxScore: number | null;
       weightedScore: number | null;
+      weightedMinScore: number | null;
       weightedMaxScore: number | null;
       scoreStatus: CognitiveDomainItemScoreStatus;
       isMissing: boolean;
@@ -627,6 +740,11 @@ export class CognitiveDomainsService {
       domain.excludedItemCount += 1;
       return;
     }
+    domain.includedItemCount += 1;
+
+    if (contribution.scoreValue === null) {
+      domain.includedUnscoredItemCount += 1;
+    }
 
     if (contribution.weightedScore !== null) {
       domain.scoreValue += contribution.weightedScore;
@@ -637,24 +755,47 @@ export class CognitiveDomainsService {
       domain.maxScore += contribution.weightedMaxScore;
       domain.hasMaxScore = true;
     }
+
+    if (contribution.weightedMinScore !== null) {
+      domain.minScore += contribution.weightedMinScore;
+      domain.hasMinScore = true;
+      domain.includedMinScoreCount += 1;
+    }
   }
 
   private mapDomainAccumulator(
     domain: CognitiveDomainAccumulator,
   ): CognitiveDomainScoreSummary {
     const scoreValue = domain.hasScoreValue ? domain.scoreValue : null;
+    const minScore = domain.hasMinScore ? domain.minScore : null;
     const maxScore = domain.hasMaxScore ? domain.maxScore : null;
+    const completeNewRange =
+      domain.includedItemCount > 0 &&
+      domain.includedMinScoreCount === domain.includedItemCount;
+    const scorePercent =
+      scoreValue !== null &&
+      maxScore !== null &&
+      domain.includedUnscoredItemCount === 0
+        ? completeNewRange && minScore !== null && maxScore > minScore
+          ? Math.min(
+              100,
+              Math.max(
+                0,
+                ((scoreValue - minScore) / (maxScore - minScore)) * 100,
+              ),
+            )
+          : domain.includedMinScoreCount === 0 && maxScore > 0
+            ? (scoreValue / maxScore) * 100
+            : null
+        : null;
 
     return {
       domainCode: domain.domainCode,
       domainTitle: domain.domainTitle,
       scoreValue,
       maxScore,
-      minScore: null,
-      scorePercent:
-        scoreValue !== null && maxScore !== null && maxScore > 0
-          ? (scoreValue / maxScore) * 100
-          : null,
+      minScore,
+      scorePercent,
       weightedScore: scoreValue,
       weightedMaxScore: maxScore,
       itemCount: domain.itemCount,
@@ -703,7 +844,25 @@ export class CognitiveDomainsService {
       confirmedAt: domainResult.confirmedAt ?? null,
       lockedAt: domainResult.lockedAt ?? null,
       voidedAt: domainResult.voidedAt ?? null,
+      createdAt: this.readTimestamp(domainResult, 'createdAt'),
+      updatedAt: this.readTimestamp(domainResult, 'updatedAt'),
     };
+  }
+
+  private readTimestamp(
+    domainResult: CognitiveDomainResultDocument,
+    path: 'createdAt' | 'updatedAt',
+  ): Date {
+    const candidate = domainResult as CognitiveDomainResultDocument & {
+      createdAt?: unknown;
+      updatedAt?: unknown;
+      get?: (timestampPath: string) => unknown;
+    };
+    const value: unknown = candidate[path] ?? candidate.get?.(path);
+    if (!(value instanceof Date) || !Number.isFinite(value.getTime())) {
+      throw new Error(`CognitiveDomainResult ${path} is unavailable`);
+    }
+    return value;
   }
 
   private mapVersionTrace(

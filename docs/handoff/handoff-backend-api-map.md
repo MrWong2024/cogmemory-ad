@@ -6,12 +6,12 @@
 
 ## 2. 当前状态
 
-- 当前公开 API 在 A17 清单上新增 A18 的单题 manual-review PATCH 与 ScoreResult confirm POST。
+- 当前公开 API 在 A18 清单上新增 A19 的认知域 compute POST 与 latest GET。
 - `AuthModule` 当前新增 `AuthController`，仅暴露最小公开认证 API 底座；主登录态仍为服务端 Session + HttpOnly Cookie，不采用 JWT 主登录态。
 - AuthModule 内部 session cookie 名称已统一为 `cogmemory_ad_session`，登录成功下发 HttpOnly Cookie，`SameSite=Lax`，`Path=/`，production 环境启用 `Secure`。
 - 当前没有 users controller，没有公开用户管理 API，没有注册、密码重置、角色权限管理、短信验证码、OAuth / SSO 或 JWT 登录 API。
 - A12 已新增 `PatientsController` 与 `AssessmentVisitsController`，形成第一组受保护临床业务 API；所有五个接口均显式绑定 `SessionAuthGuard`、`RolesGuard` 和 `@Roles('admin', 'doctor', 'nurse', 'research_assistant')`。
-- 当前已有实例 submission readiness / submit 与评分 compute / latest / manual-review / confirm 最小闭环；仍没有撤销 / reopen / lock / void / rerun、批量 / 分片 / 客户端直传、认知域、报告、SMS 或 AI / LLM 公开接口。
+- 当前已有实例 submission readiness / submit、评分 compute / latest / manual-review / confirm，以及认知域 compute / latest 最小闭环；仍没有认知域人工修改 / 确认 / 锁定 / 重算、报告、SMS 或 AI / LLM 公开接口。
 - 当前 API 事实以实际 Controller、DTO、response type 和对应单元 / E2E 测试为准。
 
 ## 3. 当前 API 清单
@@ -304,6 +304,27 @@
 - 其他错误：404 完整归属；409 `SCORE_RESULT_VOIDED` / patient / visit / instance 状态 / metadata 错误；500 `SCORE_RESULT_CONFIRMATION_FAILED`
 - 安全与非目标：confirmed 的 isFinal=true 但不 locked；不实现 lock、void、撤销、reopen、重跑、runNo=2、认知域、报告、诊断或 AI
 
+### A19 认知域结果 API
+
+- 接口名称：计算认知域结果
+- Method / Path：`POST /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/cognitive-domain-results/compute`
+- Controller / Guard / Roles：`CognitiveDomainResultsController`；显式 `SessionAuthGuard` + `RolesGuard`；`admin`、`doctor`、`nurse`、`research_assistant`；通过 `@CurrentUser()` 取得内部 computedBy
+- Param / Body DTO：复用 `ScaleInstanceExecutionParamDto`；`ComputeCognitiveDomainResultDto { confirm }`，只接受 boolean，业务层要求严格 true；客户端 score / domain code / weight / mappingRules / metadata / force / rerun / override 和路径 ID 均由 whitelist 拒绝
+- 首次状态：active Patient；Visit 为 draft / in_progress / completed；ScaleInstance completed。来源必须是当前实例 runNo=1、confirmed / locked、confirmedAt 完整、qualityStatus=passed、reviewed、total 完整且 warningCount=0 的 ScoreResult
+- 输入绑定：ScoreResult 与 Patient / Visit / Instance / Definition / Version 完整归属；itemCode 集合、countsTowardTotal、min/max 和规范化 cognitiveDomainCodes 与实例绑定 ScaleVersion 完全一致；不读取或重新判定原始作答、图片、手写、expectedValue、scoringRule 或 isCorrect
+- mapping：固定 mappingSource=scale_config、mappingMode=item_domain_codes、mappingVersion=`a19-item-domain-codes-1.0`、weight=1；同 item 同 domain 去重，多 domain 采用完整 score / max 重叠归因，不拆分、不平均；domainScores 不可跨 domain 求和解释为量表总分
+- 响应：200，`ComputeCognitiveDomainResultResponse { scale, scaleInstance, sourceScoreResult, cognitiveDomainResult, alreadyComputed }`。新建结果 runNo=1、status=computed、reviewStatus=not_required、qualityStatus=unchecked、isFinal=false；computed 不等于 confirmed / locked
+- 幂等 / 并发：computed / needs_review / confirmed / locked 返回 alreadyComputed=true，且不重读 ScoreResult 或重算；draft / voided 拒绝。依赖 `{ scaleInstanceId, runNo }` 唯一索引，duplicate key 后重读；不使用 transaction、分布式锁、临时 draft、重算或 runNo=2
+- 错误：400 `COGNITIVE_DOMAIN_COMPUTATION_CONFIRMATION_REQUIRED`；401 / 403；404 `PATIENT_NOT_FOUND` / `VISIT_NOT_FOUND` / `SCALE_INSTANCE_NOT_FOUND` / `SCORE_RESULT_NOT_FOUND`；409 `PATIENT_NOT_ACTIVE` / `VISIT_NOT_EDITABLE` / `COGNITIVE_DOMAIN_INSTANCE_NOT_COMPUTABLE` / `SCALE_INSTANCE_CONFIGURATION_UNAVAILABLE` / `COGNITIVE_DOMAIN_SOURCE_SCORE_NOT_FINAL` / `COGNITIVE_DOMAIN_SOURCE_SCORE_INVALID` / `COGNITIVE_DOMAIN_MAPPING_UNAVAILABLE` / `COGNITIVE_DOMAIN_INPUT_INVALID` / `COGNITIVE_DOMAIN_RESULT_INCOMPLETE` / `COGNITIVE_DOMAIN_RESULT_VOIDED` / `COGNITIVE_DOMAIN_COMPUTATION_CONFLICT`；500 `COGNITIVE_DOMAIN_COMPUTATION_FAILED`
+- 安全与非诊断：公开结果不含 subjectCode、作答、评分 / 确认意见、metadata、qualityHints、computedBy、原始 Mixed mappingRules、媒体地址、阈值、正常 / 异常分类或诊断；scorePercent 不是疾病概率
+
+- 接口名称：查询最新认知域结果
+- Method / Path：`GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/cognitive-domain-results/latest`
+- Controller / Guard / Roles / Param DTO：同 compute；无 Query / Body，不使用 `@CurrentUser()`
+- 读取状态：允许 inactive / archived Patient 与 completed / locked / voided Visit / ScaleInstance 历史读取；按完整路径归属和实例绑定版本返回 runNo=1 结果；无结果 404 `COGNITIVE_DOMAIN_RESULT_NOT_FOUND`，draft 409 `COGNITIVE_DOMAIN_RESULT_INCOMPLETE`，voided 允许安全展示
+- 响应：200，`CognitiveDomainResultDetailResponse { scale, scaleInstance, sourceScoreResult, cognitiveDomainResult }`；只读不写数据库，不提供重算或历史列表
+- mapping / 安全 / 非诊断：与 compute 相同；domainScores 和 itemContributions 稳定排序，mapping policy 明确 overlappingDomains=true 与 domainScoresAreScaleTotalPartition=false
+
 ## 4. 当前未暴露接口说明
 
 - `backend\src\modules\users` 当前没有 Controller。
@@ -315,9 +336,9 @@
 - `backend\src\modules\assessments` 还通过 `ScaleInstanceSubmissionController` 暴露 A16 两个接口；`AssessmentExecutionService` 仍为内部初始化能力，不暴露批量保存或计分接口。
 - `backend\src\modules\media` 当前仅通过 `MediaEvidenceController` 暴露上述四个题目级媒体接口；没有全患者 / 访视 / 实例媒体列表、直接对象 key 下载、永久 URL、物理删除、替换、批量、分片、客户端直传、OCR 或 AI 接口。
 - `backend\src\modules\scoring` 当前通过同一 `ScoringController` 暴露 A17 compute / latest 与 A18 manual-review / confirm；没有 lock、void、撤销确认、reopen、重跑、列表、患者级或访视级评分 API。
-- `backend\src\modules\cognitive-domains` 当前没有 Controller；`CognitiveDomainsService` 仅供后续后端业务模块内部读取认知域结果摘要和复用通用认知域汇总纯函数。
+- `backend\src\modules\cognitive-domains` 当前通过 `CognitiveDomainResultsController` 暴露 A19 compute / latest；没有人工修改、确认、锁定、作废、重算、历史列表、患者 / 访视级列表或报告 API。
 - `backend\src\modules\reports` 当前没有 Controller；`ReportsService` 仅供后续后端业务模块内部读取临床报告摘要和复用报告状态转换校验纯函数。
-- 当前已定义 A12-A18 对应公开 DTO 和响应类型；仍不定义评分 lock / void / 重跑、认知域、报告、SMS、AI / LLM 或批量 / 分片 / 客户端直传契约；本次未更新 frontend handoff。
+- 当前已定义 A12-A19 对应公开 DTO 和响应类型；仍不定义评分 lock / void / 重跑、认知域人工修改 / 确认 / 锁定 / 重算、报告、SMS、AI / LLM 或批量 / 分片 / 客户端直传契约；本次未更新 frontend handoff。
 
 ## 5. 后续同步规则
 

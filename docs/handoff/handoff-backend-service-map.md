@@ -6,7 +6,7 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 Service / Provider 与 A12-A18 业务能力；A18 在既有 Scoring Controller / A17 Workflow / pure engine / public mapper 上新增 ScoreReviewWorkflowService、人工复核纯函数与单文档原子更新。
+- 当前存在公共底座 Service / Provider 与 A12-A19 业务能力；A19 在既有 CognitiveDomainsService / summarizeDomainScores() 上新增 Controller、Workflow、确认评分纯映射 / 校验和 public mapper。
 - 当前没有医生、SMS 或 LLM Service；A16 不调用计分、认知域、报告、MediaModule 或 AI 能力。
 
 ## 3. 当前 Service / Provider 清单
@@ -171,11 +171,12 @@
 - Service 名称：`CognitiveDomainsService`
 - 文件路径：`backend\src\modules\cognitive-domains\services\cognitive-domains.service.ts`
 - 职责边界：提供认知域结果快照的内部读取底座；规范化 `domainResultCode` 与 `domainCode`；按 mapper 输出 `CognitiveDomainResultSummary`，不直接返回完整 Mongoose document；提供 `summarizeDomainScores()` 通用认知域汇总纯函数。
-- 当前方法：`normalizeDomainResultCode(domainResultCode)`、`normalizeDomainCode(domainCode)`、`findDomainResultByCode(domainResultCode)`、`findLatestDomainResultByScaleInstanceId(scaleInstanceId)`、`listDomainResultsByScaleInstanceId(scaleInstanceId)`、`listDomainResultsByScoreResultId(scoreResultId)`、`listDomainResultsByVisitId(assessmentVisitId)`、`listDomainResultsByPatientId(patientId)`、`summarizeDomainScores(items)`。
-- 上游调用方：当前暂无公开 Controller；预期供后续评估、计分任务、报告或科研导出等后端业务模块内部读取认知域结果摘要或复用通用汇总。
+- 当前方法：保留既有 code / latest / 实例 / ScoreResult / 访视 / 患者读取与 `summarizeDomainScores(items)`；A19 新增 `findDomainResultByScaleInstanceAndRunNo()` 与 `createRunOneDomainResult()`。
+- 上游调用方：`CognitiveDomainComputationWorkflowService`，以及后续报告或科研导出等内部能力。
 - 下游依赖：`CognitiveDomainResult` Mongoose Model；`summarizeDomainScores()` 不依赖数据库。
-- 边界：不创建、更新、删除认知域结果；不实现确认、锁定、作废、状态流转、作答提交后自动认知域计算触发、MMSE / MoCA 专用认知域映射规则、疾病诊断、AD 风险等级、报告、AI、认证、权限或公开认知域 API；不修改 `ScoreResult` 或 `ItemResponse`。
-- 测试覆盖口径：`backend\src\modules\cognitive-domains\services\cognitive-domains.service.spec.ts`，覆盖 domain result code / domain code 规范化、查无返回 `null`、mapper 输出、按量表实例最新读取、按量表实例 / 计分结果 / 访视 / 患者列表读取、schema collection、索引、内嵌子文档 `_id: false`、关键字段显式类型，以及 `summarizeDomainScores()` 对多认知域映射、默认映射、权重、不计入认知域、缺失、未评分、需复核和非有限数字 warning 的处理；不连接真实 MongoDB，不调用 Storage / OSS / SMS / LLM，测试数据为脱敏人工样例。
+- 边界：只创建最终 computed runNo=1 文档，不提供 update / confirm / lock / void / delete / rerun；不修改 `ScoreResult` 或 `ItemResponse`，不实现诊断、报告或 AI。
+- 汇总：新增 minScore / non-zero min 与完整 percentage；excluded 不进 score / min / max，included 未评分 percentage=null；保留旧输入未提供 min 的兼容语义，domain / contribution 稳定排序。
+- 测试覆盖口径：service spec 覆盖既有 A6 语义、timestamps、runNo 查询 / create、min / non-zero min、excluded、完整 percentage 与 stable sort；Model 为 mock，不连接真实 MongoDB。
 
 - Service 名称：`ReportsService`
 - 文件路径：`backend\src\modules\reports\services\reports.service.ts`
@@ -329,6 +330,28 @@
 - 安全：非法 / 未知 metadata 安全忽略且从不透传；manual_scored 不继续暴露旧 reviewReason；不公开事件列表、previousScoreValue、内部命名空间或 Session。
 
 - 一致性：A18 的一致性边界是单个 ScoreResult 文档的条件原子更新；不使用 Mongo transaction、跨集合写入、分布式锁或自动重试。confirmed 不是 locked，qualityStatus=passed 不是疾病结论。
+
+### A19 确认评分驱动的认知域编排
+
+- 名称：`CognitiveDomainResultsController`
+- 职责：绑定 compute / latest 两条嵌套路由，复用 `ScaleInstanceExecutionParamDto`，接收 Compute DTO；类级显式 Session / Roles Guard 与四个临床角色。compute 通过 `@CurrentUser()` 传入内部 computedBy；Controller 不操作 Model、不解析 ScoreResult、不构造 mapping rules 或处理 duplicate key。
+
+- 名称：`CognitiveDomainComputationWorkflowService`
+- 依赖：`PatientsService`、`AssessmentsService`、`ScalesService`、`ScoringService`、`CognitiveDomainsService`、`CognitiveDomainResultPublicMapper`。
+- 职责：完整 Patient → Visit → ScaleInstance → Definition / Version 归属；既有 result 幂等；首次状态和 source ScoreResult 最终性；调用纯映射与 `summarizeDomainScores()`；构造受控 runNo=1 result；duplicate-key 恢复；安全响应组装。
+- 幂等边界：既有有效结果不重读或重新验证 ScoreResult，也不重新要求首次 Patient / Visit / Instance 状态；只返回既有安全结果。latest 只读并允许历史状态 / voided result。
+- 写入边界：只调用 CognitiveDomainsService 创建一条 computed 结果；不修改 Patient、Visit、ScaleInstance、ItemResponse、MediaEvidence 或 ScoreResult，不创建 ClinicalReport，不使用 transaction、分布式锁或 runNo=2。
+
+- 名称：`mapConfirmedScoreToDomainInputs()`
+- 类型：无 Nest DI、无数据库访问的纯函数。
+- 职责：验证 ScoreResult item set / duplicate itemCode、countsTowardTotal、finite min/max、itemResponseId、cognitiveDomainCodes 与 ScaleVersion 绑定；domain trim + lowercase + 单 item 去重；生成 weight=1 的 included / excluded mapping input、排序 domainCodes、受控 mappingSnapshot / policy。
+- 安全：只读取已确认 itemScores 安全字段，不读取作答、图片、手写、expectedValue、scoringRule、isCorrect 或 AI；不修改输入，不按 scaleCode / itemCode 分支，不硬编码 domain title。
+
+- 名称：`CognitiveDomainResultPublicMapper`
+- 职责：显式逐字段输出 domain score、contribution、固定 mapping policy / interpretation、computation / review / version / timestamps；finite / null 归一化并稳定排序复制数组。
+- 安全：不透传 subjectCode、数据库关系大包、metadata、qualityHints、computedBy、原始 Mixed mappingRules、内部 notes、评分 / 确认意见、作答、媒体、阈值或诊断内容。
+
+- 模块依赖：`CognitiveDomainsModule` 单向导入 AuthModule、PatientsModule、AssessmentsModule、ScalesModule、ScoringModule；ScoringModule 不导入 CognitiveDomainsModule，无循环、forwardRef 或其他模块 Schema 重复注册。
 
 ## 4. 后续同步规则
 

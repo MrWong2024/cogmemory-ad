@@ -260,6 +260,16 @@
 - 质量口径：确认成功的 qualityStatus=passed 仅表示评分结果完整性与人工复核流程通过，不表示患者正常、疾病诊断或报告结论。A19 再进入认知域结果；A18 不创建 CognitiveDomainResult / ClinicalReport，不实现诊断或 AI。
 - 影响范围：仅 scoring 模块、A18 E2E 和指定 backend handoff / roadmap；未修改 Schema、seed、auth / patients / assessments / scales / media / cognitive-domains / reports、AppModule、依赖、环境配置或前端。
 
+### D-029：认知域结果只基于确认评分快照并采用完整分值重叠归因
+
+- 日期：2026-07-11
+- 决策：A19 只允许当前 ScaleInstance 的 runNo=1、confirmed / locked ScoreResult 作为首次认知域计算来源；必须具备 confirmedAt、passed quality、reviewed、完整 total 和零 computation warning。只读取 ScoreResult.itemScores 安全快照，并与历史实例绑定 ScaleVersion 的 item set、countsTowardTotal、score range 和 cognitiveDomainCodes 完整校验；不重新读取原始作答、媒体或规则判分。
+- mapping：首阶段只支持 mappingSource=scale_config、mappingMode=item_domain_codes、版本 `a19-item-domain-codes-1.0`。domain code trim + lowercase，同 item 同 domain 去重，weight 固定 1；单 item 多 domain 时把完整 score / max 分别归入每个 domain，不按 domain 数量拆分或平均，不引入 weighted_mapping 或客户端权重。
+- 解释边界：多 domain 是重叠归因，不是重复计分错误；domain scores 不可跨 domain 求和解释为量表总分。scorePercent 只表示映射项目在合法 min/max 区间内的得分比例，不是正常率、疾病概率、风险等级或诊断结论。
+- 结果与幂等：首次直接创建 runNo=1、status=computed、reviewStatus=not_required、qualityStatus=unchecked、isFinal=false 的最终派生文档；computed 不等于 confirmed / locked。computed / needs_review / confirmed / locked 既有结果幂等返回，draft / voided 拒绝；依赖既有唯一索引处理并发 duplicate key，不使用 transaction、分布式锁、临时 draft、重算或 runNo=2。
+- 安全与隔离：public mapper 不返回 subjectCode、原始作答、规则、评分 / 确认意见、metadata、qualityHints、computedBy、原始 Mixed mappingRules、媒体地址、阈值或诊断。A19 不修改 Patient / Visit / ScaleInstance / ItemResponse / MediaEvidence / ScoreResult，不创建 ClinicalReport，不实现认知域人工修改、确认、锁定、作废、报告或 AI。
+- 影响范围：仅 cognitive-domains 模块、A19 E2E 与指定 backend handoff / roadmap；未修改任何 Schema、seed、auth / patients / assessments / scales / scoring / media / reports / storage、AppModule、依赖、环境配置或前端。
+
 ## 4. 后续同步规则
 
 - 新增关键技术选型、接口设计、数据模型、测试策略或部署策略后，应追加决策记录。
