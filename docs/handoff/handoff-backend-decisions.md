@@ -237,6 +237,18 @@
 - 非目标：不撤销、reopen、lock、force submit，不执行自动 / 手工评分，不创建 ScoreResult / CognitiveDomainResult / ClinicalReport；后续 A17 才进入评分阶段。
 - 影响范围：仅 assessments 模块、A16 E2E 与指定 backend handoff / roadmap；未修改 Schema、auth / patients / scales / media / scoring / reports、依赖、环境配置、AppModule 或前端。
 
+### D-027：completed 实例采用保守混合阶段性评分，人工确认后置
+
+- 日期：2026-07-11
+- 决策：A17 只对 completed ScaleInstance 首次创建 runNo=1 阶段性 ScoreResult；提交与评分继续解耦，结果即使全部自动计算也不在 A17 confirmed / locked，`isFinal=false`。
+- 自动评分边界：量表通用纯引擎只识别真实 seed 中严格 `multi_step_manual`。expected / actual 仅允许同类型 finite number 或 boolean；MMSE 按正确步骤 maxScore 求和，MoCA 只支持当前 `correctStepCount` 或 `correctStepCountMin/Max` 数组聚合。不做字符串匹配 / 转换，不按 scaleCode / itemCode 分支，不执行表达式。
+- 保守复核：manual_exact_match 与其他人工模式、未知模式、missing、既有 ItemResponse 题分均不猜分并进入 reviewQueue；`countsTowardTotal=false` / raw_record_only 过程项排除且不进复核。待复核项不按 0 分处理。
+- 阶段性得分：total / group 只累计可靠评分项；存在未评分或待复核计分项时 scorePercent=null、isComplete=false，避免部分得分除以总满分形成误导。group 不是认知域结果。
+- 幂等与一致性：computed / needs_review / confirmed / locked 返回既有结果；draft / voided 拒绝。创建不使用临时 draft，依赖 `{ scaleInstanceId, runNo }` 唯一索引，duplicate key 后重读；不使用 Mongo transaction 或分布式锁，不支持重跑。
+- 数据与隐私：A17 只创建 ScoreResult，不覆盖 ItemResponse，不修改 Patient / Visit / Instance / step / prompt / media。public mapper 不返回作答、答案 / expectedValue、scoringRule、isCorrect、ItemResponse.score、metadata / qualityHints 或 reviewer。
+- 非目标：不做教育年限校正、诊断阈值 / 结论、人工评分录入 / 修改 / 确认 / 锁定 / 作废 / 重跑，不创建 CognitiveDomainResult / ClinicalReport，不调用 AI。A18 再设计可审计人工复核与评分确认。
+- 影响范围：仅 scoring 模块、A17 E2E 与指定 backend handoff / roadmap；未修改任何 Schema、seed、AssessmentsService、其他业务模块、AppModule、依赖、环境配置或前端。
+
 ## 4. 后续同步规则
 
 - 新增关键技术选型、接口设计、数据模型、测试策略或部署策略后，应追加决策记录。

@@ -6,7 +6,7 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 Service / Provider 与 A12-A16 业务能力；A16 新增 submission Controller / Service / pure evaluator，并扩展 AssessmentsService 原子完成职责。
+- 当前存在公共底座 Service / Provider 与 A12-A17 业务能力；A17 新增 Scoring Controller / Workflow / pure engine / public mapper，并扩展 ScoringService 的 runNo=1 创建与 provisional 汇总职责。
 - 当前没有医生、SMS 或 LLM Service；A16 不调用计分、认知域、报告、MediaModule 或 AI 能力。
 
 ## 3. 当前 Service / Provider 清单
@@ -164,7 +164,7 @@
 - 当前方法：`normalizeScoreResultCode(scoreResultCode)`、`findScoreResultByCode(scoreResultCode)`、`findLatestScoreResultByScaleInstanceId(scaleInstanceId)`、`listScoreResultsByScaleInstanceId(scaleInstanceId)`、`listScoreResultsByVisitId(assessmentVisitId)`、`listScoreResultsByPatientId(patientId)`、`summarizeItemScores(items)`。
 - 上游调用方：当前暂无公开 Controller；预期供后续评估、计分任务、报告或科研导出等后端业务模块内部读取计分结果摘要或复用通用汇总。
 - 下游依赖：`ScoreResult` Mongoose Model；`summarizeItemScores()` 不依赖数据库。
-- 边界：不创建、更新、删除计分结果；不实现确认、锁定、作废、状态流转、作答提交后自动计分触发、MMSE / MoCA 专用计分规则、认知域结果、报告、AI、认证、权限或公开计分 API；不修改 `ItemResponse`。
+- A17 扩展：新增按实例 + runNo 查询和明确输入的 ScoreResult create；`summarizeItemScores(items, { provisional: true })` 只统计计分项并在不完整时抑制 percentage。仍无 update / confirm / lock / void / delete，不修改 ItemResponse。
 - 测试覆盖口径：`backend\src\modules\scoring\services\scoring.service.spec.ts`，覆盖 score result code 规范化、查无返回 `null`、mapper 输出、按量表实例最新读取、按量表实例 / 访视 / 患者列表读取、schema collection、索引、内嵌子文档 `_id: false`、关键字段显式类型，以及 `summarizeItemScores()` 对计入 / 不计入总分、缺失、未评分、需复核、非有限数字、逐步计分和 group score 汇总的处理；不连接真实 MongoDB，不调用 Storage / OSS / SMS / LLM，测试数据为脱敏人工样例。
 
 - Service 名称：`CognitiveDomainsService`
@@ -289,6 +289,27 @@
 - 职责：`completeScaleInstanceIfEditable()` 用完整 ownership + editable status 单条 `findOneAndUpdate`，设置 completed / timing / progress 和受控 metadata 点路径；`readScaleInstanceSubmissionAudit()` 只解析允许字段。
 - 一致性：提交前两次读取 ItemResponse，再原子迁移单个 ScaleInstance；不使用 Mongo transaction、跨集合锁或分布式锁，因此不是跨集合严格线性化事务。
 - 配置：`ScalesService` 仅作为只读 definition / version 依赖；不修改 scales 或 media 模块。
+
+### A17 阶段性评分编排
+
+- 名称：`ScoringController`
+- 职责：绑定 compute / latest 两条嵌套路由、复用路径 DTO、接收 Compute DTO，显式 Session / Roles Guard；不注入 Model、不读取 Mixed 规则、不计算分数或处理 duplicate key。
+
+- 名称：`ProvisionalScoringWorkflowService`
+- 依赖：`PatientsService`、`AssessmentsService`、`ScalesService`、`ScoringService`、`ScoreResultPublicMapper` 与纯评分引擎。
+- 职责：完整 ownership / definition / version / item set 校验；既有结果状态解析；首次计算 Patient / Visit / completed Instance 状态校验；调用纯引擎与既有汇总器；创建 runNo=1；duplicate key 重读；组装安全响应。
+- 边界：不接收当前用户或人工评分，不修改 Patient / Visit / ScaleInstance / ItemResponse / step / prompt / media，不确认或锁定结果，不创建认知域结果 / 报告，不调用 AI。
+
+- 名称：`evaluateProvisionalItems()` / `finalizeProvisionalScoring()`
+- 类型：无 DI、无数据库访问的量表通用纯函数。
+- 职责：按 scoringRule.mode / steps / aggregationRule / scoreRange / countsTowardTotal 分类。只识别严格 number / boolean `multi_step_manual`；MMSE 直接步骤求和，MoCA 只识别真实 correct-step-count 数组结构；其他模式保守复核。输出 item snapshots、provisional total / groups、状态 / 来源 / review / quality 和受控 warning。
+- 安全：不按 scaleCode / itemCode 分支，不做字符串匹配 / 类型转换，不使用 eval / Function，不修改输入。
+
+- 名称：`ScoreResultPublicMapper`
+- 职责：从内部 ScoreResult summary 与实例绑定版本配置逐字段生成公开 scoreResult / reviewQueue；派生 group 计数和 stable sort；未知 reason 回退通用人工复核，warning 仅白名单输出。
+- 安全：不透传 Mixed、作答、规则、正确性、ItemResponse.score、metadata、qualityHints 或 reviewer。
+
+- 模块依赖：`ScoringModule` 单向导入 AuthModule、PatientsModule、AssessmentsModule、ScalesModule；AssessmentsModule 不导入 ScoringModule，无循环、forwardRef 或重复 Schema 注册。
 
 ## 4. 后续同步规则
 

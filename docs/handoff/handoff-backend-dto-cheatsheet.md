@@ -6,7 +6,7 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 DTO、响应 type、Storage interface，以及 A12-A16 业务契约；A16 新增严格确认 DTO、readiness issue / summary / response 与安全提交响应类型。
+- 当前存在公共底座 DTO、响应 type、Storage interface，以及 A12-A17 业务契约；A17 新增严格计算确认 DTO、阶段性 total / group / item / computation / review / reviewQueue 与 compute / latest 安全响应类型。
 - 当前新增公开认证请求 DTO：`LoginDto`。
 - 当前新增公开患者 / 访视 DTO：`CreatePatientDto`、`ListPatientsQueryDto`、`PatientIdParamDto`、`CreateAssessmentVisitDto`、`ListAssessmentVisitsQueryDto`、`PatientVisitsParamDto`。
 - 当前仍没有用户管理、注册、密码重置、撤销 / reopen / force submit、批量 / 分片 / 客户端直传、计分、认知域或报告请求 DTO。
@@ -409,6 +409,31 @@
 - 名称：`ScaleInstanceSubmissionAuditResponse` / `SubmitScaleInstanceResponse`
 - 字段：submissionId、submittedAt、安全 submittedBy(operatorId / name / role)、alreadySubmitted、durationSource；顶层响应为 `{ scaleInstance, submission, readiness }`。
 - 历史兼容：completed 无 A16 metadata 时 submissionId=null、submittedAt=completedAt、submittedBy=null；completedAt 也缺失则 409，不猜测操作者或时间。
+
+### A17 阶段性评分 DTO 与公开响应
+
+- 名称：`ComputeScoreResultDto`
+- 用途：`POST .../:scaleInstanceId/score-results/compute` body；唯一字段 `confirm` 仅接受 boolean，缺失 / false 由 Workflow 统一为 `SCORE_COMPUTATION_CONFIRMATION_REQUIRED`。runNo、scoreResultCode、状态 / 来源 / 模式、item / group / total 分数、规则、review、quality、metadata、force / rerun / override 和路径 ID 均不声明并由全局 whitelist 拒绝。
+- 路径：compute 与 latest 复用 assessments 的 `ScaleInstanceExecutionParamDto`；三个 ID 均 `@IsMongoId()`，未新增重复路径 DTO。
+
+- 名称：`ProvisionalScoreTotalResponse`
+- 字段：provisionalScoreValue、minScore、maxScore、scorePercent、totalItemCount、scoredItemCount、unscoredItemCount、needsReviewItemCount、missingItemCount、isComplete、isFinal。存在未评分 / 待复核计分项时 scorePercent=null；A17 新建结果 isFinal=false。
+
+- 名称：`ProvisionalScoreGroupResponse`
+- 字段：groupCode、可选 groupTitle / order、provisionalScoreValue、minScore、maxScore、scored / unscored / needsReview / missing 计数、isComplete；不是 CognitiveDomainResult。
+
+- 名称：`ProvisionalScoreItemResponse`
+- 字段：安全 itemResponseId / itemCode / CRF / group / title / order / responseType、countsTowardTotal、includedInTotal、provisionalScoreValue、scoreRange、scoreStatus / source、isMissing、cognitiveDomainCodes、reviewRequired 和受控 reason；不含作答、expectedValue、scoringRule、isCorrect 或 ItemResponse.score。
+
+- 名称：`ProvisionalScoreComputationResponse` / `ProvisionalScoreReviewResponse`
+- 字段：computedAt、engineVersion、scoringRuleVersion、auto / pending / excluded 计数、受控 warningCodes；review 仅含 status 与 pendingItemCount，不含 reviewer / note / reviewedAt。
+
+- 名称：`ProvisionalScoreResultResponse` / `ScoreReviewQueueItemResponse`
+- 结果字段：id、scoreResultCode、runNo、status / source / mode、versionTrace、provisional total / groups / items、computation、review、qualityStatus、isFinal。
+- reviewQueue：安全题目标识、顺序、responseType、countsTowardTotal 与受控 reason；不含作答、媒体地址、答案或内部规则。
+
+- 名称：`ScoreResultDetailResponse` / `ComputeScoreResultResponse`
+- latest：`{ scale, scaleInstance, scoreResult, reviewQueue }`；compute 额外 `alreadyComputed`。公开 mapper 对 number 做 finite / null 处理、复制数组、未知内部 reason 回退 `MANUAL_SCORING_REQUIRED`，未知 warning 不透传。
 
 ## 4. 后续同步规则
 

@@ -126,8 +126,12 @@ export type ScoreResultSummary = {
 };
 
 export type ScoringItemInput = {
+  itemResponseId?: string | null;
   itemCode: string;
+  crfCode?: string;
   groupCode?: string;
+  itemTitle?: string;
+  responseType?: string;
   countsTowardTotal: boolean;
   isMissing?: boolean;
   scoreValue?: number | null;
@@ -138,6 +142,34 @@ export type ScoringItemInput = {
   itemOrder?: number;
   cognitiveDomainCodes?: string[];
   note?: string;
+};
+
+export type SummarizeItemScoresOptions = {
+  provisional?: boolean;
+};
+
+export type CreateScoreResultInput = {
+  patientId: string;
+  assessmentVisitId: string;
+  scaleInstanceId: string;
+  subjectCode: string;
+  scaleDefinitionId: string;
+  scaleVersionId: string;
+  scaleCode: string;
+  scaleVersion: string;
+  instanceCode: string;
+  scoreResultCode: string;
+  runNo: 1;
+  status: Extract<ScoreResultStatus, 'computed' | 'needs_review'>;
+  scoringSource: ScoringSource;
+  scoringMode: Extract<ScoringMode, 'rule_based'>;
+  versionTrace: ScoreVersionTraceSummary;
+  totalScore: TotalScoreSummary;
+  itemScores: ScoreItemSummary[];
+  groupScores: ScoreGroupSummary[];
+  computation: Omit<ScoringComputationSnapshotSummary, 'computedBy'>;
+  review: Pick<ScoreReviewSummary, 'reviewStatus'>;
+  qualityStatus: Extract<ScoreQualityStatus, 'unchecked' | 'needs_review'>;
 };
 
 export type ScoringComputationWarning = {
@@ -224,6 +256,58 @@ export class ScoringService {
     return this.mapScoreResult(scoreResult);
   }
 
+  async findScoreResultByScaleInstanceAndRunNo(
+    scaleInstanceId: Types.ObjectId | string,
+    runNo: number,
+  ): Promise<ScoreResultSummary | null> {
+    const normalizedId = this.normalizeObjectId(scaleInstanceId);
+
+    if (!normalizedId || !Number.isInteger(runNo) || runNo < 1) {
+      return null;
+    }
+
+    const scoreResult = await this.scoreResultModel
+      .findOne({ scaleInstanceId: normalizedId, runNo })
+      .exec();
+
+    return scoreResult ? this.mapScoreResult(scoreResult) : null;
+  }
+
+  async createScoreResult(
+    input: CreateScoreResultInput,
+  ): Promise<ScoreResultSummary> {
+    const created = await this.scoreResultModel.create({
+      patientId: new Types.ObjectId(input.patientId),
+      assessmentVisitId: new Types.ObjectId(input.assessmentVisitId),
+      scaleInstanceId: new Types.ObjectId(input.scaleInstanceId),
+      subjectCode: input.subjectCode,
+      scaleDefinitionId: new Types.ObjectId(input.scaleDefinitionId),
+      scaleVersionId: new Types.ObjectId(input.scaleVersionId),
+      scaleCode: input.scaleCode,
+      scaleVersion: input.scaleVersion,
+      instanceCode: input.instanceCode,
+      scoreResultCode: input.scoreResultCode,
+      runNo: input.runNo,
+      status: input.status,
+      scoringSource: input.scoringSource,
+      scoringMode: input.scoringMode,
+      versionTrace: input.versionTrace,
+      totalScore: input.totalScore,
+      itemScores: input.itemScores.map((item) => ({
+        ...item,
+        itemResponseId: item.itemResponseId
+          ? new Types.ObjectId(item.itemResponseId)
+          : null,
+      })),
+      groupScores: input.groupScores,
+      computation: input.computation,
+      review: input.review,
+      qualityStatus: input.qualityStatus,
+    });
+
+    return this.mapScoreResult(created);
+  }
+
   async listScoreResultsByScaleInstanceId(
     scaleInstanceId: Types.ObjectId | string,
   ): Promise<ScoreResultSummary[]> {
@@ -275,7 +359,11 @@ export class ScoringService {
     return scoreResults.map((scoreResult) => this.mapScoreResult(scoreResult));
   }
 
-  summarizeItemScores(items: ScoringItemInput[]): ScoringComputationSummary {
+  summarizeItemScores(
+    items: ScoringItemInput[],
+    options: SummarizeItemScoresOptions = {},
+  ): ScoringComputationSummary {
+    const provisional = options.provisional === true;
     const warnings: ScoringComputationWarning[] = [];
     const groupMap = new Map<string, ScoreGroupAccumulator>();
     let totalScoreValue = 0;
@@ -312,17 +400,20 @@ export class ScoringService {
         excludedItemCount += 1;
       }
 
-      if (hasScoreValue) {
+      if (hasScoreValue && (!provisional || countsTowardTotal)) {
         scoredItemCount += 1;
-      } else {
+      } else if (!provisional || countsTowardTotal) {
         unscoredItemCount += 1;
       }
 
-      if (isMissing) {
+      if (isMissing && (!provisional || countsTowardTotal)) {
         missingItemCount += 1;
       }
 
-      if (scoreStatus === 'needs_review') {
+      if (
+        scoreStatus === 'needs_review' &&
+        (!provisional || countsTowardTotal)
+      ) {
         needsReviewItemCount += 1;
       }
 
@@ -365,7 +456,7 @@ export class ScoringService {
         hasTotalMinScore = true;
       }
 
-      if (groupCode) {
+      if (groupCode && (!provisional || countsTowardTotal)) {
         const group = this.getOrCreateGroupAccumulator(groupMap, groupCode);
         group.totalItemCount += 1;
 
@@ -387,10 +478,13 @@ export class ScoringService {
       }
 
       return {
-        itemResponseId: null,
+        itemResponseId: item.itemResponseId ?? null,
         itemCode,
+        crfCode: item.crfCode,
         groupCode,
+        itemTitle: item.itemTitle,
         itemOrder: item.itemOrder ?? index + 1,
+        responseType: item.responseType,
         countsTowardTotal,
         includedInTotal,
         scoreValue,
@@ -414,11 +508,15 @@ export class ScoringService {
         maxScore,
         minScore,
         scorePercent:
-          scoreValue !== null && maxScore !== null && maxScore > 0
+          scoreValue !== null &&
+          maxScore !== null &&
+          maxScore > 0 &&
+          (!provisional ||
+            (unscoredItemCount === 0 && needsReviewItemCount === 0))
             ? (scoreValue / maxScore) * 100
             : null,
         scoredItemCount,
-        totalItemCount: items.length,
+        totalItemCount: provisional ? includedItemCount : items.length,
         unscoredItemCount,
         missingItemCount,
         needsReviewItemCount,

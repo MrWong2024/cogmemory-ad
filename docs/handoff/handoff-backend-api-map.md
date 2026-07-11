@@ -6,7 +6,7 @@
 
 ## 2. 当前状态
 
-- 当前公开 API 在 A15 清单上新增 A16 的 submission readiness GET 与 submit POST。
+- 当前公开 API 在 A16 清单上新增 A17 的阶段性评分 compute POST 与 latest GET。
 - `AuthModule` 当前新增 `AuthController`，仅暴露最小公开认证 API 底座；主登录态仍为服务端 Session + HttpOnly Cookie，不采用 JWT 主登录态。
 - AuthModule 内部 session cookie 名称已统一为 `cogmemory_ad_session`，登录成功下发 HttpOnly Cookie，`SameSite=Lax`，`Path=/`，production 环境启用 `Secure`。
 - 当前没有 users controller，没有公开用户管理 API，没有注册、密码重置、角色权限管理、短信验证码、OAuth / SSO 或 JWT 登录 API。
@@ -258,6 +258,27 @@
 - 错误：400 `SCALE_INSTANCE_SUBMISSION_CONFIRMATION_REQUIRED`；404 归属错误；409 `PATIENT_NOT_ACTIVE`、`VISIT_NOT_EDITABLE`、`SCALE_INSTANCE_NOT_SUBMITTABLE`、`SCALE_INSTANCE_NOT_READY`、`SCALE_INSTANCE_START_TIME_INVALID`、`SCALE_INSTANCE_SUBMISSION_CONFLICT`、`SCALE_INSTANCE_SUBMISSION_AUDIT_UNAVAILABLE`；500 `SCALE_INSTANCE_SUBMISSION_FAILED`
 - 非目标：无撤销、reopen、lock、force / ignore issues、访视完成、评分、认知域、报告或 AI
 
+### A17 阶段性评分 API
+
+- 接口名称：计算阶段性评分结果
+- Method / Path：`POST /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/score-results/compute`
+- Controller：`ScoringController`
+- Guard / Roles：显式 `SessionAuthGuard` + `RolesGuard`；`admin`、`doctor`、`nurse`、`research_assistant`
+- Param / Body DTO：复用 `ScaleInstanceExecutionParamDto`；`ComputeScoreResultDto { confirm }`，仅接受 boolean 且业务层要求严格 true；客户端分数、itemScores、runNo、状态、规则、force / rerun / override、metadata 等由 whitelist 拒绝
+- 首次状态：active Patient；Visit 允许 draft / in_progress / completed，禁止 locked / voided；ScaleInstance 必须 completed。definition / version 四项绑定、ItemResponse 完整 ownership、itemCode 集合和计分项 answered / scored 必须一致
+- 评分语义：仅严格 `multi_step_manual` 可自动评分；number / boolean 严格同类型比较，不做字符串匹配或转换。MMSE 步骤分值求和，MoCA 使用真实 correct-step-count aggregationRule。人工 / 未知模式、missing、既有题分进入 reviewQueue；非计分过程项排除
+- 响应：200，`ComputeScoreResultResponse { scale, scaleInstance, scoreResult, reviewQueue, alreadyComputed }`。total / group / item 均为 provisional；存在待复核时 scorePercent=null、isComplete=false；A17 新建结果 isFinal=false
+- 幂等 / 并发：runNo 固定 1；computed / needs_review / confirmed / locked 返回原结果且 `alreadyComputed=true`；draft 为 409 `SCORE_RESULT_INCOMPLETE`，voided 为 409 `SCORE_RESULT_VOIDED`。duplicate key 后重读恢复；不使用 transaction / 分布式锁，不支持重跑
+- 错误：400 `SCORE_COMPUTATION_CONFIRMATION_REQUIRED`；404 `PATIENT_NOT_FOUND` / `VISIT_NOT_FOUND` / `SCALE_INSTANCE_NOT_FOUND`；409 `PATIENT_NOT_ACTIVE` / `VISIT_NOT_EDITABLE` / `SCORE_INSTANCE_NOT_COMPUTABLE` / `SCALE_INSTANCE_CONFIGURATION_UNAVAILABLE` / `SCORE_INPUT_INVALID` / `SCORE_RESULT_INCOMPLETE` / `SCORE_RESULT_VOIDED` / `SCORE_COMPUTATION_CONFLICT`；500 `SCORE_COMPUTATION_FAILED`
+- 安全边界：不返回作答、expectedValue、scoringRule、正确答案 / isCorrect、ItemResponse.score、媒体地址、metadata / qualityHints 或 reviewer；不修改 Patient / Visit / Instance / ItemResponse，不创建认知域结果或报告
+
+- 接口名称：查询最新阶段性评分结果
+- Method / Path：`GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/score-results/latest`
+- Controller / Guard / Roles / Param DTO：同 compute；无 Query / Body
+- 读取状态：允许 inactive / archived Patient 及 completed / locked / voided Visit、ScaleInstance 历史读取；无结果 404 `SCORE_RESULT_NOT_FOUND`，draft 409 `SCORE_RESULT_INCOMPLETE`，computed / needs_review / confirmed / locked 返回安全结果，voided 允许安全展示
+- 响应：200，`ScoreResultDetailResponse { scale, scaleInstance, scoreResult, reviewQueue }`；只读不写数据库，不提供重跑或多 run 查询
+- 隐私边界：与 compute 相同；reviewQueue 仅含安全题目标识和受控原因，按 itemOrder / itemCode 稳定排序
+
 ## 4. 当前未暴露接口说明
 
 - `backend\src\modules\users` 当前没有 Controller。
@@ -268,10 +289,10 @@
 - `backend\src\modules\patients` 当前仅通过 `PatientsController` 暴露 A12 三个患者接口；未暴露 PATCH、DELETE 或归档接口。
 - `backend\src\modules\assessments` 还通过 `ScaleInstanceSubmissionController` 暴露 A16 两个接口；`AssessmentExecutionService` 仍为内部初始化能力，不暴露批量保存或计分接口。
 - `backend\src\modules\media` 当前仅通过 `MediaEvidenceController` 暴露上述四个题目级媒体接口；没有全患者 / 访视 / 实例媒体列表、直接对象 key 下载、永久 URL、物理删除、替换、批量、分片、客户端直传、OCR 或 AI 接口。
-- `backend\src\modules\scoring` 当前没有 Controller；`ScoringService` 仅供后续后端业务模块内部读取计分结果摘要和复用通用计分汇总纯函数。
+- `backend\src\modules\scoring` 当前仅通过 `ScoringController` 暴露 A17 compute / latest；没有人工评分、确认、锁定、作废、重跑、列表、患者级或访视级评分 API。
 - `backend\src\modules\cognitive-domains` 当前没有 Controller；`CognitiveDomainsService` 仅供后续后端业务模块内部读取认知域结果摘要和复用通用认知域汇总纯函数。
 - `backend\src\modules\reports` 当前没有 Controller；`ReportsService` 仅供后续后端业务模块内部读取临床报告摘要和复用报告状态转换校验纯函数。
-- 当前已定义 A12-A16 对应公开 DTO 和响应类型；仍不定义计分、认知域、报告、SMS、AI / LLM 或批量 / 分片 / 客户端直传契约；本次未更新 frontend handoff。
+- 当前已定义 A12-A17 对应公开 DTO 和响应类型；仍不定义人工评分复核、认知域、报告、SMS、AI / LLM 或批量 / 分片 / 客户端直传契约；本次未更新 frontend handoff。
 
 ## 5. 后续同步规则
 

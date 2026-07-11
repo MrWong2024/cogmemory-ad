@@ -12,7 +12,7 @@
 - 本地前端默认 origin 为 `http://localhost:3002`。
 - 测试环境默认 `STORAGE_DRIVER=fake`。
 - 测试环境 `LLM_PROVIDER=stub`，不得依赖真实大模型调用。
-- 当前存在五个真实 HTTP E2E：A12 患者 / 访视、A13 初始化、A14 草稿、A15 媒体与 A16 submission。
+- 当前存在六个真实 HTTP E2E：A12 患者 / 访视、A13 初始化、A14 草稿、A15 媒体、A16 submission 与 A17 provisional scoring。
 - TypeScript `rootDir` 当前为 `.`，后端主入口预期 build 产物为 `dist/src/main.js`。
 - `tsBuildInfoFile` 保持 `./dist/tsconfig.build.tsbuildinfo`。
 - `dist` 与 `*.tsbuildinfo` 为生成物，不进入版本库。
@@ -111,6 +111,11 @@
   - `npm run build`
   - `npm test -- --runInBand`
   - `npm run test:e2e`
+- 本次后端 A17 已验证命令：
+  - `npm run lint:file -- src/modules/scoring test/provisional-scoring.e2e-spec.ts`
+  - `npm run build`
+  - `npm test -- --runInBand`
+  - `npm run test:e2e`
 - 当前路径对齐验证命令：
   - `npm run build`
   - 检查 `dist/src/main.js` 存在
@@ -120,8 +125,8 @@
   - `npm run build` 成功。
   - build 后 `dist/src/main.js` 已确认存在。
   - `npm test -- --runInBand` 成功。
-  - 当前单元测试为 42 个测试套件、369 个测试通过。
-  - 当前 E2E 为 5 个测试套件、32 个测试通过。
+  - 当前单元测试为 47 个测试套件、408 个测试通过。
+  - 当前 E2E 为 6 个测试套件、36 个测试通过。
   - 用户已补充验证 `npm run start:prod` 本地启动成功。
   - `dist/src/main.js` 与 `start:prod` 指向的 `./dist/src/main.js` 路径匹配。
 - 当前未验证命令：
@@ -131,7 +136,7 @@
 - 如果 `backend\node_modules` 存在，可执行 `npm test -- --runInBand` 验证单元测试。
 - 如果 `backend\node_modules` 不存在，不应自动执行 `npm install`。
 - 当前任务不调用真实 OSS、阿里云 SMS、大模型或生产数据库。
-- `test:e2e` 脚本已通过 `test/jest-e2e.json` 执行 A12-A16 真实 HTTP 闭环；测试运行时确认 `NODE_ENV=test`、数据库名 `cogmemory_ad_test`、Storage=fake、LLM/SMS=stub，未打印数据库凭证。
+- `test:e2e` 脚本已通过 `test/jest-e2e.json` 执行 A12-A17 真实 HTTP 闭环；测试运行时确认 `NODE_ENV=test`、数据库名 `cogmemory_ad_test`、Storage=fake、LLM/SMS=stub，未打印数据库凭证。
 
 ## 5. 当前单元测试口径
 
@@ -168,6 +173,11 @@
 - A16 新增 submission Service spec：依赖均为 mock，覆盖归属 / 配置、readiness 阻断、Patient / Visit / Instance 状态、二次读取、startedAt 派生、原子完成、操作者角色优先级、completed 幂等和安全审计；不连接真实 MongoDB。
 - `assessments.service.spec.ts` A16 新增完整 ownership 条件、最终 progress、metadata 点路径、原子 update miss 与受控 submission audit 读取；不更新 Visit / ItemResponse。
 - `backend\src\modules\scoring\services\scoring.service.spec.ts`：验证 `ScoreResult` schema 的 collection、索引、枚举 / ObjectId / Date / Number / Boolean / Mixed 显式类型，验证计分结果内嵌子文档 `_id: false`，验证 `ScoringService` 的 `scoreResultCode` 规范化、查无返回 `null`、mapper 输出、按量表实例最新读取、按量表实例 / 访视 / 患者读取，以及 `summarizeItemScores()` 对计入 / 不计入总分、缺失、未评分、需复核、非有限数字、逐步计分和 group score 汇总的处理；不连接真实 MongoDB，不调用 Storage / OSS / SMS / LLM，测试数据为 `SUBJ-TEST-*`、`VISIT-TEST-*`、`INST-TEST-*`、`SCR-TEST-*`、`moca.memory.immediate.trial_1.face`、`moca.recall.delayed.free.face`、`mmse.attention.serial_sevens.step_1` 等脱敏人工样例。
+- A17 新增 DTO / Controller spec：覆盖 confirm boolean、全部服务器字段 whitelist、显式 SessionAuthGuard / RolesGuard、四个允许角色与 compute / latest 参数转发。
+- A17 新增 pure engine spec：直接使用真实 MMSE / MoCA seed，覆盖连续减 7 求和 / aggregation、false / 0、数字字符串不转换、missing / duplicate step、非法 aggregation / scoreRange、全部人工模式 / unknown、raw_record_only 排除、missing / 既有题分复核，以及 provisional total / group / status / source / review / quality。
+- A17 扩展 ScoringService spec：覆盖实例 + runNo 读取、受控 create、runNo=1、null confirm / lock 字段、provisional 汇总排除过程项和不完整 percentage 抑制。
+- A17 新增 Workflow spec：依赖均为 mock，覆盖完整 ownership / 配置 / item set、Patient / Visit / completed Instance、既有 computed / needs_review / confirmed / locked 幂等、draft / voided、duplicate key 恢复、latest not found / voided 与不调用 Assessment 写入；不连接真实 MongoDB。
+- A17 新增 public mapper spec：覆盖 finite / null、阶段性 total / group、reviewQueue、受控未知 reason / warning fallback，以及作答、规则、正确性、metadata / qualityHints / reviewer 完整排除。
 - `backend\src\modules\cognitive-domains\services\cognitive-domains.service.spec.ts`：验证 `CognitiveDomainResult` schema 的 collection、索引、枚举 / ObjectId / Date / Number / Boolean / Mixed 显式类型，验证认知域结果内嵌子文档 `_id: false`，验证 `CognitiveDomainsService` 的 `domainResultCode` / `domainCode` 规范化、查无返回 `null`、mapper 输出、按量表实例最新读取、按量表实例 / 计分结果 / 访视 / 患者读取，以及 `summarizeDomainScores()` 对默认映射、多认知域映射、权重、不计入认知域、缺失、未评分、需复核和非有限数字 warning 的处理；不连接真实 MongoDB，不调用 Storage / OSS / SMS / LLM，测试数据为 `SUBJ-TEST-*`、`VISIT-TEST-*`、`INST-TEST-*`、`SCR-TEST-*`、`CDR-TEST-*`、`moca.visuospatial.clock`、`moca.memory.delayed.face`、`mmse.attention.serial_sevens.step_1` 等脱敏人工样例。
 - `backend\src\modules\reports\services\reports.service.spec.ts`：验证 `ClinicalReport` schema 的 collection、索引、枚举 / ObjectId / Date / Number / Boolean / Mixed 显式类型，验证报告内嵌子文档 `_id: false`，验证 `ReportsService` 的 `reportCode` 规范化、查无返回 `null`、mapper 输出、按访视最新读取、按访视 / 患者 / 状态读取、按患者读取 confirmed / archived / corrected 报告列表，以及 `canTransitionReportStatus()` / `getAllowedReportStatusTransitions()` 对草稿、待确认、已确认、已归档、更正和作废状态的处理；不连接真实 MongoDB，不调用 Storage / OSS / SMS / LLM，测试数据为 `SUBJ-TEST-*`、`VISIT-TEST-*`、`INST-TEST-*`、`SCR-TEST-*`、`CDR-TEST-*`、`RPT-TEST-*`、`moca.visuospatial.clock` 等脱敏人工样例。
 - `backend\src\modules\users\services\users.service.spec.ts`：验证 `User` schema 的 collection、索引、`passwordHash select: false`、枚举 / Date / Number / Mixed 显式类型，验证 `UsersService` 的 accountName / email / staffCode 规范化、按 ID / 账号查无返回 `null`、mapper 输出不含 `passwordHash`、凭证查询显式 select `+passwordHash` 且只返回认证必要字段、active 用户列表读取；不连接真实 MongoDB，测试数据为 `doctor-test-001`、`STAFF-TEST-001`、`doctor-test-001@example.test` 等脱敏人工样例。
@@ -194,6 +204,9 @@
 - A15 E2E 实际结果：新增 1 个测试套件、6 个测试；与 A12 / A13 / A14 合计 4 个套件、29 个测试通过。运行时确认 `NODE_ENV=test`、数据库 `cogmemory_ad_test`、Storage=fake、LLM / SMS=stub；测试图片和轨迹为代码内固定脱敏人工 Buffer，未调用真实 OSS、SMS、LLM 或生产服务。
 - `scale-instance-submission.e2e-spec.ts` 通过真实 AppModule、Cookie / Guard、全局 DTO、MongoDB 与 fake Storage，使用 A12 / A13 建实例、A14 完成全部 MMSE 项、A15 为支持照片项上传固定 1×1 PNG；覆盖 readiness 401 / 403、安全字段、confirm、未完成阻断、ready / canSubmitNow、首次 200 提交、受控 metadata / progress、Visit / ItemResponse 不变、无评分 / 认知域 / 报告结果、提交后草稿 / 上传 / 作废冻结、历史 GET / 媒体列表、重复提交幂等与 Patient / Visit / Instance 状态边界。
 - A16 E2E 实际结果：新增 1 个测试套件、3 个测试；全量合计 5 个套件、32 个测试通过。连接隔离 `cogmemory_ad_test`，Storage=fake、LLM / SMS=stub；测试账号、编号、备注、图片均为脱敏人工数据，未调用真实 OSS、SMS、LLM 或生产服务。
+- `provisional-scoring.e2e-spec.ts` 使用真实 AppModule、Cookie / Guard、全局 DTO、MongoDB 与 fake Storage，经 A12 / A13 建 MMSE / MoCA 实例、A14 填写人工构造作答、A15 上传固定 1×1 PNG、A16 submit 后调用 A17。
+- A17 E2E 覆盖 GET / POST 401、system 403、confirm / 服务器字段、未 completed、inactive / archived Patient 首次计算、locked / voided Visit 首次计算、历史幂等读取、latest not found、跨 ownership、MMSE 严格步骤自动得分、manual reviewQueue、provisional total / null percentage / isFinal=false、ScoreResult runNo=1、latest、重复 compute 幂等、响应敏感字段排除、Visit / Instance / ItemResponse 不变、无 CognitiveDomainResult / ClinicalReport、MoCA aggregation 与 immediate-memory raw_record_only 排除。
+- A17 E2E 实际结果：新增 1 个测试套件、4 个测试；全量合计 6 个套件、36 个测试通过。连接隔离 `cogmemory_ad_test`，Storage=fake、LLM / SMS=stub；测试账号、编号、备注、作答和图片均为脱敏人工构造数据，未调用真实 OSS、SMS、LLM 或生产服务。
 
 ## 7. 医疗与量表数据测试红线
 

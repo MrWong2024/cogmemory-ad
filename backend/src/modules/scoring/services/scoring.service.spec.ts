@@ -20,6 +20,10 @@ function createExecQuery<T>(value: T) {
   };
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function createScoreResultFixture(overrides: Record<string, unknown> = {}) {
   return {
     _id: new Types.ObjectId(),
@@ -258,12 +262,14 @@ describe('ScoringService', () => {
   let scoreResultModel: {
     findOne: jest.Mock;
     find: jest.Mock;
+    create: jest.Mock;
   };
 
   beforeEach(async () => {
     scoreResultModel = {
       findOne: jest.fn(),
       find: jest.fn(),
+      create: jest.fn(),
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -483,6 +489,71 @@ describe('ScoringService', () => {
         runNo: 2,
       }),
     );
+  });
+
+  it('finds a specific run and creates an explicitly controlled score result', async () => {
+    const scaleInstanceId = new Types.ObjectId();
+    const created = createScoreResultFixture({ scaleInstanceId });
+    scoreResultModel.findOne.mockReturnValue(createExecQuery(created));
+    scoreResultModel.create.mockResolvedValue(created);
+
+    await expect(
+      service.findScoreResultByScaleInstanceAndRunNo(scaleInstanceId, 1),
+    ).resolves.toEqual(expect.objectContaining({ runNo: 1 }));
+    expect(scoreResultModel.findOne).toHaveBeenCalledWith({
+      scaleInstanceId,
+      runNo: 1,
+    });
+
+    await service.createScoreResult({
+      patientId: created.patientId.toString(),
+      assessmentVisitId: created.assessmentVisitId.toString(),
+      scaleInstanceId: created.scaleInstanceId.toString(),
+      subjectCode: created.subjectCode,
+      scaleDefinitionId: created.scaleDefinitionId.toString(),
+      scaleVersionId: created.scaleVersionId.toString(),
+      scaleCode: created.scaleCode,
+      scaleVersion: created.scaleVersion,
+      instanceCode: created.instanceCode,
+      scoreResultCode: created.scoreResultCode,
+      runNo: 1,
+      status: 'needs_review',
+      scoringSource: 'manual',
+      scoringMode: 'rule_based',
+      versionTrace: { scaleVersion: '1.0' },
+      totalScore: created.totalScore,
+      itemScores: [],
+      groupScores: [],
+      computation: {
+        computedAt: new Date(),
+        inputItemCount: 1,
+        includedItemCount: 1,
+        excludedItemCount: 0,
+        warningCount: 0,
+      },
+      review: {
+        reviewStatus: 'pending',
+      },
+      qualityStatus: 'needs_review',
+    });
+    expect(scoreResultModel.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runNo: 1,
+        status: 'needs_review',
+      }),
+    );
+    const createCalls: unknown = scoreResultModel.create.mock.calls;
+    if (!Array.isArray(createCalls)) throw new Error('Expected create calls');
+    const firstCall: unknown = createCalls[0];
+    if (!Array.isArray(firstCall))
+      throw new Error('Expected first create call');
+    const createArgument: unknown = firstCall[0];
+    if (!isRecord(createArgument)) throw new Error('Expected create input');
+    expect(createArgument).not.toHaveProperty('confirmedAt');
+    expect(createArgument).not.toHaveProperty('lockedAt');
+    expect(createArgument).not.toHaveProperty('voidedAt');
+    expect(createArgument).not.toHaveProperty('metadata');
+    expect(createArgument).not.toHaveProperty('qualityHints');
   });
 
   it('lists score results by scale instance id ordered by run number and createdAt', async () => {
@@ -731,5 +802,56 @@ describe('ScoringService', () => {
         message: 'maxScore is not a finite number.',
       },
     ]);
+  });
+
+  it('supports provisional totals that exclude process items and suppress partial percentages', () => {
+    const summary = service.summarizeItemScores(
+      [
+        {
+          itemCode: 'test.auto',
+          groupCode: 'group',
+          countsTowardTotal: true,
+          scoreValue: 1,
+          minScore: 0,
+          maxScore: 1,
+          scoreStatus: 'auto_scored',
+          scoreSource: 'auto_rule',
+        },
+        {
+          itemCode: 'test.review',
+          groupCode: 'group',
+          countsTowardTotal: true,
+          scoreValue: null,
+          minScore: 0,
+          maxScore: 1,
+          scoreStatus: 'needs_review',
+          scoreSource: 'none',
+        },
+        {
+          itemCode: 'test.process',
+          groupCode: 'group',
+          countsTowardTotal: false,
+          scoreValue: null,
+          minScore: 0,
+          maxScore: 0,
+          scoreStatus: 'not_scored',
+          scoreSource: 'none',
+        },
+      ],
+      { provisional: true },
+    );
+
+    expect(summary.totalScore).toEqual(
+      expect.objectContaining({
+        scoreValue: 1,
+        totalItemCount: 2,
+        scoredItemCount: 1,
+        unscoredItemCount: 1,
+        needsReviewItemCount: 1,
+        scorePercent: null,
+      }),
+    );
+    expect(summary.groupScores[0].totalItemCount).toBe(2);
+    expect(summary.excludedItemCount).toBe(1);
   });
 });
