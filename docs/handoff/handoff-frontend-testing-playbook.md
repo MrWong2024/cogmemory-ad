@@ -6,12 +6,12 @@
 
 ## 2. 当前状态
 
-- 前端公共底座与 B1-B7 既有闭环已落地；B8 题目人工评分、乐观并发、显式评分确认与最终只读展示已落地。
+- 前端公共底座与 B1-B8 既有闭环已落地；B9 认知域结果计算、重叠归因说明与安全展示已落地。
 - `frontend\package.json` 已存在，自动验证命令以其中真实脚本为准。
-- B2-B8 不新增测试代码、测试框架、E2E 或第三方依赖。
+- B2-B9 不新增测试代码、测试框架、E2E 或第三方依赖。
 - 当前自动验证覆盖三个认证 API、A12 五个患者 / 访视 API、A13 三个评估初始化前置 API、A14 两个执行草稿 API、A15 四个媒体证据 API、A16 两个提交 API 与 A17 两个阶段性评分 API 的前端类型、调用代码和页面构建；真实 HTTP / 浏览器联调仍需手工验证。
 
-## 3. B1 / B2 / B3 / B4 / B5 / B6 / B7 / B8 自动验证命令
+## 3. B1 / B2 / B3 / B4 / B5 / B6 / B7 / B8 / B9 自动验证命令
 
 在 `frontend` 目录、且既有 `node_modules` 存在时执行：
 
@@ -94,6 +94,16 @@
 - 未新增自动测试：当前前端没有既有测试框架，任务明确不新增测试框架或浏览器 E2E；本阶段使用 lint、typecheck 与生产构建验证。
 - E2E / 浏览器自动化：未执行。
 - 浏览器手工验证：未执行，以下 B8 场景均为待验证。
+- 后端命令：未执行。
+
+本次 B9 验证结果：
+
+- `npm run lint`：通过。
+- `npm run typecheck`：通过，Next 16 既有量表实例执行动态路由类型生成成功且 TypeScript 无错误。
+- `npm run build`：通过，生产构建包含既有量表实例动态路由，B9 未新增路由。
+- 未新增自动测试：当前前端没有既有测试框架，任务明确不新增测试框架或浏览器 E2E；本阶段使用 lint、typecheck 与生产构建验证。
+- E2E / 浏览器自动化：未执行。
+- 浏览器手工验证：未执行，以下 B9 场景均为待验证。
 - 后端命令：未执行。
 
 如后续环境中 `frontend/node_modules` 不存在，不得为验证本阶段而执行 `npm install`；应跳过上述命令并说明原因。
@@ -197,7 +207,20 @@ B8 自动验证不覆盖：
 
 - 真实 A18 HTTP、数据库更新、Cookie / CORS、多操作者并发、审计上限与历史异常组合。
 - 浏览器 beforeunload、滚动 / focus、窄屏、屏幕阅读器 live region 与真实表单控件行为。
-- 评分 lock / void / reopen / rerun、认知域、报告、诊断或 AI；这些能力未实现。
+- B8 自身不覆盖认知域；该静态路径现由下方 B9 覆盖。评分 lock / void / reopen / rerun、认知域确认、报告、诊断或 AI 仍未实现。
+
+B9 静态与构建验证额外覆盖：
+
+- A19 安全类型、独立 API Client、latest AbortSignal、compute `{ confirm: true }` 白名单、全部业务错误映射和 POST 不重试路径。
+- 独立 Hook 的来源 ScoreResult 依赖、waiting / not_found / forbidden / error、latest 取消、首次计算二次确认、dirty / writing 阻断、幂等回执与冲突后只读刷新路径。
+- domainScores、itemContributions、mapping policy / interpretation、computation / warning / versionTrace / 来源评分摘要、7 个真实 seed domain code 标签和统一题目定位的静态路径。
+- 同一既有动态路由集成；未新增依赖、路由、BFF、middleware、持久化状态、图表库或配置。
+
+B9 自动验证不覆盖：
+
+- 真实 A19 HTTP、数据库 CognitiveDomainResult、Cookie / CORS、并发计算、幂等重读、历史状态和业务错误组合。
+- 浏览器 beforeunload、scrollIntoView / focus、窄屏横向表格、屏幕阅读器 live region 与真实 checkbox / disabled 行为。
+- 认知域人工修改 / 确认 / 锁定 / 作废 / 重算、weighted mapping 编辑、报告、诊断或 AI；这些能力未实现。
 
 ## 5. B1 手工验证建议
 
@@ -490,7 +513,64 @@ B8 自动验证不覆盖：
 59. 页面没有新增路由，题目定位不修改 URL 且不丢失各类草稿。
 60. lint、typecheck、build 均通过。
 
-## 13. 认证与安全验证口径
+## 13. B9 手工验证建议（待验证）
+
+前置条件：后端已启动，使用脱敏人工测试账号与测试数据；不得使用真实患者或医疗数据。以下场景本次未执行：
+
+1. 未生成评分结果时不请求认知域 latest。
+2. needs_review / computed 未确认评分不请求认知域 latest。
+3. confirmed 评分自动查询认知域 latest。
+4. B8 confirm 成功后自动查询一次 latest。
+5. latest 无结果显示“尚未计算”，不是系统错误。
+6. 页面加载不自动 compute。
+7. 计算前出现重叠归因和非诊断说明。
+8. 未勾选 checkbox 不能计算。
+9. compute 只发送 confirm=true。
+10. 本地作答 / 媒体 / 评分草稿或写请求阻止 compute。
+11. compute 期间重复操作禁用。
+12. compute 成功展示结果。
+13. alreadyComputed=true 按成功处理。
+14. 页面刷新后 latest 返回同一结果。
+15. 已有结果不显示重算按钮。
+16. computed 结果显示尚未独立确认。
+17. locked / voided 结果只读。
+18. domain score 不按分数排名。
+19. scoreValue=null 不显示为 0。
+20. scorePercent 只使用服务端值。
+21. scorePercent 文案不是正常率或疾病概率。
+22. domainScores 不进行前端求和。
+23. 页面明确认知域不能相加解释为量表总分。
+24. 单 domain 项展示正确。
+25. 多 domain 项保留多条合法贡献。
+26. 多 domain 项不平均拆分分值。
+27. 同 item 同 domain 后端去重结果不被前端重复生成。
+28. countsTowardDomain=false 显示排除。
+29. contribution 没有伪造 minScore。
+30. contribution 能定位原题。
+31. itemResponseId=null 不提供虚假定位。
+32. 定位不丢失其他分组草稿。
+33. mapping policy 展示正确。
+34. interpretation 四项安全字面值展示正确。
+35. interpretation 异常时显示安全警告。
+36. computation / versionTrace 展示正确。
+37. source ScoreResult 摘要展示正确。
+38. warning 不显示为患者风险。
+39. `COGNITIVE_DOMAIN_RESULT_INCOMPLETE` 显示管理员处理提示。
+40. `COGNITIVE_DOMAIN_RESULT_VOIDED` 不提供重算。
+41. `COGNITIVE_DOMAIN_COMPUTATION_CONFLICT` 后刷新 latest。
+42. `COGNITIVE_DOMAIN_SOURCE_SCORE_NOT_FINAL` 不自动确认评分。
+43. `COGNITIVE_DOMAIN_MAPPING_UNAVAILABLE` 不提供客户端自定义映射。
+44. 401 返回登录页。
+45. 403 显示无权限而非无结果。
+46. 网络错误不影响题目、媒体和评分展示。
+47. 页面不显示原始作答、评分意见或评分规则。
+48. 页面不显示诊断阈值、正常 / 异常或疾病结论。
+49. 页面没有认知域人工编辑、确认、lock、void 或 rerun。
+50. 页面没有新增路由。
+51. 小屏幕认知域区域可正常使用。
+52. 不使用真实患者或医疗数据。
+
+## 14. 认证与安全验证口径
 
 - 使用浏览器网络面板确认三个认证请求均携带 credentials 语义，并由浏览器处理 HttpOnly Cookie。
 - 前端代码与存储中不得出现 raw token、token hash、`passwordHash`、JWT 或其他认证凭证。
@@ -505,15 +585,16 @@ B8 自动验证不覆盖：
 - B4 页面不得在 console、存储或 URL 中记录作答草稿、患者、访视、实例、请求体或响应体；PATCH body 必须是变化白名单，不能包含服务器控制字段。
 - B5 页面不得在 console、存储或 URL 中记录源 File、JPEG / PNG Blob、轨迹、短期 URL、请求体或响应体；multipart 只能由 API Client 逐字段构造，不能手工设置 multipart Content-Type。
 - B7 页面不得在 console、存储或 URL 中记录评分结果、reviewQueue、请求体或响应体；compute 只能由独立 API Client 构造 `{ confirm: true }`，不得提交任何分数、规则、状态或服务器字段。
+- B9 页面不得在 console、存储或 URL 中记录认知域结果、贡献、来源评分、请求体或响应体；compute 只能由独立 API Client 构造 `{ confirm: true }`，不得提交 domain、weight、mapping、分数、规则、状态或服务器字段。
 
-## 14. 医疗与隐私展示红线
+## 15. 医疗与隐私展示红线
 
 - 不展示真实用户或患者敏感数据样本。
 - 测试截图不得包含真实姓名、邮箱、身份证号、手机号、病历号、住址、患者资料或真实文件名。
 - 不得在页面文案或测试截图中呈现未经确认的真实医疗诊断结论。
 - 核心认知评估必须保持医护或研究人员陪伴 / 监督的产品边界。
 
-## 15. 后续同步规则
+## 16. 后续同步规则
 
 - 前端新增或调整测试脚本后，应同步更新自动验证命令。
 - 新增页面、路由、组件、API 对接或权限展示后，应同步补充对应验证口径。

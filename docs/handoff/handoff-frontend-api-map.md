@@ -6,13 +6,13 @@
 
 ## 2. 当前状态与边界
 
-- B8 继续扩展 `frontend\src\features\assessments\api\provisional-scoring-api.ts`，在 A17 latest / compute 上新增 A18 manual-review / confirm。
-- 当前只新增 A18 两个已确认评分写接口，不调用其他评分、认知域、报告或 AI API。
+- B9 新增独立 `frontend\src\features\assessments\api\cognitive-domain-api.ts`，在既有量表实例页接入 A19 latest / compute。
+- 当前只新增 A19 两个已确认认知域接口；不调用认知域修改 / 确认 / 锁定 / 作废 / 重算、报告或 AI API。
 - API Client 使用 `frontendEnv.apiBaseUrl` 作为后端基础地址。
 - 所有请求统一使用 `credentials: 'include'`，由浏览器携带或接收 HttpOnly Cookie。
 - 所有认证、患者和访视请求使用 `cache: 'no-store'`。
 - 前端不读取 Cookie，不保存 token，不使用 JWT，也不记录密码或认证响应体。
-- 当前没有 BFF 代理；B1-B8 按明确任务口径由浏览器直接请求既有公开 API base URL。
+- 当前没有 BFF 代理；B1-B9 按明确任务口径由浏览器直接请求既有公开 API base URL。
 
 ## 3. 环境变量读取
 
@@ -301,6 +301,28 @@
 - 幂等：alreadyConfirmed=true 作为成功处理，不再次 POST；confirmed / locked 的 latest 直接展示 confirmation 安全摘要，confirmation 为空时不冒充其他操作者。
 - 审计与临床边界：只显示 confirmationId、confirmedAt、confirmedBy、reviewNote、alreadyConfirmed；不显示 Session、metadata 或内部历史。confirmed 不等于 locked，qualityStatus=passed 不表示患者正常，不创建认知域或报告。
 
+### 4.24 `getLatestCognitiveDomainResult()` -> `GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/cognitive-domain-results/latest`
+
+- Client / 调用方：独立 `cognitive-domain-api.ts`，由 `useCognitiveDomainResult` 调用，展示由 `CognitiveDomainResultPanel` 及三个职责组件承担。
+- 自动查询条件：页面已成功取得来源 ScoreResult，实例为 completed / locked / voided，来源评分 status 为 confirmed / locked / voided。评分不存在、latest 评分失败、draft / computed / needs_review 时不请求；B8 confirm 成功后只自动 GET 一次，不自动 POST。
+- Path / 请求：patientId、visitId、scaleInstanceId 全部 `encodeURIComponent()`；无 Query / Body。使用 `frontendEnv.apiBaseUrl`、`credentials: 'include'`、`cache: 'no-store'` 和独立 AbortSignal；新请求取消旧请求，卸载取消，Abort 不显示错误。
+- 响应：`CognitiveDomainResultDetailResponse { scale, scaleInstance, sourceScoreResult, cognitiveDomainResult }`；Date JSON 字段使用 string / null。结果包含 domainScores、itemContributions、mapping policy / interpretation、computation、review、quality、versionTrace 与来源评分安全摘要，不包含原始作答、评分规则、评分 / 确认意见、metadata 或诊断内容。
+- 状态：idle / waiting_for_score / loading / not_found / loaded / forbidden / error 独立于执行详情、readiness 和评分面板。GET 不轮询、不自动重试；失败保留题目、媒体、提交和评分历史并提供手工重试。
+- 业务错误：400 validation；401 返回 `/login`；403 为独立无权限，不能伪装成无结果；404 `PATIENT_NOT_FOUND`、`VISIT_NOT_FOUND`、`SCALE_INSTANCE_NOT_FOUND`、`SCORE_RESULT_NOT_FOUND`、`COGNITIVE_DOMAIN_RESULT_NOT_FOUND`；409 `SCALE_INSTANCE_CONFIGURATION_UNAVAILABLE`、`COGNITIVE_DOMAIN_INPUT_INVALID`、`COGNITIVE_DOMAIN_RESULT_INCOMPLETE`。not found 是正常 not_found；incomplete 显示管理员处理提示。
+- 历史：computed / needs_review / confirmed / locked / voided 按真实 status 与 isFinal 只读展示；voided 允许返回。已有结果只提供重新加载 latest，不提供重新计算，也不通过 POST 查询历史。
+
+### 4.25 `computeCognitiveDomainResult()` -> `POST /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/cognitive-domain-results/compute`
+
+- Client / 调用方：`cognitive-domain-api.ts` / `useCognitiveDomainResult`；仅 latest=not_found、来源评分 confirmed / locked 且 isFinal=true、实例 completed、Visit 为 draft / in_progress / completed、无本地 dirty 或任一题目 / 媒体 / submit / 评分写请求时开放入口。
+- 交互：用户先选择“准备计算认知域结果”，阅读完整分值重叠归因、跨域不可求和、scorePercent 非疾病概率和非诊断说明，再勾选可见 checkbox。页面加载、评分确认和 latest 均不会自动调用 compute；不支持重算。
+- Path / Body：三个 Path ID 全部编码且不进入 body；`ComputeCognitiveDomainResultRequest` 严格为 `{ confirm: true }`，API Client 再次构造白名单。不接受 scoreResultId、domainResultCode、runNo、status、mappingSource / mode、domainScores、itemContributions、domainCodes、weight / weights、mappingRules、thresholds、diagnosis、metadata、force / rerun / override、confirmResult、createReport 或路径 ID。
+- 凭证 / 缓存 / 重试：`credentials: 'include'`、`cache: 'no-store'`、JSON POST。独立 compute 写锁禁止重复操作；POST 不自动重试，组件卸载后不 setState。
+- 响应：`ComputeCognitiveDomainResultResponse`，包含完整 detail 与 `alreadyComputed`。成功直接保存 scale、scaleInstance、sourceScoreResult、cognitiveDomainResult 和回执；不覆盖主页面 Visit / ItemResponse / ScoreResult / 草稿，不重载或跳转。
+- 幂等：`alreadyComputed=false` 显示计算完成且尚未独立确认；`alreadyComputed=true` 作为正常成功，说明此前已有结果且本次未重复计算，不再次 POST。
+- 错误：400 `COGNITIVE_DOMAIN_COMPUTATION_CONFIRMATION_REQUIRED`；401 / 403；404 `PATIENT_NOT_FOUND` / `VISIT_NOT_FOUND` / `SCALE_INSTANCE_NOT_FOUND` / `SCORE_RESULT_NOT_FOUND`；409 `PATIENT_NOT_ACTIVE` / `VISIT_NOT_EDITABLE` / `COGNITIVE_DOMAIN_INSTANCE_NOT_COMPUTABLE` / `SCALE_INSTANCE_CONFIGURATION_UNAVAILABLE` / `COGNITIVE_DOMAIN_SOURCE_SCORE_NOT_FINAL` / `COGNITIVE_DOMAIN_SOURCE_SCORE_INVALID` / `COGNITIVE_DOMAIN_MAPPING_UNAVAILABLE` / `COGNITIVE_DOMAIN_INPUT_INVALID` / `COGNITIVE_DOMAIN_RESULT_INCOMPLETE` / `COGNITIVE_DOMAIN_RESULT_VOIDED` / `COGNITIVE_DOMAIN_COMPUTATION_CONFLICT`；500 `COGNITIVE_DOMAIN_COMPUTATION_FAILED`；其他网络 / 500 为 service_unavailable。
+- 错误行为：CONFLICT / VOIDED 自动 GET latest 一次但不重发 POST；SOURCE_SCORE_NOT_FINAL / INVALID / SCORE_RESULT_NOT_FOUND 可由用户手工刷新现有评分 latest，绝不自动确认评分；MAPPING_UNAVAILABLE 不提供客户端映射编辑；FAILED 保留全页并只允许用户手工查询 latest。
+- 数据隔离：不触发 A14 PATCH、A15 写请求、A16 submit、A17 compute 或 A18 manual-review / confirm；不修改 Visit、ScaleInstance 状态、ItemResponse 或 ScoreResult。结果 computed 不等于 confirmed / locked，不生成报告、诊断或 AI。
+
 ## 5. 当前认证公开类型
 
 - `AuthUserResponse`：`id`、`accountName`、`displayName`、`roles`、`permissions`、可选 `userType`。
@@ -325,11 +347,13 @@
 - `AssessmentExecutionApiError.kind` 新增 `scale_instance_not_submittable`、`scale_instance_not_ready`、`scale_instance_start_time_invalid`、`scale_instance_submission_confirmation_required`、`scale_instance_submission_conflict`、`scale_instance_submission_audit_unavailable`、`scale_instance_submission_failed`，对应全部 A16 提交业务 code。
 - B8 扩展 `provisional-scoring.ts`：新增 updatedAt、manualReview、confirmation、reviewUpdate、confirmationReceipt 与两个写请求白名单；Date JSON 使用 string / null，不定义作答、expectedValue、scoringRule、metadata、previousScoreValue 或完整审计 events。
 - `ProvisionalScoringApiError.kind` 覆盖 unauthenticated、forbidden、validation、患者 / 访视 / 实例 / 配置状态和 A17 全部 `SCORE_*` 业务 code、service_unavailable 与 unknown；UI 使用稳定中文映射。
+- `cognitive-domain-result.ts` 严格覆盖 result status、mapping source / mode、item score、review / quality、domain score、contribution、mapping、computation、versionTrace 与 A19 请求 / 响应；不定义原始作答、评分意见、expectedValue、scoringRule、metadata 或 contribution minScore。
+- `CognitiveDomainApiError.kind` 覆盖 401 / 403 / validation、患者 / 访视 / 实例 / 配置、来源评分和全部 `COGNITIVE_DOMAIN_*` 业务 code、service_unavailable 与 unknown；UI 使用稳定中文映射，不直接显示后端英文 message。
 
 ## 7. 当前未对接 API
 
 - 当前没有 A12 / A13 / A14 已接接口之外的患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转调用。
-- 当前除 A16、A17 与 A18 manual-review / confirm 外，没有撤销提交、reopen、评分 lock / void / rerun / 历史、认知域、报告、AI、用户管理、角色权限管理或科研导出 API 调用。
+- 当前除 A16、A17、A18 manual-review / confirm 与 A19 latest / compute 外，没有撤销提交、reopen、评分 lock / void / rerun / 历史、认知域修改 / 确认 / 锁定 / 作废 / 重算、报告、AI、用户管理、角色权限管理或科研导出 API 调用。
 - 不得在后端 API 未确认并进入明确任务范围前编造前端对接事实。
 
 ## 8. 后续同步规则

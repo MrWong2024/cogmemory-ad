@@ -7,15 +7,15 @@
 ## 2. 当前工程状态
 
 - `frontend\` 根目录公共骨架配置与 `frontend\app` / `frontend\src` 公共底座已初始化。
-- 前端 B1-B7 已落地既有认证、患者 / 访视、执行、媒体、提交与阶段性评分能力；前端 B8 已在同一量表实例路由接入 A18 manual-review / confirm，完成单题人工评分、确认前修订、updatedAt 乐观并发、冲突刷新、显式确认与 confirmed 最终只读展示。
+- 前端 B1-B8 已落地既有认证、患者 / 访视、执行、媒体、提交、阶段性评分、人工评分与评分确认能力；前端 B9 已在同一量表实例路由接入 A19 latest / compute，完成来源评分依赖、明确确认后首次计算、重叠归因说明、认知域安全展示与贡献定位原题。
 - 当前首页仍为公共占位，只增加登录页与工作台入口，不调用后端。
 - `/login` 提供账号密码登录，并在登录前通过 `GET /auth/me` 检查已有会话。
 - `/dashboard` 通过 `GET /auth/me` 验证会话、展示当前用户公开信息、提供患者档案入口和登出入口。
 - `/patients/**` 通过轻量认证工作区复用 `useAuth()`；当前包含患者列表 / 创建、患者详情 / 访视列表、访视创建、访视详情 / 量表实例初始化，以及量表实例施测执行页面。
 - Patients API Client 真实调用 A12 五个患者 / 访视 API，支持分页、过滤、GET 请求取消、稳定错误映射和安全请求字段白名单。
-- Assessment Execution API Client 继续调用 A13 / A14 / A16；独立 Provisional Scoring API Client 调用 A17 latest / compute 与 A18 manual-review / confirm。写请求逐字段重建白名单且不自动重试，latest 使用独立 AbortController。
+- Assessment Execution API Client 继续调用 A13 / A14 / A16；独立 Provisional Scoring API Client 调用 A17 / A18；独立 Cognitive Domain API Client 调用 A19 latest / compute。写请求逐字段重建白名单且不自动重试，latest 使用各自独立 AbortController。
 - 当前视觉遵循医疗系统 / 临床评估 / 低干扰 / 高可读性 / 冷静可信口径，不继承 ReviewX 视觉风格。
-- 当前没有患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、批量或自动保存、评分 lock / void / rerun、认知域结果、报告、AI、用户管理或权限菜单页面；B8 确认不完成 Visit，也不形成临床诊断结论。
+- 当前没有患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、批量或自动保存、评分 lock / void / rerun、认知域人工修改 / 确认 / 锁定 / 作废 / 重算、报告、AI、用户管理或权限菜单页面；B9 结果不形成临床诊断结论。
 
 ## 3. 当前已确认前端事实
 
@@ -53,6 +53,11 @@
   - `api/provisional-scoring-api.ts`：独立接入 latest / compute / manual-review / confirm；统一 credentials / no-store、完整 A18 错误映射与严格请求白名单，写请求不自动重试。
   - `lib/score-review-draft.ts`：维护人工评分 / 确认 React 内存草稿、dirty、stale、数值与 reviewNote 校验、expectedUpdatedAt 请求构建和确认资格；不计算任何题目、分组、总分或百分比。
   - `components/ManualScoreReviewForm.tsx`、`ScoreResultConfirmationPanel.tsx` 与评分展示组件：提供单活动人工评分表单、修订时预填最新服务端分值和公开意见、min / max 基础校验、step="any"、确认两步交互、安全审计摘要与 final / provisional 文案切换。
+  - `types/cognitive-domain-result.ts`：严格定义 A19 result / mapping / item / review / quality 枚举、domainScores、itemContributions、mapping policy / interpretation、computation、versionTrace 和请求 / 响应；Date JSON 使用 string / null，不定义原始作答、意见、expectedValue、scoringRule、metadata 或 contribution minScore。
+  - `api/cognitive-domain-api.ts`：独立接入 A19 latest / compute；统一 credentials / no-store、完整业务错误映射、latest AbortSignal 与严格 `{ confirm: true }` 白名单，POST 不自动重试。
+  - `hooks/useCognitiveDomainResult.ts`：独立管理 idle / waiting_for_score / loading / not_found / loaded / forbidden / error、latest 取消、首次计算确认、compute 写锁、幂等回执和稳定错误；不计算分数、不修改来源 ScoreResult。
+  - `lib/cognitive-domain-display.ts`：集中维护真实 MMSE / MoCA domain code 安全中文标签、A19 枚举 / warning / error 文案、日期与有限数值格式、interpretation 安全检查和非诊断声明。
+  - `CognitiveDomainResultPanel`、`CognitiveDomainScoreList`、`CognitiveDomainContributionList`、`CognitiveDomainMappingSummary`：展示结果状态、domainScores、itemContributions、mapping / computation / warning / versionTrace / 来源评分摘要，并复用统一题目定位。
   - `types/scale-instance-submission.ts`、`lib/scale-instance-submission-display.ts`：严格对齐 A16 安全 readiness / issue / submission JSON 类型和稳定中文展示映射；Date 使用 string，不定义作答原文、评分、expectedValue 或 metadata。
   - `components/ScaleInstanceSubmissionPanel.tsx`、`ScaleSubmissionIssueList.tsx`：展示 submissionState、ready / canSubmitNow、检查时间、九项统计、阻断问题、可展开警告、本地 dirty、readiness stale、内联确认和当前会话回执。
   - `types/media-evidence.ts`、`types/handwriting-evidence.ts`、`types/media-evidence-draft.ts`：严格对齐 A15 安全响应、上传白名单、固定 strokes 结构与页面内存草稿；JSON Date 字段仍使用 string / null。
@@ -77,6 +82,9 @@
   - `POST /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/score-results/compute`
   - `PATCH /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/score-results/:scoreResultId/item-scores/:itemResponseId/manual-review`
   - `POST /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/score-results/:scoreResultId/confirm`
+- Cognitive Domain API Client 仅调用：
+  - `GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/cognitive-domain-results/latest`
+  - `POST /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/cognitive-domain-results/compute`
 - Media Evidence API Client 仅调用：
   - `GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/item-responses/:itemResponseId/media-evidences`
   - `POST /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/item-responses/:itemResponseId/media-evidences`
@@ -119,6 +127,13 @@
 - 人工评分成功使用完整响应替换 ScoreResult detail 与 ScaleInstance 摘要，不自行减少 reviewQueue，不重新计算 total / group / item / percentage；reviewUpdate 只保存在当前页面内存。修订表单一致预填最新公开人工分值与 reviewNote，不展示完整历史或 previousScoreValue。
 - 确认入口仅在 computed、无 pending / queue / warning、total complete、实例 / 访视状态允许且没有本地草稿或写请求时出现；确认只发送 confirm=true、trim 后 reviewNote 与表单基线 updatedAt。confirmed 后显示安全 confirmation 摘要并只读，confirmed 不等于 locked，qualityStatus=passed 显示“评分复核流程已通过”。
 - 人工评分与确认草稿只存在 React 内存，不写 localStorage / sessionStorage / URL；人工评分与确认意见 dirty 独立于作答 / 媒体计数，并扩展 beforeunload。latest 刷新不清除本地草稿，版本变化会标记 stale 并取消确认 checkbox。
+- B9 仅在实例 completed / locked / voided 且页面已有 confirmed / locked / voided ScoreResult 时自动查询一次认知域 latest；评分未生成、评分查询失败、draft / computed / needs_review 时保持 waiting_for_score，不把评分依赖误显示为认知域 not_found。没有轮询和 GET 自动重试。
+- B8 confirm 成功后来源评分变为 confirmed，A19 Hook 自动查询一次 latest 以判断是否已有结果，绝不自动 compute。`COGNITIVE_DOMAIN_RESULT_NOT_FOUND` 是正常 not_found；首次计算还要求来源 confirmed / locked 且 isFinal=true、实例 completed、访视状态允许，并汇总阻断题目 / 媒体 / submission / 评分请求和所有内存草稿。
+- 计算采用两步内联确认和可见 checkbox，API Client 只发送 `{ confirm: true }`。compute 写锁防止重复操作且 POST 不自动重试；`alreadyComputed=true` 作为正常成功处理。冲突 / voided 只自动 GET latest 一次，不重发 POST。
+- domainScores 按 domainCode、itemContributions 按 itemOrder / itemCode / domainCode 对响应副本稳定排序。页面直接使用 scoreValue、min / max、scorePercent、weighted 字段和全部计数；null 不显示为 0，不跨域求和、不平均拆分、不重新计算任何服务端分值。
+- mapping policy 与 interpretation 直接按 A19 口径展示：完整项目分值分别归入每个映射认知域、同题同域由后端去重、多 domain 合法保留；异常 interpretation 显示安全警告且不扩展临床解释。warning 只表述为内部计算提示。
+- 贡献记录仅在 itemResponseId 可匹配当前安全题目时提供“查看原题”，复用分组切换、scrollIntoView 和 focus；null / 无法匹配不按 itemCode 猜测。定位不修改 URL，不清除作答、媒体、人工评分或确认草稿。
+- 认知域主区域固定说明 scorePercent 只是映射项目得分比例、不是疾病概率，domainScores 不可相加解释量表总分，认知域结果不能脱离量表、临床访谈和其他检查单独形成诊断。页面没有认知域编辑、确认、锁定、作废、重算、报告或 AI。
 - 前端媒体公开类型没有定义 Storage 对象定位、校验和、原始文件名、内部患者关联或删除时间字段；页面也不显示这些字段。
 
 ## 4. 当前文件清单
@@ -163,10 +178,12 @@
 - `frontend\src\features\assessments\types\media-evidence-draft.ts`
 - `frontend\src\features\assessments\types\scale-instance-submission.ts`
 - `frontend\src\features\assessments\types\provisional-scoring.ts`
+- `frontend\src\features\assessments\types\cognitive-domain-result.ts`
 - `frontend\src\features\assessments\lib\score-review-draft.ts`
 - `frontend\src\features\assessments\api\assessment-execution-api.ts`
 - `frontend\src\features\assessments\api\media-evidence-api.ts`
 - `frontend\src\features\assessments\api\provisional-scoring-api.ts`
+- `frontend\src\features\assessments\api\cognitive-domain-api.ts`
 - `frontend\src\features\assessments\lib\assessment-execution-display.ts`
 - `frontend\src\features\assessments\lib\item-response-draft.ts`
 - `frontend\src\features\assessments\lib\media-evidence-image.ts`
@@ -174,6 +191,8 @@
 - `frontend\src\features\assessments\lib\handwriting-evidence.ts`
 - `frontend\src\features\assessments\lib\scale-instance-submission-display.ts`
 - `frontend\src\features\assessments\lib\provisional-scoring-display.ts`
+- `frontend\src\features\assessments\lib\cognitive-domain-display.ts`
+- `frontend\src\features\assessments\hooks\useCognitiveDomainResult.ts`
 - `frontend\src\features\assessments\components\AssessmentVisitExecutionPage.tsx`
 - `frontend\src\features\assessments\components\ScaleInstanceList.tsx`
 - `frontend\src\features\assessments\components\ScaleInitializationPanel.tsx`
@@ -187,6 +206,10 @@
 - `frontend\src\features\assessments\components\ScoreReviewQueue.tsx`
 - `frontend\src\features\assessments\components\ManualScoreReviewForm.tsx`
 - `frontend\src\features\assessments\components\ScoreResultConfirmationPanel.tsx`
+- `frontend\src\features\assessments\components\CognitiveDomainResultPanel.tsx`
+- `frontend\src\features\assessments\components\CognitiveDomainScoreList.tsx`
+- `frontend\src\features\assessments\components\CognitiveDomainContributionList.tsx`
+- `frontend\src\features\assessments\components\CognitiveDomainMappingSummary.tsx`
 - `frontend\src\features\assessments\components\ScaleExecutionGroupNavigation.tsx`
 - `frontend\src\features\assessments\components\ItemResponseEditor.tsx`
 - `frontend\src\features\assessments\components\ItemStepEditor.tsx`
@@ -268,14 +291,23 @@
 - E2E 与浏览器自动化未执行；浏览器手工联调未执行，A18 真实 HTTP、并发冲突、手工输入、窄屏与可访问性行为均待开发者使用脱敏数据验证。
 - 后端命令未执行。
 
+本次 B9 验证结果：
+
+- 未新增自动测试或测试框架；当前前端无既有测试框架，本阶段按边界使用 lint、typecheck 与生产构建验证。
+- `npm run lint`：通过。
+- `npm run typecheck`：通过，Next 16 既有量表实例动态路由类型生成成功。
+- `npm run build`：通过，生产构建包含既有量表实例动态路由，B9 未新增路由。
+- E2E 与浏览器自动化未执行；浏览器手工联调未执行，A19 真实 HTTP、错误组合、滚动 / focus、窄屏与可访问性行为均待开发者使用脱敏数据验证。
+- 后端命令未执行。
+
 ## 6. 当前未实现前端事实
 
 - `/dashboard` 已有患者档案入口，但不是完整医生工作台。
 - 患者编辑 / 删除 / 归档 / 合并尚未实现。
 - 访视编辑 / 删除 / 状态流转尚未实现；访视详情支持查看、初始化量表实例和进入 B4 执行页。
-- B4-B8 已支持安全题目记录、photo / handwriting 证据、完整性检查、正式实例提交、阶段性评分、人工评分与评分确认；批量 / 自动保存、评分锁定、认知域结果尚未实现。
+- B4-B9 已支持安全题目记录、photo / handwriting 证据、完整性检查、正式实例提交、阶段性评分、人工评分、评分确认与认知域结果计算 / 展示；批量 / 自动保存、评分锁定、认知域人工确认与报告尚未实现。
 - 报告生成、医生确认、AI、用户管理、角色权限管理和权限菜单尚未实现。
-- 当前在既有 API 上只新增 A18 manual-review / confirm；没有评分 lock / void / reopen / rerun、认知域、报告或 AI API 调用。
+- 当前在既有 API 上新增 A19 latest / compute；没有评分 lock / void / reopen / rerun、认知域修改 / 确认 / lock / void / rerun、报告或 AI API 调用。
 - 当前不包含路由级服务端认证中间件。
 
 ## 7. 后续同步规则

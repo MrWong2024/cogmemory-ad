@@ -35,8 +35,10 @@ import {
   ProvisionalScoringPanel,
   type ProvisionalScoreQueryStatus,
 } from '@/src/features/assessments/components/ProvisionalScoringPanel';
+import { CognitiveDomainResultPanel } from '@/src/features/assessments/components/CognitiveDomainResultPanel';
 import { ScaleExecutionGroupNavigation } from '@/src/features/assessments/components/ScaleExecutionGroupNavigation';
 import { ScaleInstanceSubmissionPanel } from '@/src/features/assessments/components/ScaleInstanceSubmissionPanel';
+import { useCognitiveDomainResult } from '@/src/features/assessments/hooks/useCognitiveDomainResult';
 import {
   assessmentOperatorRoleLabels,
   buildScaleExecutionGroupSections,
@@ -768,6 +770,64 @@ export function ScaleInstanceExecutionPage({
 
   const manualReviewDraftDirty = manualScoreReviewDraftIsDirty(manualReviewDraft);
   const confirmationDraftDirty = confirmationDraftIsDirty(confirmationDraft);
+  const handleCognitiveDomainUnauthorized = useCallback(() => {
+    router.replace('/login');
+  }, [router]);
+  const handleRefreshCognitiveDomainSourceScore = useCallback(() => {
+    void loadLatestScoreResult();
+  }, [loadLatestScoreResult]);
+  const cognitiveDomainLocalBlockReason = useMemo(() => {
+    if (scoreQueryStatus === 'loading') {
+      return '正在加载最新评分结果，请等待评分事实稳定后再计算认知域结果。';
+    }
+    if (isComputingScore) {
+      return '正在计算阶段性评分，请等待评分写请求完成。';
+    }
+    if (scoreWriteState !== 'idle') {
+      return scoreWriteState === 'reviewing'
+        ? '正在保存人工评分，请等待评分写请求完成。'
+        : '正在确认评分结果，请等待评分写请求完成。';
+    }
+    if (isSubmitting) {
+      return '正在正式提交量表实例，请等待提交完成。';
+    }
+    if (savingItemIds.size > 0 || mediaWritingKeys.size > 0) {
+      return '当前仍有题目保存或媒体写请求，请等待完成后再计算认知域结果。';
+    }
+    if (unsavedAnswerItemCount > 0 || pendingMediaItemCount > 0) {
+      return '存在本地未保存作答或未上传媒体，系统不会静默清除这些内容。';
+    }
+    if (manualReviewDraft !== null) {
+      return '当前仍有人工评分草稿，请先保存或明确放弃。';
+    }
+    if (confirmationDraft !== null) {
+      return '当前仍有评分确认意见草稿，请先完成或明确放弃。';
+    }
+    return null;
+  }, [
+    confirmationDraft,
+    isComputingScore,
+    isSubmitting,
+    manualReviewDraft,
+    mediaWritingKeys.size,
+    pendingMediaItemCount,
+    savingItemIds.size,
+    scoreQueryStatus,
+    scoreWriteState,
+    unsavedAnswerItemCount,
+  ]);
+  const cognitiveDomainState = useCognitiveDomainResult({
+    patientId,
+    visitId,
+    scaleInstanceId,
+    visitStatus: detail?.visit.status ?? null,
+    scaleInstanceStatus: detail?.scaleInstance.status ?? null,
+    sourceScoreResult: scoreResult?.scoreResult ?? null,
+    sourceScoreQueryStatus: scoreQueryStatus,
+    localBlockReason: cognitiveDomainLocalBlockReason,
+    onUnauthorized: handleCognitiveDomainUnauthorized,
+    onRefreshSourceScoreResult: handleRefreshCognitiveDomainSourceScore,
+  });
 
   useEffect(() => {
     if (
@@ -1701,7 +1761,7 @@ export function ScaleInstanceExecutionPage({
       setManualReviewStatus(
         response.confirmationReceipt.alreadyConfirmed
           ? '该评分结果此前已经确认，本次未重复写入。'
-          : '评分结果已确认。confirmed 不等于 locked；本阶段未生成认知域结果或报告。',
+          : '评分结果已确认。confirmed 不等于 locked；认知域区域将查询已有结果，但不会自动计算或生成报告。',
       );
     } catch (requestError: unknown) {
       if (!mountedRef.current) {
@@ -1884,7 +1944,7 @@ export function ScaleInstanceExecutionPage({
       </header>
 
       <p className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-info-soft)] px-5 py-4 text-base leading-7 text-[var(--cma-info)]">
-        核心认知量表应由医护或研究人员陪伴或监督完成。当前已支持受控人工评分复核和显式评分确认；评分锁定、认知域、报告与 AI 仍未实现。
+        核心认知量表应由医护或研究人员陪伴或监督完成。当前已支持认知域结果计算与安全展示；认知域人工确认、报告与 AI 尚未实现。
       </p>
 
       {readOnlyReason ? (
@@ -2132,6 +2192,18 @@ export function ScaleInstanceExecutionPage({
         scoreWriteState={scoreWriteState}
         statusMessage={scoreComputationStatus}
         visitStatus={visit.status}
+      />
+
+      <CognitiveDomainResultPanel
+        canLocateItem={(itemResponseId) =>
+          sections.some((section) =>
+            section.itemResponses.some((item) => item.id === itemResponseId),
+          )
+        }
+        onLocateItem={(itemResponseId) =>
+          locateItemResponse(itemResponseId, 'scoring')
+        }
+        state={cognitiveDomainState}
       />
 
       <Card>

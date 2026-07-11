@@ -9,9 +9,9 @@
 - `frontend\src\components\ui` 提供 `Button`、`Card`、`Badge` 三个无业务语义公共组件。
 - `frontend\src\features\auth` 提供 B1 最小认证接入能力。
 - `frontend\src\features\patients` 提供 B2 患者档案与评估访视最小业务闭环。
-- `frontend\src\features\assessments` 在 B3-B7 既有能力上新增 B8 单题人工评分、乐观并发、显式确认与最终只读展示。
+- `frontend\src\features\assessments` 在 B3-B8 既有能力上新增 B9 认知域结果计算、重叠归因说明、安全展示与原题定位。
 - 当前组件遵循医疗系统 / 临床评估 / 低干扰 / 高可读性 / 冷静可信视觉基线。
-- B2-B8 未新增公共 Input 组件、第三方 UI 库、状态管理库、数据请求库或权限菜单组件。
+- B2-B9 未新增公共 Input 组件、第三方 UI 库、状态管理库、数据请求库或权限菜单组件。
 
 ## 3. 公共 UI 组件
 
@@ -193,6 +193,8 @@
 - B6 合并边界：readiness 成功只替换 ScaleInstance；submit 成功只替换 ScaleInstance、readiness 与 receipt，不修改 Visit、itemResponses 或 drafts。completed 由服务端响应驱动；历史操作者不从 operatorSnapshot 推断
 - B7 评分职责：仅在 completed / locked / voided 自动查询 latest；管理独立 AbortController、no_result / forbidden / error、compute 确认 / 写锁 / 幂等回执和稳定错误。submit 成功只触发 latest，不自动 compute
 - B7 合并边界：latest / compute 成功使用服务端 ScoreResult 并只同步 ScaleInstance；不修改 Visit、ItemResponse、answer / media drafts、progress 或 readiness，不调用 A14 / A15 写接口
+- B9 有限编排：向独立 `useCognitiveDomainResult` 传递来源 ScoreResult、实例 / 访视状态、全部 dirty / writing 阻断、401 回调与评分 latest 刷新回调；在评分面板之后渲染认知域面板。
+- B9 合并边界：认知域 Hook 保存完整 A19 detail 与 alreadyComputed 回执；主页面不覆盖 Visit、ItemResponse、ScoreResult、作答 / 媒体 / 人工评分 / 确认草稿，不调用 A14-A18 写接口。
 - 通用题目定位：B6 submission issue 与 B7 reviewQueue 共用 itemResponseId -> 分组切换 -> `scrollIntoView()` -> focus 流程；不改 URL 或清理其他分组内存草稿
 - 边界：GET 使用独立 AbortController，PATCH 与媒体 / submit POST 不重试；组件卸载后不 setState；不使用 SWR、React Query、Redux、Zustand、localStorage 或 sessionStorage
 
@@ -400,6 +402,48 @@
 
 - 新增：`reviewScoreItemManually()` 与 `confirmScoreResult()`。
 - 边界：五个 / 四个 Path ID 分别编码；credentials / no-store；PATCH / POST 请求体逐字段白名单构建且不重试；完整 A18 错误 code 使用稳定中文映射，不记录临床数据到 console。
+
+### 6.39 `useCognitiveDomainResult`
+
+- 路径：`frontend\src\features\assessments\hooks\useCognitiveDomainResult.ts`
+- 职责：独立管理 A19 idle / waiting_for_score / loading / not_found / loaded / forbidden / error、latest AbortController、source ScoreResult 依赖、首次 compute 二次确认、checkbox、写锁、alreadyComputed、稳定错误与手工 reload。
+- 自动 latest：实例 completed / locked / voided 且来源评分 confirmed / locked / voided 时查询；来源 ID / 状态 / isFinal 或路由实例变化时重置并按条件重新进入流程。B8 confirm 成功只触发 GET，不触发 POST。
+- compute：只在来源 confirmed / locked 且 isFinal、实例 completed、Visit 状态允许、latest not_found 且外部 localBlockReason 为空时开放；只调用 `{ confirm: true }`。冲突 / voided 自动 GET 一次但不重发 POST。
+- 边界：不渲染 JSX、不格式化标签、不定位题目、不计算分数 / 百分比 / 贡献，不修改来源 ScoreResult、Visit 或 ItemResponse；无轮询、无 compute 自动重试。
+
+### 6.40 `CognitiveDomainResultPanel`
+
+- 路径：`frontend\src\features\assessments\components\CognitiveDomainResultPanel.tsx`
+- 职责：组合来源评分依赖、latest 状态、not_found、forbidden / error、首次计算说明 / checkbox、compute 写入 / 幂等回执、result status / isFinal、非诊断声明和三个结果子组件。
+- 安全说明：固定展示完整分值重叠归因、各域不可相加解释量表总分、scorePercent 非疾病概率、结果不能单独形成诊断；已有结果只提供重新加载 GET。
+- 可访问性：error 使用 alert，loading / success 使用 polite live region，checkbox 有可见 label，disabled 有文字状态；不使用雷达图或诊断式颜色。
+
+### 6.41 `CognitiveDomainScoreList`
+
+- 路径：`frontend\src\features\assessments\components\CognitiveDomainScoreList.tsx`
+- 职责：按 domainCode 排序响应副本，展示安全标题、domainCode、scoreValue、min / max、服务端 scorePercent、weighted 技术值和 item / scored / unscored / missing / review / excluded 全部计数。
+- 边界：null 不显示为 0；不求和、平均、排名、归一化、补算比例或生成风险等级。domainTitle 优先后端，再使用集中 domain code 标签，最后原 code。
+
+### 6.42 `CognitiveDomainContributionList`
+
+- 路径：`frontend\src\features\assessments\components\CognitiveDomainContributionList.tsx`
+- 职责：按 itemOrder / itemCode / domainCode 排序响应副本，展示 item / CRF / group / domain、weight、countsTowardDomain、score / max、weighted、score status / source、isMissing 和原题核对。
+- 定位：仅非空 itemResponseId 可匹配安全题目时回调父级统一定位；null / 无法匹配显示稳定说明，不按 itemCode 猜测。
+- 边界：保留同题多 domain 多条合法记录，不合并后计算；排除项明确不计入，scoreValue null 不显示为 0；不显示正确 / 错误，不定义 contribution minScore。
+
+### 6.43 `CognitiveDomainMappingSummary`
+
+- 路径：`frontend\src\features\assessments\components\CognitiveDomainMappingSummary.tsx`
+- 职责：展示 mappingVersion / source / mode / domainCodes、严格 policy、四项 interpretation、computation、warning、versionTrace、来源 ScoreResult 安全摘要和弱化结果技术编号。
+- 异常：interpretation 不符合 A19 安全字面值时显示 alert，继续展示技术性结果但不扩展临床解释；warning 仅作为内部计算提示，不渲染为患者风险。
+- 边界：不编辑 mapping / weight / domainCodes，不模拟 weighted mapping，不重新计算 count / policy / isFinal，不显示原始 Mixed mappingRules。
+
+### 6.44 B9 类型、API 与 display 纯函数
+
+- `types/cognitive-domain-result.ts`：严格对齐 A19 JSON response 与真实 enum；Date 为 string / null，不含原始作答、评分意见、expectedValue、scoringRule、metadata、qualityHints、computedBy 或 contribution minScore。
+- `api/cognitive-domain-api.ts`：仅提供 `getLatestCognitiveDomainResult()` 与 `computeCognitiveDomainResult()`；credentials / no-store、Path 编码、GET AbortSignal、完整错误映射、POST `{ confirm: true }` 白名单且不重试。
+- `lib/cognitive-domain-display.ts`：集中维护 7 个真实 seed domain code 标签、result / mapping / item / review / quality / score source / warning / error 文案、日期 / 有限数值格式与 interpretation 安全检查。
+- 边界：display 不按 scaleCode / itemCode 推断 domain，不计算分数、比例、贡献或诊断，不直接输出未知内部 code。
 
 ## 7. 后续同步规则
 
