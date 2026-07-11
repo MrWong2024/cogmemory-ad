@@ -132,6 +132,8 @@ function resultFixture(): ScoreResultSummary {
     confirmedAt: null,
     lockedAt: null,
     voidedAt: null,
+    createdAt: new Date('2026-07-11T01:00:00.000Z'),
+    updatedAt: new Date('2026-07-11T01:00:00.000Z'),
   };
 }
 
@@ -197,5 +199,87 @@ describe('ScoreResultPublicMapper', () => {
     ]) {
       expect(serialized).not.toContain(forbiddenValue);
     }
+  });
+
+  it('maps only the latest safe manual review and confirmation summaries', () => {
+    const result = resultFixture();
+    result.status = 'confirmed';
+    result.confirmedAt = new Date('2026-07-11T03:00:00.000Z');
+    result.itemScores[1] = {
+      ...result.itemScores[1],
+      includedInTotal: true,
+      scoreValue: 1,
+      scoreStatus: 'manual_scored',
+      scoreSource: 'operator',
+    };
+    result.metadata = {
+      a18ManualReview: {
+        version: 1,
+        events: [
+          {
+            eventId: 'event-old',
+            itemResponseId: result.itemScores[1].itemResponseId,
+            itemCode: result.itemScores[1].itemCode,
+            originalReasonCode: 'MANUAL_SCORING_REQUIRED',
+            previousScoreValue: null,
+            scoreValue: 0,
+            reviewNote: 'old safe note',
+            reviewedAt: new Date('2026-07-11T02:00:00.000Z'),
+            reviewerId: '507f1f77bcf86cd799439020',
+            reviewerName: 'Old Reviewer',
+            reviewerRole: 'nurse',
+          },
+          {
+            eventId: 'event-latest',
+            itemResponseId: result.itemScores[1].itemResponseId,
+            itemCode: result.itemScores[1].itemCode,
+            originalReasonCode: 'MANUAL_SCORING_REQUIRED',
+            previousScoreValue: 0,
+            scoreValue: 1,
+            reviewNote: 'latest safe note',
+            reviewedAt: new Date('2026-07-11T02:30:00.000Z'),
+            reviewerId: '507f1f77bcf86cd799439021',
+            reviewerName: 'Latest Reviewer',
+            reviewerRole: 'doctor',
+          },
+        ],
+      },
+      a18Confirmation: {
+        confirmationId: 'confirmation-safe',
+        confirmedAt: result.confirmedAt,
+        confirmedBy: '507f1f77bcf86cd799439021',
+        confirmedByName: 'Latest Reviewer',
+        confirmedByRole: 'doctor',
+        reviewNote: 'final safe note',
+      },
+    };
+
+    const mapped = mapper.toPublicResult(result, versionFixture());
+    expect(mapped.scoreResult.updatedAt).toEqual(result.updatedAt);
+    const manualReview = mapped.scoreResult.itemScores[1].manualReview;
+    expect(manualReview?.reviewNote).toBe('latest safe note');
+    expect(manualReview?.reviewer.operatorName).toBe('Latest Reviewer');
+    expect(manualReview?.reviewer.operatorRole).toBe('doctor');
+    expect(mapped.scoreResult.itemScores[1]).not.toHaveProperty(
+      'reviewReasonCode',
+    );
+    expect(mapped.scoreResult.confirmation?.confirmationId).toBe(
+      'confirmation-safe',
+    );
+    expect(mapped.scoreResult.confirmation?.reviewNote).toBe('final safe note');
+    const serialized = JSON.stringify(mapped);
+    expect(serialized).not.toContain('previousScoreValue');
+    expect(serialized).not.toContain('event-old');
+    expect(serialized).not.toContain('old safe note');
+    expect(serialized).not.toContain('a18ManualReview');
+  });
+
+  it('safely ignores malformed metadata rather than exposing or throwing it', () => {
+    const result = resultFixture();
+    result.metadata = { a18ManualReview: { events: 'private-invalid' } };
+    expect(() => mapper.toPublicResult(result, versionFixture())).not.toThrow();
+    expect(
+      JSON.stringify(mapper.toPublicResult(result, versionFixture())),
+    ).not.toContain('private-invalid');
   });
 });

@@ -2,6 +2,10 @@ import { Injectable } from '@nestjs/common';
 import type { ScaleVersionSummary } from '../../scales/services/scales.service';
 import type { ScoreItemSummary, ScoreResultSummary } from './scoring.service';
 import {
+  readConfirmationAudit,
+  readManualReviewEvents,
+} from '../lib/manual-score-review';
+import {
   SCORE_COMPUTATION_WARNING_CODES,
   SCORE_REVIEW_REASON_CODES,
   type ScoreComputationWarningCode,
@@ -11,6 +15,7 @@ import type {
   ProvisionalScoreGroupResponse,
   ProvisionalScoreItemResponse,
   ProvisionalScoreResultResponse,
+  ScoreResultConfirmationSummaryResponse,
   ScoreReviewQueueItemResponse,
 } from '../types/score-result-response.types';
 
@@ -52,13 +57,14 @@ function controlledReason(note?: string): ScoreReviewReasonCode | undefined {
 function publicReason(
   item: ScoreItemSummary,
 ): ScoreReviewReasonCode | undefined {
+  if (item.scoreStatus !== 'needs_review') {
+    return undefined;
+  }
   const known = controlledReason(item.note);
   if (known) {
     return known;
   }
-  return item.scoreStatus === 'needs_review'
-    ? 'MANUAL_SCORING_REQUIRED'
-    : undefined;
+  return 'MANUAL_SCORING_REQUIRED';
 }
 
 function parseWarningCodes(notes?: string): ScoreComputationWarningCode[] {
@@ -80,7 +86,10 @@ export class ScoreResultPublicMapper {
     scoreResult: ProvisionalScoreResultResponse;
     reviewQueue: ScoreReviewQueueItemResponse[];
   } {
-    const itemScores = result.itemScores.map((item) => this.mapItem(item));
+    const manualEvents = readManualReviewEvents(result.metadata);
+    const itemScores = result.itemScores.map((item) =>
+      this.mapItem(item, manualEvents),
+    );
     const reviewQueue = itemScores
       .filter((item) => item.reviewRequired)
       .map((item) => ({
@@ -176,14 +185,22 @@ export class ScoreResultPublicMapper {
         },
         qualityStatus: result.qualityStatus,
         isFinal,
+        updatedAt: result.updatedAt,
+        ...(isFinal ? { confirmation: this.mapConfirmation(result) } : {}),
       },
       reviewQueue,
     };
   }
 
-  private mapItem(item: ScoreItemSummary): ProvisionalScoreItemResponse {
+  private mapItem(
+    item: ScoreItemSummary,
+    manualEvents: ReturnType<typeof readManualReviewEvents>,
+  ): ProvisionalScoreItemResponse {
     const reasonCode = publicReason(item);
     const reviewRequired = item.scoreStatus === 'needs_review';
+    const latestManualReview = [...manualEvents]
+      .reverse()
+      .find((event) => event.itemResponseId === item.itemResponseId);
     return {
       itemResponseId: item.itemResponseId ?? null,
       itemCode: item.itemCode,
@@ -209,6 +226,54 @@ export class ScoreResultPublicMapper {
       ...(reasonCode ? { reviewReasonCode: reasonCode } : {}),
       ...(reasonCode
         ? { reviewReasonMessage: REASON_MESSAGES[reasonCode] }
+        : {}),
+      ...(item.scoreStatus === 'manual_scored' && latestManualReview
+        ? {
+            manualReview: {
+              reviewedAt: latestManualReview.reviewedAt,
+              reviewer: {
+                operatorId: latestManualReview.reviewerId,
+                operatorName: latestManualReview.reviewerName,
+                operatorRole: latestManualReview.reviewerRole,
+              },
+              reviewNote: latestManualReview.reviewNote,
+            },
+          }
+        : {}),
+    };
+  }
+
+  private mapConfirmation(
+    result: ScoreResultSummary,
+  ): ScoreResultConfirmationSummaryResponse | null {
+    const audit = readConfirmationAudit(result.metadata);
+    if (audit) {
+      return {
+        confirmationId: audit.confirmationId,
+        confirmedAt: audit.confirmedAt,
+        confirmedBy: {
+          operatorId: audit.confirmedBy,
+          operatorName: audit.confirmedByName,
+          operatorRole: audit.confirmedByRole,
+        },
+        reviewNote: audit.reviewNote,
+      };
+    }
+    if (!result.confirmedAt) {
+      return null;
+    }
+    return {
+      confirmationId: null,
+      confirmedAt: result.confirmedAt,
+      confirmedBy: {
+        operatorId: result.review?.reviewerId ?? null,
+        ...(result.review?.reviewerName
+          ? { operatorName: result.review.reviewerName }
+          : {}),
+        operatorRole: 'unknown',
+      },
+      ...(result.review?.reviewNote
+        ? { reviewNote: result.review.reviewNote }
         : {}),
     };
   }

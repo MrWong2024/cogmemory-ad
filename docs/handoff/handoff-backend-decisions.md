@@ -249,6 +249,17 @@
 - 非目标：不做教育年限校正、诊断阈值 / 结论、人工评分录入 / 修改 / 确认 / 锁定 / 作废 / 重跑，不创建 CognitiveDomainResult / ClinicalReport，不调用 AI。A18 再设计可审计人工复核与评分确认。
 - 影响范围：仅 scoring 模块、A17 E2E 与指定 backend handoff / roadmap；未修改任何 Schema、seed、AssessmentsService、其他业务模块、AppModule、依赖、环境配置或前端。
 
+### D-028：自动评分与人工复核分离，并以显式确认完成评分闭环
+
+- 日期：2026-07-11
+- 决策：A18 只允许对 ScoreResult 内 countsTowardTotal=true 的 needs_review / manual_scored 项目执行单题人工复核；auto_scored、not_scored 和过程项不可人工覆盖。人工分值按实例当前绑定 ScaleVersion 的 scoreRange / step 验证，不从原始作答建议或重新自动判分。
+- 审计：每次人工修改向 `metadata.a18ManualReview.events` 追加 randomUUID 受控事件，保留旧事件和其他 metadata，单结果上限 500。内部事件可保存 previousScoreValue，但公开响应只显示每题最新操作者、时间和意见；不公开 metadata、完整历史或 previousScoreValue。
+- 汇总：单题更新后始终复用 `summarizeItemScores()` 从 ScoreResult.itemScores 重新派生 total / group / scorePercent，并按 auto / manual 当前组成派生 scoringSource。客户端不能提交 item / group / total、status、quality 或 reviewer。
+- 并发：manual-review 与 confirm 都要求 expectedUpdatedAt，并把 ScoreResult.updatedAt 与完整 ownership / runNo=1 / 状态加入同一次 findOneAndUpdate 条件；原子 miss 后重读并返回稳定 conflict，不自动覆盖或重试。不新增 revision Schema 字段，不使用 transaction 或分布式锁。
+- 确认：全部计分项为 auto_scored / manual_scored 且实时汇总、range、source、percentage 与 A17 warning 检查通过后，必须由独立 confirm=true 操作进入 confirmed。confirmed 不等于 locked，不设置 lockedAt；confirmed / locked 重复确认幂等且不重写审计，缺 confirmedAt 的历史数据不猜测。
+- 质量口径：确认成功的 qualityStatus=passed 仅表示评分结果完整性与人工复核流程通过，不表示患者正常、疾病诊断或报告结论。A19 再进入认知域结果；A18 不创建 CognitiveDomainResult / ClinicalReport，不实现诊断或 AI。
+- 影响范围：仅 scoring 模块、A18 E2E 和指定 backend handoff / roadmap；未修改 Schema、seed、auth / patients / assessments / scales / media / cognitive-domains / reports、AppModule、依赖、环境配置或前端。
+
 ## 4. 后续同步规则
 
 - 新增关键技术选型、接口设计、数据模型、测试策略或部署策略后，应追加决策记录。

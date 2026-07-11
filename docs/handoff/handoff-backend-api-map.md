@@ -6,12 +6,12 @@
 
 ## 2. 当前状态
 
-- 当前公开 API 在 A16 清单上新增 A17 的阶段性评分 compute POST 与 latest GET。
+- 当前公开 API 在 A17 清单上新增 A18 的单题 manual-review PATCH 与 ScoreResult confirm POST。
 - `AuthModule` 当前新增 `AuthController`，仅暴露最小公开认证 API 底座；主登录态仍为服务端 Session + HttpOnly Cookie，不采用 JWT 主登录态。
 - AuthModule 内部 session cookie 名称已统一为 `cogmemory_ad_session`，登录成功下发 HttpOnly Cookie，`SameSite=Lax`，`Path=/`，production 环境启用 `Secure`。
 - 当前没有 users controller，没有公开用户管理 API，没有注册、密码重置、角色权限管理、短信验证码、OAuth / SSO 或 JWT 登录 API。
 - A12 已新增 `PatientsController` 与 `AssessmentVisitsController`，形成第一组受保护临床业务 API；所有五个接口均显式绑定 `SessionAuthGuard`、`RolesGuard` 和 `@Roles('admin', 'doctor', 'nurse', 'research_assistant')`。
-- 当前已有实例 submission readiness 与最终提交最小闭环；仍没有撤销 / reopen / lock / force submit、批量 / 分片 / 客户端直传、计分、认知域、报告、SMS 或 AI / LLM 公开接口。
+- 当前已有实例 submission readiness / submit 与评分 compute / latest / manual-review / confirm 最小闭环；仍没有撤销 / reopen / lock / void / rerun、批量 / 分片 / 客户端直传、认知域、报告、SMS 或 AI / LLM 公开接口。
 - 当前 API 事实以实际 Controller、DTO、response type 和对应单元 / E2E 测试为准。
 
 ## 3. 当前 API 清单
@@ -279,6 +279,31 @@
 - 响应：200，`ScoreResultDetailResponse { scale, scaleInstance, scoreResult, reviewQueue }`；只读不写数据库，不提供重跑或多 run 查询
 - 隐私边界：与 compute 相同；reviewQueue 仅含安全题目标识和受控原因，按 itemOrder / itemCode 稳定排序
 
+### A18 人工复核与评分确认 API
+
+- 接口名称：人工复核单题得分
+- Method / Path：`PATCH /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/score-results/:scoreResultId/item-scores/:itemResponseId/manual-review`
+- Controller / Guard / Roles：既有 `ScoringController`；显式 `SessionAuthGuard` + `RolesGuard`；`admin`、`doctor`、`nurse`、`research_assistant`；通过 `@CurrentUser()` 取得审计操作者
+- Param / Body DTO：`ScoreItemReviewParamDto` 的五个 ID 均 `@IsMongoId()`；`ReviewScoreItemDto { scoreValue, reviewNote, expectedUpdatedAt }`。scoreValue 为 finite number，note trim 后 3-2000，时间为 strict ISO；其他字段由 whitelist 拒绝
+- 状态与目标：active Patient；Visit 为 draft / in_progress / completed；ScaleInstance completed；ScoreResult runNo=1 且 status 为 needs_review / computed；仅 countsTowardTotal=true 且 scoreStatus 为 needs_review / manual_scored、itemResponseId 和 ItemResponse / ScaleVersion itemCode 完整匹配的项目可写。auto_scored、not_scored 与过程项返回 `SCORE_ITEM_NOT_REVIEWABLE`
+- 分值：事实源为当前绑定 ScaleVersion item scoreRange；验证有限 min / max / 正 step、边界和浮点容差内 step 对齐；0 合法，不转换字符串，不 clamp。错误为 409 `SCORE_MANUAL_VALUE_OUT_OF_RANGE` / `SCORE_MANUAL_VALUE_STEP_INVALID` / `SCORE_INPUT_INVALID`
+- 汇总与响应：更新为 manual_scored / operator / includedInTotal=true，保留原 reason；调用 `summarizeItemScores()` 重新派生 total / group / scorePercent、status、scoringSource、review、qualityStatus 与 reviewQueue。返回 200 `ReviewScoreItemResponse`，包含原 detail 与安全 `reviewUpdate { eventId, itemResponseId, reviewedAt, reviewer, pendingItemCount }`
+- 审计：向 `metadata.a18ManualReview.events` 追加 randomUUID 事件并保留其他 metadata；每个结果最多 500，达到上限为 409 `SCORE_REVIEW_AUDIT_LIMIT_REACHED`。不接受客户端 metadata，不公开事件数组或 previousScoreValue；非法内部 metadata 写入时为 `SCORE_RESULT_METADATA_UNSUPPORTED`
+- 并发：请求 expectedUpdatedAt 对应公开 scoreResult.updatedAt；完整 ownership + runNo=1 + editable status + updatedAt 进入同一次 findOneAndUpdate。原子 miss 且结果仍可编辑为 409 `SCORE_RESULT_REVIEW_CONFLICT`；不自动重试或覆盖，不使用 transaction
+- 其他错误：404 `PATIENT_NOT_FOUND` / `VISIT_NOT_FOUND` / `SCALE_INSTANCE_NOT_FOUND` / `SCORE_RESULT_NOT_FOUND` / `SCORE_ITEM_NOT_FOUND` / `SCORE_ITEM_REVIEW_TARGET_UNAVAILABLE`；409 状态错误；500 `SCORE_RESULT_REVIEW_FAILED`
+- 安全边界：不修改 Patient / Visit / ScaleInstance / ItemResponse / ItemResponse.score / status / step / prompt / evidence / MediaEvidence；不记录分值、意见、作答或患者隐私；响应不含作答、expectedValue、scoringRule、metadata、完整审计或 previousScoreValue
+
+- 接口名称：确认评分结果
+- Method / Path：`POST /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/score-results/:scoreResultId/confirm`
+- Controller / Guard / Roles：同一 `ScoringController`、显式 Session / Roles Guard、四个临床角色与 `@CurrentUser()`
+- Param / Body DTO：`ScoreResultParamDto`；`ConfirmScoreResultDto { confirm, reviewNote, expectedUpdatedAt }`。业务要求 confirm 严格 true，否则 400 `SCORE_RESULT_CONFIRMATION_REQUIRED`；note trim 后 3-2000，expectedUpdatedAt strict ISO，force / ignoreWarnings / totals / metadata 等由 whitelist 拒绝
+- 首次确认 readiness：Patient active；Visit draft / in_progress / completed；Instance completed；ScoreResult status=computed、runNo=1、无 needs_review / not_scored 计分项；每项 finite 且 range / step / status-source 合理；实时 `summarizeItemScores()` 与持久化 total / groups / scorePercent 完全一致；A17 computation warning 为空。未就绪为 409 `SCORE_RESULT_NOT_READY_FOR_CONFIRMATION`，warning 为 409 `SCORE_RESULT_CONFIRMATION_WARNINGS_PRESENT`
+- 成功与响应：同一 findOneAndUpdate 写 status=confirmed、confirmedAt、reviewed reviewer / final note、qualityStatus=passed、实时 total / group 和 `metadata.a18Confirmation` randomUUID 审计；不改 itemScores、scoringSource / mode、computation / versionTrace，不设置 lockedAt。返回 200 `ConfirmScoreResultResponse` 与安全 confirmationReceipt；qualityStatus=passed 不是诊断结论
+- 幂等：confirmed / locked 返回 200、alreadyConfirmed=true，不生成新 confirmationId、不改时间 / 操作者 / 意见。优先读 a18Confirmation，历史无 namespace 时以 confirmedAt + review 安全回退且 confirmationId=null；缺 confirmedAt 为 409 `SCORE_RESULT_CONFIRMATION_AUDIT_UNAVAILABLE`
+- 并发：首次确认的完整 ownership + runNo=1 + status=computed + updatedAt 原子过滤不命中且仍可确认时为 409 `SCORE_RESULT_CONFIRMATION_CONFLICT`；不自动覆盖，不使用 transaction
+- 其他错误：404 完整归属；409 `SCORE_RESULT_VOIDED` / patient / visit / instance 状态 / metadata 错误；500 `SCORE_RESULT_CONFIRMATION_FAILED`
+- 安全与非目标：confirmed 的 isFinal=true 但不 locked；不实现 lock、void、撤销、reopen、重跑、runNo=2、认知域、报告、诊断或 AI
+
 ## 4. 当前未暴露接口说明
 
 - `backend\src\modules\users` 当前没有 Controller。
@@ -289,10 +314,10 @@
 - `backend\src\modules\patients` 当前仅通过 `PatientsController` 暴露 A12 三个患者接口；未暴露 PATCH、DELETE 或归档接口。
 - `backend\src\modules\assessments` 还通过 `ScaleInstanceSubmissionController` 暴露 A16 两个接口；`AssessmentExecutionService` 仍为内部初始化能力，不暴露批量保存或计分接口。
 - `backend\src\modules\media` 当前仅通过 `MediaEvidenceController` 暴露上述四个题目级媒体接口；没有全患者 / 访视 / 实例媒体列表、直接对象 key 下载、永久 URL、物理删除、替换、批量、分片、客户端直传、OCR 或 AI 接口。
-- `backend\src\modules\scoring` 当前仅通过 `ScoringController` 暴露 A17 compute / latest；没有人工评分、确认、锁定、作废、重跑、列表、患者级或访视级评分 API。
+- `backend\src\modules\scoring` 当前通过同一 `ScoringController` 暴露 A17 compute / latest 与 A18 manual-review / confirm；没有 lock、void、撤销确认、reopen、重跑、列表、患者级或访视级评分 API。
 - `backend\src\modules\cognitive-domains` 当前没有 Controller；`CognitiveDomainsService` 仅供后续后端业务模块内部读取认知域结果摘要和复用通用认知域汇总纯函数。
 - `backend\src\modules\reports` 当前没有 Controller；`ReportsService` 仅供后续后端业务模块内部读取临床报告摘要和复用报告状态转换校验纯函数。
-- 当前已定义 A12-A17 对应公开 DTO 和响应类型；仍不定义人工评分复核、认知域、报告、SMS、AI / LLM 或批量 / 分片 / 客户端直传契约；本次未更新 frontend handoff。
+- 当前已定义 A12-A18 对应公开 DTO 和响应类型；仍不定义评分 lock / void / 重跑、认知域、报告、SMS、AI / LLM 或批量 / 分片 / 客户端直传契约；本次未更新 frontend handoff。
 
 ## 5. 后续同步规则
 

@@ -6,7 +6,7 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 DTO、响应 type、Storage interface，以及 A12-A17 业务契约；A17 新增严格计算确认 DTO、阶段性 total / group / item / computation / review / reviewQueue 与 compute / latest 安全响应类型。
+- 当前存在公共底座 DTO、响应 type、Storage interface，以及 A12-A18 业务契约；A18 新增路径、单题人工复核、评分确认 DTO，以及 updatedAt / manualReview / confirmation / receipt 安全响应扩展。
 - 当前新增公开认证请求 DTO：`LoginDto`。
 - 当前新增公开患者 / 访视 DTO：`CreatePatientDto`、`ListPatientsQueryDto`、`PatientIdParamDto`、`CreateAssessmentVisitDto`、`ListAssessmentVisitsQueryDto`、`PatientVisitsParamDto`。
 - 当前仍没有用户管理、注册、密码重置、撤销 / reopen / force submit、批量 / 分片 / 客户端直传、计分、认知域或报告请求 DTO。
@@ -434,6 +434,38 @@
 
 - 名称：`ScoreResultDetailResponse` / `ComputeScoreResultResponse`
 - latest：`{ scale, scaleInstance, scoreResult, reviewQueue }`；compute 额外 `alreadyComputed`。公开 mapper 对 number 做 finite / null 处理、复制数组、未知内部 reason 回退 `MANUAL_SCORING_REQUIRED`，未知 warning 不透传。
+
+### A18 人工复核 / 确认 DTO 与公开响应
+
+- 名称：`ScoreResultParamDto`
+- 用途：A18 confirm path；patientId、visitId、scaleInstanceId、scoreResultId 均使用 `@IsMongoId()`，不从 body 接受路径 ID。
+
+- 名称：`ScoreItemReviewParamDto`
+- 用途：A18 manual-review path；继承四段 ScoreResult path 并增加 `itemResponseId: @IsMongoId()`。
+
+- 名称：`ReviewScoreItemDto`
+- 字段：必填 `scoreValue` 为不允许 NaN / Infinity 的 number；`reviewNote` trim 后 3-2000；`expectedUpdatedAt` 为 strict ISO 8601 string。
+- 白名单：不声明 item identity / range / status / source、reviewer / reviewedAt、item / group / total、metadata、expectedValue / scoringRule、force / override；字符串数字不转换。
+
+- 名称：`ConfirmScoreResultDto`
+- 字段：`confirm` 仅接受 boolean，业务层要求严格 true；`reviewNote` trim 后 3-2000；`expectedUpdatedAt` 为 strict ISO 8601 string。
+- 白名单：不声明 status / confirmedAt / lockedAt、reviewer、confirmationId、item / group / total、quality、metadata、force / ignoreWarnings / lockAfterConfirm / downstream create 字段。
+
+- 名称：`ScoreResultActorResponse` / `ManualScoreReviewSummaryResponse`
+- 字段：actor 仅 operatorId、可选 operatorName / operatorRole；manualReview 仅 reviewedAt、reviewer、reviewNote。每个 manual_scored item 最多公开最新一条合法摘要。
+
+- 名称：`ScoreResultConfirmationSummaryResponse`
+- 字段：confirmationId（历史 fallback 可为 null）、confirmedAt、confirmedBy 安全 actor、可选 reviewNote；仅 confirmed / locked 结果公开。
+
+- 名称：`ManualScoreReviewReceiptResponse` / `ReviewScoreItemResponse`
+- 字段：receipt 为 eventId、itemResponseId、reviewedAt、reviewer、pendingItemCount；顶层继承 `ScoreResultDetailResponse` 并增加 `reviewUpdate`。
+
+- 名称：`ScoreResultConfirmationReceiptResponse` / `ConfirmScoreResultResponse`
+- 字段：confirmationId、confirmedAt、confirmedBy、reviewNote、alreadyConfirmed；顶层继承 detail 并增加 `confirmationReceipt`。
+
+- A17 兼容扩展：`ProvisionalScoreResultResponse` 增加 `updatedAt: Date` 和可选 confirmation；`ProvisionalScoreItemResponse` 增加可选 manualReview。JSON 中 Date 序列化为 ISO string；既有字段未删除或改名。
+- 并发口径：latest / compute / manual-review / confirm 的 scoreResult.updatedAt 是下一次 A18 写请求 expectedUpdatedAt 的事实源；不是客户端 revision，也不是分布式锁。
+- 安全：响应不含 metadata、全部审计事件、previousScoreValue、作答、expectedValue、scoringRule、正确答案、Session 或 token。
 
 ## 4. 后续同步规则
 

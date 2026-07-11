@@ -24,6 +24,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function record(value: unknown, label: string): Record<string, unknown> {
+  if (!isRecord(value)) throw new Error(`Expected ${label} object`);
+  return value;
+}
+
 function createScoreResultFixture(overrides: Record<string, unknown> = {}) {
   return {
     _id: new Types.ObjectId(),
@@ -134,6 +139,8 @@ function createScoreResultFixture(overrides: Record<string, unknown> = {}) {
     confirmedAt: null,
     lockedAt: null,
     voidedAt: null,
+    createdAt: new Date('2026-01-07T07:00:00.000Z'),
+    updatedAt: new Date('2026-01-07T08:00:00.000Z'),
     internalMarker: 'not returned',
     ...overrides,
   };
@@ -261,6 +268,7 @@ describe('ScoringService', () => {
   let service: ScoringService;
   let scoreResultModel: {
     findOne: jest.Mock;
+    findOneAndUpdate: jest.Mock;
     find: jest.Mock;
     create: jest.Mock;
   };
@@ -268,6 +276,7 @@ describe('ScoringService', () => {
   beforeEach(async () => {
     scoreResultModel = {
       findOne: jest.fn(),
+      findOneAndUpdate: jest.fn(),
       find: jest.fn(),
       create: jest.fn(),
     };
@@ -459,6 +468,8 @@ describe('ScoringService', () => {
       confirmedAt: null,
       lockedAt: null,
       voidedAt: null,
+      createdAt: new Date('2026-01-07T07:00:00.000Z'),
+      updatedAt: new Date('2026-01-07T08:00:00.000Z'),
     });
     expect(result).not.toHaveProperty('_id');
     expect(result).not.toHaveProperty('internalMarker');
@@ -554,6 +565,171 @@ describe('ScoringService', () => {
     expect(createArgument).not.toHaveProperty('voidedAt');
     expect(createArgument).not.toHaveProperty('metadata');
     expect(createArgument).not.toHaveProperty('qualityHints');
+  });
+
+  it('uses full ownership and updatedAt in the atomic manual review update', async () => {
+    const scoreResultId = new Types.ObjectId();
+    const patientId = new Types.ObjectId();
+    const assessmentVisitId = new Types.ObjectId();
+    const scaleInstanceId = new Types.ObjectId();
+    const itemResponseId = new Types.ObjectId();
+    const expectedUpdatedAt = new Date('2026-07-11T03:00:00.000Z');
+    const updated = createScoreResultFixture({
+      _id: scoreResultId,
+      patientId,
+      assessmentVisitId,
+      scaleInstanceId,
+      updatedAt: new Date('2026-07-11T03:00:01.000Z'),
+    });
+    scoreResultModel.findOneAndUpdate.mockReturnValue(createExecQuery(updated));
+
+    await expect(
+      service.reviewScoreItemIfUnmodified({
+        scoreResultId: scoreResultId.toString(),
+        patientId: patientId.toString(),
+        assessmentVisitId: assessmentVisitId.toString(),
+        scaleInstanceId: scaleInstanceId.toString(),
+        expectedUpdatedAt,
+        itemScores: [
+          {
+            itemResponseId: itemResponseId.toString(),
+            itemCode: 'manual.item',
+            itemOrder: 1,
+            countsTowardTotal: true,
+            includedInTotal: true,
+            scoreValue: 0,
+            maxScore: 1,
+            minScore: 0,
+            scoreStatus: 'manual_scored',
+            scoreSource: 'operator',
+            isMissing: false,
+            cognitiveDomainCodes: [],
+          },
+        ],
+        groupScores: [],
+        totalScore: {
+          scoreValue: 0,
+          maxScore: 1,
+          minScore: 0,
+          scorePercent: 0,
+          scoredItemCount: 1,
+          totalItemCount: 1,
+          unscoredItemCount: 0,
+          missingItemCount: 0,
+          needsReviewItemCount: 0,
+        },
+        status: 'computed',
+        scoringSource: 'manual',
+        review: {
+          reviewStatus: 'reviewed',
+          reviewedAt: expectedUpdatedAt,
+          reviewerId: patientId.toString(),
+        },
+        qualityStatus: 'unchecked',
+        metadata: { a18ManualReview: { version: 1, events: [] } },
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({ id: scoreResultId.toString() }),
+    );
+
+    const call: unknown = scoreResultModel.findOneAndUpdate.mock.calls[0];
+    if (!Array.isArray(call)) throw new Error('Expected atomic update call');
+    const filter = record(call[0], 'review filter');
+    const update = record(call[1], 'review update');
+    const updateFields = record(update.$set, 'review update fields');
+    const options = record(call[2], 'review options');
+    expect(filter).toEqual(
+      expect.objectContaining({
+        _id: scoreResultId,
+        patientId,
+        assessmentVisitId,
+        scaleInstanceId,
+        runNo: 1,
+        status: { $in: ['needs_review', 'computed'] },
+        updatedAt: expectedUpdatedAt,
+      }),
+    );
+    expect(updateFields).toEqual(
+      expect.objectContaining({
+        status: 'computed',
+        scoringSource: 'manual',
+        qualityStatus: 'unchecked',
+      }),
+    );
+    expect(updateFields).not.toHaveProperty('lockedAt');
+    expect(options).toEqual({ returnDocument: 'after', runValidators: true });
+  });
+
+  it('atomically confirms only computed run one without changing item sources', async () => {
+    const scoreResultId = new Types.ObjectId();
+    const patientId = new Types.ObjectId();
+    const assessmentVisitId = new Types.ObjectId();
+    const scaleInstanceId = new Types.ObjectId();
+    const expectedUpdatedAt = new Date('2026-07-11T03:00:00.000Z');
+    const confirmedAt = new Date('2026-07-11T03:00:02.000Z');
+    scoreResultModel.findOneAndUpdate.mockReturnValue(
+      createExecQuery(
+        createScoreResultFixture({
+          _id: scoreResultId,
+          patientId,
+          assessmentVisitId,
+          scaleInstanceId,
+          status: 'confirmed',
+          confirmedAt,
+        }),
+      ),
+    );
+
+    await service.confirmScoreResultIfUnmodified({
+      scoreResultId: scoreResultId.toString(),
+      patientId: patientId.toString(),
+      assessmentVisitId: assessmentVisitId.toString(),
+      scaleInstanceId: scaleInstanceId.toString(),
+      expectedUpdatedAt,
+      confirmedAt,
+      totalScore: {
+        scoreValue: 1,
+        maxScore: 1,
+        minScore: 0,
+        scorePercent: 100,
+        scoredItemCount: 1,
+        totalItemCount: 1,
+        unscoredItemCount: 0,
+        missingItemCount: 0,
+        needsReviewItemCount: 0,
+      },
+      groupScores: [],
+      review: {
+        reviewStatus: 'reviewed',
+        reviewedAt: confirmedAt,
+        reviewerId: patientId.toString(),
+      },
+      metadata: { a18Confirmation: { confirmationId: 'confirmation-test' } },
+    });
+
+    const call: unknown = scoreResultModel.findOneAndUpdate.mock.calls[0];
+    if (!Array.isArray(call)) throw new Error('Expected atomic confirm call');
+    const filter = record(call[0], 'confirm filter');
+    const update = record(call[1], 'confirm update');
+    const updateFields = record(update.$set, 'confirm update fields');
+    expect(filter).toEqual(
+      expect.objectContaining({
+        _id: scoreResultId,
+        runNo: 1,
+        status: 'computed',
+        updatedAt: expectedUpdatedAt,
+      }),
+    );
+    expect(updateFields).toEqual(
+      expect.objectContaining({
+        status: 'confirmed',
+        confirmedAt,
+        qualityStatus: 'passed',
+      }),
+    );
+    expect(updateFields).not.toHaveProperty('itemScores');
+    expect(updateFields).not.toHaveProperty('scoringSource');
+    expect(updateFields).not.toHaveProperty('lockedAt');
   });
 
   it('lists score results by scale instance id ordered by run number and createdAt', async () => {

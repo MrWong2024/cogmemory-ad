@@ -6,7 +6,7 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 Service / Provider 与 A12-A17 业务能力；A17 新增 Scoring Controller / Workflow / pure engine / public mapper，并扩展 ScoringService 的 runNo=1 创建与 provisional 汇总职责。
+- 当前存在公共底座 Service / Provider 与 A12-A18 业务能力；A18 在既有 Scoring Controller / A17 Workflow / pure engine / public mapper 上新增 ScoreReviewWorkflowService、人工复核纯函数与单文档原子更新。
 - 当前没有医生、SMS 或 LLM Service；A16 不调用计分、认知域、报告、MediaModule 或 AI 能力。
 
 ## 3. 当前 Service / Provider 清单
@@ -164,7 +164,8 @@
 - 当前方法：`normalizeScoreResultCode(scoreResultCode)`、`findScoreResultByCode(scoreResultCode)`、`findLatestScoreResultByScaleInstanceId(scaleInstanceId)`、`listScoreResultsByScaleInstanceId(scaleInstanceId)`、`listScoreResultsByVisitId(assessmentVisitId)`、`listScoreResultsByPatientId(patientId)`、`summarizeItemScores(items)`。
 - 上游调用方：当前暂无公开 Controller；预期供后续评估、计分任务、报告或科研导出等后端业务模块内部读取计分结果摘要或复用通用汇总。
 - 下游依赖：`ScoreResult` Mongoose Model；`summarizeItemScores()` 不依赖数据库。
-- A17 扩展：新增按实例 + runNo 查询和明确输入的 ScoreResult create；`summarizeItemScores(items, { provisional: true })` 只统计计分项并在不完整时抑制 percentage。仍无 update / confirm / lock / void / delete，不修改 ItemResponse。
+- A17 扩展：新增按实例 + runNo 查询和明确输入的 ScoreResult create；`summarizeItemScores(items, { provisional: true })` 只统计计分项并在不完整时抑制 percentage。
+- A18 扩展：新增完整 ownership + runNo=1 读取、`reviewScoreItemIfUnmodified()` 与 `confirmScoreResultIfUnmodified()`；两个更新都用 expected updatedAt 条件和单次 `findOneAndUpdate`，runValidators=true。人工复核原子写 item / group / total / status / source / review / quality / metadata；确认原子写确认状态 / 时间、实时 total / groups、review / quality / metadata，不写 itemScores / scoringSource / lockedAt。仍无 lock / void / delete，不修改 ItemResponse。
 - 测试覆盖口径：`backend\src\modules\scoring\services\scoring.service.spec.ts`，覆盖 score result code 规范化、查无返回 `null`、mapper 输出、按量表实例最新读取、按量表实例 / 访视 / 患者列表读取、schema collection、索引、内嵌子文档 `_id: false`、关键字段显式类型，以及 `summarizeItemScores()` 对计入 / 不计入总分、缺失、未评分、需复核、非有限数字、逐步计分和 group score 汇总的处理；不连接真实 MongoDB，不调用 Storage / OSS / SMS / LLM，测试数据为脱敏人工样例。
 
 - Service 名称：`CognitiveDomainsService`
@@ -310,6 +311,24 @@
 - 安全：不透传 Mixed、作答、规则、正确性、ItemResponse.score、metadata、qualityHints 或 reviewer。
 
 - 模块依赖：`ScoringModule` 单向导入 AuthModule、PatientsModule、AssessmentsModule、ScalesModule；AssessmentsModule 不导入 ScoringModule，无循环、forwardRef 或重复 Schema 注册。
+
+### A18 人工复核与确认编排
+
+- 名称：`ScoreReviewWorkflowService`
+- 依赖：`PatientsService`、`AssessmentsService`、`ScalesService`、`ScoringService`、`ScoreResultPublicMapper`。
+- 职责：完整 Patient → Visit → ScaleInstance → ScoreResult ownership / runNo=1 / definition / version 绑定；manual-review 额外验证 ItemResponse ownership 与 itemCode；解析认证 actor 角色优先级；编排 range / step、受控审计、重新汇总、状态派生、expectedUpdatedAt 原子更新、冲突重读、确认 readiness 与 confirmed / locked 幂等。
+- 边界：不访问媒体文件、不从 ItemResponse 重新判分、不调用 A17 provisional engine、不修改 Patient / Visit / Instance / ItemResponse，不依赖 CognitiveDomains / Reports，不调用 AI。
+
+- 名称：`prepareManualScoreReview()` / `finalizeManualScoreReview()` / `evaluateScoreConfirmationReadiness()` / `prepareScoreConfirmation()`
+- 类型：scoring 模块内无 DI、无数据库访问的纯函数。
+- 职责：验证可复核 item、ScaleVersion range / step、0 分；克隆 itemScores / metadata、追加 UUID 事件、500 上限；基于 `summarizeItemScores()` 输出补齐总分范围 / group title / 排序 / percentage，派生 scoringSource / result / review / quality；确认前比较实时汇总与持久化快照并阻断 A17 warning；生成受控 confirmation metadata。
+- metadata：写入时 null 视为空对象，普通对象保留所有顶层 key，非法结构拒绝且不覆盖；公开读取 parser 仅返回合法受控字段。previousScoreValue 只存在内部人工审计。
+
+- 名称：`ScoreResultPublicMapper`（A18 扩展）
+- 职责：公开 updatedAt；按 itemResponseId 选择最后一条合法人工事件映射 manualReview；confirmed / locked 映射 confirmation，历史无 namespace 时使用 confirmedAt + review 安全 fallback。
+- 安全：非法 / 未知 metadata 安全忽略且从不透传；manual_scored 不继续暴露旧 reviewReason；不公开事件列表、previousScoreValue、内部命名空间或 Session。
+
+- 一致性：A18 的一致性边界是单个 ScoreResult 文档的条件原子更新；不使用 Mongo transaction、跨集合写入、分布式锁或自动重试。confirmed 不是 locked，qualityStatus=passed 不是疾病结论。
 
 ## 4. 后续同步规则
 

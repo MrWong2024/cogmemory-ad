@@ -9,6 +9,7 @@ import { ScoringController } from './controllers/scoring.controller';
 import { ScoreResult, ScoreResultSchema } from './schemas/score-result.schema';
 import { ProvisionalScoringWorkflowService } from './services/provisional-scoring-workflow.service';
 import { ScoreResultPublicMapper } from './services/score-result-public.mapper';
+import { ScoreReviewWorkflowService } from './services/score-review-workflow.service';
 import { ScoringService } from './services/scoring.service';
 
 @Module({
@@ -26,6 +27,7 @@ import { ScoringService } from './services/scoring.service';
     ScoringService,
     ProvisionalScoringWorkflowService,
     ScoreResultPublicMapper,
+    ScoreReviewWorkflowService,
   ],
   exports: [ScoringService],
 })

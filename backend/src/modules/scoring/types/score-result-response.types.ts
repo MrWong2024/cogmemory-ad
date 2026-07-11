@@ -8,6 +8,7 @@ import type {
   ScoringSource,
 } from '../schemas/score-result.schema';
 import type { ScaleInstanceListItemResponse } from '../../assessments/types/assessment-execution-response.types';
+import type { AssessmentOperatorRole } from '../../assessments/schemas/assessment-visit.schema';
 import type {
   ScoreComputationWarningCode,
   ScoreReviewReasonCode,
@@ -77,6 +78,26 @@ export type ProvisionalScoreItemResponse = {
   reviewRequired: boolean;
   reviewReasonCode?: ScoreReviewReasonCode;
   reviewReasonMessage?: string;
+  manualReview?: ManualScoreReviewSummaryResponse;
+};
+
+export type ScoreResultActorResponse = {
+  operatorId: string | null;
+  operatorName?: string;
+  operatorRole?: AssessmentOperatorRole;
+};
+
+export type ManualScoreReviewSummaryResponse = {
+  reviewedAt: Date;
+  reviewer: ScoreResultActorResponse;
+  reviewNote: string;
+};
+
+export type ScoreResultConfirmationSummaryResponse = {
+  confirmationId: string | null;
+  confirmedAt: Date;
+  confirmedBy: ScoreResultActorResponse;
+  reviewNote?: string;
 };
 
 export type ProvisionalScoreComputationResponse = {
@@ -109,6 +130,8 @@ export type ProvisionalScoreResultResponse = {
   review: ProvisionalScoreReviewResponse;
   qualityStatus: ScoreQualityStatus;
   isFinal: boolean;
+  updatedAt: Date;
+  confirmation?: ScoreResultConfirmationSummaryResponse | null;
 };
 
 export type ScoreReviewQueueItemResponse = {
@@ -133,4 +156,25 @@ export type ScoreResultDetailResponse = {
 
 export type ComputeScoreResultResponse = ScoreResultDetailResponse & {
   alreadyComputed: boolean;
+};
+
+export type ManualScoreReviewReceiptResponse = {
+  eventId: string;
+  itemResponseId: string;
+  reviewedAt: Date;
+  reviewer: ScoreResultActorResponse;
+  pendingItemCount: number;
+};
+
+export type ReviewScoreItemResponse = ScoreResultDetailResponse & {
+  reviewUpdate: ManualScoreReviewReceiptResponse;
+};
+
+export type ScoreResultConfirmationReceiptResponse =
+  ScoreResultConfirmationSummaryResponse & {
+    alreadyConfirmed: boolean;
+  };
+
+export type ConfirmScoreResultResponse = ScoreResultDetailResponse & {
+  confirmationReceipt: ScoreResultConfirmationReceiptResponse;
 };

@@ -123,6 +123,8 @@ export type ScoreResultSummary = {
   confirmedAt: Date | null;
   lockedAt: Date | null;
   voidedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
 };
 
 export type ScoringItemInput = {
@@ -170,6 +172,34 @@ export type CreateScoreResultInput = {
   computation: Omit<ScoringComputationSnapshotSummary, 'computedBy'>;
   review: Pick<ScoreReviewSummary, 'reviewStatus'>;
   qualityStatus: Extract<ScoreQualityStatus, 'unchecked' | 'needs_review'>;
+};
+
+export type ScoreResultOwnershipInput = {
+  scoreResultId: string;
+  patientId: string;
+  assessmentVisitId: string;
+  scaleInstanceId: string;
+};
+
+export type ReviewScoreItemAtomicInput = ScoreResultOwnershipInput & {
+  expectedUpdatedAt: Date;
+  itemScores: ScoreItemSummary[];
+  groupScores: ScoreGroupSummary[];
+  totalScore: TotalScoreSummary;
+  status: Extract<ScoreResultStatus, 'computed' | 'needs_review'>;
+  scoringSource: Extract<ScoringSource, 'auto_rule' | 'mixed' | 'manual'>;
+  review: ScoreReviewSummary;
+  qualityStatus: Extract<ScoreQualityStatus, 'unchecked' | 'needs_review'>;
+  metadata: Exclude<ScoreResultMetadata, null>;
+};
+
+export type ConfirmScoreResultAtomicInput = ScoreResultOwnershipInput & {
+  expectedUpdatedAt: Date;
+  confirmedAt: Date;
+  totalScore: TotalScoreSummary;
+  groupScores: ScoreGroupSummary[];
+  review: ScoreReviewSummary;
+  metadata: Exclude<ScoreResultMetadata, null>;
 };
 
 export type ScoringComputationWarning = {
@@ -271,6 +301,103 @@ export class ScoringService {
       .exec();
 
     return scoreResult ? this.mapScoreResult(scoreResult) : null;
+  }
+
+  async findScoreResultByOwnership(
+    input: ScoreResultOwnershipInput,
+  ): Promise<ScoreResultSummary | null> {
+    const scoreResultId = this.normalizeObjectId(input.scoreResultId);
+    const patientId = this.normalizeObjectId(input.patientId);
+    const assessmentVisitId = this.normalizeObjectId(input.assessmentVisitId);
+    const scaleInstanceId = this.normalizeObjectId(input.scaleInstanceId);
+    if (
+      !scoreResultId ||
+      !patientId ||
+      !assessmentVisitId ||
+      !scaleInstanceId
+    ) {
+      return null;
+    }
+    const scoreResult = await this.scoreResultModel
+      .findOne({
+        _id: scoreResultId,
+        patientId,
+        assessmentVisitId,
+        scaleInstanceId,
+        runNo: 1,
+      })
+      .exec();
+    return scoreResult ? this.mapScoreResult(scoreResult) : null;
+  }
+
+  async reviewScoreItemIfUnmodified(
+    input: ReviewScoreItemAtomicInput,
+  ): Promise<ScoreResultSummary | null> {
+    const ownership = this.normalizeScoreResultOwnership(input);
+    if (!ownership || !Number.isFinite(input.expectedUpdatedAt.getTime())) {
+      return null;
+    }
+    const updated = await this.scoreResultModel
+      .findOneAndUpdate(
+        {
+          ...ownership,
+          runNo: 1,
+          status: { $in: ['needs_review', 'computed'] },
+          updatedAt: input.expectedUpdatedAt,
+        },
+        {
+          $set: {
+            itemScores: input.itemScores.map((item) => ({
+              ...item,
+              itemResponseId: item.itemResponseId
+                ? new Types.ObjectId(item.itemResponseId)
+                : null,
+            })),
+            groupScores: input.groupScores,
+            totalScore: input.totalScore,
+            status: input.status,
+            scoringSource: input.scoringSource,
+            review: input.review,
+            qualityStatus: input.qualityStatus,
+            metadata: input.metadata,
+          },
+        },
+        { returnDocument: 'after', runValidators: true },
+      )
+      .exec();
+    return updated ? this.mapScoreResult(updated) : null;
+  }
+
+  async confirmScoreResultIfUnmodified(
+    input: ConfirmScoreResultAtomicInput,
+  ): Promise<ScoreResultSummary | null> {
+    const ownership = this.normalizeScoreResultOwnership(input);
+    if (!ownership || !Number.isFinite(input.expectedUpdatedAt.getTime())) {
+      return null;
+    }
+    const updated = await this.scoreResultModel
+      .findOneAndUpdate(
+        {
+          ...ownership,
+          runNo: 1,
+          status: 'computed',
+          updatedAt: input.expectedUpdatedAt,
+        },
+        {
+          $set: {
+            status: 'confirmed',
+            confirmedAt: input.confirmedAt,
+            totalScore: input.totalScore,
+            groupScores: input.groupScores,
+            review: input.review,
+            qualityStatus: 'passed',
+            metadata: input.metadata,
+          },
+        },
+        { returnDocument: 'after', runValidators: true },
+      )
+      .exec();
+    return updated ? this.mapScoreResult(updated) : null;
   }
 
   async createScoreResult(
@@ -563,6 +690,26 @@ export class ScoringService {
     return objectId;
   }
 
+  private normalizeScoreResultOwnership(input: ScoreResultOwnershipInput): {
+    _id: Types.ObjectId;
+    patientId: Types.ObjectId;
+    assessmentVisitId: Types.ObjectId;
+    scaleInstanceId: Types.ObjectId;
+  } | null {
+    const scoreResultId = this.normalizeObjectId(input.scoreResultId);
+    const patientId = this.normalizeObjectId(input.patientId);
+    const assessmentVisitId = this.normalizeObjectId(input.assessmentVisitId);
+    const scaleInstanceId = this.normalizeObjectId(input.scaleInstanceId);
+    return scoreResultId && patientId && assessmentVisitId && scaleInstanceId
+      ? {
+          _id: scoreResultId,
+          patientId,
+          assessmentVisitId,
+          scaleInstanceId,
+        }
+      : null;
+  }
+
   private normalizeItemCode(itemCode: string): string {
     return itemCode.trim().toLowerCase();
   }
@@ -651,7 +798,25 @@ export class ScoringService {
       confirmedAt: scoreResult.confirmedAt ?? null,
       lockedAt: scoreResult.lockedAt ?? null,
       voidedAt: scoreResult.voidedAt ?? null,
+      createdAt: this.readTimestamp(scoreResult, 'createdAt'),
+      updatedAt: this.readTimestamp(scoreResult, 'updatedAt'),
     };
+  }
+
+  private readTimestamp(
+    scoreResult: ScoreResultDocument,
+    path: 'createdAt' | 'updatedAt',
+  ): Date {
+    const candidate = scoreResult as ScoreResultDocument & {
+      createdAt?: unknown;
+      updatedAt?: unknown;
+      get?: (timestampPath: string) => unknown;
+    };
+    const value: unknown = candidate[path] ?? candidate.get?.(path);
+    if (!(value instanceof Date) || !Number.isFinite(value.getTime())) {
+      throw new Error(`ScoreResult ${path} is unavailable`);
+    }
+    return value;
   }
 
   private mapVersionTrace(

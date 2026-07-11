@@ -15,7 +15,7 @@
 - `AssessmentsModule` 当前提供访视 / 量表实例 / 题目作答 Schema、`AssessmentsService`、`AssessmentExecutionService`、`AssessmentScaleWorkflowService`、`AssessmentExecutionDetailService`、`ItemResponseDraftService`，以及 `AssessmentVisitsController` / `AssessmentExecutionController`。A14 在既有四个访视 / 初始化 API 之外新增单实例执行详情与单题草稿 PATCH；不自动修改访视或实例状态。
 - A16 在 `AssessmentsModule` 新增 `ScaleInstanceSubmissionController`、`ScaleInstanceSubmissionService`、纯 readiness evaluator、提交 DTO 与安全公开响应类型；开放 readiness GET 与 submit POST。
 - `MediaModule` 当前在既有媒体证据 Schema / Service 上新增 A15 公开 `MediaEvidenceController`、工作流 Service、安全 mapper、图片与轨迹纯校验；提供题目下列表、multipart 上传、短期签名访问和作废四个接口。
-- `ScoringModule` 当前在计分结果快照 Schema、`ScoringService` 读取 / 创建底座和 `summarizeItemScores()` 通用汇总基础上，提供 A17 `ScoringController`、阶段性 workflow、纯评分引擎与安全 public mapper；公开 compute / latest，但不提供人工复核、确认、锁定、重跑或报告接口。
+- `ScoringModule` 当前在计分结果快照 Schema、`ScoringService` 与 `summarizeItemScores()` 通用汇总基础上，提供 A17 阶段性 workflow、A18 `ScoreReviewWorkflowService`、纯评分 / 人工复核函数与安全 public mapper；公开 compute / latest / manual-review / confirm，不提供 lock、void、重跑、认知域或报告接口。
 - `CognitiveDomainsModule` 当前只提供认知域结果快照 Schema、内部 `CognitiveDomainsService` 读取底座和 `summarizeDomainScores()` 通用认知域汇总纯函数，不提供公开认知域计算触发、查询、复核或报告接口。
 - `ReportsModule` 当前只提供临床报告快照 Schema、内部 `ReportsService` 读取底座和报告状态转换校验纯函数，不提供公开报告生成、查询、医生确认、归档、更正、作废、PDF 导出或 AI 生成接口。
 - `UsersModule` 当前只提供系统账号 `User` Schema 与内部 `UsersService` 读取、规范化和安全 mapper 底座，不提供公开用户管理接口。
@@ -23,10 +23,10 @@
 - OSS 业务上传服务、SMS Service、LLM Service 均未实现。
 - 本地默认后端端口为 `5002`。
 - 本地默认前端 origin 为 `http://localhost:3002`。
-- 当前公共接口在 A16 清单上新增 A17 两个阶段性评分 API；A12-A17 临床接口均显式使用 `SessionAuthGuard` + `RolesGuard`，允许 `admin`、`doctor`、`nurse`、`research_assistant`。
+- 当前公共接口在 A17 清单上新增 A18 两个评分复核 API；A12-A18 临床接口均显式使用 `SessionAuthGuard` + `RolesGuard`，允许 `admin`、`doctor`、`nurse`、`research_assistant`。
 - 已完成后端公共底座基础闭环本地验证：`npm install` 成功、`npm run build` 成功、`npm test -- --runInBand` 成功、`npm run start:prod` 启动成功。
-- 单元测试验证结果为 47 个测试套件通过、408 个测试通过。
-- A12-A17 真实 HTTP E2E 已在 `NODE_ENV=test` 和隔离 `cogmemory_ad_test` 数据库上通过：6 个测试套件、36 个测试通过；使用 fake / stub 外部服务配置和脱敏人工数据，并按各自测试前缀清理运行时数据。
+- 单元测试验证结果为 50 个测试套件通过、426 个测试通过。
+- A12-A18 真实 HTTP E2E 已在 `NODE_ENV=test` 和隔离 `cogmemory_ad_test` 数据库上通过：7 个测试套件、38 个测试通过；使用 fake / stub 外部服务配置和脱敏人工数据，并按各自测试前缀清理运行时数据。
 - 后端 TypeScript 编译根目录为 `.`，`outDir` 保持 `./dist`，因此 `src/main.ts` 编译后的主入口产物为 `dist/src/main.js`。
 - `package.json` 中 `start:prod` 保持指向 `./dist/src/main.js`，当前 build 产物路径已与该启动路径对齐。
 - `tsBuildInfoFile` 保持 `./dist/tsconfig.build.tsbuildinfo`；`dist` 与 `*.tsbuildinfo` 均作为生成物处理，不作为项目源文件纳入版本库。
@@ -43,7 +43,7 @@
 - development / test 默认 `STORAGE_DRIVER=fake`，production 默认 `STORAGE_DRIVER=oss`。
 - OSS、SMS、LLM 配置均为占位或示例口径，不包含真实密钥。
 - A15 媒体业务上传接口已通过既有 fake / OSS Storage abstraction 实现；SMS Service 与 LLM Service 仍未实现，未新增 Storage interface、driver 或配置。
-- 当前 A12-A17 已开放患者 / 访视、目录 / 初始化、执行草稿、媒体证据、submission readiness / submit、阶段性评分 compute / latest API。仍无用户管理、患者 / 访视编辑、批量 / 自动保存、媒体批量 / 分片 / 直传 / 物理删除 / 原子替换、人工评分复核 / 确认、认知域计算、报告、PDF、疾病诊断或 AI。
+- 当前 A12-A18 已开放患者 / 访视、目录 / 初始化、执行草稿、媒体证据、submission readiness / submit、阶段性评分 compute / latest、单题 manual-review 与 ScoreResult confirm API。仍无用户管理、患者 / 访视编辑、批量 / 自动保存、媒体批量 / 分片 / 直传 / 物理删除 / 原子替换、评分 lock / void / 重跑、认知域计算、报告、PDF、疾病诊断或 AI。
 - 当前 `start:prod` 与 TypeScript build 主入口产物路径均指向 `dist/src/main.js`，并已完成本地启动验证。
 - 本次仅使用指定外部 GitHub commit `b302b8af7b7ac9cc558939dc1b38ace0976c65b3` 作为后端公共底座来源，不继承其业务事实。
 
@@ -154,6 +154,12 @@
 - compute 对 computed / needs_review / confirmed / locked 幂等返回；draft / voided 分别拒绝。创建依赖 `{ scaleInstanceId, runNo }` 唯一索引，duplicate key 后重读恢复；不使用 transaction、分布式锁或临时 draft。
 - public mapper 逐字段输出 item / group / total、computation、review 与稳定排序 reviewQueue；不返回原始作答、expectedValue、scoringRule、isCorrect、ItemResponse.score、metadata、qualityHints 或 reviewer 信息。未知 reason / warning 只映射为受控通用值，不原样透传。
 - A17 不修改 Patient、AssessmentVisit、ScaleInstance、ItemResponse、step / prompt 或媒体；不创建 CognitiveDomainResult / ClinicalReport，不执行教育校正、诊断或 AI。
+- A18 新增 `PATCH .../score-results/:scoreResultId/item-scores/:itemResponseId/manual-review` 与 `POST .../score-results/:scoreResultId/confirm`；路径由 `ScoreItemReviewParamDto` / `ScoreResultParamDto` 校验，body 分别为 `ReviewScoreItemDto` / `ConfirmScoreResultDto`，只接收分值 / 意见 / expectedUpdatedAt 或 confirm / 意见 / expectedUpdatedAt。
+- 人工评分仅允许 countsTowardTotal=true 的 needs_review / manual_scored 项目；分值必须是 finite number，并按当前 ScaleVersion item scoreRange 的 min / max / step 验证，0 为合法值。成功后为 manual_scored / operator，保留 A17 reason，调用 `summarizeItemScores(..., { provisional: true })` 重新派生 total / group / scorePercent、result / review / quality 状态与 scoringSource。
+- 每次人工修改向 `metadata.a18ManualReview.events` 追加 UUID 事件并保留其他顶层 metadata；单结果上限 500。内部可保存 previousScoreValue，但 public mapper 只公开每题最新 manualReview 摘要，不公开 metadata、历史事件或 previousScoreValue。非法 legacy metadata 在写入时以 `SCORE_RESULT_METADATA_UNSUPPORTED` 拒绝，在公开读取时安全忽略。
+- latest / compute / manual-review / confirm 安全响应的 scoreResult 均包含 `updatedAt`。两个 A18 写接口以 expectedUpdatedAt 加入完整 ownership + runNo=1 原子过滤；原子 miss 重读并返回 review / confirmation conflict，不自动覆盖其他操作者，不使用 transaction 或分布式锁。
+- 队列清空后结果回到 computed / reviewed / unchecked，仍 isFinal=false；confirm 会实时重新汇总并验证 item range / source、total / groups / scorePercent、A17 warning、Patient / Visit / completed Instance 状态。成功后 status=confirmed、confirmedAt / reviewer / final note 落库、qualityStatus=passed、isFinal=true，并写 `metadata.a18Confirmation` UUID 审计；qualityStatus=passed 只表示评分结果完整性和复核流程通过，不表示疾病结论。
+- confirmed / locked 重复 confirm 返回 alreadyConfirmed=true 且不改审计；受控 metadata 缺失时可从 confirmedAt + review 安全回退，confirmedAt 缺失则 `SCORE_RESULT_CONFIRMATION_AUDIT_UNAVAILABLE`。confirmed 不设置 lockedAt。A18 不修改 Patient、Visit、ScaleInstance、ItemResponse / score / step / prompt / media，不创建 CognitiveDomainResult 或 ClinicalReport。
 
 ## 8. 当前 cognitive-domains 认知域结果模型与通用汇总底座
 
@@ -206,20 +212,20 @@
 
 - 尚无公开用户管理接口、角色权限管理接口、短信验证码接口、OAuth / SSO 接口或密码重置接口。
 - 尚无医生端或患者端业务。
-- 除 A12-A17 已确认 API 外，尚无人工评分复核、认知域或报告业务接口。
+- 除 A12-A18 已确认 API 外，尚无评分 lock / void / 撤销确认 / reopen / 重跑、认知域或报告业务接口。
 - 尚无批量作答、自动保存调度、计时动作、提交撤销 / reopen / lock / force submit 或访视状态流转接口。
 - 媒体当前仅有题目下列表、服务端 multipart 上传、短期签名访问与逻辑作废；尚无全患者 / 访视 / 实例媒体列表、直接 objectKey 下载、永久 URL、物理删除、替换、批量、分片或客户端直传接口。
 - 尚无全量数据库 seed runner、量表管理或完整 MMSE / MoCA 题目配置公开接口；A13 只在初始化时按需物化并提供安全摘要。
-- 已有 A17 阶段性计分 compute / latest；尚无人工题分录入、评分修改、复核提交、确认、锁定、作废、重跑或历史列表接口。
+- 已有 A17 compute / latest 与 A18 单题人工复核 / 确认；尚无批量人工评分、锁定、作废、撤销确认、reopen、重跑或历史列表接口。
 - 尚无公开认知域计算触发、认知域查询、认知域复核或报告接口。
 - 尚无公开报告 API、真实报告生成任务流、医生确认写库流程、报告锁定写库流程、报告归档 / 更正 / 作废接口、PDF / Word / 打印导出、AuditLog 模型或公开认证权限接口。
 - 尚无作答提交后自动计分触发、自动认知域计算触发或真实认知域计算任务流；A17 仅由显式 compute 触发保守通用规则评分，不包含 MMSE / MoCA itemCode 硬编码或专用认知域规则。
 - 尚无短信发送接口。
 - 尚无 AI / LLM 调用接口。
-- 尚无患者编辑 / 删除 / 归档、访视编辑 / 删除 / 状态流转，以及 A15 四个媒体接口之外的量表、作答、媒体、计分、认知域、报告等其他业务 Controller 或公开业务 API。
+- 尚无患者编辑 / 删除 / 归档、访视编辑 / 删除 / 状态流转，以及 A12-A18 已列接口之外的量表、作答、媒体、计分、认知域、报告等其他业务 Controller 或公开业务 API。
 - 尚未实现用户创建、用户更新、用户禁用、重置密码、角色权限管理、短信验证码、OAuth / SSO、JWT 主登录态、前端登录页、前端认证态或权限菜单。
-- A12-A17 真实 HTTP E2E 已执行并通过；连接隔离 `cogmemory_ad_test`，Storage=fake、SMS / LLM=stub，未调用真实 OSS 或生产服务。
-- 已完成 A17 定向 lint、后端 build、全量单元测试与 E2E：47 个单元测试套件 / 408 个测试、6 个 E2E 套件 / 36 个测试通过；全量 lint 未执行。
+- A12-A18 真实 HTTP E2E 已执行并通过；连接隔离 `cogmemory_ad_test`，Storage=fake、SMS / LLM=stub，未调用真实 OSS 或生产服务。
+- 已完成 A18 定向 lint、后端 build、全量单元测试与 E2E：50 个单元测试套件 / 426 个测试、7 个 E2E 套件 / 38 个测试通过；全量 lint 未执行。
 
 ## 12. 后续同步规则
 

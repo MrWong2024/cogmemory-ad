@@ -72,6 +72,8 @@ function resultFixture(
     confirmedAt: null,
     lockedAt: null,
     voidedAt: status === 'voided' ? new Date() : null,
+    createdAt: new Date('2026-07-11T01:00:00.000Z'),
+    updatedAt: new Date('2026-07-11T01:00:00.000Z'),
   };
 }
 
