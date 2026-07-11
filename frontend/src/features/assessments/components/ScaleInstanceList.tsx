@@ -225,7 +225,7 @@ export function ScaleInstanceList({
             </article>
           ))}
           <p className="text-sm leading-6 text-[var(--cma-muted)]">
-            可打开量表进行逐题草稿记录；整份提交、计分和报告仍在后续阶段接入。
+            可打开量表进行逐题记录、评分复核与认知域计算；访视级规则化报告草稿请在本页独立报告区域明确选择范围后生成。
           </p>
         </CardContent>
       )}

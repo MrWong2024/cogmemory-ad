@@ -7,15 +7,15 @@
 ## 2. 当前工程状态
 
 - `frontend\` 根目录公共骨架配置与 `frontend\app` / `frontend\src` 公共底座已初始化。
-- 前端 B1-B8 已落地既有认证、患者 / 访视、执行、媒体、提交、阶段性评分、人工评分与评分确认能力；前端 B9 已在同一量表实例路由接入 A19 latest / compute，完成来源评分依赖、明确确认后首次计算、重叠归因说明、认知域安全展示与贡献定位原题。
+- 前端 B1-B9 已落地既有认证、患者 / 访视、执行、媒体、提交、评分确认与认知域能力；前端 B10 已在既有访视详情路由接入 A20 latest / generate，完成明确 scope、二次确认、规则化报告草稿生成与完整安全展示。
 - 当前首页仍为公共占位，只增加登录页与工作台入口，不调用后端。
 - `/login` 提供账号密码登录，并在登录前通过 `GET /auth/me` 检查已有会话。
 - `/dashboard` 通过 `GET /auth/me` 验证会话、展示当前用户公开信息、提供患者档案入口和登出入口。
 - `/patients/**` 通过轻量认证工作区复用 `useAuth()`；当前包含患者列表 / 创建、患者详情 / 访视列表、访视创建、访视详情 / 量表实例初始化，以及量表实例施测执行页面。
 - Patients API Client 真实调用 A12 五个患者 / 访视 API，支持分页、过滤、GET 请求取消、稳定错误映射和安全请求字段白名单。
-- Assessment Execution API Client 继续调用 A13 / A14 / A16；独立 Provisional Scoring API Client 调用 A17 / A18；独立 Cognitive Domain API Client 调用 A19 latest / compute。写请求逐字段重建白名单且不自动重试，latest 使用各自独立 AbortController。
+- Assessment Execution API Client 继续调用 A13 / A14 / A16；独立 Provisional Scoring、Cognitive Domain 与 Clinical Report API Client 分别调用 A17 / A18、A19 与 A20。写请求逐字段重建白名单且不自动重试，latest 使用各自独立 AbortController。
 - 当前视觉遵循医疗系统 / 临床评估 / 低干扰 / 高可读性 / 冷静可信口径，不继承 ReviewX 视觉风格。
-- 当前没有患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、批量或自动保存、评分 lock / void / rerun、认知域人工修改 / 确认 / 锁定 / 作废 / 重算、报告、AI、用户管理或权限菜单页面；B9 结果不形成临床诊断结论。
+- 当前没有患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、批量或自动保存、评分 lock / void / rerun、认知域人工修改 / 确认 / 锁定 / 作废 / 重算、报告编辑 / 医生确认 / PDF / 重生成、AI、用户管理或权限菜单页面；B10 规则草稿不形成临床诊断结论。
 
 ## 3. 当前已确认前端事实
 
@@ -134,6 +134,11 @@
 - mapping policy 与 interpretation 直接按 A19 口径展示：完整项目分值分别归入每个映射认知域、同题同域由后端去重、多 domain 合法保留；异常 interpretation 显示安全警告且不扩展临床解释。warning 只表述为内部计算提示。
 - 贡献记录仅在 itemResponseId 可匹配当前安全题目时提供“查看原题”，复用分组切换、scrollIntoView 和 focus；null / 无法匹配不按 itemCode 猜测。定位不修改 URL，不清除作答、媒体、人工评分或确认草稿。
 - 认知域主区域固定说明 scorePercent 只是映射项目得分比例、不是疾病概率，domainScores 不可相加解释量表总分，认知域结果不能脱离量表、临床访谈和其他检查单独形成诊断。页面没有认知域编辑、确认、锁定、作废、重算、报告或 AI。
+- B10 latest 在访视详情成功后自动查询一次，拥有 idle / loading / not_found / loaded / forbidden / error 独立状态；量表目录失败不影响报告查询，GET 使用独立 AbortController、无轮询、无自动重试并支持手工重新加载。
+- B10 scope 只来自当前访视实例；completed / locked 为前端候选，draft / in_progress / voided 不可选择。初始不自动勾选，数量限制 1-10、拒绝重复 / 非法 ID，并按 scaleCode / instanceNo / id 稳定顺序发送；没有为 readiness 扇出 A17 / A19 请求。
+- generate 只发送 `confirm: true` 与 `primaryScaleInstanceIds` 白名单，必须完成内联说明与可见 checkbox；生成期间 scope 与量表初始化提交禁用，POST 不自动重试。alreadyGenerated 作为成功回执；scope conflict / voided / generation conflict 自动 latest 一次但不重发 POST。
+- 报告展示覆盖 patient / visit 快照、scaleTraces、score / domain / evidence 快照、五段 narrative、generation 和历史 confirmation。null 不补为 0，不从当前档案补快照，不计算 scorePercent、不跨域求和、不调用媒体预览，不显示内部来源 ID、对象键、scoreDetails、clinicalContext、metadata 或 AI draft。
+- 页面明确 reportVersion 1 scope 固定、system_draft 是系统规则化草稿、draft 尚未经医生确认、本次未使用 AI、认知域未独立确认以及无阈值 / 风险 / 诊断 / 治疗建议；不提供编辑、确认、签名、锁定、归档、更正、作废、重生成、version 2、PDF 或下载。
 - 前端媒体公开类型没有定义 Storage 对象定位、校验和、原始文件名、内部患者关联或删除时间字段；页面也不显示这些字段。
 
 ## 4. 当前文件清单
@@ -179,11 +184,13 @@
 - `frontend\src\features\assessments\types\scale-instance-submission.ts`
 - `frontend\src\features\assessments\types\provisional-scoring.ts`
 - `frontend\src\features\assessments\types\cognitive-domain-result.ts`
+- `frontend\src\features\assessments\types\clinical-report.ts`
 - `frontend\src\features\assessments\lib\score-review-draft.ts`
 - `frontend\src\features\assessments\api\assessment-execution-api.ts`
 - `frontend\src\features\assessments\api\media-evidence-api.ts`
 - `frontend\src\features\assessments\api\provisional-scoring-api.ts`
 - `frontend\src\features\assessments\api\cognitive-domain-api.ts`
+- `frontend\src\features\assessments\api\clinical-report-api.ts`
 - `frontend\src\features\assessments\lib\assessment-execution-display.ts`
 - `frontend\src\features\assessments\lib\item-response-draft.ts`
 - `frontend\src\features\assessments\lib\media-evidence-image.ts`
@@ -192,7 +199,9 @@
 - `frontend\src\features\assessments\lib\scale-instance-submission-display.ts`
 - `frontend\src\features\assessments\lib\provisional-scoring-display.ts`
 - `frontend\src\features\assessments\lib\cognitive-domain-display.ts`
+- `frontend\src\features\assessments\lib\clinical-report-display.ts`
 - `frontend\src\features\assessments\hooks\useCognitiveDomainResult.ts`
+- `frontend\src\features\assessments\hooks\useClinicalReport.ts`
 - `frontend\src\features\assessments\components\AssessmentVisitExecutionPage.tsx`
 - `frontend\src\features\assessments\components\ScaleInstanceList.tsx`
 - `frontend\src\features\assessments\components\ScaleInitializationPanel.tsx`
@@ -210,6 +219,14 @@
 - `frontend\src\features\assessments\components\CognitiveDomainScoreList.tsx`
 - `frontend\src\features\assessments\components\CognitiveDomainContributionList.tsx`
 - `frontend\src\features\assessments\components\CognitiveDomainMappingSummary.tsx`
+- `frontend\src\features\assessments\components\ClinicalReportPanel.tsx`
+- `frontend\src\features\assessments\components\ClinicalReportScopeSelector.tsx`
+- `frontend\src\features\assessments\components\ClinicalReportSnapshotSummary.tsx`
+- `frontend\src\features\assessments\components\ClinicalReportScoreList.tsx`
+- `frontend\src\features\assessments\components\ClinicalReportDomainList.tsx`
+- `frontend\src\features\assessments\components\ClinicalReportEvidenceList.tsx`
+- `frontend\src\features\assessments\components\ClinicalReportNarrative.tsx`
+- `frontend\src\features\assessments\components\ClinicalReportTechnicalSummary.tsx`
 - `frontend\src\features\assessments\components\ScaleExecutionGroupNavigation.tsx`
 - `frontend\src\features\assessments\components\ItemResponseEditor.tsx`
 - `frontend\src\features\assessments\components\ItemStepEditor.tsx`
@@ -300,14 +317,23 @@
 - E2E 与浏览器自动化未执行；浏览器手工联调未执行，A19 真实 HTTP、错误组合、滚动 / focus、窄屏与可访问性行为均待开发者使用脱敏数据验证。
 - 后端命令未执行。
 
+本次 B10 验证结果：
+
+- 未新增自动测试或测试框架；当前前端无既有测试框架，本阶段按边界使用 ESLint、TypeScript 与生产构建验证。
+- `npm run lint`：通过。
+- `npm run typecheck`：通过，Next 16 既有动态路由类型生成成功。
+- `npm run build`：通过，生产构建包含既有访视详情动态路由；B10 未新增路由。
+- E2E 与浏览器自动化未执行；浏览器手工联调未执行，A20 真实 HTTP、全部错误分支、窄屏、键盘与可访问性行为均待开发者使用脱敏数据验证。
+- 后端命令未执行。
+
 ## 6. 当前未实现前端事实
 
 - `/dashboard` 已有患者档案入口，但不是完整医生工作台。
 - 患者编辑 / 删除 / 归档 / 合并尚未实现。
-- 访视编辑 / 删除 / 状态流转尚未实现；访视详情支持查看、初始化量表实例和进入 B4 执行页。
-- B4-B9 已支持安全题目记录、photo / handwriting 证据、完整性检查、正式实例提交、阶段性评分、人工评分、评分确认与认知域结果计算 / 展示；批量 / 自动保存、评分锁定、认知域人工确认与报告尚未实现。
-- 报告生成、医生确认、AI、用户管理、角色权限管理和权限菜单尚未实现。
-- 当前在既有 API 上新增 A19 latest / compute；没有评分 lock / void / reopen / rerun、认知域修改 / 确认 / lock / void / rerun、报告或 AI API 调用。
+- 访视编辑 / 删除 / 状态流转尚未实现；访视详情支持查看、初始化量表实例、进入 B4 执行页以及 B10 访视级报告草稿生成 / 查看。
+- B4-B10 已支持安全题目记录、photo / handwriting 证据、完整性检查、正式实例提交、评分确认、认知域结果和访视级规则化报告草稿；批量 / 自动保存、评分锁定、认知域人工确认仍未实现。
+- 报告编辑、医生确认、签名、锁定、归档、更正、作废、重生成、version 2、PDF / 下载、AI、用户管理、角色权限管理和权限菜单尚未实现。
+- 当前在既有 API 上新增 A20 latest / generate；没有评分 lock / void / reopen / rerun、认知域修改 / 确认 / lock / void / rerun、其他报告写接口或 AI API 调用。
 - 当前不包含路由级服务端认证中间件。
 
 ## 7. 后续同步规则

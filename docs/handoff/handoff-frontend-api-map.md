@@ -323,6 +323,25 @@
 - 错误行为：CONFLICT / VOIDED 自动 GET latest 一次但不重发 POST；SOURCE_SCORE_NOT_FINAL / INVALID / SCORE_RESULT_NOT_FOUND 可由用户手工刷新现有评分 latest，绝不自动确认评分；MAPPING_UNAVAILABLE 不提供客户端映射编辑；FAILED 保留全页并只允许用户手工查询 latest。
 - 数据隔离：不触发 A14 PATCH、A15 写请求、A16 submit、A17 compute 或 A18 manual-review / confirm；不修改 Visit、ScaleInstance 状态、ItemResponse 或 ScoreResult。结果 computed 不等于 confirmed / locked，不生成报告、诊断或 AI。
 
+### 4.26 `getLatestClinicalReport()` -> `GET /patients/:patientId/visits/:visitId/clinical-reports/latest`
+
+- Client / 调用方：独立 `clinical-report-api.ts`，由 `useClinicalReport` 在访视详情成功后自动查询一次；不依赖量表目录，不轮询、不自动重试，支持报告区域手工重新加载。
+- Path / 请求：patientId、visitId 均 `encodeURIComponent()`；无 Query / Body。使用 `frontendEnv.apiBaseUrl`、`credentials: 'include'`、`cache: 'no-store'` 与独立 AbortSignal；新请求取消旧请求、卸载取消、Abort 不显示错误。
+- 响应：`ClinicalReportDetailResponse { report }`。前端类型覆盖真实 report type / status / source / quality、patient / visit snapshot、scaleTrace、score / domain / evidence snapshot、五段 narrative、generation、confirmation 与 Date JSON string / null；不定义内部来源 ID 数组、对象键、scoreDetails、clinicalContext、metadata、AI draft 或 signature。
+- 状态：idle / loading / not_found / loaded / forbidden / error 独立于访视详情和目录。`CLINICAL_REPORT_NOT_FOUND` 是正常 not_found；403 独立显示无权限；其他失败不清除访视详情或实例列表。
+- 错误：401 返回 `/login`；400 validation；404 `PATIENT_NOT_FOUND` / `VISIT_NOT_FOUND` / `CLINICAL_REPORT_NOT_FOUND`；409 `CLINICAL_REPORT_INCOMPLETE`；500 / 网络映射稳定 service error。后端英文 message 不进入 UI。
+
+### 4.27 `generateClinicalReport()` -> `POST /patients/:patientId/visits/:visitId/clinical-reports/generate`
+
+- Client / 调用方：`clinical-report-api.ts` / `useClinicalReport` / `ClinicalReportPanel`。仅 latest=not_found、Visit 为 draft / in_progress / completed、用户已选择 1-10 个 completed / locked 候选且无其他访视写请求时开放内联二次确认；页面不自动 generate。
+- Scope 防御：ID trim + lowercase、严格 24 位 MongoId、数量 1-10、拒绝重复且不静默去重；最终按 scaleCode / instanceNo / id 稳定顺序发送。前端不为 readiness 扇出 A17 / A19，请求后端最终校验 ScoreResult / CognitiveDomainResult / media / version。
+- Path / Body：路径 ID 编码且不进入 body；Client 逐字段重建严格 `{ confirm: true, primaryScaleInstanceIds }`，不发送报告编号、版本、状态、snapshot、narrative、metadata、来源结果 ID、force / regenerate / AI / PDF / diagnosis 等服务器字段。
+- 凭证 / 缓存 / 重试：`credentials: 'include'`、`cache: 'no-store'`、JSON POST；独立写锁禁用重复提交、scope 与量表初始化提交。POST 没有自动重试，也不轮询 latest。
+- 成功：直接使用 `GenerateClinicalReportResponse { report, alreadyGenerated }`；alreadyGenerated=false 显示新 draft 回执，true 作为相同 scope 幂等成功且不再次 POST。成功清空本地 scope / checkbox，不重载页面、不二次 latest、不修改任何来源数据。
+- 错误 code：完整映射 `CLINICAL_REPORT_GENERATION_CONFIRMATION_REQUIRED`、`CLINICAL_REPORT_SCOPE_INVALID`、`PATIENT_NOT_ACTIVE`、`VISIT_NOT_EDITABLE`、`SCALE_INSTANCE_NOT_FOUND`、`SCALE_INSTANCE_CONFIGURATION_UNAVAILABLE`、`CLINICAL_REPORT_SOURCE_SCALE_NOT_READY`、`CLINICAL_REPORT_SOURCE_SCORE_NOT_FINAL`、`CLINICAL_REPORT_SOURCE_DOMAIN_RESULT_REQUIRED`、`CLINICAL_REPORT_SOURCE_DOMAIN_RESULT_INVALID`、`CLINICAL_REPORT_SOURCE_MEDIA_INVALID`、`CLINICAL_REPORT_INPUT_INVALID`、`CLINICAL_REPORT_SCOPE_CONFLICT`、`CLINICAL_REPORT_VOIDED`、`CLINICAL_REPORT_INCOMPLETE`、`CLINICAL_REPORT_GENERATION_CONFLICT`、`CLINICAL_REPORT_GENERATION_FAILED`。
+- 错误行为：scope / source 错误保留合法选择并提供量表入口；SCALE_INSTANCE_NOT_FOUND 提供访视重载；scope conflict / voided / generation conflict 只自动 GET latest 一次，绝不覆盖或重发 POST；incomplete 不伪造报告；401 返回登录，403 仅影响报告区域，网络失败保留 scope。
+- 展示边界：只读展示公开快照、规则正文与审计摘要；system_draft 不写成 AI 或医生确认，quality 不解释患者状态，null 分值不写成 0，不计算 scorePercent、不跨域求和、不调用媒体 API、不输出阈值 / 风险 / 诊断 / 治疗建议。
+
 ## 5. 当前认证公开类型
 
 - `AuthUserResponse`：`id`、`accountName`、`displayName`、`roles`、`permissions`、可选 `userType`。
@@ -353,7 +372,7 @@
 ## 7. 当前未对接 API
 
 - 当前没有 A12 / A13 / A14 已接接口之外的患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转调用。
-- 当前除 A16、A17、A18 manual-review / confirm 与 A19 latest / compute 外，没有撤销提交、reopen、评分 lock / void / rerun / 历史、认知域修改 / 确认 / 锁定 / 作废 / 重算、报告、AI、用户管理、角色权限管理或科研导出 API 调用。
+- 当前除 A16、A17、A18 manual-review / confirm、A19 latest / compute 与 A20 latest / generate 外，没有撤销提交、reopen、评分 lock / void / rerun / 历史、认知域修改 / 确认 / 锁定 / 作废 / 重算、报告编辑 / 确认 / 签名 / 锁定 / 归档 / 更正 / 作废 / 重生成 / version 2 / PDF、AI、用户管理、角色权限管理或科研导出 API 调用。
 - 不得在后端 API 未确认并进入明确任务范围前编造前端对接事实。
 
 ## 8. 后续同步规则

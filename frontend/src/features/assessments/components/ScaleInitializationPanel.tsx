@@ -49,6 +49,7 @@ function getCatalogErrorMessage(error: AssessmentExecutionApiError): string {
 export function ScaleInitializationPanel({
   catalogError,
   existingScaleCodes,
+  externalBusyReason,
   feedback,
   initializingScaleCode,
   isCatalogLoading,
@@ -59,6 +60,7 @@ export function ScaleInitializationPanel({
 }: {
   catalogError: AssessmentExecutionApiError | null;
   existingScaleCodes: ReadonlySet<string>;
+  externalBusyReason: string | null;
   feedback: InitializationFeedback | null;
   initializingScaleCode: string | null;
   isCatalogLoading: boolean;
@@ -137,6 +139,15 @@ export function ScaleInitializationPanel({
           </p>
         ) : null}
 
+        {externalBusyReason ? (
+          <p
+            aria-live="polite"
+            className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-info-soft)] px-4 py-3 text-base leading-7 text-[var(--cma-info)]"
+          >
+            {externalBusyReason}
+          </p>
+        ) : null}
+
         {feedback ? (
           <p
             aria-live={feedback.kind === 'success' ? 'polite' : undefined}
@@ -179,6 +190,7 @@ export function ScaleInitializationPanel({
               const controlsDisabled =
                 isInitialized ||
                 !visitCanInitialize ||
+                externalBusyReason !== null ||
                 isAnyScaleInitializing;
 
               return (
@@ -320,6 +332,8 @@ export function ScaleInitializationPanel({
                           ? '正在初始化...'
                           : !visitCanInitialize
                             ? '当前状态不可初始化'
+                            : externalBusyReason
+                              ? '报告生成期间暂停初始化'
                             : isAnyScaleInitializing
                               ? '等待当前初始化完成'
                               : '初始化量表实例'}

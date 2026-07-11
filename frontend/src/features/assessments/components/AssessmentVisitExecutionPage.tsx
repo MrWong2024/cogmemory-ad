@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { logout } from '@/src/features/auth/api/auth-api';
@@ -24,7 +24,9 @@ import {
   ScaleInitializationPanel,
   type InitializationFeedback,
 } from '@/src/features/assessments/components/ScaleInitializationPanel';
+import { ClinicalReportPanel } from '@/src/features/assessments/components/ClinicalReportPanel';
 import { ScaleInstanceList } from '@/src/features/assessments/components/ScaleInstanceList';
+import { useClinicalReport } from '@/src/features/assessments/hooks/useClinicalReport';
 import {
   assessmentOperatorRoleLabels,
   canInitializeScaleForVisit,
@@ -43,6 +45,7 @@ import {
 import type { AssessmentVisitStatus } from '@/src/features/patients/types/patient';
 
 const mongoIdPattern = /^[a-f\d]{24}$/i;
+const emptyScaleInstances: ScaleInstanceListItem[] = [];
 
 const secondaryLinkClassName =
   'inline-flex min-h-11 items-center justify-center rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-surface)] px-4 py-2 text-base font-semibold text-[var(--cma-text-strong)] transition-colors hover:border-[var(--cma-primary)] hover:bg-[var(--cma-primary-soft)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cma-ring)]';
@@ -182,6 +185,33 @@ export function AssessmentVisitExecutionPage({
     ReadonlySet<string>
   >(() => new Set());
   const [isSigningOut, setIsSigningOut] = useState(false);
+
+  const handleUnauthorized = useCallback(() => {
+    router.replace('/login');
+  }, [router]);
+  const handleRefreshVisitDetail = useCallback(() => {
+    setDetailRetryKey((value) => value + 1);
+  }, []);
+  const detailMatchesRoute =
+    detail !== null &&
+    detail.visit.id.trim().toLowerCase() === visitId.trim().toLowerCase() &&
+    detail.visit.patientId.trim().toLowerCase() ===
+      patientId.trim().toLowerCase();
+  const reportState = useClinicalReport({
+    patientId,
+    visitId,
+    enabled: detailMatchesRoute,
+    visitStatus: detailMatchesRoute ? detail.visit.status : null,
+    scaleInstances: detailMatchesRoute
+      ? detail.scaleInstances
+      : emptyScaleInstances,
+    externalWriteBlockReason: isDetailLoading
+      ? '访视详情正在加载，请等待完成后再生成报告。'
+      : initializingScaleCode !== null
+        ? '量表初始化正在进行，请等待完成后再生成报告。'
+        : null,
+    onUnauthorized: handleUnauthorized,
+  });
 
   useEffect(() => {
     mountedRef.current = true;
@@ -324,6 +354,7 @@ export function AssessmentVisitExecutionPage({
 
     if (
       !detail ||
+      reportState.generating ||
       initializingScaleCodeRef.current !== null ||
       existingScaleCodes.has(normalizedCode) ||
       !canInitializeScaleForVisit(detail.visit.status)
@@ -657,9 +688,23 @@ export function AssessmentVisitExecutionPage({
         visitCanInitialize={visitCanInitialize}
       />
 
+      <ClinicalReportPanel
+        catalog={scales}
+        instances={detail.scaleInstances}
+        onRefreshVisitDetail={handleRefreshVisitDetail}
+        patientId={patientId}
+        reportState={reportState}
+        visitId={visitId}
+      />
+
       <ScaleInitializationPanel
         catalogError={catalogError}
         existingScaleCodes={existingScaleCodes}
+        externalBusyReason={
+          reportState.generating
+            ? '正在生成规则化报告草稿，量表初始化提交已临时停用。'
+            : null
+        }
         feedback={initializationFeedback}
         initializingScaleCode={initializingScaleCode}
         isCatalogLoading={isCatalogLoading}

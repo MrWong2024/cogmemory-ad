@@ -6,12 +6,12 @@
 
 ## 2. 当前状态
 
-- 前端公共底座与 B1-B8 既有闭环已落地；B9 认知域结果计算、重叠归因说明与安全展示已落地。
+- 前端公共底座与 B1-B9 既有闭环已落地；B10 访视级规则化报告草稿生成与安全展示已落地。
 - `frontend\package.json` 已存在，自动验证命令以其中真实脚本为准。
-- B2-B9 不新增测试代码、测试框架、E2E 或第三方依赖。
+- B2-B10 不新增测试代码、测试框架、E2E 或第三方依赖。
 - 当前自动验证覆盖三个认证 API、A12 五个患者 / 访视 API、A13 三个评估初始化前置 API、A14 两个执行草稿 API、A15 四个媒体证据 API、A16 两个提交 API 与 A17 两个阶段性评分 API 的前端类型、调用代码和页面构建；真实 HTTP / 浏览器联调仍需手工验证。
 
-## 3. B1 / B2 / B3 / B4 / B5 / B6 / B7 / B8 / B9 自动验证命令
+## 3. B1 / B2 / B3 / B4 / B5 / B6 / B7 / B8 / B9 / B10 自动验证命令
 
 在 `frontend` 目录、且既有 `node_modules` 存在时执行：
 
@@ -104,6 +104,16 @@
 - 未新增自动测试：当前前端没有既有测试框架，任务明确不新增测试框架或浏览器 E2E；本阶段使用 lint、typecheck 与生产构建验证。
 - E2E / 浏览器自动化：未执行。
 - 浏览器手工验证：未执行，以下 B9 场景均为待验证。
+- 后端命令：未执行。
+
+本次 B10 验证结果：
+
+- `npm run lint`：通过。
+- `npm run typecheck`：通过，Next 16 既有动态路由类型生成成功且 TypeScript 无错误。
+- `npm run build`：通过，生产构建包含既有访视详情动态路由，B10 未新增路由。
+- 未新增自动测试：当前前端没有既有测试框架，任务明确不新增测试框架或浏览器 E2E；本阶段使用 lint、typecheck 与生产构建验证。
+- E2E / 浏览器自动化：未执行。
+- 浏览器手工验证：未执行，以下 B10 场景均为待验证。
 - 后端命令：未执行。
 
 如后续环境中 `frontend/node_modules` 不存在，不得为验证本阶段而执行 `npm install`；应跳过上述命令并说明原因。
@@ -290,7 +300,7 @@ B9 自动验证不覆盖：
 12. 使会话失效后确认页面返回 `/login`，且不无限重试。
 13. 使用无 A13 权限账号确认显示 403，而不是空目录或空实例，并可返回工作台或退出登录。
 14. 模拟患者不存在、访视不存在或归属不符、无效 ID、目录单独失败、量表不可用、目录冲突和服务错误，确认使用稳定中文状态且不展示后端 message。
-15. 确认实例列表提供“打开量表 / 查看量表”入口，但访视详情页自身不读取或保存题目，也没有最终提交、媒体、计分、报告或 AI 操作。
+15. 确认实例列表提供“打开量表 / 查看量表”入口；访视详情页自身不读取或保存题目，B10 报告能力位于独立区域且不触发题目、媒体、评分或认知域写操作。
 
 ## 8. B4 手工验证建议（待验证）
 
@@ -570,7 +580,107 @@ B9 自动验证不覆盖：
 51. 小屏幕认知域区域可正常使用。
 52. 不使用真实患者或医疗数据。
 
-## 14. 认证与安全验证口径
+## 14. B10 手工验证建议（待验证）
+
+1. 访视详情成功后自动查询 report latest。
+2. 量表目录失败不阻止 latest。
+3. latest 无报告显示正常 not_found。
+4. latest 失败不清除访视详情和实例列表。
+5. latest 提供独立手工重试，新请求取消旧请求，Abort 不显示错误。
+6. 页面不自动 generate。
+7. draft 实例不可选择。
+8. in_progress 实例不可选择。
+9. voided 实例不可选择。
+10. completed 实例可作为候选。
+11. locked 实例可作为候选。
+12. completed / locked 不显示成“已满足全部报告条件”。
+13. 初始不自动勾选任何实例。
+14. scope 最少 1 项。
+15. scope 最多 10 项。
+16. 重复 ID 与非法 MongoId 被阻止且不静默去重。
+17. scope 按 scaleCode / instanceNo / id 稳定顺序发送。
+18. 更改 scope 后关闭确认区、清除 checkbox 与旧生成错误。
+19. 全选只由用户触发且最多选择稳定前 10 项。
+20. report loaded 时不显示 scope 控件。
+21. Visit locked 时无首次生成入口。
+22. Visit voided 时无首次生成入口。
+23. 生成前显示 version 1 与 scope 固定性说明。
+24. 生成前显示未使用 AI。
+25. 生成前显示 draft 尚未经医生确认。
+26. 生成前显示非诊断、认知域重叠和媒体仅索引边界。
+27. 未勾选确认 checkbox 不能生成。
+28. generate body 只发送 confirm 与 primaryScaleInstanceIds。
+29. 请求不包含 snapshot、narrative、metadata、状态、版本或服务器编号。
+30. generate 期间 scope 与量表初始化提交真实 disabled。
+31. generate 不自动重试、不轮询、不自动刷新整页。
+32. generate 成功直接展示服务端完整报告。
+33. alreadyGenerated=false 显示首次生成 draft 回执。
+34. alreadyGenerated=true 按成功处理并说明未重复生成。
+35. 相同 scope 不显示为重生成能力。
+36. scope conflict 后自动 latest 一次。
+37. scope conflict 不提供覆盖或改写入口。
+38. voided report 只读且不提供重生成。
+39. generation conflict 后不自动重发 POST。
+40. source scale not ready 保留 scope 与量表查看入口。
+41. source score not final 保留 scope并引导量表评分确认。
+42. source domain result required 不自动调用 A19。
+43. source media invalid 不显示对象键或内部错误猜测。
+44. patient inactive 显示稳定状态且不猜测患者其他状态。
+45. report incomplete 不伪造空报告并提示管理员处理。
+46. draft 显示“规则化报告草稿”。
+47. draft 显示尚未经医生确认，不称为正式报告。
+48. status / isFinal 不一致显示安全警告且不自行纠正。
+49. system_draft 不显示为 AI 或医生确认。
+50. quality passed 只解释流程标记，不显示患者正常。
+51. patientSnapshot 仅显示 subjectCode / displayName / sex / birthDate / educationYears。
+52. patientSnapshot 为 null 不从当前档案补齐。
+53. visitSnapshot 只显示允许字段且不显示 clinicalContext / metadata。
+54. scaleTrace 有合法 ID 时可打开既有单量表路由。
+55. scaleTrace 无 ID 或非法 ID 时不伪造链接。
+56. score null 不显示为 0。
+57. scorePercent 只显示服务端值且不在前端计算。
+58. score summary 显示为规则化安全摘要，不称为医生意见。
+59. domainSnapshot 不编造 minScore。
+60. domainSnapshot 不跨域求和或生成报告级认知域总分。
+61. domain scorePercent 不显示成疾病概率。
+62. evidenceSnapshot 不显示预览、原文件或下载。
+63. evidenceSnapshot 不显示 media / item 内部 ID 或对象键。
+64. narrative 只显示 chief / score / domain / evidence / limitations 五个安全字段。
+65. narrative 使用普通文本且不使用 `dangerouslySetInnerHTML`。
+66. narrative 不出现编辑框或保存入口。
+67. narrative 不显示 trend / recommendation / doctor opinion。
+68. generation.aiUsed=false 显示未使用 AI。
+69. generation=null 时不猜测 AI 使用情况、生成时间或操作者。
+70. generation actor 不重点展示 operatorId。
+71. historical confirmation 只读安全展示公开字段。
+72. confirmed 但 confirmation=null 时不冒充访视操作者。
+73. voided 报告显示公开 voidReason。
+74. report.id 不作为业务编号展示，也没有 reportId 路由。
+75. 页面没有报告编辑按钮。
+76. 页面没有医生确认按钮。
+77. 页面没有签名按钮。
+78. 页面没有 lock / archive / correct / void 按钮。
+79. 页面没有重生成或 version 2。
+80. 页面没有 PDF、打印模板或下载。
+81. 页面没有 AI 操作或 LLM 调用。
+82. 页面不输出阈值、等级、风险、诊断或治疗建议。
+83. A20 401 返回登录页。
+84. A20 403 仅影响报告区域，不伪装成 not_found。
+85. 网络错误保留当前 scope 并提供手工操作。
+86. scope 不写 localStorage / sessionStorage / URL。
+87. 页面刷新后未提交 scope 消失。
+88. 报告区域在小屏幕保持纵向可读且无内容溢出阻断。
+89. checkbox、按钮、量表链接和原生 details 支持键盘。
+90. 没有新增独立报告路由。
+91. 没有调用 A17 / A18 / A19 readiness 扇出或写接口。
+92. 页面与文档没有使用真实患者或医疗数据。
+93. `npm run lint` 通过。
+94. `npm run typecheck` 通过。
+95. `npm run build` 通过。
+
+以上真实浏览器联调尚未执行，不得写成已通过。
+
+## 15. 认证与安全验证口径
 
 - 使用浏览器网络面板确认三个认证请求均携带 credentials 语义，并由浏览器处理 HttpOnly Cookie。
 - 前端代码与存储中不得出现 raw token、token hash、`passwordHash`、JWT 或其他认证凭证。
@@ -587,14 +697,14 @@ B9 自动验证不覆盖：
 - B7 页面不得在 console、存储或 URL 中记录评分结果、reviewQueue、请求体或响应体；compute 只能由独立 API Client 构造 `{ confirm: true }`，不得提交任何分数、规则、状态或服务器字段。
 - B9 页面不得在 console、存储或 URL 中记录认知域结果、贡献、来源评分、请求体或响应体；compute 只能由独立 API Client 构造 `{ confirm: true }`，不得提交 domain、weight、mapping、分数、规则、状态或服务器字段。
 
-## 15. 医疗与隐私展示红线
+## 16. 医疗与隐私展示红线
 
 - 不展示真实用户或患者敏感数据样本。
 - 测试截图不得包含真实姓名、邮箱、身份证号、手机号、病历号、住址、患者资料或真实文件名。
 - 不得在页面文案或测试截图中呈现未经确认的真实医疗诊断结论。
 - 核心认知评估必须保持医护或研究人员陪伴 / 监督的产品边界。
 
-## 16. 后续同步规则
+## 17. 后续同步规则
 
 - 前端新增或调整测试脚本后，应同步更新自动验证命令。
 - 新增页面、路由、组件、API 对接或权限展示后，应同步补充对应验证口径。

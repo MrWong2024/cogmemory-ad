@@ -6,9 +6,9 @@
 
 ## 2. 当前状态
 
-- 当前包含既有公共、认证、患者 / 访视路由与 B4-B9 共用量表实例路由；B9 未新增路由。
+- 当前包含既有公共、认证、患者 / 访视路由与 B4-B9 共用量表实例路由；B10 复用访视详情路由，未新增路由。
 - `/dashboard` 已提供患者档案入口，但仍不是完整医生工作台。
-- 当前不包含患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、独立评分、评分锁定、独立认知域、报告、AI、用户管理或权限菜单路由。
+- 当前不包含患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、独立评分、评分锁定、独立认知域、独立报告详情、AI、用户管理或权限菜单路由。
 - 当前不包含 Next middleware 或路由级服务端认证中间件。
 
 ## 3. 当前路由清单
@@ -91,19 +91,24 @@
 
 ### 3.8 `/patients/[patientId]/visits/[visitId]`
 
-- 页面名称：访视详情与量表初始化
-- 页面职责：展示访视公开详情、已有量表实例安全摘要、MMSE / MoCA 可用目录，并为尚未存在的量表初始化实例
+- 页面名称：访视详情、量表初始化与访视级规则化报告
+- 页面职责：展示访视公开详情、已有量表实例安全摘要和可用目录，初始化量表实例，并在独立报告区域接入 A20 latest / generate、访视级多实例 scope 与完整安全报告展示
 - 动态参数：Server Component 按 Next 16 `params: Promise<{ patientId: string; visitId: string }>` 等待参数后传给 `AssessmentVisitExecutionPage`
 - 访问边界：复用 `/patients/**` 的 `PatientsWorkspaceShell`；不新增 middleware / Provider，不读取 Cookie；后端 Guard 是最终安全边界
-- 数据来源：`GET /patients/:patientId/visits/:visitId`、`GET /scales/available`、`POST /patients/:patientId/visits/:visitId/scale-instances`
-- loading：认证检查由工作区承担；访视详情和量表目录各自独立 loading、AbortController、错误与重试；目录失败仍保留访视和既有实例
+- 数据来源：既有访视详情 / 量表目录 / 初始化请求，以及 `GET .../clinical-reports/latest` 与 `POST .../clinical-reports/generate`
+- loading：认证检查由工作区承担；访视详情、量表目录与报告 latest 各自独立 loading、AbortController、错误与重试；目录或报告失败不移除访视和既有实例
 - 链接无效：任一动态参数不符合 24 位 MongoId 时不发送 A13 请求，显示“访视链接无效”并提供返回入口
 - 401 / 403 / 404：401 返回 `/login`；403 显示无权限及工作台 / 退出登录入口；患者不存在与访视不存在或归属不符使用不同稳定文案
 - 初始化能力：仅 `draft` / `in_progress` 可操作；选择三种已确认施测方式之一，只提交 scaleCode / scaleVersion / administrationMode；已初始化 scaleCode 禁用按钮；重复冲突刷新详情
 - 成功：以服务端返回的 ScaleInstance 更新列表并展示 `createdItemResponseCount` 题目记录骨架数量，不展示 ItemResponse 全量
+- 报告 scope：无报告时由用户从当前访视 completed / locked 实例中明确选择 1-10 项；draft / in_progress / voided 不可选，初始不自动选择。候选状态不等于后端评分 / 认知域 / 媒体前置条件，不扇出 A17 / A19 readiness 请求。
+- 报告生成：用户须阅读 scope 固定、version 1、system_draft、未使用 AI、未医生确认与非诊断说明并勾选 checkbox；POST 只发送 confirm 与稳定排序实例 ID。生成期间禁用 scope 与初始化提交，不自动重试。
+- 报告状态：latest 独立建模 idle / loading / not_found / loaded / forbidden / error；已有报告只提供重新加载。same scope alreadyGenerated 按成功处理；scope conflict / voided / generation conflict 只自动 latest 一次，不覆盖、不重发 POST。
+- 报告展示：只读展示 patient / visit / scale / score / domain / evidence 快照、五段 narrative、generation、历史 confirmation、技术信息与历史纳入范围；scope 固定，后续实例不自动加入。
+- 报告安全：不补齐缺失快照，不重新计算评分 / 比例 / 认知域，不调用媒体预览，不显示内部来源 ID / 对象键 / metadata，不输出诊断阈值、疾病判断或治疗建议。
 - 安全边界：目录不展示完整 groups / items、指导语、答案、scoringRule、expectedValue 或内部 ObjectId；能力标识不表示媒体、手写或计时已实现
-- 当前非目标：不在访视详情内读取或保存题目，不提供整份提交、开始 / 暂停 / 结束、访视状态流转、媒体、计分、认知域、报告或 AI 操作
-- 关联组件：`AssessmentVisitExecutionPage`、`ScaleInstanceList`、`ScaleInitializationPanel`
+- 当前非目标：不在访视详情内读取或保存题目，不提供整份提交、访视状态流转、报告编辑 / 医生确认 / 签名 / 锁定 / 归档 / 更正 / 作废 / 重生成 / version 2 / PDF / 下载或 AI 操作
+- 关联组件：`AssessmentVisitExecutionPage`、`ScaleInstanceList`、`ScaleInitializationPanel`、`useClinicalReport` 与 ClinicalReport 系列组件
 
 ### 3.9 `/patients/[patientId]/visits/[visitId]/scale-instances/[scaleInstanceId]`
 
@@ -147,7 +152,8 @@
 - 非诊断边界：主区域明确结果仅展示项目在认知维度中的映射，不能脱离量表、临床访谈和其他检查单独形成诊断；不输出阈值、等级、疾病概率、报告或 AI 解读。
 - 评分隔离：compute / latest 只允许同步服务端 scaleInstance 摘要，不覆盖 Visit、ItemResponse、作答 / 媒体草稿或 submission readiness，不触发 A14 / A15 写操作
 - 只读：completed / locked / voided 实例仍可查看 readiness、作答和历史证据；submit 期间题目保存、图片 / 手写采集、上传与作废临时真实禁用
-- 当前非目标：不提供批量评分、评分 lock / void / 撤销确认 / reopen / rerun / runNo=2 / 完整历史；不提供认知域人工修改 / 确认 / 锁定 / 作废 / 重算 / weighted mapping 编辑；不提供报告、诊断、OCR 或 AI。
+- 报告入口：单量表页面不生成访视级报告；完成评分确认与认知域计算后返回访视详情页，在独立报告区域选择多实例 scope。
+- 当前非目标：不提供批量评分、评分 lock / void / 撤销确认 / reopen / rerun / runNo=2 / 完整历史；不提供认知域人工修改 / 确认 / 锁定 / 作废 / 重算 / weighted mapping 编辑；不在单量表页提供报告生成、诊断、OCR 或 AI。
 - 关联组件：既有执行与评分组件，以及 `useCognitiveDomainResult`、`CognitiveDomainResultPanel`、`CognitiveDomainScoreList`、`CognitiveDomainContributionList`、`CognitiveDomainMappingSummary`。
 
 ### 3.10 `not-found`

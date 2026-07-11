@@ -445,6 +445,34 @@
 - `lib/cognitive-domain-display.ts`：集中维护 7 个真实 seed domain code 标签、result / mapping / item / review / quality / score source / warning / error 文案、日期 / 有限数值格式与 interpretation 安全检查。
 - 边界：display 不按 scaleCode / itemCode 推断 domain，不计算分数、比例、贡献或诊断，不直接输出未知内部 code。
 
+### 6.45 `useClinicalReport`
+
+- 路径：`frontend\src\features\assessments\hooks\useClinicalReport.ts`
+- 职责：独立管理 A20 idle / loading / not_found / loaded / forbidden / error、latest AbortController、访视级内存 scope、1-10 / 唯一性 / 当前实例校验、内联二次确认、generate 写锁、alreadyGenerated、错误与 conflict 后单次 latest。
+- 自动行为：访视详情成功后只自动 GET latest；没有轮询、GET 自动重试、自动 generate、POST 重试或 A17-A19 readiness 扇出。路由身份 / enabled 变化重置；实例变化只修剪失效 scope 并要求重新核对。
+- 边界：Hook 不渲染 JSX、不计算评分 / 比例 / 认知域、不读取原始作答、不生成 narrative、不修改 Visit / ScaleInstance 或其他来源数据，也不持久化 scope。
+
+### 6.46 `ClinicalReportPanel` 与 `ClinicalReportScopeSelector`
+
+- `ClinicalReportPanel`：组合 latest 独立状态、not_found、scope、二次确认、generate loading / error / 幂等回执、loaded 报告、草稿 / 非 AI / 非诊断声明和所有只读展示组件；403 只影响报告区域。
+- `ClinicalReportScopeSelector`：稳定排序展示当前访视全部实例；completed / locked 候选和其他状态原因均有文字，checkbox 有可见 label，提供用户触发的前 10 项全选、清空、量表链接和 version 1 scope 固定说明。候选不标记为已满足全部报告条件。
+- `AssessmentVisitExecutionPage`：仅承担访视数据到 Hook / Panel 的有限编排；报告区域位于实例列表之后、初始化目录之前。报告生成期间向 `ScaleInitializationPanel` 传递外部写锁，不改变初始化 API。
+
+### 6.47 ClinicalReport 快照、正文与技术组件
+
+- `ClinicalReportSnapshotSummary`：只展示报告生成时 patient / visit 安全快照，null 明确缺失且不从当前档案补齐；组合 score / domain / evidence 子列表。
+- `ClinicalReportScoreList`：展示服务端分值 / 范围 / percent / status / quality / summary；null 不写成 0，不补算 percent，不解释阈值或患者状态。
+- `ClinicalReportDomainList`：复用 B9 `getCognitiveDomainTitle()`，展示 score / max / percent / weighted / count / review / summary，并固定说明重叠归因、跨域不可求和、结果未独立确认与 percent 非诊断概率。
+- `ClinicalReportEvidenceList`：只展示证据类型、采集方式、quality 和安全摘要；不显示图片 / 手写、预览 / 下载、内部 ID 或对象键，不调用媒体 API。
+- `ClinicalReportNarrative`：以普通文本只读展示 chief / score / domain / evidence / limitations 五段；不使用 HTML 注入、不编辑、不自行拼接正文。
+- `ClinicalReportTechnicalSummary`：展示 generation 审计、历史 confirmation 和原生 details 技术摘要 / scaleTraces；合法 scaleInstanceId 才链接既有单量表路由，不重点展示内部报告 id 或操作者 id。
+
+### 6.48 B10 类型、API 与 display 纯函数
+
+- `types/clinical-report.ts`：严格覆盖 A20 公开 enum / response，Date JSON 为 string / null；不定义内部来源 ID 数组、对象键、scoreDetails、clinicalContext、metadata、AI draft、signature 或原始作答。
+- `api/clinical-report-api.ts`：只提供 latest / generate；credentials / no-store、Path 编码、GET AbortSignal、完整 A20 错误映射；generate 再次 trim / lowercase / MongoId / 1-10 / unique 校验并只构造 confirm + IDs 白名单，POST 不重试。
+- `lib/clinical-report-display.ts`：集中维护 type / status / source / quality / patient / visit / operator / confirmation / score / evidence / capture / error 中文标签，日期 / 有限数值 / 百分比安全格式、status / isFinal 一致性和报告边界说明；不计算任何报告事实或诊断解释。
+
 ## 7. 后续同步规则
 
 - 组件事实以实际前端代码和页面使用情况为准。
