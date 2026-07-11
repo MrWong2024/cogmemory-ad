@@ -22,6 +22,7 @@ export function ItemEvidenceRequirements({
   item,
   onDraftChange,
   onEndWrite,
+  onEvidencePersisted,
   onRequirementChange,
   onTryBeginWrite,
   pageReadOnlyReason,
@@ -37,6 +38,7 @@ export function ItemEvidenceRequirements({
     draft: ItemMediaDrafts[SupportedMediaEvidenceType] | null,
   ) => void;
   onEndWrite: (evidenceType: SupportedMediaEvidenceType) => void;
+  onEvidencePersisted: () => void;
   onRequirementChange: (requirement: EvidenceRequirementState) => void;
   onTryBeginWrite: (evidenceType: SupportedMediaEvidenceType) => boolean;
   pageReadOnlyReason: string | null;
@@ -102,6 +104,7 @@ export function ItemEvidenceRequirements({
           item={item}
           onDraftChange={onDraftChange}
           onEndWrite={onEndWrite}
+          onEvidencePersisted={onEvidencePersisted}
           onRequirementChange={onRequirementChange}
           onTryBeginWrite={onTryBeginWrite}
           pageReadOnlyReason={pageReadOnlyReason}

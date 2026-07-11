@@ -6,12 +6,12 @@
 
 ## 2. 当前状态
 
-- 前端公共底座、B1 登录 / 认证接入、B2 患者档案与评估访视最小页面闭环、B3 访视详情与量表实例初始化、B4 量表施测执行与逐题手工草稿保存，以及 B5 photo / handwriting 媒体证据闭环已落地。
+- 前端公共底座、B1 登录 / 认证接入、B2 患者档案与评估访视最小页面闭环、B3 访视详情与量表实例初始化、B4 量表施测执行与逐题手工草稿保存、B5 photo / handwriting 媒体证据闭环，以及 B6 submission readiness 与正式实例提交已落地。
 - `frontend\package.json` 已存在，自动验证命令以其中真实脚本为准。
-- B2 / B3 / B4 / B5 不新增测试代码、测试框架、E2E 或第三方依赖。
-- 当前自动验证覆盖三个认证 API、A12 五个患者 / 访视 API、A13 三个评估初始化前置 API、A14 两个执行草稿 API 与 A15 四个媒体证据 API 的前端类型、调用代码和页面构建；真实 HTTP / 浏览器联调仍需手工验证。
+- B2 / B3 / B4 / B5 / B6 不新增测试代码、测试框架、E2E 或第三方依赖。
+- 当前自动验证覆盖三个认证 API、A12 五个患者 / 访视 API、A13 三个评估初始化前置 API、A14 两个执行草稿 API、A15 四个媒体证据 API 与 A16 两个提交 API 的前端类型、调用代码和页面构建；真实 HTTP / 浏览器联调仍需手工验证。
 
-## 3. B1 / B2 / B3 / B4 / B5 自动验证命令
+## 3. B1 / B2 / B3 / B4 / B5 / B6 自动验证命令
 
 在 `frontend` 目录、且既有 `node_modules` 存在时执行：
 
@@ -66,6 +66,16 @@
 - 浏览器手工验证：未执行，以下 B5 场景均为待验证。
 - 后端命令：未执行。
 
+本次 B6 验证结果：
+
+- `npm run lint`：通过。
+- `npm run typecheck`：通过，Next 16 量表实例执行动态路由类型生成成功且 TypeScript 无错误。
+- `npm run build`：通过，生产构建包含既有量表实例动态路由，B6 未新增路由。
+- 未新增自动测试：当前前端没有既有测试框架，任务明确不新增测试框架或浏览器 E2E；本阶段继续使用 lint、typecheck 与生产构建验证。
+- E2E / 浏览器自动化：未执行；本阶段明确不执行浏览器 E2E。
+- 浏览器手工验证：未执行，以下 B6 场景均为待验证。
+- 后端命令：未执行。
+
 如后续环境中 `frontend/node_modules` 不存在，不得为验证本阶段而执行 `npm install`；应跳过上述命令并说明原因。
 
 ## 4. 自动验证覆盖范围
@@ -118,7 +128,7 @@ B4 自动验证不覆盖：
 
 - 真实 A14 HTTP、数据库写入、测试用户、HttpOnly Cookie、CORS、浏览器导航、GET 取消与 PATCH 竞态联调。
 - 浏览器 beforeunload 的实际提示样式与触发策略；该行为由浏览器决定。
-- B4 当时不覆盖媒体；媒体静态路径现由下方 B5 验证覆盖。整份量表最终提交、批量或自动保存、实时计时、计分、认知域、报告或 AI 仍未实现。
+- B4 当时不覆盖媒体与整份量表提交；对应静态路径现分别由下方 B5、B6 验证覆盖。批量或自动保存、实时计时、计分、认知域、报告或 AI 仍未实现。
 
 B5 静态与构建验证额外覆盖：
 
@@ -130,7 +140,19 @@ B5 自动验证不覆盖：
 
 - 真实 A15 HTTP、Storage、测试用户、Cookie / CORS、浏览器文件解码差异、移动端 capture 提示、触控笔 / 触屏 Pointer Events、临时 URL 域名与过期行为。
 - 浏览器 Canvas 输出的临床可读性、不同源图格式兼容性、真实网络竞态、作废后重传和 beforeunload 提示；均需使用脱敏人工测试数据手工验证。
-- 整份量表最终提交、自动保存、评分、认知域、报告、OCR、图像识别或 AI；这些能力未实现。
+- B5 当时不覆盖整份量表最终提交；该静态路径现由下方 B6 验证覆盖。自动保存、评分、认知域、报告、OCR、图像识别或 AI 仍未实现。
+
+B6 静态与构建验证额外覆盖：
+
+- A16 安全类型、两个 API Client 方法、GET AbortSignal、submit confirm 白名单、7 个提交业务错误映射和 POST 不重试路径的 lint 与类型检查。
+- submission 展示纯函数、面板、issue 列表、readiness stale、本地 dirty / 写请求阻断、内联 checkbox、submit 临时只读、服务端状态合并、幂等回执和题目定位代码路径。
+- 同一 B4 / B5 动态路由的 B6 集成；B6 未新增路由、依赖、BFF、middleware、持久化状态或配置。
+
+B6 自动验证不覆盖：
+
+- 真实 A16 HTTP、数据库状态迁移、Cookie / CORS、并发提交、已提交历史审计差异、滚动 / focus 和浏览器可访问性行为。
+- 真实本地草稿与上传竞态、submit 期间各浏览器控件 disabled 表现、网络中断后的服务器最终状态；均需使用脱敏人工测试数据手工验证。
+- 自动或手工评分、认知域、访视完成 / 锁定、报告、撤销 / reopen / lock / force submit 或 AI；这些能力未实现。
 
 ## 5. B1 手工验证建议
 
@@ -269,10 +291,51 @@ B5 自动验证不覆盖：
 36. 患者非 active 或 Storage 异常时显示稳定提示并保留本地待上传草稿。
 37. 上传与作废请求不自动重试；分组切换期间同题同类型写锁仍阻止第二个写请求。
 38. 页面与公开类型不显示内部对象定位、Storage bucket / credential、校验和、原始文件名、任意 metadata / qualityHints 或内部归属字段。
-39. 页面没有最终提交、评分、OCR、报告或 AI 入口，也不调用相关接口。
+39. 媒体子组件自身不调用提交、评分、OCR、报告或 AI 接口；正式提交只由 B6 主执行页交互触发。
 40. 全部验证使用脱敏人工测试图片与手写内容，不使用真实医疗数据。
 
-## 10. 认证与安全验证口径
+## 10. B6 手工验证建议（待验证）
+
+前置条件：后端已启动，使用脱敏人工测试账号和测试患者 / 访视 / MMSE / MoCA 实例；不得使用真实患者或医疗数据。以下场景本次未执行，均待开发者本地验证：
+
+1. 打开未完成 MMSE / MoCA 实例。
+2. readiness 在执行详情成功后独立自动加载。
+3. 初始阻断问题和九项统计与服务器数据一致。
+4. readiness 失败只影响提交面板，不影响题目、作答草稿与媒体历史展示。
+5. 问题列表不显示作答、正确答案、expectedValue 或评分。
+6. “定位题目”能切换分组、滚动并将键盘焦点移到题目容器。
+7. scale_instance scope 问题不显示错误的题目定位操作。
+8. 未保存作答存在时禁止进入有效确认和发送 POST。
+9. 未上传媒体草稿存在时禁止进入有效确认和发送 POST。
+10. 题目 PATCH 成功后 readiness 标记过期，纯本地输入不自动请求 readiness。
+11. 媒体上传或作废成功后 readiness 标记过期；列表 / 预览 GET 不标记过期。
+12. 重新检查取消旧 GET 并使用最新服务器状态；取消请求不显示错误。
+13. blocking issue 阻止提交，页面没有忽略或 force 操作。
+14. warning 不阻止提交，并可独立展开查看。
+15. readiness ready=true、canSubmitNow=true、无 blocking 且无本地阻断时出现确认区。
+16. 未勾选确认 checkbox 时“确认正式提交”不可用。
+17. submit 期间题目编辑 / 保存、图片采集、手写画布、上传和作废全部真实禁用。
+18. submit 成功后页面立即变为 completed 只读，不整页重载。
+19. submit 成功后历史题目作答和媒体证据仍可查看。
+20. submit 成功后不跳转评分、报告或 AI 页面，也不修改访视状态。
+21. 当前会话 submission 回执的 submittedAt、operatorName、operatorRole、durationSource 正确，submissionId 仅弱化展示。
+22. 并发已提交返回 alreadySubmitted=true 时作为成功处理并说明未重复写入。
+23. completed 实例刷新后不自动调用 submit POST。
+24. completed 实例无当前会话回执时不把施测 operatorSnapshot 冒充提交操作者。
+25. locked / voided 实例不显示可用提交按钮，仍可查看 readiness 与历史。
+26. patient_inactive / visit_not_editable 显示 canSubmitNow=false 且不能提交。
+27. `SCALE_INSTANCE_NOT_READY` 后自动刷新一次 readiness，但不自动再次 POST。
+28. `SCALE_INSTANCE_SUBMISSION_CONFLICT` 后刷新服务器状态，但不自动再次 POST。
+29. readiness 或 submit 的 401 返回登录页。
+30. readiness 或 submit 的 403 显示无权限，不伪装成空检查结果。
+31. readiness / submit 服务错误保留当前题目、作答草稿、媒体草稿和确认说明；POST 不自动重试。
+32. 页面没有 force submit、ignore issues、撤销、reopen 或 lock 入口。
+33. 页面不显示 score、isCorrect、scoreValue、scoringRule、expectedValue 或正确答案。
+34. 问题定位跨分组后其他分组的作答与媒体草稿没有丢失。
+35. B6 没有新增路由、修改 URL 或增加路由参数。
+36. 全部验证使用脱敏人工测试数据，不使用真实患者或医疗信息。
+
+## 11. 认证与安全验证口径
 
 - 使用浏览器网络面板确认三个认证请求均携带 credentials 语义，并由浏览器处理 HttpOnly Cookie。
 - 前端代码与存储中不得出现 raw token、token hash、`passwordHash`、JWT 或其他认证凭证。
@@ -287,14 +350,14 @@ B5 自动验证不覆盖：
 - B4 页面不得在 console、存储或 URL 中记录作答草稿、患者、访视、实例、请求体或响应体；PATCH body 必须是变化白名单，不能包含服务器控制字段。
 - B5 页面不得在 console、存储或 URL 中记录源 File、JPEG / PNG Blob、轨迹、短期 URL、请求体或响应体；multipart 只能由 API Client 逐字段构造，不能手工设置 multipart Content-Type。
 
-## 11. 医疗与隐私展示红线
+## 12. 医疗与隐私展示红线
 
 - 不展示真实用户或患者敏感数据样本。
 - 测试截图不得包含真实姓名、邮箱、身份证号、手机号、病历号、住址、患者资料或真实文件名。
 - 不得在页面文案或测试截图中呈现未经确认的真实医疗诊断结论。
 - 核心认知评估必须保持医护或研究人员陪伴 / 监督的产品边界。
 
-## 12. 后续同步规则
+## 13. 后续同步规则
 
 - 前端新增或调整测试脚本后，应同步更新自动验证命令。
 - 新增页面、路由、组件、API 对接或权限展示后，应同步补充对应验证口径。

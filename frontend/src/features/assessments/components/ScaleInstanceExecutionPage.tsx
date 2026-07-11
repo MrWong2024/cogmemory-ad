@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { Badge, type BadgeTone } from '@/src/components/ui/Badge';
@@ -16,13 +16,16 @@ import {
 import {
   AssessmentExecutionApiError,
   getScaleInstanceExecutionDetail,
+  getScaleInstanceSubmissionReadiness,
   saveItemResponseDraft,
+  submitScaleInstance,
 } from '@/src/features/assessments/api/assessment-execution-api';
 import {
   ItemResponseEditor,
   type ItemSaveFeedback,
 } from '@/src/features/assessments/components/ItemResponseEditor';
 import { ScaleExecutionGroupNavigation } from '@/src/features/assessments/components/ScaleExecutionGroupNavigation';
+import { ScaleInstanceSubmissionPanel } from '@/src/features/assessments/components/ScaleInstanceSubmissionPanel';
 import {
   assessmentOperatorRoleLabels,
   buildScaleExecutionGroupSections,
@@ -47,6 +50,14 @@ import type {
   SupportedMediaEvidenceType,
 } from '@/src/features/assessments/types/media-evidence';
 import type { ScaleInstanceExecutionDetailResponse } from '@/src/features/assessments/types/item-response-execution';
+import {
+  getScaleSubmissionApiErrorMessage,
+} from '@/src/features/assessments/lib/scale-instance-submission-display';
+import type {
+  ScaleInstanceSubmissionAudit,
+  ScaleSubmissionIssue,
+  ScaleSubmissionReadinessResponse,
+} from '@/src/features/assessments/types/scale-instance-submission';
 import { logout } from '@/src/features/auth/api/auth-api';
 import {
   assessmentVisitStatusLabels,
@@ -209,6 +220,13 @@ export function ScaleInstanceExecutionPage({
   const mountedRef = useRef(true);
   const savingItemIdsRef = useRef(new Set<string>());
   const mediaWritingKeysRef = useRef(new Set<string>());
+  const readinessControllerRef = useRef<AbortController | null>(null);
+  const readinessRef = useRef<ScaleSubmissionReadinessResponse | null>(null);
+  const localBlockersRef = useRef({
+    unsavedAnswerItemCount: 0,
+    pendingMediaItemCount: 0,
+  });
+  const submittingRef = useRef(false);
   const idsAreValid =
     mongoIdPattern.test(patientId) &&
     mongoIdPattern.test(visitId) &&
@@ -234,28 +252,121 @@ export function ScaleInstanceExecutionPage({
   const [retryKey, setRetryKey] = useState(0);
   const [activeGroupCode, setActiveGroupCode] = useState('');
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const [readiness, setReadiness] =
+    useState<ScaleSubmissionReadinessResponse | null>(null);
+  const [readinessError, setReadinessError] =
+    useState<AssessmentExecutionApiError | null>(null);
+  const [isReadinessLoading, setIsReadinessLoading] = useState(false);
+  const [readinessStale, setReadinessStale] = useState(false);
+  const [submissionReceipt, setSubmissionReceipt] =
+    useState<ScaleInstanceSubmissionAudit | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
+  const [submissionStatus, setSubmissionStatus] = useState<string | null>(null);
+  const [confirmationVisible, setConfirmationVisible] = useState(false);
+  const [pendingFocusItemId, setPendingFocusItemId] = useState<string | null>(
+    null,
+  );
+
+  const loadSubmissionReadiness = useCallback(async () => {
+    readinessControllerRef.current?.abort();
+    const controller = new AbortController();
+    readinessControllerRef.current = controller;
+    setIsReadinessLoading(true);
+    setReadinessError(null);
+
+    try {
+      const response = await getScaleInstanceSubmissionReadiness(
+        patientId,
+        visitId,
+        scaleInstanceId,
+        { signal: controller.signal },
+      );
+
+      if (controller.signal.aborted || !mountedRef.current) {
+        return null;
+      }
+
+      readinessRef.current = response;
+      setReadiness(response);
+      setReadinessStale(false);
+      setConfirmationVisible(false);
+      setDetail((current) =>
+        current
+          ? {
+              ...current,
+              scaleInstance: response.scaleInstance,
+            }
+          : current,
+      );
+      return response;
+    } catch (requestError: unknown) {
+      if (controller.signal.aborted || !mountedRef.current) {
+        return null;
+      }
+
+      const error =
+        requestError instanceof AssessmentExecutionApiError
+          ? requestError
+          : new AssessmentExecutionApiError('unknown');
+
+      if (error.kind === 'unauthenticated') {
+        router.replace('/login');
+        return null;
+      }
+
+      setReadinessError(error);
+      return null;
+    } finally {
+      if (readinessControllerRef.current === controller) {
+        readinessControllerRef.current = null;
+      }
+
+      if (!controller.signal.aborted && mountedRef.current) {
+        setIsReadinessLoading(false);
+      }
+    }
+  }, [patientId, router, scaleInstanceId, visitId]);
 
   useEffect(() => {
     mountedRef.current = true;
 
     return () => {
       mountedRef.current = false;
+      readinessControllerRef.current?.abort();
+      readinessControllerRef.current = null;
     };
   }, []);
 
   useEffect(() => {
     if (!idsAreValid) {
+      readinessControllerRef.current?.abort();
+      readinessRef.current = null;
       setDetail(null);
       setDrafts({});
       setMediaDrafts({});
+      setReadiness(null);
+      setReadinessError(null);
+      setIsReadinessLoading(false);
+      setSubmissionReceipt(null);
       setDetailError(new AssessmentExecutionApiError('validation', 400));
       setIsLoading(false);
       return;
     }
 
     const controller = new AbortController();
+    readinessControllerRef.current?.abort();
+    readinessRef.current = null;
     setIsLoading(true);
     setDetailError(null);
+    setReadiness(null);
+    setReadinessError(null);
+    setIsReadinessLoading(false);
+    setReadinessStale(false);
+    setSubmissionReceipt(null);
+    setSubmissionError(null);
+    setSubmissionStatus(null);
+    setConfirmationVisible(false);
 
     void getScaleInstanceExecutionDetail(
       patientId,
@@ -277,6 +388,7 @@ export function ScaleInstanceExecutionPage({
         setMediaDrafts({});
         setFeedbacks({});
         setActiveGroupCode(sections[0]?.code ?? '');
+        void loadSubmissionReadiness();
       })
       .catch((requestError: unknown) => {
         if (controller.signal.aborted) {
@@ -307,7 +419,15 @@ export function ScaleInstanceExecutionPage({
       });
 
     return () => controller.abort();
-  }, [idsAreValid, patientId, retryKey, router, scaleInstanceId, visitId]);
+  }, [
+    idsAreValid,
+    loadSubmissionReadiness,
+    patientId,
+    retryKey,
+    router,
+    scaleInstanceId,
+    visitId,
+  ]);
 
   const sections = useMemo(
     () =>
@@ -344,6 +464,61 @@ export function ScaleInstanceExecutionPage({
   }, [detail, mediaDrafts]);
 
   useEffect(() => {
+    localBlockersRef.current = {
+      unsavedAnswerItemCount,
+      pendingMediaItemCount,
+    };
+  }, [pendingMediaItemCount, unsavedAnswerItemCount]);
+
+  useEffect(() => {
+    if (!pendingFocusItemId) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      const element = document.getElementById(
+        `submission-item-${pendingFocusItemId}`,
+      );
+
+      if (!element) {
+        setSubmissionStatus(
+          '未能定位该题目，请重新加载量表后再试。',
+        );
+        setPendingFocusItemId(null);
+        return;
+      }
+
+      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      element.focus({ preventScroll: true });
+      setPendingFocusItemId(null);
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeGroupCode, pendingFocusItemId]);
+
+  useEffect(() => {
+    if (
+      detail?.scaleInstance.status === 'completed' &&
+      !submissionReceipt &&
+      (unsavedAnswerItemCount > 0 ||
+        pendingMediaItemCount > 0 ||
+        savingItemIds.size > 0 ||
+        mediaWritingKeys.size > 0)
+    ) {
+      setSubmissionStatus(
+        '实例已被其他操作完成，本地未保存内容无法继续提交；这些内容不会被静默清除。',
+      );
+    }
+  }, [
+    detail?.scaleInstance.status,
+    mediaWritingKeys.size,
+    pendingMediaItemCount,
+    savingItemIds.size,
+    submissionReceipt,
+    unsavedAnswerItemCount,
+  ]);
+
+  useEffect(() => {
     if (unsavedAnswerItemCount === 0 && pendingMediaItemCount === 0) {
       return;
     }
@@ -372,7 +547,19 @@ export function ScaleInstanceExecutionPage({
     }
   }
 
+  function markReadinessStale() {
+    if (readinessRef.current) {
+      setReadinessStale(true);
+    }
+    setConfirmationVisible(false);
+    setSubmissionError(null);
+  }
+
   function handleDraftChange(itemResponseId: string, draft: ItemDraftState) {
+    if (submittingRef.current) {
+      return;
+    }
+
     setDrafts((current) => ({ ...current, [itemResponseId]: draft }));
     setFeedbacks((current) => ({
       ...current,
@@ -385,6 +572,10 @@ export function ScaleInstanceExecutionPage({
     evidenceType: SupportedMediaEvidenceType,
     mediaDraft: MediaEvidenceDraft | null,
   ) {
+    if (submittingRef.current) {
+      return;
+    }
+
     const key = buildMediaDraftKey(itemResponseId, evidenceType);
     setMediaDrafts((current) => {
       const next = { ...current };
@@ -432,13 +623,21 @@ export function ScaleInstanceExecutionPage({
     });
   }
 
+  function handleEvidencePersisted() {
+    if (!mountedRef.current) {
+      return;
+    }
+
+    markReadinessStale();
+  }
+
   function handleBeginMediaWrite(
     itemResponseId: string,
     evidenceType: SupportedMediaEvidenceType,
   ): boolean {
     const key = buildMediaDraftKey(itemResponseId, evidenceType);
 
-    if (mediaWritingKeysRef.current.has(key)) {
+    if (submittingRef.current || mediaWritingKeysRef.current.has(key)) {
       return false;
     }
 
@@ -463,7 +662,11 @@ export function ScaleInstanceExecutionPage({
     itemResponseId: string,
     markAsAnswered: boolean,
   ) {
-    if (!detail || savingItemIdsRef.current.has(itemResponseId)) {
+    if (
+      !detail ||
+      submittingRef.current ||
+      savingItemIdsRef.current.has(itemResponseId)
+    ) {
       return;
     }
 
@@ -562,6 +765,7 @@ export function ScaleInstanceExecutionPage({
             : '本题草稿已保存。',
         },
       }));
+      markReadinessStale();
     } catch (requestError: unknown) {
       if (!mountedRef.current) {
         return;
@@ -593,6 +797,181 @@ export function ScaleInstanceExecutionPage({
           next.delete(itemResponseId);
           return next;
         });
+      }
+    }
+  }
+
+  function handleLocateSubmissionIssue(issue: ScaleSubmissionIssue) {
+    if (!issue.itemResponseId) {
+      return;
+    }
+
+    const section = sections.find((candidate) =>
+      candidate.itemResponses.some((item) => item.id === issue.itemResponseId),
+    );
+
+    if (!section) {
+      setSubmissionStatus('未能定位该题目，请重新加载量表后再试。');
+      return;
+    }
+
+    setSubmissionStatus(null);
+    setActiveGroupCode(section.code);
+    setPendingFocusItemId(issue.itemResponseId);
+  }
+
+  function hasLocalSubmissionBlockers(): boolean {
+    return (
+      localBlockersRef.current.unsavedAnswerItemCount > 0 ||
+      localBlockersRef.current.pendingMediaItemCount > 0 ||
+      savingItemIdsRef.current.size > 0 ||
+      mediaWritingKeysRef.current.size > 0
+    );
+  }
+
+  async function handlePrepareSubmission() {
+    if (submittingRef.current) {
+      return;
+    }
+
+    setConfirmationVisible(false);
+    setSubmissionError(null);
+    setSubmissionStatus(null);
+    const latest = await loadSubmissionReadiness();
+
+    if (!latest || !mountedRef.current) {
+      return;
+    }
+
+    if (hasLocalSubmissionBlockers()) {
+      setSubmissionStatus(
+        '服务器检查已更新，但本地仍有尚未保存或正在写入的内容，请先完成保存或上传。',
+      );
+      return;
+    }
+
+    if (
+      latest.ready &&
+      latest.canSubmitNow &&
+      latest.blockingIssues.length === 0
+    ) {
+      setConfirmationVisible(true);
+      setSubmissionStatus(
+        latest.warnings.length > 0
+          ? `服务器检查已通过；当前有 ${latest.warnings.length} 条不阻断警告，请核对后确认。`
+          : '服务器检查已通过，可以进行正式提交确认。',
+      );
+      return;
+    }
+
+    setSubmissionStatus('当前尚未满足正式提交条件，请处理阻断问题后重新检查。');
+  }
+
+  async function handleConfirmSubmission() {
+    const latest = readinessRef.current;
+
+    if (
+      submittingRef.current ||
+      !latest ||
+      readinessStale ||
+      hasLocalSubmissionBlockers() ||
+      !latest.ready ||
+      !latest.canSubmitNow ||
+      latest.blockingIssues.length > 0
+    ) {
+      setConfirmationVisible(false);
+      setSubmissionError(
+        '当前提交依据已变化，请保存本地内容并重新检查提交条件。',
+      );
+      return;
+    }
+
+    submittingRef.current = true;
+    setIsSubmitting(true);
+    setSubmissionError(null);
+    setSubmissionStatus(null);
+
+    try {
+      const response = await submitScaleInstance(
+        patientId,
+        visitId,
+        scaleInstanceId,
+        { confirm: true },
+      );
+
+      if (!mountedRef.current) {
+        return;
+      }
+
+      readinessRef.current = response.readiness;
+      setDetail((current) =>
+        current
+          ? {
+              ...current,
+              scaleInstance: response.scaleInstance,
+            }
+          : current,
+      );
+      setReadiness(response.readiness);
+      setReadinessError(null);
+      setReadinessStale(false);
+      setSubmissionReceipt(response.submission);
+      setConfirmationVisible(false);
+      setSubmissionStatus(
+        response.submission.alreadySubmitted
+          ? '服务器确认该量表实例此前已经提交，本次没有重复写入。'
+          : '量表实例已正式提交并切换为只读；本阶段未执行评分，访视状态未改变。',
+      );
+
+      if (hasLocalSubmissionBlockers()) {
+        setSubmissionStatus(
+          '量表实例已完成；当前仍有本地未保存内容，无法继续保存，且这些内容没有被静默清除。',
+        );
+      }
+    } catch (requestError: unknown) {
+      if (!mountedRef.current) {
+        return;
+      }
+
+      const error =
+        requestError instanceof AssessmentExecutionApiError
+          ? requestError
+          : new AssessmentExecutionApiError('unknown');
+
+      if (error.kind === 'unauthenticated') {
+        router.replace('/login');
+        return;
+      }
+
+      setSubmissionError(getScaleSubmissionApiErrorMessage(error.kind));
+
+      const refreshKinds = new Set<AssessmentExecutionApiError['kind']>([
+        'scale_instance_not_ready',
+        'scale_instance_submission_conflict',
+        'scale_instance_not_submittable',
+        'scale_instance_submission_audit_unavailable',
+      ]);
+
+      if (refreshKinds.has(error.kind)) {
+        setConfirmationVisible(false);
+        await loadSubmissionReadiness();
+      } else if (
+        error.kind === 'scale_instance_start_time_invalid' ||
+        error.kind === 'scale_instance_submission_confirmation_required'
+      ) {
+        setConfirmationVisible(false);
+      } else if (
+        error.kind === 'scale_instance_submission_failed' ||
+        error.kind === 'service_unavailable' ||
+        error.kind === 'unknown'
+      ) {
+        setReadinessStale(true);
+      }
+    } finally {
+      submittingRef.current = false;
+
+      if (mountedRef.current) {
+        setIsSubmitting(false);
       }
     }
   }
@@ -662,6 +1041,9 @@ export function ScaleInstanceExecutionPage({
     visit.status,
     scaleInstance.status,
   );
+  const effectiveReadOnlyReason = isSubmitting
+    ? '正在正式提交量表，暂时不能修改记录。'
+    : readOnlyReason;
   const progressPercent =
     scaleInstance.progress.totalItemCount > 0
       ? Math.min(
@@ -681,6 +1063,7 @@ export function ScaleInstanceExecutionPage({
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone="info">量表施测执行</Badge>
             {readOnlyReason ? <Badge tone="warning">只读查看</Badge> : null}
+            {isSubmitting ? <Badge tone="warning">正在正式提交</Badge> : null}
             <Badge tone={unsavedAnswerItemCount > 0 ? 'warning' : 'success'}>
               未保存作答：{unsavedAnswerItemCount} 题
             </Badge>
@@ -717,7 +1100,7 @@ export function ScaleInstanceExecutionPage({
       </header>
 
       <p className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-info-soft)] px-5 py-4 text-base leading-7 text-[var(--cma-info)]">
-        核心认知量表应由医护或研究人员陪伴或监督完成。本页支持逐题原始作答草稿，以及 photo / handwriting 证据采集、预览和作废；整份量表提交、评分、认知域、报告与 AI 仍未实现。
+        核心认知量表应由医护或研究人员陪伴或监督完成。当前已支持提交完整性检查与正式完成量表实例；评分、认知域、报告与 AI 仍未实现。
       </p>
 
       {readOnlyReason ? (
@@ -873,6 +1256,37 @@ export function ScaleInstanceExecutionPage({
         </Card>
       </div>
 
+      <ScaleInstanceSubmissionPanel
+        activeAnswerWriteCount={savingItemIds.size}
+        activeMediaWriteCount={mediaWritingKeys.size}
+        completedAt={scaleInstance.completedAt}
+        confirmationVisible={confirmationVisible}
+        localUnsavedAnswerCount={unsavedAnswerItemCount}
+        onConfirmSubmit={() => void handleConfirmSubmission()}
+        onLocateIssue={handleLocateSubmissionIssue}
+        onPrepareSubmit={() => void handlePrepareSubmission()}
+        onRefresh={() => {
+          setSubmissionError(null);
+          setSubmissionStatus(null);
+          setConfirmationVisible(false);
+          void loadSubmissionReadiness();
+        }}
+        pendingMediaCount={pendingMediaItemCount}
+        readOnlyReason={readOnlyReason}
+        readiness={readiness}
+        readinessError={
+          readinessError
+            ? getScaleSubmissionApiErrorMessage(readinessError.kind)
+            : null
+        }
+        readinessLoading={isReadinessLoading}
+        readinessStale={readinessStale}
+        statusMessage={submissionStatus}
+        submissionError={submissionError}
+        submissionReceipt={submissionReceipt}
+        submitting={isSubmitting}
+      />
+
       <Card>
         <CardHeader className="border-b border-[var(--cma-line)]">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -949,45 +1363,53 @@ export function ScaleInstanceExecutionPage({
               }
 
               return (
-                <ItemResponseEditor
-                  draft={draft}
-                  feedback={feedbacks[item.id] ?? null}
-                  isDirty={itemDraftHasChanges(item, draft)}
-                  isSaving={savingItemIds.has(item.id)}
-                  item={item}
+                <div
+                  aria-label={`第 ${item.itemOrder} 题定位区域`}
+                  className="scroll-mt-4 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-[var(--cma-ring)]"
+                  id={`submission-item-${item.id}`}
                   key={item.id}
-                  mediaDrafts={getItemMediaDrafts(mediaDrafts, item.id)}
-                  mediaWritingTypes={getItemMediaWritingTypes(
-                    mediaWritingKeys,
-                    item.id,
-                  )}
-                  onChange={(nextDraft) =>
-                    handleDraftChange(item.id, nextDraft)
-                  }
-                  onEvidenceRequirementChange={(requirement) =>
-                    handleEvidenceRequirementChange(item.id, requirement)
-                  }
-                  onEndMediaWrite={(evidenceType) =>
-                    handleEndMediaWrite(item.id, evidenceType)
-                  }
-                  onMediaDraftChange={(evidenceType, mediaDraft) =>
-                    handleMediaDraftChange(
+                  tabIndex={-1}
+                >
+                  <ItemResponseEditor
+                    draft={draft}
+                    feedback={feedbacks[item.id] ?? null}
+                    isDirty={itemDraftHasChanges(item, draft)}
+                    isSaving={savingItemIds.has(item.id)}
+                    item={item}
+                    mediaDrafts={getItemMediaDrafts(mediaDrafts, item.id)}
+                    mediaWritingTypes={getItemMediaWritingTypes(
+                      mediaWritingKeys,
                       item.id,
-                      evidenceType,
-                      mediaDraft ?? null,
-                    )
-                  }
-                  onTryBeginMediaWrite={(evidenceType) =>
-                    handleBeginMediaWrite(item.id, evidenceType)
-                  }
-                  onSave={(markAsAnswered) =>
-                    handleSaveItem(item.id, markAsAnswered)
-                  }
-                  pageReadOnlyReason={readOnlyReason}
-                  patientId={patientId}
-                  scaleInstanceId={scaleInstanceId}
-                  visitId={visitId}
-                />
+                    )}
+                    onChange={(nextDraft) =>
+                      handleDraftChange(item.id, nextDraft)
+                    }
+                    onEvidenceRequirementChange={(requirement) =>
+                      handleEvidenceRequirementChange(item.id, requirement)
+                    }
+                    onEvidencePersisted={handleEvidencePersisted}
+                    onEndMediaWrite={(evidenceType) =>
+                      handleEndMediaWrite(item.id, evidenceType)
+                    }
+                    onMediaDraftChange={(evidenceType, mediaDraft) =>
+                      handleMediaDraftChange(
+                        item.id,
+                        evidenceType,
+                        mediaDraft ?? null,
+                      )
+                    }
+                    onTryBeginMediaWrite={(evidenceType) =>
+                      handleBeginMediaWrite(item.id, evidenceType)
+                    }
+                    onSave={(markAsAnswered) =>
+                      handleSaveItem(item.id, markAsAnswered)
+                    }
+                    pageReadOnlyReason={effectiveReadOnlyReason}
+                    patientId={patientId}
+                    scaleInstanceId={scaleInstanceId}
+                    visitId={visitId}
+                  />
+                </div>
               );
             })
           ) : (

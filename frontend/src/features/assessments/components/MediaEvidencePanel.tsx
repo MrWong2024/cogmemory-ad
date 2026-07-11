@@ -66,6 +66,7 @@ export function MediaEvidencePanel({
   item,
   onDraftChange,
   onEndWrite,
+  onEvidencePersisted,
   onRequirementChange,
   onTryBeginWrite,
   pageReadOnlyReason,
@@ -81,6 +82,7 @@ export function MediaEvidencePanel({
     draft: ItemMediaDrafts[SupportedMediaEvidenceType] | null,
   ) => void;
   onEndWrite: (evidenceType: SupportedMediaEvidenceType) => void;
+  onEvidencePersisted: () => void;
   onRequirementChange: (requirement: EvidenceRequirementState) => void;
   onTryBeginWrite: (evidenceType: SupportedMediaEvidenceType) => boolean;
   pageReadOnlyReason: string | null;
@@ -236,6 +238,7 @@ export function MediaEvidencePanel({
 
       onRequirementChange(response.evidenceRequirement);
       onDraftChange(evidenceType, null);
+      onEvidencePersisted();
 
       if (mountedRef.current) {
         setItems((current) => mergeEvidence(current, response.mediaEvidence));
@@ -325,6 +328,7 @@ export function MediaEvidencePanel({
       );
 
       onRequirementChange(response.evidenceRequirement);
+      onEvidencePersisted();
 
       if (mountedRef.current) {
         setItems((current) => mergeEvidence(current, response.mediaEvidence));

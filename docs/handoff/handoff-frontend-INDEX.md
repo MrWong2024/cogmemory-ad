@@ -10,17 +10,17 @@
 
 本文档是 CogMemory AD 前端 handoff 文档入口，用于索引前端事实快照、设计基线、路由、API 对接、组件和验证手册。
 
-当前内容记录前端公共底座、B1 认证接入、B2 患者档案与评估访视最小页面闭环、B3 访视详情与量表实例初始化、B4 量表施测执行与逐题手工作答草稿保存，以及 B5 题目 photo / handwriting 媒体证据闭环。当前仍未实现患者完整管理、整份量表最终提交、自动或手工评分、认知域、报告、AI、用户管理或权限菜单。
+当前内容记录前端公共底座、B1 认证接入、B2 患者档案与评估访视最小页面闭环、B3 访视详情与量表实例初始化、B4 量表施测执行与逐题手工作答草稿保存、B5 题目 photo / handwriting 媒体证据闭环，以及 B6 submission readiness、问题定位和正式实例提交。当前仍未实现患者完整管理、自动或手工评分、认知域、报告、AI、用户管理或权限菜单。
 
 ## 3. 当前状态
 
 - `frontend\` 根目录公共骨架配置与 `frontend\app` / `frontend\src` 公共底座已初始化。
-- 前端已从 B1 认证接入底座、B2 患者 / 访视最小业务闭环、B3 量表实例初始化和 B4 真实单题草稿记录推进到 B5 photo / handwriting 证据采集阶段。
+- 前端已从 B1 认证接入底座、B2 患者 / 访视最小业务闭环、B3 量表实例初始化、B4 真实单题草稿记录和 B5 photo / handwriting 证据采集推进到 B6 完整性检查与正式实例提交阶段。
 - 当前路由包含 `/login`、`/dashboard`、`/patients`、`/patients/new`、`/patients/[patientId]`、`/patients/[patientId]/visits/new`、`/patients/[patientId]/visits/[visitId]` 与 `/patients/[patientId]/visits/[visitId]/scale-instances/[scaleInstanceId]`。
 - 当前已新增 Auth 类型、Auth API Client、`useAuth()` 认证状态 Hook、`LoginForm` 和 `AuthDashboard`。
 - 当前已新增 patients feature：患者 / 访视公开类型、Patients API Client、展示与日期纯函数、认证工作区、患者列表 / 创建 / 详情及访视列表 / 创建组件。
-- 当前 assessments feature 已包含 A13 / A14 / A15 安全公开类型、评估与媒体 API Client、草稿转换、photo Canvas 重编码、handwriting 轨迹纯函数、访视详情与初始化、实例入口、分组导航、题目编辑、单题保存和媒体证据组件。
-- 当前前端对接三个 Auth API、A12 五个业务 API、A13 三个初始化前置 API、A14 两个执行草稿 API，以及 A15 的题目媒体列表、multipart 上传、短期访问地址与作废四个接口。
+- 当前 assessments feature 已包含 A13 / A14 / A15 / A16 安全公开类型、评估与媒体 API Client、草稿转换、photo Canvas 重编码、handwriting 轨迹纯函数、submission 展示纯函数、访视详情与初始化、实例入口、分组导航、题目编辑、单题保存、媒体证据、提交面板和 issue 列表组件。
+- 当前前端对接三个 Auth API、A12 五个业务 API、A13 三个初始化前置 API、A14 两个执行草稿 API、A15 的题目媒体列表 / multipart 上传 / 短期访问地址 / 作废四个接口，以及 A16 readiness / submit 两个接口。
 - Auth、Patients 与 Assessment Execution API Client 均使用 `frontendEnv.apiBaseUrl`、`credentials: 'include'` 和 `cache: 'no-store'`。
 - 主登录态由后端 Session + HttpOnly Cookie 维护；前端不读取 Cookie，不保存 raw token、token hash 或 `passwordHash`，也不使用 localStorage / sessionStorage 保存认证凭证。
 - `/dashboard` 已提供真实患者档案入口，但仍是轻量工作区入口，不是完整医生工作台。
@@ -32,8 +32,9 @@
 - 当前不包含 Next middleware、完整前端权限矩阵、角色权限管理页面或权限菜单。
 - 当前首页仍为公共占位，只增加 `/login` 与 `/dashboard` 入口，不调用后端。
 - 页面继续遵循医疗系统 / 临床评估 / 低干扰 / 高可读性 / 冷静可信设计基线，不继承 ReviewX 视觉风格。
-- B5 未新增测试代码、测试框架或第三方依赖；lint、typecheck 与 build 结果记录在事实快照和验证手册，真实浏览器联调仍待执行。
-- 当前仍未实现患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、整份量表最终提交、批量或自动保存、评分、认知域、报告、AI、用户管理或权限菜单。
+- B5 / B6 未新增测试代码、测试框架或第三方依赖；lint、typecheck 与 build 结果记录在事实快照和验证手册，真实浏览器联调仍待执行。
+- B6 在既有执行页接入 A16 两个接口，支持独立 readiness 错误 / 重试、统计、阻断问题、警告、题目定位、readiness stale、本地 dirty / 写请求阻断、内联二次确认、提交写锁、completed 只读和当前会话幂等回执；形成“逐题记录 → 媒体证据 → 完整性检查 → 实例提交”闭环。
+- 当前仍未实现患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、批量或自动保存、评分、认知域、报告、AI、用户管理或权限菜单。
 
 ## 4. 必读基础文档
 

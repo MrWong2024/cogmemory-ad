@@ -14,6 +14,11 @@ import type {
   UpdateItemTimingDraftRequest,
   UpdatePromptResponseDraftRequest,
 } from '@/src/features/assessments/types/item-response-execution';
+import type {
+  ScaleSubmissionReadinessResponse,
+  SubmitScaleInstanceRequest,
+  SubmitScaleInstanceResponse,
+} from '@/src/features/assessments/types/scale-instance-submission';
 
 export type AssessmentExecutionApiErrorKind =
   | 'unauthenticated'
@@ -33,6 +38,13 @@ export type AssessmentExecutionApiErrorKind =
   | 'scale_instance_not_found'
   | 'scale_instance_not_editable'
   | 'scale_instance_configuration_unavailable'
+  | 'scale_instance_not_submittable'
+  | 'scale_instance_not_ready'
+  | 'scale_instance_start_time_invalid'
+  | 'scale_instance_submission_confirmation_required'
+  | 'scale_instance_submission_conflict'
+  | 'scale_instance_submission_audit_unavailable'
+  | 'scale_instance_submission_failed'
   | 'visit_not_editable'
   | 'item_response_not_found'
   | 'item_response_not_editable'
@@ -116,6 +128,16 @@ function mapHttpError(
     SCALE_INSTANCE_NOT_EDITABLE: 'scale_instance_not_editable',
     SCALE_INSTANCE_CONFIGURATION_UNAVAILABLE:
       'scale_instance_configuration_unavailable',
+    SCALE_INSTANCE_NOT_SUBMITTABLE: 'scale_instance_not_submittable',
+    SCALE_INSTANCE_NOT_READY: 'scale_instance_not_ready',
+    SCALE_INSTANCE_START_TIME_INVALID: 'scale_instance_start_time_invalid',
+    SCALE_INSTANCE_SUBMISSION_CONFIRMATION_REQUIRED:
+      'scale_instance_submission_confirmation_required',
+    SCALE_INSTANCE_SUBMISSION_CONFLICT:
+      'scale_instance_submission_conflict',
+    SCALE_INSTANCE_SUBMISSION_AUDIT_UNAVAILABLE:
+      'scale_instance_submission_audit_unavailable',
+    SCALE_INSTANCE_SUBMISSION_FAILED: 'scale_instance_submission_failed',
     ITEM_RESPONSE_NOT_FOUND: 'item_response_not_found',
     ITEM_RESPONSE_NOT_EDITABLE: 'item_response_not_editable',
     ITEM_RESPONSE_EMPTY_PATCH: 'item_response_empty_patch',
@@ -255,6 +277,44 @@ export async function getScaleInstanceExecutionDetail(
   );
 
   return readJson<ScaleInstanceExecutionDetailResponse>(response);
+}
+
+export async function getScaleInstanceSubmissionReadiness(
+  patientId: string,
+  visitId: string,
+  scaleInstanceId: string,
+  options: RequestOptions = {},
+): Promise<ScaleSubmissionReadinessResponse> {
+  const response = await assessmentExecutionFetch(
+    `/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/scale-instances/${encodeURIComponent(scaleInstanceId)}/submission-readiness`,
+    {
+      method: 'GET',
+      signal: options.signal,
+    },
+  );
+
+  return readJson<ScaleSubmissionReadinessResponse>(response);
+}
+
+export async function submitScaleInstance(
+  patientId: string,
+  visitId: string,
+  scaleInstanceId: string,
+  input: SubmitScaleInstanceRequest,
+): Promise<SubmitScaleInstanceResponse> {
+  const requestBody: SubmitScaleInstanceRequest = { confirm: input.confirm };
+  const response = await assessmentExecutionFetch(
+    `/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/scale-instances/${encodeURIComponent(scaleInstanceId)}/submit`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    },
+  );
+
+  return readJson<SubmitScaleInstanceResponse>(response);
 }
 
 function buildStepRequest(

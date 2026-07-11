@@ -6,13 +6,13 @@
 
 ## 2. 当前状态与边界
 
-- 前端 B1 已新增 `frontend\src\features\auth\api\auth-api.ts`；B2 已新增 `frontend\src\features\patients\api\patients-api.ts`；B3 / B4 使用 `frontend\src\features\assessments\api\assessment-execution-api.ts` 对接评估执行 API；B5 新增 `frontend\src\features\assessments\api\media-evidence-api.ts` 对接题目媒体证据 API。
-- 当前对接后端 A11 三个认证 API、A12 五个患者 / 访视 API、A13 三个评估初始化前置 API、A14 两个评估执行草稿 API与 A15 四个题目媒体证据 API，不调用其他业务 API。
+- 前端 B1 已新增 `frontend\src\features\auth\api\auth-api.ts`；B2 已新增 `frontend\src\features\patients\api\patients-api.ts`；B3 / B4 / B6 使用 `frontend\src\features\assessments\api\assessment-execution-api.ts` 对接评估执行与实例提交 API；B5 新增 `frontend\src\features\assessments\api\media-evidence-api.ts` 对接题目媒体证据 API。
+- 当前对接后端 A11 三个认证 API、A12 五个患者 / 访视 API、A13 三个评估初始化前置 API、A14 两个评估执行草稿 API、A15 四个题目媒体证据 API与 A16 两个实例提交 API，不调用其他业务 API。
 - API Client 使用 `frontendEnv.apiBaseUrl` 作为后端基础地址。
 - 所有请求统一使用 `credentials: 'include'`，由浏览器携带或接收 HttpOnly Cookie。
 - 所有认证、患者和访视请求使用 `cache: 'no-store'`。
 - 前端不读取 Cookie，不保存 token，不使用 JWT，也不记录密码或认证响应体。
-- 当前没有 BFF 代理；B1 / B2 / B3 / B4 / B5 按明确任务口径由浏览器直接请求既有公开 API base URL。
+- 当前没有 BFF 代理；B1 / B2 / B3 / B4 / B5 / B6 按明确任务口径由浏览器直接请求既有公开 API base URL。
 
 ## 3. 环境变量读取
 
@@ -20,7 +20,7 @@
 - 读取项：既有 `NEXT_PUBLIC_API_BASE_URL`
 - 安全默认值：`http://localhost:5002`
 - 导出对象：`frontendEnv.apiBaseUrl`
-- B1 / B2 / B3 / B4 / B5 未新增、删除或修改环境变量与环境变量文件。
+- B1 / B2 / B3 / B4 / B5 / B6 未新增、删除或修改环境变量与环境变量文件。
 
 ## 4. 当前 API 对接清单
 
@@ -230,6 +230,27 @@
 - 错误：401 返回登录；403 显示无权限；404 归属 / `MEDIA_EVIDENCE_NOT_FOUND` 提示重新加载；409 的患者 / 访视 / 实例 / 题目只读 code 显示稳定原因，`MEDIA_EVIDENCE_NOT_VOIDABLE` 提示刷新列表；500 `MEDIA_EVIDENCE_VOID_FAILED` 显示作废失败；网络错误不自动重试。
 - 隔离边界：作废不调用物理删除或替换接口，不触发 A14 PATCH、progress、题目状态、访视 / 实例状态或评分变化。
 
+### 4.18 `getScaleInstanceSubmissionReadiness()` -> `GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/submission-readiness`
+
+- Client / 调用方：`assessment-execution-api.ts`，由 `ScaleInstanceExecutionPage` 调用，展示由 `ScaleInstanceSubmissionPanel` 与 `ScaleSubmissionIssueList` 承担。
+- Path / 请求：patientId、visitId、scaleInstanceId 全部 `encodeURIComponent()`；无 Query / Body。执行详情成功后独立自动读取；“重新检查”和“检查并准备提交”每次重新读取服务器状态。
+- 响应：`ScaleSubmissionReadinessResponse`，包含安全 `scaleInstance`、string `checkedAt`、ready、canSubmitNow、submissionState / 可选 stateReason、summary、blockingIssues 与 warnings；成功只合并 `detail.scaleInstance`，不覆盖 itemResponses、drafts 或 mediaDrafts。
+- 凭证 / 缓存 / 取消：`frontendEnv.apiBaseUrl`、`credentials: 'include'`、`cache: 'no-store'`、AbortSignal。readiness 使用独立 AbortController；新请求取消旧请求，卸载取消，Abort 不显示错误；GET 不自动重试。
+- 错误：400 validation；401 返回 `/login`；403 明确显示无检查 / 提交权限且不伪装为空结果；404 `PATIENT_NOT_FOUND`、`VISIT_NOT_FOUND`、`SCALE_INSTANCE_NOT_FOUND`；409 `SCALE_INSTANCE_CONFIGURATION_UNAVAILABLE`；网络 / 未知错误保留题目、作答草稿与媒体区域并提供提交面板手工重试。
+- issue UI：前端按全部 15 个受控 code 映射稳定中文主文案；只展示 itemCode、crfCode、itemTitle、itemOrder、groupCode、missingItemCodes、unexpectedItemCodes、missingStepCodes、requiredEvidenceMode、requiredEvidenceTypes 等安全辅助字段。后端 message 仅保留在类型契约中，不作为主要或唯一文案。
+- stale / 隔离：A14 PATCH、A15 上传或作废成功后旧结果标记过期；本地输入、媒体列表 GET 和访问 URL GET 不自动读取 readiness。GET 不写数据库，不返回作答原文、正确答案、expectedValue、评分、mediaEvidenceId 或 metadata。
+
+### 4.19 `submitScaleInstance()` -> `POST /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/submit`
+
+- Client / 调用方：`assessment-execution-api.ts` / `ScaleInstanceExecutionPage`；仅在用户完成最新 readiness、满足服务器和本地条件并勾选内联确认后调用。页面加载、readiness 刷新或 completed 历史查看不会调用 POST。
+- Path / Body：三个路径 ID 全部编码；`SubmitScaleInstanceRequest` 严格为 `{ confirm: true }`，API Client 再次构造同一白名单，不接受或透传 status、时间、操作者、progress、metadata、score、force、ignoreIssues、itemResponses、evidence、Visit 状态等字段。
+- 响应：`SubmitScaleInstanceResponse { scaleInstance, submission, readiness }`；submission 包含 string submittedAt、安全 submittedBy、alreadySubmitted、durationSource 与弱化的 submissionId。成功只替换当前 detail.scaleInstance、readiness 和页面内存 receipt，不修改 detail.visit、itemResponses 或本地草稿，不重新加载或跳转。
+- 凭证 / 缓存 / 重试：`credentials: 'include'`、`cache: 'no-store'`、JSON POST。POST 不自动重试；提交期间使用单一写锁禁用题目保存、媒体采集、上传和作废，并在卸载后停止 setState。
+- 业务 code：`SCALE_INSTANCE_NOT_SUBMITTABLE`、`SCALE_INSTANCE_NOT_READY`、`SCALE_INSTANCE_START_TIME_INVALID`、`SCALE_INSTANCE_SUBMISSION_CONFIRMATION_REQUIRED`、`SCALE_INSTANCE_SUBMISSION_CONFLICT`、`SCALE_INSTANCE_SUBMISSION_AUDIT_UNAVAILABLE`、`SCALE_INSTANCE_SUBMISSION_FAILED` 全部映射稳定中文；继续复用 `PATIENT_NOT_ACTIVE`、`VISIT_NOT_EDITABLE`、资源不存在、validation、401 / 403、service_unavailable。
+- 错误行为：NOT_READY 自动刷新一次 readiness 但不重提；CONFLICT / NOT_SUBMITTABLE 刷新服务器状态且不重提；START_TIME_INVALID 关闭确认；AUDIT_UNAVAILABLE 显示审计不完整并刷新只读状态，不猜测操作者或时间；SUBMISSION_FAILED / 网络未知保留页面并将 readiness 标记过期，要求手工重新检查。
+- 幂等 / 历史：`alreadySubmitted=true` 作为成功处理并切换只读，不重复 POST。completed 初始页面只显示 completedAt；当前会话没有 receipt 时明确只读 API 未提供历史提交操作者，不以 `operatorSnapshot` 冒充。
+- 安全边界：没有 force / ignore / override；blocking 不能绕过，warning 不阻断；不修改 Visit 或 ItemResponse，不执行评分、认知域、报告或 AI。
+
 ## 5. 当前认证公开类型
 
 - `AuthUserResponse`：`id`、`accountName`、`displayName`、`roles`、`permissions`、可选 `userType`。
@@ -250,11 +271,13 @@
 - `item-response-execution.ts` 定义 A14 安全响应和 PATCH 白名单类型；所有 Date JSON 字段使用 `string | null`，不定义 scoringRule、expectedValue、score、isCorrect、scoreValue、metadata、qualityControlHints 或内部配置引用。
 - `media-evidence.ts` 定义 A15 安全公开响应、access asset、requirement 状态和上传白名单；所有 Date JSON 字段使用 `string` / `string | null`。该类型没有内部患者 / 访视 / 实例 / 题目关联、对象定位、Storage credential、源文件名、校验和、任意 metadata 或删除时间字段。
 - `MediaEvidenceApiError.kind` 覆盖 unauthenticated / forbidden / validation、完整资源 / 状态 code、文件 / 轨迹 / captureMode code、重复 / 不可访问 / 不可作废、Storage、创建 / 关联 / 作废内部失败、网络错误和 unknown；UI 不直接显示后端英文 message。
+- B6 新增 `scale-instance-submission.ts`：Date JSON 字段均为 string / string | null；类型定义 15 个 issue code、8 个 submissionState、summary、安全提交操作者和严格 `{ confirm: true }`。不定义作答原文、评分、expectedValue、mediaEvidenceId 或 metadata。
+- `AssessmentExecutionApiError.kind` 新增 `scale_instance_not_submittable`、`scale_instance_not_ready`、`scale_instance_start_time_invalid`、`scale_instance_submission_confirmation_required`、`scale_instance_submission_conflict`、`scale_instance_submission_audit_unavailable`、`scale_instance_submission_failed`，对应全部 A16 提交业务 code。
 
 ## 7. 当前未对接 API
 
 - 当前没有 A12 / A13 / A14 已接接口之外的患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转调用。
-- 当前没有整份量表最终提交、ItemResponse 批量或自动保存、量表开始 / 暂停 / 结束、媒体批量 / 分片 / 客户端直传 / 替换 / 物理删除、质量审核、OCR、计分、认知域、报告、AI、用户管理、角色权限管理或科研导出 API 调用。
+- 当前除 A16 readiness 与 submit 外，没有撤销提交、reopen、lock、force submit、ItemResponse 批量或自动保存、量表开始 / 暂停 / 结束、访视完成、媒体批量 / 分片 / 客户端直传 / 替换 / 物理删除、质量审核、OCR、计分、认知域、报告、AI、用户管理、角色权限管理或科研导出 API 调用。
 - 不得在后端 API 未确认并进入明确任务范围前编造前端对接事实。
 
 ## 8. 后续同步规则

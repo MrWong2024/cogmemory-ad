@@ -7,15 +7,15 @@
 ## 2. 当前工程状态
 
 - `frontend\` 根目录公共骨架配置与 `frontend\app` / `frontend\src` 公共底座已初始化。
-- 前端 B1 已落地登录页、认证状态 Hook、Auth API Client 和受保护工作台入口；前端 B2 已落地患者档案与评估访视最小页面闭环；前端 B3 已落地访视详情与量表实例初始化；前端 B4 已落地量表施测执行页与逐题手工作答草稿保存；前端 B5 已在同一执行页落地 photo / handwriting 媒体证据采集、预览与作废闭环。
+- 前端 B1 已落地登录页、认证状态 Hook、Auth API Client 和受保护工作台入口；前端 B2 已落地患者档案与评估访视最小页面闭环；前端 B3 已落地访视详情与量表实例初始化；前端 B4 已落地量表施测执行页与逐题手工作答草稿保存；前端 B5 已在同一执行页落地 photo / handwriting 媒体证据采集、预览与作废闭环；前端 B6 已在同一路由落地 A16 readiness、问题定位和正式实例提交。
 - 当前首页仍为公共占位，只增加登录页与工作台入口，不调用后端。
 - `/login` 提供账号密码登录，并在登录前通过 `GET /auth/me` 检查已有会话。
 - `/dashboard` 通过 `GET /auth/me` 验证会话、展示当前用户公开信息、提供患者档案入口和登出入口。
 - `/patients/**` 通过轻量认证工作区复用 `useAuth()`；当前包含患者列表 / 创建、患者详情 / 访视列表、访视创建、访视详情 / 量表实例初始化，以及量表实例施测执行页面。
 - Patients API Client 真实调用 A12 五个患者 / 访视 API，支持分页、过滤、GET 请求取消、稳定错误映射和安全请求字段白名单。
-- Assessment Execution API Client 真实调用 A13 三个 API 与 A14 两个 API；执行详情 GET 使用 AbortController，初始化 POST 与单题 PATCH 均不自动重试，写请求均重新构造白名单字段。
+- Assessment Execution API Client 真实调用 A13 三个、A14 两个与 A16 两个 API；执行详情和 readiness GET 使用独立 AbortController，初始化 POST、单题 PATCH 与 submit POST 均不自动重试，写请求均重新构造白名单字段。
 - 当前视觉遵循医疗系统 / 临床评估 / 低干扰 / 高可读性 / 冷静可信口径，不继承 ReviewX 视觉风格。
-- 当前没有患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、整份量表最终提交、批量或自动保存、自动或手工计分、认知域结果、报告、AI、用户管理或权限菜单页面。
+- 当前没有患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、批量或自动保存、自动或手工计分、认知域结果、报告、AI、用户管理或权限菜单页面；B6 完成的是 ScaleInstance，不完成 Visit。
 
 ## 3. 当前已确认前端事实
 
@@ -41,14 +41,16 @@
   - `PaginationControls`、`PatientStatusBadge`：patients feature 内局部复用组件。
 - 当前 assessments feature 包含：
   - `types/assessment-execution.ts`：按 JSON 传输事实定义安全量表目录、访视执行详情、量表实例摘要和初始化白名单类型。
-  - `api/assessment-execution-api.ts`：只对接 A13 三个 API 与 A14 两个 API，统一 credentials / no-store、GET AbortSignal、POST / PATCH 白名单和业务错误码映射。
+  - `api/assessment-execution-api.ts`：对接 A13 三个、A14 两个和 A16 两个 API，统一 credentials / no-store、GET AbortSignal、POST / PATCH 白名单和业务错误码映射；submit 只重建 `{ confirm: true }` 且不重试。
   - `lib/assessment-execution-display.ts`：集中维护施测方式、实例状态、操作者角色、能力摘要、用时和访视初始化状态纯函数。
   - `components/AssessmentVisitExecutionPage.tsx`：独立管理访视详情与目录加载、401 / 403 / not-found、初始化与重复冲突刷新。
   - `components/ScaleInstanceList.tsx`：展示实例进度、操作者、状态时间与版本追溯安全摘要，不展示 ItemResponse。
   - `components/ScaleInitializationPanel.tsx`：展示安全量表目录、施测方式选择、禁用规则和初始化反馈。
   - `types/item-response-execution.ts`：严格对齐 A14 安全执行详情、单题 PATCH 白名单与 JSON 传输日期口径，不定义答案或评分字段。
   - `lib/item-response-draft.ts`：负责服务端题目到本地草稿、字段级 dirty、数值 / 时间转换、有效作答判断与差异 PATCH 构建。
-  - `components/ScaleInstanceExecutionPage.tsx`：管理 A14 GET、分组切换、本地草稿、beforeunload、逐题 PATCH、服务端响应覆盖与进度更新。
+  - `components/ScaleInstanceExecutionPage.tsx`：管理 A14 GET、分组切换、本地草稿、beforeunload、逐题 PATCH，以及 B6 独立 readiness AbortController、stale、本地阻断、题目定位、二次确认、submit 写锁、成功状态合并与内存回执。
+  - `types/scale-instance-submission.ts`、`lib/scale-instance-submission-display.ts`：严格对齐 A16 安全 readiness / issue / submission JSON 类型和稳定中文展示映射；Date 使用 string，不定义作答原文、评分、expectedValue 或 metadata。
+  - `components/ScaleInstanceSubmissionPanel.tsx`、`ScaleSubmissionIssueList.tsx`：展示 submissionState、ready / canSubmitNow、检查时间、九项统计、阻断问题、可展开警告、本地 dirty、readiness stale、内联确认和当前会话回执。
   - `types/media-evidence.ts`、`types/handwriting-evidence.ts`、`types/media-evidence-draft.ts`：严格对齐 A15 安全响应、上传白名单、固定 strokes 结构与页面内存草稿；JSON Date 字段仍使用 string / null。
   - `api/media-evidence-api.ts`：真实接入 A15 的 list / upload / access-url / void 四个接口；multipart 逐字段构建 FormData，固定安全文件名，不手工设置 multipart Content-Type，GET 支持 AbortSignal，POST 不重试。
   - `lib/media-evidence-image.ts`：浏览器解码源图，在白色 Canvas 上按最长边 2560、有界质量 / 尺寸策略重编码为不超过 10 MiB 的 JPEG；不保留源 File、源文件名或原图元数据。
@@ -64,6 +66,8 @@
   - `POST /patients/:patientId/visits/:visitId/scale-instances`
   - `GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId`
   - `PATCH /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/item-responses/:itemResponseId`
+  - `GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/submission-readiness`
+  - `POST /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/submit`
 - Media Evidence API Client 仅调用：
   - `GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/item-responses/:itemResponseId/media-evidences`
   - `POST /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/item-responses/:itemResponseId/media-evidences`
@@ -74,6 +78,7 @@
 - A13 三个请求同样使用 `frontendEnv.apiBaseUrl`、`credentials: 'include'` 和 `cache: 'no-store'`；访视详情与目录 GET 独立取消旧请求，初始化 POST 不自动重试，组件卸载后不更新状态。
 - Patients API Client 映射 401、403、普通 400 及 `PATIENT_NOT_FOUND`、`PATIENT_SUBJECT_CODE_CONFLICT`、`PATIENT_NOT_ACTIVE`、`VISIT_CODE_CONFLICT`、`INVALID_DATE_RANGE`。
 - Assessment Execution API Client 映射 401、403、400，以及 `PATIENT_NOT_FOUND`、`VISIT_NOT_FOUND`、`PATIENT_NOT_ACTIVE`、`VISIT_NOT_INITIALIZABLE`、`SCALE_NOT_AVAILABLE`、`SCALE_VERSION_NOT_AVAILABLE`、`SCALE_NOT_ACTIVE`、`SCALE_VERSION_NOT_ACTIVE`、`SCALE_CATALOG_INVALID`、`SCALE_CATALOG_VERSION_CONFLICT`、`SCALE_INSTANCE_ALREADY_EXISTS`、`SCALE_EXECUTION_INITIALIZATION_FAILED`。
+- B6 继续映射 `SCALE_INSTANCE_NOT_SUBMITTABLE`、`SCALE_INSTANCE_NOT_READY`、`SCALE_INSTANCE_START_TIME_INVALID`、`SCALE_INSTANCE_SUBMISSION_CONFIRMATION_REQUIRED`、`SCALE_INSTANCE_SUBMISSION_CONFLICT`、`SCALE_INSTANCE_SUBMISSION_AUDIT_UNAVAILABLE`、`SCALE_INSTANCE_SUBMISSION_FAILED`；UI 不直接展示后端 message。
 - `getMe()` 对 `401` 返回 `null`；其他非成功状态映射为稳定认证服务错误。
 - 登录 `401` 在 UI 统一显示“账号或密码错误，或账号不可用。”，不区分具体安全失败原因。
 - 主登录态使用后端 Session + HttpOnly Cookie；前端不读取 Cookie，不使用 JWT，不保存 raw token、token hash、`passwordHash` 或其他认证凭证。
@@ -89,6 +94,12 @@
 - handwriting 画布支持 stylus / finger / mouse、pointer capture、`touch-action: none`、撤销和清空；最终上传为 PNG，可选轨迹默认开启并使用相对毫秒、有限坐标 / 压力的固定 strokes JSON，不含患者、访视、实例或题目标识。
 - 证据列表展示 A15 安全字段与 attached / locked / voided 历史；点击时才获取 primary / trajectory 短期 URL，按 expiresAt 与 30 秒余量判断复用。URL 只存在组件内存，不写存储、路由参数或日志。
 - 上传和作废成功只使用 A15 响应更新对应 evidence requirement 与媒体列表，不触发 A14 PATCH，不改变作答 dirty、progress、ItemResponse / ScaleInstance / Visit 状态或评分。作废保留历史并允许重传，不实现覆盖或物理删除。
+- B6 在执行详情成功后独立自动读取 readiness；失败只影响提交面板。401 返回登录页，403 显示无提交权限，不将失败渲染成空问题列表。每次手工检查取消旧 GET，被取消请求不显示错误，也不自动重试。
+- A14 单题 PATCH 成功、A15 上传成功或作废成功后 readiness 标记过期；纯本地输入、媒体列表 GET 与访问地址 GET 不触发 readiness 请求或 stale。旧结果保留供参考但不能用于正式提交。
+- 本地未保存作答、未上传媒体、题目保存请求或媒体写请求任一存在时，页面明确说明服务器检查不包含本地内容，不展开有效确认且不发送 submit POST。
+- B6 按 `itemResponseId` 在内存中切换分组、滚动并聚焦稳定题目容器，不改 URL、不重建 drafts 或 mediaDrafts；scale_instance scope issue 不提供虚假定位。
+- 正式提交必须先取得最新 readiness，并满足 ready / canSubmitNow / 无 blocking / 无本地阻断；内联 checkbox 后只发送 `{ confirm: true }`。submit 期间题目和媒体写操作真实禁用，成功只替换 `detail.scaleInstance`、readiness 和当前会话 receipt，不修改 visit、itemResponses 或本地草稿。
+- `alreadySubmitted=true` 作为成功回执处理；completed / locked / voided 只读且仍可查看 readiness 与历史证据。刷新 completed 页面不调用 submit POST；没有当前会话回执时不将初始 `operatorSnapshot` 冒充提交操作者。
 - 前端媒体公开类型没有定义 Storage 对象定位、校验和、原始文件名、内部患者关联或删除时间字段；页面也不显示这些字段。
 
 ## 4. 当前文件清单
@@ -131,6 +142,7 @@
 - `frontend\src\features\assessments\types\media-evidence.ts`
 - `frontend\src\features\assessments\types\handwriting-evidence.ts`
 - `frontend\src\features\assessments\types\media-evidence-draft.ts`
+- `frontend\src\features\assessments\types\scale-instance-submission.ts`
 - `frontend\src\features\assessments\api\assessment-execution-api.ts`
 - `frontend\src\features\assessments\api\media-evidence-api.ts`
 - `frontend\src\features\assessments\lib\assessment-execution-display.ts`
@@ -138,10 +150,13 @@
 - `frontend\src\features\assessments\lib\media-evidence-image.ts`
 - `frontend\src\features\assessments\lib\media-evidence-display.ts`
 - `frontend\src\features\assessments\lib\handwriting-evidence.ts`
+- `frontend\src\features\assessments\lib\scale-instance-submission-display.ts`
 - `frontend\src\features\assessments\components\AssessmentVisitExecutionPage.tsx`
 - `frontend\src\features\assessments\components\ScaleInstanceList.tsx`
 - `frontend\src\features\assessments\components\ScaleInitializationPanel.tsx`
 - `frontend\src\features\assessments\components\ScaleInstanceExecutionPage.tsx`
+- `frontend\src\features\assessments\components\ScaleInstanceSubmissionPanel.tsx`
+- `frontend\src\features\assessments\components\ScaleSubmissionIssueList.tsx`
 - `frontend\src\features\assessments\components\ScaleExecutionGroupNavigation.tsx`
 - `frontend\src\features\assessments\components\ItemResponseEditor.tsx`
 - `frontend\src\features\assessments\components\ItemStepEditor.tsx`
@@ -194,14 +209,24 @@
 - 浏览器手工联调未执行，A15 四个接口、移动端 capture、Canvas 重编码、触屏 / 触控笔、临时 URL、作废和 beforeunload 仍待开发者本地验证。
 - 后端命令未执行。
 
+本次 B6 验证结果：
+
+- 未新增自动测试或测试框架；继续使用既有 lint、typecheck 与生产构建验证。
+- `npm run lint`：通过。
+- `npm run typecheck`：通过，Next 16 量表实例动态路由类型生成成功。
+- `npm run build`：通过，生产构建包含既有 `/patients/[patientId]/visits/[visitId]/scale-instances/[scaleInstanceId]` 动态路由，B6 未新增路由。
+- E2E 与浏览器自动化未执行；本阶段明确不执行浏览器 E2E。
+- 浏览器手工联调未执行，A16 readiness / submit、问题定位、并发提交与只读切换均待开发者使用脱敏数据本地验证。
+- 后端命令未执行。
+
 ## 6. 当前未实现前端事实
 
 - `/dashboard` 已有患者档案入口，但不是完整医生工作台。
 - 患者编辑 / 删除 / 归档 / 合并尚未实现。
 - 访视编辑 / 删除 / 状态流转尚未实现；访视详情支持查看、初始化量表实例和进入 B4 执行页。
-- B4 / B5 已支持安全 MMSE / MoCA 题目查看、逐题手工草稿保存与 photo / handwriting 题目证据闭环，但整份量表最终提交、批量或自动保存、自动或手工计分和认知域结果尚未实现。
+- B4 / B5 / B6 已支持安全 MMSE / MoCA 题目查看、逐题手工草稿保存、photo / handwriting 题目证据、完整性检查和正式实例提交；批量或自动保存、自动或手工计分和认知域结果尚未实现。
 - 报告生成、医生确认、AI、用户管理、角色权限管理和权限菜单尚未实现。
-- 当前除 A12 五个患者 / 访视 API、A13 三个评估初始化前置 API、A14 两个评估执行草稿 API 与 A15 四个题目媒体证据 API 外，没有其他业务 API 调用。
+- 当前除 A12 五个患者 / 访视 API、A13 三个评估初始化前置 API、A14 两个评估执行草稿 API、A15 四个题目媒体证据 API 与 A16 两个实例提交 API 外，没有其他业务 API 调用。
 - 当前不包含路由级服务端认证中间件。
 
 ## 7. 后续同步规则

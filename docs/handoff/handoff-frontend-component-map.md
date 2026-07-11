@@ -9,9 +9,9 @@
 - `frontend\src\components\ui` 提供 `Button`、`Card`、`Badge` 三个无业务语义公共组件。
 - `frontend\src\features\auth` 提供 B1 最小认证接入能力。
 - `frontend\src\features\patients` 提供 B2 患者档案与评估访视最小业务闭环。
-- `frontend\src\features\assessments` 提供 B3 访视详情与量表实例初始化、B4 量表施测执行与逐题手工草稿保存，以及 B5 photo / handwriting 媒体证据采集、预览和作废能力。
+- `frontend\src\features\assessments` 提供 B3 访视详情与量表实例初始化、B4 量表施测执行与逐题手工草稿保存、B5 photo / handwriting 媒体证据采集 / 预览 / 作废，以及 B6 submission readiness、问题定位和正式实例提交能力。
 - 当前组件遵循医疗系统 / 临床评估 / 低干扰 / 高可读性 / 冷静可信视觉基线。
-- B2 / B3 / B4 / B5 未新增公共 Input 组件、第三方 UI 库、状态管理库、数据请求库或权限菜单组件。
+- B2 / B3 / B4 / B5 / B6 未新增公共 Input 组件、第三方 UI 库、状态管理库、数据请求库或权限菜单组件。
 
 ## 3. 公共 UI 组件
 
@@ -169,8 +169,8 @@
 ### 6.4 Assessment Execution API Client
 
 - 路径：`frontend\src\features\assessments\api\assessment-execution-api.ts`
-- 职责：提供 `listAvailableScales()`、`getAssessmentVisitExecutionDetail()`、`initializeScaleInstance()`、`getScaleInstanceExecutionDetail()`、`saveItemResponseDraft()` 与稳定 `AssessmentExecutionApiError`
-- 边界：只调用 A13 三个 API 与 A14 两个 API；统一 `frontendEnv.apiBaseUrl`、credentials、no-store，GET 支持 AbortSignal，POST / PATCH 重建白名单且不自动重试；不记录请求 / 响应或泛化为完整 SDK
+- 职责：提供 `listAvailableScales()`、`getAssessmentVisitExecutionDetail()`、`initializeScaleInstance()`、`getScaleInstanceExecutionDetail()`、`saveItemResponseDraft()`、`getScaleInstanceSubmissionReadiness()`、`submitScaleInstance()` 与稳定 `AssessmentExecutionApiError`
+- 边界：只调用 A13 三个、A14 两个与 A16 两个 API；统一 `frontendEnv.apiBaseUrl`、credentials、no-store，GET 支持 AbortSignal，POST / PATCH 重建白名单且不自动重试；submit 严格只接受 `{ confirm: true }`，不记录请求 / 响应或泛化为完整 SDK
 
 ### 6.5 Assessment Execution 类型
 
@@ -187,10 +187,11 @@
 ### 6.7 `ScaleInstanceExecutionPage`
 
 - 路径：`frontend\src\features\assessments\components\ScaleInstanceExecutionPage.tsx`
-- 职责：接收 patientId / visitId / scaleInstanceId，加载 A14 安全执行详情，管理 invalid / loading / 401 / 403 / not-found / configuration-unavailable / retry、动态分组、itemResponseId 作答草稿、`${itemResponseId}:${evidenceType}` 媒体草稿、两类待处理计数、beforeunload、逐题 PATCH 和实时 progress
+- 职责：接收 patientId / visitId / scaleInstanceId，加载 A14 安全执行详情，管理 invalid / loading / 401 / 403 / not-found / configuration-unavailable / retry、动态分组、itemResponseId 作答草稿、`${itemResponseId}:${evidenceType}` 媒体草稿、两类待处理计数、beforeunload、逐题 PATCH、实时 progress，以及 B6 独立 readiness / stale / error、题目定位、本地阻断、提交确认、submit 写锁和当前会话 receipt
 - 保存：同一题保存期间禁止并发；成功后以响应 itemResponse 覆盖当前题、清除 dirty，并用响应 progress 更新实例摘要，不重新加载整个页面
 - 媒体父级职责：分组切换不清除 JPEG Blob / strokes；持有跨分组媒体写锁；只合并 A15 返回的同题同类型 requirement，不改作答 draft / dirty / progress；上传成功或主动清除后减少未上传证据题目数
-- 边界：GET 使用 AbortController，PATCH 与媒体 POST 不重试；组件卸载后不 setState；不使用 SWR、React Query、Redux、Zustand、localStorage 或 sessionStorage
+- B6 合并边界：readiness 成功只替换 ScaleInstance；submit 成功只替换 ScaleInstance、readiness 与 receipt，不修改 Visit、itemResponses 或 drafts。completed 由服务端响应驱动；历史操作者不从 operatorSnapshot 推断
+- 边界：GET 使用独立 AbortController，PATCH 与媒体 / submit POST 不重试；组件卸载后不 setState；不使用 SWR、React Query、Redux、Zustand、localStorage 或 sessionStorage
 
 ### 6.8 `ScaleExecutionGroupNavigation`
 
@@ -276,6 +277,33 @@
 - `lib/media-evidence-image.ts`：白色 Canvas JPEG 重编码、2560 最长边、0.9 初始质量、有界压缩与 10 MiB 限制
 - `lib/handwriting-evidence.ts`：坐标 / 压力归一化、工具 / 时长推导、轨迹验证、Canvas 重绘和 PNG 生成
 - `lib/media-evidence-display.ts`：安全展示字典、文件大小、排序、active / access 有效性和中文错误映射
+
+### 6.20 `ScaleInstanceSubmissionPanel`
+
+- 路径：`frontend\src\features\assessments\components\ScaleInstanceSubmissionPanel.tsx`
+- 职责：展示 submissionState、ready / canSubmitNow、checkedAt、九项 summary、独立 loading / error / retry、readiness stale、本地未保存 / 写请求计数、阻断问题、可展开 warning、内联二次确认、提交中状态与当前会话回执
+- 确认：readiness / dirty / 写请求 / 页面状态 / submitting 变化时重置 checkbox；只有最新服务器条件和本地条件同时满足才允许确认按钮，warning 数量明确显示但不阻断
+- 历史边界：completed 无当前会话回执时只展示 ScaleInstance.completedAt，并说明只读 API 未提供历史提交操作者；不自动调用 submit POST 获取审计
+
+### 6.21 `ScaleSubmissionIssueList`
+
+- 路径：`frontend\src\features\assessments\components\ScaleSubmissionIssueList.tsx`
+- 职责：语义化展示 blocking / warning 列表，按受控 code 使用稳定中文标题和说明，仅附加允许的安全字段
+- 定位：只为 item scope 且含 itemResponseId 的 issue 提供 button；scale_instance scope 不提供虚假跳转
+- 安全边界：不把后端 message 当主文案，不展示或推断作答、正确答案、expectedValue 或评分
+
+### 6.22 A16 类型与 submission 展示纯函数
+
+- 类型路径：`frontend\src\features\assessments\types\scale-instance-submission.ts`
+- 类型职责：严格定义 15 个 issue code、severity / scope、summary、8 个 submissionState、安全 operator / audit、严格 `{ confirm: true }` 和两个 A16 响应；Date JSON 使用 string
+- 纯函数路径：`frontend\src\features\assessments\lib\scale-instance-submission-display.ts`
+- 纯函数职责：issue、severity、submissionState、durationSource、required evidence 和提交 API 错误的稳定中文映射，以及安全 issue 辅助详情构建
+- 边界：不定义或读取作答原文、评分、expectedValue、mediaEvidenceId 或 metadata，不将 warning 降级 / 升级为其他 severity
+
+### 6.23 B6 媒体写成功回调链
+
+- `ItemResponseEditor` -> `ItemEvidenceRequirements` -> `MediaEvidencePanel` 最小新增 `onEvidencePersisted` 回调，只在 A15 上传或作废成功后通知父级标记 readiness stale
+- 媒体列表 GET、access URL GET 和 requirement 只读对齐不会触发该回调；A14 / A15 请求体、媒体草稿、写锁和既有保存语义不变
 
 ## 7. 后续同步规则
 

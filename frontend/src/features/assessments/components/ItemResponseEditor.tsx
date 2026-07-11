@@ -101,6 +101,7 @@ export function ItemResponseEditor({
   onChange,
   onEndMediaWrite,
   onEvidenceRequirementChange,
+  onEvidencePersisted,
   onMediaDraftChange,
   onSave,
   onTryBeginMediaWrite,
@@ -121,6 +122,7 @@ export function ItemResponseEditor({
   onEvidenceRequirementChange: (
     requirement: EvidenceRequirementState,
   ) => void;
+  onEvidencePersisted: () => void;
   onMediaDraftChange: (
     evidenceType: SupportedMediaEvidenceType,
     draft: ItemMediaDrafts[SupportedMediaEvidenceType] | null,
@@ -243,6 +245,7 @@ export function ItemResponseEditor({
         item={item}
         onDraftChange={onMediaDraftChange}
         onEndWrite={onEndMediaWrite}
+        onEvidencePersisted={onEvidencePersisted}
         onRequirementChange={onEvidenceRequirementChange}
         onTryBeginWrite={onTryBeginMediaWrite}
         pageReadOnlyReason={pageReadOnlyReason}
