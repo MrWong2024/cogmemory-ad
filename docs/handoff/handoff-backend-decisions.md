@@ -301,6 +301,14 @@
 - 后续边界：unlock / reopen / return / reject、archive、correct、void、reportVersion=2、PDF 与 AI 均由后续独立阶段决定；A22 不提前实现。
 - 后续复查点：前端 B11 可接入受控编辑、提交和 doctor / admin 确认；退回、签名、锁定、来源锁定、更正、归档与 PDF 必须另行设计权限、审计与一致性策略。
 
+### D-033：来源冻结由已锁报告驱动并采用可恢复编排
+
+- 发起点与 scope：只有完整 A22 已锁 ClinicalReport 可发起；scope 只读取报告已有四类来源字段，并补齐这些实例下全部 ItemResponse。首次把精确 ID 集合固化到 `metadata.a23SourceFreeze`，恢复期间不重新扩张或接受客户端 scope。
+- 冻结表达：沿用五类 Schema 既有 status / lockedAt；ScaleInstance、ItemResponse、ScoreResult、MediaEvidence 迁移到 locked，CognitiveDomainResult computed/confirmed 只设置 lockedAt 并保留 status，不新增 frozen 状态或修改 Schema。
+- 一致性：跨集合不使用 Mongo transaction。先原子写 `in_progress`，再按固定顺序执行幂等批量冻结，最后重读全部精确 ID 验证并写 `completed`；部分失败不 rollback / unfreeze，后续请求使用同 freezeId、scope、note 与 startedBy 恢复。
+- 完成与公开：completed 前不宣称整体成功；完成后重复请求只读幂等。公开 report / receipt 仅展示安全 actor、时间、note、状态和 counts，不公开 metadata 或 source IDs。
+- 边界：不冻结 Patient、AssessmentVisit、ScaleDefinition、ScaleVersion 或 Storage，不创建 AuditLog / job，不实现 unfreeze、PDF 或 AI。前端后续 B13 只消费确认交互、进度和安全摘要。
+
 ## 4. 后续同步规则
 
 - 新增关键技术选型、接口设计、数据模型、测试策略或部署策略后，应追加决策记录。

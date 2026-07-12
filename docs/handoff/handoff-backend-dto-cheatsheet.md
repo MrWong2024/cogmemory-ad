@@ -556,3 +556,12 @@
 - Date JSON 口径：Nest/JSON 将 Date 序列化为 ISO 8601 string；TypeScript response type 保持 Date。历史 fallback 的 lockId 为 null、lockedBy.operatorRole 为 unknown，不猜 operatorName 或 lockNote。
 - public contract 不含 metadata 或 Schema 原始 lockedBy；安全 actor 的 operatorId 可为 string/null，首次 A22 写入一定来自认证 doctor/admin，历史 fallback 才使用 unknown role。
 - Date 口径：请求 `expectedUpdatedAt` 是严格 ISO string；内部解析为 Date 并进入原子 filter；公开 report / receipt 时间保持 Date，由 Nest JSON 序列化为 ISO string。
+
+## A23 ClinicalReport source freeze DTO / response
+
+- `FreezeClinicalReportSourcesDto`：`confirm` 仅声明为 boolean 且业务层要求严格 true；`freezeNote` 必填 string，transform trim 后 3-2000；`expectedUpdatedAt` 必填并使用 strict ISO 8601。DTO 不接收任何 source ID、scope、metadata、actor、时间、状态、force / rollback / unfreeze。
+- `ClinicalReportSourceFreezeState` 为 `in_progress | completed`；`ClinicalReportSourceFreezeResourceCountsResponse` 只包含五类数量和 total，不包含 ID。
+- `ClinicalReportSourceFreezeActorResponse` 包含 operatorId / operatorName / operatorRole；summary 公开 freezeId、state、started/sourceLocked/completed 时间、startedBy/completedBy、freezeNote 与 expected/completed/newly/previously counts。
+- `ClinicalReportSourceFreezeReceiptResponse` 在 completed summary 上增加 `alreadyFrozen` 与 `resumedExisting`；`FreezeClinicalReportSourcesResponse` 为 `{ report, sourceFreezeReceipt }`。`ClinicalReportResponse.sourceFreeze` 为 nullable 安全摘要。
+- TypeScript response 中时间保持 Date，Nest/JSON 序列化为 ISO string。expectedUpdatedAt 只在首次无审计时参与启动原子并发；既有 in_progress 恢复和 completed 幂等允许客户端继续携带旧值。
+- public contract 不返回内部 `metadata.a23SourceFreeze`、scope 或五类来源 ID；非法审计在 latest mapper 中安全忽略，A23 写接口则返回受控审计错误。

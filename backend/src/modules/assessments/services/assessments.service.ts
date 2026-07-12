@@ -288,6 +288,24 @@ export type ItemResponseSummary = {
   voidedAt: Date | null;
 };
 
+export type AssessmentSourceFreezeItem = {
+  id: string;
+  patientId: string;
+  assessmentVisitId: string;
+  scaleInstanceId?: string;
+  status: string;
+  lockedAt: Date | null;
+};
+
+export type AssessmentSourceFreezeBatchResult = {
+  requestedCount: number;
+  matchedCount: number;
+  newlyFrozenCount: number;
+  previouslyFrozenCount: number;
+  invalidCount: number;
+  items: AssessmentSourceFreezeItem[];
+};
+
 @Injectable()
 export class AssessmentsService {
   constructor(
@@ -646,6 +664,97 @@ export class AssessmentsService {
     return scaleInstance ? this.mapScaleInstance(scaleInstance) : null;
   }
 
+  async listScaleInstancesByIds(
+    patientId: Types.ObjectId | string,
+    assessmentVisitId: Types.ObjectId | string,
+    scaleInstanceIds: readonly string[],
+  ): Promise<ScaleInstanceSummary[]> {
+    const normalizedPatientId = this.normalizeObjectId(patientId);
+    const normalizedVisitId = this.normalizeObjectId(assessmentVisitId);
+    const normalizedIds = this.normalizeObjectIds(scaleInstanceIds);
+    if (!normalizedPatientId || !normalizedVisitId || !normalizedIds) {
+      return [];
+    }
+    const instances = await this.scaleInstanceModel
+      .find({
+        _id: { $in: normalizedIds },
+        patientId: normalizedPatientId,
+        assessmentVisitId: normalizedVisitId,
+      })
+      .sort({ _id: 1 })
+      .exec();
+    return instances.map((instance) => this.mapScaleInstance(instance));
+  }
+
+  async freezeScaleInstancesByIds(
+    patientId: Types.ObjectId | string,
+    assessmentVisitId: Types.ObjectId | string,
+    scaleInstanceIds: readonly string[],
+    sourceLockedAt: Date,
+  ): Promise<AssessmentSourceFreezeBatchResult> {
+    const normalizedPatientId = this.normalizeObjectId(patientId);
+    const normalizedVisitId = this.normalizeObjectId(assessmentVisitId);
+    const normalizedIds = this.normalizeObjectIds(scaleInstanceIds);
+    if (
+      !normalizedPatientId ||
+      !normalizedVisitId ||
+      !normalizedIds ||
+      !Number.isFinite(sourceLockedAt.getTime())
+    ) {
+      return this.emptyAssessmentFreezeResult(scaleInstanceIds.length);
+    }
+    const before = await this.scaleInstanceModel
+      .find({
+        _id: { $in: normalizedIds },
+        patientId: normalizedPatientId,
+        assessmentVisitId: normalizedVisitId,
+      })
+      .exec();
+    const previouslyFrozenCount = before.filter(
+      (item) => item.status === 'locked' && item.lockedAt instanceof Date,
+    ).length;
+    const updateResult = await this.scaleInstanceModel
+      .updateMany(
+        {
+          _id: { $in: normalizedIds },
+          patientId: normalizedPatientId,
+          assessmentVisitId: normalizedVisitId,
+          status: 'completed',
+          lockedAt: null,
+          voidedAt: null,
+        },
+        { $set: { status: 'locked', lockedAt: sourceLockedAt } },
+        { runValidators: true },
+      )
+      .exec();
+    const after = await this.scaleInstanceModel
+      .find({
+        _id: { $in: normalizedIds },
+        patientId: normalizedPatientId,
+        assessmentVisitId: normalizedVisitId,
+      })
+      .sort({ _id: 1 })
+      .exec();
+    const items = after.map((item) => ({
+      id: item._id.toString(),
+      patientId: item.patientId.toString(),
+      assessmentVisitId: item.assessmentVisitId.toString(),
+      status: item.status,
+      lockedAt: item.lockedAt ?? null,
+    }));
+    const validCount = items.filter(
+      (item) => item.status === 'locked' && item.lockedAt !== null,
+    ).length;
+    return {
+      requestedCount: normalizedIds.length,
+      matchedCount: items.length,
+      newlyFrozenCount: updateResult.modifiedCount,
+      previouslyFrozenCount,
+      invalidCount: normalizedIds.length - validCount,
+      items,
+    };
+  }
+
   async completeScaleInstanceIfEditable(
     patientId: Types.ObjectId | string,
     assessmentVisitId: Types.ObjectId | string,
@@ -705,6 +814,7 @@ export class AssessmentsService {
           patientId: normalizedPatientId,
           assessmentVisitId: normalizedVisitId,
           status: { $in: ['draft', 'in_progress'] },
+          lockedAt: null,
         },
         { $set: updateFields },
         { returnDocument: 'after', runValidators: true },
@@ -866,6 +976,7 @@ export class AssessmentsService {
         {
           ...ownership,
           status: { $in: ['not_started', 'in_progress', 'answered'] },
+          lockedAt: null,
           evidenceRefs: {
             $elemMatch: {
               evidenceType,
@@ -923,6 +1034,7 @@ export class AssessmentsService {
         {
           ...ownership,
           status: { $in: ['not_started', 'in_progress', 'answered'] },
+          lockedAt: null,
           evidenceRefs: {
             $elemMatch: {
               evidenceType,
@@ -978,6 +1090,7 @@ export class AssessmentsService {
       .findOneAndUpdate(
         {
           ...ownership,
+          lockedAt: null,
           evidenceRefs: {
             $elemMatch: {
               evidenceType,
@@ -1027,6 +1140,134 @@ export class AssessmentsService {
     return itemResponses.map((itemResponse) =>
       this.toItemResponseSummary(itemResponse),
     );
+  }
+
+  async listItemResponsesByScaleInstanceIds(
+    patientId: Types.ObjectId | string,
+    assessmentVisitId: Types.ObjectId | string,
+    scaleInstanceIds: readonly string[],
+  ): Promise<ItemResponseSummary[]> {
+    const normalizedPatientId = this.normalizeObjectId(patientId);
+    const normalizedVisitId = this.normalizeObjectId(assessmentVisitId);
+    const normalizedScaleIds = this.normalizeObjectIds(scaleInstanceIds);
+    if (!normalizedPatientId || !normalizedVisitId || !normalizedScaleIds) {
+      return [];
+    }
+    const responses = await this.itemResponseModel
+      .find({
+        patientId: normalizedPatientId,
+        assessmentVisitId: normalizedVisitId,
+        scaleInstanceId: { $in: normalizedScaleIds },
+      })
+      .sort({ scaleInstanceId: 1, itemOrder: 1, _id: 1 })
+      .exec();
+    return responses.map((response) => this.toItemResponseSummary(response));
+  }
+
+  async listItemResponsesByIds(
+    patientId: Types.ObjectId | string,
+    assessmentVisitId: Types.ObjectId | string,
+    scaleInstanceIds: readonly string[],
+    itemResponseIds: readonly string[],
+  ): Promise<ItemResponseSummary[]> {
+    const normalizedPatientId = this.normalizeObjectId(patientId);
+    const normalizedVisitId = this.normalizeObjectId(assessmentVisitId);
+    const normalizedScaleIds = this.normalizeObjectIds(scaleInstanceIds);
+    const normalizedItemIds = this.normalizeObjectIds(itemResponseIds);
+    if (
+      !normalizedPatientId ||
+      !normalizedVisitId ||
+      !normalizedScaleIds ||
+      !normalizedItemIds
+    ) {
+      return [];
+    }
+    const responses = await this.itemResponseModel
+      .find({
+        _id: { $in: normalizedItemIds },
+        patientId: normalizedPatientId,
+        assessmentVisitId: normalizedVisitId,
+        scaleInstanceId: { $in: normalizedScaleIds },
+      })
+      .sort({ _id: 1 })
+      .exec();
+    return responses.map((response) => this.toItemResponseSummary(response));
+  }
+
+  async freezeItemResponsesByIds(
+    patientId: Types.ObjectId | string,
+    assessmentVisitId: Types.ObjectId | string,
+    scaleInstanceIds: readonly string[],
+    itemResponseIds: readonly string[],
+    sourceLockedAt: Date,
+  ): Promise<AssessmentSourceFreezeBatchResult> {
+    const normalizedPatientId = this.normalizeObjectId(patientId);
+    const normalizedVisitId = this.normalizeObjectId(assessmentVisitId);
+    const normalizedScaleIds = this.normalizeObjectIds(scaleInstanceIds);
+    const normalizedItemIds = this.normalizeObjectIds(itemResponseIds);
+    if (
+      !normalizedPatientId ||
+      !normalizedVisitId ||
+      !normalizedScaleIds ||
+      !normalizedItemIds ||
+      !Number.isFinite(sourceLockedAt.getTime())
+    ) {
+      return this.emptyAssessmentFreezeResult(itemResponseIds.length);
+    }
+    const before = await this.itemResponseModel
+      .find({
+        _id: { $in: normalizedItemIds },
+        patientId: normalizedPatientId,
+        assessmentVisitId: normalizedVisitId,
+        scaleInstanceId: { $in: normalizedScaleIds },
+      })
+      .exec();
+    const previouslyFrozenCount = before.filter(
+      (item) => item.status === 'locked' && item.lockedAt instanceof Date,
+    ).length;
+    const updateResult = await this.itemResponseModel
+      .updateMany(
+        {
+          _id: { $in: normalizedItemIds },
+          patientId: normalizedPatientId,
+          assessmentVisitId: normalizedVisitId,
+          scaleInstanceId: { $in: normalizedScaleIds },
+          status: { $in: ['answered', 'scored'] },
+          lockedAt: null,
+          voidedAt: null,
+        },
+        { $set: { status: 'locked', lockedAt: sourceLockedAt } },
+        { runValidators: true },
+      )
+      .exec();
+    const after = await this.itemResponseModel
+      .find({
+        _id: { $in: normalizedItemIds },
+        patientId: normalizedPatientId,
+        assessmentVisitId: normalizedVisitId,
+        scaleInstanceId: { $in: normalizedScaleIds },
+      })
+      .sort({ _id: 1 })
+      .exec();
+    const items = after.map((item) => ({
+      id: item._id.toString(),
+      patientId: item.patientId.toString(),
+      assessmentVisitId: item.assessmentVisitId.toString(),
+      scaleInstanceId: item.scaleInstanceId.toString(),
+      status: item.status,
+      lockedAt: item.lockedAt ?? null,
+    }));
+    const validCount = items.filter(
+      (item) => item.status === 'locked' && item.lockedAt !== null,
+    ).length;
+    return {
+      requestedCount: normalizedItemIds.length,
+      matchedCount: items.length,
+      newlyFrozenCount: updateResult.modifiedCount,
+      previouslyFrozenCount,
+      invalidCount: normalizedItemIds.length - validCount,
+      items,
+    };
   }
 
   async listScoredItemResponsesByScaleInstanceId(
@@ -1122,6 +1363,33 @@ export class AssessmentsService {
     }
 
     return objectId;
+  }
+
+  private normalizeObjectIds(ids: readonly string[]): Types.ObjectId[] | null {
+    const result: Types.ObjectId[] = [];
+    const seen = new Set<string>();
+    for (const id of ids) {
+      const normalized = this.normalizeObjectId(id);
+      if (!normalized || seen.has(normalized.toString())) {
+        return null;
+      }
+      seen.add(normalized.toString());
+      result.push(normalized);
+    }
+    return result;
+  }
+
+  private emptyAssessmentFreezeResult(
+    requestedCount: number,
+  ): AssessmentSourceFreezeBatchResult {
+    return {
+      requestedCount,
+      matchedCount: 0,
+      newlyFrozenCount: 0,
+      previouslyFrozenCount: 0,
+      invalidCount: requestedCount,
+      items: [],
+    };
   }
 
   private normalizeItemResponseOwnership(

@@ -140,6 +140,37 @@ export type ClinicalReportLockSummaryResponse = {
   lockNote?: string;
 };
 
+export type ClinicalReportSourceFreezeStateResponse =
+  | 'in_progress'
+  | 'completed';
+
+export type ClinicalReportSourceFreezeActorResponse =
+  ClinicalReportWorkflowActorResponse;
+
+export type ClinicalReportSourceFreezeResourceCountsResponse = {
+  scaleInstanceCount: number;
+  itemResponseCount: number;
+  scoreResultCount: number;
+  cognitiveDomainResultCount: number;
+  mediaEvidenceCount: number;
+  totalSourceCount: number;
+};
+
+export type ClinicalReportSourceFreezeSummaryResponse = {
+  freezeId: string;
+  state: ClinicalReportSourceFreezeStateResponse;
+  startedAt: Date;
+  sourceLockedAt: Date;
+  startedBy: ClinicalReportSourceFreezeActorResponse;
+  freezeNote: string;
+  expectedCounts: ClinicalReportSourceFreezeResourceCountsResponse;
+  completedCounts: ClinicalReportSourceFreezeResourceCountsResponse | null;
+  newlyFrozenCounts: ClinicalReportSourceFreezeResourceCountsResponse | null;
+  previouslyFrozenCounts: ClinicalReportSourceFreezeResourceCountsResponse;
+  completedAt: Date | null;
+  completedBy: ClinicalReportSourceFreezeActorResponse | null;
+};
+
 export type ClinicalReportResponse = {
   id: string;
   reportCode: string;
@@ -162,6 +193,7 @@ export type ClinicalReportResponse = {
   confirmation: ClinicalReportConfirmationResponse | null;
   lockedAt: Date | null;
   lock: ClinicalReportLockSummaryResponse | null;
+  sourceFreeze: ClinicalReportSourceFreezeSummaryResponse | null;
   archivedAt: Date | null;
   voidedAt: Date | null;
   voidReason?: string;
@@ -229,4 +261,26 @@ export type LockClinicalReportReceiptResponse = {
 export type LockClinicalReportResponse = {
   report: ClinicalReportResponse;
   lockReceipt: LockClinicalReportReceiptResponse;
+};
+
+export type FreezeClinicalReportSourcesReceiptResponse = {
+  freezeId: string;
+  state: 'completed';
+  startedAt: Date;
+  sourceLockedAt: Date;
+  startedBy: ClinicalReportSourceFreezeActorResponse;
+  completedAt: Date;
+  completedBy: ClinicalReportSourceFreezeActorResponse;
+  freezeNote: string;
+  expectedCounts: ClinicalReportSourceFreezeResourceCountsResponse;
+  completedCounts: ClinicalReportSourceFreezeResourceCountsResponse;
+  newlyFrozenCounts: ClinicalReportSourceFreezeResourceCountsResponse;
+  previouslyFrozenCounts: ClinicalReportSourceFreezeResourceCountsResponse;
+  alreadyFrozen: boolean;
+  resumedExisting: boolean;
+};
+
+export type FreezeClinicalReportSourcesResponse = {
+  report: ClinicalReportResponse;
+  sourceFreezeReceipt: FreezeClinicalReportSourcesReceiptResponse;
 };

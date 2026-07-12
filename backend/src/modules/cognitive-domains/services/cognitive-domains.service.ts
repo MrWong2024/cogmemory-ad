@@ -136,6 +136,25 @@ export type CognitiveDomainResultSummary = {
   updatedAt: Date;
 };
 
+export type CognitiveDomainSourceFreezeItem = {
+  id: string;
+  patientId: string;
+  assessmentVisitId: string;
+  scaleInstanceId: string;
+  scoreResultId: string;
+  status: CognitiveDomainResultStatus;
+  lockedAt: Date | null;
+};
+
+export type CognitiveDomainSourceFreezeBatchResult = {
+  requestedCount: number;
+  matchedCount: number;
+  newlyFrozenCount: number;
+  previouslyFrozenCount: number;
+  invalidCount: number;
+  items: CognitiveDomainSourceFreezeItem[];
+};
+
 export type CognitiveDomainMappingInput = {
   domainCode: string;
   domainTitle?: string;
@@ -296,6 +315,119 @@ export class CognitiveDomainsService {
       .findOne({ scaleInstanceId: normalizedId, runNo })
       .exec();
     return domainResult ? this.mapDomainResult(domainResult) : null;
+  }
+
+  async listCognitiveDomainResultsByIds(
+    patientId: Types.ObjectId | string,
+    assessmentVisitId: Types.ObjectId | string,
+    scaleInstanceIds: readonly string[],
+    scoreResultIds: readonly string[],
+    cognitiveDomainResultIds: readonly string[],
+  ): Promise<CognitiveDomainResultSummary[]> {
+    const normalizedPatientId = this.normalizeObjectId(patientId);
+    const normalizedVisitId = this.normalizeObjectId(assessmentVisitId);
+    const normalizedScaleIds = this.normalizeObjectIds(scaleInstanceIds);
+    const normalizedScoreIds = this.normalizeObjectIds(scoreResultIds);
+    const normalizedResultIds = this.normalizeObjectIds(
+      cognitiveDomainResultIds,
+    );
+    if (
+      !normalizedPatientId ||
+      !normalizedVisitId ||
+      !normalizedScaleIds ||
+      !normalizedScoreIds ||
+      !normalizedResultIds
+    ) {
+      return [];
+    }
+    const results = await this.cognitiveDomainResultModel
+      .find({
+        _id: { $in: normalizedResultIds },
+        patientId: normalizedPatientId,
+        assessmentVisitId: normalizedVisitId,
+        scaleInstanceId: { $in: normalizedScaleIds },
+        scoreResultId: { $in: normalizedScoreIds },
+      })
+      .sort({ _id: 1 })
+      .exec();
+    return results.map((result) => this.mapDomainResult(result));
+  }
+
+  async freezeCognitiveDomainResultsByIds(
+    patientId: Types.ObjectId | string,
+    assessmentVisitId: Types.ObjectId | string,
+    scaleInstanceIds: readonly string[],
+    scoreResultIds: readonly string[],
+    cognitiveDomainResultIds: readonly string[],
+    sourceLockedAt: Date,
+  ): Promise<CognitiveDomainSourceFreezeBatchResult> {
+    const normalizedPatientId = this.normalizeObjectId(patientId);
+    const normalizedVisitId = this.normalizeObjectId(assessmentVisitId);
+    const normalizedScaleIds = this.normalizeObjectIds(scaleInstanceIds);
+    const normalizedScoreIds = this.normalizeObjectIds(scoreResultIds);
+    const normalizedResultIds = this.normalizeObjectIds(
+      cognitiveDomainResultIds,
+    );
+    if (
+      !normalizedPatientId ||
+      !normalizedVisitId ||
+      !normalizedScaleIds ||
+      !normalizedScoreIds ||
+      !normalizedResultIds ||
+      !Number.isFinite(sourceLockedAt.getTime())
+    ) {
+      return this.emptySourceFreezeResult(cognitiveDomainResultIds.length);
+    }
+    const ownership = {
+      _id: { $in: normalizedResultIds },
+      patientId: normalizedPatientId,
+      assessmentVisitId: normalizedVisitId,
+      scaleInstanceId: { $in: normalizedScaleIds },
+      scoreResultId: { $in: normalizedScoreIds },
+      runNo: 1,
+    };
+    const before = await this.cognitiveDomainResultModel.find(ownership).exec();
+    const previouslyFrozenCount = before.filter(
+      (item) => item.lockedAt instanceof Date,
+    ).length;
+    const updateResult = await this.cognitiveDomainResultModel
+      .updateMany(
+        {
+          ...ownership,
+          status: { $in: ['computed', 'confirmed'] },
+          lockedAt: null,
+          voidedAt: null,
+        },
+        { $set: { lockedAt: sourceLockedAt } },
+        { runValidators: true },
+      )
+      .exec();
+    const after = await this.cognitiveDomainResultModel
+      .find(ownership)
+      .sort({ _id: 1 })
+      .exec();
+    const items = after.map((item) => ({
+      id: item._id.toString(),
+      patientId: item.patientId.toString(),
+      assessmentVisitId: item.assessmentVisitId.toString(),
+      scaleInstanceId: item.scaleInstanceId.toString(),
+      scoreResultId: item.scoreResultId.toString(),
+      status: item.status,
+      lockedAt: item.lockedAt ?? null,
+    }));
+    const validCount = items.filter(
+      (item) =>
+        ['computed', 'confirmed', 'locked'].includes(item.status) &&
+        item.lockedAt !== null,
+    ).length;
+    return {
+      requestedCount: normalizedResultIds.length,
+      matchedCount: items.length,
+      newlyFrozenCount: updateResult.modifiedCount,
+      previouslyFrozenCount,
+      invalidCount: normalizedResultIds.length - validCount,
+      items,
+    };
   }
 
   async createRunOneDomainResult(
@@ -591,6 +723,33 @@ export class CognitiveDomainsService {
     }
 
     return objectId;
+  }
+
+  private normalizeObjectIds(ids: readonly string[]): Types.ObjectId[] | null {
+    const result: Types.ObjectId[] = [];
+    const seen = new Set<string>();
+    for (const id of ids) {
+      const normalized = this.normalizeObjectId(id);
+      if (!normalized || seen.has(normalized.toString())) {
+        return null;
+      }
+      seen.add(normalized.toString());
+      result.push(normalized);
+    }
+    return result;
+  }
+
+  private emptySourceFreezeResult(
+    requestedCount: number,
+  ): CognitiveDomainSourceFreezeBatchResult {
+    return {
+      requestedCount,
+      matchedCount: 0,
+      newlyFrozenCount: 0,
+      previouslyFrozenCount: 0,
+      invalidCount: requestedCount,
+      items: [],
+    };
   }
 
   private normalizeItemCode(itemCode: string): string {

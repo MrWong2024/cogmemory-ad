@@ -1520,6 +1520,7 @@ describe('AssessmentsService', () => {
         scaleInstanceId,
         patientId,
         status: { $in: ['not_started', 'in_progress', 'answered'] },
+        lockedAt: null,
         evidenceRefs: {
           $elemMatch: {
             evidenceType: 'photo',
@@ -1572,6 +1573,7 @@ describe('AssessmentsService', () => {
         scaleInstanceId,
         patientId,
         status: { $in: ['not_started', 'in_progress', 'answered'] },
+        lockedAt: null,
         evidenceRefs: {
           $elemMatch: {
             evidenceType: 'handwriting',
@@ -1621,6 +1623,7 @@ describe('AssessmentsService', () => {
         assessmentVisitId: visitId,
         scaleInstanceId,
         patientId,
+        lockedAt: null,
         evidenceRefs: {
           $elemMatch: {
             evidenceType: 'photo',
@@ -1718,6 +1721,7 @@ describe('AssessmentsService', () => {
         _id: scaleInstanceId,
         patientId,
         assessmentVisitId: visitId,
+        lockedAt: null,
         status: { $in: ['draft', 'in_progress'] },
       },
       {

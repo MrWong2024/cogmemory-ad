@@ -129,7 +129,10 @@ export class ItemResponseDraftService {
       });
     }
 
-    if (!EDITABLE_SCALE_INSTANCE_STATUSES.has(scaleInstance.status)) {
+    if (
+      !EDITABLE_SCALE_INSTANCE_STATUSES.has(scaleInstance.status) ||
+      scaleInstance.lockedAt instanceof Date
+    ) {
       throw new ConflictException({
         code: 'SCALE_INSTANCE_NOT_EDITABLE',
         message: 'Scale instance is not editable',
@@ -151,7 +154,10 @@ export class ItemResponseDraftService {
       });
     }
 
-    if (!EDITABLE_ITEM_RESPONSE_STATUSES.has(itemResponse.status)) {
+    if (
+      !EDITABLE_ITEM_RESPONSE_STATUSES.has(itemResponse.status) ||
+      itemResponse.lockedAt instanceof Date
+    ) {
       throw new ConflictException({
         code: 'ITEM_RESPONSE_NOT_EDITABLE',
         message: 'Item response is not editable',
@@ -183,6 +189,7 @@ export class ItemResponseDraftService {
             scaleInstanceId,
             patientId,
             status: itemResponse.status,
+            lockedAt: null,
           },
           update,
           { returnDocument: 'after', runValidators: true },

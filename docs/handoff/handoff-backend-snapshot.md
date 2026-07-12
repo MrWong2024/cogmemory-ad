@@ -234,26 +234,36 @@
 - `AuthController` 当前公开 `POST /auth/login`、`POST /auth/logout`、`GET /auth/me`：登录校验账号密码、创建服务端 session 并下发 HttpOnly `cogmemory_ad_session` Cookie；登出从 Cookie 读取 session token，存在则内部撤销 session，并清除 Cookie；`GET /auth/me` 使用 `SessionAuthGuard` 显式保护并返回当前用户公开上下文。
 - 当前不提供用户管理或权限管理 API；不提供前端登录页、认证态联动或权限菜单。
 
-## 11. 当前尚未实现
+## 11. A23 已锁报告来源链冻结
+
+- 唯一新增公开接口为 `POST /patients/:patientId/visits/:visitId/clinical-reports/:reportId/freeze-sources`；DTO 只接收显式 `confirm=true`、trim 3-2000 `freezeNote` 与 strict ISO `expectedUpdatedAt`，仅 doctor / admin 可执行。
+- 首次发起要求 report 为已锁定且完整 confirmed / mixed / passed version 1 报告，并验证 A20 generation、A21 submission / confirmation 与 A22 lock 审计。scope 只来自报告的 primaryScaleInstanceIds、scoreResultIds、cognitiveDomainResultIds、mediaEvidenceIds；实例下全部 ItemResponse ID 在首次审计中固化。
+- A23 冻结 ScaleInstance completed→locked、ItemResponse answered/scored→locked、ScoreResult confirmed→locked、MediaEvidence attached→locked；CognitiveDomainResult computed/confirmed 只设置 lockedAt，保留原 status。已有合法锁与 lockedAt 均保留。
+- `metadata.a23SourceFreeze` version=1 使用 `in_progress / completed`，保存 freezeId、原始 actor/note/time、sourceLockedAt、内部 scope 和计数。跨五类集合不使用 transaction；部分失败不回滚、不解冻，重复 POST 按固化 scope 恢复；仅在重新读取全部精确来源并验证后写 completed。completed 重复请求即使 expectedUpdatedAt 已旧也只读幂等返回。
+- latest 与写响应只返回安全 `sourceFreeze` 摘要和 receipt；不返回 metadata、scope IDs 或来源关联 ID。A14 ItemResponse 草稿、A15 上传/作废、A16 submit、A18 review/confirm 等写路径增加 lockedAt 防御。
+- 不冻结 Patient、AssessmentVisit、ScaleDefinition、ScaleVersion、Storage 对象；不实现 unfreeze、rollback、AuditLog、PDF 或 AI。ReportsModule 只调用来源模块导出的 Service，不直接注入来源 Model。
+- A23 实际验证：build 通过；69 个单元测试套件 / 597 个测试通过；隔离 test DB 上 12 个 E2E 套件 / 55 个测试通过，其中 A23 为 1 个套件 / 4 个测试。
+
+## 12. 当前尚未实现
 
 - 尚无公开用户管理接口、角色权限管理接口、短信验证码接口、OAuth / SSO 接口或密码重置接口。
 - 尚无医生端或患者端业务。
-- 除 A12-A20 已确认 API 外，尚无评分 lock / void / 撤销确认 / reopen / 重跑、认知域人工修改 / 确认 / 锁定 / 作废 / 重算或报告编辑 / 医生确认 / PDF 业务接口。
+- A12-A23 已覆盖评分计算/复核/确认、认知域计算、报告生成/编辑/确认/锁定/来源冻结；仍无评分独立 lock / void / 撤销确认 / reopen / 重跑、认知域人工修改 / 确认 / 作废 / 重算、报告签名 / unfreeze / 归档 / 更正 / 作废 / PDF 接口。
 - 尚无批量作答、自动保存调度、计时动作、提交撤销 / reopen / lock / force submit 或访视状态流转接口。
 - 媒体当前仅有题目下列表、服务端 multipart 上传、短期签名访问与逻辑作废；尚无全患者 / 访视 / 实例媒体列表、直接 objectKey 下载、永久 URL、物理删除、替换、批量、分片或客户端直传接口。
 - 尚无全量数据库 seed runner、量表管理或完整 MMSE / MoCA 题目配置公开接口；A13 只在初始化时按需物化并提供安全摘要。
 - 已有 A17 compute / latest 与 A18 单题人工复核 / 确认；尚无批量人工评分、锁定、作废、撤销确认、reopen、重跑或历史列表接口。
 - 已有 A19 认知域 compute / latest；尚无认知域人工复核、确认、锁定、作废、重算、历史列表、跨量表合并或报告接口。
-- 已有 A20 访视级规则化报告 draft generate / latest；尚无报告编辑、医生确认写库、签名、锁定、归档 / 更正 / 作废、重生成、version 2、历史列表、PDF / Word / 打印导出、AuditLog 模型或 AI 报告。
+- 已有 A20-A23 报告 generate / latest / edit / submit / confirm / lock / freeze-sources；尚无签名、unlock / unfreeze、归档 / 更正 / 作废、重生成、version 2、历史列表、PDF / Word / 打印导出、AuditLog 模型或 AI 报告。
 - 尚无作答提交后自动计分或自动认知域计算触发；A17 / A19 均由显式 compute 触发，不包含 MMSE / MoCA itemCode、domain title 或诊断规则硬编码。
 - 尚无短信发送接口。
 - 尚无 AI / LLM 调用接口。
-- 尚无患者编辑 / 删除 / 归档、访视编辑 / 删除 / 状态流转，以及 A12-A20 已列接口之外的量表、作答、媒体、计分、认知域、报告等其他业务 Controller 或公开业务 API。
+- 尚无患者编辑 / 删除 / 归档、访视编辑 / 删除 / 状态流转，以及 A12-A23 已列接口之外的量表、作答、媒体、计分、认知域、报告等其他业务 Controller 或公开业务 API。
 - 尚未实现用户创建、用户更新、用户禁用、重置密码、角色权限管理、短信验证码、OAuth / SSO、JWT 主登录态、前端登录页、前端认证态或权限菜单。
-- A12-A20 真实 HTTP E2E 已执行并通过；连接隔离 `cogmemory_ad_test`，Storage=fake、SMS / LLM=stub，未调用真实 OSS 或生产服务。
-- 已完成 A20 定向 lint、后端 build、全量单元测试与 E2E：60 个单元测试套件 / 513 个测试、9 个 E2E 套件 / 43 个测试通过；全量 lint 未执行。
+- A12-A23 真实 HTTP E2E 已执行并通过；连接隔离 `cogmemory_ad_test`，Storage=fake、SMS / LLM=stub，未调用真实 OSS 或生产服务。
+- 已完成 A23 定向 lint、后端 build、全量单元测试与 E2E：69 个单元测试套件 / 597 个测试、12 个 E2E 套件 / 55 个测试通过；全模块 lint 仍有未由 A23 修改的既有 scoring 格式错误。
 
-## 12. 后续同步规则
+## 13. 后续同步规则
 
 - 后续新增模块、接口、DTO、数据模型、Service 或测试命令后，应同步更新对应 handoff 文档。
 - 本文档只记录已确认事实，不承载未确认推测。

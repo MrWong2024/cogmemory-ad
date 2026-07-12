@@ -886,6 +886,77 @@ describe('ReportsService', () => {
     ).resolves.toBeNull();
   });
 
+  it('atomically starts source freeze only for the unchanged locked report', async () => {
+    const reportId = new Types.ObjectId();
+    const patientId = new Types.ObjectId();
+    const visitId = new Types.ObjectId();
+    const expectedUpdatedAt = new Date('2026-07-12T08:00:00.000Z');
+    const metadata = { a20Generation: {}, a23SourceFreeze: {} };
+    clinicalReportModel.findOneAndUpdate.mockReturnValue(createExecQuery(null));
+
+    await service.startSourceFreezeIfUnmodified({
+      reportId: reportId.toString(),
+      patientId: patientId.toString(),
+      assessmentVisitId: visitId.toString(),
+      expectedUpdatedAt,
+      metadata,
+    });
+
+    expect(clinicalReportModel.findOneAndUpdate).toHaveBeenCalledWith(
+      {
+        _id: reportId,
+        patientId,
+        assessmentVisitId: visitId,
+        reportType: 'cognitive_assessment',
+        reportVersion: 1,
+        status: 'confirmed',
+        source: 'mixed',
+        qualityStatus: 'passed',
+        lockedAt: { $ne: null },
+        lockedBy: { $ne: null },
+        archivedAt: null,
+        voidedAt: null,
+        correctionRecords: { $size: 0 },
+        updatedAt: expectedUpdatedAt,
+        'metadata.a23SourceFreeze': { $exists: false },
+      },
+      { $set: { metadata } },
+      { returnDocument: 'after', runValidators: true },
+    );
+  });
+
+  it('atomically completes only the matching in-progress freeze audit', async () => {
+    const reportId = new Types.ObjectId();
+    const patientId = new Types.ObjectId();
+    const visitId = new Types.ObjectId();
+    const freezeId = '11111111-1111-4111-8111-111111111111';
+    const metadata = { a20Generation: {}, a23SourceFreeze: {} };
+    clinicalReportModel.findOneAndUpdate.mockReturnValue(createExecQuery(null));
+
+    await service.completeSourceFreezeIfMatching({
+      reportId: reportId.toString(),
+      patientId: patientId.toString(),
+      assessmentVisitId: visitId.toString(),
+      freezeId,
+      metadata,
+    });
+
+    expect(clinicalReportModel.findOneAndUpdate).toHaveBeenCalledWith(
+      {
+        _id: reportId,
+        patientId,
+        assessmentVisitId: visitId,
+        reportType: 'cognitive_assessment',
+        reportVersion: 1,
+        'metadata.a23SourceFreeze.version': 1,
+        'metadata.a23SourceFreeze.freezeId': freezeId,
+        'metadata.a23SourceFreeze.state': 'in_progress',
+      },
+      { $set: { metadata } },
+      { returnDocument: 'after', runValidators: true },
+    );
+  });
+
   it('creates one complete version-one cognitive assessment document', async () => {
     const patientId = new Types.ObjectId().toString();
     const assessmentVisitId = new Types.ObjectId().toString();

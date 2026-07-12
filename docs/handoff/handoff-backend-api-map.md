@@ -410,3 +410,17 @@
 - 幂等 / fallback：已锁定 confirmed / archived / corrected 返回 200、alreadyLocked=true，不写库，不要求 expectedUpdatedAt 匹配，不改变锁定事实。合法 a22Lock 返回原审计；历史只有完整 lockedAt + lockedBy 时 lockId=null、actor role=unknown，不猜 name / note；锁定字段残缺或 a22Lock 非法 / 不一致返回 409 `CLINICAL_REPORT_LOCK_AUDIT_UNAVAILABLE`。
 - 业务错误：400 `CLINICAL_REPORT_LOCK_CONFIRMATION_REQUIRED` / DTO validation；404 `PATIENT_NOT_FOUND` / `VISIT_NOT_FOUND` / `CLINICAL_REPORT_NOT_FOUND`；409 `PATIENT_NOT_ACTIVE`、`VISIT_NOT_EDITABLE`、`CLINICAL_REPORT_INCOMPLETE`、`CLINICAL_REPORT_VOIDED`、`CLINICAL_REPORT_METADATA_UNSUPPORTED`、`CLINICAL_REPORT_NOT_LOCKABLE`、`CLINICAL_REPORT_LOCK_CONFLICT`、`CLINICAL_REPORT_LOCK_AUDIT_UNAVAILABLE`；未知持久化失败 500 `CLINICAL_REPORT_LOCK_FAILED`。
 - 隐私 / 非目标：日志与错误不含 lockNote、confirmationNote、doctorOpinion、narrative、snapshots、metadata、患者标识、完整 actor、Cookie/token 或 Mongo 细节。没有 unlock / reopen / return / reject / archive / correct / void、transaction、Storage / PDF 或 AI。
+
+## A23 ClinicalReport source freeze
+
+### POST `/patients/:patientId/visits/:visitId/clinical-reports/:reportId/freeze-sources`
+
+- Guard / roles / actor：类级 `SessionAuthGuard` + `RolesGuard`，方法级 `@Roles('doctor', 'admin')`，并使用 `@CurrentUser()`；未认证 401，system / nurse / research_assistant 403。路径复用 `ClinicalReportResourceParamDto`。
+- Body / whitelist：`FreezeClinicalReportSourcesDto` 只允许 `confirm=true`、trim 后 3-2000 `freezeNote` 和 strict ISO `expectedUpdatedAt`；source IDs、metadata、actor/time、force、rollback、unfreeze 等额外字段由全局 whitelist 拒绝。缺失或非 true confirmation 返回 `CLINICAL_REPORT_SOURCE_FREEZE_CONFIRMATION_REQUIRED`。
+- 首次前置：Patient active、Visit 为 draft / in_progress / completed；报告必须完整归属、cognitive_assessment version 1、confirmed/mixed/passed、已 A22 锁定且未 archived/voided/corrected，并通过 A20-A22 metadata、快照和 expectedUpdatedAt 校验。
+- 精确 scope：只采用报告 primaryScaleInstanceIds、scoreResultIds、cognitiveDomainResultIds、mediaEvidenceIds，并读取这些实例下全部 ItemResponse 后把精确 ID 固化到内部 a23SourceFreeze。不会接受客户端 scope，也不会冻结 scope 外记录。
+- 状态 / 恢复：首次原子写 `in_progress` 后依次冻结 ScaleInstance、ItemResponse、ScoreResult、CognitiveDomainResult、MediaEvidence，再重新精确读取验证并原子写 `completed`。无 transaction 或 rollback；中断后以原 freezeId / note / startedBy / scope 恢复。completed 重复请求允许旧 expectedUpdatedAt，返回 `alreadyFrozen=true`；恢复完成返回 `resumedExisting=true`。
+- Response：HTTP 200 `FreezeClinicalReportSourcesResponse`，包含安全 `report` 与 `sourceFreezeReceipt`；receipt 含 freezeId、状态、时间、actor、原始 note、expected/completed/newly/previously counts、alreadyFrozen、resumedExisting。report.latest 同步返回安全 sourceFreeze summary。
+- 隐私 / 边界：公开响应不含 metadata、scope、ItemResponse IDs 或其他来源 ID；不冻结 Patient、Visit、ScaleDefinition/Version、Storage，不生成 PDF / AI，不创建 AuditLog，不提供 unfreeze。
+- 错误族：ownership / Patient / Visit / report not found，`CLINICAL_REPORT_NOT_SOURCE_FREEZABLE`、`CLINICAL_REPORT_SOURCE_FREEZE_INPUT_INVALID`、`..._SCOPE_INVALID`、`..._CONFLICT`、`..._AUDIT_UNAVAILABLE`、`..._INCOMPLETE`、`..._FAILED` 及既有 metadata / voided 错误。
+- 冻结后写保护：A14 ItemResponse 草稿更新、A15 media 上传/作废与 evidenceRefs 变更、A16 ScaleInstance submit、A18 ScoreResult manual-review/confirm 的原子 filter 均包含 `lockedAt: null`；A17/A19/A20-A22 的既有幂等读取/计算不会覆盖锁定事实或 a23SourceFreeze。

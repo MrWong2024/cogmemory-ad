@@ -35,6 +35,7 @@ import {
 } from '../schemas/clinical-report.schema';
 import type { ClinicalReportConfirmationMetadata } from '../types/clinical-report-review.types';
 import type { LockClinicalReportInput } from '../types/clinical-report-lock.types';
+import type { FreezeClinicalReportSourcesInput } from '../types/clinical-report-source-freeze.types';
 
 export type ReportPatientSnapshotSummary = {
   subjectCode?: string;
@@ -261,6 +262,12 @@ export type ConfirmClinicalReportInput = ClinicalReportOwnershipInput & {
   confirmation: ClinicalReportConfirmationMetadata;
   metadata: Record<string, unknown>;
 };
+
+export type CompleteClinicalReportSourceFreezeInput =
+  ClinicalReportOwnershipInput & {
+    freezeId: string;
+    metadata: Record<string, unknown>;
+  };
 
 const REPORT_STATUS_TRANSITIONS = {
   draft: ['pending_confirmation', 'voided'],
@@ -500,6 +507,61 @@ export class ReportsService {
           },
         },
         { new: true, runValidators: true },
+      )
+      .exec();
+    return updated ? this.mapReport(updated) : null;
+  }
+
+  async startSourceFreezeIfUnmodified(
+    input: FreezeClinicalReportSourcesInput,
+  ): Promise<ClinicalReportSummary | null> {
+    const ownership = this.normalizeClinicalReportOwnership(input);
+    if (!ownership || !Number.isFinite(input.expectedUpdatedAt.getTime())) {
+      return null;
+    }
+    const updated = await this.clinicalReportModel
+      .findOneAndUpdate(
+        {
+          ...ownership,
+          reportType: 'cognitive_assessment',
+          reportVersion: 1,
+          status: 'confirmed',
+          source: 'mixed',
+          qualityStatus: 'passed',
+          lockedAt: { $ne: null },
+          lockedBy: { $ne: null },
+          archivedAt: null,
+          voidedAt: null,
+          correctionRecords: { $size: 0 },
+          updatedAt: input.expectedUpdatedAt,
+          'metadata.a23SourceFreeze': { $exists: false },
+        },
+        { $set: { metadata: input.metadata } },
+        { returnDocument: 'after', runValidators: true },
+      )
+      .exec();
+    return updated ? this.mapReport(updated) : null;
+  }
+
+  async completeSourceFreezeIfMatching(
+    input: CompleteClinicalReportSourceFreezeInput,
+  ): Promise<ClinicalReportSummary | null> {
+    const ownership = this.normalizeClinicalReportOwnership(input);
+    if (!ownership || !input.freezeId.trim()) {
+      return null;
+    }
+    const updated = await this.clinicalReportModel
+      .findOneAndUpdate(
+        {
+          ...ownership,
+          reportType: 'cognitive_assessment',
+          reportVersion: 1,
+          'metadata.a23SourceFreeze.version': 1,
+          'metadata.a23SourceFreeze.freezeId': input.freezeId,
+          'metadata.a23SourceFreeze.state': 'in_progress',
+        },
+        { $set: { metadata: input.metadata } },
+        { returnDocument: 'after', runValidators: true },
       )
       .exec();
     return updated ? this.mapReport(updated) : null;

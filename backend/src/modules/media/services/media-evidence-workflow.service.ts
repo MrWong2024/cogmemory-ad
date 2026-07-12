@@ -338,7 +338,7 @@ export class MediaEvidenceWorkflowService {
       params.mediaEvidenceId,
     );
 
-    if (evidence.status !== 'attached') {
+    if (evidence.status !== 'attached' || evidence.lockedAt instanceof Date) {
       throw new ConflictException({
         code: 'MEDIA_EVIDENCE_NOT_VOIDABLE',
         message: 'Media evidence cannot be voided',
@@ -507,14 +507,20 @@ export class MediaEvidenceWorkflowService {
       });
     }
 
-    if (!EDITABLE_STATUSES.has(chain.scaleInstance.status)) {
+    if (
+      !EDITABLE_STATUSES.has(chain.scaleInstance.status) ||
+      chain.scaleInstance.lockedAt instanceof Date
+    ) {
       throw new ConflictException({
         code: 'SCALE_INSTANCE_NOT_EDITABLE',
         message: 'Scale instance is not editable',
       });
     }
 
-    if (!EDITABLE_ITEM_RESPONSE_STATUSES.has(chain.itemResponse.status)) {
+    if (
+      !EDITABLE_ITEM_RESPONSE_STATUSES.has(chain.itemResponse.status) ||
+      chain.itemResponse.lockedAt instanceof Date
+    ) {
       throw new ConflictException({
         code: 'ITEM_RESPONSE_NOT_EDITABLE',
         message: 'Item response is not editable',

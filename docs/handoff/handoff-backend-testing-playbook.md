@@ -266,6 +266,14 @@
 - A22 测试数据使用 `SUBJ-A22-TEST-*` / `VISIT-A22-TEST-*`、脱敏账号和无临床含义短句；只定向清理 A22 数据，不调用真实 OSS、SMS、LLM、Storage 或生产服务，不创建 PDF / AI / AuditLog。
 - A22 当前实际结果：新增 3 个单元测试套件并扩展既有 reports specs；全量 unit 为 66 个套件 / 582 个测试通过。新增 A22 真实 HTTP E2E 为 1 个套件 / 5 个测试通过；全量 E2E 为 11 个套件 / 51 个测试通过。
 
+- A23 DTO / Controller：覆盖 confirm、freezeNote trim/长度、strict expectedUpdatedAt、extra fields，以及类级 guards、doctor/admin、CurrentUser 和轻薄转发。
+- A23 纯函数 / Workflow：覆盖已锁报告 readiness、A20-A22 metadata、scope 去重稳定排序、counts、in_progress / completed audit、metadata preserve、invalid scope，以及显式确认和 completed 旧 expectedUpdatedAt 幂等。ReportsService mock 覆盖 start / complete 原子 filter。
+- 来源冻结与写保护：Assessments / Scoring / CognitiveDomains / Media Service 以精确 ownership + IDs 批量读取/更新；ScaleInstance、ItemResponse、ScoreResult、MediaEvidence 使用 locked 状态，computed CognitiveDomainResult 只补 lockedAt。A14/A15/A16/A18 相关写 filter 增加 lockedAt 防御，并由既有 service specs 验证关键 filter。
+- public mapper：A23 summary / receipt 只含 actor、时间、note 和 expected/completed/newly/previously counts；不含 scope IDs 或 metadata，非法 metadata 在 latest 安全忽略。
+- `clinical-report-source-freeze.e2e-spec.ts` 使用真实 AppModule、Cookie/Session/Roles Guard、全局 DTO、隔离 MongoDB 与 fake Storage；使用 `SUBJ-A23-TEST-*` / `VISIT-A23-TEST-*`、脱敏账号和无临床含义 note，定向清理 A23 数据。覆盖 401、system/nurse/research 403、confirmation/whitelist、doctor 首次精确冻结、domain status 保留、scope 外实例/Patient/Visit/报告锁不变、旧 expectedUpdatedAt 幂等、latest 安全摘要和 admin。
+- A23 执行前确认 `NODE_ENV=test`、数据库为 `cogmemory_ad_test` 且非 dev/prod、Storage=fake、LLM=stub，SMS 使用 test stub 默认值；未输出连接串或凭证，未调用真实 OSS/SMS/LLM。
+- A23 当前实际结果：build 通过；全量 unit 为 69 个套件 / 597 个测试通过；A23 定向 E2E 为 1 个套件 / 4 个测试，全量 E2E 为 12 个套件 / 55 个测试通过。定向 A23/reports lint 通过；按全模块范围执行 lint 时仍报告未由 A23 修改的既有 scoring 纯函数/测试格式问题，因此不写成全量 lint 通过。
+
 ## 7. 医疗与量表数据测试红线
 
 - 测试不得使用真实患者数据、真实身份证号、真实手机号、真实病历号或其他可识别个人信息。

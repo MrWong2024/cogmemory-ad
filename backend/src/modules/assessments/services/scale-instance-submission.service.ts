@@ -329,7 +329,8 @@ export class ScaleInstanceSubmissionService {
   private assertFirstSubmissionState(context: SubmissionContext): void {
     if (
       context.scaleInstance.status === 'locked' ||
-      context.scaleInstance.status === 'voided'
+      context.scaleInstance.status === 'voided' ||
+      context.scaleInstance.lockedAt instanceof Date
     ) {
       throw new ConflictException({
         code: 'SCALE_INSTANCE_NOT_SUBMITTABLE',
@@ -482,7 +483,11 @@ export class ScaleInstanceSubmissionService {
       );
       return this.buildAlreadySubmittedResponse(context);
     }
-    if (current?.status === 'locked' || current?.status === 'voided') {
+    if (
+      current?.status === 'locked' ||
+      current?.status === 'voided' ||
+      current?.lockedAt instanceof Date
+    ) {
       throw new ConflictException({
         code: 'SCALE_INSTANCE_NOT_SUBMITTABLE',
         message: 'Scale instance is not submittable',

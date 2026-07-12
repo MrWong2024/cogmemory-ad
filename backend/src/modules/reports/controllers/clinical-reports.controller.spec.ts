@@ -7,6 +7,7 @@ import { PATIENT_WORKFLOW_ROLES } from '../../patients/patients.constants';
 import { ClinicalReportGenerationWorkflowService } from '../services/clinical-report-generation-workflow.service';
 import { ClinicalReportLockWorkflowService } from '../services/clinical-report-lock-workflow.service';
 import { ClinicalReportReviewWorkflowService } from '../services/clinical-report-review-workflow.service';
+import { ClinicalReportSourceFreezeWorkflowService } from '../services/clinical-report-source-freeze-workflow.service';
 import { ClinicalReportsController } from './clinical-reports.controller';
 
 describe('ClinicalReportsController', () => {
@@ -21,6 +22,7 @@ describe('ClinicalReportsController', () => {
     confirmReport: jest.Mock;
   };
   let lockWorkflow: { lockClinicalReport: jest.Mock };
+  let sourceFreezeWorkflow: { freezeClinicalReportSources: jest.Mock };
 
   beforeEach(async () => {
     workflow = {
@@ -33,6 +35,7 @@ describe('ClinicalReportsController', () => {
       confirmReport: jest.fn(),
     };
     lockWorkflow = { lockClinicalReport: jest.fn() };
+    sourceFreezeWorkflow = { freezeClinicalReportSources: jest.fn() };
     const moduleRef = await Test.createTestingModule({
       controllers: [ClinicalReportsController],
       providers: [
@@ -47,6 +50,10 @@ describe('ClinicalReportsController', () => {
         {
           provide: ClinicalReportLockWorkflowService,
           useValue: lockWorkflow,
+        },
+        {
+          provide: ClinicalReportSourceFreezeWorkflowService,
+          useValue: sourceFreezeWorkflow,
         },
       ],
     })
@@ -64,6 +71,13 @@ describe('ClinicalReportsController', () => {
         ROLES_KEY,
         // eslint-disable-next-line @typescript-eslint/unbound-method
         ClinicalReportsController.prototype.confirmReport,
+      ),
+    ).toEqual(['doctor', 'admin']);
+    expect(
+      Reflect.getMetadata(
+        ROLES_KEY,
+        // eslint-disable-next-line @typescript-eslint/unbound-method
+        ClinicalReportsController.prototype.freezeSources,
       ),
     ).toEqual(['doctor', 'admin']);
     expect(
@@ -154,15 +168,22 @@ describe('ClinicalReportsController', () => {
       lockNote: '脱敏不可逆锁定说明',
       expectedUpdatedAt,
     };
+    const freeze = {
+      confirm: true,
+      freezeNote: '脱敏来源冻结说明',
+      expectedUpdatedAt,
+    };
     reviewWorkflow.updateDraft.mockResolvedValue({});
     reviewWorkflow.submitForConfirmation.mockResolvedValue({});
     reviewWorkflow.confirmReport.mockResolvedValue({});
     lockWorkflow.lockClinicalReport.mockResolvedValue({});
+    sourceFreezeWorkflow.freezeClinicalReportSources.mockResolvedValue({});
 
     await controller.updateDraft(params, currentUser, edit);
     await controller.submitForConfirmation(params, currentUser, submit);
     await controller.confirmReport(params, currentUser, confirm);
     await controller.lockReport(params, currentUser, lock);
+    await controller.freezeSources(params, currentUser, freeze);
 
     expect(reviewWorkflow.updateDraft).toHaveBeenCalledWith(
       params.patientId,
@@ -191,6 +212,15 @@ describe('ClinicalReportsController', () => {
       params.reportId,
       currentUser,
       lock,
+    );
+    expect(
+      sourceFreezeWorkflow.freezeClinicalReportSources,
+    ).toHaveBeenCalledWith(
+      params.patientId,
+      params.visitId,
+      params.reportId,
+      currentUser,
+      freeze,
     );
   });
 });

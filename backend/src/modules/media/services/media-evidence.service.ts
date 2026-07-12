@@ -127,6 +127,28 @@ export type MediaEvidenceSummary = {
   updatedAt: Date | null;
 };
 
+export type MediaEvidenceSourceFreezeItem = {
+  id: string;
+  patientId: string;
+  assessmentVisitId: string;
+  scaleInstanceId: string;
+  itemResponseId: string;
+  status: MediaEvidenceStatus;
+  storageStatus: MediaStorageStatus;
+  lockedAt: Date | null;
+  voidedAt: Date | null;
+  deletedAt: Date | null;
+};
+
+export type MediaEvidenceSourceFreezeBatchResult = {
+  requestedCount: number;
+  matchedCount: number;
+  newlyFrozenCount: number;
+  previouslyFrozenCount: number;
+  invalidCount: number;
+  items: MediaEvidenceSourceFreezeItem[];
+};
+
 export type MediaEvidenceOwnership = {
   patientId: Types.ObjectId | string;
   assessmentVisitId: Types.ObjectId | string;
@@ -323,6 +345,114 @@ export class MediaEvidenceService {
     return evidence ? this.mapEvidence(evidence) : null;
   }
 
+  async listMediaEvidenceByIds(
+    patientId: Types.ObjectId | string,
+    assessmentVisitId: Types.ObjectId | string,
+    scaleInstanceIds: readonly string[],
+    mediaEvidenceIds: readonly string[],
+  ): Promise<MediaEvidenceSummary[]> {
+    const normalizedPatientId = this.normalizeObjectId(patientId);
+    const normalizedVisitId = this.normalizeObjectId(assessmentVisitId);
+    const normalizedScaleIds = this.normalizeObjectIds(scaleInstanceIds);
+    const normalizedEvidenceIds = this.normalizeObjectIds(mediaEvidenceIds);
+    if (
+      !normalizedPatientId ||
+      !normalizedVisitId ||
+      !normalizedScaleIds ||
+      !normalizedEvidenceIds
+    ) {
+      return [];
+    }
+    const evidence = await this.mediaEvidenceModel
+      .find({
+        _id: { $in: normalizedEvidenceIds },
+        patientId: normalizedPatientId,
+        assessmentVisitId: normalizedVisitId,
+        scaleInstanceId: { $in: normalizedScaleIds },
+      })
+      .sort({ _id: 1 })
+      .exec();
+    return evidence.map((item) => this.mapEvidence(item));
+  }
+
+  async freezeMediaEvidenceByIds(
+    patientId: Types.ObjectId | string,
+    assessmentVisitId: Types.ObjectId | string,
+    scaleInstanceIds: readonly string[],
+    mediaEvidenceIds: readonly string[],
+    sourceLockedAt: Date,
+  ): Promise<MediaEvidenceSourceFreezeBatchResult> {
+    const normalizedPatientId = this.normalizeObjectId(patientId);
+    const normalizedVisitId = this.normalizeObjectId(assessmentVisitId);
+    const normalizedScaleIds = this.normalizeObjectIds(scaleInstanceIds);
+    const normalizedEvidenceIds = this.normalizeObjectIds(mediaEvidenceIds);
+    if (
+      !normalizedPatientId ||
+      !normalizedVisitId ||
+      !normalizedScaleIds ||
+      !normalizedEvidenceIds ||
+      !Number.isFinite(sourceLockedAt.getTime())
+    ) {
+      return this.emptySourceFreezeResult(mediaEvidenceIds.length);
+    }
+    const ownership = {
+      _id: { $in: normalizedEvidenceIds },
+      patientId: normalizedPatientId,
+      assessmentVisitId: normalizedVisitId,
+      scaleInstanceId: { $in: normalizedScaleIds },
+    };
+    const before = await this.mediaEvidenceModel.find(ownership).exec();
+    const previouslyFrozenCount = before.filter(
+      (item) => item.status === 'locked' && item.lockedAt instanceof Date,
+    ).length;
+    const updateResult = await this.mediaEvidenceModel
+      .updateMany(
+        {
+          ...ownership,
+          status: 'attached',
+          storageStatus: 'stored',
+          lockedAt: null,
+          voidedAt: null,
+          deletedAt: null,
+        },
+        { $set: { status: 'locked', lockedAt: sourceLockedAt } },
+        { runValidators: true },
+      )
+      .exec();
+    const after = await this.mediaEvidenceModel
+      .find(ownership)
+      .sort({ _id: 1 })
+      .exec();
+    const items = after.map((item) => ({
+      id: item._id.toString(),
+      patientId: item.patientId.toString(),
+      assessmentVisitId: item.assessmentVisitId.toString(),
+      scaleInstanceId: item.scaleInstanceId.toString(),
+      itemResponseId: item.itemResponseId.toString(),
+      status: item.status,
+      storageStatus: item.storageStatus,
+      lockedAt: item.lockedAt ?? null,
+      voidedAt: item.voidedAt ?? null,
+      deletedAt: item.deletedAt ?? null,
+    }));
+    const validCount = items.filter(
+      (item) =>
+        item.status === 'locked' &&
+        item.storageStatus === 'stored' &&
+        item.lockedAt !== null &&
+        item.voidedAt === null &&
+        item.deletedAt === null,
+    ).length;
+    return {
+      requestedCount: normalizedEvidenceIds.length,
+      matchedCount: items.length,
+      newlyFrozenCount: updateResult.modifiedCount,
+      previouslyFrozenCount,
+      invalidCount: normalizedEvidenceIds.length - validCount,
+      items,
+    };
+  }
+
   async listEvidenceByItemOwnership(
     ownership: MediaEvidenceOwnership,
   ): Promise<MediaEvidenceSummary[]> {
@@ -393,6 +523,8 @@ export class MediaEvidenceService {
           _id: normalizedEvidenceId,
           ...normalizedOwnership,
           status: 'attached',
+          lockedAt: null,
+          voidedAt: null,
           deletedAt: null,
         },
         {
@@ -467,6 +599,33 @@ export class MediaEvidenceService {
     }
 
     return objectId;
+  }
+
+  private normalizeObjectIds(ids: readonly string[]): Types.ObjectId[] | null {
+    const result: Types.ObjectId[] = [];
+    const seen = new Set<string>();
+    for (const id of ids) {
+      const normalized = this.normalizeObjectId(id);
+      if (!normalized || seen.has(normalized.toString())) {
+        return null;
+      }
+      seen.add(normalized.toString());
+      result.push(normalized);
+    }
+    return result;
+  }
+
+  private emptySourceFreezeResult(
+    requestedCount: number,
+  ): MediaEvidenceSourceFreezeBatchResult {
+    return {
+      requestedCount,
+      matchedCount: 0,
+      newlyFrozenCount: 0,
+      previouslyFrozenCount: 0,
+      invalidCount: requestedCount,
+      items: [],
+    };
   }
 
   private mapEvidence(evidence: MediaEvidenceDocument): MediaEvidenceSummary {

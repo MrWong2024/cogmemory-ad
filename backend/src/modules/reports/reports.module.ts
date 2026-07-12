@@ -18,6 +18,7 @@ import { ClinicalReportGenerationWorkflowService } from './services/clinical-rep
 import { ClinicalReportLockWorkflowService } from './services/clinical-report-lock-workflow.service';
 import { ClinicalReportPublicMapper } from './services/clinical-report-public.mapper';
 import { ClinicalReportReviewWorkflowService } from './services/clinical-report-review-workflow.service';
+import { ClinicalReportSourceFreezeWorkflowService } from './services/clinical-report-source-freeze-workflow.service';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { ClinicalReportReviewWorkflowService } from './services/clinical-report-
     ClinicalReportPublicMapper,
     ClinicalReportReviewWorkflowService,
     ClinicalReportLockWorkflowService,
+    ClinicalReportSourceFreezeWorkflowService,
   ],
   exports: [ReportsService],
 })

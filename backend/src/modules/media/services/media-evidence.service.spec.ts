@@ -655,6 +655,8 @@ describe('MediaEvidenceService', () => {
         _id: rawEvidence._id,
         ...ownership,
         status: 'attached',
+        lockedAt: null,
+        voidedAt: null,
         deletedAt: null,
       },
       { $set: { status: 'voided', voidedAt, metadata } },

@@ -399,3 +399,12 @@
 - `ReportsService.lockReportIfUnmodified()` 只负责 ObjectId 转换、完整条件 filter 和单文档 `findOneAndUpdate()`；update 只含 lockedAt、lockedBy、metadata，Mongoose timestamps 更新 updatedAt。没有 save、自动重试、transaction、分布式锁或来源更新。
 - `ClinicalReportPublicMapper` 无数据库访问，安全解析 a22Lock 为 `lock`；缺 namespace 且 Schema 锁定字段完整时返回受控 fallback，非法 / 不一致审计返回 lock=null；继续保留 top-level lockedAt，不返回 metadata 或原始 lockedBy。
 - 与 A20/A21 边界：A20 负责生成历史快照，A21 负责 clinician edit / submission / confirmation，A22 只锁定已经 confirmed 的当前 ClinicalReport 文档。A22 不修改 A20/A21 metadata、confirmation、narrative、快照、source / quality / status，不实现 unlock / archive / correct / void。
+
+### A23 ClinicalReport source freeze workflow
+
+- `ClinicalReportSourceFreezeWorkflowService` 依赖 Patients、Assessments、Scoring、CognitiveDomains、Media 的导出 Service，以及 ReportsService / public mapper；负责 ownership、doctor/admin actor、首次 readiness、精确 scope、固定顺序批量冻结、全量重读验证、恢复、completed 幂等和安全回执。
+- `clinical-report-source-freeze.ts` 是无 DI / 数据库的纯函数：验证已锁报告与 A20-A22 metadata，规范化、去重和稳定排序 scope，构建 counts、in_progress / completed audit，保留其他 metadata namespace，并严格解析既有审计与 scope 一致性。
+- `ReportsService.startSourceFreezeIfUnmodified()` 以 ownership + report prerequisite + expectedUpdatedAt + 无既有 A23 审计原子写入 in_progress；`completeSourceFreezeIfMatching()` 只按 ownership + freezeId + in_progress 原子写 completed，不修改正文、快照、confirmation、锁字段或 status。
+- `AssessmentsService` 提供 exact ScaleInstance / ItemResponse 查询和批量冻结；`ScoringService` 冻结 confirmed ScoreResult；`CognitiveDomainsService` 只为 computed/confirmed 域结果补 lockedAt；`MediaEvidenceService` 冻结 attached 证据。所有方法限定 patient / visit / 精确 ID，并返回受控批次计数。
+- ReportsModule 保持单向依赖来源模块；不重复注册来源 Schema、不直接注入跨模块 Model、不使用 forwardRef。跨集合操作无 Mongo transaction，in_progress 是恢复锚点；部分失败不回滚或解冻，completed 仅在重读验证全部来源后写入。
+- public mapper 只解析安全 summary，不公开 metadata / scope IDs；A20-A22 metadata 更新继续使用顶层 namespace 合并并保留 a23SourceFreeze。

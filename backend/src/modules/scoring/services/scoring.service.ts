@@ -127,6 +127,24 @@ export type ScoreResultSummary = {
   updatedAt: Date;
 };
 
+export type ScoreResultSourceFreezeItem = {
+  id: string;
+  patientId: string;
+  assessmentVisitId: string;
+  scaleInstanceId: string;
+  status: ScoreResultStatus;
+  lockedAt: Date | null;
+};
+
+export type ScoreResultSourceFreezeBatchResult = {
+  requestedCount: number;
+  matchedCount: number;
+  newlyFrozenCount: number;
+  previouslyFrozenCount: number;
+  invalidCount: number;
+  items: ScoreResultSourceFreezeItem[];
+};
+
 export type ScoringItemInput = {
   itemResponseId?: string | null;
   itemCode: string;
@@ -330,6 +348,115 @@ export class ScoringService {
     return scoreResult ? this.mapScoreResult(scoreResult) : null;
   }
 
+  async listScoreResultsByIds(
+    patientId: Types.ObjectId | string,
+    assessmentVisitId: Types.ObjectId | string,
+    scaleInstanceIds: readonly string[],
+    scoreResultIds: readonly string[],
+  ): Promise<ScoreResultSummary[]> {
+    const normalizedPatientId = this.normalizeObjectId(patientId);
+    const normalizedVisitId = this.normalizeObjectId(assessmentVisitId);
+    const normalizedScaleIds = this.normalizeObjectIds(scaleInstanceIds);
+    const normalizedResultIds = this.normalizeObjectIds(scoreResultIds);
+    if (
+      !normalizedPatientId ||
+      !normalizedVisitId ||
+      !normalizedScaleIds ||
+      !normalizedResultIds
+    ) {
+      return [];
+    }
+    const results = await this.scoreResultModel
+      .find({
+        _id: { $in: normalizedResultIds },
+        patientId: normalizedPatientId,
+        assessmentVisitId: normalizedVisitId,
+        scaleInstanceId: { $in: normalizedScaleIds },
+      })
+      .sort({ _id: 1 })
+      .exec();
+    return results.map((result) => this.mapScoreResult(result));
+  }
+
+  async freezeScoreResultsByIds(
+    patientId: Types.ObjectId | string,
+    assessmentVisitId: Types.ObjectId | string,
+    scaleInstanceIds: readonly string[],
+    scoreResultIds: readonly string[],
+    sourceLockedAt: Date,
+  ): Promise<ScoreResultSourceFreezeBatchResult> {
+    const normalizedPatientId = this.normalizeObjectId(patientId);
+    const normalizedVisitId = this.normalizeObjectId(assessmentVisitId);
+    const normalizedScaleIds = this.normalizeObjectIds(scaleInstanceIds);
+    const normalizedResultIds = this.normalizeObjectIds(scoreResultIds);
+    if (
+      !normalizedPatientId ||
+      !normalizedVisitId ||
+      !normalizedScaleIds ||
+      !normalizedResultIds ||
+      !Number.isFinite(sourceLockedAt.getTime())
+    ) {
+      return this.emptySourceFreezeResult(scoreResultIds.length);
+    }
+    const before = await this.scoreResultModel
+      .find({
+        _id: { $in: normalizedResultIds },
+        patientId: normalizedPatientId,
+        assessmentVisitId: normalizedVisitId,
+        scaleInstanceId: { $in: normalizedScaleIds },
+        runNo: 1,
+      })
+      .exec();
+    const previouslyFrozenCount = before.filter(
+      (item) => item.status === 'locked' && item.lockedAt instanceof Date,
+    ).length;
+    const updateResult = await this.scoreResultModel
+      .updateMany(
+        {
+          _id: { $in: normalizedResultIds },
+          patientId: normalizedPatientId,
+          assessmentVisitId: normalizedVisitId,
+          scaleInstanceId: { $in: normalizedScaleIds },
+          runNo: 1,
+          status: 'confirmed',
+          lockedAt: null,
+          voidedAt: null,
+        },
+        { $set: { status: 'locked', lockedAt: sourceLockedAt } },
+        { runValidators: true },
+      )
+      .exec();
+    const after = await this.scoreResultModel
+      .find({
+        _id: { $in: normalizedResultIds },
+        patientId: normalizedPatientId,
+        assessmentVisitId: normalizedVisitId,
+        scaleInstanceId: { $in: normalizedScaleIds },
+        runNo: 1,
+      })
+      .sort({ _id: 1 })
+      .exec();
+    const items = after.map((item) => ({
+      id: item._id.toString(),
+      patientId: item.patientId.toString(),
+      assessmentVisitId: item.assessmentVisitId.toString(),
+      scaleInstanceId: item.scaleInstanceId.toString(),
+      status: item.status,
+      lockedAt: item.lockedAt ?? null,
+    }));
+    const validCount = items.filter(
+      (item) => item.status === 'locked' && item.lockedAt !== null,
+    ).length;
+    return {
+      requestedCount: normalizedResultIds.length,
+      matchedCount: items.length,
+      newlyFrozenCount: updateResult.modifiedCount,
+      previouslyFrozenCount,
+      invalidCount: normalizedResultIds.length - validCount,
+      items,
+    };
+  }
+
   async reviewScoreItemIfUnmodified(
     input: ReviewScoreItemAtomicInput,
   ): Promise<ScoreResultSummary | null> {
@@ -343,6 +470,7 @@ export class ScoringService {
           ...ownership,
           runNo: 1,
           status: { $in: ['needs_review', 'computed'] },
+          lockedAt: null,
           updatedAt: input.expectedUpdatedAt,
         },
         {
@@ -381,6 +509,7 @@ export class ScoringService {
           ...ownership,
           runNo: 1,
           status: 'computed',
+          lockedAt: null,
           updatedAt: input.expectedUpdatedAt,
         },
         {
@@ -688,6 +817,33 @@ export class ScoringService {
     }
 
     return objectId;
+  }
+
+  private normalizeObjectIds(ids: readonly string[]): Types.ObjectId[] | null {
+    const result: Types.ObjectId[] = [];
+    const seen = new Set<string>();
+    for (const id of ids) {
+      const normalized = this.normalizeObjectId(id);
+      if (!normalized || seen.has(normalized.toString())) {
+        return null;
+      }
+      seen.add(normalized.toString());
+      result.push(normalized);
+    }
+    return result;
+  }
+
+  private emptySourceFreezeResult(
+    requestedCount: number,
+  ): ScoreResultSourceFreezeBatchResult {
+    return {
+      requestedCount,
+      matchedCount: 0,
+      newlyFrozenCount: 0,
+      previouslyFrozenCount: 0,
+      invalidCount: requestedCount,
+      items: [],
+    };
   }
 
   private normalizeScoreResultOwnership(input: ScoreResultOwnershipInput): {

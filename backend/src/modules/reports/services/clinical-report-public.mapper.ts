@@ -9,6 +9,7 @@ import {
   readClinicalReportSubmission,
 } from '../lib/clinical-report-review';
 import { resolveExistingClinicalReportLock } from '../lib/clinical-report-lock';
+import { resolveExistingSourceFreeze } from '../lib/clinical-report-source-freeze';
 import type { ClinicalReportResponse } from '../types/clinical-report-response.types';
 import type {
   ClinicalReportSummary,
@@ -170,6 +171,7 @@ export class ClinicalReportPublicMapper {
         : null,
       lockedAt: safeDate(report.lockedAt),
       lock: this.mapLock(report),
+      sourceFreeze: this.mapSourceFreeze(report),
       archivedAt: safeDate(report.archivedAt),
       voidedAt: safeDate(report.voidedAt),
       voidReason: report.voidReason,
@@ -319,6 +321,55 @@ export class ClinicalReportPublicMapper {
           operatorRole: lock.lockedBy.operatorRole,
         },
         ...(lock.lockNote ? { lockNote: lock.lockNote } : {}),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private mapSourceFreeze(report: ClinicalReportSummary) {
+    try {
+      const audit = resolveExistingSourceFreeze(report);
+      if (!audit) {
+        return null;
+      }
+      const completed = audit.state === 'completed';
+      return {
+        freezeId: audit.freezeId,
+        state: audit.state,
+        startedAt: new Date(audit.startedAt.getTime()),
+        sourceLockedAt: new Date(audit.sourceLockedAt.getTime()),
+        startedBy: {
+          operatorId: audit.startedBy,
+          operatorName: audit.startedByName,
+          operatorRole: audit.startedByRole,
+        },
+        freezeNote: audit.freezeNote,
+        expectedCounts: { ...audit.expectedCounts },
+        completedCounts:
+          completed && audit.completedCounts
+            ? { ...audit.completedCounts }
+            : null,
+        newlyFrozenCounts:
+          completed && audit.newlyFrozenCounts
+            ? { ...audit.newlyFrozenCounts }
+            : null,
+        previouslyFrozenCounts: { ...audit.previouslyFrozenCounts },
+        completedAt:
+          completed && audit.completedAt
+            ? new Date(audit.completedAt.getTime())
+            : null,
+        completedBy:
+          completed &&
+          audit.completedBy &&
+          audit.completedByName &&
+          audit.completedByRole
+            ? {
+                operatorId: audit.completedBy,
+                operatorName: audit.completedByName,
+                operatorRole: audit.completedByRole,
+              }
+            : null,
       };
     } catch {
       return null;
