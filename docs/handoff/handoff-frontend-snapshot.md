@@ -165,6 +165,10 @@
 - archiveNote 为 React 内存输入，非空纳入 beforeunload。冲突、not archivable、failed、voided、not found 保留说明、清 checkbox、最多 latest 一次且不自动 POST；网络结果不确定时仅提供手工 latest。latest 已 archived 时只读展示并保留本地说明到用户明确关闭。
 - 归档成功完整应用 response.report，不手动构造 status、archivedAt 或 archive；保存当前页面 archiveReceipt，alreadyArchived true / false 均按成功。`ClinicalReportArchivePanel` 提供内联二次确认，`ClinicalReportArchiveSummary` 分开显示 status、顶层 archivedAt、持久 archive 与会话 receipt；归档后六类报告写操作全部只读。
 - `useClinicalReportWorkflow.ts` 由 B13 基线 1375 行增至 B14 的 1651 行；本阶段未做大规模重构，只把归档资格、草稿、冻结上下文、请求构造与一致性算法提取为独立纯函数，保持统一公开 Hook 和单写锁不变。
+- B14.1 将 `useClinicalReportWorkflow.ts` 从 1651 行 / 52,771 字节拆为 228 行 / 9,156 字节的组合 façade，并新增 `hooks/clinical-report-workflow/` 内部目录。公开 9 个 options、99 个 result keys、七个 mode 和全部组件消费保持不变，现有组件没有修改。
+- 内部中央纯 reducer 管理 activeMode、writingAction、六类 draft / error / receipt、liveMessage 与 writeProhibited；coordinator 唯一持有 mountedRef / writingRef，统一路由报告身份重置、activate / cancel、clearActionErrors / clearAllDrafts、API 执行、401、onReportUpdated 与 latest 恢复。
+- edit / submit / confirm / lock / source-freeze / archive 六类 Action 分别保留各自动作资格、校验、dirty / stale、block reason、API、错误分类、成功文案与回执；公共 recovery 保留原错误 latest 集合并保证每个写请求最多调用一次，单一 beforeunload 保留原四类草稿加首次 freezeNote / archiveNote 条件。
+- B14.1 仍只有一个 activeMode、writingAction、writingRef、mountedRef、beforeunload、报告成功更新入口和 latest 查询入口；façade 不直接 import API Client，Action 不互相 import，组件不 import 内部模块。A25 correction 未接入。
 - 前端媒体公开类型没有定义 Storage 对象定位、校验和、原始文件名、内部患者关联或删除时间字段；页面也不显示这些字段。
 
 ## 4. 当前文件清单
@@ -233,6 +237,17 @@
 - `frontend\src\features\assessments\hooks\useCognitiveDomainResult.ts`
 - `frontend\src\features\assessments\hooks\useClinicalReport.ts`
 - `frontend\src\features\assessments\hooks\useClinicalReportWorkflow.ts`
+- `frontend\src\features\assessments\hooks\clinical-report-workflow\clinical-report-workflow.types.ts`
+- `frontend\src\features\assessments\hooks\clinical-report-workflow\clinical-report-workflow.state.ts`
+- `frontend\src\features\assessments\hooks\clinical-report-workflow\clinical-report-workflow-recovery.ts`
+- `frontend\src\features\assessments\hooks\clinical-report-workflow\useClinicalReportWorkflowCoordinator.ts`
+- `frontend\src\features\assessments\hooks\clinical-report-workflow\useClinicalReportBeforeUnload.ts`
+- `frontend\src\features\assessments\hooks\clinical-report-workflow\useClinicalReportEditAction.ts`
+- `frontend\src\features\assessments\hooks\clinical-report-workflow\useClinicalReportSubmissionAction.ts`
+- `frontend\src\features\assessments\hooks\clinical-report-workflow\useClinicalReportConfirmationAction.ts`
+- `frontend\src\features\assessments\hooks\clinical-report-workflow\useClinicalReportLockAction.ts`
+- `frontend\src\features\assessments\hooks\clinical-report-workflow\useClinicalReportSourceFreezeAction.ts`
+- `frontend\src\features\assessments\hooks\clinical-report-workflow\useClinicalReportArchiveAction.ts`
 - `frontend\src\features\assessments\components\AssessmentVisitExecutionPage.tsx`
 - `frontend\src\features\assessments\components\ScaleInstanceList.tsx`
 - `frontend\src\features\assessments\components\ScaleInitializationPanel.tsx`
@@ -400,6 +415,16 @@
 - `npm run typecheck`：通过，Next 16 既有动态路由类型生成成功且 TypeScript 无错误。
 - `npm run build`：通过，生产构建包含既有访视详情动态路由；B14 未新增路由。
 - E2E、浏览器自动化与浏览器手工联调未执行；A24 真实 HTTP、角色入口、并发冲突、幂等、历史 fallback、窄屏与可访问性均待开发者使用脱敏数据验证。
+- 后端命令未执行。
+
+本次 B14.1 验证结果：
+
+- `npm run lint`：通过。
+- `npm run typecheck`：通过，Next 16 route types 生成成功且 TypeScript 无错误。
+- `npm run build`：通过，生产构建路由集合不变并包含既有访视详情动态路由。
+- 公共契约静态核对：拆分前后 options 均为 9 个字段，result 均为 99 个字段，缺失 0、新增 0；七个既有 mode 不变。
+- 六类 API 仅由对应 Action 调用；单一 writingRef / mountedRef、单一报告 beforeunload、无组件 diff、无锁定业务文件 diff。
+- E2E、浏览器自动化与浏览器手工联调未执行，六类真实 HTTP、并发、beforeunload 与可访问性场景待开发者使用脱敏数据验证。
 - 后端命令未执行。
 
 ## 6. 当前未实现前端事实

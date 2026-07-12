@@ -417,6 +417,13 @@
 - 安全摘要 / fallback：完整 A24 archive 校验顶层 archivedAt、UUID、actor、note 与当前 completed sourceFreeze freezeId / completedAt；历史 archived / corrected 可安全显示 archiveId / 锚点为空、actor unknown / 缺姓名的 fallback，不猜测或补写缺失信息且不开放再次归档。archivedAt / archive / status 或锚点不一致时警告并禁止写入。
 - 边界：归档不读取或修改来源，不修改 Patient / Visit、lockedAt / lock、sourceFreeze、confirmation、narrative / snapshots / scope。没有 unarchive / restore confirmed / correction / void / delete / unlock / unfreeze / PDF / Word / 下载或 AI。
 
+B14.1 调用归属更新（接口契约不变）：
+
+- `updateClinicalReportDraft()` 仅由 `useClinicalReportEditAction.ts` 调用；`submitClinicalReportForConfirmation()` 仅由 `useClinicalReportSubmissionAction.ts` 调用；`confirmClinicalReport()` 仅由 `useClinicalReportConfirmationAction.ts` 调用。
+- `lockClinicalReport()` 仅由 `useClinicalReportLockAction.ts` 调用；`freezeClinicalReportSources()` 仅由 `useClinicalReportSourceFreezeAction.ts` 调用；`archiveClinicalReport()` 仅由 `useClinicalReportArchiveAction.ts` 调用。
+- 公开 `useClinicalReportWorkflow.ts` façade 不直接 import API Client；组件仍不调用报告 API。六个既有 API 路径、method、Body 白名单、错误映射、401 / 403、latest 集合、幂等、无自动 retry / polling 语义均未变化。
+- B14.1 没有新增 correction API，也未对接 A25。
+
 ## 5. 当前认证公开类型
 
 - `AuthUserResponse`：`id`、`accountName`、`displayName`、`roles`、`permissions`、可选 `userType`。

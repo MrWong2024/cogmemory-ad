@@ -156,6 +156,15 @@
 - 浏览器手工验证：未执行，以下 B14 场景均待开发者使用脱敏数据本地验证。
 - 后端命令：未执行。
 
+本次 B14.1 验证结果：
+
+- `npm run lint`：通过。
+- `npm run typecheck`：通过，Next 16 route types 生成成功且 TypeScript 无错误。
+- `npm run build`：通过，既有路由集合不变。
+- 公共 options 9 / result keys 99 静态对照通过；消费者、组件、API Client、ClinicalReport types、draft libs 与 display 均无 diff。
+- E2E / 浏览器自动化 / 浏览器手工验证：未执行；以下 B14.1 浏览器场景均待验证。
+- 后端命令：未执行。
+
 如后续环境中 `frontend/node_modules` 不存在，不得为验证本阶段而执行 `npm install`；应跳过上述命令并说明原因。
 
 ## 4. 自动验证覆盖范围
@@ -309,6 +318,22 @@ B14 自动验证不覆盖：
 - 真实 A24 HTTP、数据库归档、Cookie / CORS、多操作者并发、幂等重读、历史 fallback 与各种审计异常组合。
 - 浏览器 beforeunload、窄屏布局、屏幕阅读器 alert / live region、真实 checkbox / disabled 行为和网络中断后的最终服务端状态。
 - unarchive / restore confirmed / correction / void / delete / unlock / unfreeze / PDF / Word / 下载或 AI；这些能力未实现。
+
+B14.1 静态回归矩阵：
+
+- 公共：options 字段与 null 语义不变；99 个 result keys 不变；mode 仍为 idle / edit / submit / confirm / lock / source_freeze / archive；writingAction、mountedRef、writingRef、activeMode 和 beforeunload 各自唯一；组件无 diff，API Client 无 diff，未新增 correction。
+- Edit：open / update / no-change / save / conflict / 403 / receipt / stale / beforeunload 条件与 B11 一致；本地三个字段在网络与冲突错误后保留。
+- Submit：readiness、submissionNote、checkbox、success / alreadySubmitted、conflict 与 pending read-only 条件一致；不自动重发。
+- Confirm：doctor / admin role、confirmationNote、checkbox、success / alreadyConfirmed、conflict 与 403 文案一致；不模拟 lock。
+- Lock：doctor / admin、Visit draft / in_progress / completed、success / alreadyLocked、conflict、consistency warning 与 confirmed status 不变；lockNote 保留。
+- Source-freeze：start / resume、服务端 persisted note、显式 discard local、in_progress / incomplete / failed、alreadyFrozen / resumedExisting 与 no polling 语义一致；不自动进入恢复。
+- Archive：doctor / admin、不依赖 Patient active / Visit editable、Visit locked 不阻断、success / alreadyArchived、conflict、historical fallback 与 archived read-only 一致。
+- 自动审计：lint / typecheck / build、diff-check、consumer diff、line count、API import direction、单锁、单 beforeunload、latest 与禁止范围检查。
+
+B14.1 静态验证不覆盖：
+
+- 真实 B11-B14 HTTP、Cookie / CORS、多操作者并发、浏览器 beforeunload、网络中断最终状态、窄屏与屏幕阅读器行为；均待开发者使用脱敏数据本地验证。
+- A25 / B15 correction、replacement 关系、版本列表、自动 retry / polling；本阶段均未实现。
 
 ## 5. B1 手工验证建议
 

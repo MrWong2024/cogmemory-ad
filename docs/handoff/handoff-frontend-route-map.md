@@ -6,7 +6,7 @@
 
 ## 2. 当前状态
 
-- 当前包含既有公共、认证、患者 / 访视路由与 B4-B9 共用量表实例路由；B10-B14 复用访视详情路由，未新增报告、锁定、来源冻结或归档路由。
+- 当前包含既有公共、认证、患者 / 访视路由与 B4-B9 共用量表实例路由；B10-B14 复用访视详情路由，B14.1 仅治理内部 Hook 结构，未新增报告、锁定、来源冻结、归档或更正路由。
 - `/dashboard` 已提供患者档案入口，但仍不是完整医生工作台。
 - 当前不包含患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、独立评分、评分锁定、独立认知域、独立报告详情、AI、用户管理或权限菜单路由。
 - 当前不包含 Next middleware 或路由级服务端认证中间件。
@@ -127,6 +127,7 @@
 - 安全边界：目录不展示完整 groups / items、指导语、答案、scoringRule、expectedValue 或内部 ObjectId；能力标识不表示媒体、手写或计时已实现
 - 当前非目标：不在访视详情内读取或保存题目，不提供访视状态流转、报告退回 / reject / reopen / withdraw / 签名 / unlock / unfreeze / rollback / unarchive / restore confirmed / 更正 / 作废 / 重生成 / version 2 / PDF / 下载或 AI 操作
 - 关联组件：`AssessmentVisitExecutionPage`、`ScaleInstanceList`、`ScaleInitializationPanel`、`PatientsWorkspaceContext`、`useClinicalReport`、`useClinicalReportWorkflow`、`ClinicalReportLockPanel`、`ClinicalReportSourceFreezePanel`、`ClinicalReportSourceFreezeSummary`、`ClinicalReportArchivePanel`、`ClinicalReportArchiveSummary` 与其他 ClinicalReport 组件
+- B14.1 路由结论：访视详情仍是唯一报告工作流入口，页面 JSX 与路由数据源不变；内部六类 Action 只能经 `useClinicalReportWorkflow` façade 被页面间接使用。B15 版本化更正页面 / 交互尚未实施。
 
 ### 3.9 `/patients/[patientId]/visits/[visitId]/scale-instances/[scaleInstanceId]`
 

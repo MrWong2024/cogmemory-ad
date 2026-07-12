@@ -623,6 +623,16 @@
 - `ClinicalReportWorkflowSummary`：新增持久 archive 与当前会话 receipt；`ClinicalReportTechnicalSummary` 分开显示 report.status、isFinal、lockedAt、sourceFreeze.state、archivedAt、archiveId 与 archive sourceFreeze anchor。
 - 安全边界：不显示 metadata、Schema 原始 archivedBy、来源 ID 或 correctionRecords；不查询 / 修改来源，不修改 Patient / Visit、lock、sourceFreeze、confirmation、narrative / snapshots / scope，不把归档写成删除、作废、更正或 PDF。
 
+### 6.68 B14.1 ClinicalReport 工作流内部结构
+
+- 公开 façade：`hooks/useClinicalReportWorkflow.ts` 只组合 coordinator、六类 Action 和单一 beforeunload，继续导出原公开 Hook、mode / writing action、显式 options / result 与兼容的 `UseClinicalReportWorkflowValue`。组件只允许 import 此 façade。
+- 公共契约：`hooks/clinical-report-workflow/clinical-report-workflow.types.ts` 显式定义 9 字段 options、99 字段 result、七个 mode、中央 state/action 与 coordinator typed contract；不使用 any、index signature 或双重断言。
+- 中央状态：`clinical-report-workflow.state.ts` 是纯 reducer，统一管理 activeMode、writingAction、六类 draft / error / receipt、liveMessage、writeProhibited、OPEN / CANCEL / RESET / COMPLETE、clearActionErrors 与 clearAllDrafts。
+- 协调器：`useClinicalReportWorkflowCoordinator.ts` 唯一持有 mountedRef / writingRef 和 reducer dispatch，统一 begin / finish write、路由报告身份重置、activate / cancel、401、onReportUpdated、latest 恢复与每次只允许一个写请求。
+- 公共恢复 / unload：`clinical-report-workflow-recovery.ts` 固定原 latest error 集合、写阻断分类与最多一次 refresh helper；`useClinicalReportBeforeUnload.ts` 是报告工作流唯一 beforeunload 注册点。
+- 六类 Action：`useClinicalReportEditAction.ts`、`useClinicalReportSubmissionAction.ts`、`useClinicalReportConfirmationAction.ts`、`useClinicalReportLockAction.ts`、`useClinicalReportSourceFreezeAction.ts`、`useClinicalReportArchiveAction.ts` 分别独占各自资格、草稿、校验、dirty / stale、block reason、API、错误、成功消息和回执，不互相 import 或修改对方 slice。
+- 消费边界：全部 ClinicalReport 组件与 `AssessmentVisitExecutionPage` 未修改，继续只接收 façade 的扁平结果；内部模块不得被组件直接 import。B14.1 没有接入 A25 correction。
+
 ## 7. 后续同步规则
 
 - 组件事实以实际前端代码和页面使用情况为准。

@@ -10,7 +10,7 @@
 
 本文档是 CogMemory AD 前端 handoff 文档入口，用于索引前端事实快照、设计基线、路由、API 对接、组件和验证手册。
 
-当前内容记录前端公共底座、B1-B13 既有闭环，以及 B14 已冻结 ClinicalReport 归档确认、乐观并发、幂等回执与安全摘要展示。当前仍未实现患者完整管理、评分锁定、认知域人工确认、报告退回 / 签名 / unlock / unfreeze / unarchive / 更正 / 作废 / PDF、AI、用户管理或权限菜单。
+当前内容记录前端公共底座、B1-B13 既有闭环、B14 已冻结 ClinicalReport 归档能力，以及 B14.1 报告工作流 Hook 行为等价结构治理。B14.1 不新增用户功能；当前仍未实现患者完整管理、评分锁定、认知域人工确认、报告退回 / 签名 / unlock / unfreeze / unarchive / 更正 / 作废 / PDF、AI、用户管理或权限菜单。
 
 ## 3. 当前状态
 
@@ -43,6 +43,8 @@
 - B12 在同一路由接入 A22 lock API：仅 doctor / admin 显示可用入口，请求只发送 confirm、lockNote、expectedUpdatedAt；冲突保留说明、刷新 latest 一次且不自动重发。status 继续为 confirmed，顶层 lockedAt 是主锁定事实，lock 是安全摘要，alreadyLocked 按正常成功处理；锁定只作用于 ClinicalReport。
 - B13 在同一路由接入 A23 freeze-sources：仅 doctor / admin 显示可用首次冻结 / 恢复入口，请求只发送 confirm、freezeNote、expectedUpdatedAt；sourceFreeze 支持 null / in_progress / completed。in_progress 明确可能已有部分来源被冻结，恢复沿用服务端原 freezeId、freezeNote 与 scope；completed 展示五类安全计数并按 alreadyFrozen 幂等处理。页面不公开来源 ID，不自动轮询、重试或恢复，不冻结 Patient / Visit / Storage，也不提供 unfreeze。
 - B14 在同一路由接入 A24 archive：仅 doctor / admin 对 confirmed、已安全锁定且 sourceFreeze completed 的报告显示可用入口；请求只发送 confirm、archiveNote、expectedUpdatedAt。Patient active、Visit editable 与 Visit locked 不参与前端资格。冲突 / failed 保留说明、latest 最多一次且不自动 POST；成功完整采用服务端 archived report，alreadyArchived 按幂等成功处理。页面分开显示 status、archivedAt、archive 安全摘要和当前会话 receipt，校验 sourceFreeze 锚点并支持不猜测缺失信息的历史 fallback；归档后完全只读。
+- B14.1 保留 `hooks/useClinicalReportWorkflow.ts` 为唯一公开 façade；内部 `hooks/clinical-report-workflow/` 包含显式 types、central state/reducer、recovery、coordinator、单一 beforeunload，以及 edit / submit / confirm / lock / source-freeze / archive 六类 Action。唯一 activeMode、writingAction、writingRef、mountedRef、latest 与报告更新入口保持；所有报告组件继续只依赖 façade。
+- 当前前端业务能力仍完成到 B14；B14.1 是结构治理，不是新增用户功能。A25 尚未接入，下一业务阶段为 B15 版本化更正交互。
 - 当前仍未实现患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、批量或自动保存、评分锁定、认知域人工修改 / 确认 / 锁定 / 作废 / 重算、报告退回 / reject / reopen / withdraw / 签名 / unlock / unfreeze / unarchive / 更正 / 作废 / 重生成 / version 2 / PDF、AI、用户管理或权限菜单。
 
 ## 4. 必读基础文档
