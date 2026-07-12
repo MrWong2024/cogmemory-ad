@@ -208,6 +208,15 @@ export type ClinicalReportLockSummary = {
   lockNote?: string;
 };
 
+export type ClinicalReportArchiveSummary = {
+  archiveId: string | null;
+  archivedAt: string;
+  archivedBy: ClinicalReportWorkflowActor;
+  archiveNote?: string;
+  sourceFreezeId: string | null;
+  sourceFreezeCompletedAt: string | null;
+};
+
 export type ClinicalReportSourceFreezeState = 'in_progress' | 'completed';
 
 export type ClinicalReportSourceFreezeResourceCounts = {
@@ -258,6 +267,7 @@ export type ClinicalReport = {
   lock: ClinicalReportLockSummary | null;
   sourceFreeze: ClinicalReportSourceFreezeSummary | null;
   archivedAt: string | null;
+  archive: ClinicalReportArchiveSummary | null;
   voidedAt: string | null;
   voidReason?: string;
   createdAt: string | null;
@@ -307,6 +317,12 @@ export type LockClinicalReportRequest = {
 export type FreezeClinicalReportSourcesRequest = {
   confirm: true;
   freezeNote: string;
+  expectedUpdatedAt: string;
+};
+
+export type ArchiveClinicalReportRequest = {
+  confirm: true;
+  archiveNote: string;
   expectedUpdatedAt: string;
 };
 
@@ -382,4 +398,19 @@ export type FreezeClinicalReportSourcesReceipt = {
 export type FreezeClinicalReportSourcesResponse = {
   report: ClinicalReport;
   sourceFreezeReceipt: FreezeClinicalReportSourcesReceipt;
+};
+
+export type ArchiveClinicalReportReceipt = {
+  archiveId: string | null;
+  archivedAt: string;
+  archivedBy: ClinicalReportWorkflowActor;
+  archiveNote?: string;
+  sourceFreezeId: string | null;
+  sourceFreezeCompletedAt: string | null;
+  alreadyArchived: boolean;
+};
+
+export type ArchiveClinicalReportResponse = {
+  report: ClinicalReport;
+  archiveReceipt: ArchiveClinicalReportReceipt;
 };

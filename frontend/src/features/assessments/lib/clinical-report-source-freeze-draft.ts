@@ -228,7 +228,11 @@ export function getClinicalReportSourceFreezeStartEligibilityWarning(
   if (!report.lock.lockId?.trim()) {
     return '当前报告缺少受控锁定技术追溯号，不能安全冻结来源。';
   }
-  if (report.archivedAt !== null || report.voidedAt !== null) {
+  if (
+    report.archivedAt !== null ||
+    report.archive !== null ||
+    report.voidedAt !== null
+  ) {
     return '已归档或已作废报告不开放首次来源冻结。';
   }
   if (report.sourceFreeze !== null) {
@@ -248,6 +252,16 @@ export function getClinicalReportSourceFreezeStartEligibilityWarning(
 export function getClinicalReportSourceFreezeResumeEligibilityWarning(
   report: ClinicalReport,
 ): string | null {
+  if (
+    report.status === 'archived' ||
+    report.status === 'corrected' ||
+    report.status === 'voided' ||
+    report.archivedAt !== null ||
+    report.archive !== null ||
+    report.voidedAt !== null
+  ) {
+    return '归档、更正或作废报告不开放来源冻结恢复写入。';
+  }
   if (!isSafeWriteIdentity(report)) {
     return '当前报告缺少安全的 updatedAt 并发基线。';
   }

@@ -9,7 +9,7 @@
 - `frontend\src\components\ui` 提供 `Button`、`Card`、`Badge` 三个无业务语义公共组件。
 - `frontend\src\features\auth` 提供 B1 最小认证接入能力。
 - `frontend\src\features\patients` 提供 B2 患者档案与评估访视最小业务闭环。
-- `frontend\src\features\assessments` 已推进至 B13；在 B3-B12 既有能力上新增 A23 已锁报告来源链冻结确认、可恢复状态与安全摘要 / 回执展示。
+- `frontend\src\features\assessments` 已推进至 B14；在 B3-B13 既有能力上新增 A24 已冻结报告归档确认、乐观并发、幂等回执与安全摘要展示。
 - 当前组件遵循医疗系统 / 临床评估 / 低干扰 / 高可读性 / 冷静可信视觉基线。
 - B2-B11 未新增公共 Input 组件、第三方 UI 库、状态管理库、数据请求库或权限菜单组件。
 
@@ -589,6 +589,39 @@
 - `ClinicalReportPanel`：在 LockPanel 后组合 SourceFreezePanel / Summary，新增“来源未冻结 / 冻结未完成 / 来源已冻结”Badge 和一致性 alert；报告正文与快照仍可阅读。
 - `ClinicalReportWorkflowSummary`：新增持久来源冻结摘要与当前会话回执；`ClinicalReportTechnicalSummary` 分开显示 report.status、isFinal、report.lockedAt、sourceFreeze.state、sourceLockedAt、startedAt、completedAt、expected / completed total。
 - 安全边界：不显示 operatorId 作为主要字段，不显示来源 ID、内部 scope、metadata 或对象明细；不重新读取 A14–A19 或重新统计计数。明确 A23 非 Mongo transaction、可能部分完成、无自动回滚，Patient / Visit / Storage 未冻结，CognitiveDomainResult 冻结不等于确认。
+
+### 6.64 B14 ClinicalReport 类型、API、display 与归档纯函数
+
+- `types/clinical-report.ts`：新增 `ClinicalReportArchiveSummary`、`ArchiveClinicalReportRequest / Receipt / Response`，并为 report 增加 nullable archive。Date JSON 全部为 string / null；不定义 metadata、a24Archive、Schema 原始 archivedBy、来源 ID、correctionRecords、Session 或 currentUser。
+- `api/clinical-report-api.ts`：新增 `archiveClinicalReport()`，三个 Path ID 编码、reportId MongoId 防御、credentials / no-store；Body 只重建 confirm、trim archiveNote、expectedUpdatedAt。映射 A24 五个业务错误，不自动重试，不记录说明、updatedAt、请求或响应。
+- `lib/clinical-report-display.ts`：新增归档边界说明和稳定错误文案；明确 status=archived、归档不等于删除 / 作废 / 更正 / PDF，不提供 unarchive 且不调用 AI。
+- `lib/clinical-report-archive-draft.ts`：独立管理 reportId / baseUpdatedAt、confirmed / locked / sourceFreeze completed 冻结上下文、archiveNote、checkbox、dirty / stale、请求构造和基于 latest 继续。archiveNote trim 后 3–2000 字；不自动生成 / 预填 / 分析，不使用浏览器时间或持久化存储。
+- 一致性纯函数：`getClinicalReportArchiveConsistencyWarning()`、`isClinicalReportArchived()`、`isSafeClinicalReportArchive()`、`isClinicalReportArchivable()` 分开处理未归档、完整 A24、历史 fallback、status / archivedAt / archive 与 sourceFreeze anchor 异常。只用于展示与阻断，不修改 report、不补时间 / ID / actor / 锚点。
+
+### 6.65 B14 `useClinicalReportWorkflow`
+
+- activeMode / writingAction 新增 archive，继续复用同一 report、roles、onUnauthorized、onReportUpdated、refreshLatest 与 reportWriteBlocked。edit / submit / confirm / lock / source_freeze / archive 同一时间只有一个模式和一个写请求；没有第二套 latest、Auth 或 archive Hook。
+- 管理 archiveDraft / error / receipt、roleCanArchive、canArchive、dirty / stale / version、consistency warning、block reason、基于 latest 继续、手工不确定结果核对与 confirmArchive。archiveNote 非空纳入 beforeunload；路由变化或成功后清除草稿，receipt 仅保存在当前 React 页面内存。
+- 首次资格要求 cognitive_assessment version 1、confirmed / mixed / passed / isFinal、完整 doctor / admin confirmation、安全非 fallback lock、completed 且一致的 sourceFreeze、archivedAt / archive / voidedAt 为空、服务端 updatedAt、doctor / admin、无其他草稿 / 写入 / 一致性警告。Patient active、Visit status / editable / locked 不参与归档判断。
+- conflict / not archivable / failed / voided / not found 保留 archiveNote、清 checkbox、标记 stale、最多 latest 一次且不重发 POST。latest 仍可归档时需明确基于最新继续；latest 已 archived 时保留本地说明到明确关闭。audit unavailable / metadata unsupported 禁止继续安全写入；网络错误只提供手工 latest。
+- 成功完整应用 response.report、保存 archiveReceipt、清草稿并回 idle；alreadyArchived false / true 均是成功。Hook 由 B13 的 1375 行增至 1651 行；未做大规模重构，归档规则与一致性算法已最小提取到独立纯函数，统一公开 API 与单写锁不变。
+
+### 6.66 `ClinicalReportArchivePanel`
+
+- 路径：`frontend\src\features\assessments\components\ClinicalReportArchivePanel.tsx`
+- 职责：提供“准备归档报告 → archiveNote + 不可撤销说明 + checkbox → 确认归档报告”的两步内联交互；展示 status、lockedAt、sourceFreeze.completedAt、report.updatedAt / baseUpdatedAt、字符计数、stale 与写入状态。
+- 角色 / 并发：doctor / admin 显示可用入口；nurse / research_assistant / unknown 只读。冲突保留说明并清 checkbox；latest 已 archived 时明确说明本地 note 未写入，只有用户关闭才清除。POST 期间 textarea 与六类报告写操作真实 disabled，报告内容仍可阅读。
+- 可访问性：textarea / checkbox 有可见 label，错误与 stale 使用 alert，写入 / 成功使用页面 polite live region，按钮真实 disabled，小屏幕纵向排列。
+- 边界：不用 window.confirm 或弹窗库；不自动归档，不生成 / 预填 / 分析 archiveNote，不实现 unarchive / restore confirmed / correct / void / delete / unlock / unfreeze / PDF / Word / 下载或 AI。
+
+### 6.67 `ClinicalReportArchiveSummary` 与报告展示集成
+
+- 路径：`frontend\src\features\assessments\components\ClinicalReportArchiveSummary.tsx`
+- 职责：持久展示 archiveId（“归档追溯号”）、archivedAt、actor / role、archiveNote（“归档流程说明”）、sourceFreezeId（“来源冻结锚点”）与 sourceFreezeCompletedAt；另展示当前会话 receipt 和 alreadyArchived。operatorId 不作为主要业务字段。
+- fallback：archiveId / sourceFreeze anchor 为空且 actor unknown / 缺姓名时显示“历史归档记录”和缺失字段说明，不猜测 actor、note 或锚点；status / archivedAt / archive 或锚点不一致时 alert 且不开放写入。
+- `ClinicalReportPanel`：在 SourceFreezePanel / Summary 后组合 ArchivePanel / Summary，新增“尚未归档 / 报告已归档”Badge 和归档一致性 alert。archived / corrected / voided 保持报告只读，正文、快照、报告锁定与来源冻结摘要继续可阅读。
+- `ClinicalReportWorkflowSummary`：新增持久 archive 与当前会话 receipt；`ClinicalReportTechnicalSummary` 分开显示 report.status、isFinal、lockedAt、sourceFreeze.state、archivedAt、archiveId 与 archive sourceFreeze anchor。
+- 安全边界：不显示 metadata、Schema 原始 archivedBy、来源 ID 或 correctionRecords；不查询 / 修改来源，不修改 Patient / Visit、lock、sourceFreeze、confirmation、narrative / snapshots / scope，不把归档写成删除、作废、更正或 PDF。
 
 ## 7. 后续同步规则
 

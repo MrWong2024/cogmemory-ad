@@ -6,7 +6,7 @@
 
 ## 2. 当前状态
 
-- 当前包含既有公共、认证、患者 / 访视路由与 B4-B9 共用量表实例路由；B10-B13 复用访视详情路由，未新增报告、锁定或来源冻结路由。
+- 当前包含既有公共、认证、患者 / 访视路由与 B4-B9 共用量表实例路由；B10-B14 复用访视详情路由，未新增报告、锁定、来源冻结或归档路由。
 - `/dashboard` 已提供患者档案入口，但仍不是完整医生工作台。
 - 当前不包含患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、独立评分、评分锁定、独立认知域、独立报告详情、AI、用户管理或权限菜单路由。
 - 当前不包含 Next middleware 或路由级服务端认证中间件。
@@ -92,10 +92,10 @@
 ### 3.8 `/patients/[patientId]/visits/[visitId]`
 
 - 页面名称：访视详情、量表初始化与访视级报告工作流
-- 页面职责：展示访视公开详情、已有量表实例安全摘要和可用目录，初始化量表实例，并在独立报告区域接入 A20 latest / generate、A21 draft 编辑 / 提交 / 确认、A22 confirmed 报告不可逆锁定与 A23 已锁报告来源链冻结
+- 页面职责：展示访视公开详情、已有量表实例安全摘要和可用目录，初始化量表实例，并在独立报告区域接入 A20 latest / generate、A21 draft 编辑 / 提交 / 确认、A22 confirmed 报告不可逆锁定、A23 已锁报告来源链冻结与 A24 已冻结报告归档
 - 动态参数：Server Component 按 Next 16 `params: Promise<{ patientId: string; visitId: string }>` 等待参数后传给 `AssessmentVisitExecutionPage`
 - 访问边界：复用 `/patients/**` 的 `PatientsWorkspaceShell`；Shell 用轻量 `PatientsWorkspaceContext` 提供已取得的安全 AuthUser，不新增第二次 `/auth/me`，不读取 Cookie；角色只控制确认入口可见性，后端 Guard 是最终安全边界
-- 数据来源：既有访视详情 / 量表目录 / 初始化请求，以及 A20 latest / generate、A21 `PATCH .../:reportId/draft`、`POST .../:reportId/submit-confirmation`、`POST .../:reportId/confirm`、A22 `POST .../:reportId/lock` 与 A23 `POST .../:reportId/freeze-sources`
+- 数据来源：既有访视详情 / 量表目录 / 初始化请求，以及 A20 latest / generate、A21 `PATCH .../:reportId/draft`、`POST .../:reportId/submit-confirmation`、`POST .../:reportId/confirm`、A22 `POST .../:reportId/lock`、A23 `POST .../:reportId/freeze-sources` 与 A24 `POST .../:reportId/archive`
 - loading：认证检查由工作区承担；访视详情、量表目录与报告 latest 各自独立 loading、AbortController、错误与重试；目录或报告失败不移除访视和既有实例
 - 链接无效：任一动态参数不符合 24 位 MongoId 时不发送 A13 请求，显示“访视链接无效”并提供返回入口
 - 401 / 403 / 404：401 返回 `/login`；403 显示无权限及工作台 / 退出登录入口；患者不存在与访视不存在或归属不符使用不同稳定文案
@@ -117,11 +117,16 @@
 - 恢复交互：doctor / admin 必须明确选择“准备继续完成来源冻结”并重新勾选 checkbox；恢复使用同一 POST、服务端原 freezeNote 和当前 report.updatedAt，不生成新 freezeId、不允许替换首次说明。恢复不因 Visit 后续 locked / voided 被前端擅自阻断，后端仍是最终边界。
 - 并发与不确定结果：source_freeze 与 edit / submit / confirm / lock 共用一个 writingAction。conflict / incomplete / failed 等最多 latest 一次，保留本地首次说明、清 checkbox，不自动 POST / 恢复；网络错误只提供手工 latest。页面不轮询、不显示百分比或虚假逐项进度。
 - 来源冻结安全：页面不查询、定义或展示内部来源 ID / scope / metadata，不调用 A14–A19 扇出检查，不前端重新统计。明确 A23 不使用 Mongo transaction、completed 前可能部分冻结、无自动解冻 / 回滚，Patient / Visit / Storage 未冻结，CognitiveDomainResult 冻结不等于确认。
+- 归档入口：仅 doctor / admin，且 report 为 cognitive_assessment version 1、confirmed / mixed / passed / isFinal、完整确认与安全锁定、sourceFreeze completed 且一致、archivedAt / archive / voidedAt 为空、updatedAt 非空、无其他写请求 / 草稿 / 外部阻断时显示。Patient active、Visit draft / in_progress / completed、Visit locked 与 Visit editable 均不是前端归档条件。
+- 归档交互：内联展示 status、lockedAt、sourceFreeze.completedAt、report.updatedAt、不可撤销边界、3–2000 字 archiveNote 与可见 checkbox；请求只发送 confirm、archiveNote、服务端 expectedUpdatedAt。POST 期间 edit / submit / confirm / lock / source-freeze / archive 共用单一写锁，报告内容仍可阅读。
+- 归档并发：conflict / not archivable / failed / voided / not found 保留 archiveNote、清 checkbox、latest 最多一次，不自动重发 POST。latest 仍可归档时需明确基于最新继续；latest 已 archived 时进入只读，提示本地说明未写入并保留到用户关闭。网络不确定结果仅提供手工 latest。
+- 归档展示：成功完整采用服务端 report，status 真实为 archived；顶层 archivedAt、status、archive 安全摘要与当前会话 receipt 分开。展示归档追溯号、时间、actor / role、流程说明、sourceFreezeId / completedAt 与 alreadyArchived；完整摘要校验冻结锚点。历史 fallback 的缺失 ID、actor 或锚点不猜测、不补写，也不开放再次归档。
+- 归档后只读：archived 不显示 edit / submit / confirm / lock / source-freeze / archive；corrected 只读展示原归档摘要，voided 不开放归档。归档不修改报告锁定、来源冻结、Patient、Visit 或来源对象，不等于删除、作废、更正或 PDF。
 - 状态边界：pending_confirmation 不可编辑；confirmed 未锁定仅可进入 A22 锁定；confirmed 已锁定及 archived / corrected / voided 只读。qualityStatus=passed 只表示报告确认流程质量标记通过；confirmed 与 lockedAt 是正交事实，source=mixed 不表示 AI。
 - 报告安全：不补齐缺失快照，不重新计算评分 / 比例 / 认知域，不调用媒体预览，不显示内部来源 ID / 对象键 / metadata，不输出诊断阈值、疾病判断或治疗建议。
 - 安全边界：目录不展示完整 groups / items、指导语、答案、scoringRule、expectedValue 或内部 ObjectId；能力标识不表示媒体、手写或计时已实现
-- 当前非目标：不在访视详情内读取或保存题目，不提供访视状态流转、报告退回 / reject / reopen / withdraw / 签名 / unlock / unfreeze / rollback / 归档 / 更正 / 作废 / 重生成 / version 2 / PDF / 下载或 AI 操作
-- 关联组件：`AssessmentVisitExecutionPage`、`ScaleInstanceList`、`ScaleInitializationPanel`、`PatientsWorkspaceContext`、`useClinicalReport`、`useClinicalReportWorkflow`、`ClinicalReportLockPanel`、`ClinicalReportSourceFreezePanel`、`ClinicalReportSourceFreezeSummary` 与其他 ClinicalReport 组件
+- 当前非目标：不在访视详情内读取或保存题目，不提供访视状态流转、报告退回 / reject / reopen / withdraw / 签名 / unlock / unfreeze / rollback / unarchive / restore confirmed / 更正 / 作废 / 重生成 / version 2 / PDF / 下载或 AI 操作
+- 关联组件：`AssessmentVisitExecutionPage`、`ScaleInstanceList`、`ScaleInitializationPanel`、`PatientsWorkspaceContext`、`useClinicalReport`、`useClinicalReportWorkflow`、`ClinicalReportLockPanel`、`ClinicalReportSourceFreezePanel`、`ClinicalReportSourceFreezeSummary`、`ClinicalReportArchivePanel`、`ClinicalReportArchiveSummary` 与其他 ClinicalReport 组件
 
 ### 3.9 `/patients/[patientId]/visits/[visitId]/scale-instances/[scaleInstanceId]`
 

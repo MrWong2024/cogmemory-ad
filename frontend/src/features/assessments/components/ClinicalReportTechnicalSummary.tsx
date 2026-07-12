@@ -14,6 +14,7 @@ import {
   getClinicalReportLockConsistencyWarning,
 } from '@/src/features/assessments/lib/clinical-report-display';
 import { getClinicalReportSourceFreezeConsistencyWarning } from '@/src/features/assessments/lib/clinical-report-source-freeze-draft';
+import { getClinicalReportArchiveConsistencyWarning } from '@/src/features/assessments/lib/clinical-report-archive-draft';
 import type { ClinicalReport } from '@/src/features/assessments/types/clinical-report';
 
 const mongoIdPattern = /^[a-f\d]{24}$/i;
@@ -43,6 +44,8 @@ export function ClinicalReportTechnicalSummary({
   const safeSourceFreeze = sourceFreezeConsistencyWarning
     ? null
     : report.sourceFreeze;
+  const archiveConsistencyWarning =
+    getClinicalReportArchiveConsistencyWarning(report);
 
   return (
     <div className="grid gap-5">
@@ -236,6 +239,15 @@ export function ClinicalReportTechnicalSummary({
               {sourceFreezeConsistencyWarning}
             </p>
           ) : null}
+          {archiveConsistencyWarning ? (
+            <p
+              className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] px-4 py-3 text-base text-[var(--cma-warning)]"
+              role="alert"
+            >
+              归档安全摘要不完整或不一致：
+              {archiveConsistencyWarning}
+            </p>
+          ) : null}
           <dl className="grid gap-x-5 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
             <div>
               <dt className="text-sm font-semibold text-[var(--cma-muted)]">报告编号</dt>
@@ -312,6 +324,18 @@ export function ClinicalReportTechnicalSummary({
             <div>
               <dt className="text-sm font-semibold text-[var(--cma-muted)]">归档时间</dt>
               <dd className="mt-1 text-base text-[var(--cma-text-strong)]">{formatClinicalReportDate(report.archivedAt)}</dd>
+            </div>
+            <div>
+              <dt className="text-sm font-semibold text-[var(--cma-muted)]">归档追溯号</dt>
+              <dd className="mt-1 break-all text-base text-[var(--cma-text-strong)]">{displayValue(report.archive?.archiveId)}</dd>
+            </div>
+            <div>
+              <dt className="text-sm font-semibold text-[var(--cma-muted)]">归档来源冻结锚点</dt>
+              <dd className="mt-1 break-all text-base text-[var(--cma-text-strong)]">{displayValue(report.archive?.sourceFreezeId)}</dd>
+            </div>
+            <div>
+              <dt className="text-sm font-semibold text-[var(--cma-muted)]">归档锚定冻结完成时间</dt>
+              <dd className="mt-1 text-base text-[var(--cma-text-strong)]">{formatClinicalReportDate(report.archive?.sourceFreezeCompletedAt)}</dd>
             </div>
             <div>
               <dt className="text-sm font-semibold text-[var(--cma-muted)]">作废时间</dt>

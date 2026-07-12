@@ -6,8 +6,8 @@
 
 ## 2. 当前状态与边界
 
-- B13 继续扩展独立 `clinical-report-api.ts`，在既有访视详情页接入 A23 freeze-sources POST；保留 A20 latest / generate、A21 draft / submit / confirm 与 A22 lock。
-- A21 / A22 / A23 写请求均只使用服务端 `report.updatedAt` 作为 `expectedUpdatedAt`，逐字段重建 Body 白名单且不自动重试；受控冲突或结果不完整最多自动 latest 一次，不重发原请求或自动恢复。
+- B14 继续扩展独立 `clinical-report-api.ts`，在既有访视详情页接入 A24 archive POST；保留 A20 latest / generate、A21 draft / submit / confirm、A22 lock 与 A23 freeze-sources。
+- A21 / A22 / A23 / A24 写请求均只使用服务端 `report.updatedAt` 作为 `expectedUpdatedAt`，逐字段重建 Body 白名单且不自动重试；受控冲突或结果不完整最多自动 latest 一次，不重发原请求或自动恢复。
 - B9 新增独立 `frontend\src\features\assessments\api\cognitive-domain-api.ts`，在既有量表实例页接入 A19 latest / compute。
 - 认知域仍只调用 A19 latest / compute；报告当前调用 A20 latest / generate、A21 edit / submit / confirm 与 A22 lock，不调用其他认知域或报告未来 API，也不调用 AI API。
 - API Client 使用 `frontendEnv.apiBaseUrl` 作为后端基础地址。
@@ -402,6 +402,21 @@
 - 网络不确定结果：保留本地说明，不自动 latest 或 POST，只提供手工“重新加载最新报告”核对；action 403 保留已加载报告和本地说明，401 复用现有 onUnauthorized 返回登录页。
 - 隐私与事务边界：公开类型不定义或展示内部来源 ID、scope、metadata 或原始状态明细；前端不调用 A14–A19 查询来源状态，不重新统计计数或计算百分比。A23 不使用 Mongo transaction，completed 前可能部分冻结且无自动回滚；不冻结 Patient、Visit、Storage，不提供 unfreeze，不生成 PDF / 下载，不调用 AI。
 
+### 4.33 `archiveClinicalReport()` -> `POST /patients/:patientId/visits/:visitId/clinical-reports/:reportId/archive`
+
+- Client / 调用方：`clinical-report-api.ts` / `useClinicalReportWorkflow` / `ClinicalReportArchivePanel`；仅 currentUser roles 包含 doctor / admin 且完整前端资格通过时显示可用入口。nurse / research_assistant 只读查看归档摘要；后端 RolesGuard 是最终权限边界。
+- Path：patientId、visitId、reportId 均 `encodeURIComponent()`；reportId 先 trim + lowercase 并通过既有 24 位 MongoId 防御。路径 ID 不进入 Body。
+- Body 白名单：只构造 `{ confirm: true, archiveNote: input.archiveNote.trim(), expectedUpdatedAt: input.expectedUpdatedAt }`。不发送 status、archivedAt / archivedBy、archiveId / archive、sourceFreeze / 锚点、lock / confirmation、metadata、actor、force、unarchive / correct / void / createPdf 或路径 ID。
+- 首次资格：cognitive_assessment version 1、confirmed / mixed / passed / isFinal、完整 doctor / admin confirmation、安全非 fallback A22 lock、completed 且一致的 A23 sourceFreeze、archivedAt / archive / voidedAt 为空、服务端 updatedAt、无其他报告写请求或本地草稿。Patient active、Visit status / editable 不参与资格，Visit locked 不阻断。
+- 说明 / 并发：archiveNote 由用户明确填写，trim 后 3–2000 字且必须勾选不可撤销确认；expectedUpdatedAt 只来自归档区打开时冻结的服务端 report.updatedAt。客户端不使用浏览器时间，不生成 archiveId / archivedAt / actor。
+- 凭证 / 缓存 / 重试：`frontendEnv.apiBaseUrl`、`credentials: 'include'`、`cache: 'no-store'`、JSON POST；不读取 Cookie、不保存 token、不自动重试，不输出 archiveNote、updatedAt、请求或响应。
+- Response：`ArchiveClinicalReportResponse { report, archiveReceipt }`。成功完整应用 response.report，不手动设置 status / isFinal / archivedAt / archive；当前会话 receipt 含 archiveId、archivedAt、actor、archiveNote、sourceFreezeId / completedAt、alreadyArchived，仅保存在 React 内存。
+- 幂等：alreadyArchived=false 表示首次完成；alreadyArchived=true 是正常成功且本次未重复写入，不生成第二个归档事实。刷新后 receipt 消失，持久事实来自 report.status / archivedAt / archive。
+- 错误映射：严格新增 `CLINICAL_REPORT_ARCHIVE_CONFIRMATION_REQUIRED`、`CLINICAL_REPORT_NOT_ARCHIVABLE`、`CLINICAL_REPORT_ARCHIVE_CONFLICT`、`CLINICAL_REPORT_ARCHIVE_AUDIT_UNAVAILABLE`、`CLINICAL_REPORT_ARCHIVE_FAILED`；继续复用 validation、401 / 403、patient / visit / report not found、incomplete、voided、metadata unsupported、service unavailable。
+- 恢复：not archivable / conflict / failed / voided / not found 最多自动 latest 一次，保留 archiveNote、清 checkbox、标记 stale，绝不自动重发 POST。latest 仍可归档时必须由用户明确基于最新报告继续；latest 已 archived 时进入只读，说明保留到用户明确关闭且提示未写入。网络结果不确定时仅提供手工 latest。
+- 安全摘要 / fallback：完整 A24 archive 校验顶层 archivedAt、UUID、actor、note 与当前 completed sourceFreeze freezeId / completedAt；历史 archived / corrected 可安全显示 archiveId / 锚点为空、actor unknown / 缺姓名的 fallback，不猜测或补写缺失信息且不开放再次归档。archivedAt / archive / status 或锚点不一致时警告并禁止写入。
+- 边界：归档不读取或修改来源，不修改 Patient / Visit、lockedAt / lock、sourceFreeze、confirmation、narrative / snapshots / scope。没有 unarchive / restore confirmed / correction / void / delete / unlock / unfreeze / PDF / Word / 下载或 AI。
+
 ## 5. 当前认证公开类型
 
 - `AuthUserResponse`：`id`、`accountName`、`displayName`、`roles`、`permissions`、可选 `userType`。
@@ -432,11 +447,13 @@
 - `ClinicalReportApiError.kind` 严格映射 A21 与 A22 lock 业务 code；UI 使用稳定中文，不直接展示后端英文 message。
 - B13 `clinical-report.ts` 新增 `ClinicalReportSourceFreezeState / ResourceCounts / Summary` 与 freeze request / receipt / response；Date JSON 继续为 string / null，不定义内部 scope、来源 ID、metadata、a23SourceFreeze 原始结构、Session 或 currentUser。
 - `ClinicalReportApiError.kind` 继续严格映射 A23 八个来源冻结业务 code；UI 使用稳定中文，不直接展示后端英文 message。
+- B14 `clinical-report.ts` 新增 `ClinicalReportArchiveSummary`、archive request / receipt / response；Date JSON 继续为 string / null，不定义 metadata、a24Archive、Schema 原始 archivedBy、来源 ID、Session 或 currentUser。
+- `ClinicalReportApiError.kind` 严格新增 A24 五个归档业务 code；UI 使用稳定中文，不直接展示后端英文 message。
 
 ## 7. 当前未对接 API
 
 - 当前没有 A12 / A13 / A14 已接接口之外的患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转调用。
-- 当前除 A16、A17、A18 manual-review / confirm、A19 latest / compute、A20 latest / generate、A21 edit / submit / confirm、A22 lock 与 A23 freeze-sources 外，没有撤销提交、reopen、评分 lock / void / rerun / 历史、认知域修改 / 确认 / 作废 / 重算、报告退回 / reject / reopen / withdraw / 签名 / unlock / unfreeze / 归档 / 更正 / 作废 / 重生成 / version 2 / PDF、AI、用户管理、角色权限管理或科研导出 API 调用。
+- 当前除 A16、A17、A18 manual-review / confirm、A19 latest / compute、A20 latest / generate、A21 edit / submit / confirm、A22 lock、A23 freeze-sources 与 A24 archive 外，没有撤销提交、reopen、评分 lock / void / rerun / 历史、认知域修改 / 确认 / 作废 / 重算、报告退回 / reject / reopen / withdraw / 签名 / unlock / unfreeze / unarchive / 更正 / 作废 / 重生成 / version 2 / PDF、AI、用户管理、角色权限管理或科研导出 API 调用。
 - 不得在后端 API 未确认并进入明确任务范围前编造前端对接事实。
 
 ## 8. 后续同步规则

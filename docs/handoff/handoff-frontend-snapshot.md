@@ -7,7 +7,7 @@
 ## 2. 当前工程状态
 
 - `frontend\` 根目录公共骨架配置与 `frontend\app` / `frontend\src` 公共底座已初始化。
-- 前端 B1-B12 已落地既有认证、患者 / 访视、执行、媒体、提交、评分确认、认知域、规则化报告确认与报告锁定能力；前端 B13 已在既有访视详情路由接入 A23 来源链冻结确认、可恢复状态与安全摘要展示。
+- 前端 B1-B13 已落地既有认证、患者 / 访视、执行、媒体、提交、评分确认、认知域、规则化报告确认、锁定与来源冻结能力；前端 B14 已在既有访视详情路由接入 A24 报告归档确认、乐观并发、幂等回执与安全摘要展示。
 - 当前首页仍为公共占位，只增加登录页与工作台入口，不调用后端。
 - `/login` 提供账号密码登录，并在登录前通过 `GET /auth/me` 检查已有会话。
 - `/dashboard` 通过 `GET /auth/me` 验证会话、展示当前用户公开信息、提供患者档案入口和登出入口。
@@ -15,7 +15,7 @@
 - Patients API Client 真实调用 A12 五个患者 / 访视 API，支持分页、过滤、GET 请求取消、稳定错误映射和安全请求字段白名单。
 - Assessment Execution API Client 继续调用 A13 / A14 / A16；独立 Provisional Scoring、Cognitive Domain 与 Clinical Report API Client 分别调用 A17 / A18、A19 与 A20 / A21。写请求逐字段重建白名单且不自动重试，latest 使用各自独立 AbortController。
 - 当前视觉遵循医疗系统 / 临床评估 / 低干扰 / 高可读性 / 冷静可信口径，不继承 ReviewX 视觉风格。
-- 当前没有患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、批量或自动保存、评分 lock / void / rerun、认知域人工修改 / 确认 / 作废 / 重算、报告退回 / 签名 / unlock / unfreeze / archive / correct / void / PDF / 重生成、AI、用户管理或权限菜单页面；B13 只冻结报告固定 scope 内五类来源，不冻结 Patient、Visit 或 Storage，也不形成临床诊断结论。
+- 当前没有患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、批量或自动保存、评分 lock / void / rerun、认知域人工修改 / 确认 / 作废 / 重算、报告退回 / 签名 / unlock / unfreeze / unarchive / correct / void / PDF / 重生成、AI、用户管理或权限菜单页面；B14 只归档 ClinicalReport，不修改 Patient、Visit、来源对象或 Storage，也不形成临床诊断结论。
 
 ## 3. 当前已确认前端事实
 
@@ -158,6 +158,13 @@
 - 首次 freezeNote 为 React 内存用户输入，非空纳入 beforeunload；恢复只能使用服务端持久 freezeNote，不可编辑且不产生文本 dirty。冲突、not source freezable、incomplete、failed、voided、not found 最多 latest 一次，保留本地首次说明并清 checkbox；不自动再次 POST 或进入恢复。网络结果不确定时只提供手工 latest。
 - `ClinicalReportSourceFreezePanel` 提供首次与恢复的独立内联二次确认；`ClinicalReportSourceFreezeSummary` 展示 freezeId、state、started/sourceLocked/completed 时间、actor、原说明及五类 expected / completed / newly / previously / total 计数。回执仅在当前页面内存，刷新后消失；持久事实来自 report.sourceFreeze。
 - 页面明确 A23 不使用 Mongo transaction，in_progress 期间可能已有部分来源被冻结，系统不自动解冻、回滚、轮询或恢复；不冻结 Patient / Visit / Storage，CognitiveDomainResult 冻结不等于确认，不生成 PDF / 下载，不调用 AI。
+- B14 扩展 `ClinicalReportArchiveSummary`、archive request / receipt / response；全部 Date JSON 为 string / null，不定义 metadata、Schema 原始 archivedBy、来源 ID、Session、currentUser、correctionRecords 或 PDF artifact。
+- `archiveClinicalReport()` 调用 A24 doctor / admin 专用 POST，三个路径 ID 编码且 reportId 使用 MongoId 防御；Body 只重建 `{ confirm: true, archiveNote: trim 后文本, expectedUpdatedAt }`，credentials / no-store，不自动重试且不输出说明、updatedAt、请求或响应。
+- 新增 `clinical-report-archive-draft.ts`，集中管理 3–2000 字 archiveNote、reportId / 服务端 updatedAt、锁定与 sourceFreeze completed 冻结上下文、dirty / stale、请求构造、首次资格和归档摘要一致性。完整 A24 摘要校验 UUID、actor、archiveNote、顶层 archivedAt 与 sourceFreeze freezeId / completedAt；历史 fallback 允许 archiveId / 锚点为空和 unknown / 缺姓名 actor，但不猜测缺失信息。
+- `useClinicalReportWorkflow` 新增 archive mode，继续复用同一 roles、report、latest、onUnauthorized、完整 report 应用路径与 writingAction。doctor / admin 才显示入口；nurse / research_assistant 只读。首次资格不查询 Patient active，不依赖 Visit status / editable，也不因 Visit locked 阻断。
+- archiveNote 为 React 内存输入，非空纳入 beforeunload。冲突、not archivable、failed、voided、not found 保留说明、清 checkbox、最多 latest 一次且不自动 POST；网络结果不确定时仅提供手工 latest。latest 已 archived 时只读展示并保留本地说明到用户明确关闭。
+- 归档成功完整应用 response.report，不手动构造 status、archivedAt 或 archive；保存当前页面 archiveReceipt，alreadyArchived true / false 均按成功。`ClinicalReportArchivePanel` 提供内联二次确认，`ClinicalReportArchiveSummary` 分开显示 status、顶层 archivedAt、持久 archive 与会话 receipt；归档后六类报告写操作全部只读。
+- `useClinicalReportWorkflow.ts` 由 B13 基线 1375 行增至 B14 的 1651 行；本阶段未做大规模重构，只把归档资格、草稿、冻结上下文、请求构造与一致性算法提取为独立纯函数，保持统一公开 Hook 和单写锁不变。
 - 前端媒体公开类型没有定义 Storage 对象定位、校验和、原始文件名、内部患者关联或删除时间字段；页面也不显示这些字段。
 
 ## 4. 当前文件清单
@@ -222,6 +229,7 @@
 - `frontend\src\features\assessments\lib\clinical-report-display.ts`
 - `frontend\src\features\assessments\lib\clinical-report-workflow-draft.ts`
 - `frontend\src\features\assessments\lib\clinical-report-source-freeze-draft.ts`
+- `frontend\src\features\assessments\lib\clinical-report-archive-draft.ts`
 - `frontend\src\features\assessments\hooks\useCognitiveDomainResult.ts`
 - `frontend\src\features\assessments\hooks\useClinicalReport.ts`
 - `frontend\src\features\assessments\hooks\useClinicalReportWorkflow.ts`
@@ -257,6 +265,8 @@
 - `frontend\src\features\assessments\components\ClinicalReportLockPanel.tsx`
 - `frontend\src\features\assessments\components\ClinicalReportSourceFreezePanel.tsx`
 - `frontend\src\features\assessments\components\ClinicalReportSourceFreezeSummary.tsx`
+- `frontend\src\features\assessments\components\ClinicalReportArchivePanel.tsx`
+- `frontend\src\features\assessments\components\ClinicalReportArchiveSummary.tsx`
 - `frontend\src\features\assessments\components\ScaleExecutionGroupNavigation.tsx`
 - `frontend\src\features\assessments\components\ItemResponseEditor.tsx`
 - `frontend\src\features\assessments\components\ItemStepEditor.tsx`
@@ -383,14 +393,23 @@
 - E2E 与浏览器自动化未执行；浏览器手工联调未执行，A23 真实 HTTP、角色入口、首次 / 恢复、并发冲突、部分失败、幂等、窄屏与可访问性均待开发者使用脱敏数据验证。
 - 后端命令未执行。
 
+本次 B14 验证结果：
+
+- 未新增自动测试或测试框架；继续使用既有 ESLint、TypeScript 与生产构建验证。
+- `npm run lint`：通过。
+- `npm run typecheck`：通过，Next 16 既有动态路由类型生成成功且 TypeScript 无错误。
+- `npm run build`：通过，生产构建包含既有访视详情动态路由；B14 未新增路由。
+- E2E、浏览器自动化与浏览器手工联调未执行；A24 真实 HTTP、角色入口、并发冲突、幂等、历史 fallback、窄屏与可访问性均待开发者使用脱敏数据验证。
+- 后端命令未执行。
+
 ## 6. 当前未实现前端事实
 
 - `/dashboard` 已有患者档案入口，但不是完整医生工作台。
 - 患者编辑 / 删除 / 归档 / 合并尚未实现。
 - 访视编辑 / 删除 / 状态流转尚未实现；访视详情支持查看、初始化量表实例、进入 B4 执行页以及 B10 / B11 访视级报告闭环。
-- B4-B13 已支持安全题目记录、photo / handwriting 证据、完整性检查、正式实例提交、评分确认、认知域结果、规则化报告、受控编辑、提交待确认、医生 / 管理员确认、报告不可逆锁定与固定 scope 来源链冻结；批量 / 自动保存、评分锁定、认知域人工确认与来源解冻仍未实现。
-- 报告退回、reject、reopen、withdraw、签名、unlock、归档、更正、作废、重生成、version 2、PDF / 下载、AI、用户管理、角色权限管理和权限菜单尚未实现。
-- 当前报告 API 为 A20 latest / generate、A21 edit / submit / confirm、A22 lock 与 A23 freeze-sources；没有评分 lock / void / reopen / rerun、认知域修改 / 确认 / void / rerun、报告 unlock / unfreeze / archive / correct / void 或 AI API 调用。
+- B4-B14 已支持安全题目记录、photo / handwriting 证据、完整性检查、正式实例提交、评分确认、认知域结果、规则化报告、受控编辑、提交待确认、医生 / 管理员确认、报告不可逆锁定、固定 scope 来源链冻结与报告归档；批量 / 自动保存、评分锁定、认知域人工确认、来源解冻与取消归档仍未实现。
+- 报告退回、reject、reopen、withdraw、签名、unlock、unfreeze、unarchive、更正、作废、重生成、version 2、PDF / 下载、AI、用户管理、角色权限管理和权限菜单尚未实现。
+- 当前报告 API 为 A20 latest / generate、A21 edit / submit / confirm、A22 lock、A23 freeze-sources 与 A24 archive；没有评分 lock / void / reopen / rerun、认知域修改 / 确认 / void / rerun、报告 unlock / unfreeze / unarchive / correct / void 或 AI API 调用。
 - 当前不包含路由级服务端认证中间件。
 
 ## 7. 后续同步规则

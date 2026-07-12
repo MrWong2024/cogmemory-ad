@@ -6,12 +6,12 @@
 
 ## 2. 当前状态
 
-- 前端公共底座与 B1-B12 既有闭环已落地；B13 已锁 ClinicalReport 来源链冻结确认、可恢复状态与安全摘要展示已落地。
+- 前端公共底座与 B1-B13 既有闭环已落地；B14 已冻结 ClinicalReport 归档确认、乐观并发、幂等回执与安全摘要展示已落地。
 - `frontend\package.json` 已存在，自动验证命令以其中真实脚本为准。
-- B2-B13 不新增测试代码、测试框架、E2E 或第三方依赖。
+- B2-B14 不新增测试代码、测试框架、E2E 或第三方依赖。
 - 当前自动验证覆盖三个认证 API、A12 五个患者 / 访视 API、A13 三个评估初始化前置 API、A14 两个执行草稿 API、A15 四个媒体证据 API、A16 两个提交 API 与 A17 两个阶段性评分 API 的前端类型、调用代码和页面构建；真实 HTTP / 浏览器联调仍需手工验证。
 
-## 3. B1 / B2 / B3 / B4 / B5 / B6 / B7 / B8 / B9 / B10 / B11 / B12 / B13 自动验证命令
+## 3. B1 / B2 / B3 / B4 / B5 / B6 / B7 / B8 / B9 / B10 / B11 / B12 / B13 / B14 自动验证命令
 
 在 `frontend` 目录、且既有 `node_modules` 存在时执行：
 
@@ -144,6 +144,16 @@
 - 未新增自动测试：当前前端没有既有测试框架，本阶段使用 lint、typecheck 与生产构建验证。
 - E2E / 浏览器自动化：未执行；本阶段明确不执行。
 - 浏览器手工验证：未执行，以下 B13 场景均待开发者使用脱敏数据本地验证。
+- 后端命令：未执行。
+
+本次 B14 验证结果：
+
+- `npm run lint`：通过。
+- `npm run typecheck`：通过，Next 16 既有动态路由类型生成成功且 TypeScript 无错误。
+- `npm run build`：通过，生产构建包含既有 `/patients/[patientId]/visits/[visitId]`，B14 未新增路由。
+- 未新增自动测试：当前前端没有既有测试框架，本阶段使用 lint、typecheck 与生产构建验证。
+- E2E / 浏览器自动化：未执行；本阶段明确不执行。
+- 浏览器手工验证：未执行，以下 B14 场景均待开发者使用脱敏数据本地验证。
 - 后端命令：未执行。
 
 如后续环境中 `frontend/node_modules` 不存在，不得为验证本阶段而执行 `npm install`；应跳过上述命令并说明原因。
@@ -286,6 +296,19 @@ B13 自动验证不覆盖：
 - 真实 A23 HTTP、数据库跨集合冻结、Cookie / CORS、多操作者并发、中断恢复、部分失败、审计异常与幂等重读组合。
 - 浏览器 beforeunload、窄屏计数表、屏幕阅读器 alert / live region、真实 checkbox / disabled 行为和网络中断后的最终服务端状态。
 - unfreeze / rollback / 自动恢复 / 轮询、Patient / Visit / Storage 冻结、archive / correct / void、PDF / 下载或 AI；这些能力未实现。
+
+B14 静态与构建验证额外覆盖：
+
+- A24 archive 安全类型、request / receipt / response、五个业务错误映射、Path 编码 / MongoId 防御、Body 白名单、credentials / no-store 与 POST 不自动重试路径。
+- 独立归档草稿与一致性纯函数、3–2000 字 archiveNote、服务端 updatedAt / lock / sourceFreeze anchor 冻结上下文、dirty / stale / beforeunload、完整 A24 / historical fallback / 异常摘要判断。
+- archive 统一报告写锁、doctor / admin role gate、不依赖 Patient active / Visit editable / Visit locked 的 eligibility、冲突 / failed latest 一次、alreadyArchived 与完整 report 应用路径。
+- ArchivePanel / Summary、status / archivedAt / archive / receipt 分离、归档 actor / note / sourceFreeze anchor、安全警告与既有访视详情路由集成；未新增依赖、路由、BFF、middleware、持久化状态或配置。
+
+B14 自动验证不覆盖：
+
+- 真实 A24 HTTP、数据库归档、Cookie / CORS、多操作者并发、幂等重读、历史 fallback 与各种审计异常组合。
+- 浏览器 beforeunload、窄屏布局、屏幕阅读器 alert / live region、真实 checkbox / disabled 行为和网络中断后的最终服务端状态。
+- unarchive / restore confirmed / correction / void / delete / unlock / unfreeze / PDF / Word / 下载或 AI；这些能力未实现。
 
 ## 5. B1 手工验证建议
 
@@ -1030,7 +1053,129 @@ B13 自动验证不覆盖：
 
 以上真实浏览器联调尚未执行，不得写成已通过。
 
-## 18. 认证与安全验证口径
+## 18. B14 手工验证建议（待验证）
+
+前置条件：后端已启动，使用脱敏人工测试账号、已确认 / 锁定 / 来源冻结完成的测试报告；不得使用真实患者或归档说明。以下场景本次未执行：
+
+1. 无报告时无归档入口。
+2. draft 不显示归档入口。
+3. pending_confirmation 不显示归档入口。
+4. confirmed 未锁定不显示归档入口。
+5. 已锁定但 sourceFreeze=null 不显示归档入口。
+6. sourceFreeze=in_progress 不显示归档入口。
+7. confirmed + locked + sourceFreeze completed 显示尚未归档。
+8. doctor 显示归档入口。
+9. admin 显示归档入口。
+10. nurse 不显示可用入口。
+11. research_assistant 不显示可用入口。
+12. system 不显示可用入口。
+13. 没有第二次 /auth/me。
+14. Patient active 不作为前端条件。
+15. Visit draft 可归档。
+16. Visit in_progress 可归档。
+17. Visit completed 可归档。
+18. Visit locked 不阻断归档。
+19. Visit voided 不被前端自行作为 A24 阻断。
+20. archiveNote 少于 3 字不能提交。
+21. archiveNote 超过 2000 字不能提交。
+22. archiveNote 不自动生成。
+23. freezeNote 不自动填入。
+24. lockNote 不自动填入。
+25. confirmationNote 不自动填入。
+26. 未勾选 checkbox 不能归档。
+27. 请求只发送 confirm、archiveNote、expectedUpdatedAt。
+28. 不发送 status。
+29. 不发送 archivedAt / archivedBy。
+30. 不发送 metadata。
+31. expectedUpdatedAt 来自 report.updatedAt。
+32. POST 不自动重试。
+33. POST 期间六类写操作均禁用。
+34. POST 期间报告仍可阅读。
+35. 归档成功使用完整服务端 report。
+36. 归档成功 status=archived。
+37. 归档成功 isFinal 使用服务端值。
+38. 归档成功 archivedAt 非空。
+39. 归档成功 archive 非空。
+40. 首次成功显示 alreadyArchived=false。
+41. 幂等成功显示 alreadyArchived=true。
+42. alreadyArchived 不表示重复写入。
+43. archived 后不显示再次归档入口。
+44. archived 后不显示 edit。
+45. archived 后不显示 submit。
+46. archived 后不显示 confirm。
+47. archived 后不显示 lock。
+48. archived 后不显示 source-freeze。
+49. archiveId 显示为归档追溯号。
+50. archivedBy 显示姓名和角色。
+51. operatorId 不作为主要业务字段。
+52. archiveNote 显示为归档流程说明。
+53. sourceFreezeId 显示为冻结锚点。
+54. sourceFreezeCompletedAt 单独显示。
+55. archivedAt 不显示为 lockedAt。
+56. sourceFreezeCompletedAt 不显示为 archivedAt。
+57. status、lockedAt、sourceFreeze、archivedAt 分开。
+58. 完整 A24 anchor 与 sourceFreeze 一致。
+59. anchor 不一致显示警告。
+60. status=archived 但 archivedAt=null 显示警告。
+61. archivedAt 非空但 archive=null 不开放归档。
+62. archive 非空但 archivedAt=null 显示警告。
+63. archive 时间与顶层不一致显示警告。
+64. confirmed 但 archive 非空显示警告。
+65. historical fallback archiveId=null 安全显示。
+66. historical fallback role=unknown 安全显示。
+67. historical fallback 不猜测说明。
+68. historical fallback 不开放再次归档。
+69. conflict 保留 archiveNote。
+70. conflict 清除 checkbox。
+71. conflict 自动 latest 一次。
+72. conflict 不自动 POST。
+73. latest 仍可归档时要求明确基于最新继续。
+74. latest 已归档时本地说明保留。
+75. latest 已归档时提示本地说明未写入。
+76. failed 后保留 archiveNote。
+77. failed 后 latest 一次。
+78. failed 后不自动重试。
+79. audit unavailable 不猜测归档事实。
+80. metadata unsupported 不展示 metadata。
+81. voided 不开放归档。
+82. 401 返回登录页。
+83. action 403 保留报告和 archiveNote。
+84. 网络错误保留 archiveNote。
+85. 网络错误提示 latest 核对。
+86. archiveNote 纳入 beforeunload。
+87. archive 草稿不写 localStorage。
+88. 页面刷新后未提交 note 消失。
+89. archiveReceipt 刷新后消失。
+90. 持久事实来自 report.status / archivedAt / archive。
+91. 不修改 lockedAt / lock。
+92. 不修改 sourceFreeze。
+93. 不修改 confirmation。
+94. 不修改 narrative / snapshots / scope。
+95. 不调用 A14–A19 检查。
+96. 不修改 Patient / Visit。
+97. 不实现 unarchive。
+98. 不实现 restore confirmed。
+99. 不实现 correction。
+100. 不实现 void / delete。
+101. 不实现 unlock / unfreeze。
+102. 不实现 PDF / Word / 下载。
+103. 不实现 AI。
+104. 不显示“患者已归档”。
+105. 不显示“访视已归档”。
+106. 不显示“报告已删除”。
+107. 不显示“PDF 已生成”。
+108. 小屏幕归档表单和摘要可用。
+109. label / alert / live region 正确。
+110. 没有新增路由。
+111. 没有新增依赖。
+112. 没有使用真实医疗数据。
+113. lint 通过。
+114. typecheck 通过。
+115. build 通过。
+
+以上真实浏览器联调尚未执行，不得写成已通过。
+
+## 19. 认证与安全验证口径
 
 - 使用浏览器网络面板确认三个认证请求均携带 credentials 语义，并由浏览器处理 HttpOnly Cookie。
 - 前端代码与存储中不得出现 raw token、token hash、`passwordHash`、JWT 或其他认证凭证。
@@ -1047,15 +1192,16 @@ B13 自动验证不覆盖：
 - B7 页面不得在 console、存储或 URL 中记录评分结果、reviewQueue、请求体或响应体；compute 只能由独立 API Client 构造 `{ confirm: true }`，不得提交任何分数、规则、状态或服务器字段。
 - B9 页面不得在 console、存储或 URL 中记录认知域结果、贡献、来源评分、请求体或响应体；compute 只能由独立 API Client 构造 `{ confirm: true }`，不得提交 domain、weight、mapping、分数、规则、状态或服务器字段。
 - B13 页面不得在 console、存储或 URL 中记录 freezeNote、sourceFreeze 计数、updatedAt、请求或响应；freeze-sources 只能由独立 API Client 构造 confirm、trim 后 freezeNote 与 expectedUpdatedAt。不得提交或显示内部来源 ID / scope / metadata，不得保存 sourceFreeze 草稿或 receipt 到浏览器持久化存储。
+- B14 页面不得在 console、存储或 URL 中记录 archiveNote、updatedAt、请求或响应；archive 只能由独立 API Client 构造 confirm、trim 后 archiveNote 与 expectedUpdatedAt。不得提交或显示 metadata、Schema 原始 archivedBy 或来源 ID，不得保存 archive 草稿或 receipt 到浏览器持久化存储。
 
-## 19. 医疗与隐私展示红线
+## 20. 医疗与隐私展示红线
 
 - 不展示真实用户或患者敏感数据样本。
 - 测试截图不得包含真实姓名、邮箱、身份证号、手机号、病历号、住址、患者资料或真实文件名。
 - 不得在页面文案或测试截图中呈现未经确认的真实医疗诊断结论。
 - 核心认知评估必须保持医护或研究人员陪伴 / 监督的产品边界。
 
-## 20. 后续同步规则
+## 21. 后续同步规则
 
 - 前端新增或调整测试脚本后，应同步更新自动验证命令。
 - 新增页面、路由、组件、API 对接或权限展示后，应同步补充对应验证口径。

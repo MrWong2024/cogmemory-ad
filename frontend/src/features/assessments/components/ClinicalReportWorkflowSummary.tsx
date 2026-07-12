@@ -56,7 +56,7 @@ export function ClinicalReportWorkflowSummary({
         </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <section className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] p-4">
           <h4 className="text-lg font-semibold text-[var(--cma-text-strong)]">最新编辑摘要</h4>
           {report.editorial ? (
@@ -132,6 +132,26 @@ export function ClinicalReportWorkflowSummary({
             <p className="mt-3 text-sm text-[var(--cma-muted)]">报告来源尚未冻结。</p>
           )}
         </section>
+
+        <section className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] p-4">
+          <h4 className="text-lg font-semibold text-[var(--cma-text-strong)]">归档摘要</h4>
+          {report.archive ? (
+            <dl className="mt-3 grid gap-3 text-sm">
+              <div><dt className="font-semibold text-[var(--cma-muted)]">归档时间</dt><dd className="mt-1 text-[var(--cma-text-strong)]">{formatClinicalReportDate(report.archive.archivedAt)}</dd></div>
+              <div><dt className="font-semibold text-[var(--cma-muted)]">归档人</dt><dd className="mt-1 text-[var(--cma-text-strong)]">{actorLabel(report.archive.archivedBy)}</dd></div>
+              <div><dt className="font-semibold text-[var(--cma-muted)]">归档流程说明</dt><dd className="mt-1 whitespace-pre-wrap text-[var(--cma-text-strong)]">{report.archive.archiveNote?.trim() || '—'}</dd></div>
+              <div><dt className="font-semibold text-[var(--cma-muted)]">归档追溯号</dt><dd className="mt-1 break-all text-[var(--cma-muted)]">{traceId(report.archive.archiveId)}</dd></div>
+              <div><dt className="font-semibold text-[var(--cma-muted)]">来源冻结锚点</dt><dd className="mt-1 break-all text-[var(--cma-muted)]">{traceId(report.archive.sourceFreezeId)}</dd></div>
+              <div><dt className="font-semibold text-[var(--cma-muted)]">锚定完成时间</dt><dd className="mt-1 text-[var(--cma-text-strong)]">{formatClinicalReportDate(report.archive.sourceFreezeCompletedAt)}</dd></div>
+            </dl>
+          ) : report.archivedAt ? (
+            <p className="mt-3 text-sm leading-6 text-[var(--cma-muted)]">
+              顶层 archivedAt 已存在，但当前安全响应未提供完整归档摘要。
+            </p>
+          ) : (
+            <p className="mt-3 text-sm text-[var(--cma-muted)]">尚未归档。</p>
+          )}
+        </section>
       </div>
 
       {lockWarning ? (
@@ -166,6 +186,11 @@ export function ClinicalReportWorkflowSummary({
       {workflow.sourceFreezeReceipt ? (
         <p aria-live="polite" className="text-sm leading-6 text-[var(--cma-muted)]">
           本次来源冻结回执：{workflow.sourceFreezeReceipt.alreadyFrozen ? '此前已冻结，本次未重复写入' : workflow.sourceFreezeReceipt.resumedExisting ? '既有流程已恢复并完成' : '首次来源冻结完成'}；开始 {formatClinicalReportDate(workflow.sourceFreezeReceipt.startedAt)}；完成 {formatClinicalReportDate(workflow.sourceFreezeReceipt.completedAt)}；发起人 {actorLabel(workflow.sourceFreezeReceipt.startedBy)}；完成人 {actorLabel(workflow.sourceFreezeReceipt.completedBy)}；技术追溯号 {workflow.sourceFreezeReceipt.freezeId}；expected / completed / newly / previously 合计 {workflow.sourceFreezeReceipt.expectedCounts.totalSourceCount} / {workflow.sourceFreezeReceipt.completedCounts.totalSourceCount} / {workflow.sourceFreezeReceipt.newlyFrozenCounts.totalSourceCount} / {workflow.sourceFreezeReceipt.previouslyFrozenCounts.totalSourceCount}。
+        </p>
+      ) : null}
+      {workflow.archiveReceipt ? (
+        <p aria-live="polite" className="text-sm leading-6 text-[var(--cma-muted)]">
+          本次归档回执：{workflow.archiveReceipt.alreadyArchived ? '此前已归档，本次未重复写入' : '首次归档成功'}；{formatClinicalReportDate(workflow.archiveReceipt.archivedAt)}；归档人 {actorLabel(workflow.archiveReceipt.archivedBy)}；归档流程说明 {workflow.archiveReceipt.archiveNote?.trim() || '—'}；归档追溯号 {traceId(workflow.archiveReceipt.archiveId)}；来源冻结锚点 {traceId(workflow.archiveReceipt.sourceFreezeId)}；锚定完成时间 {formatClinicalReportDate(workflow.archiveReceipt.sourceFreezeCompletedAt)}；alreadyArchived={workflow.archiveReceipt.alreadyArchived ? 'true' : 'false'}。
         </p>
       ) : null}
     </section>

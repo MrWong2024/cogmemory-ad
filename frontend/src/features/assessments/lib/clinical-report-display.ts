@@ -201,6 +201,17 @@ export const clinicalReportSourceFreezeBoundaryStatements = [
   '当前不提供 unfreeze、自动回滚、PDF、下载或 AI 操作，也不形成新的诊断结论。',
 ];
 
+export const clinicalReportArchiveBoundaryStatements = [
+  '归档对象是当前 ClinicalReport；报告已经确认、报告自身已经锁定，且来源冻结已经完成。',
+  '归档成功后报告真实 status 变为 archived；当前系统不提供 unarchive，也不能恢复为 confirmed。',
+  '归档不会清除报告锁定，不会解冻或重新冻结来源。',
+  '归档不会修改 Patient、AssessmentVisit 或任何来源对象。',
+  '归档不会修改原始作答、评分、认知域结果、媒体、报告正文或既有快照。',
+  '归档不等于删除、作废或更正；后续更正必须通过独立、可追溯的受控流程形成。',
+  '归档不生成 PDF、Word、签名、打印件或下载文件，也不调用 AI。',
+  '归档流程说明只用于本次归档审计，不属于报告正文或医生确认意见。',
+];
+
 export function formatClinicalReportDate(
   value: string | null | undefined,
 ): string {
@@ -399,6 +410,15 @@ export function getClinicalReportApiErrorMessage(
       '来源冻结尚未完整完成；部分来源可能已经冻结，请重新加载并由医生或管理员明确继续恢复。',
     clinical_report_source_freeze_failed:
       '来源冻结操作未完成；请重新加载最新报告，确认是否存在可恢复流程。',
+    clinical_report_archive_confirmation_required:
+      '请明确确认报告归档边界后再继续。',
+    clinical_report_not_archivable: '当前报告尚未满足归档要求。',
+    clinical_report_archive_conflict:
+      '报告在归档前已发生变化，请重新核对最新报告。',
+    clinical_report_archive_audit_unavailable:
+      '报告归档审计信息不完整，不能安全执行或确认归档状态。',
+    clinical_report_archive_failed:
+      '报告归档操作未能确认完成，请保留当前归档说明并重新加载最新报告。',
     service_unavailable: '报告服务暂时不可用，请稍后手工重试。',
     unknown: '暂时无法完成报告操作，请稍后手工重新加载最新报告。',
   };
@@ -440,6 +460,24 @@ export function getClinicalReportSourceFreezeApiErrorMessage(
   }
   if (kind === 'service_unavailable' || kind === 'unknown') {
     return '来源冻结请求结果暂不确定；系统不会自动重试，请手工重新加载最新报告核对。';
+  }
+  return getClinicalReportApiErrorMessage(kind);
+}
+
+export function getClinicalReportArchiveApiErrorMessage(
+  kind: ClinicalReportApiErrorKind,
+): string {
+  if (kind === 'forbidden') {
+    return '当前账号不具备 doctor / admin 归档权限；报告和本地归档说明均已保留。';
+  }
+  if (kind === 'clinical_report_metadata_unsupported') {
+    return '报告内部审计结构异常，当前不能继续归档，请联系管理员。';
+  }
+  if (kind === 'clinical_report_voided') {
+    return '当前报告已作废，不能归档。';
+  }
+  if (kind === 'service_unavailable' || kind === 'unknown') {
+    return '归档请求结果暂不确定；系统不会自动重试，请保留当前归档说明并手工重新加载最新报告核对。';
   }
   return getClinicalReportApiErrorMessage(kind);
 }

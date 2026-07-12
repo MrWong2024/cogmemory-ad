@@ -1,6 +1,8 @@
 import { frontendEnv } from '@/src/lib/env';
 
 import type {
+  ArchiveClinicalReportRequest,
+  ArchiveClinicalReportResponse,
   ConfirmClinicalReportRequest,
   ConfirmClinicalReportResponse,
   ClinicalReportDetailResponse,
@@ -69,6 +71,11 @@ export type ClinicalReportApiErrorKind =
   | 'clinical_report_source_freeze_audit_unavailable'
   | 'clinical_report_source_freeze_incomplete'
   | 'clinical_report_source_freeze_failed'
+  | 'clinical_report_archive_confirmation_required'
+  | 'clinical_report_not_archivable'
+  | 'clinical_report_archive_conflict'
+  | 'clinical_report_archive_audit_unavailable'
+  | 'clinical_report_archive_failed'
   | 'service_unavailable'
   | 'unknown';
 
@@ -196,6 +203,13 @@ function mapHttpError(
       'clinical_report_source_freeze_incomplete',
     CLINICAL_REPORT_SOURCE_FREEZE_FAILED:
       'clinical_report_source_freeze_failed',
+    CLINICAL_REPORT_ARCHIVE_CONFIRMATION_REQUIRED:
+      'clinical_report_archive_confirmation_required',
+    CLINICAL_REPORT_NOT_ARCHIVABLE: 'clinical_report_not_archivable',
+    CLINICAL_REPORT_ARCHIVE_CONFLICT: 'clinical_report_archive_conflict',
+    CLINICAL_REPORT_ARCHIVE_AUDIT_UNAVAILABLE:
+      'clinical_report_archive_audit_unavailable',
+    CLINICAL_REPORT_ARCHIVE_FAILED: 'clinical_report_archive_failed',
   };
 
   if (backendCode && businessKinds[backendCode]) {
@@ -445,4 +459,26 @@ export async function freezeClinicalReportSources(
     },
   );
   return readJson<FreezeClinicalReportSourcesResponse>(response);
+}
+
+export async function archiveClinicalReport(
+  patientId: string,
+  visitId: string,
+  reportId: string,
+  input: ArchiveClinicalReportRequest,
+): Promise<ArchiveClinicalReportResponse> {
+  const requestBody: ArchiveClinicalReportRequest = {
+    confirm: true,
+    archiveNote: input.archiveNote.trim(),
+    expectedUpdatedAt: input.expectedUpdatedAt,
+  };
+  const response = await clinicalReportFetch(
+    `${buildClinicalReportResourcePath(patientId, visitId, reportId)}/archive`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+    },
+  );
+  return readJson<ArchiveClinicalReportResponse>(response);
 }
