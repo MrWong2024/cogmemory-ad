@@ -3,6 +3,7 @@ import {
   clinicalReportConfirmationRoleLabels,
   clinicalReportOperatorRoleLabels,
   formatClinicalReportDate,
+  clinicalReportSourceFreezeStateLabels,
   getClinicalReportLockConsistencyWarning,
 } from '@/src/features/assessments/lib/clinical-report-display';
 import type {
@@ -55,7 +56,7 @@ export function ClinicalReportWorkflowSummary({
         </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <section className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] p-4">
           <h4 className="text-lg font-semibold text-[var(--cma-text-strong)]">最新编辑摘要</h4>
           {report.editorial ? (
@@ -116,6 +117,21 @@ export function ClinicalReportWorkflowSummary({
             <p className="mt-3 text-sm text-[var(--cma-muted)]">尚未锁定。</p>
           )}
         </section>
+
+        <section className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] p-4">
+          <h4 className="text-lg font-semibold text-[var(--cma-text-strong)]">来源冻结摘要</h4>
+          {report.sourceFreeze ? (
+            <dl className="mt-3 grid gap-3 text-sm">
+              <div><dt className="font-semibold text-[var(--cma-muted)]">状态</dt><dd className="mt-1 text-[var(--cma-text-strong)]">{clinicalReportSourceFreezeStateLabels[report.sourceFreeze.state]}</dd></div>
+              <div><dt className="font-semibold text-[var(--cma-muted)]">开始 / 完成时间</dt><dd className="mt-1 text-[var(--cma-text-strong)]">{formatClinicalReportDate(report.sourceFreeze.startedAt)} / {formatClinicalReportDate(report.sourceFreeze.completedAt)}</dd></div>
+              <div><dt className="font-semibold text-[var(--cma-muted)]">发起 / 完成人</dt><dd className="mt-1 text-[var(--cma-text-strong)]">{actorLabel(report.sourceFreeze.startedBy)} / {actorLabel(report.sourceFreeze.completedBy)}</dd></div>
+              <div><dt className="font-semibold text-[var(--cma-muted)]">流程说明</dt><dd className="mt-1 whitespace-pre-wrap text-[var(--cma-text-strong)]">{report.sourceFreeze.freezeNote}</dd></div>
+              <div><dt className="font-semibold text-[var(--cma-muted)]">技术追溯号</dt><dd className="mt-1 break-all text-[var(--cma-muted)]">{report.sourceFreeze.freezeId}</dd></div>
+            </dl>
+          ) : (
+            <p className="mt-3 text-sm text-[var(--cma-muted)]">报告来源尚未冻结。</p>
+          )}
+        </section>
       </div>
 
       {lockWarning ? (
@@ -145,6 +161,11 @@ export function ClinicalReportWorkflowSummary({
       {workflow.lockReceipt ? (
         <p aria-live="polite" className="text-sm leading-6 text-[var(--cma-muted)]">
           本次锁定回执：{workflow.lockReceipt.alreadyLocked ? '此前已锁定，本次未重复写入' : '首次不可逆锁定成功'}；{formatClinicalReportDate(workflow.lockReceipt.lockedAt)}；锁定人 {actorLabel(workflow.lockReceipt.lockedBy)}；锁定流程说明 {workflow.lockReceipt.lockNote?.trim() || '—'}；技术追溯号 {traceId(workflow.lockReceipt.lockId)}。
+        </p>
+      ) : null}
+      {workflow.sourceFreezeReceipt ? (
+        <p aria-live="polite" className="text-sm leading-6 text-[var(--cma-muted)]">
+          本次来源冻结回执：{workflow.sourceFreezeReceipt.alreadyFrozen ? '此前已冻结，本次未重复写入' : workflow.sourceFreezeReceipt.resumedExisting ? '既有流程已恢复并完成' : '首次来源冻结完成'}；开始 {formatClinicalReportDate(workflow.sourceFreezeReceipt.startedAt)}；完成 {formatClinicalReportDate(workflow.sourceFreezeReceipt.completedAt)}；发起人 {actorLabel(workflow.sourceFreezeReceipt.startedBy)}；完成人 {actorLabel(workflow.sourceFreezeReceipt.completedBy)}；技术追溯号 {workflow.sourceFreezeReceipt.freezeId}；expected / completed / newly / previously 合计 {workflow.sourceFreezeReceipt.expectedCounts.totalSourceCount} / {workflow.sourceFreezeReceipt.completedCounts.totalSourceCount} / {workflow.sourceFreezeReceipt.newlyFrozenCounts.totalSourceCount} / {workflow.sourceFreezeReceipt.previouslyFrozenCounts.totalSourceCount}。
         </p>
       ) : null}
     </section>

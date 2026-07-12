@@ -13,6 +13,8 @@ import { ClinicalReportSubmissionPanel } from '@/src/features/assessments/compon
 import { ClinicalReportConfirmationPanel } from '@/src/features/assessments/components/ClinicalReportConfirmationPanel';
 import { ClinicalReportWorkflowSummary } from '@/src/features/assessments/components/ClinicalReportWorkflowSummary';
 import { ClinicalReportLockPanel } from '@/src/features/assessments/components/ClinicalReportLockPanel';
+import { ClinicalReportSourceFreezePanel } from '@/src/features/assessments/components/ClinicalReportSourceFreezePanel';
+import { ClinicalReportSourceFreezeSummary } from '@/src/features/assessments/components/ClinicalReportSourceFreezeSummary';
 import { ClinicalReportScopeSelector } from '@/src/features/assessments/components/ClinicalReportScopeSelector';
 import { ClinicalReportSnapshotSummary } from '@/src/features/assessments/components/ClinicalReportSnapshotSummary';
 import { ClinicalReportTechnicalSummary } from '@/src/features/assessments/components/ClinicalReportTechnicalSummary';
@@ -30,6 +32,7 @@ import {
   getClinicalReportLockConsistencyWarning,
   isClinicalReportLocked,
 } from '@/src/features/assessments/lib/clinical-report-display';
+import { getClinicalReportSourceFreezeConsistencyWarning } from '@/src/features/assessments/lib/clinical-report-source-freeze-draft';
 import type {
   AvailableScaleOption,
   ScaleInstanceListItem,
@@ -78,6 +81,9 @@ export function ClinicalReportPanel({
   const lockConsistencyWarning = report
     ? getClinicalReportLockConsistencyWarning(report)
     : null;
+  const sourceFreezeConsistencyWarning = report
+    ? getClinicalReportSourceFreezeConsistencyWarning(report.sourceFreeze)
+    : null;
 
   return (
     <Card>
@@ -86,7 +92,7 @@ export function ClinicalReportPanel({
           <div>
             <CardTitle>访视级临床报告</CardTitle>
             <CardDescription>
-              在 A20 / A21 报告工作流基础上，支持 doctor / admin 执行 A22 不可逆锁定并安全展示锁定审计。
+              在 A20–A22 报告工作流基础上，支持 doctor / admin 明确发起或恢复 A23 来源链冻结，并安全展示持久摘要。
             </CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -98,6 +104,21 @@ export function ClinicalReportPanel({
                 {isClinicalReportLocked(report) ? (
                   <Badge tone="warning">已锁定</Badge>
                 ) : null}
+                <Badge
+                  tone={
+                    report.sourceFreeze?.state === 'completed'
+                      ? 'success'
+                      : report.sourceFreeze?.state === 'in_progress'
+                        ? 'warning'
+                        : 'neutral'
+                  }
+                >
+                  {report.sourceFreeze?.state === 'completed'
+                    ? '来源已冻结'
+                    : report.sourceFreeze?.state === 'in_progress'
+                      ? '冻结未完成'
+                      : '来源未冻结'}
+                </Badge>
               </>
             ) : reportState.status === 'not_found' ? (
               <Badge>尚无报告</Badge>
@@ -383,6 +404,16 @@ export function ClinicalReportPanel({
               </p>
             ) : null}
 
+            {sourceFreezeConsistencyWarning ? (
+              <p
+                className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] px-4 py-3 text-base text-[var(--cma-warning)]"
+                role="alert"
+              >
+                来源冻结安全摘要不完整或不一致：
+                {sourceFreezeConsistencyWarning}
+              </p>
+            ) : null}
+
             <ClinicalReportSnapshotSummary report={report} />
             <ClinicalReportNarrative
               narrative={report.narrative}
@@ -399,12 +430,24 @@ export function ClinicalReportPanel({
               workflow={workflow}
             />
             <ClinicalReportLockPanel report={report} workflow={workflow} />
+            <ClinicalReportSourceFreezePanel
+              report={report}
+              workflow={workflow}
+            />
+            <ClinicalReportSourceFreezeSummary
+              receipt={workflow.sourceFreezeReceipt}
+              sourceFreeze={report.sourceFreeze}
+            />
             {['confirmed', 'archived', 'corrected', 'voided'].includes(
               report.status,
             ) ? (
               <p className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] px-4 py-3 text-base leading-7 text-[var(--cma-muted)]">
                 {isClinicalReportLocked(report)
-                  ? '当前报告已经确认并锁定，status 仍为 confirmed。锁定只作用于当前 ClinicalReport，不锁定患者、访视、量表实例、评分、认知域或媒体；当前不提供 unlock，也不表示已归档、签名或生成 PDF。'
+                  ? report.sourceFreeze?.state === 'completed'
+                    ? '当前报告自身已经确认并锁定，status 仍为 confirmed；其固定 scope 内来源链已完成冻结。Patient、Visit 与 Storage 仍未冻结；当前不提供 unlock、unfreeze，也不表示已归档、签名或生成 PDF。'
+                    : report.sourceFreeze?.state === 'in_progress'
+                      ? '当前报告自身已经锁定，但来源冻结尚未完整完成，部分来源可能已经冻结且系统不会自动回滚。Patient、Visit 与 Storage 未冻结；需由医生或管理员明确恢复同一流程。'
+                      : '当前报告自身已经确认并锁定，但 sourceFreeze=null 表示报告来源尚未冻结。报告锁定与来源冻结是两个独立阶段；Patient、Visit 与 Storage 未冻结。'
                   : '当前报告为只读状态。confirmed 表示已完成医生或管理员确认，但尚未锁定；也不表示访视、评分、认知域或媒体已锁定，或报告已归档、签名、生成 PDF。'}
               </p>
             ) : null}

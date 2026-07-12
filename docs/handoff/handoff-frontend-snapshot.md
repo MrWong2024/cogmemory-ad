@@ -7,7 +7,7 @@
 ## 2. 当前工程状态
 
 - `frontend\` 根目录公共骨架配置与 `frontend\app` / `frontend\src` 公共底座已初始化。
-- 前端 B1-B11 已落地既有认证、患者 / 访视、执行、媒体、提交、评分确认、认知域与规则化报告确认能力；前端 B12 已在既有访视详情路由接入 A22 confirmed ClinicalReport 不可逆锁定、乐观并发和安全摘要展示。
+- 前端 B1-B12 已落地既有认证、患者 / 访视、执行、媒体、提交、评分确认、认知域、规则化报告确认与报告锁定能力；前端 B13 已在既有访视详情路由接入 A23 来源链冻结确认、可恢复状态与安全摘要展示。
 - 当前首页仍为公共占位，只增加登录页与工作台入口，不调用后端。
 - `/login` 提供账号密码登录，并在登录前通过 `GET /auth/me` 检查已有会话。
 - `/dashboard` 通过 `GET /auth/me` 验证会话、展示当前用户公开信息、提供患者档案入口和登出入口。
@@ -15,7 +15,7 @@
 - Patients API Client 真实调用 A12 五个患者 / 访视 API，支持分页、过滤、GET 请求取消、稳定错误映射和安全请求字段白名单。
 - Assessment Execution API Client 继续调用 A13 / A14 / A16；独立 Provisional Scoring、Cognitive Domain 与 Clinical Report API Client 分别调用 A17 / A18、A19 与 A20 / A21。写请求逐字段重建白名单且不自动重试，latest 使用各自独立 AbortController。
 - 当前视觉遵循医疗系统 / 临床评估 / 低干扰 / 高可读性 / 冷静可信口径，不继承 ReviewX 视觉风格。
-- 当前没有患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、批量或自动保存、评分 lock / void / rerun、认知域人工修改 / 确认 / 锁定 / 作废 / 重算、报告退回 / 签名 / unlock / archive / correct / void / PDF / 重生成、AI、用户管理或权限菜单页面；B12 只锁当前 ClinicalReport，不锁定来源对象，也不形成临床诊断结论。
+- 当前没有患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、批量或自动保存、评分 lock / void / rerun、认知域人工修改 / 确认 / 作废 / 重算、报告退回 / 签名 / unlock / unfreeze / archive / correct / void / PDF / 重生成、AI、用户管理或权限菜单页面；B13 只冻结报告固定 scope 内五类来源，不冻结 Patient、Visit 或 Storage，也不形成临床诊断结论。
 
 ## 3. 当前已确认前端事实
 
@@ -151,6 +151,13 @@
 - 锁定区使用必填 3–2000 字 lockNote、字符计数、不可逆边界和可见 checkbox。expectedUpdatedAt 只来自打开锁定区时冻结的服务端 report.updatedAt；冲突保留 lockNote、清 checkbox、自动 latest 一次、标记 stale，不自动重发 POST 或覆盖。用户明确“基于最新报告继续”后才采用最新 updatedAt；若 latest 已锁定，保留本地说明直到用户关闭。
 - 锁定成功完整采用服务端 report，并在当前内存保存 lockReceipt；alreadyLocked=false 显示首次锁定成功，alreadyLocked=true 作为既有锁定幂等成功。status 仍为 confirmed，lockedAt 为主锁定事实，lock 为安全审计摘要，isFinal 直接使用服务端值且不作为锁定状态。锁定后 edit / submit / confirm / lock 全部只读。
 - `ClinicalReportWorkflowSummary` 展示持久 lock 摘要和当前会话 receipt；`ClinicalReportTechnicalSummary` 分开显示真实 status、lockedAt 与 isFinal。lockedAt 非空但 lock 为空时说明审计摘要不完整；lock 非空但 lockedAt 为空、或两个时间不一致时显示一致性警告并禁止锁定，不猜测字段。
+- B13 扩展 `ClinicalReport` 的 sourceFreeze 安全摘要以及 freeze request / receipt / response；状态严格为 in_progress / completed，全部 Date JSON 继续使用 string / null。公开类型不定义内部 scope、任何来源 ID、metadata 或原始来源状态明细。
+- `freezeClinicalReportSources()` 调用 doctor / admin 专用 A23 POST；Body 只重建 `{ confirm: true, freezeNote: trim 后文本, expectedUpdatedAt }`，路径 ID 编码且 reportId 使用 MongoId 防御。客户端不自动重试，不输出说明、updatedAt、请求或响应。
+- 独立 `clinical-report-source-freeze-draft.ts` 管理首次 / 恢复草稿、3–2000 字说明、服务端 updatedAt 基线、dirty / stale、持久说明只读、白名单请求、资格和安全一致性。计数要求非负安全整数且 total 等于五类之和；in_progress 不得含完成字段；completed 要求完整完成字段、expected=completed 且 newly+previously=expected。
+- `useClinicalReportWorkflow` 新增 source_freeze mode 并继续复用同一 writingAction、roles、report、latest、onUnauthorized 与完整 report 应用路径。doctor / admin 才显示操作入口；nurse / research_assistant 只读。首次要求 Visit draft / in_progress / completed；恢复既有 in_progress 不因 Visit 后续 locked / voided 被前端阻断。
+- 首次 freezeNote 为 React 内存用户输入，非空纳入 beforeunload；恢复只能使用服务端持久 freezeNote，不可编辑且不产生文本 dirty。冲突、not source freezable、incomplete、failed、voided、not found 最多 latest 一次，保留本地首次说明并清 checkbox；不自动再次 POST 或进入恢复。网络结果不确定时只提供手工 latest。
+- `ClinicalReportSourceFreezePanel` 提供首次与恢复的独立内联二次确认；`ClinicalReportSourceFreezeSummary` 展示 freezeId、state、started/sourceLocked/completed 时间、actor、原说明及五类 expected / completed / newly / previously / total 计数。回执仅在当前页面内存，刷新后消失；持久事实来自 report.sourceFreeze。
+- 页面明确 A23 不使用 Mongo transaction，in_progress 期间可能已有部分来源被冻结，系统不自动解冻、回滚、轮询或恢复；不冻结 Patient / Visit / Storage，CognitiveDomainResult 冻结不等于确认，不生成 PDF / 下载，不调用 AI。
 - 前端媒体公开类型没有定义 Storage 对象定位、校验和、原始文件名、内部患者关联或删除时间字段；页面也不显示这些字段。
 
 ## 4. 当前文件清单
@@ -214,6 +221,7 @@
 - `frontend\src\features\assessments\lib\cognitive-domain-display.ts`
 - `frontend\src\features\assessments\lib\clinical-report-display.ts`
 - `frontend\src\features\assessments\lib\clinical-report-workflow-draft.ts`
+- `frontend\src\features\assessments\lib\clinical-report-source-freeze-draft.ts`
 - `frontend\src\features\assessments\hooks\useCognitiveDomainResult.ts`
 - `frontend\src\features\assessments\hooks\useClinicalReport.ts`
 - `frontend\src\features\assessments\hooks\useClinicalReportWorkflow.ts`
@@ -247,6 +255,8 @@
 - `frontend\src\features\assessments\components\ClinicalReportConfirmationPanel.tsx`
 - `frontend\src\features\assessments\components\ClinicalReportWorkflowSummary.tsx`
 - `frontend\src\features\assessments\components\ClinicalReportLockPanel.tsx`
+- `frontend\src\features\assessments\components\ClinicalReportSourceFreezePanel.tsx`
+- `frontend\src\features\assessments\components\ClinicalReportSourceFreezeSummary.tsx`
 - `frontend\src\features\assessments\components\ScaleExecutionGroupNavigation.tsx`
 - `frontend\src\features\assessments\components\ItemResponseEditor.tsx`
 - `frontend\src\features\assessments\components\ItemStepEditor.tsx`
@@ -364,14 +374,23 @@
 - E2E 与浏览器自动化未执行；浏览器手工联调未执行，A22 真实 HTTP、角色入口、并发冲突、幂等、窄屏与可访问性均待开发者使用脱敏数据验证。
 - 后端命令未执行。
 
+本次 B13 验证结果：
+
+- 未新增自动测试或测试框架；继续使用既有 ESLint、TypeScript 与生产构建验证。
+- `npm run lint`：通过。
+- `npm run typecheck`：通过，Next 16 既有动态路由类型生成成功且 TypeScript 无错误。
+- `npm run build`：通过，生产构建包含既有访视详情动态路由；B13 未新增路由。
+- E2E 与浏览器自动化未执行；浏览器手工联调未执行，A23 真实 HTTP、角色入口、首次 / 恢复、并发冲突、部分失败、幂等、窄屏与可访问性均待开发者使用脱敏数据验证。
+- 后端命令未执行。
+
 ## 6. 当前未实现前端事实
 
 - `/dashboard` 已有患者档案入口，但不是完整医生工作台。
 - 患者编辑 / 删除 / 归档 / 合并尚未实现。
 - 访视编辑 / 删除 / 状态流转尚未实现；访视详情支持查看、初始化量表实例、进入 B4 执行页以及 B10 / B11 访视级报告闭环。
-- B4-B12 已支持安全题目记录、photo / handwriting 证据、完整性检查、正式实例提交、评分确认、认知域结果、规则化报告、受控编辑、提交待确认、医生 / 管理员确认与报告不可逆锁定；批量 / 自动保存、评分锁定、认知域人工确认仍未实现。
+- B4-B13 已支持安全题目记录、photo / handwriting 证据、完整性检查、正式实例提交、评分确认、认知域结果、规则化报告、受控编辑、提交待确认、医生 / 管理员确认、报告不可逆锁定与固定 scope 来源链冻结；批量 / 自动保存、评分锁定、认知域人工确认与来源解冻仍未实现。
 - 报告退回、reject、reopen、withdraw、签名、unlock、归档、更正、作废、重生成、version 2、PDF / 下载、AI、用户管理、角色权限管理和权限菜单尚未实现。
-- 当前报告 API 为 A20 latest / generate、A21 edit / submit / confirm 与 A22 lock；没有评分 lock / void / reopen / rerun、认知域修改 / 确认 / lock / void / rerun、报告 unlock / archive / correct / void 或 AI API 调用。
+- 当前报告 API 为 A20 latest / generate、A21 edit / submit / confirm、A22 lock 与 A23 freeze-sources；没有评分 lock / void / reopen / rerun、认知域修改 / 确认 / void / rerun、报告 unlock / unfreeze / archive / correct / void 或 AI API 调用。
 - 当前不包含路由级服务端认证中间件。
 
 ## 7. 后续同步规则

@@ -4,6 +4,8 @@ import type {
   ConfirmClinicalReportRequest,
   ConfirmClinicalReportResponse,
   ClinicalReportDetailResponse,
+  FreezeClinicalReportSourcesRequest,
+  FreezeClinicalReportSourcesResponse,
   GenerateClinicalReportRequest,
   GenerateClinicalReportResponse,
   LockClinicalReportRequest,
@@ -59,6 +61,14 @@ export type ClinicalReportApiErrorKind =
   | 'clinical_report_lock_conflict'
   | 'clinical_report_lock_audit_unavailable'
   | 'clinical_report_lock_failed'
+  | 'clinical_report_source_freeze_confirmation_required'
+  | 'clinical_report_not_source_freezable'
+  | 'clinical_report_source_freeze_scope_invalid'
+  | 'clinical_report_source_freeze_input_invalid'
+  | 'clinical_report_source_freeze_conflict'
+  | 'clinical_report_source_freeze_audit_unavailable'
+  | 'clinical_report_source_freeze_incomplete'
+  | 'clinical_report_source_freeze_failed'
   | 'service_unavailable'
   | 'unknown';
 
@@ -170,6 +180,22 @@ function mapHttpError(
     CLINICAL_REPORT_LOCK_AUDIT_UNAVAILABLE:
       'clinical_report_lock_audit_unavailable',
     CLINICAL_REPORT_LOCK_FAILED: 'clinical_report_lock_failed',
+    CLINICAL_REPORT_SOURCE_FREEZE_CONFIRMATION_REQUIRED:
+      'clinical_report_source_freeze_confirmation_required',
+    CLINICAL_REPORT_NOT_SOURCE_FREEZABLE:
+      'clinical_report_not_source_freezable',
+    CLINICAL_REPORT_SOURCE_FREEZE_SCOPE_INVALID:
+      'clinical_report_source_freeze_scope_invalid',
+    CLINICAL_REPORT_SOURCE_FREEZE_INPUT_INVALID:
+      'clinical_report_source_freeze_input_invalid',
+    CLINICAL_REPORT_SOURCE_FREEZE_CONFLICT:
+      'clinical_report_source_freeze_conflict',
+    CLINICAL_REPORT_SOURCE_FREEZE_AUDIT_UNAVAILABLE:
+      'clinical_report_source_freeze_audit_unavailable',
+    CLINICAL_REPORT_SOURCE_FREEZE_INCOMPLETE:
+      'clinical_report_source_freeze_incomplete',
+    CLINICAL_REPORT_SOURCE_FREEZE_FAILED:
+      'clinical_report_source_freeze_failed',
   };
 
   if (backendCode && businessKinds[backendCode]) {
@@ -397,4 +423,26 @@ export async function lockClinicalReport(
     },
   );
   return readJson<LockClinicalReportResponse>(response);
+}
+
+export async function freezeClinicalReportSources(
+  patientId: string,
+  visitId: string,
+  reportId: string,
+  input: FreezeClinicalReportSourcesRequest,
+): Promise<FreezeClinicalReportSourcesResponse> {
+  const requestBody: FreezeClinicalReportSourcesRequest = {
+    confirm: true,
+    freezeNote: input.freezeNote.trim(),
+    expectedUpdatedAt: input.expectedUpdatedAt,
+  };
+  const response = await clinicalReportFetch(
+    `${buildClinicalReportResourcePath(patientId, visitId, reportId)}/freeze-sources`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+    },
+  );
+  return readJson<FreezeClinicalReportSourcesResponse>(response);
 }

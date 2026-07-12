@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ClinicalReportApiError,
   confirmClinicalReport,
+  freezeClinicalReportSources,
   lockClinicalReport,
   submitClinicalReportForConfirmation,
   updateClinicalReportDraft,
@@ -13,6 +14,19 @@ import {
   getClinicalReportFinalityWarning,
   getClinicalReportLockConsistencyWarning,
 } from '@/src/features/assessments/lib/clinical-report-display';
+import {
+  buildFreezeClinicalReportSourcesRequest,
+  clinicalReportSourceFreezeDraftMatchesReport,
+  continueClinicalReportSourceFreezeDraftWithLatest,
+  createClinicalReportSourceFreezeResumeDraft,
+  createClinicalReportSourceFreezeStartDraft,
+  getClinicalReportSourceFreezeConsistencyWarning,
+  getClinicalReportSourceFreezeResumeEligibilityWarning,
+  getClinicalReportSourceFreezeStartEligibilityWarning,
+  isClinicalReportSourceFreezeDirty,
+  validateClinicalReportSourceFreezeDraft,
+  type ClinicalReportSourceFreezeDraft,
+} from '@/src/features/assessments/lib/clinical-report-source-freeze-draft';
 import {
   buildConfirmClinicalReportRequest,
   buildLockClinicalReportRequest,
@@ -41,6 +55,7 @@ import {
 import type {
   ClinicalReport,
   ClinicalReportEditReceipt,
+  FreezeClinicalReportSourcesReceipt,
   LockClinicalReportReceipt,
   ConfirmClinicalReportReceipt,
   SubmitClinicalReportReceipt,
@@ -52,7 +67,8 @@ export type ClinicalReportWorkflowMode =
   | 'edit'
   | 'submit'
   | 'confirm'
-  | 'lock';
+  | 'lock'
+  | 'source_freeze';
 export type ClinicalReportWritingAction = Exclude<
   ClinicalReportWorkflowMode,
   'idle'
@@ -81,6 +97,10 @@ const refreshAfterActionErrors = new Set<ClinicalReportApiError['kind']>([
   'clinical_report_not_found',
   'clinical_report_not_lockable',
   'clinical_report_lock_conflict',
+  'clinical_report_not_source_freezable',
+  'clinical_report_source_freeze_conflict',
+  'clinical_report_source_freeze_incomplete',
+  'clinical_report_source_freeze_failed',
 ]);
 
 const lockableVisitStatuses = new Set<AssessmentVisitStatus>([
@@ -201,6 +221,8 @@ export function useClinicalReportWorkflow({
     useState<ClinicalReportConfirmationDraft | null>(null);
   const [lockDraft, setLockDraft] =
     useState<ClinicalReportLockDraft | null>(null);
+  const [sourceFreezeDraft, setSourceFreezeDraft] =
+    useState<ClinicalReportSourceFreezeDraft | null>(null);
   const [editError, setEditError] = useState<ClinicalReportApiError | null>(
     null,
   );
@@ -211,6 +233,8 @@ export function useClinicalReportWorkflow({
   const [lockError, setLockError] = useState<ClinicalReportApiError | null>(
     null,
   );
+  const [sourceFreezeError, setSourceFreezeError] =
+    useState<ClinicalReportApiError | null>(null);
   const [editReceipt, setEditReceipt] =
     useState<ClinicalReportEditReceipt | null>(null);
   const [submissionReceipt, setSubmissionReceipt] =
@@ -219,6 +243,8 @@ export function useClinicalReportWorkflow({
     useState<ConfirmClinicalReportReceipt | null>(null);
   const [lockReceipt, setLockReceipt] =
     useState<LockClinicalReportReceipt | null>(null);
+  const [sourceFreezeReceipt, setSourceFreezeReceipt] =
+    useState<FreezeClinicalReportSourcesReceipt | null>(null);
   const [liveMessage, setLiveMessage] = useState<string | null>(null);
   const [writeProhibited, setWriteProhibited] = useState(false);
 
@@ -228,6 +254,7 @@ export function useClinicalReportWorkflow({
     [currentUserRoles],
   );
   const roleCanLock = roleCanConfirm;
+  const roleCanFreezeSources = roleCanConfirm;
 
   const editDirty = isClinicalReportEditDirty(editDraft);
   const submissionDirty =
@@ -237,8 +264,13 @@ export function useClinicalReportWorkflow({
     normalizeClinicalReportText(confirmationDraft?.confirmationNote ?? '')
       .length > 0;
   const lockDirty = isClinicalReportLockDirty(lockDraft);
+  const sourceFreezeDirty = isClinicalReportSourceFreezeDirty(sourceFreezeDraft);
   const hasLocalDraft = Boolean(
-    editDraft || submissionDraft || confirmationDraft || lockDraft,
+    editDraft ||
+      submissionDraft ||
+      confirmationDraft ||
+      lockDraft ||
+      sourceFreezeDraft,
   );
 
   const canEdit =
@@ -270,6 +302,34 @@ export function useClinicalReportWorkflow({
     !hasLocalDraft &&
     roleCanLock &&
     isLockableReport(report, visitStatus);
+  const sourceFreezeConsistencyWarning = report
+    ? getClinicalReportSourceFreezeConsistencyWarning(report.sourceFreeze)
+    : null;
+  const canStartSourceFreeze = Boolean(
+    report &&
+      activeMode === 'idle' &&
+      writingAction === null &&
+      !reportWriteBlocked &&
+      !writeProhibited &&
+      !hasLocalDraft &&
+      roleCanFreezeSources &&
+      sourceFreezeConsistencyWarning === null &&
+      getClinicalReportSourceFreezeStartEligibilityWarning(
+        report,
+        visitStatus,
+      ) === null,
+  );
+  const canResumeSourceFreeze = Boolean(
+    report &&
+      activeMode === 'idle' &&
+      writingAction === null &&
+      !reportWriteBlocked &&
+      !writeProhibited &&
+      !hasLocalDraft &&
+      roleCanFreezeSources &&
+      sourceFreezeConsistencyWarning === null &&
+      getClinicalReportSourceFreezeResumeEligibilityWarning(report) === null,
+  );
 
   const editValidation = editDraft
     ? validateClinicalReportEditDraft(editDraft)
@@ -282,6 +342,9 @@ export function useClinicalReportWorkflow({
     : { valid: false, message: null };
   const lockValidation = lockDraft
     ? validateClinicalReportLockDraft(lockDraft)
+    : { valid: false, message: null };
+  const sourceFreezeValidation = sourceFreezeDraft
+    ? validateClinicalReportSourceFreezeDraft(sourceFreezeDraft)
     : { valid: false, message: null };
 
   const editVersionMatches = Boolean(
@@ -309,6 +372,11 @@ export function useClinicalReportWorkflow({
       lockDraft.baseUpdatedAt === report.updatedAt &&
       report.status === 'confirmed' &&
       report.lockedAt === null,
+  );
+  const sourceFreezeVersionMatches = Boolean(
+    sourceFreezeDraft &&
+      report &&
+      clinicalReportSourceFreezeDraftMatchesReport(sourceFreezeDraft, report),
   );
 
   const canSaveEdit = Boolean(
@@ -356,6 +424,25 @@ export function useClinicalReportWorkflow({
       roleCanLock &&
       isLockableReport(report, visitStatus),
   );
+  const canConfirmSourceFreeze = Boolean(
+    sourceFreezeDraft &&
+      report &&
+      sourceFreezeValidation.valid &&
+      !sourceFreezeDraft.stale &&
+      sourceFreezeVersionMatches &&
+      writingAction === null &&
+      !reportWriteBlocked &&
+      !writeProhibited &&
+      roleCanFreezeSources &&
+      sourceFreezeConsistencyWarning === null &&
+      (sourceFreezeDraft.mode === 'start'
+        ? getClinicalReportSourceFreezeStartEligibilityWarning(
+            report,
+            visitStatus,
+          ) === null
+        : getClinicalReportSourceFreezeResumeEligibilityWarning(report) ===
+          null),
+  );
   const canContinueLockWithLatest = Boolean(
     lockDraft &&
       lockDraft.stale &&
@@ -363,6 +450,25 @@ export function useClinicalReportWorkflow({
       !reportWriteBlocked &&
       !writeProhibited &&
       isLockableReport(report, visitStatus),
+  );
+  const canContinueSourceFreezeWithLatest = Boolean(
+    sourceFreezeDraft &&
+      sourceFreezeDraft.stale &&
+      report &&
+      roleCanFreezeSources &&
+      !reportWriteBlocked &&
+      !writeProhibited &&
+      sourceFreezeConsistencyWarning === null &&
+      (sourceFreezeDraft.mode === 'start'
+        ? report.sourceFreeze === null &&
+          getClinicalReportSourceFreezeStartEligibilityWarning(
+            report,
+            visitStatus,
+          ) === null
+        : report.sourceFreeze?.state === 'in_progress' &&
+          report.sourceFreeze.freezeId === sourceFreezeDraft.freezeId &&
+          getClinicalReportSourceFreezeResumeEligibilityWarning(report) ===
+            null),
   );
   const lockBlockReason = useMemo(() => {
     if (!report) return '请先加载当前临床报告。';
@@ -414,6 +520,54 @@ export function useClinicalReportWorkflow({
     writeProhibited,
     writingAction,
   ]);
+  const sourceFreezeBlockReason = useMemo(() => {
+    if (!report) return '请先加载当前临床报告。';
+    if (!roleCanFreezeSources) {
+      return report.sourceFreeze?.state === 'in_progress'
+        ? '来源冻结尚未完成，等待医生或管理员明确继续。'
+        : '来源冻结需由医生或管理员执行。';
+    }
+    if (sourceFreezeConsistencyWarning) {
+      return '来源冻结安全摘要不完整或不一致；不能继续写入，请联系管理员。';
+    }
+    if (report.sourceFreeze?.state === 'completed') {
+      return '报告来源链冻结已经完成，不开放再次冻结或恢复入口。';
+    }
+    const eligibilityWarning = report.sourceFreeze
+      ? getClinicalReportSourceFreezeResumeEligibilityWarning(report)
+      : getClinicalReportSourceFreezeStartEligibilityWarning(
+          report,
+          visitStatus,
+        );
+    if (eligibilityWarning) return eligibilityWarning;
+    if (reportWriteBlocked) return '当前存在其他访视或报告写操作，请等待完成。';
+    if (writeProhibited) return '报告审计结构当前禁止继续安全写入。';
+    if (activeMode !== 'idle' || hasLocalDraft) {
+      return '请先保存或放弃当前报告本地草稿。';
+    }
+    if (writingAction !== null) return '当前正在执行报告写操作。';
+    return null;
+  }, [
+    activeMode,
+    hasLocalDraft,
+    report,
+    reportWriteBlocked,
+    roleCanFreezeSources,
+    sourceFreezeConsistencyWarning,
+    visitStatus,
+    writeProhibited,
+    writingAction,
+  ]);
+  const canDiscardLocalSourceFreezeAndResume = Boolean(
+    sourceFreezeDraft?.mode === 'start' &&
+      sourceFreezeDraft.stale &&
+      report?.sourceFreeze?.state === 'in_progress' &&
+      roleCanFreezeSources &&
+      !reportWriteBlocked &&
+      !writeProhibited &&
+      sourceFreezeConsistencyWarning === null &&
+      getClinicalReportSourceFreezeResumeEligibilityWarning(report) === null,
+  );
 
   useEffect(() => {
     mountedRef.current = true;
@@ -430,14 +584,18 @@ export function useClinicalReportWorkflow({
     setSubmissionDraft(null);
     setConfirmationDraft(null);
     setLockDraft(null);
+    setSourceFreezeDraft(null);
+    setSourceFreezeDraft(null);
     setEditError(null);
     setSubmissionError(null);
     setConfirmationError(null);
     setLockError(null);
+    setSourceFreezeError(null);
     setEditReceipt(null);
     setSubmissionReceipt(null);
     setConfirmationReceipt(null);
     setLockReceipt(null);
+    setSourceFreezeReceipt(null);
     setLiveMessage(null);
     setWriteProhibited(false);
   }, [patientId, visitId]);
@@ -494,7 +652,28 @@ export function useClinicalReportWorkflow({
           : current,
       );
     }
-  }, [confirmationDraft, editDraft, lockDraft, report, submissionDraft]);
+    if (
+      sourceFreezeDraft &&
+      (!report ||
+        !clinicalReportSourceFreezeDraftMatchesReport(
+          sourceFreezeDraft,
+          report,
+        ))
+    ) {
+      setSourceFreezeDraft((current) =>
+        current && !current.stale
+          ? { ...current, confirmed: false, stale: true }
+          : current,
+      );
+    }
+  }, [
+    confirmationDraft,
+    editDraft,
+    lockDraft,
+    report,
+    sourceFreezeDraft,
+    submissionDraft,
+  ]);
 
   useEffect(() => {
     const shouldWarn = shouldWarnBeforeClinicalReportUnload({
@@ -503,20 +682,27 @@ export function useClinicalReportWorkflow({
       confirmationDraft,
       lockDraft,
     });
-    if (!shouldWarn) return;
+    if (!shouldWarn && !sourceFreezeDirty) return;
 
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [confirmationDraft, editDraft, lockDraft, submissionDraft]);
+  }, [
+    confirmationDraft,
+    editDraft,
+    lockDraft,
+    sourceFreezeDirty,
+    submissionDraft,
+  ]);
 
   const clearActionErrors = useCallback(() => {
     setEditError(null);
     setSubmissionError(null);
     setConfirmationError(null);
     setLockError(null);
+    setSourceFreezeError(null);
     setLiveMessage(null);
   }, []);
 
@@ -529,6 +715,7 @@ export function useClinicalReportWorkflow({
     setSubmissionDraft(null);
     setConfirmationDraft(null);
     setLockDraft(null);
+    setSourceFreezeDraft(null);
     setActiveMode('edit');
   }, [canEdit, clearActionErrors, report]);
 
@@ -553,6 +740,7 @@ export function useClinicalReportWorkflow({
     setSubmissionDraft(null);
     setConfirmationDraft(draft);
     setLockDraft(null);
+    setSourceFreezeDraft(null);
     setActiveMode('confirm');
   }, [canConfirm, clearActionErrors, report]);
 
@@ -565,8 +753,35 @@ export function useClinicalReportWorkflow({
     setSubmissionDraft(null);
     setConfirmationDraft(null);
     setLockDraft(draft);
+    setSourceFreezeDraft(null);
     setActiveMode('lock');
   }, [canLock, clearActionErrors, report]);
+
+  const openSourceFreeze = useCallback(() => {
+    if (!canStartSourceFreeze || !report) return;
+    const draft = createClinicalReportSourceFreezeStartDraft(report);
+    if (!draft) return;
+    clearActionErrors();
+    setEditDraft(null);
+    setSubmissionDraft(null);
+    setConfirmationDraft(null);
+    setLockDraft(null);
+    setSourceFreezeDraft(draft);
+    setActiveMode('source_freeze');
+  }, [canStartSourceFreeze, clearActionErrors, report]);
+
+  const openSourceFreezeResume = useCallback(() => {
+    if (!canResumeSourceFreeze || !report) return;
+    const draft = createClinicalReportSourceFreezeResumeDraft(report);
+    if (!draft) return;
+    clearActionErrors();
+    setEditDraft(null);
+    setSubmissionDraft(null);
+    setConfirmationDraft(null);
+    setLockDraft(null);
+    setSourceFreezeDraft(draft);
+    setActiveMode('source_freeze');
+  }, [canResumeSourceFreeze, clearActionErrors, report]);
 
   const cancelActive = useCallback(() => {
     if (writingRef.current !== null) return;
@@ -574,9 +789,18 @@ export function useClinicalReportWorkflow({
     setSubmissionDraft(null);
     setConfirmationDraft(null);
     setLockDraft(null);
+    setSourceFreezeDraft(null);
     setActiveMode('idle');
     clearActionErrors();
   }, [clearActionErrors]);
+
+  const cancelSourceFreeze = useCallback(() => {
+    if (writingRef.current !== null) return;
+    setSourceFreezeDraft(null);
+    setSourceFreezeError(null);
+    setActiveMode('idle');
+    setLiveMessage(null);
+  }, []);
 
   const updateEditDraft = useCallback(
     (field: 'doctorOpinion' | 'recommendationText' | 'editNote', value: string) => {
@@ -625,6 +849,21 @@ export function useClinicalReportWorkflow({
 
   const setLockConfirmed = useCallback((confirmed: boolean) => {
     setLockDraft((current) =>
+      current ? { ...current, confirmed } : current,
+    );
+  }, []);
+
+  const updateSourceFreezeNote = useCallback((value: string) => {
+    setSourceFreezeDraft((current) =>
+      current && current.mode === 'start' && !current.usesPersistedNote
+        ? { ...current, freezeNote: value, confirmed: false }
+        : current,
+    );
+    setSourceFreezeError(null);
+  }, []);
+
+  const setSourceFreezeConfirmed = useCallback((confirmed: boolean) => {
+    setSourceFreezeDraft((current) =>
       current ? { ...current, confirmed } : current,
     );
   }, []);
@@ -697,6 +936,34 @@ export function useClinicalReportWorkflow({
     );
     setLockError(null);
   }, [canContinueLockWithLatest, report]);
+
+  const continueSourceFreezeWithLatest = useCallback(() => {
+    if (!report || !canContinueSourceFreezeWithLatest) return;
+    setSourceFreezeDraft((current) =>
+      current
+        ? continueClinicalReportSourceFreezeDraftWithLatest(current, report)
+        : current,
+    );
+    setSourceFreezeError(null);
+  }, [canContinueSourceFreezeWithLatest, report]);
+
+  const discardLocalSourceFreezeAndResume = useCallback(() => {
+    if (!report || !canDiscardLocalSourceFreezeAndResume) return;
+    const draft = createClinicalReportSourceFreezeResumeDraft(report);
+    if (!draft) return;
+    setSourceFreezeDraft(draft);
+    setSourceFreezeError(null);
+    setLiveMessage(
+      '本地未提交说明已放弃；请重新核对服务端原说明并明确确认恢复。',
+    );
+  }, [canDiscardLocalSourceFreezeAndResume, report]);
+
+  const reloadLatestAfterSourceFreezeUncertainty = useCallback(async () => {
+    setSourceFreezeDraft((current) =>
+      current ? { ...current, confirmed: false, stale: true } : current,
+    );
+    await refreshLatest();
+  }, [refreshLatest]);
 
   const refreshOnceAfterError = useCallback(
     async (error: ClinicalReportApiError) => {
@@ -945,6 +1212,80 @@ export function useClinicalReportWorkflow({
     visitId,
   ]);
 
+  const confirmSourceFreeze = useCallback(async () => {
+    if (
+      !sourceFreezeDraft ||
+      !canConfirmSourceFreeze ||
+      writingRef.current !== null
+    ) {
+      return;
+    }
+    writingRef.current = 'source_freeze';
+    setWritingAction('source_freeze');
+    setSourceFreezeError(null);
+    setLiveMessage('正在执行来源链冻结；页面不显示虚假逐项实时进度。');
+    try {
+      const response = await freezeClinicalReportSources(
+        patientId,
+        visitId,
+        sourceFreezeDraft.reportId,
+        buildFreezeClinicalReportSourcesRequest(sourceFreezeDraft),
+      );
+      if (!mountedRef.current) return;
+      onReportUpdated(response.report);
+      setSourceFreezeReceipt(response.sourceFreezeReceipt);
+      setSourceFreezeDraft(null);
+      setActiveMode('idle');
+      setLiveMessage(
+        response.sourceFreezeReceipt.alreadyFrozen
+          ? '该报告的来源链此前已经冻结，本次未重复写入。'
+          : response.sourceFreezeReceipt.resumedExisting
+            ? '已有来源冻结流程已恢复并完成。'
+            : '报告来源链冻结已完成。',
+      );
+    } catch (requestError: unknown) {
+      if (!mountedRef.current) return;
+      const error = toClinicalReportApiError(requestError);
+      if (error.kind === 'unauthenticated') {
+        onUnauthorized();
+        return;
+      }
+      setSourceFreezeError(error);
+      setLiveMessage(null);
+      if (
+        error.kind === 'clinical_report_metadata_unsupported' ||
+        error.kind === 'clinical_report_source_freeze_scope_invalid' ||
+        error.kind === 'clinical_report_source_freeze_input_invalid' ||
+        error.kind === 'clinical_report_source_freeze_audit_unavailable'
+      ) {
+        setWriteProhibited(true);
+      }
+      if (refreshAfterActionErrors.has(error.kind)) {
+        setSourceFreezeDraft((current) =>
+          current
+            ? { ...current, confirmed: false, stale: true }
+            : current,
+        );
+      } else {
+        setSourceFreezeDraft((current) =>
+          current ? { ...current, confirmed: false } : current,
+        );
+      }
+      await refreshOnceAfterError(error);
+    } finally {
+      writingRef.current = null;
+      if (mountedRef.current) setWritingAction(null);
+    }
+  }, [
+    canConfirmSourceFreeze,
+    onReportUpdated,
+    onUnauthorized,
+    patientId,
+    refreshOnceAfterError,
+    sourceFreezeDraft,
+    visitId,
+  ]);
+
   return {
     activeMode,
     writingAction,
@@ -952,42 +1293,59 @@ export function useClinicalReportWorkflow({
     submissionDraft,
     confirmationDraft,
     lockDraft,
+    sourceFreezeDraft,
     editDirty,
     submissionDirty,
     confirmationDirty,
     lockDirty,
+    sourceFreezeDirty,
     editValidation,
     submissionValidation,
     confirmationValidation,
     lockValidation,
+    sourceFreezeValidation,
     editError,
     submissionError,
     confirmationError,
     lockError,
+    sourceFreezeError,
     editReceipt,
     submissionReceipt,
     confirmationReceipt,
     lockReceipt,
+    sourceFreezeReceipt,
     liveMessage,
     writeProhibited,
     canEdit,
     canSubmit,
     canConfirm,
     canLock,
+    canStartSourceFreeze,
+    canResumeSourceFreeze,
     canSaveEdit,
     canConfirmSubmission,
     canConfirmReport,
     canConfirmLock,
+    canConfirmSourceFreeze,
     canContinueLockWithLatest,
+    canContinueSourceFreezeWithLatest,
+    canDiscardLocalSourceFreezeAndResume,
     lockVersionMatches,
+    sourceFreezeVersionMatches,
     lockBlockReason,
+    sourceFreezeConsistencyWarning,
+    sourceFreezeBlockReason,
     roleCanConfirm,
     roleCanLock,
+    roleCanFreezeSources,
     openEdit,
     openSubmit,
     openConfirm,
     openLock,
+    openSourceFreeze,
+    openSourceFreezeResume,
     cancelActive,
+    cancelSourceFreeze,
     updateEditDraft,
     updateSubmissionNote,
     setSubmissionConfirmed,
@@ -995,14 +1353,20 @@ export function useClinicalReportWorkflow({
     setConfirmationConfirmed,
     updateLockNote,
     setLockConfirmed,
+    updateSourceFreezeNote,
+    setSourceFreezeConfirmed,
     continueEditFromLatest,
     continueSubmissionFromLatest,
     continueConfirmationFromLatest,
     continueLockWithLatest,
+    continueSourceFreezeWithLatest,
+    discardLocalSourceFreezeAndResume,
+    reloadLatestAfterSourceFreezeUncertainty,
     saveEdit,
     submitForConfirmation,
     confirmReport,
     confirmLock,
+    confirmSourceFreeze,
   };
 }
 

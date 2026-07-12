@@ -6,12 +6,12 @@
 
 ## 2. 当前状态
 
-- 前端公共底座与 B1-B11 既有闭环已落地；B12 confirmed ClinicalReport 不可逆锁定、乐观并发与安全摘要展示已落地。
+- 前端公共底座与 B1-B12 既有闭环已落地；B13 已锁 ClinicalReport 来源链冻结确认、可恢复状态与安全摘要展示已落地。
 - `frontend\package.json` 已存在，自动验证命令以其中真实脚本为准。
-- B2-B12 不新增测试代码、测试框架、E2E 或第三方依赖。
+- B2-B13 不新增测试代码、测试框架、E2E 或第三方依赖。
 - 当前自动验证覆盖三个认证 API、A12 五个患者 / 访视 API、A13 三个评估初始化前置 API、A14 两个执行草稿 API、A15 四个媒体证据 API、A16 两个提交 API 与 A17 两个阶段性评分 API 的前端类型、调用代码和页面构建；真实 HTTP / 浏览器联调仍需手工验证。
 
-## 3. B1 / B2 / B3 / B4 / B5 / B6 / B7 / B8 / B9 / B10 / B11 / B12 自动验证命令
+## 3. B1 / B2 / B3 / B4 / B5 / B6 / B7 / B8 / B9 / B10 / B11 / B12 / B13 自动验证命令
 
 在 `frontend` 目录、且既有 `node_modules` 存在时执行：
 
@@ -134,6 +134,16 @@
 - 未新增自动测试：当前前端没有既有测试框架，本阶段使用 lint、typecheck 与生产构建验证。
 - E2E / 浏览器自动化：未执行；本阶段明确不执行。
 - 浏览器手工验证：未执行，以下 B12 场景均待开发者使用脱敏数据本地验证。
+- 后端命令：未执行。
+
+本次 B13 验证结果：
+
+- `npm run lint`：通过。
+- `npm run typecheck`：通过，Next 16 既有动态路由类型生成成功且 TypeScript 无错误。
+- `npm run build`：通过，生产构建包含既有 `/patients/[patientId]/visits/[visitId]`，B13 未新增路由。
+- 未新增自动测试：当前前端没有既有测试框架，本阶段使用 lint、typecheck 与生产构建验证。
+- E2E / 浏览器自动化：未执行；本阶段明确不执行。
+- 浏览器手工验证：未执行，以下 B13 场景均待开发者使用脱敏数据本地验证。
 - 后端命令：未执行。
 
 如后续环境中 `frontend/node_modules` 不存在，不得为验证本阶段而执行 `npm install`；应跳过上述命令并说明原因。
@@ -262,7 +272,20 @@ B12 自动验证不覆盖：
 
 - 真实 A22 HTTP、数据库锁定、Cookie / CORS、多操作者并发、历史安全 fallback、审计异常与幂等重读组合。
 - 浏览器 beforeunload、窄屏布局、屏幕阅读器 alert / live region、真实 checkbox / disabled 行为和网络中断后的最终服务端状态。
-- unlock / reopen / return / reject / withdraw、签名、归档、更正、作废、PDF / 下载、来源数据锁定或 AI；这些能力未实现。
+- B12 自动验证不覆盖来源数据冻结；该静态路径现由下方 B13 覆盖。unlock / reopen / return / reject / withdraw、签名、归档、更正、作废、PDF / 下载或 AI 仍未实现。
+
+B13 静态与构建验证额外覆盖：
+
+- A23 sourceFreeze 安全类型、freeze request / receipt / response、八个业务错误映射、Path 编码 / MongoId 防御、Body 白名单、credentials / no-store 与 POST 不自动重试路径。
+- 独立 start / resume 草稿纯函数、3–2000 字 freezeNote、服务端 updatedAt 基线、持久说明只读、dirty / stale / beforeunload、计数 / 状态 / actor 一致性与请求构建。
+- source_freeze 统一报告写锁、doctor / admin role gate、首次 / 恢复 Visit 口径、冲突 / incomplete / failed latest 一次、显式转入恢复、alreadyFrozen / resumedExisting 与完整 report 应用路径。
+- SourceFreezePanel / Summary、五类 + total expected / completed / newly / previously 计数、null / in_progress / completed Badge、技术字段分离与既有访视详情路由集成；未新增依赖、路由、BFF、middleware、持久化状态或配置。
+
+B13 自动验证不覆盖：
+
+- 真实 A23 HTTP、数据库跨集合冻结、Cookie / CORS、多操作者并发、中断恢复、部分失败、审计异常与幂等重读组合。
+- 浏览器 beforeunload、窄屏计数表、屏幕阅读器 alert / live region、真实 checkbox / disabled 行为和网络中断后的最终服务端状态。
+- unfreeze / rollback / 自动恢复 / 轮询、Patient / Visit / Storage 冻结、archive / correct / void、PDF / 下载或 AI；这些能力未实现。
 
 ## 5. B1 手工验证建议
 
@@ -884,7 +907,130 @@ B12 自动验证不覆盖：
 
 以上真实浏览器联调尚未执行，不得写成已通过。
 
-## 17. 认证与安全验证口径
+## 17. B13 手工验证建议（待验证）
+
+前置条件：后端已启动，使用脱敏人工测试账号、已确认并锁定的测试报告；不得使用真实患者或冻结说明。以下场景本次未执行：
+
+1. 未生成报告时无来源冻结区域写入口。
+2. draft 报告不允许冻结来源。
+3. pending_confirmation 不允许冻结来源。
+4. confirmed 未锁定报告提示先锁报告。
+5. confirmed 已锁定且 sourceFreeze=null 显示尚未冻结。
+6. doctor 显示首次冻结入口。
+7. admin 显示首次冻结入口。
+8. nurse 不显示可用入口。
+9. research_assistant 不显示可用入口。
+10. system 不显示可用入口。
+11. 没有第二次 `/auth/me`。
+12. Visit draft 可首次发起。
+13. Visit in_progress 可首次发起。
+14. Visit completed 可首次发起。
+15. Visit locked 不开放首次发起。
+16. Visit voided 不开放首次发起。
+17. sourceFreeze=in_progress 时允许 doctor / admin 恢复。
+18. in_progress 恢复不因 Visit 后续 locked / voided 被前端擅自阻断。
+19. 首次 freezeNote 少于 3 字不能提交。
+20. freezeNote 超过 2000 字不能提交。
+21. freezeNote 不自动生成。
+22. lockNote 不自动填入 freezeNote。
+23. confirmationNote 不自动填入 freezeNote。
+24. 未勾选 checkbox 不能首次冻结。
+25. freeze 请求只发送 confirm、freezeNote、expectedUpdatedAt。
+26. 不发送来源 ID。
+27. expectedUpdatedAt 来自 report.updatedAt。
+28. POST 不自动重试。
+29. POST 期间 edit / submit / confirm / lock / freeze 均禁用。
+30. POST 期间报告仍可阅读。
+31. POST 期间不显示虚假逐项实时进度。
+32. 首次成功 sourceFreeze.state=completed。
+33. 首次成功显示 alreadyFrozen=false。
+34. 首次成功显示 resumedExisting=false。
+35. 恢复成功显示 resumedExisting=true。
+36. completed 幂等显示 alreadyFrozen=true。
+37. alreadyFrozen 不再次写入。
+38. sourceFreeze=null 显示来源尚未冻结。
+39. in_progress 显示可能已有部分来源冻结。
+40. in_progress 不显示已回滚。
+41. in_progress 显示原 freezeId。
+42. in_progress 显示原 freezeNote。
+43. in_progress freezeNote 不可编辑。
+44. in_progress 恢复使用服务端 freezeNote。
+45. 恢复不生成新 freezeId。
+46. 恢复不允许替换首次说明。
+47. 恢复必须重新勾选 checkbox。
+48. 恢复不自动 POST。
+49. completed 不显示再次冻结入口。
+50. completed 不显示恢复入口。
+51. completed 展示 started / completed actor。
+52. completed 展示 expectedCounts。
+53. completed 展示 completedCounts。
+54. completed 展示 newlyFrozenCounts。
+55. completed 展示 previouslyFrozenCounts。
+56. 五类来源名称正确。
+57. totalSourceCount 正确展示。
+58. 前端不重新统计来源。
+59. 前端不计算完成百分比。
+60. 前端不显示来源 ID。
+61. 前端不显示 metadata。
+62. sourceFreeze count 非安全整数显示一致性警告。
+63. total 与五类之和不一致显示警告。
+64. in_progress 包含 completedAt 时显示警告。
+65. completed 缺 completedCounts 时显示警告。
+66. completed expected / completed 不一致显示警告。
+67. 一致性异常时不开放恢复或首次写操作。
+68. conflict 保留首次 freezeNote。
+69. conflict 清除 checkbox。
+70. conflict 自动 latest 一次。
+71. conflict 不自动 POST。
+72. incomplete 自动 latest 一次。
+73. incomplete 不显示已回滚。
+74. incomplete latest=in_progress 时显示恢复入口。
+75. failed 后保留 freezeNote。
+76. failed 后不自动恢复。
+77. scope invalid 不显示内部 ID 差异。
+78. input invalid 不猜测具体来源。
+79. audit unavailable 不猜测完成状态。
+80. metadata unsupported 不显示 metadata。
+81. 401 返回登录页。
+82. action 403 保留报告和首次 freezeNote。
+83. 网络错误保留 freezeNote。
+84. 网络错误提示手工 latest 核对。
+85. 首次 note 纳入 beforeunload。
+86. 恢复的只读服务端 note 不额外触发文本 dirty。
+87. sourceFreeze 草稿不写 localStorage。
+88. 页面刷新后未提交首次 note 消失。
+89. sourceFreeze receipt 刷新后消失。
+90. 持久事实仍来自 report.sourceFreeze。
+91. status 仍显示 confirmed。
+92. report.lockedAt 仍表示报告自身锁定。
+93. sourceFreeze 单独表示来源冻结。
+94. isFinal 不作为来源冻结完成状态。
+95. sourceLockedAt 不显示为 report.lockedAt。
+96. 页面说明 A23 不是 Mongo transaction。
+97. 页面说明 completed 前可能部分冻结。
+98. 页面说明不自动解冻。
+99. 页面说明不冻结 Patient。
+100. 页面说明不冻结 Visit。
+101. 页面说明不冻结 Storage。
+102. 页面说明 CognitiveDomainResult 冻结不等于确认。
+103. 页面不存在 unfreeze。
+104. 页面不存在 rollback。
+105. 页面不存在后台恢复开关。
+106. 页面不存在 archive / correct / void。
+107. 页面不存在 PDF / 下载。
+108. 页面不存在 AI 操作。
+109. 页面不输出诊断结论。
+110. 小屏幕计数与确认表单可用。
+111. label / alert / live region 正确。
+112. 没有新增路由。
+113. 没有使用真实患者或冻结说明。
+114. lint 通过。
+115. typecheck 通过。
+116. build 通过。
+
+以上真实浏览器联调尚未执行，不得写成已通过。
+
+## 18. 认证与安全验证口径
 
 - 使用浏览器网络面板确认三个认证请求均携带 credentials 语义，并由浏览器处理 HttpOnly Cookie。
 - 前端代码与存储中不得出现 raw token、token hash、`passwordHash`、JWT 或其他认证凭证。
@@ -900,15 +1046,16 @@ B12 自动验证不覆盖：
 - B5 页面不得在 console、存储或 URL 中记录源 File、JPEG / PNG Blob、轨迹、短期 URL、请求体或响应体；multipart 只能由 API Client 逐字段构造，不能手工设置 multipart Content-Type。
 - B7 页面不得在 console、存储或 URL 中记录评分结果、reviewQueue、请求体或响应体；compute 只能由独立 API Client 构造 `{ confirm: true }`，不得提交任何分数、规则、状态或服务器字段。
 - B9 页面不得在 console、存储或 URL 中记录认知域结果、贡献、来源评分、请求体或响应体；compute 只能由独立 API Client 构造 `{ confirm: true }`，不得提交 domain、weight、mapping、分数、规则、状态或服务器字段。
+- B13 页面不得在 console、存储或 URL 中记录 freezeNote、sourceFreeze 计数、updatedAt、请求或响应；freeze-sources 只能由独立 API Client 构造 confirm、trim 后 freezeNote 与 expectedUpdatedAt。不得提交或显示内部来源 ID / scope / metadata，不得保存 sourceFreeze 草稿或 receipt 到浏览器持久化存储。
 
-## 18. 医疗与隐私展示红线
+## 19. 医疗与隐私展示红线
 
 - 不展示真实用户或患者敏感数据样本。
 - 测试截图不得包含真实姓名、邮箱、身份证号、手机号、病历号、住址、患者资料或真实文件名。
 - 不得在页面文案或测试截图中呈现未经确认的真实医疗诊断结论。
 - 核心认知评估必须保持医护或研究人员陪伴 / 监督的产品边界。
 
-## 19. 后续同步规则
+## 20. 后续同步规则
 
 - 前端新增或调整测试脚本后，应同步更新自动验证命令。
 - 新增页面、路由、组件、API 对接或权限展示后，应同步补充对应验证口径。

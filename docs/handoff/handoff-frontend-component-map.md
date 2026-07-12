@@ -9,7 +9,7 @@
 - `frontend\src\components\ui` 提供 `Button`、`Card`、`Badge` 三个无业务语义公共组件。
 - `frontend\src\features\auth` 提供 B1 最小认证接入能力。
 - `frontend\src\features\patients` 提供 B2 患者档案与评估访视最小业务闭环。
-- `frontend\src\features\assessments` 已推进至 B12；在 B3-B11 既有能力上新增 A22 confirmed 报告不可逆锁定、乐观并发与安全摘要 / 回执展示。
+- `frontend\src\features\assessments` 已推进至 B13；在 B3-B12 既有能力上新增 A23 已锁报告来源链冻结确认、可恢复状态与安全摘要 / 回执展示。
 - 当前组件遵循医疗系统 / 临床评估 / 低干扰 / 高可读性 / 冷静可信视觉基线。
 - B2-B11 未新增公共 Input 组件、第三方 UI 库、状态管理库、数据请求库或权限菜单组件。
 
@@ -549,7 +549,7 @@
 - 职责：doctor / admin 的“准备锁定报告 → lockNote + 不可逆说明 + checkbox → 确认不可逆锁定”两步内联交互；展示当前真实 status、isFinal、confirmation、updatedAt、字符计数、stale 与写入状态。
 - 角色：nurse / research_assistant / unknown 不显示可用按钮，仅显示需医生或管理员并保留只读摘要。后端 RolesGuard 是最终边界。
 - 可访问性：textarea / checkbox 有可见 label，错误 / stale 使用 alert，写入 / 成功由页面 polite live region 展示，按钮真实 disabled，小屏幕纵向排列。
-- 边界：不用 window.confirm 或弹窗库；不自动生成 / 预填 / 分析 lockNote；不实现 unlock、签名、归档、更正、作废、PDF / 下载、来源数据锁定或 AI。
+- 边界：不用 window.confirm 或弹窗库；不自动生成 / 预填 / 分析 lockNote；该 A22 组件不执行来源冻结，B13 由独立 SourceFreezePanel 承担；不实现 unlock、签名、归档、更正、作废、PDF / 下载或 AI。
 
 ### 6.59 B12 报告展示组件与访视编排
 
@@ -557,6 +557,38 @@
 - `ClinicalReportTechnicalSummary`：真实显示 `status=confirmed`、独立 lockedAt、服务端 isFinal 与锁定生命周期；锁定字段不一致时警告且不自行选择时间。
 - `ClinicalReportPanel`：组合 LockPanel，主状态额外显示“已锁定”；已锁定报告只读并明确锁定仅作用于 ClinicalReport，不等于归档 / 签名 / PDF。
 - `AssessmentVisitExecutionPage`：仅最小传入 Visit status；继续从 PatientsWorkspaceContext 复用 roles，并通过现有 writingAction 使报告 lock 与量表初始化互斥。未修改 useClinicalReport、认证 Context 或 B10 / B11 请求契约。
+
+### 6.60 B13 ClinicalReport 类型、API 与来源冻结纯函数
+
+- `types/clinical-report.ts`：新增 `ClinicalReportSourceFreezeState`（仅 in_progress / completed）、五类 + total `ClinicalReportSourceFreezeResourceCounts`、持久 `ClinicalReportSourceFreezeSummary` 与 freeze request / receipt / response；Date JSON 为 string / null，不定义内部 scope、来源 ID、metadata、a23SourceFreeze 原始结构、Session 或 currentUser。
+- `api/clinical-report-api.ts`：新增 `freezeClinicalReportSources()`；三个 Path ID 编码、reportId MongoId 防御、credentials / no-store，Body 只重建 confirm、trim freezeNote、expectedUpdatedAt。映射 A23 八个业务错误，不自动重试，不记录说明、updatedAt、请求或响应。
+- `lib/clinical-report-source-freeze-draft.ts`：独立管理 start / resume 草稿、reportId / baseUpdatedAt、服务端 freezeId、说明、checkbox、stale 与 usesPersistedNote。首次说明可编辑且 3–2000 字；恢复说明来自服务端且只读。提供请求构建、dirty / version、基于 latest 继续、首次 / 恢复资格和安全摘要一致性纯函数。
+- 一致性：所有计数必须为非负安全整数，total 等于五类之和；in_progress 完成字段必须为空；completed 要求完成计数 / 时间 / actor 完整、expected=completed、newly+previously=expected。异常只用于警告和阻断写操作，不修正服务端事实、不计算进度。
+
+### 6.61 B13 `useClinicalReportWorkflow`
+
+- activeMode / writingAction 新增 source_freeze，继续复用同一 report、roles、onUnauthorized、onReportUpdated、refreshLatest 与 reportWriteBlocked。edit / submit / confirm / lock / source_freeze 同一时间只有一个活动模式和一个写请求；没有第二套 latest、Auth 或 report 合并路径。
+- 管理 sourceFreezeDraft / error / receipt、roleCanFreezeSources、首次 / 恢复 eligibility、dirty / stale / version、consistency warning、block reason、显式转入恢复和 confirmSourceFreeze。首次 note dirty 纳入 beforeunload；恢复只读服务端 note 不计文本 dirty。
+- 首次要求 confirmed / mixed / passed / isFinal、完整一致的报告锁、sourceFreeze=null、Visit draft / in_progress / completed、doctor / admin 且无其他草稿 / 写入；恢复要求安全 in_progress、原 freezeId / note 与当前 updatedAt，不因 Visit 后续 locked / voided 被前端阻断。
+- conflict / not source freezable / incomplete / failed / voided / not found 最多 latest 一次，保留本地首次 note、清 checkbox、标记 stale且不重发 POST。latest 变为 in_progress 时不自动进入恢复；用户必须明确放弃本地说明并转入服务端原说明。网络不确定结果只提供手工 latest。
+- 成功完整应用 response.report、保存内存 receipt、清草稿并回 idle；首次、resumedExisting 与 alreadyFrozen 使用不同稳定文案。receipt 刷新后消失，持久事实来自 report.sourceFreeze。
+
+### 6.62 `ClinicalReportSourceFreezePanel`
+
+- 路径：`frontend\src\features\assessments\components\ClinicalReportSourceFreezePanel.tsx`
+- 职责：sourceFreeze=null 时提供“准备冻结报告来源 → 用户 freezeNote + 边界说明 + checkbox → 确认冻结”的两步内联交互；in_progress 时提供原 freezeId / 原说明只读与独立恢复 checkbox；completed 只读且无再次入口。
+- 并发：展示 report.status、report.lockedAt、report.updatedAt / baseUpdatedAt；stale 保留首次说明并清 checkbox。latest 发现 in_progress 时提供“关闭并放弃本地说明”与“放弃本地说明并转入恢复现有流程”两个显式操作，不静默替换文本。
+- 可访问性：textarea / checkbox 有可见 label，错误 / stale 使用 alert，写入使用 polite live region，按钮真实 disabled，小屏幕纵向排列。POST 期间明确不显示百分比或虚假实时进度。
+- 边界：不用 window.confirm 或弹窗库；不自动生成 / 预填 / 分析说明，不自动轮询、重试或恢复，不实现 unfreeze / rollback / PDF / 下载 / AI。
+
+### 6.63 `ClinicalReportSourceFreezeSummary` 与报告展示集成
+
+- 路径：`frontend\src\features\assessments\components\ClinicalReportSourceFreezeSummary.tsx`
+- 职责：持久展示 state、freezeId、startedAt、sourceLockedAt、startedBy、completedAt、completedBy、首次说明，以及量表实例 / 题目记录 / 评分结果 / 认知域结果 / 媒体证据 / 合计的 expected / completed / newly / previously 计数；in_progress 的完成列显示“待完成”，不计算百分比。
+- 回执：同组件展示当前会话 freeze receipt、alreadyFrozen / resumedExisting 与全部安全计数；不持久化回执，不以 receipt 替代 report.sourceFreeze。
+- `ClinicalReportPanel`：在 LockPanel 后组合 SourceFreezePanel / Summary，新增“来源未冻结 / 冻结未完成 / 来源已冻结”Badge 和一致性 alert；报告正文与快照仍可阅读。
+- `ClinicalReportWorkflowSummary`：新增持久来源冻结摘要与当前会话回执；`ClinicalReportTechnicalSummary` 分开显示 report.status、isFinal、report.lockedAt、sourceFreeze.state、sourceLockedAt、startedAt、completedAt、expected / completed total。
+- 安全边界：不显示 operatorId 作为主要字段，不显示来源 ID、内部 scope、metadata 或对象明细；不重新读取 A14–A19 或重新统计计数。明确 A23 非 Mongo transaction、可能部分完成、无自动回滚，Patient / Visit / Storage 未冻结，CognitiveDomainResult 冻结不等于确认。
 
 ## 7. 后续同步规则
 

@@ -9,6 +9,7 @@ import type {
   ClinicalReportQualityStatus,
   ClinicalReportScoreStatus,
   ClinicalReportSource,
+  ClinicalReportSourceFreezeState,
   ClinicalReportStatus,
   ClinicalReportType,
   ClinicalReportVisitType,
@@ -130,6 +131,23 @@ export const clinicalReportCaptureModeLabels: Record<
   other: '其他采集方式',
 };
 
+export const clinicalReportSourceFreezeStateLabels: Record<
+  ClinicalReportSourceFreezeState,
+  string
+> = {
+  in_progress: '冻结尚未完成',
+  completed: '来源冻结已完成',
+};
+
+export const clinicalReportSourceFreezeCountLabels = {
+  scaleInstanceCount: '量表实例',
+  itemResponseCount: '题目记录',
+  scoreResultCount: '评分结果',
+  cognitiveDomainResultCount: '认知域结果',
+  mediaEvidenceCount: '媒体证据',
+  totalSourceCount: '合计',
+} as const;
+
 export const clinicalReportDraftBoundaryStatements = [
   '本次内容是访视级临床认知评估报告的结构化规则草稿。',
   '系统规则化草稿不等于医生结论；draft 报告尚未经医生确认。',
@@ -166,6 +184,21 @@ export const clinicalReportLockBoundaryStatements = [
   '锁定不等于归档，不生成签名，也不生成 PDF 或下载文件。',
   '锁定过程不调用 AI；qualityStatus=passed 不表示患者正常，也不形成新的诊断结论。',
   '锁定流程说明仅用于本次锁定审计，不属于报告正文。',
+];
+
+export const clinicalReportSourceFreezeBoundaryStatements = [
+  '当前报告已经确认并锁定；报告锁定与来源冻结是两个独立阶段。',
+  '冻结范围来自服务端保存的报告来源 scope，前端不能选择、增加、移除或修改。',
+  '冻结范围包含报告纳入的量表实例、这些实例下的全部题目记录、报告引用的评分结果、认知域结果持久快照和媒体证据记录。',
+  '来源冻结不会读取或修改原始作答、分值或媒体内容。',
+  '冻结可能跨多个集合逐步执行，不使用 Mongo transaction。',
+  '完成前可能已有部分来源被冻结；系统不会自动解冻或回滚。',
+  '中断后必须由 doctor / admin 明确继续同一 freezeId，系统不会自动恢复。',
+  '恢复沿用服务端原冻结范围、原说明、发起人和 freezeId，不生成新流程。',
+  'completed 后重复请求按幂等成功处理，不会重新冻结来源。',
+  'CognitiveDomainResult 的冻结只固定持久快照，不等于独立认知域确认。',
+  '本操作不冻结 Patient、AssessmentVisit 或 Storage 文件。',
+  '当前不提供 unfreeze、自动回滚、PDF、下载或 AI 操作，也不形成新的诊断结论。',
 ];
 
 export function formatClinicalReportDate(
@@ -350,6 +383,22 @@ export function getClinicalReportApiErrorMessage(
       '报告锁定审计信息不完整，不能安全推断或重复锁定。',
     clinical_report_lock_failed:
       '报告锁定失败，请保留当前锁定说明并稍后重试。',
+    clinical_report_source_freeze_confirmation_required:
+      '请明确确认来源冻结的不可逆边界后再继续。',
+    clinical_report_not_source_freezable:
+      '当前报告尚未满足来源链冻结要求。',
+    clinical_report_source_freeze_scope_invalid:
+      '报告保存的来源范围不完整或不一致，当前不能安全冻结。',
+    clinical_report_source_freeze_input_invalid:
+      '报告来源数据状态与冻结审计不一致，请联系管理员处理。',
+    clinical_report_source_freeze_conflict:
+      '报告在来源冻结开始前已发生变化，请重新核对最新报告。',
+    clinical_report_source_freeze_audit_unavailable:
+      '来源冻结审计信息不完整，不能安全启动、恢复或确认完成状态。',
+    clinical_report_source_freeze_incomplete:
+      '来源冻结尚未完整完成；部分来源可能已经冻结，请重新加载并由医生或管理员明确继续恢复。',
+    clinical_report_source_freeze_failed:
+      '来源冻结操作未完成；请重新加载最新报告，确认是否存在可恢复流程。',
     service_unavailable: '报告服务暂时不可用，请稍后手工重试。',
     unknown: '暂时无法完成报告操作，请稍后手工重新加载最新报告。',
   };
@@ -370,6 +419,27 @@ export function getClinicalReportLockApiErrorMessage(
   }
   if (kind === 'clinical_report_metadata_unsupported') {
     return '报告内部审计结构异常，当前不能继续锁定，请联系管理员。';
+  }
+  return getClinicalReportApiErrorMessage(kind);
+}
+
+export function getClinicalReportSourceFreezeApiErrorMessage(
+  kind: ClinicalReportApiErrorKind,
+): string {
+  if (kind === 'forbidden') {
+    return '当前账号不具备 doctor / admin 来源冻结权限；报告和本地首次说明均已保留。';
+  }
+  if (kind === 'patient_not_active') {
+    return '当前患者不是活动状态，不能首次发起来源冻结。';
+  }
+  if (kind === 'visit_not_editable') {
+    return '当前访视状态不允许首次发起来源冻结。';
+  }
+  if (kind === 'clinical_report_metadata_unsupported') {
+    return '报告内部审计结构异常，当前不能继续来源冻结，请联系管理员。';
+  }
+  if (kind === 'service_unavailable' || kind === 'unknown') {
+    return '来源冻结请求结果暂不确定；系统不会自动重试，请手工重新加载最新报告核对。';
   }
   return getClinicalReportApiErrorMessage(kind);
 }

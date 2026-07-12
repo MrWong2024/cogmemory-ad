@@ -6,12 +6,14 @@ import {
   clinicalReportQualityStatusLabels,
   clinicalReportSourceLabels,
   clinicalReportStatusLabels,
+  clinicalReportSourceFreezeStateLabels,
   clinicalReportTypeLabels,
   formatClinicalReportDate,
   getClinicalReportFinalityWarning,
   getClinicalReportLifecycleLabel,
   getClinicalReportLockConsistencyWarning,
 } from '@/src/features/assessments/lib/clinical-report-display';
+import { getClinicalReportSourceFreezeConsistencyWarning } from '@/src/features/assessments/lib/clinical-report-source-freeze-draft';
 import type { ClinicalReport } from '@/src/features/assessments/types/clinical-report';
 
 const mongoIdPattern = /^[a-f\d]{24}$/i;
@@ -36,6 +38,11 @@ export function ClinicalReportTechnicalSummary({
     report.isFinal,
   );
   const lockConsistencyWarning = getClinicalReportLockConsistencyWarning(report);
+  const sourceFreezeConsistencyWarning =
+    getClinicalReportSourceFreezeConsistencyWarning(report.sourceFreeze);
+  const safeSourceFreeze = sourceFreezeConsistencyWarning
+    ? null
+    : report.sourceFreeze;
 
   return (
     <div className="grid gap-5">
@@ -220,6 +227,15 @@ export function ClinicalReportTechnicalSummary({
               {lockConsistencyWarning}
             </p>
           ) : null}
+          {sourceFreezeConsistencyWarning ? (
+            <p
+              className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] px-4 py-3 text-base text-[var(--cma-warning)]"
+              role="alert"
+            >
+              来源冻结安全摘要不完整或不一致：
+              {sourceFreezeConsistencyWarning}
+            </p>
+          ) : null}
           <dl className="grid gap-x-5 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
             <div>
               <dt className="text-sm font-semibold text-[var(--cma-muted)]">报告编号</dt>
@@ -268,6 +284,30 @@ export function ClinicalReportTechnicalSummary({
             <div>
               <dt className="text-sm font-semibold text-[var(--cma-muted)]">锁定时间</dt>
               <dd className="mt-1 text-base text-[var(--cma-text-strong)]">{formatClinicalReportDate(report.lockedAt)}</dd>
+            </div>
+            <div>
+              <dt className="text-sm font-semibold text-[var(--cma-muted)]">来源冻结状态</dt>
+              <dd className="mt-1 text-base text-[var(--cma-text-strong)]">{safeSourceFreeze ? `${clinicalReportSourceFreezeStateLabels[safeSourceFreeze.state]}（${safeSourceFreeze.state}）` : report.sourceFreeze ? '安全摘要异常' : '尚未冻结'}</dd>
+            </div>
+            <div>
+              <dt className="text-sm font-semibold text-[var(--cma-muted)]">来源冻结开始时间</dt>
+              <dd className="mt-1 text-base text-[var(--cma-text-strong)]">{formatClinicalReportDate(safeSourceFreeze?.startedAt)}</dd>
+            </div>
+            <div>
+              <dt className="text-sm font-semibold text-[var(--cma-muted)]">来源统一锁定时间</dt>
+              <dd className="mt-1 text-base text-[var(--cma-text-strong)]">{formatClinicalReportDate(safeSourceFreeze?.sourceLockedAt)}</dd>
+            </div>
+            <div>
+              <dt className="text-sm font-semibold text-[var(--cma-muted)]">来源冻结完成时间</dt>
+              <dd className="mt-1 text-base text-[var(--cma-text-strong)]">{formatClinicalReportDate(safeSourceFreeze?.completedAt)}</dd>
+            </div>
+            <div>
+              <dt className="text-sm font-semibold text-[var(--cma-muted)]">来源预期合计</dt>
+              <dd className="mt-1 text-base text-[var(--cma-text-strong)]">{safeSourceFreeze?.expectedCounts.totalSourceCount ?? '—'}</dd>
+            </div>
+            <div>
+              <dt className="text-sm font-semibold text-[var(--cma-muted)]">来源完成合计</dt>
+              <dd className="mt-1 text-base text-[var(--cma-text-strong)]">{safeSourceFreeze?.completedCounts?.totalSourceCount ?? '—'}</dd>
             </div>
             <div>
               <dt className="text-sm font-semibold text-[var(--cma-muted)]">归档时间</dt>
