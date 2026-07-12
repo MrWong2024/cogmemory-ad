@@ -6,7 +6,7 @@
 
 ## 2. 当前状态
 
-- 当前包含既有公共、认证、患者 / 访视路由与 B4-B9 共用量表实例路由；B10 / B11 复用访视详情路由，未新增报告路由。
+- 当前包含既有公共、认证、患者 / 访视路由与 B4-B9 共用量表实例路由；B10-B12 复用访视详情路由，未新增报告或锁定路由。
 - `/dashboard` 已提供患者档案入口，但仍不是完整医生工作台。
 - 当前不包含患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、独立评分、评分锁定、独立认知域、独立报告详情、AI、用户管理或权限菜单路由。
 - 当前不包含 Next middleware 或路由级服务端认证中间件。
@@ -92,10 +92,10 @@
 ### 3.8 `/patients/[patientId]/visits/[visitId]`
 
 - 页面名称：访视详情、量表初始化与访视级报告工作流
-- 页面职责：展示访视公开详情、已有量表实例安全摘要和可用目录，初始化量表实例，并在独立报告区域接入 A20 latest / generate 与 A21 draft 编辑、提交待确认、doctor / admin 最终确认
+- 页面职责：展示访视公开详情、已有量表实例安全摘要和可用目录，初始化量表实例，并在独立报告区域接入 A20 latest / generate、A21 draft 编辑 / 提交 / 确认与 A22 confirmed 报告不可逆锁定
 - 动态参数：Server Component 按 Next 16 `params: Promise<{ patientId: string; visitId: string }>` 等待参数后传给 `AssessmentVisitExecutionPage`
 - 访问边界：复用 `/patients/**` 的 `PatientsWorkspaceShell`；Shell 用轻量 `PatientsWorkspaceContext` 提供已取得的安全 AuthUser，不新增第二次 `/auth/me`，不读取 Cookie；角色只控制确认入口可见性，后端 Guard 是最终安全边界
-- 数据来源：既有访视详情 / 量表目录 / 初始化请求，以及 A20 latest / generate、A21 `PATCH .../:reportId/draft`、`POST .../:reportId/submit-confirmation` 与 `POST .../:reportId/confirm`
+- 数据来源：既有访视详情 / 量表目录 / 初始化请求，以及 A20 latest / generate、A21 `PATCH .../:reportId/draft`、`POST .../:reportId/submit-confirmation`、`POST .../:reportId/confirm` 与 A22 `POST .../:reportId/lock`
 - loading：认证检查由工作区承担；访视详情、量表目录与报告 latest 各自独立 loading、AbortController、错误与重试；目录或报告失败不移除访视和既有实例
 - 链接无效：任一动态参数不符合 24 位 MongoId 时不发送 A13 请求，显示“访视链接无效”并提供返回入口
 - 401 / 403 / 404：401 返回 `/login`；403 显示无权限及工作台 / 退出登录入口；患者不存在与访视不存在或归属不符使用不同稳定文案
@@ -109,11 +109,14 @@
 - 乐观并发：编辑、提交、确认均冻结服务端 updatedAt；版本变化或冲突保留 React 内存输入、自动 latest 一次、标记 stale，禁止自动覆盖和自动重发。用户明确基于最新报告继续后才更新基线；相关 note dirty 触发 beforeunload。
 - 提交：mixed draft 且医生意见合法、quality 非 failed、无本地 dirty / 写请求时，通过 submissionNote + checkbox 两步确认后进入 pending_confirmation。提交后不可编辑且不显示重复提交按钮；展示提交人、时间、说明和弱化 ID。
 - 确认：pending_confirmation 仅 doctor / admin 显示 confirmationNote + checkbox 的两步确认；nurse / research_assistant 只读等待。成功使用服务端 status=confirmed、qualityStatus=passed、isFinal=true 并进入只读；alreadySubmitted / alreadyConfirmed 按幂等成功处理。
-- 状态边界：pending_confirmation 不可编辑；confirmed / archived / corrected / voided 只读。qualityStatus=passed 只表示报告确认流程质量标记通过，confirmed 不等于 locked；source=mixed 表示系统规则与临床人员补充并存，不表示 AI。
+- 锁定入口：仅 doctor / admin，且 report 为 cognitive_assessment version 1、confirmed / mixed / passed / isFinal、完整确认摘要、lockedAt 与 lock 均为空、访视为 draft / in_progress / completed、无状态一致性警告、无其他写请求或本地草稿时显示“准备锁定报告”。nurse / research_assistant 只读查看。
+- 锁定交互：内联展示真实 status、isFinal、confirmation、updatedAt、不可逆边界、3–2000 字 lockNote 与可见 checkbox；请求只发送 confirm、lockNote、服务端 expectedUpdatedAt。冲突保留说明、清 checkbox、latest 一次、stale 且不自动重发；alreadyLocked 为正常成功。
+- 锁定展示：status 继续为 confirmed，页面额外显示已锁定；顶层 lockedAt 是主事实，lock 摘要展示技术追溯号、时间、锁定人 / 角色和“锁定流程说明”，当前会话 receipt 单独展示。锁定后 edit / submit / confirm / lock 全部只读；lockedAt 与 lock 缺失 / 不一致时不猜测字段并显示安全警告。
+- 状态边界：pending_confirmation 不可编辑；confirmed 未锁定仅可进入 A22 锁定；confirmed 已锁定及 archived / corrected / voided 只读。qualityStatus=passed 只表示报告确认流程质量标记通过；confirmed 与 lockedAt 是正交事实，source=mixed 不表示 AI。
 - 报告安全：不补齐缺失快照，不重新计算评分 / 比例 / 认知域，不调用媒体预览，不显示内部来源 ID / 对象键 / metadata，不输出诊断阈值、疾病判断或治疗建议。
 - 安全边界：目录不展示完整 groups / items、指导语、答案、scoringRule、expectedValue 或内部 ObjectId；能力标识不表示媒体、手写或计时已实现
-- 当前非目标：不在访视详情内读取或保存题目，不提供访视状态流转、报告退回 / reject / reopen / withdraw / 签名 / 锁定 / 归档 / 更正 / 作废 / 重生成 / version 2 / PDF / 下载或 AI 操作
-- 关联组件：`AssessmentVisitExecutionPage`、`ScaleInstanceList`、`ScaleInitializationPanel`、`PatientsWorkspaceContext`、`useClinicalReport`、`useClinicalReportWorkflow` 与 ClinicalReport 系列组件
+- 当前非目标：不在访视详情内读取或保存题目，不提供访视状态流转、报告退回 / reject / reopen / withdraw / 签名 / unlock / 归档 / 更正 / 作废 / 重生成 / version 2 / PDF / 下载、来源数据锁定或 AI 操作
+- 关联组件：`AssessmentVisitExecutionPage`、`ScaleInstanceList`、`ScaleInitializationPanel`、`PatientsWorkspaceContext`、`useClinicalReport`、`useClinicalReportWorkflow`、`ClinicalReportLockPanel` 与其他 ClinicalReport 组件
 
 ### 3.9 `/patients/[patientId]/visits/[visitId]/scale-instances/[scaleInstanceId]`
 

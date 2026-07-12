@@ -6,6 +6,8 @@ import type {
   ClinicalReportDetailResponse,
   GenerateClinicalReportRequest,
   GenerateClinicalReportResponse,
+  LockClinicalReportRequest,
+  LockClinicalReportResponse,
   SubmitClinicalReportForConfirmationRequest,
   SubmitClinicalReportForConfirmationResponse,
   UpdateClinicalReportDraftRequest,
@@ -52,6 +54,11 @@ export type ClinicalReportApiErrorKind =
   | 'clinical_report_confirmation_conflict'
   | 'clinical_report_confirmation_audit_unavailable'
   | 'clinical_report_confirmation_failed'
+  | 'clinical_report_lock_confirmation_required'
+  | 'clinical_report_not_lockable'
+  | 'clinical_report_lock_conflict'
+  | 'clinical_report_lock_audit_unavailable'
+  | 'clinical_report_lock_failed'
   | 'service_unavailable'
   | 'unknown';
 
@@ -156,6 +163,13 @@ function mapHttpError(
       'clinical_report_confirmation_audit_unavailable',
     CLINICAL_REPORT_CONFIRMATION_FAILED:
       'clinical_report_confirmation_failed',
+    CLINICAL_REPORT_LOCK_CONFIRMATION_REQUIRED:
+      'clinical_report_lock_confirmation_required',
+    CLINICAL_REPORT_NOT_LOCKABLE: 'clinical_report_not_lockable',
+    CLINICAL_REPORT_LOCK_CONFLICT: 'clinical_report_lock_conflict',
+    CLINICAL_REPORT_LOCK_AUDIT_UNAVAILABLE:
+      'clinical_report_lock_audit_unavailable',
+    CLINICAL_REPORT_LOCK_FAILED: 'clinical_report_lock_failed',
   };
 
   if (backendCode && businessKinds[backendCode]) {
@@ -361,4 +375,26 @@ export async function confirmClinicalReport(
     },
   );
   return readJson<ConfirmClinicalReportResponse>(response);
+}
+
+export async function lockClinicalReport(
+  patientId: string,
+  visitId: string,
+  reportId: string,
+  input: LockClinicalReportRequest,
+): Promise<LockClinicalReportResponse> {
+  const requestBody: LockClinicalReportRequest = {
+    confirm: true,
+    lockNote: input.lockNote.trim(),
+    expectedUpdatedAt: input.expectedUpdatedAt,
+  };
+  const response = await clinicalReportFetch(
+    `${buildClinicalReportResourcePath(patientId, visitId, reportId)}/lock`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+    },
+  );
+  return readJson<LockClinicalReportResponse>(response);
 }

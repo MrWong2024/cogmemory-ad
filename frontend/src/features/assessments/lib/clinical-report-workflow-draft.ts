@@ -1,6 +1,7 @@
 import type {
   ClinicalReport,
   ConfirmClinicalReportRequest,
+  LockClinicalReportRequest,
   SubmitClinicalReportForConfirmationRequest,
   UpdateClinicalReportDraftRequest,
 } from '@/src/features/assessments/types/clinical-report';
@@ -11,6 +12,7 @@ export const clinicalReportWorkflowLimits = {
   editNote: { min: 3, max: 1000 },
   submissionNote: { min: 3, max: 2000 },
   confirmationNote: { min: 3, max: 2000 },
+  lockNote: { min: 3, max: 2000 },
 } as const;
 
 export type ClinicalReportEditDraft = {
@@ -36,6 +38,14 @@ export type ClinicalReportConfirmationDraft = {
   reportId: string;
   baseUpdatedAt: string;
   confirmationNote: string;
+  confirmed: boolean;
+  stale: boolean;
+};
+
+export type ClinicalReportLockDraft = {
+  reportId: string;
+  baseUpdatedAt: string;
+  lockNote: string;
   confirmed: boolean;
   stale: boolean;
 };
@@ -107,6 +117,21 @@ export function createClinicalReportConfirmationDraft(
     reportId: report.id.trim().toLowerCase(),
     baseUpdatedAt: report.updatedAt,
     confirmationNote: '',
+    confirmed: false,
+    stale: false,
+  };
+}
+
+export function createClinicalReportLockDraft(
+  report: ClinicalReport,
+): ClinicalReportLockDraft | null {
+  if (!isSafeClinicalReportWriteIdentity(report.id, report.updatedAt)) {
+    return null;
+  }
+  return {
+    reportId: report.id.trim().toLowerCase(),
+    baseUpdatedAt: report.updatedAt,
+    lockNote: '',
     confirmed: false,
     stale: false,
   };
@@ -239,20 +264,79 @@ export function buildConfirmClinicalReportRequest(
   };
 }
 
+export function validateClinicalReportLockDraft(
+  draft: ClinicalReportLockDraft,
+): ClinicalReportWorkflowValidation {
+  if (
+    !isSafeClinicalReportWriteIdentity(draft.reportId, draft.baseUpdatedAt)
+  ) {
+    return { valid: false, message: '当前报告写入标识无效，请重新加载。' };
+  }
+  if (draft.stale) {
+    return { valid: false, message: '报告已发生变化，请重新核对最新报告。' };
+  }
+  if (!draft.confirmed) {
+    return { valid: false, message: '请勾选不可逆锁定确认。' };
+  }
+  return validateRequiredText(
+    draft.lockNote,
+    '锁定流程说明',
+    clinicalReportWorkflowLimits.lockNote.min,
+    clinicalReportWorkflowLimits.lockNote.max,
+  );
+}
+
+export function isClinicalReportLockDirty(
+  draft: ClinicalReportLockDraft | null,
+): boolean {
+  return (
+    normalizeClinicalReportText(draft?.lockNote ?? '').length > 0
+  );
+}
+
+export function buildLockClinicalReportRequest(
+  draft: ClinicalReportLockDraft,
+): LockClinicalReportRequest {
+  return {
+    confirm: true,
+    lockNote: normalizeClinicalReportText(draft.lockNote),
+    expectedUpdatedAt: draft.baseUpdatedAt,
+  };
+}
+
+export function continueClinicalReportLockDraftWithLatest(
+  draft: ClinicalReportLockDraft,
+  report: ClinicalReport,
+): ClinicalReportLockDraft | null {
+  if (!isSafeClinicalReportWriteIdentity(report.id, report.updatedAt)) {
+    return null;
+  }
+  return {
+    ...draft,
+    reportId: report.id.trim().toLowerCase(),
+    baseUpdatedAt: report.updatedAt,
+    confirmed: false,
+    stale: false,
+  };
+}
+
 export function shouldWarnBeforeClinicalReportUnload({
   editDraft,
   submissionDraft,
   confirmationDraft,
+  lockDraft,
 }: {
   editDraft: ClinicalReportEditDraft | null;
   submissionDraft: ClinicalReportSubmissionDraft | null;
   confirmationDraft: ClinicalReportConfirmationDraft | null;
+  lockDraft: ClinicalReportLockDraft | null;
 }): boolean {
   return (
     isClinicalReportEditDirty(editDraft) ||
     normalizeClinicalReportText(submissionDraft?.submissionNote ?? '').length >
       0 ||
     normalizeClinicalReportText(confirmationDraft?.confirmationNote ?? '')
-      .length > 0
+      .length > 0 ||
+    isClinicalReportLockDirty(lockDraft)
   );
 }

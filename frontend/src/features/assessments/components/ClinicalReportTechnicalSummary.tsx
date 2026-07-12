@@ -9,6 +9,8 @@ import {
   clinicalReportTypeLabels,
   formatClinicalReportDate,
   getClinicalReportFinalityWarning,
+  getClinicalReportLifecycleLabel,
+  getClinicalReportLockConsistencyWarning,
 } from '@/src/features/assessments/lib/clinical-report-display';
 import type { ClinicalReport } from '@/src/features/assessments/types/clinical-report';
 
@@ -33,6 +35,7 @@ export function ClinicalReportTechnicalSummary({
     report.status,
     report.isFinal,
   );
+  const lockConsistencyWarning = getClinicalReportLockConsistencyWarning(report);
 
   return (
     <div className="grid gap-5">
@@ -209,6 +212,14 @@ export function ClinicalReportTechnicalSummary({
               {finalityWarning}
             </p>
           ) : null}
+          {lockConsistencyWarning ? (
+            <p
+              className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] px-4 py-3 text-base text-[var(--cma-warning)]"
+              role="alert"
+            >
+              {lockConsistencyWarning}
+            </p>
+          ) : null}
           <dl className="grid gap-x-5 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
             <div>
               <dt className="text-sm font-semibold text-[var(--cma-muted)]">报告编号</dt>
@@ -228,7 +239,11 @@ export function ClinicalReportTechnicalSummary({
             </div>
             <div>
               <dt className="text-sm font-semibold text-[var(--cma-muted)]">报告状态</dt>
-              <dd className="mt-1 text-base text-[var(--cma-text-strong)]">{clinicalReportStatusLabels[report.status]}</dd>
+              <dd className="mt-1 text-base text-[var(--cma-text-strong)]">{clinicalReportStatusLabels[report.status]}（status={report.status}）</dd>
+            </div>
+            <div>
+              <dt className="text-sm font-semibold text-[var(--cma-muted)]">锁定状态</dt>
+              <dd className="mt-1 text-base text-[var(--cma-text-strong)]">{getClinicalReportLifecycleLabel(report)}</dd>
             </div>
             <div>
               <dt className="text-sm font-semibold text-[var(--cma-muted)]">来源</dt>

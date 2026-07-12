@@ -3,6 +3,7 @@ import {
   clinicalReportConfirmationRoleLabels,
   clinicalReportOperatorRoleLabels,
   formatClinicalReportDate,
+  getClinicalReportLockConsistencyWarning,
 } from '@/src/features/assessments/lib/clinical-report-display';
 import type {
   ClinicalReport,
@@ -35,6 +36,8 @@ export function ClinicalReportWorkflowSummary({
   report: ClinicalReport;
   workflow: UseClinicalReportWorkflowValue;
 }) {
+  const lockWarning = getClinicalReportLockConsistencyWarning(report);
+
   return (
     <section
       aria-labelledby="clinical-report-workflow-summary-heading"
@@ -52,7 +55,7 @@ export function ClinicalReportWorkflowSummary({
         </p>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <section className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] p-4">
           <h4 className="text-lg font-semibold text-[var(--cma-text-strong)]">最新编辑摘要</h4>
           {report.editorial ? (
@@ -95,7 +98,34 @@ export function ClinicalReportWorkflowSummary({
             <p className="mt-3 text-sm text-[var(--cma-muted)]">尚未完成最终确认。</p>
           )}
         </section>
+
+        <section className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] p-4">
+          <h4 className="text-lg font-semibold text-[var(--cma-text-strong)]">锁定摘要</h4>
+          {report.lock ? (
+            <dl className="mt-3 grid gap-3 text-sm">
+              <div><dt className="font-semibold text-[var(--cma-muted)]">锁定时间</dt><dd className="mt-1 text-[var(--cma-text-strong)]">{formatClinicalReportDate(report.lock.lockedAt)}</dd></div>
+              <div><dt className="font-semibold text-[var(--cma-muted)]">锁定人</dt><dd className="mt-1 text-[var(--cma-text-strong)]">{actorLabel(report.lock.lockedBy)}</dd></div>
+              <div><dt className="font-semibold text-[var(--cma-muted)]">锁定流程说明</dt><dd className="mt-1 whitespace-pre-wrap text-[var(--cma-text-strong)]">{report.lock.lockNote?.trim() || '—'}</dd></div>
+              <div><dt className="font-semibold text-[var(--cma-muted)]">技术追溯号</dt><dd className="mt-1 break-all text-[var(--cma-muted)]">{traceId(report.lock.lockId)}</dd></div>
+            </dl>
+          ) : report.lockedAt ? (
+            <p className="mt-3 text-sm leading-6 text-[var(--cma-muted)]">
+              报告已锁定，但当前安全响应未提供完整锁定审计摘要；系统不会猜测锁定人或说明。
+            </p>
+          ) : (
+            <p className="mt-3 text-sm text-[var(--cma-muted)]">尚未锁定。</p>
+          )}
+        </section>
       </div>
+
+      {lockWarning ? (
+        <p
+          className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] px-4 py-3 text-sm leading-6 text-[var(--cma-warning)]"
+          role="alert"
+        >
+          {lockWarning}
+        </p>
+      ) : null}
 
       {workflow.editReceipt ? (
         <p aria-live="polite" className="text-sm leading-6 text-[var(--cma-muted)]">
@@ -110,6 +140,11 @@ export function ClinicalReportWorkflowSummary({
       {workflow.confirmationReceipt ? (
         <p aria-live="polite" className="text-sm leading-6 text-[var(--cma-muted)]">
           本次确认回执：{workflow.confirmationReceipt.alreadyConfirmed ? '此前已确认，本次未重复写入' : '首次确认成功'}；{formatClinicalReportDate(workflow.confirmationReceipt.confirmedAt)}；确认人 {actorLabel(workflow.confirmationReceipt.confirmedBy)}；确认意见 {workflow.confirmationReceipt.confirmationNote?.trim() || '—'}；技术追溯号 {traceId(workflow.confirmationReceipt.confirmationId)}。
+        </p>
+      ) : null}
+      {workflow.lockReceipt ? (
+        <p aria-live="polite" className="text-sm leading-6 text-[var(--cma-muted)]">
+          本次锁定回执：{workflow.lockReceipt.alreadyLocked ? '此前已锁定，本次未重复写入' : '首次不可逆锁定成功'}；{formatClinicalReportDate(workflow.lockReceipt.lockedAt)}；锁定人 {actorLabel(workflow.lockReceipt.lockedBy)}；锁定流程说明 {workflow.lockReceipt.lockNote?.trim() || '—'}；技术追溯号 {traceId(workflow.lockReceipt.lockId)}。
         </p>
       ) : null}
     </section>

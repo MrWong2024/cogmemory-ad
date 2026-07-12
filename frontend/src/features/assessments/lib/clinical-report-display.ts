@@ -1,6 +1,7 @@
 import type { ClinicalReportApiErrorKind } from '@/src/features/assessments/api/clinical-report-api';
 import type {
   ClinicalReportCaptureMode,
+  ClinicalReport,
   ClinicalReportConfirmationRole,
   ClinicalReportEvidenceType,
   ClinicalReportOperatorRole,
@@ -157,6 +158,16 @@ export const clinicalReportScopeFixedStatements = [
   '当前不支持重生成或 reportVersion 2，请在生成前认真核对范围。',
 ];
 
+export const clinicalReportLockBoundaryStatements = [
+  '当前报告已经确认；锁定后真实 status 仍为 confirmed。',
+  '系统通过顶层 lockedAt 和锁定审计摘要表达锁定，不新增 locked 状态。',
+  '锁定不可撤销，当前系统不提供 unlock。',
+  '锁定只作用于当前 ClinicalReport，不会锁定患者、访视、量表实例、评分、认知域或媒体。',
+  '锁定不等于归档，不生成签名，也不生成 PDF 或下载文件。',
+  '锁定过程不调用 AI；qualityStatus=passed 不表示患者正常，也不形成新的诊断结论。',
+  '锁定流程说明仅用于本次锁定审计，不属于报告正文。',
+];
+
 export function formatClinicalReportDate(
   value: string | null | undefined,
 ): string {
@@ -208,6 +219,52 @@ export function getClinicalReportFinalityWarning(
   return expectedFinal === isFinal
     ? null
     : '报告状态与最终性标记不一致，请联系管理员。';
+}
+
+export function isClinicalReportLocked(report: ClinicalReport): boolean {
+  return report.lockedAt !== null;
+}
+
+export function getClinicalReportLifecycleLabel(
+  report: ClinicalReport,
+): string {
+  if (report.status === 'confirmed') {
+    return report.lockedAt === null ? '已确认，尚未锁定' : '已确认并锁定';
+  }
+  return clinicalReportStatusLabels[report.status];
+}
+
+export function getClinicalReportLockConsistencyWarning(
+  report: ClinicalReport,
+): string | null {
+  if (report.lock !== null && report.lockedAt === null) {
+    return '报告返回了锁定审计摘要，但顶层 lockedAt 为空；不能据此认定报告已锁定，也不能继续锁定，请联系管理员。';
+  }
+  if (
+    report.lockedAt !== null &&
+    !['confirmed', 'archived', 'corrected'].includes(report.status)
+  ) {
+    return '报告状态与顶层 lockedAt 不一致；当前不能继续报告写操作，请联系管理员。';
+  }
+  if (report.lockedAt !== null && report.lock === null) {
+    return '报告已锁定，但当前安全响应未提供完整锁定审计摘要；系统不会猜测锁定人或说明。';
+  }
+  if (
+    report.lockedAt !== null &&
+    report.lock !== null &&
+    (report.lock.lockedAt === null || report.lock.lockedBy === null)
+  ) {
+    return '报告已锁定，但锁定审计摘要不完整；系统不会猜测锁定人、角色或时间。';
+  }
+  if (
+    report.lockedAt !== null &&
+    report.lock?.lockedAt !== null &&
+    report.lock?.lockedAt !== undefined &&
+    report.lock.lockedAt !== report.lockedAt
+  ) {
+    return '顶层 lockedAt 与锁定审计摘要时间不一致；系统不会自行选择或覆盖时间，请联系管理员。';
+  }
+  return null;
 }
 
 export function getClinicalReportApiErrorMessage(
@@ -283,8 +340,36 @@ export function getClinicalReportApiErrorMessage(
       '历史确认审计信息不完整，不能安全推断确认记录。',
     clinical_report_confirmation_failed:
       '报告确认失败，请重新加载最新报告后重试。',
+    clinical_report_lock_confirmation_required:
+      '请明确确认不可逆锁定边界后再锁定报告。',
+    clinical_report_not_lockable:
+      '当前报告状态或流程信息不满足锁定要求。',
+    clinical_report_lock_conflict:
+      '报告在锁定前已发生变化，请重新核对最新报告。',
+    clinical_report_lock_audit_unavailable:
+      '报告锁定审计信息不完整，不能安全推断或重复锁定。',
+    clinical_report_lock_failed:
+      '报告锁定失败，请保留当前锁定说明并稍后重试。',
     service_unavailable: '报告服务暂时不可用，请稍后手工重试。',
     unknown: '暂时无法完成报告操作，请稍后手工重新加载最新报告。',
   };
   return messages[kind];
+}
+
+export function getClinicalReportLockApiErrorMessage(
+  kind: ClinicalReportApiErrorKind,
+): string {
+  if (kind === 'forbidden') {
+    return '当前账号不具备 doctor / admin 锁定权限；报告和本地锁定说明均已保留。';
+  }
+  if (kind === 'patient_not_active') {
+    return '当前患者不是活动状态，不能首次锁定报告。';
+  }
+  if (kind === 'visit_not_editable') {
+    return '当前访视状态不允许首次锁定报告。';
+  }
+  if (kind === 'clinical_report_metadata_unsupported') {
+    return '报告内部审计结构异常，当前不能继续锁定，请联系管理员。';
+  }
+  return getClinicalReportApiErrorMessage(kind);
 }

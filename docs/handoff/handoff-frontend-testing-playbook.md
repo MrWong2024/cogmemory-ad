@@ -6,12 +6,12 @@
 
 ## 2. 当前状态
 
-- 前端公共底座与 B1-B10 既有闭环已落地；B11 报告受控编辑、提交待确认与 doctor / admin 最终确认已落地。
+- 前端公共底座与 B1-B11 既有闭环已落地；B12 confirmed ClinicalReport 不可逆锁定、乐观并发与安全摘要展示已落地。
 - `frontend\package.json` 已存在，自动验证命令以其中真实脚本为准。
-- B2-B11 不新增测试代码、测试框架、E2E 或第三方依赖。
+- B2-B12 不新增测试代码、测试框架、E2E 或第三方依赖。
 - 当前自动验证覆盖三个认证 API、A12 五个患者 / 访视 API、A13 三个评估初始化前置 API、A14 两个执行草稿 API、A15 四个媒体证据 API、A16 两个提交 API 与 A17 两个阶段性评分 API 的前端类型、调用代码和页面构建；真实 HTTP / 浏览器联调仍需手工验证。
 
-## 3. B1 / B2 / B3 / B4 / B5 / B6 / B7 / B8 / B9 / B10 / B11 自动验证命令
+## 3. B1 / B2 / B3 / B4 / B5 / B6 / B7 / B8 / B9 / B10 / B11 / B12 自动验证命令
 
 在 `frontend` 目录、且既有 `node_modules` 存在时执行：
 
@@ -124,6 +124,16 @@
 - 未新增自动测试：当前前端没有既有测试框架，本阶段使用 lint、typecheck 与生产构建验证。
 - E2E / 浏览器自动化：未执行；本阶段明确不执行。
 - 浏览器手工验证：未执行，以下 B11 场景均待开发者使用脱敏数据本地验证。
+- 后端命令：未执行。
+
+本次 B12 验证结果：
+
+- `npm run lint`：通过。
+- `npm run typecheck`：通过，Next 16 既有动态路由类型生成成功且 TypeScript 无错误。
+- `npm run build`：通过，生产构建包含既有 `/patients/[patientId]/visits/[visitId]`，B12 未新增路由。
+- 未新增自动测试：当前前端没有既有测试框架，本阶段使用 lint、typecheck 与生产构建验证。
+- E2E / 浏览器自动化：未执行；本阶段明确不执行。
+- 浏览器手工验证：未执行，以下 B12 场景均待开发者使用脱敏数据本地验证。
 - 后端命令：未执行。
 
 如后续环境中 `frontend/node_modules` 不存在，不得为验证本阶段而执行 `npm install`；应跳过上述命令并说明原因。
@@ -241,6 +251,18 @@ B9 自动验证不覆盖：
 - 真实 A19 HTTP、数据库 CognitiveDomainResult、Cookie / CORS、并发计算、幂等重读、历史状态和业务错误组合。
 - 浏览器 beforeunload、scrollIntoView / focus、窄屏横向表格、屏幕阅读器 live region 与真实 checkbox / disabled 行为。
 - 认知域人工修改 / 确认 / 锁定 / 作废 / 重算、weighted mapping 编辑、报告、诊断或 AI；这些能力未实现。
+
+B12 静态与构建验证额外覆盖：
+
+- A22 lock 安全类型、API Body 白名单、五个业务错误映射、Path 编码 / MongoId 防御、credentials / no-store 与 POST 不自动重试路径。
+- lock mode、统一报告写锁、doctor / admin role gate、eligibility、3–2000 字 lockNote、checkbox、服务端 updatedAt 基线、dirty / stale / beforeunload、冲突 latest 一次、alreadyLocked 与完整 report 应用路径。
+- lock 安全摘要、当前会话 receipt、status / lockedAt / lock / isFinal 分离、一致性警告、已锁定只读和同一访视详情路由集成；未新增依赖、路由、BFF、middleware、持久化状态或配置。
+
+B12 自动验证不覆盖：
+
+- 真实 A22 HTTP、数据库锁定、Cookie / CORS、多操作者并发、历史安全 fallback、审计异常与幂等重读组合。
+- 浏览器 beforeunload、窄屏布局、屏幕阅读器 alert / live region、真实 checkbox / disabled 行为和网络中断后的最终服务端状态。
+- unlock / reopen / return / reject / withdraw、签名、归档、更正、作废、PDF / 下载、来源数据锁定或 AI；这些能力未实现。
 
 ## 5. B1 手工验证建议
 
@@ -767,7 +789,102 @@ B9 自动验证不覆盖：
 
 以上真实浏览器联调尚未执行，不得写成已通过。
 
-## 16. 认证与安全验证口径
+## 16. B12 手工验证建议（待验证）
+
+前置条件：后端已启动，使用脱敏人工测试账号与测试报告；不得使用真实患者或锁定说明。以下场景本次未执行：
+
+1. draft 报告不显示锁定入口。
+2. pending_confirmation 不显示锁定入口。
+3. confirmed 未锁定报告显示锁定状态。
+4. confirmed 未锁定报告对 doctor 显示锁定入口。
+5. confirmed 未锁定报告对 admin 显示锁定入口。
+6. nurse 不显示可用锁定入口。
+7. research_assistant 不显示可用锁定入口。
+8. system 不显示可用锁定入口。
+9. 不新增 locked status。
+10. 技术信息中的 status 仍为 confirmed。
+11. 页面独立显示“尚未锁定”。
+12. quality 非 passed 不开放锁定。
+13. isFinal=false 不开放锁定。
+14. confirmation 缺失不开放锁定。
+15. Visit locked / voided 不开放首次锁定。
+16. lockedAt 非空不显示再次锁定入口。
+17. lock 非空但 lockedAt 为空显示一致性警告。
+18. lockedAt 非空但 lock 为空显示审计摘要不完整。
+19. lock.lockedAt 与 top-level 不一致显示警告。
+20. 锁定前显示不可逆说明。
+21. 锁定前说明 status 仍为 confirmed。
+22. 锁定前说明只锁报告本身。
+23. 锁定前说明不锁来源数据。
+24. 锁定前说明不等于归档。
+25. 锁定前说明不生成签名或 PDF。
+26. lockNote 少于 3 字符不能提交。
+27. lockNote 超过 2000 字符不能提交。
+28. lockNote 不自动生成。
+29. confirmationNote 不自动填入 lockNote。
+30. 未勾选 checkbox 不能锁定。
+31. lock 只发送 confirm、lockNote、expectedUpdatedAt。
+32. expectedUpdatedAt 来自服务端。
+33. 锁定期间 edit / submit / confirm / lock 均禁用。
+34. 锁定期间报告仍可阅读。
+35. 锁定成功使用服务端完整 report。
+36. 锁定成功 status 仍为 confirmed。
+37. 锁定成功 lockedAt 非空。
+38. 锁定成功 lock summary 非空。
+39. 锁定成功显示 lockReceipt。
+40. alreadyLocked=false 显示首次锁定成功。
+41. alreadyLocked=true 按成功处理。
+42. alreadyLocked 不自动重发。
+43. 重复锁定不显示第二个可用入口。
+44. lockId 弱化为技术追溯号。
+45. lockedBy 显示姓名和角色。
+46. operatorId 不作为主要业务字段。
+47. lockNote 标记为锁定流程说明。
+48. lockNote 不显示为报告正文。
+49. lock conflict 保留 lockNote。
+50. lock conflict 清除 checkbox。
+51. lock conflict 自动 latest 一次。
+52. lock conflict 不自动 POST。
+53. stale 时不能锁定。
+54. 基于最新报告继续后保留 lockNote。
+55. 最新报告已锁定时不能继续提交本地草稿。
+56. audit unavailable 不猜测锁定人。
+57. metadata unsupported 不显示 metadata。
+58. action 403 保留报告和 lockNote。
+59. 401 返回登录页。
+60. 网络错误保留 lockNote。
+61. beforeunload 覆盖 lockNote。
+62. lockNote 不写 localStorage。
+63. 刷新后未提交 lockNote 消失。
+64. 已锁定报告 edit 不可用。
+65. 已锁定报告 submit 不可用。
+66. 已锁定报告 confirm 不可用。
+67. 已锁定报告 lock 不可用。
+68. confirmed 不显示为 locked status。
+69. isFinal 不作为锁定判断。
+70. lockedAt 不显示为归档时间。
+71. 页面不存在 unlock。
+72. 页面不存在 reopen / return / reject / withdraw。
+73. 页面不存在 signature。
+74. 页面不存在 archive / correct / void。
+75. 页面不存在 PDF / 下载。
+76. 页面不存在来源链锁定。
+77. 页面不存在 AI 操作。
+78. 页面不显示患者、访视或评分已锁定。
+79. 页面不把 quality passed 显示为患者正常。
+80. 页面不输出诊断结论。
+81. 小屏幕锁定表单可用。
+82. label、alert、live region 正确。
+83. 没有第二次 `/auth/me`。
+84. 没有新增路由。
+85. 没有使用真实患者或锁定说明。
+86. lint 通过。
+87. typecheck 通过。
+88. build 通过。
+
+以上真实浏览器联调尚未执行，不得写成已通过。
+
+## 17. 认证与安全验证口径
 
 - 使用浏览器网络面板确认三个认证请求均携带 credentials 语义，并由浏览器处理 HttpOnly Cookie。
 - 前端代码与存储中不得出现 raw token、token hash、`passwordHash`、JWT 或其他认证凭证。
@@ -784,14 +901,14 @@ B9 自动验证不覆盖：
 - B7 页面不得在 console、存储或 URL 中记录评分结果、reviewQueue、请求体或响应体；compute 只能由独立 API Client 构造 `{ confirm: true }`，不得提交任何分数、规则、状态或服务器字段。
 - B9 页面不得在 console、存储或 URL 中记录认知域结果、贡献、来源评分、请求体或响应体；compute 只能由独立 API Client 构造 `{ confirm: true }`，不得提交 domain、weight、mapping、分数、规则、状态或服务器字段。
 
-## 17. 医疗与隐私展示红线
+## 18. 医疗与隐私展示红线
 
 - 不展示真实用户或患者敏感数据样本。
 - 测试截图不得包含真实姓名、邮箱、身份证号、手机号、病历号、住址、患者资料或真实文件名。
 - 不得在页面文案或测试截图中呈现未经确认的真实医疗诊断结论。
 - 核心认知评估必须保持医护或研究人员陪伴 / 监督的产品边界。
 
-## 18. 后续同步规则
+## 19. 后续同步规则
 
 - 前端新增或调整测试脚本后，应同步更新自动验证命令。
 - 新增页面、路由、组件、API 对接或权限展示后，应同步补充对应验证口径。

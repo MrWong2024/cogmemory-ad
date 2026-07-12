@@ -219,6 +219,7 @@ export function AssessmentVisitExecutionPage({
     patientId,
     visitId,
     report: reportState.report,
+    visitStatus: detailMatchesRoute ? detail.visit.status : null,
     currentUserRoles: currentUser.roles,
     reportWriteBlocked:
       isDetailLoading ||

@@ -6,10 +6,10 @@
 
 ## 2. 当前状态与边界
 
-- B11 扩展独立 `clinical-report-api.ts`，在既有访视详情页接入 A21 draft PATCH、submit-confirmation POST 与 confirm POST；保留 A20 latest / generate。
-- 三个 A21 写请求均只使用服务端 `report.updatedAt` 作为 `expectedUpdatedAt`，逐字段重建 Body 白名单且不自动重试；冲突最多自动 latest 一次，不重发原请求。
+- B12 继续扩展独立 `clinical-report-api.ts`，在既有访视详情页接入 A22 lock POST；保留 A20 latest / generate 与 A21 draft / submit / confirm。
+- A21 / A22 写请求均只使用服务端 `report.updatedAt` 作为 `expectedUpdatedAt`，逐字段重建 Body 白名单且不自动重试；冲突最多自动 latest 一次，不重发原请求。
 - B9 新增独立 `frontend\src\features\assessments\api\cognitive-domain-api.ts`，在既有量表实例页接入 A19 latest / compute。
-- 认知域仍只调用 A19 latest / compute；报告当前调用 A20 latest / generate 与 A21 edit / submit / confirm，不调用其他认知域或报告未来 API，也不调用 AI API。
+- 认知域仍只调用 A19 latest / compute；报告当前调用 A20 latest / generate、A21 edit / submit / confirm 与 A22 lock，不调用其他认知域或报告未来 API，也不调用 AI API。
 - API Client 使用 `frontendEnv.apiBaseUrl` 作为后端基础地址。
 - 所有请求统一使用 `credentials: 'include'`，由浏览器携带或接收 HttpOnly Cookie。
 - 所有认证、患者和访视请求使用 `cache: 'no-store'`。
@@ -373,6 +373,20 @@
 - 并发 / 错误：confirmation conflict / not ready 自动 latest 一次，保留 confirmationNote、清除 checkbox、标记 stale 且不重发。audit unavailable 不猜测确认人、时间或 ID；confirm 403 明确当前账号不具备 doctor / admin 权限并保留报告。
 - 边界：confirmed 后前端只读，但 confirmed 不等于 locked；不生成签名，不设置前端模拟 locked，不锁定 Visit、评分、认知域或媒体，不生成 PDF，不调用 AI。
 
+### 4.31 `lockClinicalReport()` -> `POST /patients/:patientId/visits/:visitId/clinical-reports/:reportId/lock`
+
+- Client / 调用方：`clinical-report-api.ts` / `useClinicalReportWorkflow` / `ClinicalReportLockPanel`；仅 currentUser roles 包含 doctor / admin 且完整前端 eligibility 通过时显示可用入口，后端方法级 RolesGuard 是最终权限边界。nurse / research_assistant 不显示可用按钮但可查看报告和锁定摘要。
+- Path：patientId、visitId、reportId 均使用 `encodeURIComponent()`；reportId 先 trim + lowercase 并通过既有 24 位 MongoId 防御。路径 ID 不进入 Body。
+- Body 白名单：只构造 `{ confirm: true, lockNote: input.lockNote.trim(), expectedUpdatedAt: input.expectedUpdatedAt }`。不发送 status、source、qualityStatus、lockedAt / lockedBy、lock / lockId、confirmation、正文 / 快照、metadata、force / unlock、archive、PDF、来源 ID 或路径 ID。
+- expectedUpdatedAt：只来自锁定区打开时冻结的服务端 `ClinicalReport.updatedAt`，不使用浏览器时间、confirmedAt、lockedAt 或客户端生成时间。lockNote trim 后 3–2000 字且由用户明确填写，不自动生成或改写。
+- 凭证 / 缓存 / 重试：使用 `frontendEnv.apiBaseUrl`、`credentials: 'include'`、`cache: 'no-store'`、JSON POST；不读取 Cookie、不保存 token、不自动重试、冲突后不重发，也不输出请求、响应或 lockNote 到 console。
+- 响应：`LockClinicalReportResponse { report, lockReceipt }`。成功完整采用服务端 report，不手动设置 status / lockedAt / lock；当前会话保存 receipt。status 继续为 confirmed，lockedAt 为主锁定事实，lock 为安全摘要，isFinal 直接使用服务端值。
+- 幂等：`alreadyLocked=false` 显示首次不可逆锁定完成；`alreadyLocked=true` 作为正常成功，说明此前已锁定且本次未重复写入，不再次 POST，也不改写既有 lockId、时间、actor 或说明。
+- 错误映射：严格新增 `CLINICAL_REPORT_LOCK_CONFIRMATION_REQUIRED`、`CLINICAL_REPORT_NOT_LOCKABLE`、`CLINICAL_REPORT_LOCK_CONFLICT`、`CLINICAL_REPORT_LOCK_AUDIT_UNAVAILABLE`、`CLINICAL_REPORT_LOCK_FAILED`；继续复用 validation、401 / 403、patient / visit / ownership、incomplete、voided、metadata unsupported、service unavailable。
+- 冲突恢复：LOCK_CONFLICT 保留 lockNote、清 checkbox、标记 stale、自动 latest 一次；不自动覆盖或重发。NOT_LOCKABLE 同样最多刷新一次；若 latest 已锁定，进入只读展示并保留本地说明到用户明确关闭；若仍可锁，用户需明确“基于最新报告继续”并重新勾选。
+- 401 / 403：401 复用现有 onUnauthorized 返回登录；action 403 保留已加载报告和 lockNote，显示需 doctor / admin 权限，不将整个报告区域变成 forbidden。
+- 隐私 / 非目标：公开类型仅建模安全 lock actor，不公开 metadata、a22Lock、Schema 原始 lockedBy、Session / currentUser 或事件。不锁定 Patient、Visit、ScaleInstance、ScoreResult、CognitiveDomainResult、MediaEvidence 或 Storage；没有 unlock、签名、归档、更正、作废、PDF / 下载或 AI。
+
 ## 5. 当前认证公开类型
 
 - `AuthUserResponse`：`id`、`accountName`、`displayName`、`roles`、`permissions`、可选 `userType`。
@@ -399,13 +413,13 @@
 - `ProvisionalScoringApiError.kind` 覆盖 unauthenticated、forbidden、validation、患者 / 访视 / 实例 / 配置状态和 A17 全部 `SCORE_*` 业务 code、service_unavailable 与 unknown；UI 使用稳定中文映射。
 - `cognitive-domain-result.ts` 严格覆盖 result status、mapping source / mode、item score、review / quality、domain score、contribution、mapping、computation、versionTrace 与 A19 请求 / 响应；不定义原始作答、评分意见、expectedValue、scoringRule、metadata 或 contribution minScore。
 - `CognitiveDomainApiError.kind` 覆盖 401 / 403 / validation、患者 / 访视 / 实例 / 配置、来源评分和全部 `COGNITIVE_DOMAIN_*` 业务 code、service_unavailable 与 unknown；UI 使用稳定中文映射，不直接显示后端英文 message。
-- B11 `clinical-report.ts` 扩展 clinician-owned narrative、editorial、submission、confirmationId、三类请求与三类 receipt；Date JSON 使用 string / null，不定义 metadata、完整 edit events、previousValues / nextValues、signatureText 或来源 ID 数组。
-- `ClinicalReportApiError.kind` 新增并严格映射全部 A21 metadata、editable、edit、submission、confirmation 业务 code；UI 不直接展示后端英文 message。
+- B12 `clinical-report.ts` 在 B11 类型上新增 `ClinicalReportLockSummary`、`LockClinicalReportRequest`、`LockClinicalReportReceipt` 与 `LockClinicalReportResponse`；Date JSON 使用 string / null，不定义 metadata、a22Lock、Schema 原始 lockedBy、Session、currentUser、signatureText 或来源 ID 数组。
+- `ClinicalReportApiError.kind` 严格映射 A21 与 A22 lock 业务 code；UI 使用稳定中文，不直接展示后端英文 message。
 
 ## 7. 当前未对接 API
 
 - 当前没有 A12 / A13 / A14 已接接口之外的患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转调用。
-- 当前除 A16、A17、A18 manual-review / confirm、A19 latest / compute、A20 latest / generate 与 A21 edit / submit / confirm 外，没有撤销提交、reopen、评分 lock / void / rerun / 历史、认知域修改 / 确认 / 锁定 / 作废 / 重算、报告退回 / reject / reopen / withdraw / 签名 / 锁定 / 归档 / 更正 / 作废 / 重生成 / version 2 / PDF、AI、用户管理、角色权限管理或科研导出 API 调用。
+- 当前除 A16、A17、A18 manual-review / confirm、A19 latest / compute、A20 latest / generate、A21 edit / submit / confirm 与 A22 lock 外，没有撤销提交、reopen、评分 lock / void / rerun / 历史、认知域修改 / 确认 / 锁定 / 作废 / 重算、报告退回 / reject / reopen / withdraw / 签名 / unlock / 归档 / 更正 / 作废 / 重生成 / version 2 / PDF、AI、用户管理、角色权限管理或科研导出 API 调用。
 - 不得在后端 API 未确认并进入明确任务范围前编造前端对接事实。
 
 ## 8. 后续同步规则

@@ -5,36 +5,54 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ClinicalReportApiError,
   confirmClinicalReport,
+  lockClinicalReport,
   submitClinicalReportForConfirmation,
   updateClinicalReportDraft,
 } from '@/src/features/assessments/api/clinical-report-api';
 import {
+  getClinicalReportFinalityWarning,
+  getClinicalReportLockConsistencyWarning,
+} from '@/src/features/assessments/lib/clinical-report-display';
+import {
   buildConfirmClinicalReportRequest,
+  buildLockClinicalReportRequest,
   buildSubmitClinicalReportForConfirmationRequest,
   buildUpdateClinicalReportDraftRequest,
   createClinicalReportConfirmationDraft,
   createClinicalReportEditDraft,
+  createClinicalReportLockDraft,
   createClinicalReportSubmissionDraft,
+  continueClinicalReportLockDraftWithLatest,
   hasClinicalReportNarrativeChange,
   isClinicalReportEditDirty,
+  isClinicalReportLockDirty,
   isSafeClinicalReportWriteIdentity,
   normalizeClinicalReportText,
   shouldWarnBeforeClinicalReportUnload,
   validateClinicalReportConfirmationDraft,
   validateClinicalReportEditDraft,
+  validateClinicalReportLockDraft,
   validateClinicalReportSubmissionDraft,
   type ClinicalReportConfirmationDraft,
   type ClinicalReportEditDraft,
+  type ClinicalReportLockDraft,
   type ClinicalReportSubmissionDraft,
 } from '@/src/features/assessments/lib/clinical-report-workflow-draft';
 import type {
   ClinicalReport,
   ClinicalReportEditReceipt,
+  LockClinicalReportReceipt,
   ConfirmClinicalReportReceipt,
   SubmitClinicalReportReceipt,
 } from '@/src/features/assessments/types/clinical-report';
+import type { AssessmentVisitStatus } from '@/src/features/patients/types/patient';
 
-export type ClinicalReportWorkflowMode = 'idle' | 'edit' | 'submit' | 'confirm';
+export type ClinicalReportWorkflowMode =
+  | 'idle'
+  | 'edit'
+  | 'submit'
+  | 'confirm'
+  | 'lock';
 export type ClinicalReportWritingAction = Exclude<
   ClinicalReportWorkflowMode,
   'idle'
@@ -44,6 +62,7 @@ type UseClinicalReportWorkflowOptions = {
   patientId: string;
   visitId: string;
   report: ClinicalReport | null;
+  visitStatus: AssessmentVisitStatus | null;
   currentUserRoles: string[];
   reportWriteBlocked: boolean;
   onUnauthorized: () => void;
@@ -60,6 +79,14 @@ const refreshAfterActionErrors = new Set<ClinicalReportApiError['kind']>([
   'clinical_report_not_ready_for_confirmation',
   'clinical_report_voided',
   'clinical_report_not_found',
+  'clinical_report_not_lockable',
+  'clinical_report_lock_conflict',
+]);
+
+const lockableVisitStatuses = new Set<AssessmentVisitStatus>([
+  'draft',
+  'in_progress',
+  'completed',
 ]);
 
 function toClinicalReportApiError(error: unknown): ClinicalReportApiError {
@@ -76,6 +103,7 @@ function isEditableDraftReport(report: ClinicalReport | null): boolean {
       report.reportVersion === 1 &&
       (report.source === 'system_draft' || report.source === 'mixed') &&
       report.lockedAt === null &&
+      report.lock === null &&
       report.archivedAt === null &&
       report.voidedAt === null &&
       report.confirmation === null &&
@@ -96,6 +124,11 @@ function isSubmittableDraftReport(report: ClinicalReport | null): boolean {
       report.status === 'draft' &&
       report.source === 'mixed' &&
       report.qualityStatus !== 'failed' &&
+      report.lockedAt === null &&
+      report.lock === null &&
+      report.archivedAt === null &&
+      report.voidedAt === null &&
+      report.confirmation === null &&
       hasValidDoctorOpinion(report) &&
       isSafeClinicalReportWriteIdentity(report.id, report.updatedAt),
   );
@@ -107,6 +140,38 @@ function isConfirmableReport(report: ClinicalReport | null): boolean {
       report.status === 'pending_confirmation' &&
       report.submission !== null &&
       report.qualityStatus !== 'failed' &&
+      report.lockedAt === null &&
+      report.lock === null &&
+      report.archivedAt === null &&
+      report.voidedAt === null &&
+      isSafeClinicalReportWriteIdentity(report.id, report.updatedAt),
+  );
+}
+
+function isLockableReport(
+  report: ClinicalReport | null,
+  visitStatus: AssessmentVisitStatus | null,
+): boolean {
+  return Boolean(
+    report &&
+      report.reportType === 'cognitive_assessment' &&
+      report.reportVersion === 1 &&
+      report.status === 'confirmed' &&
+      report.source === 'mixed' &&
+      report.qualityStatus === 'passed' &&
+      report.isFinal === true &&
+      report.confirmation !== null &&
+      Boolean(report.confirmation.confirmedAt) &&
+      (report.confirmation.confirmedByRole === 'doctor' ||
+        report.confirmation.confirmedByRole === 'admin') &&
+      report.lockedAt === null &&
+      report.lock === null &&
+      report.archivedAt === null &&
+      report.voidedAt === null &&
+      visitStatus !== null &&
+      lockableVisitStatuses.has(visitStatus) &&
+      getClinicalReportFinalityWarning(report.status, report.isFinal) === null &&
+      getClinicalReportLockConsistencyWarning(report) === null &&
       isSafeClinicalReportWriteIdentity(report.id, report.updatedAt),
   );
 }
@@ -115,6 +180,7 @@ export function useClinicalReportWorkflow({
   patientId,
   visitId,
   report,
+  visitStatus,
   currentUserRoles,
   reportWriteBlocked,
   onUnauthorized,
@@ -133,6 +199,8 @@ export function useClinicalReportWorkflow({
     useState<ClinicalReportSubmissionDraft | null>(null);
   const [confirmationDraft, setConfirmationDraft] =
     useState<ClinicalReportConfirmationDraft | null>(null);
+  const [lockDraft, setLockDraft] =
+    useState<ClinicalReportLockDraft | null>(null);
   const [editError, setEditError] = useState<ClinicalReportApiError | null>(
     null,
   );
@@ -140,12 +208,17 @@ export function useClinicalReportWorkflow({
     useState<ClinicalReportApiError | null>(null);
   const [confirmationError, setConfirmationError] =
     useState<ClinicalReportApiError | null>(null);
+  const [lockError, setLockError] = useState<ClinicalReportApiError | null>(
+    null,
+  );
   const [editReceipt, setEditReceipt] =
     useState<ClinicalReportEditReceipt | null>(null);
   const [submissionReceipt, setSubmissionReceipt] =
     useState<SubmitClinicalReportReceipt | null>(null);
   const [confirmationReceipt, setConfirmationReceipt] =
     useState<ConfirmClinicalReportReceipt | null>(null);
+  const [lockReceipt, setLockReceipt] =
+    useState<LockClinicalReportReceipt | null>(null);
   const [liveMessage, setLiveMessage] = useState<string | null>(null);
   const [writeProhibited, setWriteProhibited] = useState(false);
 
@@ -154,6 +227,7 @@ export function useClinicalReportWorkflow({
       currentUserRoles.some((role) => role === 'doctor' || role === 'admin'),
     [currentUserRoles],
   );
+  const roleCanLock = roleCanConfirm;
 
   const editDirty = isClinicalReportEditDirty(editDraft);
   const submissionDirty =
@@ -162,7 +236,10 @@ export function useClinicalReportWorkflow({
   const confirmationDirty =
     normalizeClinicalReportText(confirmationDraft?.confirmationNote ?? '')
       .length > 0;
-  const hasLocalDraft = Boolean(editDraft || submissionDraft || confirmationDraft);
+  const lockDirty = isClinicalReportLockDirty(lockDraft);
+  const hasLocalDraft = Boolean(
+    editDraft || submissionDraft || confirmationDraft || lockDraft,
+  );
 
   const canEdit =
     activeMode === 'idle' &&
@@ -185,6 +262,14 @@ export function useClinicalReportWorkflow({
     !hasLocalDraft &&
     roleCanConfirm &&
     isConfirmableReport(report);
+  const canLock =
+    activeMode === 'idle' &&
+    writingAction === null &&
+    !reportWriteBlocked &&
+    !writeProhibited &&
+    !hasLocalDraft &&
+    roleCanLock &&
+    isLockableReport(report, visitStatus);
 
   const editValidation = editDraft
     ? validateClinicalReportEditDraft(editDraft)
@@ -194,6 +279,9 @@ export function useClinicalReportWorkflow({
     : { valid: false, message: null };
   const confirmationValidation = confirmationDraft
     ? validateClinicalReportConfirmationDraft(confirmationDraft)
+    : { valid: false, message: null };
+  const lockValidation = lockDraft
+    ? validateClinicalReportLockDraft(lockDraft)
     : { valid: false, message: null };
 
   const editVersionMatches = Boolean(
@@ -213,6 +301,14 @@ export function useClinicalReportWorkflow({
       report &&
       confirmationDraft.reportId === report.id.trim().toLowerCase() &&
       confirmationDraft.baseUpdatedAt === report.updatedAt,
+  );
+  const lockVersionMatches = Boolean(
+    lockDraft &&
+      report &&
+      lockDraft.reportId === report.id.trim().toLowerCase() &&
+      lockDraft.baseUpdatedAt === report.updatedAt &&
+      report.status === 'confirmed' &&
+      report.lockedAt === null,
   );
 
   const canSaveEdit = Boolean(
@@ -249,6 +345,75 @@ export function useClinicalReportWorkflow({
       roleCanConfirm &&
       isConfirmableReport(report),
   );
+  const canConfirmLock = Boolean(
+    lockDraft &&
+      lockValidation.valid &&
+      !lockDraft.stale &&
+      lockVersionMatches &&
+      writingAction === null &&
+      !reportWriteBlocked &&
+      !writeProhibited &&
+      roleCanLock &&
+      isLockableReport(report, visitStatus),
+  );
+  const canContinueLockWithLatest = Boolean(
+    lockDraft &&
+      lockDraft.stale &&
+      roleCanLock &&
+      !reportWriteBlocked &&
+      !writeProhibited &&
+      isLockableReport(report, visitStatus),
+  );
+  const lockBlockReason = useMemo(() => {
+    if (!report) return '请先加载当前临床报告。';
+    if (!roleCanLock) return '报告锁定需由医生或管理员执行。';
+    if (report.lockedAt !== null) return '当前报告已经锁定，不能重复开放锁定入口。';
+    const consistencyWarning = getClinicalReportLockConsistencyWarning(report);
+    if (consistencyWarning) return consistencyWarning;
+    if (getClinicalReportFinalityWarning(report.status, report.isFinal)) {
+      return '报告状态与最终性标记不一致，当前不能安全锁定。';
+    }
+    if (report.reportType !== 'cognitive_assessment' || report.reportVersion !== 1) {
+      return '当前仅支持 cognitive_assessment version 1 报告锁定。';
+    }
+    if (report.status !== 'confirmed') return '只有已确认报告可以执行锁定。';
+    if (report.source !== 'mixed') return '当前报告来源状态不满足锁定要求。';
+    if (report.qualityStatus !== 'passed') return '报告流程质量标记未通过，不能锁定。';
+    if (!report.isFinal) return '服务端尚未将当前报告标记为最终，不能锁定。';
+    if (
+      !report.confirmation?.confirmedAt ||
+      (report.confirmation.confirmedByRole !== 'doctor' &&
+        report.confirmation.confirmedByRole !== 'admin')
+    ) {
+      return '当前报告缺少完整的医生或管理员确认摘要。';
+    }
+    if (report.lock !== null) return '锁定字段不一致，当前不能继续写入。';
+    if (report.archivedAt !== null || report.voidedAt !== null) {
+      return '已归档或已作废报告不开放首次锁定。';
+    }
+    if (!visitStatus || !lockableVisitStatuses.has(visitStatus)) {
+      return '当前访视状态不允许首次锁定报告。';
+    }
+    if (!isSafeClinicalReportWriteIdentity(report.id, report.updatedAt)) {
+      return '当前报告缺少安全的 updatedAt 并发基线。';
+    }
+    if (reportWriteBlocked) return '当前存在其他访视或报告写操作，请等待完成。';
+    if (writeProhibited) return '报告审计结构当前禁止继续安全写入。';
+    if (activeMode !== 'idle' || hasLocalDraft) {
+      return '请先保存或放弃当前报告本地草稿。';
+    }
+    if (writingAction !== null) return '当前正在执行报告写操作。';
+    return null;
+  }, [
+    activeMode,
+    hasLocalDraft,
+    report,
+    reportWriteBlocked,
+    roleCanLock,
+    visitStatus,
+    writeProhibited,
+    writingAction,
+  ]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -264,12 +429,15 @@ export function useClinicalReportWorkflow({
     setEditDraft(null);
     setSubmissionDraft(null);
     setConfirmationDraft(null);
+    setLockDraft(null);
     setEditError(null);
     setSubmissionError(null);
     setConfirmationError(null);
+    setLockError(null);
     setEditReceipt(null);
     setSubmissionReceipt(null);
     setConfirmationReceipt(null);
+    setLockReceipt(null);
     setLiveMessage(null);
     setWriteProhibited(false);
   }, [patientId, visitId]);
@@ -309,13 +477,31 @@ export function useClinicalReportWorkflow({
           : current,
       );
     }
-  }, [confirmationDraft, editDraft, report, submissionDraft]);
+    if (
+      lockDraft &&
+      (!report ||
+        lockDraft.reportId !== report.id.trim().toLowerCase() ||
+        lockDraft.baseUpdatedAt !== report.updatedAt ||
+        report.lockedAt !== null ||
+        report.lock !== null ||
+        report.status !== 'confirmed' ||
+        report.isFinal !== true ||
+        getClinicalReportLockConsistencyWarning(report) !== null)
+    ) {
+      setLockDraft((current) =>
+        current && !current.stale
+          ? { ...current, confirmed: false, stale: true }
+          : current,
+      );
+    }
+  }, [confirmationDraft, editDraft, lockDraft, report, submissionDraft]);
 
   useEffect(() => {
     const shouldWarn = shouldWarnBeforeClinicalReportUnload({
       editDraft,
       submissionDraft,
       confirmationDraft,
+      lockDraft,
     });
     if (!shouldWarn) return;
 
@@ -324,12 +510,13 @@ export function useClinicalReportWorkflow({
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [confirmationDraft, editDraft, submissionDraft]);
+  }, [confirmationDraft, editDraft, lockDraft, submissionDraft]);
 
   const clearActionErrors = useCallback(() => {
     setEditError(null);
     setSubmissionError(null);
     setConfirmationError(null);
+    setLockError(null);
     setLiveMessage(null);
   }, []);
 
@@ -341,6 +528,7 @@ export function useClinicalReportWorkflow({
     setEditDraft(draft);
     setSubmissionDraft(null);
     setConfirmationDraft(null);
+    setLockDraft(null);
     setActiveMode('edit');
   }, [canEdit, clearActionErrors, report]);
 
@@ -352,6 +540,7 @@ export function useClinicalReportWorkflow({
     setEditDraft(null);
     setSubmissionDraft(draft);
     setConfirmationDraft(null);
+    setLockDraft(null);
     setActiveMode('submit');
   }, [canSubmit, clearActionErrors, report]);
 
@@ -363,14 +552,28 @@ export function useClinicalReportWorkflow({
     setEditDraft(null);
     setSubmissionDraft(null);
     setConfirmationDraft(draft);
+    setLockDraft(null);
     setActiveMode('confirm');
   }, [canConfirm, clearActionErrors, report]);
+
+  const openLock = useCallback(() => {
+    if (!canLock || !report) return;
+    const draft = createClinicalReportLockDraft(report);
+    if (!draft) return;
+    clearActionErrors();
+    setEditDraft(null);
+    setSubmissionDraft(null);
+    setConfirmationDraft(null);
+    setLockDraft(draft);
+    setActiveMode('lock');
+  }, [canLock, clearActionErrors, report]);
 
   const cancelActive = useCallback(() => {
     if (writingRef.current !== null) return;
     setEditDraft(null);
     setSubmissionDraft(null);
     setConfirmationDraft(null);
+    setLockDraft(null);
     setActiveMode('idle');
     clearActionErrors();
   }, [clearActionErrors]);
@@ -409,6 +612,19 @@ export function useClinicalReportWorkflow({
 
   const setConfirmationConfirmed = useCallback((confirmed: boolean) => {
     setConfirmationDraft((current) =>
+      current ? { ...current, confirmed } : current,
+    );
+  }, []);
+
+  const updateLockNote = useCallback((value: string) => {
+    setLockDraft((current) =>
+      current ? { ...current, lockNote: value, confirmed: false } : current,
+    );
+    setLockError(null);
+  }, []);
+
+  const setLockConfirmed = useCallback((confirmed: boolean) => {
+    setLockDraft((current) =>
       current ? { ...current, confirmed } : current,
     );
   }, []);
@@ -471,6 +687,16 @@ export function useClinicalReportWorkflow({
     );
     setConfirmationError(null);
   }, [report, roleCanConfirm]);
+
+  const continueLockWithLatest = useCallback(() => {
+    if (!report || !canContinueLockWithLatest) return;
+    setLockDraft((current) =>
+      current
+        ? continueClinicalReportLockDraftWithLatest(current, report)
+        : current,
+    );
+    setLockError(null);
+  }, [canContinueLockWithLatest, report]);
 
   const refreshOnceAfterError = useCallback(
     async (error: ClinicalReportApiError) => {
@@ -659,48 +885,124 @@ export function useClinicalReportWorkflow({
     visitId,
   ]);
 
+  const confirmLock = useCallback(async () => {
+    if (!lockDraft || !canConfirmLock || writingRef.current !== null) return;
+    writingRef.current = 'lock';
+    setWritingAction('lock');
+    setLockError(null);
+    setLiveMessage('正在不可逆锁定报告。');
+    try {
+      const response = await lockClinicalReport(
+        patientId,
+        visitId,
+        lockDraft.reportId,
+        buildLockClinicalReportRequest(lockDraft),
+      );
+      if (!mountedRef.current) return;
+      onReportUpdated(response.report);
+      setLockReceipt(response.lockReceipt);
+      setLockDraft(null);
+      setActiveMode('idle');
+      setLiveMessage(
+        response.lockReceipt.alreadyLocked
+          ? '该报告此前已经锁定，本次未重复写入。'
+          : '报告已确认并完成不可逆锁定。',
+      );
+    } catch (requestError: unknown) {
+      if (!mountedRef.current) return;
+      const error = toClinicalReportApiError(requestError);
+      if (error.kind === 'unauthenticated') {
+        onUnauthorized();
+        return;
+      }
+      setLockError(error);
+      setLiveMessage(null);
+      if (
+        error.kind === 'clinical_report_metadata_unsupported' ||
+        error.kind === 'clinical_report_lock_audit_unavailable'
+      ) {
+        setWriteProhibited(true);
+      }
+      if (refreshAfterActionErrors.has(error.kind)) {
+        setLockDraft((current) =>
+          current
+            ? { ...current, confirmed: false, stale: true }
+            : current,
+        );
+      }
+      await refreshOnceAfterError(error);
+    } finally {
+      writingRef.current = null;
+      if (mountedRef.current) setWritingAction(null);
+    }
+  }, [
+    canConfirmLock,
+    lockDraft,
+    onReportUpdated,
+    onUnauthorized,
+    patientId,
+    refreshOnceAfterError,
+    visitId,
+  ]);
+
   return {
     activeMode,
     writingAction,
     editDraft,
     submissionDraft,
     confirmationDraft,
+    lockDraft,
     editDirty,
     submissionDirty,
     confirmationDirty,
+    lockDirty,
     editValidation,
     submissionValidation,
     confirmationValidation,
+    lockValidation,
     editError,
     submissionError,
     confirmationError,
+    lockError,
     editReceipt,
     submissionReceipt,
     confirmationReceipt,
+    lockReceipt,
     liveMessage,
     writeProhibited,
     canEdit,
     canSubmit,
     canConfirm,
+    canLock,
     canSaveEdit,
     canConfirmSubmission,
     canConfirmReport,
+    canConfirmLock,
+    canContinueLockWithLatest,
+    lockVersionMatches,
+    lockBlockReason,
     roleCanConfirm,
+    roleCanLock,
     openEdit,
     openSubmit,
     openConfirm,
+    openLock,
     cancelActive,
     updateEditDraft,
     updateSubmissionNote,
     setSubmissionConfirmed,
     updateConfirmationNote,
     setConfirmationConfirmed,
+    updateLockNote,
+    setLockConfirmed,
     continueEditFromLatest,
     continueSubmissionFromLatest,
     continueConfirmationFromLatest,
+    continueLockWithLatest,
     saveEdit,
     submitForConfirmation,
     confirmReport,
+    confirmLock,
   };
 }
 

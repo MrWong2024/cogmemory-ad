@@ -9,7 +9,7 @@
 - `frontend\src\components\ui` 提供 `Button`、`Card`、`Badge` 三个无业务语义公共组件。
 - `frontend\src\features\auth` 提供 B1 最小认证接入能力。
 - `frontend\src\features\patients` 提供 B2 患者档案与评估访视最小业务闭环。
-- `frontend\src\features\assessments` 已推进至 B11；在 B3-B10 既有能力上新增 A21 报告受控编辑、提交待确认、doctor / admin 确认与安全并发恢复。
+- `frontend\src\features\assessments` 已推进至 B12；在 B3-B11 既有能力上新增 A22 confirmed 报告不可逆锁定、乐观并发与安全摘要 / 回执展示。
 - 当前组件遵循医疗系统 / 临床评估 / 低干扰 / 高可读性 / 冷静可信视觉基线。
 - B2-B11 未新增公共 Input 组件、第三方 UI 库、状态管理库、数据请求库或权限菜单组件。
 
@@ -527,6 +527,36 @@
 - `ClinicalReportPanel`：在既有 A20 展示后组合 WorkflowSummary、DraftEditor、SubmissionPanel 与 ConfirmationPanel；显示 action live / alert、pending / confirmed 文字边界，系统摘要与 clinician-owned 内容职责分离。
 - `AssessmentVisitExecutionPage`：从 PatientsWorkspaceContext 读取 roles，组合 `useClinicalReport` 与 `useClinicalReportWorkflow`；报告写入与量表初始化互斥，但不承载表单细节。
 - 无新路由、Provider 层级之外的全局状态、BFF、middleware 或第二次认证请求。
+
+### 6.56 B12 ClinicalReport 类型、API 与锁定草稿
+
+- `types/clinical-report.ts`：新增 `ClinicalReportLockSummary`、`LockClinicalReportRequest`、`LockClinicalReportReceipt`、`LockClinicalReportResponse`，并为 report 增加 `lock`；Date JSON 为 string / null。ClinicalReportStatus 保持六个既有状态，没有 locked。
+- `api/clinical-report-api.ts`：新增 `lockClinicalReport()`，路径 ID 编码、reportId MongoId 防御、credentials / no-store；Body 只重建 confirm、trim lockNote、expectedUpdatedAt，POST 不自动重试。新增五个 A22 错误 code 映射，不输出临床数据。
+- `lib/clinical-report-workflow-draft.ts`：新增 `ClinicalReportLockDraft` 与创建、校验、dirty、request、基于 latest 继续纯函数。锁定说明 3–2000 字，checkbox 必须为 true，stale 禁止提交；不生成文本、不使用浏览器时间、不持久化。
+- `lib/clinical-report-display.ts`：新增锁定生命周期、主事实判断、一致性警告、不可逆说明与锁定专用错误文案。status、lockedAt、lock、isFinal 独立表达，不计算或修改服务端事实。
+
+### 6.57 B12 `useClinicalReportWorkflow`
+
+- activeMode / writingAction 扩展 lock，继续复用同一 report、roles、onUnauthorized、onReportUpdated、refreshLatest 与 reportWriteBlocked；没有第二套 latest、认证或 report 合并逻辑。
+- 管理 lockDraft、lockError、lockReceipt、roleCanLock、canLock、dirty / version / stale、基于 latest 继续和 confirmLock。edit / submit / confirm / lock 同一时间只能有一个模式和一个写请求；lockNote dirty 纳入 beforeunload。
+- eligibility 同时校验 cognitive_assessment version 1、confirmed、mixed、passed、isFinal、完整 doctor / admin confirmation、lockedAt / lock / archivedAt / voidedAt 为空、服务端 updatedAt、Visit draft / in_progress / completed、doctor / admin、无其他写入 / 草稿与一致性警告。前端判断不替代后端 A22。
+- LOCK_CONFLICT / NOT_LOCKABLE 保留 lockNote、清 checkbox、标记 stale、最多自动 latest 一次且不重发 POST；用户明确基于最新报告继续后才更新 baseUpdatedAt。latest 已锁定时保留本地说明到明确关闭。
+- 成功完整应用 response.report、保存当前会话 receipt、清草稿并回 idle；alreadyLocked true / false 均是成功。lockedAt 非空后所有 B11 / B12 写入口关闭。
+
+### 6.58 `ClinicalReportLockPanel`
+
+- 路径：`frontend\src\features\assessments\components\ClinicalReportLockPanel.tsx`
+- 职责：doctor / admin 的“准备锁定报告 → lockNote + 不可逆说明 + checkbox → 确认不可逆锁定”两步内联交互；展示当前真实 status、isFinal、confirmation、updatedAt、字符计数、stale 与写入状态。
+- 角色：nurse / research_assistant / unknown 不显示可用按钮，仅显示需医生或管理员并保留只读摘要。后端 RolesGuard 是最终边界。
+- 可访问性：textarea / checkbox 有可见 label，错误 / stale 使用 alert，写入 / 成功由页面 polite live region 展示，按钮真实 disabled，小屏幕纵向排列。
+- 边界：不用 window.confirm 或弹窗库；不自动生成 / 预填 / 分析 lockNote；不实现 unlock、签名、归档、更正、作废、PDF / 下载、来源数据锁定或 AI。
+
+### 6.59 B12 报告展示组件与访视编排
+
+- `ClinicalReportWorkflowSummary`：新增持久 lock 摘要与当前 lockReceipt，展示弱化 lockId、锁定时间、锁定人 / 角色与“锁定流程说明”；不展示 operatorId、metadata、Schema 原始 lockedBy 或完整事件。
+- `ClinicalReportTechnicalSummary`：真实显示 `status=confirmed`、独立 lockedAt、服务端 isFinal 与锁定生命周期；锁定字段不一致时警告且不自行选择时间。
+- `ClinicalReportPanel`：组合 LockPanel，主状态额外显示“已锁定”；已锁定报告只读并明确锁定仅作用于 ClinicalReport，不等于归档 / 签名 / PDF。
+- `AssessmentVisitExecutionPage`：仅最小传入 Visit status；继续从 PatientsWorkspaceContext 复用 roles，并通过现有 writingAction 使报告 lock 与量表初始化互斥。未修改 useClinicalReport、认证 Context 或 B10 / B11 请求契约。
 
 ## 7. 后续同步规则
 

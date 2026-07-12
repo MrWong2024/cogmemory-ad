@@ -10,16 +10,16 @@
 
 本文档是 CogMemory AD 前端 handoff 文档入口，用于索引前端事实快照、设计基线、路由、API 对接、组件和验证手册。
 
-当前内容记录前端公共底座、B1-B10 既有闭环，以及 B11 报告草稿受控编辑、提交待确认与 doctor / admin 最终确认。当前仍未实现患者完整管理、评分锁定、认知域人工确认、报告退回 / 签名 / 锁定 / 归档 / 更正 / 作废 / PDF、AI、用户管理或权限菜单。
+当前内容记录前端公共底座、B1-B11 既有闭环，以及 B12 confirmed ClinicalReport 不可逆锁定、乐观并发与安全锁定摘要展示。当前仍未实现患者完整管理、评分锁定、认知域人工确认、报告退回 / 签名 / unlock / 归档 / 更正 / 作废 / PDF、AI、用户管理或权限菜单。
 
 ## 3. 当前状态
 
 - `frontend\` 根目录公共骨架配置与 `frontend\app` / `frontend\src` 公共底座已初始化。
-- 前端已推进到 B11，当前闭环为“逐题记录 → 媒体证据 → readiness → 实例提交 → 阶段性评分 → 人工评分 → 评分确认 → 认知域计算与展示 → 访视级规则化报告 → 受控编辑 → 提交待确认 → doctor / admin 最终确认”。
+- 前端已推进到 B12，当前闭环为“逐题记录 → 媒体证据 → readiness → 实例提交 → 阶段性评分 → 人工评分 → 评分确认 → 认知域计算与展示 → 访视级规则化报告 generate / latest → 受控 edit → submit → doctor / admin confirm → lock”。
 - 当前路由包含 `/login`、`/dashboard`、`/patients`、`/patients/new`、`/patients/[patientId]`、`/patients/[patientId]/visits/new`、`/patients/[patientId]/visits/[visitId]` 与 `/patients/[patientId]/visits/[visitId]/scale-instances/[scaleInstanceId]`。
 - 当前已新增 Auth 类型、Auth API Client、`useAuth()` 认证状态 Hook、`LoginForm` 和 `AuthDashboard`。
 - 当前已新增 patients feature：患者 / 访视公开类型、Patients API Client、展示与日期纯函数、认证工作区、患者列表 / 创建 / 详情及访视列表 / 创建组件。
-- 当前 assessments feature 已包含 A13-A21 安全公开类型、评估 / 媒体 / 评分 / 认知域 / 报告 API Client、展示纯函数与独立状态 Hook，以及逐题记录、媒体证据、正式提交、评分确认、认知域展示和访视级报告工作流组件。
+- 当前 assessments feature 已包含 A13-A22 安全公开类型、评估 / 媒体 / 评分 / 认知域 / 报告 API Client、展示纯函数与独立状态 Hook，以及逐题记录、媒体证据、正式提交、评分确认、认知域展示和访视级报告工作流组件。
 - 当前前端在既有访视详情页接入 A20 latest / generate；scope 由用户从同访视 completed / locked 实例中选择 1-10 项并二次确认，候选状态不替代后端评分、认知域与媒体校验。页面不自动生成、不重试 POST、不修改来源数据。
 - Auth、Patients 与 Assessment Execution API Client 均使用 `frontendEnv.apiBaseUrl`、`credentials: 'include'` 和 `cache: 'no-store'`。
 - 主登录态由后端 Session + HttpOnly Cookie 维护；前端不读取 Cookie，不保存 raw token、token hash 或 `passwordHash`，也不使用 localStorage / sessionStorage 保存认证凭证。
@@ -40,7 +40,8 @@
 - B10 在访视详情页安全展示 report patient / visit / scale / score / domain / evidence 快照、五段规则化 narrative、generation 与历史 confirmation；system_draft 不等于 AI 或医生结论，draft 尚未经医生确认。
 - B11 在同一访视详情页接入 A21 三个写接口，只编辑 doctorOpinion / recommendationText；editNote、submissionNote、confirmationNote 均由用户明确填写。三个请求使用服务端 updatedAt 乐观并发；冲突保留内存输入、刷新 latest、标记 stale 且不自动重发。PatientsWorkspaceContext 复用 Shell 已取得用户，不产生第二次认证请求。
 - pending_confirmation 完全只读等待，doctor / admin 才显示确认入口；nurse / research_assistant 只读。confirmed 使用服务端 isFinal 并只读，qualityStatus=passed 只表示确认流程质量标记通过，confirmed 不等于 locked。source=mixed 表示系统规则与临床人员补充并存，不表示 AI。
-- 当前仍未实现患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、批量或自动保存、评分锁定、认知域人工修改 / 确认 / 锁定 / 作废 / 重算、报告退回 / reject / reopen / withdraw / 签名 / 锁定 / 归档 / 更正 / 作废 / 重生成 / version 2 / PDF、AI、用户管理或权限菜单。
+- B12 在同一路由接入 A22 lock API：仅 doctor / admin 显示可用入口，请求只发送 confirm、lockNote、expectedUpdatedAt；冲突保留说明、刷新 latest 一次且不自动重发。status 继续为 confirmed，顶层 lockedAt 是主锁定事实，lock 是安全摘要，alreadyLocked 按正常成功处理；锁定只作用于 ClinicalReport。
+- 当前仍未实现患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、批量或自动保存、评分锁定、认知域人工修改 / 确认 / 锁定 / 作废 / 重算、报告退回 / reject / reopen / withdraw / 签名 / unlock / 归档 / 更正 / 作废 / 重生成 / version 2 / PDF、AI、用户管理或权限菜单。
 
 ## 4. 必读基础文档
 

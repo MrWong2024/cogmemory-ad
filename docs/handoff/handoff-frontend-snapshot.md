@@ -7,7 +7,7 @@
 ## 2. 当前工程状态
 
 - `frontend\` 根目录公共骨架配置与 `frontend\app` / `frontend\src` 公共底座已初始化。
-- 前端 B1-B10 已落地既有认证、患者 / 访视、执行、媒体、提交、评分确认、认知域与规则化报告能力；前端 B11 已在既有访视详情路由接入 A21 draft 编辑、提交待确认与 doctor / admin 最终确认。
+- 前端 B1-B11 已落地既有认证、患者 / 访视、执行、媒体、提交、评分确认、认知域与规则化报告确认能力；前端 B12 已在既有访视详情路由接入 A22 confirmed ClinicalReport 不可逆锁定、乐观并发和安全摘要展示。
 - 当前首页仍为公共占位，只增加登录页与工作台入口，不调用后端。
 - `/login` 提供账号密码登录，并在登录前通过 `GET /auth/me` 检查已有会话。
 - `/dashboard` 通过 `GET /auth/me` 验证会话、展示当前用户公开信息、提供患者档案入口和登出入口。
@@ -15,7 +15,7 @@
 - Patients API Client 真实调用 A12 五个患者 / 访视 API，支持分页、过滤、GET 请求取消、稳定错误映射和安全请求字段白名单。
 - Assessment Execution API Client 继续调用 A13 / A14 / A16；独立 Provisional Scoring、Cognitive Domain 与 Clinical Report API Client 分别调用 A17 / A18、A19 与 A20 / A21。写请求逐字段重建白名单且不自动重试，latest 使用各自独立 AbortController。
 - 当前视觉遵循医疗系统 / 临床评估 / 低干扰 / 高可读性 / 冷静可信口径，不继承 ReviewX 视觉风格。
-- 当前没有患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、批量或自动保存、评分 lock / void / rerun、认知域人工修改 / 确认 / 锁定 / 作废 / 重算、报告退回 / 签名 / lock / archive / correct / void / PDF / 重生成、AI、用户管理或权限菜单页面；B11 confirmed 不等于 locked，也不形成临床诊断结论。
+- 当前没有患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、批量或自动保存、评分 lock / void / rerun、认知域人工修改 / 确认 / 锁定 / 作废 / 重算、报告退回 / 签名 / unlock / archive / correct / void / PDF / 重生成、AI、用户管理或权限菜单页面；B12 只锁当前 ClinicalReport，不锁定来源对象，也不形成临床诊断结论。
 
 ## 3. 当前已确认前端事实
 
@@ -145,6 +145,12 @@
 - draft 只编辑 doctorOpinion / recommendationText；recommendation 空字符串可清除，editNote 每次打开为空。A20 五段规则摘要、scope、patient / visit / scale / score / domain / evidence 快照、版本、编号与状态字段不可编辑。
 - 提交要求 mixed、合法 doctorOpinion、quality 非 failed、无本地 dirty / 写请求，并使用 submissionNote 与 checkbox 二次确认；成功进入 pending_confirmation。pending 完全只读，显示 submission 摘要。doctor / admin 可用 confirmationNote 与 checkbox 最终确认；nurse / research_assistant 只读等待。
 - confirmed、archived、corrected、voided 不显示写入口；confirmed 的 isFinal / qualityStatus 使用服务端事实。qualityStatus=passed 只显示报告确认流程质量标记已通过，不表示患者正常；confirmed 不等于 locked。source=mixed 只表示系统规则内容和临床人员补充并存，不表示 AI。
+- B12 扩展 `ClinicalReport` 的 `lock` 安全摘要、lock request / receipt / response；全部 Date JSON 继续使用 string / null。ClinicalReportStatus 仍只有 draft、pending_confirmation、confirmed、archived、corrected、voided，没有新增 locked。
+- `lockClinicalReport()` 调用 A22 POST，Body 只重建 `{ confirm: true, lockNote: trim 后文本, expectedUpdatedAt }`；映射 confirmation required、not lockable、lock conflict、audit unavailable、lock failed，并复用 metadata unsupported、patient / visit / ownership 等错误。不自动重试，不记录请求、响应或 lockNote。
+- `useClinicalReportWorkflow` 扩展 lock mode、lock writingAction、角色 gate、React 内存 lock draft、dirty / stale、beforeunload、lockReceipt 与统一单写锁。只有 doctor / admin、confirmed / mixed / passed / isFinal、确认摘要完整、未锁定、访视 draft / in_progress / completed、无其他写入或本地草稿且状态一致时开放入口；nurse / research_assistant 只读。
+- 锁定区使用必填 3–2000 字 lockNote、字符计数、不可逆边界和可见 checkbox。expectedUpdatedAt 只来自打开锁定区时冻结的服务端 report.updatedAt；冲突保留 lockNote、清 checkbox、自动 latest 一次、标记 stale，不自动重发 POST 或覆盖。用户明确“基于最新报告继续”后才采用最新 updatedAt；若 latest 已锁定，保留本地说明直到用户关闭。
+- 锁定成功完整采用服务端 report，并在当前内存保存 lockReceipt；alreadyLocked=false 显示首次锁定成功，alreadyLocked=true 作为既有锁定幂等成功。status 仍为 confirmed，lockedAt 为主锁定事实，lock 为安全审计摘要，isFinal 直接使用服务端值且不作为锁定状态。锁定后 edit / submit / confirm / lock 全部只读。
+- `ClinicalReportWorkflowSummary` 展示持久 lock 摘要和当前会话 receipt；`ClinicalReportTechnicalSummary` 分开显示真实 status、lockedAt 与 isFinal。lockedAt 非空但 lock 为空时说明审计摘要不完整；lock 非空但 lockedAt 为空、或两个时间不一致时显示一致性警告并禁止锁定，不猜测字段。
 - 前端媒体公开类型没有定义 Storage 对象定位、校验和、原始文件名、内部患者关联或删除时间字段；页面也不显示这些字段。
 
 ## 4. 当前文件清单
@@ -240,6 +246,7 @@
 - `frontend\src\features\assessments\components\ClinicalReportSubmissionPanel.tsx`
 - `frontend\src\features\assessments\components\ClinicalReportConfirmationPanel.tsx`
 - `frontend\src\features\assessments\components\ClinicalReportWorkflowSummary.tsx`
+- `frontend\src\features\assessments\components\ClinicalReportLockPanel.tsx`
 - `frontend\src\features\assessments\components\ScaleExecutionGroupNavigation.tsx`
 - `frontend\src\features\assessments\components\ItemResponseEditor.tsx`
 - `frontend\src\features\assessments\components\ItemStepEditor.tsx`
@@ -348,14 +355,23 @@
 - E2E 与浏览器自动化未执行；浏览器手工联调未执行，A21 真实 HTTP、并发冲突、角色入口、窄屏与可访问性行为均待开发者使用脱敏数据验证。
 - 后端命令未执行。
 
+本次 B12 验证结果：
+
+- 未新增自动测试或测试框架；继续使用既有 ESLint、TypeScript 与生产构建验证。
+- `npm run lint`：通过。
+- `npm run typecheck`：通过，Next 16 既有动态路由类型生成成功。
+- `npm run build`：通过，生产构建包含既有访视详情动态路由；B12 未新增路由。
+- E2E 与浏览器自动化未执行；浏览器手工联调未执行，A22 真实 HTTP、角色入口、并发冲突、幂等、窄屏与可访问性均待开发者使用脱敏数据验证。
+- 后端命令未执行。
+
 ## 6. 当前未实现前端事实
 
 - `/dashboard` 已有患者档案入口，但不是完整医生工作台。
 - 患者编辑 / 删除 / 归档 / 合并尚未实现。
 - 访视编辑 / 删除 / 状态流转尚未实现；访视详情支持查看、初始化量表实例、进入 B4 执行页以及 B10 / B11 访视级报告闭环。
-- B4-B11 已支持安全题目记录、photo / handwriting 证据、完整性检查、正式实例提交、评分确认、认知域结果、规则化报告、受控编辑、提交待确认和医生 / 管理员确认；批量 / 自动保存、评分锁定、认知域人工确认仍未实现。
-- 报告退回、reject、reopen、withdraw、签名、锁定、归档、更正、作废、重生成、version 2、PDF / 下载、AI、用户管理、角色权限管理和权限菜单尚未实现。
-- 当前在既有 API 上新增 A20 latest / generate 与 A21 edit / submit / confirm；没有评分 lock / void / reopen / rerun、认知域修改 / 确认 / lock / void / rerun、其他报告写接口或 AI API 调用。
+- B4-B12 已支持安全题目记录、photo / handwriting 证据、完整性检查、正式实例提交、评分确认、认知域结果、规则化报告、受控编辑、提交待确认、医生 / 管理员确认与报告不可逆锁定；批量 / 自动保存、评分锁定、认知域人工确认仍未实现。
+- 报告退回、reject、reopen、withdraw、签名、unlock、归档、更正、作废、重生成、version 2、PDF / 下载、AI、用户管理、角色权限管理和权限菜单尚未实现。
+- 当前报告 API 为 A20 latest / generate、A21 edit / submit / confirm 与 A22 lock；没有评分 lock / void / reopen / rerun、认知域修改 / 确认 / lock / void / rerun、报告 unlock / archive / correct / void 或 AI API 调用。
 - 当前不包含路由级服务端认证中间件。
 
 ## 7. 后续同步规则

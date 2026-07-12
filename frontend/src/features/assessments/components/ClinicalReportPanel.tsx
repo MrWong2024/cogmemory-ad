@@ -12,6 +12,7 @@ import { ClinicalReportDraftEditor } from '@/src/features/assessments/components
 import { ClinicalReportSubmissionPanel } from '@/src/features/assessments/components/ClinicalReportSubmissionPanel';
 import { ClinicalReportConfirmationPanel } from '@/src/features/assessments/components/ClinicalReportConfirmationPanel';
 import { ClinicalReportWorkflowSummary } from '@/src/features/assessments/components/ClinicalReportWorkflowSummary';
+import { ClinicalReportLockPanel } from '@/src/features/assessments/components/ClinicalReportLockPanel';
 import { ClinicalReportScopeSelector } from '@/src/features/assessments/components/ClinicalReportScopeSelector';
 import { ClinicalReportSnapshotSummary } from '@/src/features/assessments/components/ClinicalReportSnapshotSummary';
 import { ClinicalReportTechnicalSummary } from '@/src/features/assessments/components/ClinicalReportTechnicalSummary';
@@ -25,6 +26,9 @@ import {
   clinicalReportStatusLabels,
   getClinicalReportApiErrorMessage,
   getClinicalReportFinalityWarning,
+  getClinicalReportLifecycleLabel,
+  getClinicalReportLockConsistencyWarning,
+  isClinicalReportLocked,
 } from '@/src/features/assessments/lib/clinical-report-display';
 import type {
   AvailableScaleOption,
@@ -71,6 +75,9 @@ export function ClinicalReportPanel({
   const finalityWarning = report
     ? getClinicalReportFinalityWarning(report.status, report.isFinal)
     : null;
+  const lockConsistencyWarning = report
+    ? getClinicalReportLockConsistencyWarning(report)
+    : null;
 
   return (
     <Card>
@@ -79,14 +86,19 @@ export function ClinicalReportPanel({
           <div>
             <CardTitle>访视级临床报告</CardTitle>
             <CardDescription>
-              在 A20 规则化报告基础上，支持 A21 受控编辑、提交待确认与 doctor / admin 最终确认。
+              在 A20 / A21 报告工作流基础上，支持 doctor / admin 执行 A22 不可逆锁定并安全展示锁定审计。
             </CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {report ? (
-              <Badge tone={report.status === 'draft' ? 'info' : 'neutral'}>
-                {clinicalReportStatusLabels[report.status]}
-              </Badge>
+              <>
+                <Badge tone={report.status === 'draft' ? 'info' : 'neutral'}>
+                  {clinicalReportStatusLabels[report.status]}
+                </Badge>
+                {isClinicalReportLocked(report) ? (
+                  <Badge tone="warning">已锁定</Badge>
+                ) : null}
+              </>
             ) : reportState.status === 'not_found' ? (
               <Badge>尚无报告</Badge>
             ) : reportState.status === 'forbidden' ? (
@@ -330,6 +342,9 @@ export function ClinicalReportPanel({
                 <Badge tone="info">
                   {clinicalReportStatusLabels[report.status]}
                 </Badge>
+                <Badge tone={isClinicalReportLocked(report) ? 'warning' : 'neutral'}>
+                  {getClinicalReportLifecycleLabel(report)}
+                </Badge>
                 <Badge>{clinicalReportSourceLabels[report.source]}</Badge>
               </div>
               <p className="mt-3 text-base font-semibold">
@@ -359,6 +374,15 @@ export function ClinicalReportPanel({
               </p>
             ) : null}
 
+            {lockConsistencyWarning ? (
+              <p
+                className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] px-4 py-3 text-base text-[var(--cma-warning)]"
+                role="alert"
+              >
+                {lockConsistencyWarning}
+              </p>
+            ) : null}
+
             <ClinicalReportSnapshotSummary report={report} />
             <ClinicalReportNarrative
               narrative={report.narrative}
@@ -374,11 +398,14 @@ export function ClinicalReportPanel({
               report={report}
               workflow={workflow}
             />
+            <ClinicalReportLockPanel report={report} workflow={workflow} />
             {['confirmed', 'archived', 'corrected', 'voided'].includes(
               report.status,
             ) ? (
               <p className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] px-4 py-3 text-base leading-7 text-[var(--cma-muted)]">
-                当前报告为只读状态。confirmed 表示已完成医生或管理员确认，但不表示报告、访视、评分、认知域或媒体已锁定，也不表示已归档或已生成 PDF。
+                {isClinicalReportLocked(report)
+                  ? '当前报告已经确认并锁定，status 仍为 confirmed。锁定只作用于当前 ClinicalReport，不锁定患者、访视、量表实例、评分、认知域或媒体；当前不提供 unlock，也不表示已归档、签名或生成 PDF。'
+                  : '当前报告为只读状态。confirmed 表示已完成医生或管理员确认，但尚未锁定；也不表示访视、评分、认知域或媒体已锁定，或报告已归档、签名、生成 PDF。'}
               </p>
             ) : null}
             <ClinicalReportTechnicalSummary
