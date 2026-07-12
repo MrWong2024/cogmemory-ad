@@ -8,6 +8,7 @@ import {
   readClinicalReportEditEvents,
   readClinicalReportSubmission,
 } from '../lib/clinical-report-review';
+import { resolveExistingClinicalReportLock } from '../lib/clinical-report-lock';
 import type { ClinicalReportResponse } from '../types/clinical-report-response.types';
 import type {
   ClinicalReportSummary,
@@ -168,6 +169,7 @@ export class ClinicalReportPublicMapper {
           }
         : null,
       lockedAt: safeDate(report.lockedAt),
+      lock: this.mapLock(report),
       archivedAt: safeDate(report.archivedAt),
       voidedAt: safeDate(report.voidedAt),
       voidReason: report.voidReason,
@@ -298,6 +300,29 @@ export class ClinicalReportPublicMapper {
       },
       submissionNote: submission.submissionNote,
     };
+  }
+
+  private mapLock(report: ClinicalReportSummary) {
+    try {
+      const lock = resolveExistingClinicalReportLock(report);
+      if (!lock) {
+        return null;
+      }
+      return {
+        lockId: lock.lockId,
+        lockedAt: new Date(lock.lockedAt.getTime()),
+        lockedBy: {
+          operatorId: lock.lockedBy.operatorId,
+          ...(lock.lockedBy.operatorName
+            ? { operatorName: lock.lockedBy.operatorName }
+            : {}),
+          operatorRole: lock.lockedBy.operatorRole,
+        },
+        ...(lock.lockNote ? { lockNote: lock.lockNote } : {}),
+      };
+    } catch {
+      return null;
+    }
   }
 
   private safeOperatorRole(value: unknown): ReportOperatorRole | undefined {

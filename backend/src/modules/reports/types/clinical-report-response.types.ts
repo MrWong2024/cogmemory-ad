@@ -133,6 +133,13 @@ export type ClinicalReportConfirmationResponse = {
   confirmationNote?: string;
 };
 
+export type ClinicalReportLockSummaryResponse = {
+  lockId: string | null;
+  lockedAt: Date | null;
+  lockedBy: ClinicalReportWorkflowActorResponse | null;
+  lockNote?: string;
+};
+
 export type ClinicalReportResponse = {
   id: string;
   reportCode: string;
@@ -154,6 +161,7 @@ export type ClinicalReportResponse = {
   submission: ClinicalReportSubmissionSummaryResponse | null;
   confirmation: ClinicalReportConfirmationResponse | null;
   lockedAt: Date | null;
+  lock: ClinicalReportLockSummaryResponse | null;
   archivedAt: Date | null;
   voidedAt: Date | null;
   voidReason?: string;
@@ -208,4 +216,17 @@ export type ConfirmClinicalReportReceiptResponse = {
 export type ConfirmClinicalReportResponse = {
   report: ClinicalReportResponse;
   confirmationReceipt: ConfirmClinicalReportReceiptResponse;
+};
+
+export type LockClinicalReportReceiptResponse = {
+  lockId: string | null;
+  lockedAt: Date;
+  lockedBy: ClinicalReportWorkflowActorResponse;
+  lockNote?: string;
+  alreadyLocked: boolean;
+};
+
+export type LockClinicalReportResponse = {
+  report: ClinicalReportResponse;
+  lockReceipt: LockClinicalReportReceiptResponse;
 };

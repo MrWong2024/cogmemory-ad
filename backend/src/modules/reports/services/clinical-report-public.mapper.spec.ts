@@ -184,6 +184,7 @@ describe('ClinicalReportPublicMapper', () => {
       }),
     );
     expect(response.isFinal).toBe(false);
+    expect(response.lock).toBeNull();
     expect(response.visitSnapshot).not.toHaveProperty('clinicalContext');
     expect(response.scoreSnapshots[0]).not.toHaveProperty('scoreResultId');
     expect(response.scoreSnapshots[0]).not.toHaveProperty('scoreDetails');
@@ -274,5 +275,58 @@ describe('ClinicalReportPublicMapper', () => {
     );
     expect(JSON.stringify(response)).not.toContain('must-not-leak');
     expect(response.confirmation).not.toHaveProperty('confirmedBy');
+  });
+
+  it('maps a safe A22 lock summary and never exposes raw lockedBy', () => {
+    const report = createReport();
+    report.status = 'confirmed';
+    report.lockedAt = now;
+    report.lockedBy = '507f1f77bcf86cd799439020';
+    if (report.metadata) {
+      report.metadata.a22Lock = {
+        version: 1,
+        lockId: '11111111-1111-4111-8111-111111111111',
+        lockedAt: now,
+        lockedBy: report.lockedBy,
+        lockedByName: 'A22 Test Doctor',
+        lockedByRole: 'doctor',
+        lockNote: '脱敏锁定说明',
+      };
+    }
+    const response = mapper.toPublicReport(report);
+    expect(response.lock).toEqual({
+      lockId: '11111111-1111-4111-8111-111111111111',
+      lockedAt: now,
+      lockedBy: {
+        operatorId: report.lockedBy,
+        operatorName: 'A22 Test Doctor',
+        operatorRole: 'doctor',
+      },
+      lockNote: '脱敏锁定说明',
+    });
+    expect(response).not.toHaveProperty('lockedBy');
+    expect(response.isFinal).toBe(true);
+  });
+
+  it('uses historical fallback and safely ignores invalid A22 metadata', () => {
+    const historical = createReport();
+    historical.status = 'archived';
+    historical.lockedAt = now;
+    historical.lockedBy = '507f1f77bcf86cd799439020';
+    expect(mapper.toPublicReport(historical).lock).toEqual({
+      lockId: null,
+      lockedAt: now,
+      lockedBy: {
+        operatorId: historical.lockedBy,
+        operatorRole: 'unknown',
+      },
+    });
+
+    if (historical.metadata) {
+      historical.metadata.a22Lock = { lockNote: 'must-not-leak' };
+    }
+    const invalid = mapper.toPublicReport(historical);
+    expect(invalid.lock).toBeNull();
+    expect(JSON.stringify(invalid)).not.toContain('must-not-leak');
   });
 });

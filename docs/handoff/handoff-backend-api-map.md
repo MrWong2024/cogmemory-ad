@@ -6,12 +6,12 @@
 
 ## 2. 当前状态
 
-- 当前报告公开 API 已扩展为 A20 generate / latest 与 A21 edit draft / submit confirmation / confirm 共五个接口。
+- 当前报告公开 API 已扩展为 A20 generate / latest、A21 edit draft / submit confirmation / confirm 与 A22 lock 共六个接口。
 - `AuthModule` 当前新增 `AuthController`，仅暴露最小公开认证 API 底座；主登录态仍为服务端 Session + HttpOnly Cookie，不采用 JWT 主登录态。
 - AuthModule 内部 session cookie 名称已统一为 `cogmemory_ad_session`，登录成功下发 HttpOnly Cookie，`SameSite=Lax`，`Path=/`，production 环境启用 `Secure`。
 - 当前没有 users controller，没有公开用户管理 API，没有注册、密码重置、角色权限管理、短信验证码、OAuth / SSO 或 JWT 登录 API。
 - A12 已新增 `PatientsController` 与 `AssessmentVisitsController`，形成第一组受保护临床业务 API；所有五个接口均显式绑定 `SessionAuthGuard`、`RolesGuard` 和 `@Roles('admin', 'doctor', 'nurse', 'research_assistant')`。
-- 当前已有实例 submission、评分、认知域与报告 generate / latest / edit / submit / confirm 最小闭环；仍没有认知域人工修改 / 确认 / 锁定 / 重算、报告退回 / 签名 / 锁定 / 归档 / 更正 / 作废 / PDF、SMS 或 AI / LLM 公开接口。
+- 当前已有实例 submission、评分、认知域与报告 generate / latest / edit / submit / confirm / lock 最小闭环；仍没有认知域人工修改 / 确认 / 锁定 / 重算、报告退回 / 签名 / unlock / 归档 / 更正 / 作废 / PDF、SMS 或 AI / LLM 公开接口。
 - 当前 API 事实以实际 Controller、DTO、response type 和对应单元 / E2E 测试为准。
 
 ## 3. 当前 API 清单
@@ -395,3 +395,18 @@
 - 响应 / audit / 幂等：HTTP 200 `ConfirmClinicalReportResponse`；首次写 Schema confirmation 与 `metadata.a21Confirmation` UUID，status=confirmed、qualityStatus=passed、isFinal=true、`alreadyConfirmed=false`。confirmed / archived / corrected 重复确认不写库；历史缺 A21 audit 时 confirmationId=null 并使用安全 Schema fallback。
 - 错误：`CLINICAL_REPORT_CONFIRMATION_REQUIRED / NOT_READY_FOR_CONFIRMATION / CONFIRMATION_CONFLICT / CONFIRMATION_AUDIT_UNAVAILABLE / CONFIRMATION_FAILED`，以及通用 ownership、patient / visit、voided、metadata 错误。
 - 边界：confirmed 不等于 locked；不设置 signatureText / lockedAt，不修改 narrative、快照或任何来源集合，不生成 PDF / AI。
+
+## A22 ClinicalReport irreversible lock
+
+### POST `/patients/:patientId/visits/:visitId/clinical-reports/:reportId/lock`
+
+- Guard / Roles / actor：类级显式 `SessionAuthGuard` + `RolesGuard`；方法级 `@Roles('doctor', 'admin')`；通过 `@CurrentUser()` 构建 actor，客户端不得提交 actor、lockId 或时间。未认证 401，system / nurse / research_assistant 403。
+- Params / body：复用 `ClinicalReportResourceParamDto`；`LockClinicalReportDto` 只接收 `confirm=true`、trim 3-2000 `lockNote`、strict ISO `expectedUpdatedAt`。status、source、quality、lockedAt / lockedBy、confirmation、narrative、snapshots、metadata、force / unlock / archive / PDF / lockSources 等额外字段由 whitelist 拒绝。
+- 首次资源 / readiness：Patient 必须 active；Visit 必须 draft / in_progress / completed；report 必须完整归属、cognitive_assessment、version 1、confirmed、mixed、passed，confirmation 与 A20 generation / A21 submission / confirmation audit 完整，快照 / 五段 narrative / doctorOpinion 完整，且锁定 / 归档 / 作废字段为空、无 correctionRecords。只验证 ClinicalReport 历史快照，不读取 ScoreResult、CognitiveDomainResult、MediaEvidence 或其他来源。
+- 原子更新：filter 包含 report / patient / visit ownership、type/version、confirmed/mixed/passed、lockedAt / lockedBy / archivedAt / archivedBy / voidedAt / voidedBy=null、空 correctionRecords、updatedAt=expectedUpdatedAt；单次 `findOneAndUpdate({ new: true, runValidators: true })` 只 `$set` lockedAt、lockedBy、metadata。未命中后重读；仍可锁但 updatedAt 改变返回 409 `CLINICAL_REPORT_LOCK_CONFLICT`。
+- 成功 / 状态：HTTP 200。status 继续 confirmed、qualityStatus 继续 passed、isFinal 继续 true；confirmation、reportCode / version、narrative、快照和来源资源不变。锁定是正交不可逆事实，不新增 locked status，也不等于 archive。
+- audit / metadata：`metadata.a22Lock` 只写一次，version=1，包含服务端 UUID lockId、lockedAt、认证 actor ID/name/doctor-or-admin role 与 trim lockNote；保留 A20/A21 和未知顶层 namespace，不创建 AuditLog、不记录来源内容。
+- 响应：`LockClinicalReportResponse { report, lockReceipt }`。report 保留 top-level lockedAt 并新增安全 `lock` 摘要；receipt 返回 lockId、lockedAt、安全 lockedBy actor、可选 lockNote、alreadyLocked。响应不含 metadata、Schema 原始 lockedBy、Session、currentUser、signatureText 或完整审计历史。
+- 幂等 / fallback：已锁定 confirmed / archived / corrected 返回 200、alreadyLocked=true，不写库，不要求 expectedUpdatedAt 匹配，不改变锁定事实。合法 a22Lock 返回原审计；历史只有完整 lockedAt + lockedBy 时 lockId=null、actor role=unknown，不猜 name / note；锁定字段残缺或 a22Lock 非法 / 不一致返回 409 `CLINICAL_REPORT_LOCK_AUDIT_UNAVAILABLE`。
+- 业务错误：400 `CLINICAL_REPORT_LOCK_CONFIRMATION_REQUIRED` / DTO validation；404 `PATIENT_NOT_FOUND` / `VISIT_NOT_FOUND` / `CLINICAL_REPORT_NOT_FOUND`；409 `PATIENT_NOT_ACTIVE`、`VISIT_NOT_EDITABLE`、`CLINICAL_REPORT_INCOMPLETE`、`CLINICAL_REPORT_VOIDED`、`CLINICAL_REPORT_METADATA_UNSUPPORTED`、`CLINICAL_REPORT_NOT_LOCKABLE`、`CLINICAL_REPORT_LOCK_CONFLICT`、`CLINICAL_REPORT_LOCK_AUDIT_UNAVAILABLE`；未知持久化失败 500 `CLINICAL_REPORT_LOCK_FAILED`。
+- 隐私 / 非目标：日志与错误不含 lockNote、confirmationNote、doctorOpinion、narrative、snapshots、metadata、患者标识、完整 actor、Cookie/token 或 Mongo 细节。没有 unlock / reopen / return / reject / archive / correct / void、transaction、Storage / PDF 或 AI。

@@ -290,6 +290,15 @@
 - 状态：draft edit 与 submit 分离，submit 进入 pending_confirmation；仅 doctor / admin 可从 pending_confirmation 显式 confirm。A21 不公开 pending → draft、reject、withdraw 或 reopen。
 - 最终性：确认后 status=confirmed、qualityStatus=passed、public isFinal=true；passed 只表示本阶段报告确认流程通过，不表示患者正常、诊断成立或来源结果锁定。
 - 锁定边界：confirmed 不等于 locked。A21 不设置 lockedAt / signatureText，不锁定 Patient、Visit、ScaleInstance、ItemResponse、ScoreResult、CognitiveDomainResult 或 MediaEvidence，不实现 archive / correct / void / PDF / AI。
+
+### D-032：ClinicalReport 锁定采用 confirmed 上的不可逆正交事实
+
+- 状态决策：`ClinicalReportStatus` 不增加 locked。首次锁定后 status 保持 confirmed、isFinal 保持 true，以 lockedAt + lockedBy 表达锁定事实；锁定不创建新 reportVersion，也不等于 archive。
+- 权限 / 输入：仅 doctor / admin 可显式 lock；客户端只提交 confirm、lockNote、expectedUpdatedAt，锁定 ID、时间和 actor 全由服务端生成。
+- 一致性：以 updatedAt 乐观并发和一次 ClinicalReport `findOneAndUpdate()` 同时写 lockedAt、lockedBy、metadata.a22Lock；不使用 transaction、分布式锁、跨集合补偿或 AuditLog。
+- 审计 / 幂等：a22Lock version=1 且只写一次，保留既有 metadata namespace；重复锁定只读返回原 lockId / time / actor / note，即使 expectedUpdatedAt 已旧也不重复写。历史完整 lockedAt + lockedBy 可受控 fallback，残缺或不一致审计拒绝猜测。
+- 来源边界：锁定对象仅为当前 confirmed ClinicalReport 历史快照，不锁 Patient、Visit、ScaleInstance、ItemResponse、ScoreResult、CognitiveDomainResult、MediaEvidence 或 Storage，不重读来源或自动修复报告。
+- 后续边界：unlock / reopen / return / reject、archive、correct、void、reportVersion=2、PDF 与 AI 均由后续独立阶段决定；A22 不提前实现。
 - 后续复查点：前端 B11 可接入受控编辑、提交和 doctor / admin 确认；退回、签名、锁定、来源锁定、更正、归档与 PDF 必须另行设计权限、审计与一致性策略。
 
 ## 4. 后续同步规则

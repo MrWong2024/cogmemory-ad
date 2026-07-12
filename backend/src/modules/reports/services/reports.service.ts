@@ -34,6 +34,7 @@ import {
   ReportVisitType,
 } from '../schemas/clinical-report.schema';
 import type { ClinicalReportConfirmationMetadata } from '../types/clinical-report-review.types';
+import type { LockClinicalReportInput } from '../types/clinical-report-lock.types';
 
 export type ReportPatientSnapshotSummary = {
   subjectCode?: string;
@@ -449,6 +450,52 @@ export class ReportsService {
               confirmationNote: input.confirmation.confirmationNote,
             },
             qualityStatus: 'passed',
+            metadata: input.metadata,
+          },
+        },
+        { new: true, runValidators: true },
+      )
+      .exec();
+    return updated ? this.mapReport(updated) : null;
+  }
+
+  async lockReportIfUnmodified(
+    input: LockClinicalReportInput,
+  ): Promise<ClinicalReportSummary | null> {
+    const ownership = this.normalizeClinicalReportOwnership(input);
+    if (
+      !ownership ||
+      !Number.isFinite(input.expectedUpdatedAt.getTime()) ||
+      !Number.isFinite(input.lockedAt.getTime())
+    ) {
+      return null;
+    }
+    const lockedBy = this.normalizeObjectId(input.lockedBy);
+    if (!lockedBy) {
+      return null;
+    }
+    const updated = await this.clinicalReportModel
+      .findOneAndUpdate(
+        {
+          ...ownership,
+          reportType: 'cognitive_assessment',
+          reportVersion: 1,
+          status: 'confirmed',
+          source: 'mixed',
+          qualityStatus: 'passed',
+          lockedAt: null,
+          lockedBy: null,
+          archivedAt: null,
+          archivedBy: null,
+          voidedAt: null,
+          voidedBy: null,
+          correctionRecords: { $size: 0 },
+          updatedAt: input.expectedUpdatedAt,
+        },
+        {
+          $set: {
+            lockedAt: input.lockedAt,
+            lockedBy,
             metadata: input.metadata,
           },
         },

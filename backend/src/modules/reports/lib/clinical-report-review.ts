@@ -109,7 +109,7 @@ function readStringArray(value: unknown, allowEmpty = false): string[] | null {
   return result;
 }
 
-function isA20GenerationMetadata(value: unknown): boolean {
+export function isClinicalReportA20GenerationMetadata(value: unknown): boolean {
   if (!isPlainRecord(value)) {
     return false;
   }
@@ -361,13 +361,13 @@ export function readClinicalReportConfirmation(
   };
 }
 
-function cloneAndValidateMetadata(
+export function cloneAndValidateClinicalReportMetadata(
   report: ClinicalReportSummary,
 ): Record<string, unknown> {
   if (!isPlainRecord(report.metadata)) {
     throw new ClinicalReportReviewRuleError('CLINICAL_REPORT_INCOMPLETE');
   }
-  if (!isA20GenerationMetadata(report.metadata.a20Generation)) {
+  if (!isClinicalReportA20GenerationMetadata(report.metadata.a20Generation)) {
     throw new ClinicalReportReviewRuleError('CLINICAL_REPORT_INCOMPLETE');
   }
   if (
@@ -393,7 +393,9 @@ function normalizedOptionalText(value: string | undefined): string | null {
   return normalized ? normalized : null;
 }
 
-function assertBaseReportComplete(report: ClinicalReportSummary): void {
+export function assertClinicalReportBaseComplete(
+  report: ClinicalReportSummary,
+): void {
   const narrative = report.narrative;
   if (
     report.reportType !== 'cognitive_assessment' ||
@@ -427,8 +429,8 @@ export function prepareClinicalReportDraftEdit(input: {
   editedAt: Date;
   actor: ClinicalReportWorkflowActor;
 }): ClinicalReportDraftEditUpdate {
-  assertBaseReportComplete(input.report);
-  const metadata = cloneAndValidateMetadata(input.report);
+  assertClinicalReportBaseComplete(input.report);
+  const metadata = cloneAndValidateClinicalReportMetadata(input.report);
   const currentNarrative = input.report.narrative;
   if (!currentNarrative) {
     throw new ClinicalReportReviewRuleError('CLINICAL_REPORT_INCOMPLETE');
@@ -505,8 +507,8 @@ export function prepareClinicalReportSubmission(input: {
   metadata: Record<string, unknown>;
   submission: ClinicalReportSubmissionMetadata;
 } {
-  assertBaseReportComplete(input.report);
-  const metadata = cloneAndValidateMetadata(input.report);
+  assertClinicalReportBaseComplete(input.report);
+  const metadata = cloneAndValidateClinicalReportMetadata(input.report);
   const doctorOpinion = normalizedOptionalText(
     input.report.narrative?.doctorOpinion,
   );
@@ -552,8 +554,8 @@ export function prepareClinicalReportConfirmation(input: {
   metadata: Record<string, unknown>;
   confirmation: ClinicalReportConfirmationMetadata;
 } {
-  assertBaseReportComplete(input.report);
-  const metadata = cloneAndValidateMetadata(input.report);
+  assertClinicalReportBaseComplete(input.report);
+  const metadata = cloneAndValidateClinicalReportMetadata(input.report);
   const doctorOpinion = normalizedOptionalText(
     input.report.narrative?.doctorOpinion,
   );

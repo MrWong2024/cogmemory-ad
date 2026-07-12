@@ -12,7 +12,7 @@
 - 本地前端默认 origin 为 `http://localhost:3002`。
 - 测试环境默认 `STORAGE_DRIVER=fake`。
 - 测试环境 `LLM_PROVIDER=stub`，不得依赖真实大模型调用。
-- 当前存在十个真实 HTTP E2E：A12 患者 / 访视、A13 初始化、A14 草稿、A15 媒体、A16 submission、A17 provisional scoring、A18 manual score review / confirmation、A19 cognitive domain computation、A20 clinical report draft 与 A21 clinical report review。
+- 当前存在十一个真实 HTTP E2E：A12 患者 / 访视、A13 初始化、A14 草稿、A15 媒体、A16 submission、A17 provisional scoring、A18 manual score review / confirmation、A19 cognitive domain computation、A20 clinical report draft、A21 clinical report review 与 A22 clinical report lock。
 - TypeScript `rootDir` 当前为 `.`，后端主入口预期 build 产物为 `dist/src/main.js`。
 - `tsBuildInfoFile` 保持 `./dist/tsconfig.build.tsbuildinfo`。
 - `dist` 与 `*.tsbuildinfo` 为生成物，不进入版本库。
@@ -140,8 +140,8 @@
   - `npm run build` 成功。
   - build 后 `dist/src/main.js` 已确认存在。
   - `npm test -- --runInBand` 成功。
-  - 当前单元测试为 63 个测试套件、549 个测试通过。
-  - 当前 E2E 为 10 个测试套件、46 个测试通过。
+  - 当前单元测试为 66 个测试套件、582 个测试通过。
+  - 当前全量 E2E 为 11 个测试套件、51 个测试通过。
   - 用户已补充验证 `npm run start:prod` 本地启动成功。
   - `dist/src/main.js` 与 `start:prod` 指向的 `./dist/src/main.js` 路径匹配。
 - 当前未验证命令：
@@ -256,6 +256,15 @@
 - `clinical-report-review.e2e-spec.ts` 使用真实 AppModule、Cookie / Session / Roles Guard、全局 DTO、隔离 MongoDB 和 fake Storage，经 A12-A20 HTTP 链创建脱敏报告，再验证 401 / system 403、edit whitelist / conflict / no-change、source=mixed、A20 narrative / snapshots 不变、submit / confirm 幂等、nurse / research_assistant 403、doctor 与 admin 确认、isFinal / passed、公开隐私边界和来源数据不变。
 - A21 E2E 启动前验证 `NODE_ENV=test`、数据库名含 `_test` 且非 dev / prod、Storage=fake、LLM / SMS=stub；测试数据使用 `SUBJ-A21-TEST-*` 和脱敏人工短句，不调用真实 OSS、SMS、LLM 或生产服务。测试启动前只清理 A21 runtime 数据及 test MMSE / MoCA catalog 孤儿，结束后保留有效 test catalog，避免污染后续套件。
 - A21 实际结果：新增 3 个单元测试套件并扩展既有 reports specs；全量 unit 为 63 个套件 / 549 个测试。新增 1 个真实 HTTP E2E 套件 / 3 个测试；全量 E2E 为 10 个套件 / 46 个测试通过。
+
+- A22 DTO / Controller：覆盖 confirm 业务必需、boolean、lockNote trim / 3-2000、strict expectedUpdatedAt、extra field 拒绝、类级 Session / Roles Guard、lock 方法级 doctor / admin、CurrentUser 与轻薄转发。
+- A22 纯函数：覆盖 confirmed readiness、draft / pending / archived / corrected / voided、quality / confirmation / A20-A21 audit / 快照完整性、updatedAt conflict、a22Lock 构建、metadata namespace 保留、输入不变、完整审计、历史 fallback、字段残缺与不一致 audit unavailable。
+- A22 ReportsService：Model mock 验证 ownership + cognitive_assessment/version 1 + confirmed/mixed/passed + unlocked/unarchived/unvoided/无 correction + updatedAt 原子 filter；update 只有 lockedAt / lockedBy / metadata，`new=true`、`runValidators=true`，不连接真实 MongoDB。
+- A22 Workflow：依赖均为 mock，覆盖 doctor/admin actor、ownership、active Patient、Visit 状态、首次成功、旧 updatedAt conflict、已锁定旧 expectedUpdatedAt 幂等、audit unavailable、持久化失败；没有 Scoring / CognitiveDomains / Media / Storage / AI 依赖或来源读取。
+- A22 public mapper：覆盖 lock=null、完整 a22Lock summary、历史 fallback、非法 / 不一致 metadata 安全忽略、isFinal 规则不变，以及 metadata / Schema 原始 lockedBy 排除。
+- `clinical-report-lock.e2e-spec.ts` 使用真实 AppModule、Cookie / Session / Roles Guard、全局 DTO、隔离 MongoDB 和 fake Storage；运行时确认 NODE_ENV=test、数据库名含 `_test` 且非 dev/prod、Storage=fake、LLM/SMS=stub。覆盖 401、system/nurse/research 403、锁定前 latest、confirm / whitelist、首次 doctor 锁定、confirmed / passed / isFinal 不变、lock summary / receipt、旧 updatedAt 幂等、状态 / Patient / Visit / ownership / conflict、报告内容不变、metadata 不公开、原始 lockedBy 不公开和 admin 锁定；另通过 A12-A21 全部公开 HTTP 链创建 confirmed report 后执行 A22 lock。
+- A22 测试数据使用 `SUBJ-A22-TEST-*` / `VISIT-A22-TEST-*`、脱敏账号和无临床含义短句；只定向清理 A22 数据，不调用真实 OSS、SMS、LLM、Storage 或生产服务，不创建 PDF / AI / AuditLog。
+- A22 当前实际结果：新增 3 个单元测试套件并扩展既有 reports specs；全量 unit 为 66 个套件 / 582 个测试通过。新增 A22 真实 HTTP E2E 为 1 个套件 / 5 个测试通过；全量 E2E 为 11 个套件 / 51 个测试通过。
 
 ## 7. 医疗与量表数据测试红线
 

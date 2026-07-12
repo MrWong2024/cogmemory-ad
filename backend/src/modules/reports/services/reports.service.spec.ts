@@ -812,6 +812,80 @@ describe('ReportsService', () => {
     );
   });
 
+  it('atomically locks by setting only lock facts and preserved metadata', async () => {
+    const reportId = new Types.ObjectId();
+    const patientId = new Types.ObjectId();
+    const visitId = new Types.ObjectId();
+    const lockedBy = new Types.ObjectId();
+    const expectedUpdatedAt = new Date('2026-07-12T08:00:00.000Z');
+    const lockedAt = new Date('2026-07-12T08:05:00.000Z');
+    const metadata = { a20Generation: {}, a22Lock: {} };
+    clinicalReportModel.findOneAndUpdate.mockReturnValue(
+      createExecQuery(
+        createReportFixture({
+          _id: reportId,
+          patientId,
+          assessmentVisitId: visitId,
+          status: 'confirmed',
+          source: 'mixed',
+          qualityStatus: 'passed',
+          lockedAt,
+          lockedBy,
+          metadata,
+        }),
+      ),
+    );
+
+    await service.lockReportIfUnmodified({
+      reportId: reportId.toString(),
+      patientId: patientId.toString(),
+      assessmentVisitId: visitId.toString(),
+      expectedUpdatedAt,
+      lockedAt,
+      lockedBy: lockedBy.toString(),
+      metadata,
+    });
+
+    expect(clinicalReportModel.findOneAndUpdate).toHaveBeenCalledWith(
+      {
+        _id: reportId,
+        patientId,
+        assessmentVisitId: visitId,
+        reportType: 'cognitive_assessment',
+        reportVersion: 1,
+        status: 'confirmed',
+        source: 'mixed',
+        qualityStatus: 'passed',
+        lockedAt: null,
+        lockedBy: null,
+        archivedAt: null,
+        archivedBy: null,
+        voidedAt: null,
+        voidedBy: null,
+        correctionRecords: { $size: 0 },
+        updatedAt: expectedUpdatedAt,
+      },
+      { $set: { lockedAt, lockedBy, metadata } },
+      { new: true, runValidators: true },
+    );
+  });
+
+  it('returns null for an atomic lock miss', async () => {
+    clinicalReportModel.findOneAndUpdate.mockReturnValue(createExecQuery(null));
+    const id = new Types.ObjectId().toString();
+    await expect(
+      service.lockReportIfUnmodified({
+        reportId: id,
+        patientId: new Types.ObjectId().toString(),
+        assessmentVisitId: new Types.ObjectId().toString(),
+        expectedUpdatedAt: new Date('2026-07-12T08:00:00.000Z'),
+        lockedAt: new Date('2026-07-12T08:05:00.000Z'),
+        lockedBy: new Types.ObjectId().toString(),
+        metadata: {},
+      }),
+    ).resolves.toBeNull();
+  });
+
   it('creates one complete version-one cognitive assessment document', async () => {
     const patientId = new Types.ObjectId().toString();
     const assessmentVisitId = new Types.ObjectId().toString();

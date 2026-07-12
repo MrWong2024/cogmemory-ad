@@ -19,14 +19,17 @@ import { ClinicalReportVisitParamDto } from '../dto/clinical-report-visit-param.
 import { ClinicalReportResourceParamDto } from '../dto/clinical-report-resource-param.dto';
 import { ConfirmClinicalReportDto } from '../dto/confirm-clinical-report.dto';
 import { GenerateClinicalReportDto } from '../dto/generate-clinical-report.dto';
+import { LockClinicalReportDto } from '../dto/lock-clinical-report.dto';
 import { SubmitClinicalReportForConfirmationDto } from '../dto/submit-clinical-report-for-confirmation.dto';
 import { UpdateClinicalReportDraftDto } from '../dto/update-clinical-report-draft.dto';
 import { ClinicalReportGenerationWorkflowService } from '../services/clinical-report-generation-workflow.service';
+import { ClinicalReportLockWorkflowService } from '../services/clinical-report-lock-workflow.service';
 import { ClinicalReportReviewWorkflowService } from '../services/clinical-report-review-workflow.service';
 import type {
   ConfirmClinicalReportResponse,
   ClinicalReportDetailResponse,
   GenerateClinicalReportResponse,
+  LockClinicalReportResponse,
   SubmitClinicalReportForConfirmationResponse,
   UpdateClinicalReportDraftResponse,
 } from '../types/clinical-report-response.types';
@@ -38,6 +41,7 @@ export class ClinicalReportsController {
   constructor(
     private readonly workflow: ClinicalReportGenerationWorkflowService,
     private readonly reviewWorkflow: ClinicalReportReviewWorkflowService,
+    private readonly lockWorkflow: ClinicalReportLockWorkflowService,
   ) {}
 
   @Post('generate')
@@ -106,6 +110,23 @@ export class ClinicalReportsController {
     @Body() input: ConfirmClinicalReportDto,
   ): Promise<ConfirmClinicalReportResponse> {
     return this.reviewWorkflow.confirmReport(
+      params.patientId,
+      params.visitId,
+      params.reportId,
+      currentUser,
+      input,
+    );
+  }
+
+  @Post(':reportId/lock')
+  @HttpCode(HttpStatus.OK)
+  @Roles('doctor', 'admin')
+  lockReport(
+    @Param() params: ClinicalReportResourceParamDto,
+    @CurrentUser() currentUser: AuthenticatedUserContext | undefined,
+    @Body() input: LockClinicalReportDto,
+  ): Promise<LockClinicalReportResponse> {
+    return this.lockWorkflow.lockClinicalReport(
       params.patientId,
       params.visitId,
       params.reportId,

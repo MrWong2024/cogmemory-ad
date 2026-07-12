@@ -15,6 +15,7 @@ import {
 } from './schemas/clinical-report.schema';
 import { ReportsService } from './services/reports.service';
 import { ClinicalReportGenerationWorkflowService } from './services/clinical-report-generation-workflow.service';
+import { ClinicalReportLockWorkflowService } from './services/clinical-report-lock-workflow.service';
 import { ClinicalReportPublicMapper } from './services/clinical-report-public.mapper';
 import { ClinicalReportReviewWorkflowService } from './services/clinical-report-review-workflow.service';
 
@@ -37,6 +38,7 @@ import { ClinicalReportReviewWorkflowService } from './services/clinical-report-
     ClinicalReportGenerationWorkflowService,
     ClinicalReportPublicMapper,
     ClinicalReportReviewWorkflowService,
+    ClinicalReportLockWorkflowService,
   ],
   exports: [ReportsService],
 })

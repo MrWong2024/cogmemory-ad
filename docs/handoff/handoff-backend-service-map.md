@@ -6,7 +6,7 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 Service / Provider 与 A12-A21 业务能力；A21 在 A20 生成边界外新增独立 Review Workflow、纯 review 函数和单文档原子写。
+- 当前存在公共底座 Service / Provider 与 A12-A22 业务能力；A21 在 A20 生成边界外提供独立 Review Workflow，A22 再提供独立 Lock Workflow、纯 lock 函数和单文档原子写。
 - 当前没有独立医生、SMS 或 LLM Service；A21 不调用来源计分 / 认知域 / 媒体 Service、Storage、PDF 或 AI 能力。
 
 ## 3. 当前 Service / Provider 清单
@@ -390,3 +390,12 @@
 - `ClinicalReportPublicMapper` 容错解析 A21 metadata：公开 doctorOpinion / recommendationText、最后编辑摘要、submission 摘要和 confirmationId；非法 metadata 安全忽略，不返回 metadata、事件数组、previous / next、signatureText。
 - 与 A20 边界：Generation Workflow 仍负责一次性创建规则化 system_draft 和历史来源快照；Review Workflow 只把当前 ClinicalReport 文档作为确认对象，不调用 A17-A20 来源读取 / 重算，不重生成 narrative。
 - 一致性边界是单 ClinicalReport 文档原子更新；没有 Mongo transaction、分布式锁、跨集合补偿、AuditLog 集合或循环依赖 / forwardRef。
+
+### A22 ClinicalReport lock workflow
+
+- `ClinicalReportLockWorkflowService` 只依赖 `PatientsService`、`AssessmentsService`、`ReportsService`、`ClinicalReportPublicMapper`；负责 ownership、认证 doctor/admin actor、已锁定幂等、首次 Patient / Visit 状态、strict expectedUpdatedAt、readiness、原子 miss 恢复与安全响应。
+- Workflow 不依赖 Scoring、CognitiveDomains、Media、Storage、LLM/AI，也不读取来源 Model；已锁定分支只验证资源归属和锁定事实，不重新执行首次锁定状态 / updatedAt 检查。
+- `clinical-report-lock.ts` 是无数据库纯函数，复用 A21 导出的 plain object、A20 generation、A21 submission / confirmation 与基础报告完整性规则；评估首次锁定 readiness，构建一次性 a22Lock，保留 metadata namespace，解析完整审计 / 历史 fallback，且不修改输入或 status。
+- `ReportsService.lockReportIfUnmodified()` 只负责 ObjectId 转换、完整条件 filter 和单文档 `findOneAndUpdate()`；update 只含 lockedAt、lockedBy、metadata，Mongoose timestamps 更新 updatedAt。没有 save、自动重试、transaction、分布式锁或来源更新。
+- `ClinicalReportPublicMapper` 无数据库访问，安全解析 a22Lock 为 `lock`；缺 namespace 且 Schema 锁定字段完整时返回受控 fallback，非法 / 不一致审计返回 lock=null；继续保留 top-level lockedAt，不返回 metadata 或原始 lockedBy。
+- 与 A20/A21 边界：A20 负责生成历史快照，A21 负责 clinician edit / submission / confirmation，A22 只锁定已经 confirmed 的当前 ClinicalReport 文档。A22 不修改 A20/A21 metadata、confirmation、narrative、快照、source / quality / status，不实现 unlock / archive / correct / void。

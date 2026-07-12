@@ -5,6 +5,7 @@ import { RolesGuard } from '../../auth/guards/roles.guard';
 import { SessionAuthGuard } from '../../auth/guards/session-auth.guard';
 import { PATIENT_WORKFLOW_ROLES } from '../../patients/patients.constants';
 import { ClinicalReportGenerationWorkflowService } from '../services/clinical-report-generation-workflow.service';
+import { ClinicalReportLockWorkflowService } from '../services/clinical-report-lock-workflow.service';
 import { ClinicalReportReviewWorkflowService } from '../services/clinical-report-review-workflow.service';
 import { ClinicalReportsController } from './clinical-reports.controller';
 
@@ -19,6 +20,7 @@ describe('ClinicalReportsController', () => {
     submitForConfirmation: jest.Mock;
     confirmReport: jest.Mock;
   };
+  let lockWorkflow: { lockClinicalReport: jest.Mock };
 
   beforeEach(async () => {
     workflow = {
@@ -30,6 +32,7 @@ describe('ClinicalReportsController', () => {
       submitForConfirmation: jest.fn(),
       confirmReport: jest.fn(),
     };
+    lockWorkflow = { lockClinicalReport: jest.fn() };
     const moduleRef = await Test.createTestingModule({
       controllers: [ClinicalReportsController],
       providers: [
@@ -40,6 +43,10 @@ describe('ClinicalReportsController', () => {
         {
           provide: ClinicalReportReviewWorkflowService,
           useValue: reviewWorkflow,
+        },
+        {
+          provide: ClinicalReportLockWorkflowService,
+          useValue: lockWorkflow,
         },
       ],
     })
@@ -57,6 +64,13 @@ describe('ClinicalReportsController', () => {
         ROLES_KEY,
         // eslint-disable-next-line @typescript-eslint/unbound-method
         ClinicalReportsController.prototype.confirmReport,
+      ),
+    ).toEqual(['doctor', 'admin']);
+    expect(
+      Reflect.getMetadata(
+        ROLES_KEY,
+        // eslint-disable-next-line @typescript-eslint/unbound-method
+        ClinicalReportsController.prototype.lockReport,
       ),
     ).toEqual(['doctor', 'admin']);
   });
@@ -135,13 +149,20 @@ describe('ClinicalReportsController', () => {
       confirmationNote: '脱敏确认说明',
       expectedUpdatedAt,
     };
+    const lock = {
+      confirm: true,
+      lockNote: '脱敏不可逆锁定说明',
+      expectedUpdatedAt,
+    };
     reviewWorkflow.updateDraft.mockResolvedValue({});
     reviewWorkflow.submitForConfirmation.mockResolvedValue({});
     reviewWorkflow.confirmReport.mockResolvedValue({});
+    lockWorkflow.lockClinicalReport.mockResolvedValue({});
 
     await controller.updateDraft(params, currentUser, edit);
     await controller.submitForConfirmation(params, currentUser, submit);
     await controller.confirmReport(params, currentUser, confirm);
+    await controller.lockReport(params, currentUser, lock);
 
     expect(reviewWorkflow.updateDraft).toHaveBeenCalledWith(
       params.patientId,
@@ -163,6 +184,13 @@ describe('ClinicalReportsController', () => {
       params.reportId,
       currentUser,
       confirm,
+    );
+    expect(lockWorkflow.lockClinicalReport).toHaveBeenCalledWith(
+      params.patientId,
+      params.visitId,
+      params.reportId,
+      currentUser,
+      lock,
     );
   });
 });

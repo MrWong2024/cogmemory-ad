@@ -17,16 +17,16 @@
 - `MediaModule` 当前在既有媒体证据 Schema / Service 上新增 A15 公开 `MediaEvidenceController`、工作流 Service、安全 mapper、图片与轨迹纯校验；提供题目下列表、multipart 上传、短期签名访问和作废四个接口。
 - `ScoringModule` 当前在计分结果快照 Schema、`ScoringService` 与 `summarizeItemScores()` 通用汇总基础上，提供 A17 阶段性 workflow、A18 `ScoreReviewWorkflowService`、纯评分 / 人工复核函数与安全 public mapper；公开 compute / latest / manual-review / confirm，不提供 lock、void、重跑、认知域或报告接口。
 - `CognitiveDomainsModule` 当前在认知域结果 Schema、内部读取和 `summarizeDomainScores()` 基础上，新增 A19 Controller、Workflow、确认评分纯映射 / 校验、安全 public mapper 与 runNo=1 创建能力；公开认知域 compute / latest，不提供人工修改、确认、锁定、作废、重算或报告接口。
-- `ReportsModule` 当前在 A20 generation / latest 上新增 A21 `ClinicalReportReviewWorkflowService`、纯 review 函数和三个条件原子更新，公开 draft edit、submit-confirmation 与 doctor / admin confirm；仍不提供退回、签名、锁定、归档、更正、作废、重生成、reportVersion=2、PDF 或 AI。
+- `ReportsModule` 当前在 A20 generation / latest、A21 review 上新增 A22 `ClinicalReportLockWorkflowService`、纯 lock 函数和锁定条件原子更新，公开 doctor / admin lock；仍不提供退回、签名、解锁、归档、更正、作废、重生成、reportVersion=2、PDF 或 AI。
 - `UsersModule` 当前只提供系统账号 `User` Schema 与内部 `UsersService` 读取、规范化和安全 mapper 底座，不提供公开用户管理接口。
 - `AuthModule` 当前提供服务端 `Session` Schema、内部 `AuthService`、基础认证上下文、`@Public()` / `@Roles()` / `@CurrentUser()` 装饰器、`SessionAuthGuard`、`RolesGuard` 与 `AuthController`；公开最小认证 API `POST /auth/login`、`POST /auth/logout`、`GET /auth/me`，且未注册全局 Guard。
 - OSS 业务上传服务、SMS Service、LLM Service 均未实现。
 - 本地默认后端端口为 `5002`。
 - 本地默认前端 origin 为 `http://localhost:3002`。
-- 当前报告接口增至五个；A12-A21 临床接口显式使用 `SessionAuthGuard` + `RolesGuard`，A21 confirm 仅允许 doctor / admin，其余 A21 写操作沿用四个患者工作流角色。
+- 当前报告接口增至六个；A12-A22 临床接口显式使用 `SessionAuthGuard` + `RolesGuard`，A21 confirm 与 A22 lock 仅允许 doctor / admin，其余 A21 写操作沿用四个患者工作流角色。
 - 已完成后端公共底座基础闭环本地验证：`npm install` 成功、`npm run build` 成功、`npm test -- --runInBand` 成功、`npm run start:prod` 启动成功。
-- 单元测试验证结果为 63 个测试套件通过、549 个测试通过。
-- A12-A21 真实 HTTP E2E 已在 `NODE_ENV=test` 和隔离 `cogmemory_ad_test` 数据库上通过：10 个测试套件、46 个测试通过；使用 fake / stub 外部服务配置和脱敏人工数据，并按各自测试前缀清理运行时数据。
+- 单元测试验证结果为 66 个测试套件通过、582 个测试通过。
+- A12-A22 全量真实 HTTP E2E 已在 `NODE_ENV=test` 和隔离 `cogmemory_ad_test` 数据库上通过：11 个测试套件、51 个测试通过；使用 fake / stub 外部服务配置和脱敏人工数据，A22 按 `SUBJ-A22-TEST-*` / `VISIT-A22-TEST-*` 前缀清理运行时数据。
 - 后端 TypeScript 编译根目录为 `.`，`outDir` 保持 `./dist`，因此 `src/main.ts` 编译后的主入口产物为 `dist/src/main.js`。
 - `package.json` 中 `start:prod` 保持指向 `./dist/src/main.js`，当前 build 产物路径已与该启动路径对齐。
 - `tsBuildInfoFile` 保持 `./dist/tsconfig.build.tsbuildinfo`；`dist` 与 `*.tsbuildinfo` 均作为生成物处理，不作为项目源文件纳入版本库。
@@ -43,7 +43,7 @@
 - development / test 默认 `STORAGE_DRIVER=fake`，production 默认 `STORAGE_DRIVER=oss`。
 - OSS、SMS、LLM 配置均为占位或示例口径，不包含真实密钥。
 - A15 媒体业务上传接口已通过既有 fake / OSS Storage abstraction 实现；SMS Service 与 LLM Service 仍未实现，未新增 Storage interface、driver 或配置。
-- 当前 A12-A20 已开放患者 / 访视、目录 / 初始化、执行草稿、媒体证据、submission readiness / submit、阶段性评分 compute / latest、单题 manual-review、ScoreResult confirm、认知域 compute / latest 与访视级报告 draft generate / latest API。仍无用户管理、患者 / 访视编辑、批量 / 自动保存、媒体批量 / 分片 / 直传 / 物理删除 / 原子替换、评分 lock / void / 重跑、认知域人工修改 / 确认 / 锁定 / 重算、报告编辑 / 医生确认 / PDF、疾病诊断或 AI。
+- 当前 A12-A22 已开放患者 / 访视、目录 / 初始化、执行草稿、媒体证据、submission readiness / submit、阶段性评分 compute / latest、单题 manual-review、ScoreResult confirm、认知域 compute / latest，以及报告 generate / latest / edit / submit / confirm / lock API。仍无用户管理、患者 / 访视编辑、批量 / 自动保存、媒体批量 / 分片 / 直传 / 物理删除 / 原子替换、评分 lock / void / 重跑、认知域人工修改 / 确认 / 锁定 / 重算、报告 unlock / 归档 / 更正 / 作废 / PDF、疾病诊断或 AI。
 - 当前 `start:prod` 与 TypeScript build 主入口产物路径均指向 `dist/src/main.js`，并已完成本地启动验证。
 - 本次仅使用指定外部 GitHub commit `b302b8af7b7ac9cc558939dc1b38ace0976c65b3` 作为后端公共底座来源，不继承其业务事实。
 
@@ -205,6 +205,13 @@
 - confirm 仅 doctor / admin，显式要求 confirmationNote；成功写 Schema confirmation 与 `a21Confirmation`，进入 confirmed、qualityStatus=passed、isFinal=true。confirmed / archived / corrected 重复确认幂等；历史报告缺少 A21 namespace 时可从 Schema confirmation 安全回退，confirmedAt 缺失则拒绝猜测。
 - 三个写接口均要求严格 ISO `expectedUpdatedAt`，原子 filter 包含 report / patient / visit ownership、type、version、允许状态和 updatedAt；单次 `findOneAndUpdate({ new: true, runValidators: true })` 完成。没有自动覆盖、自动重试、transaction、分布式锁或 AuditLog 写入。
 - confirmed 与 locked 明确分离：A21 不设置 lockedAt / signatureText，不修改 Patient、Visit、ScaleInstance、ItemResponse、ScoreResult、CognitiveDomainResult、MediaEvidence，不调用来源 Service、Storage、LLM 或 PDF。
+- A22 新增唯一公开接口 `POST /patients/:patientId/visits/:visitId/clinical-reports/:reportId/lock`。Body 仅允许 `confirm=true`、trim 3-2000 `lockNote` 与 strict ISO `expectedUpdatedAt`；Controller 复用 `ClinicalReportResourceParamDto`、`SessionAuthGuard`、`RolesGuard`、`@CurrentUser()`，方法级 `@Roles('doctor', 'admin')`。
+- 首次锁定要求 active Patient、draft / in_progress / completed Visit，以及完整 confirmed / mixed / passed version 1 cognitive assessment report。报告自身必须具有完整 confirmation、A20 generation、A21 submission / confirmation、patient / visit / scale / score / domain 快照、五段 narrative 与合法 doctorOpinion，且未锁定、未归档、未作废、无 correctionRecords；不重读或验证来源当前状态。
+- `ReportsService.lockReportIfUnmodified()` 的单次 `findOneAndUpdate({ new: true, runValidators: true })` filter 包含完整 ownership、type/version、confirmed/mixed/passed、锁定 / 归档 / 作废空值、空 correctionRecords 与 expectedUpdatedAt；update 只写 lockedAt、lockedBy、metadata。没有 transaction、自动重试或来源写入。
+- `metadata.a22Lock` version 固定 1，保存服务端 randomUUID lockId、服务端 lockedAt、认证 actor ID / name / doctor-or-admin role 与 trim lockNote；写入时创建新 metadata 根对象，保留 a20Generation、a21Edits / Submission / Confirmation 和未知顶层 namespace，不修改原引用。
+- public response 保留 top-level lockedAt，并新增 `lock` 安全摘要；lock response 为 `{ report, lockReceipt }`，receipt 含 lockId、lockedAt、安全 actor、可选 lockNote、alreadyLocked。绝不返回 metadata 或 Schema 原始 lockedBy。
+- 重复锁定不写库、不改 updatedAt / lockId / 时间 / actor / note，即使请求携带旧 expectedUpdatedAt 也返回 alreadyLocked=true。合法 a22Lock 返回完整审计；历史 lockedAt + lockedBy 且无 a22Lock 时 lockId=null、role=unknown 安全 fallback；字段残缺或 a22Lock 不一致返回 `CLINICAL_REPORT_LOCK_AUDIT_UNAVAILABLE`。
+- 锁定后 status 仍为 confirmed、qualityStatus 仍为 passed、isFinal 仍为 true，confirmation、reportCode、reportVersion、narrative、快照与来源对象全部不变。A22 不新增 locked status，不实现 unlock / reopen / return / reject / archive / correct / void，不生成 PDF / Storage 文件，不调用 AI / LLM。
 
 ## 10. 当前 users / auth 认证、用户、会话与角色权限底座
 
