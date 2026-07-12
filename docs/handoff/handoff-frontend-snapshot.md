@@ -7,15 +7,15 @@
 ## 2. 当前工程状态
 
 - `frontend\` 根目录公共骨架配置与 `frontend\app` / `frontend\src` 公共底座已初始化。
-- 前端 B1-B9 已落地既有认证、患者 / 访视、执行、媒体、提交、评分确认与认知域能力；前端 B10 已在既有访视详情路由接入 A20 latest / generate，完成明确 scope、二次确认、规则化报告草稿生成与完整安全展示。
+- 前端 B1-B10 已落地既有认证、患者 / 访视、执行、媒体、提交、评分确认、认知域与规则化报告能力；前端 B11 已在既有访视详情路由接入 A21 draft 编辑、提交待确认与 doctor / admin 最终确认。
 - 当前首页仍为公共占位，只增加登录页与工作台入口，不调用后端。
 - `/login` 提供账号密码登录，并在登录前通过 `GET /auth/me` 检查已有会话。
 - `/dashboard` 通过 `GET /auth/me` 验证会话、展示当前用户公开信息、提供患者档案入口和登出入口。
 - `/patients/**` 通过轻量认证工作区复用 `useAuth()`；当前包含患者列表 / 创建、患者详情 / 访视列表、访视创建、访视详情 / 量表实例初始化，以及量表实例施测执行页面。
 - Patients API Client 真实调用 A12 五个患者 / 访视 API，支持分页、过滤、GET 请求取消、稳定错误映射和安全请求字段白名单。
-- Assessment Execution API Client 继续调用 A13 / A14 / A16；独立 Provisional Scoring、Cognitive Domain 与 Clinical Report API Client 分别调用 A17 / A18、A19 与 A20。写请求逐字段重建白名单且不自动重试，latest 使用各自独立 AbortController。
+- Assessment Execution API Client 继续调用 A13 / A14 / A16；独立 Provisional Scoring、Cognitive Domain 与 Clinical Report API Client 分别调用 A17 / A18、A19 与 A20 / A21。写请求逐字段重建白名单且不自动重试，latest 使用各自独立 AbortController。
 - 当前视觉遵循医疗系统 / 临床评估 / 低干扰 / 高可读性 / 冷静可信口径，不继承 ReviewX 视觉风格。
-- 当前没有患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、批量或自动保存、评分 lock / void / rerun、认知域人工修改 / 确认 / 锁定 / 作废 / 重算、报告编辑 / 医生确认 / PDF / 重生成、AI、用户管理或权限菜单页面；B10 规则草稿不形成临床诊断结论。
+- 当前没有患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、批量或自动保存、评分 lock / void / rerun、认知域人工修改 / 确认 / 锁定 / 作废 / 重算、报告退回 / 签名 / lock / archive / correct / void / PDF / 重生成、AI、用户管理或权限菜单页面；B11 confirmed 不等于 locked，也不形成临床诊断结论。
 
 ## 3. 当前已确认前端事实
 
@@ -100,7 +100,7 @@
 - 登录 `401` 在 UI 统一显示“账号或密码错误，或账号不可用。”，不区分具体安全失败原因。
 - 主登录态使用后端 Session + HttpOnly Cookie；前端不读取 Cookie，不使用 JWT，不保存 raw token、token hash、`passwordHash` 或其他认证凭证。
 - 密码仅在表单提交瞬间作为登录请求体使用，不进入 React state、URL、日志或持久化存储。
-- 当前未实现前端权限矩阵；公开响应中的 roles 只用于 `/dashboard` 展示摘要，不驱动权限菜单或页面权限控制。
+- 当前未实现完整前端权限矩阵；`PatientsWorkspaceContext` 复用 Shell 已取得的安全 AuthUser，B11 仅使用 roles 控制 doctor / admin 确认入口可见性，不产生第二次 `/auth/me`，后端 RolesGuard 仍是最终权限边界。
 - 本阶段未新增 Next middleware、全局 Provider、全局状态管理库或 BFF 代理。
 - 患者创建请求不含 status、externalRefs、metadata 或时间戳；访视创建请求不含 operatorSnapshot、clinicalContext、metadata、状态或状态时间。
 - 页面不展示 externalRefs、metadata 或 clinicalContext；所有患者 / 访视错误使用稳定中文 UI 文案，不直接展示后端 message。
@@ -138,7 +138,13 @@
 - B10 scope 只来自当前访视实例；completed / locked 为前端候选，draft / in_progress / voided 不可选择。初始不自动勾选，数量限制 1-10、拒绝重复 / 非法 ID，并按 scaleCode / instanceNo / id 稳定顺序发送；没有为 readiness 扇出 A17 / A19 请求。
 - generate 只发送 `confirm: true` 与 `primaryScaleInstanceIds` 白名单，必须完成内联说明与可见 checkbox；生成期间 scope 与量表初始化提交禁用，POST 不自动重试。alreadyGenerated 作为成功回执；scope conflict / voided / generation conflict 自动 latest 一次但不重发 POST。
 - 报告展示覆盖 patient / visit 快照、scaleTraces、score / domain / evidence 快照、五段 narrative、generation 和历史 confirmation。null 不补为 0，不从当前档案补快照，不计算 scorePercent、不跨域求和、不调用媒体预览，不显示内部来源 ID、对象键、scoreDetails、clinicalContext、metadata 或 AI draft。
-- 页面明确 reportVersion 1 scope 固定、system_draft 是系统规则化草稿、draft 尚未经医生确认、本次未使用 AI、认知域未独立确认以及无阈值 / 风险 / 诊断 / 治疗建议；不提供编辑、确认、签名、锁定、归档、更正、作废、重生成、version 2、PDF 或下载。
+- 页面明确 reportVersion 1 scope 固定、system_draft 是系统规则化草稿、本次未使用 AI、认知域未独立确认以及无阈值 / 风险 / 自动诊断。B11 只开放 clinician-owned 文本受控编辑、提交与确认；仍不提供签名、锁定、归档、更正、作废、重生成、version 2、PDF 或下载。
+- B11 扩展 ClinicalReport 类型以接收 doctorOpinion、recommendationText、editorial、submission、confirmationId 与 edit / submission / confirmation receipts；所有 Date JSON 继续使用 string / null，不公开 metadata、完整事件、previousValues / nextValues 或 signatureText。
+- Clinical Report API Client 新增 updateClinicalReportDraft、submitClinicalReportForConfirmation、confirmClinicalReport。PATCH 白名单为 doctorOpinion、可选 recommendationText、editNote、expectedUpdatedAt；两个 POST 分别只发送 confirm、对应 note、expectedUpdatedAt。reportId 校验 MongoId，全部路径 ID 编码，写请求不自动重试。
+- `useClinicalReportWorkflow` 管理单活动表单、单一写锁、React 内存 edit / submission / confirmation 草稿、dirty / stale、三类 action error / receipt 与 beforeunload。expectedUpdatedAt 只来自服务端 report.updatedAt；冲突保留输入、自动 latest 一次、标记 stale，不自动覆盖或重发，用户明确基于最新报告继续后才更新基线。
+- draft 只编辑 doctorOpinion / recommendationText；recommendation 空字符串可清除，editNote 每次打开为空。A20 五段规则摘要、scope、patient / visit / scale / score / domain / evidence 快照、版本、编号与状态字段不可编辑。
+- 提交要求 mixed、合法 doctorOpinion、quality 非 failed、无本地 dirty / 写请求，并使用 submissionNote 与 checkbox 二次确认；成功进入 pending_confirmation。pending 完全只读，显示 submission 摘要。doctor / admin 可用 confirmationNote 与 checkbox 最终确认；nurse / research_assistant 只读等待。
+- confirmed、archived、corrected、voided 不显示写入口；confirmed 的 isFinal / qualityStatus 使用服务端事实。qualityStatus=passed 只显示报告确认流程质量标记已通过，不表示患者正常；confirmed 不等于 locked。source=mixed 只表示系统规则内容和临床人员补充并存，不表示 AI。
 - 前端媒体公开类型没有定义 Storage 对象定位、校验和、原始文件名、内部患者关联或删除时间字段；页面也不显示这些字段。
 
 ## 4. 当前文件清单
@@ -170,6 +176,7 @@
 - `frontend\src\features\patients\api\patients-api.ts`
 - `frontend\src\features\patients\lib\patient-display.ts`
 - `frontend\src\features\patients\components\PatientsWorkspaceShell.tsx`
+- `frontend\src\features\patients\components\PatientsWorkspaceContext.tsx`
 - `frontend\src\features\patients\components\PatientsListPage.tsx`
 - `frontend\src\features\patients\components\PatientCreateForm.tsx`
 - `frontend\src\features\patients\components\PatientDetailPage.tsx`
@@ -200,8 +207,10 @@
 - `frontend\src\features\assessments\lib\provisional-scoring-display.ts`
 - `frontend\src\features\assessments\lib\cognitive-domain-display.ts`
 - `frontend\src\features\assessments\lib\clinical-report-display.ts`
+- `frontend\src\features\assessments\lib\clinical-report-workflow-draft.ts`
 - `frontend\src\features\assessments\hooks\useCognitiveDomainResult.ts`
 - `frontend\src\features\assessments\hooks\useClinicalReport.ts`
+- `frontend\src\features\assessments\hooks\useClinicalReportWorkflow.ts`
 - `frontend\src\features\assessments\components\AssessmentVisitExecutionPage.tsx`
 - `frontend\src\features\assessments\components\ScaleInstanceList.tsx`
 - `frontend\src\features\assessments\components\ScaleInitializationPanel.tsx`
@@ -227,6 +236,10 @@
 - `frontend\src\features\assessments\components\ClinicalReportEvidenceList.tsx`
 - `frontend\src\features\assessments\components\ClinicalReportNarrative.tsx`
 - `frontend\src\features\assessments\components\ClinicalReportTechnicalSummary.tsx`
+- `frontend\src\features\assessments\components\ClinicalReportDraftEditor.tsx`
+- `frontend\src\features\assessments\components\ClinicalReportSubmissionPanel.tsx`
+- `frontend\src\features\assessments\components\ClinicalReportConfirmationPanel.tsx`
+- `frontend\src\features\assessments\components\ClinicalReportWorkflowSummary.tsx`
 - `frontend\src\features\assessments\components\ScaleExecutionGroupNavigation.tsx`
 - `frontend\src\features\assessments\components\ItemResponseEditor.tsx`
 - `frontend\src\features\assessments\components\ItemStepEditor.tsx`
@@ -326,14 +339,23 @@
 - E2E 与浏览器自动化未执行；浏览器手工联调未执行，A20 真实 HTTP、全部错误分支、窄屏、键盘与可访问性行为均待开发者使用脱敏数据验证。
 - 后端命令未执行。
 
+本次 B11 验证结果：
+
+- 未新增自动测试或测试框架；当前前端无既有测试框架，本阶段按边界使用 ESLint、TypeScript 与生产构建验证。
+- `npm run lint`：通过。
+- `npm run typecheck`：通过，Next 16 既有动态路由类型生成成功。
+- `npm run build`：通过，生产构建包含既有访视详情动态路由；B11 未新增路由。
+- E2E 与浏览器自动化未执行；浏览器手工联调未执行，A21 真实 HTTP、并发冲突、角色入口、窄屏与可访问性行为均待开发者使用脱敏数据验证。
+- 后端命令未执行。
+
 ## 6. 当前未实现前端事实
 
 - `/dashboard` 已有患者档案入口，但不是完整医生工作台。
 - 患者编辑 / 删除 / 归档 / 合并尚未实现。
-- 访视编辑 / 删除 / 状态流转尚未实现；访视详情支持查看、初始化量表实例、进入 B4 执行页以及 B10 访视级报告草稿生成 / 查看。
-- B4-B10 已支持安全题目记录、photo / handwriting 证据、完整性检查、正式实例提交、评分确认、认知域结果和访视级规则化报告草稿；批量 / 自动保存、评分锁定、认知域人工确认仍未实现。
-- 报告编辑、医生确认、签名、锁定、归档、更正、作废、重生成、version 2、PDF / 下载、AI、用户管理、角色权限管理和权限菜单尚未实现。
-- 当前在既有 API 上新增 A20 latest / generate；没有评分 lock / void / reopen / rerun、认知域修改 / 确认 / lock / void / rerun、其他报告写接口或 AI API 调用。
+- 访视编辑 / 删除 / 状态流转尚未实现；访视详情支持查看、初始化量表实例、进入 B4 执行页以及 B10 / B11 访视级报告闭环。
+- B4-B11 已支持安全题目记录、photo / handwriting 证据、完整性检查、正式实例提交、评分确认、认知域结果、规则化报告、受控编辑、提交待确认和医生 / 管理员确认；批量 / 自动保存、评分锁定、认知域人工确认仍未实现。
+- 报告退回、reject、reopen、withdraw、签名、锁定、归档、更正、作废、重生成、version 2、PDF / 下载、AI、用户管理、角色权限管理和权限菜单尚未实现。
+- 当前在既有 API 上新增 A20 latest / generate 与 A21 edit / submit / confirm；没有评分 lock / void / reopen / rerun、认知域修改 / 确认 / lock / void / rerun、其他报告写接口或 AI API 调用。
 - 当前不包含路由级服务端认证中间件。
 
 ## 7. 后续同步规则

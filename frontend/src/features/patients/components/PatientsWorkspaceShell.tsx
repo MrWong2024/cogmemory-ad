@@ -14,6 +14,7 @@ import {
   CardTitle,
 } from '@/src/components/ui/Card';
 import { useAuth } from '@/src/features/auth/hooks/use-auth';
+import { PatientsWorkspaceUserProvider } from '@/src/features/patients/components/PatientsWorkspaceContext';
 
 const navLinkClassName =
   'inline-flex min-h-11 items-center rounded-md px-3 py-2 text-base font-semibold text-[var(--cma-text-strong)] transition-colors hover:bg-[var(--cma-primary-soft)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cma-ring)]';
@@ -101,7 +102,8 @@ export function PatientsWorkspaceShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-[var(--cma-page)]">
+    <PatientsWorkspaceUserProvider user={user}>
+      <div className="min-h-screen bg-[var(--cma-page)]">
       <header className="border-b border-[var(--cma-line)] bg-[var(--cma-surface)]">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-5 py-4 sm:px-8 lg:px-10">
           <div className="flex flex-wrap items-center gap-2">
@@ -133,6 +135,7 @@ export function PatientsWorkspaceShell({ children }: { children: ReactNode }) {
       <main className="px-5 py-8 sm:px-8 lg:px-10">
         <div className="mx-auto max-w-7xl">{children}</div>
       </main>
-    </div>
+      </div>
+    </PatientsWorkspaceUserProvider>
   );
 }

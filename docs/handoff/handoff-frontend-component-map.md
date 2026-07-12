@@ -9,9 +9,9 @@
 - `frontend\src\components\ui` 提供 `Button`、`Card`、`Badge` 三个无业务语义公共组件。
 - `frontend\src\features\auth` 提供 B1 最小认证接入能力。
 - `frontend\src\features\patients` 提供 B2 患者档案与评估访视最小业务闭环。
-- `frontend\src\features\assessments` 在 B3-B8 既有能力上新增 B9 认知域结果计算、重叠归因说明、安全展示与原题定位。
+- `frontend\src\features\assessments` 已推进至 B11；在 B3-B10 既有能力上新增 A21 报告受控编辑、提交待确认、doctor / admin 确认与安全并发恢复。
 - 当前组件遵循医疗系统 / 临床评估 / 低干扰 / 高可读性 / 冷静可信视觉基线。
-- B2-B9 未新增公共 Input 组件、第三方 UI 库、状态管理库、数据请求库或权限菜单组件。
+- B2-B11 未新增公共 Input 组件、第三方 UI 库、状态管理库、数据请求库或权限菜单组件。
 
 ## 3. 公共 UI 组件
 
@@ -90,7 +90,15 @@
 - 路径：`frontend\src\features\patients\components\PatientsWorkspaceShell.tsx`
 - 职责：为 `/patients/**` 提供 `useAuth()` 认证 loading / unauthenticated / error / authenticated 工作区，展示工作台、患者档案、当前用户和登出入口
 - 输入：`children`
-- 边界：不读取 Cookie，不新增 Provider / middleware，不基于前端角色构造权限菜单；后端 Guard 是最终安全边界
+- B11：在 authenticated 分支用 `PatientsWorkspaceUserProvider` 提供已经由 `useAuth()` 取得的安全 AuthUser；不产生第二次 `/auth/me`。
+- 边界：不读取 Cookie，不新增 middleware，不构造完整权限菜单；Context 只供现有工作区后代复用安全用户，后端 Guard 是最终安全边界
+
+### 5.1.1 `PatientsWorkspaceContext`
+
+- 路径：`frontend\src\features\patients\components\PatientsWorkspaceContext.tsx`
+- 职责：轻量提供 / 读取 Shell 已取得的 AuthUser，字段仅为 id、accountName、displayName、roles、permissions、可选 userType。
+- B11 用法：`AssessmentVisitExecutionPage` 只读取 roles 判断 doctor / admin 确认入口可见性；不根据 displayName、permissions 或报告确认记录猜角色。
+- 边界：不请求 Auth API，不读取 Cookie，不持久化用户，不替代后端 RolesGuard。
 
 ### 5.2 `PatientsListPage`
 
@@ -448,7 +456,7 @@
 ### 6.45 `useClinicalReport`
 
 - 路径：`frontend\src\features\assessments\hooks\useClinicalReport.ts`
-- 职责：独立管理 A20 idle / loading / not_found / loaded / forbidden / error、latest AbortController、访视级内存 scope、1-10 / 唯一性 / 当前实例校验、内联二次确认、generate 写锁、alreadyGenerated、错误与 conflict 后单次 latest。
+- 职责：独立管理 A20 idle / loading / not_found / loaded / forbidden / error、latest AbortController、访视级内存 scope、1-10 / 唯一性 / 当前实例校验、内联二次确认、generate 写锁、alreadyGenerated、错误与 conflict 后单次 latest；B11 新增统一 `applyClinicalReport(report)` 供 generate / latest / edit / submit / confirm 完整替换报告。
 - 自动行为：访视详情成功后只自动 GET latest；没有轮询、GET 自动重试、自动 generate、POST 重试或 A17-A19 readiness 扇出。路由身份 / enabled 变化重置；实例变化只修剪失效 scope 并要求重新核对。
 - 边界：Hook 不渲染 JSX、不计算评分 / 比例 / 认知域、不读取原始作答、不生成 narrative、不修改 Visit / ScaleInstance 或其他来源数据，也不持久化 scope。
 
@@ -464,14 +472,61 @@
 - `ClinicalReportScoreList`：展示服务端分值 / 范围 / percent / status / quality / summary；null 不写成 0，不补算 percent，不解释阈值或患者状态。
 - `ClinicalReportDomainList`：复用 B9 `getCognitiveDomainTitle()`，展示 score / max / percent / weighted / count / review / summary，并固定说明重叠归因、跨域不可求和、结果未独立确认与 percent 非诊断概率。
 - `ClinicalReportEvidenceList`：只展示证据类型、采集方式、quality 和安全摘要；不显示图片 / 手写、预览 / 下载、内部 ID 或对象键，不调用媒体 API。
-- `ClinicalReportNarrative`：以普通文本只读展示 chief / score / domain / evidence / limitations 五段；不使用 HTML 注入、不编辑、不自行拼接正文。
+- `ClinicalReportNarrative`：以普通文本只读展示 chief / score / domain / evidence / limitations 五段；另设 clinician-owned 分区按状态只读展示 doctorOpinion / recommendationText。系统五段不可编辑，不使用 HTML 注入，不自行生成、改写或解释临床人员文本。
 - `ClinicalReportTechnicalSummary`：展示 generation 审计、历史 confirmation 和原生 details 技术摘要 / scaleTraces；合法 scaleInstanceId 才链接既有单量表路由，不重点展示内部报告 id 或操作者 id。
 
 ### 6.48 B10 类型、API 与 display 纯函数
 
-- `types/clinical-report.ts`：严格覆盖 A20 公开 enum / response，Date JSON 为 string / null；不定义内部来源 ID 数组、对象键、scoreDetails、clinicalContext、metadata、AI draft、signature 或原始作答。
-- `api/clinical-report-api.ts`：只提供 latest / generate；credentials / no-store、Path 编码、GET AbortSignal、完整 A20 错误映射；generate 再次 trim / lowercase / MongoId / 1-10 / unique 校验并只构造 confirm + IDs 白名单，POST 不重试。
-- `lib/clinical-report-display.ts`：集中维护 type / status / source / quality / patient / visit / operator / confirmation / score / evidence / capture / error 中文标签，日期 / 有限数值 / 百分比安全格式、status / isFinal 一致性和报告边界说明；不计算任何报告事实或诊断解释。
+- `types/clinical-report.ts`：现严格覆盖 A20 / A21 公开 enum / response、clinician-owned narrative、editorial / submission / confirmationId 与三类回执；Date JSON 为 string / null，不定义内部来源 ID 数组、对象键、scoreDetails、clinicalContext、metadata、AI draft、signature 或原始作答。
+- `api/clinical-report-api.ts`：提供 latest / generate 与 B11 update draft / submit / confirm；credentials / no-store、Path 编码、GET AbortSignal、完整 A20 / A21 错误映射；所有写请求重建白名单且不重试。
+- `lib/clinical-report-display.ts`：集中维护 type / status / source / quality / patient / visit / operator / confirmation / score / evidence / capture / error 中文标签，日期 / 有限数值 / 百分比安全格式、status / isFinal 一致性和报告边界说明；mixed 明确非 AI，passed 不解释为患者正常；不计算任何报告事实或诊断解释。
+
+### 6.49 `useClinicalReportWorkflow`
+
+- 路径：`frontend\src\features\assessments\hooks\useClinicalReportWorkflow.ts`
+- 职责：管理 activeMode idle / edit / submit / confirm、单一 writingAction、三类 React 内存草稿、dirty / stale、action error、三类当前会话 receipt、liveMessage、角色 gate 与 open / cancel / update / save 方法。
+- 并发：表单打开时冻结 reportId / updatedAt；报告版本变化或受控 conflict 保留输入、清除提交 / 确认 checkbox、标记 stale、自动 latest 一次且不重发。用户明确基于最新报告继续后才更新 baseUpdatedAt。
+- 生命周期：edit 变化或任一 note 非空时注册 beforeunload；路由 patientId / visitId 改变时清理内存草稿与回执。刷新页面后未保存内容消失是预期行为。
+- 权限：roles 精确包含 doctor / admin 才开放确认入口；unknown、nurse、research_assistant 不开放。403 保留报告与本地草稿，后端 Guard 仍是最终边界。
+- 边界：不渲染 JSX，不读取 Cookie，不持久化状态，不自动保存 / 提交 / 确认，不自动重试写请求，不分析或生成临床文本。
+
+### 6.50 ClinicalReport workflow draft 纯函数
+
+- 路径：`frontend\src\features\assessments\lib\clinical-report-workflow-draft.ts`
+- 职责：创建 edit / submission / confirmation 草稿，trim 规范化、长度校验、实际正文变化 / dirty 判断、安全 ID 判断、严格请求对象构造与 beforeunload 条件。
+- 校验：doctorOpinion 3-4000；recommendationText 空或 3-4000；editNote 3-1000；submissionNote / confirmationNote 3-2000。recommendationText 空字符串保留用于清除。
+- 边界：不修改服务端对象，不生成 doctorOpinion / recommendationText，不计算诊断，不使用 Date 对象作为 JSON，不写浏览器持久化存储。
+
+### 6.51 `ClinicalReportDraftEditor`
+
+- 路径：`frontend\src\features\assessments\components\ClinicalReportDraftEditor.tsx`
+- 职责：只编辑 doctorOpinion、recommendationText、editNote；展示可见 label、字符计数、updatedAt 基线、stale 说明、最新服务端 clinician 文本、保存 / 放弃 / 基于最新报告继续。
+- 保存：校验失败、无正文变化、stale、版本不匹配、写入中或报告不再可编辑时 disabled。成功使用完整 report，保存 editReceipt、清空本次表单，不调用 latest。
+- 边界：不渲染系统五段 textarea，不编辑快照 / scope / 编号 / 状态，不自动生成或改写文本。
+
+### 6.52 `ClinicalReportSubmissionPanel`
+
+- 路径：`frontend\src\features\assessments\components\ClinicalReportSubmissionPanel.tsx`
+- 职责：mixed draft readiness、当前 clinician 文本复核、submissionNote、可见 checkbox 与两步内联提交；明确提交后 pending_confirmation、不可继续编辑、提交不等于确认 / 锁定 / PDF / AI。
+- 幂等 / 并发：alreadySubmitted 正常成功；冲突保留 note、清 checkbox、stale、latest 一次且不重发。pending 不显示重复提交入口。
+
+### 6.53 `ClinicalReportConfirmationPanel`
+
+- 路径：`frontend\src\features\assessments\components\ClinicalReportConfirmationPanel.tsx`
+- 职责：pending_confirmation 下 doctor / admin 两步内联确认；展示 clinician 文本和 submission 摘要，要求 confirmationNote 与 checkbox。其他角色只读显示等待说明。
+- 成功：使用服务端 status / qualityStatus / isFinal，保存 confirmationReceipt 并进入只读；alreadyConfirmed 正常成功。confirmed 不等于 locked，不生成签名 / PDF / AI。
+
+### 6.54 `ClinicalReportWorkflowSummary`
+
+- 路径：`frontend\src\features\assessments\components\ClinicalReportWorkflowSummary.tsx`
+- 职责：展示 editorial 最新编辑摘要、submission、confirmationId / 确认摘要，以及当前会话 edit / submission / confirmation receipts。
+- 安全边界：operatorId 不作为主业务字段；不显示完整事件、历史 editNote、previous / next、metadata 或 signatureText；技术追溯号弱化显示。
+
+### 6.55 B11 `ClinicalReportPanel` / `AssessmentVisitExecutionPage`
+
+- `ClinicalReportPanel`：在既有 A20 展示后组合 WorkflowSummary、DraftEditor、SubmissionPanel 与 ConfirmationPanel；显示 action live / alert、pending / confirmed 文字边界，系统摘要与 clinician-owned 内容职责分离。
+- `AssessmentVisitExecutionPage`：从 PatientsWorkspaceContext 读取 roles，组合 `useClinicalReport` 与 `useClinicalReportWorkflow`；报告写入与量表初始化互斥，但不承载表单细节。
+- 无新路由、Provider 层级之外的全局状态、BFF、middleware 或第二次认证请求。
 
 ## 7. 后续同步规则
 

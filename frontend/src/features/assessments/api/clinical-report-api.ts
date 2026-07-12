@@ -1,9 +1,15 @@
 import { frontendEnv } from '@/src/lib/env';
 
 import type {
+  ConfirmClinicalReportRequest,
+  ConfirmClinicalReportResponse,
   ClinicalReportDetailResponse,
   GenerateClinicalReportRequest,
   GenerateClinicalReportResponse,
+  SubmitClinicalReportForConfirmationRequest,
+  SubmitClinicalReportForConfirmationResponse,
+  UpdateClinicalReportDraftRequest,
+  UpdateClinicalReportDraftResponse,
 } from '@/src/features/assessments/types/clinical-report';
 
 export type ClinicalReportApiErrorKind =
@@ -30,6 +36,22 @@ export type ClinicalReportApiErrorKind =
   | 'clinical_report_scope_conflict'
   | 'clinical_report_generation_conflict'
   | 'clinical_report_generation_failed'
+  | 'clinical_report_metadata_unsupported'
+  | 'clinical_report_not_editable'
+  | 'clinical_report_edit_no_changes'
+  | 'clinical_report_edit_audit_limit_reached'
+  | 'clinical_report_edit_conflict'
+  | 'clinical_report_edit_failed'
+  | 'clinical_report_submission_confirmation_required'
+  | 'clinical_report_not_ready_for_submission'
+  | 'clinical_report_submission_conflict'
+  | 'clinical_report_submission_audit_unavailable'
+  | 'clinical_report_submission_failed'
+  | 'clinical_report_confirmation_required'
+  | 'clinical_report_not_ready_for_confirmation'
+  | 'clinical_report_confirmation_conflict'
+  | 'clinical_report_confirmation_audit_unavailable'
+  | 'clinical_report_confirmation_failed'
   | 'service_unavailable'
   | 'unknown';
 
@@ -107,6 +129,33 @@ function mapHttpError(
     CLINICAL_REPORT_GENERATION_CONFLICT:
       'clinical_report_generation_conflict',
     CLINICAL_REPORT_GENERATION_FAILED: 'clinical_report_generation_failed',
+    CLINICAL_REPORT_METADATA_UNSUPPORTED:
+      'clinical_report_metadata_unsupported',
+    CLINICAL_REPORT_NOT_EDITABLE: 'clinical_report_not_editable',
+    CLINICAL_REPORT_EDIT_NO_CHANGES: 'clinical_report_edit_no_changes',
+    CLINICAL_REPORT_EDIT_AUDIT_LIMIT_REACHED:
+      'clinical_report_edit_audit_limit_reached',
+    CLINICAL_REPORT_EDIT_CONFLICT: 'clinical_report_edit_conflict',
+    CLINICAL_REPORT_EDIT_FAILED: 'clinical_report_edit_failed',
+    CLINICAL_REPORT_SUBMISSION_CONFIRMATION_REQUIRED:
+      'clinical_report_submission_confirmation_required',
+    CLINICAL_REPORT_NOT_READY_FOR_SUBMISSION:
+      'clinical_report_not_ready_for_submission',
+    CLINICAL_REPORT_SUBMISSION_CONFLICT:
+      'clinical_report_submission_conflict',
+    CLINICAL_REPORT_SUBMISSION_AUDIT_UNAVAILABLE:
+      'clinical_report_submission_audit_unavailable',
+    CLINICAL_REPORT_SUBMISSION_FAILED: 'clinical_report_submission_failed',
+    CLINICAL_REPORT_CONFIRMATION_REQUIRED:
+      'clinical_report_confirmation_required',
+    CLINICAL_REPORT_NOT_READY_FOR_CONFIRMATION:
+      'clinical_report_not_ready_for_confirmation',
+    CLINICAL_REPORT_CONFIRMATION_CONFLICT:
+      'clinical_report_confirmation_conflict',
+    CLINICAL_REPORT_CONFIRMATION_AUDIT_UNAVAILABLE:
+      'clinical_report_confirmation_audit_unavailable',
+    CLINICAL_REPORT_CONFIRMATION_FAILED:
+      'clinical_report_confirmation_failed',
   };
 
   if (backendCode && businessKinds[backendCode]) {
@@ -161,6 +210,18 @@ async function readJson<T>(response: Response): Promise<T> {
 
 function buildClinicalReportPath(patientId: string, visitId: string): string {
   return `/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/clinical-reports`;
+}
+
+function buildClinicalReportResourcePath(
+  patientId: string,
+  visitId: string,
+  reportId: string,
+): string {
+  const normalizedReportId = reportId.trim().toLowerCase();
+  if (!mongoIdPattern.test(normalizedReportId)) {
+    throw new ClinicalReportApiError('validation', 400);
+  }
+  return `${buildClinicalReportPath(patientId, visitId)}/${encodeURIComponent(normalizedReportId)}`;
 }
 
 export function normalizeClinicalReportScopeIds(ids: string[]): string[] {
@@ -231,4 +292,73 @@ export async function generateClinicalReport(
     },
   );
   return readJson<GenerateClinicalReportResponse>(response);
+}
+
+export async function updateClinicalReportDraft(
+  patientId: string,
+  visitId: string,
+  reportId: string,
+  input: UpdateClinicalReportDraftRequest,
+): Promise<UpdateClinicalReportDraftResponse> {
+  const requestBody: UpdateClinicalReportDraftRequest = {
+    doctorOpinion: input.doctorOpinion.trim(),
+    ...(input.recommendationText === undefined
+      ? {}
+      : { recommendationText: input.recommendationText.trim() }),
+    editNote: input.editNote.trim(),
+    expectedUpdatedAt: input.expectedUpdatedAt,
+  };
+  const response = await clinicalReportFetch(
+    `${buildClinicalReportResourcePath(patientId, visitId, reportId)}/draft`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+    },
+  );
+  return readJson<UpdateClinicalReportDraftResponse>(response);
+}
+
+export async function submitClinicalReportForConfirmation(
+  patientId: string,
+  visitId: string,
+  reportId: string,
+  input: SubmitClinicalReportForConfirmationRequest,
+): Promise<SubmitClinicalReportForConfirmationResponse> {
+  const requestBody: SubmitClinicalReportForConfirmationRequest = {
+    confirm: true,
+    submissionNote: input.submissionNote.trim(),
+    expectedUpdatedAt: input.expectedUpdatedAt,
+  };
+  const response = await clinicalReportFetch(
+    `${buildClinicalReportResourcePath(patientId, visitId, reportId)}/submit-confirmation`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+    },
+  );
+  return readJson<SubmitClinicalReportForConfirmationResponse>(response);
+}
+
+export async function confirmClinicalReport(
+  patientId: string,
+  visitId: string,
+  reportId: string,
+  input: ConfirmClinicalReportRequest,
+): Promise<ConfirmClinicalReportResponse> {
+  const requestBody: ConfirmClinicalReportRequest = {
+    confirm: true,
+    confirmationNote: input.confirmationNote.trim(),
+    expectedUpdatedAt: input.expectedUpdatedAt,
+  };
+  const response = await clinicalReportFetch(
+    `${buildClinicalReportResourcePath(patientId, visitId, reportId)}/confirm`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+    },
+  );
+  return readJson<ConfirmClinicalReportResponse>(response);
 }

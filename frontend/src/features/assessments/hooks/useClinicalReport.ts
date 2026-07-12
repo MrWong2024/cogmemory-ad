@@ -52,6 +52,7 @@ export type UseClinicalReportValue = {
   setConfirmationChecked: (checked: boolean) => void;
   confirmGenerate: () => Promise<void>;
   refreshLatest: () => Promise<ClinicalReport | null>;
+  applyClinicalReport: (report: ClinicalReport) => void;
 };
 
 const mongoIdPattern = /^[a-f\d]{24}$/;
@@ -140,6 +141,12 @@ export function useClinicalReport({
     setConfirmationCheckedState(false);
   }, []);
 
+  const applyClinicalReport = useCallback((nextReport: ClinicalReport) => {
+    setReport(nextReport);
+    setStatus('loaded');
+    setLatestError(null);
+  }, []);
+
   const refreshLatest = useCallback(async () => {
     latestControllerRef.current?.abort();
     const controller = new AbortController();
@@ -156,8 +163,7 @@ export function useClinicalReport({
         return null;
       }
 
-      setReport(response.report);
-      setStatus('loaded');
+      applyClinicalReport(response.report);
       setSelectedScaleInstanceIds([]);
       closeConfirmation();
       setLiveMessage('最新临床报告已加载。');
@@ -193,7 +199,7 @@ export function useClinicalReport({
         latestControllerRef.current = null;
       }
     }
-  }, [closeConfirmation, onUnauthorized, patientId, visitId]);
+  }, [applyClinicalReport, closeConfirmation, onUnauthorized, patientId, visitId]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -401,9 +407,7 @@ export function useClinicalReport({
         return;
       }
 
-      setReport(response.report);
-      setStatus('loaded');
-      setLatestError(null);
+      applyClinicalReport(response.report);
       setAlreadyGeneratedReceipt(response.alreadyGenerated);
       setSelectedScaleInstanceIds([]);
       closeConfirmation();
@@ -462,6 +466,7 @@ export function useClinicalReport({
     }
   }, [
     canPrepareGenerate,
+    applyClinicalReport,
     closeConfirmation,
     confirmationChecked,
     confirmationOpen,
@@ -495,5 +500,6 @@ export function useClinicalReport({
     setConfirmationChecked,
     confirmGenerate,
     refreshLatest,
+    applyClinicalReport,
   };
 }

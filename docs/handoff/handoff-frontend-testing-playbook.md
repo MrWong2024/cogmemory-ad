@@ -6,12 +6,12 @@
 
 ## 2. 当前状态
 
-- 前端公共底座与 B1-B9 既有闭环已落地；B10 访视级规则化报告草稿生成与安全展示已落地。
+- 前端公共底座与 B1-B10 既有闭环已落地；B11 报告受控编辑、提交待确认与 doctor / admin 最终确认已落地。
 - `frontend\package.json` 已存在，自动验证命令以其中真实脚本为准。
-- B2-B10 不新增测试代码、测试框架、E2E 或第三方依赖。
+- B2-B11 不新增测试代码、测试框架、E2E 或第三方依赖。
 - 当前自动验证覆盖三个认证 API、A12 五个患者 / 访视 API、A13 三个评估初始化前置 API、A14 两个执行草稿 API、A15 四个媒体证据 API、A16 两个提交 API 与 A17 两个阶段性评分 API 的前端类型、调用代码和页面构建；真实 HTTP / 浏览器联调仍需手工验证。
 
-## 3. B1 / B2 / B3 / B4 / B5 / B6 / B7 / B8 / B9 / B10 自动验证命令
+## 3. B1 / B2 / B3 / B4 / B5 / B6 / B7 / B8 / B9 / B10 / B11 自动验证命令
 
 在 `frontend` 目录、且既有 `node_modules` 存在时执行：
 
@@ -114,6 +114,16 @@
 - 未新增自动测试：当前前端没有既有测试框架，任务明确不新增测试框架或浏览器 E2E；本阶段使用 lint、typecheck 与生产构建验证。
 - E2E / 浏览器自动化：未执行。
 - 浏览器手工验证：未执行，以下 B10 场景均为待验证。
+- 后端命令：未执行。
+
+本次 B11 验证结果：
+
+- `npm run lint`：通过。
+- `npm run typecheck`：通过，Next 16 既有动态路由类型生成成功且 TypeScript 无错误。
+- `npm run build`：通过，生产构建包含既有 `/patients/[patientId]/visits/[visitId]`，B11 未新增路由。
+- 未新增自动测试：当前前端没有既有测试框架，本阶段使用 lint、typecheck 与生产构建验证。
+- E2E / 浏览器自动化：未执行；本阶段明确不执行。
+- 浏览器手工验证：未执行，以下 B11 场景均待开发者使用脱敏数据本地验证。
 - 后端命令：未执行。
 
 如后续环境中 `frontend/node_modules` 不存在，不得为验证本阶段而执行 `npm install`；应跳过上述命令并说明原因。
@@ -645,10 +655,10 @@ B9 自动验证不覆盖：
 61. domain scorePercent 不显示成疾病概率。
 62. evidenceSnapshot 不显示预览、原文件或下载。
 63. evidenceSnapshot 不显示 media / item 内部 ID 或对象键。
-64. narrative 只显示 chief / score / domain / evidence / limitations 五个安全字段。
+64. A20 系统 narrative 只显示 chief / score / domain / evidence / limitations 五个安全字段；B11 clinician-owned 字段在独立分区展示。
 65. narrative 使用普通文本且不使用 `dangerouslySetInnerHTML`。
-66. narrative 不出现编辑框或保存入口。
-67. narrative 不显示 trend / recommendation / doctor opinion。
+66. 系统五段 narrative 不出现编辑框；B11 编辑器只出现 doctorOpinion / recommendationText。
+67. narrative 不显示 trendSummary；doctorOpinion / recommendationText 仅作为临床人员明确填写内容展示。
 68. generation.aiUsed=false 显示未使用 AI。
 69. generation=null 时不猜测 AI 使用情况、生成时间或操作者。
 70. generation actor 不重点展示 operatorId。
@@ -656,14 +666,14 @@ B9 自动验证不覆盖：
 72. confirmed 但 confirmation=null 时不冒充访视操作者。
 73. voided 报告显示公开 voidReason。
 74. report.id 不作为业务编号展示，也没有 reportId 路由。
-75. 页面没有报告编辑按钮。
-76. 页面没有医生确认按钮。
+75. 页面只提供 B11 clinician-owned 字段受控编辑，不提供系统摘要、scope 或快照编辑。
+76. 页面只在 pending_confirmation 且当前角色为 doctor / admin 时提供最终确认按钮。
 77. 页面没有签名按钮。
 78. 页面没有 lock / archive / correct / void 按钮。
 79. 页面没有重生成或 version 2。
 80. 页面没有 PDF、打印模板或下载。
 81. 页面没有 AI 操作或 LLM 调用。
-82. 页面不输出阈值、等级、风险、诊断或治疗建议。
+82. 系统规则内容不输出阈值、等级、风险、诊断或治疗建议；临床人员明确填写的原文只按流程状态展示，不由系统解释。
 83. A20 401 返回登录页。
 84. A20 403 仅影响报告区域，不伪装成 not_found。
 85. 网络错误保留当前 scope 并提供手工操作。
@@ -680,7 +690,84 @@ B9 自动验证不覆盖：
 
 以上真实浏览器联调尚未执行，不得写成已通过。
 
-## 15. 认证与安全验证口径
+## 15. B11 手工验证建议（待验证）
+
+前置条件：后端已启动，使用脱敏人工测试账号与测试报告；不得使用真实患者或临床意见。以下场景本次未执行：
+
+1. system_draft draft 可打开编辑。
+2. 只显示 doctorOpinion / recommendationText 编辑字段。
+3. 五段系统摘要不可编辑。
+4. 结构化快照不可编辑。
+5. doctorOpinion 少于 3 字不能保存。
+6. doctorOpinion 超过 4000 字不能保存。
+7. recommendation 为空可以清除。
+8. recommendation 非空少于 3 字不能保存。
+9. editNote 必填且为 3–1000 字。
+10. 无正文变化不能保存。
+11. PATCH 只发送 doctorOpinion、可选 recommendationText、editNote、expectedUpdatedAt。
+12. expectedUpdatedAt 来自服务端 report.updatedAt，不使用浏览器当前时间。
+13. 保存后 source=mixed。
+14. 保存后系统摘要和快照不变。
+15. editorial 显示最新编辑摘要。
+16. editReceipt 只在当前会话显示。
+17. 不显示完整审计历史。
+18. 不显示 previousValues / nextValues / metadata。
+19. 编辑草稿或 editNote 触发 beforeunload。
+20. edit conflict 保留医生意见、建议与 editNote。
+21. conflict 后自动 latest 一次。
+22. conflict 后不自动 PATCH。
+23. stale 状态禁止保存。
+24. 用户明确基于最新报告继续后可保存，且本地输入不重置。
+25. audit limit 禁止继续编辑。
+26. pending_confirmation 不可编辑。
+27. confirmed / archived / corrected / voided 不可编辑。
+28. doctorOpinion 保存后显示提交入口。
+29. submissionNote 为 3–2000 字。
+30. 未勾选 checkbox 不能提交。
+31. submit 只发送 confirm、submissionNote、expectedUpdatedAt。
+32. 提交成功变为 pending_confirmation。
+33. alreadySubmitted 按成功处理且不再次 POST。
+34. pending 显示 submission 摘要。
+35. pending 不显示编辑或重复提交按钮。
+36. submit conflict 保留 note 并清除 checkbox。
+37. submit conflict 不自动 POST。
+38. nurse / research_assistant 不显示可用确认入口。
+39. doctor 显示确认入口。
+40. admin 显示确认入口。
+41. 网络面板确认 B11 不发第二次 `/auth/me`。
+42. confirmationNote 为 3–2000 字。
+43. 未勾选 checkbox 不能确认。
+44. confirm 只发送 confirm、confirmationNote、expectedUpdatedAt。
+45. confirm 成功 status=confirmed。
+46. confirmed isFinal 使用服务端值。
+47. qualityStatus=passed 只显示报告确认流程质量标记通过，不显示患者正常。
+48. confirmed 不显示为 locked。
+49. confirmationId 弱化安全显示。
+50. alreadyConfirmed 按成功处理且不再次 POST。
+51. confirm conflict 保留 note 并清除 checkbox。
+52. confirm conflict 不自动 POST。
+53. confirmed 后所有工作流控件只读。
+54. archived / corrected 只读。
+55. voided 只读。
+56. 不存在退回、reject、reopen 或 withdraw。
+57. 不存在签名或 signatureText。
+58. 不存在 lock / archive / correct / void 操作。
+59. 不存在 PDF、打印或下载。
+60. mixed 显示为系统规则与临床人员补充并存，不显示为 AI。
+61. recommendation 明确标记为临床人员内容。
+62. 系统不自动生成、改写、审核或解释 clinician 文本。
+63. A21 401 返回登录页。
+64. action 403 不清除已加载报告或本地草稿；confirm 403 提示需 doctor / admin。
+65. 网络错误保留本地草稿且不自动重试。
+66. localStorage / sessionStorage / IndexedDB 未保存工作流草稿。
+67. 页面刷新后未保存草稿与当前会话回执消失。
+68. 小屏幕表单纵向可用，textarea / checkbox 均有可见 label。
+69. stale / alert / aria-live 文案与真实 disabled 状态正确。
+70. `npm run lint`、`npm run typecheck`、`npm run build` 通过。
+
+以上真实浏览器联调尚未执行，不得写成已通过。
+
+## 16. 认证与安全验证口径
 
 - 使用浏览器网络面板确认三个认证请求均携带 credentials 语义，并由浏览器处理 HttpOnly Cookie。
 - 前端代码与存储中不得出现 raw token、token hash、`passwordHash`、JWT 或其他认证凭证。
@@ -697,14 +784,14 @@ B9 自动验证不覆盖：
 - B7 页面不得在 console、存储或 URL 中记录评分结果、reviewQueue、请求体或响应体；compute 只能由独立 API Client 构造 `{ confirm: true }`，不得提交任何分数、规则、状态或服务器字段。
 - B9 页面不得在 console、存储或 URL 中记录认知域结果、贡献、来源评分、请求体或响应体；compute 只能由独立 API Client 构造 `{ confirm: true }`，不得提交 domain、weight、mapping、分数、规则、状态或服务器字段。
 
-## 16. 医疗与隐私展示红线
+## 17. 医疗与隐私展示红线
 
 - 不展示真实用户或患者敏感数据样本。
 - 测试截图不得包含真实姓名、邮箱、身份证号、手机号、病历号、住址、患者资料或真实文件名。
 - 不得在页面文案或测试截图中呈现未经确认的真实医疗诊断结论。
 - 核心认知评估必须保持医护或研究人员陪伴 / 监督的产品边界。
 
-## 17. 后续同步规则
+## 18. 后续同步规则
 
 - 前端新增或调整测试脚本后，应同步更新自动验证命令。
 - 新增页面、路由、组件、API 对接或权限展示后，应同步补充对应验证口径。

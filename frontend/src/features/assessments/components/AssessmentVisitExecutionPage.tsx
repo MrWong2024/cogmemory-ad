@@ -27,6 +27,7 @@ import {
 import { ClinicalReportPanel } from '@/src/features/assessments/components/ClinicalReportPanel';
 import { ScaleInstanceList } from '@/src/features/assessments/components/ScaleInstanceList';
 import { useClinicalReport } from '@/src/features/assessments/hooks/useClinicalReport';
+import { useClinicalReportWorkflow } from '@/src/features/assessments/hooks/useClinicalReportWorkflow';
 import {
   assessmentOperatorRoleLabels,
   canInitializeScaleForVisit,
@@ -43,6 +44,7 @@ import {
   formatDateTime,
 } from '@/src/features/patients/lib/patient-display';
 import type { AssessmentVisitStatus } from '@/src/features/patients/types/patient';
+import { usePatientsWorkspaceUser } from '@/src/features/patients/components/PatientsWorkspaceContext';
 
 const mongoIdPattern = /^[a-f\d]{24}$/i;
 const emptyScaleInstances: ScaleInstanceListItem[] = [];
@@ -161,6 +163,7 @@ export function AssessmentVisitExecutionPage({
   visitId: string;
 }) {
   const router = useRouter();
+  const currentUser = usePatientsWorkspaceUser();
   const mountedRef = useRef(true);
   const initializingScaleCodeRef = useRef<string | null>(null);
   const idsAreValid =
@@ -211,6 +214,19 @@ export function AssessmentVisitExecutionPage({
         ? '量表初始化正在进行，请等待完成后再生成报告。'
         : null,
     onUnauthorized: handleUnauthorized,
+  });
+  const reportWorkflow = useClinicalReportWorkflow({
+    patientId,
+    visitId,
+    report: reportState.report,
+    currentUserRoles: currentUser.roles,
+    reportWriteBlocked:
+      isDetailLoading ||
+      initializingScaleCode !== null ||
+      reportState.generating,
+    onUnauthorized: handleUnauthorized,
+    onReportUpdated: reportState.applyClinicalReport,
+    refreshLatest: reportState.refreshLatest,
   });
 
   useEffect(() => {
@@ -355,6 +371,7 @@ export function AssessmentVisitExecutionPage({
     if (
       !detail ||
       reportState.generating ||
+      reportWorkflow.writingAction !== null ||
       initializingScaleCodeRef.current !== null ||
       existingScaleCodes.has(normalizedCode) ||
       !canInitializeScaleForVisit(detail.visit.status)
@@ -695,6 +712,7 @@ export function AssessmentVisitExecutionPage({
         patientId={patientId}
         reportState={reportState}
         visitId={visitId}
+        workflow={reportWorkflow}
       />
 
       <ScaleInitializationPanel
@@ -703,7 +721,9 @@ export function AssessmentVisitExecutionPage({
         externalBusyReason={
           reportState.generating
             ? '正在生成规则化报告草稿，量表初始化提交已临时停用。'
-            : null
+            : reportWorkflow.writingAction !== null
+              ? '正在执行报告写操作，量表初始化提交已临时停用。'
+              : null
         }
         feedback={initializationFeedback}
         initializingScaleCode={initializingScaleCode}

@@ -8,10 +8,15 @@ import {
   CardTitle,
 } from '@/src/components/ui/Card';
 import { ClinicalReportNarrative } from '@/src/features/assessments/components/ClinicalReportNarrative';
+import { ClinicalReportDraftEditor } from '@/src/features/assessments/components/ClinicalReportDraftEditor';
+import { ClinicalReportSubmissionPanel } from '@/src/features/assessments/components/ClinicalReportSubmissionPanel';
+import { ClinicalReportConfirmationPanel } from '@/src/features/assessments/components/ClinicalReportConfirmationPanel';
+import { ClinicalReportWorkflowSummary } from '@/src/features/assessments/components/ClinicalReportWorkflowSummary';
 import { ClinicalReportScopeSelector } from '@/src/features/assessments/components/ClinicalReportScopeSelector';
 import { ClinicalReportSnapshotSummary } from '@/src/features/assessments/components/ClinicalReportSnapshotSummary';
 import { ClinicalReportTechnicalSummary } from '@/src/features/assessments/components/ClinicalReportTechnicalSummary';
 import type { UseClinicalReportValue } from '@/src/features/assessments/hooks/useClinicalReport';
+import type { UseClinicalReportWorkflowValue } from '@/src/features/assessments/hooks/useClinicalReportWorkflow';
 import {
   clinicalReportDraftBoundaryStatements,
   clinicalReportGenerationConfirmationStatements,
@@ -48,6 +53,7 @@ export function ClinicalReportPanel({
   patientId,
   reportState,
   visitId,
+  workflow,
 }: {
   catalog: AvailableScaleOption[] | null;
   instances: ScaleInstanceListItem[];
@@ -55,6 +61,7 @@ export function ClinicalReportPanel({
   patientId: string;
   reportState: UseClinicalReportValue;
   visitId: string;
+  workflow: UseClinicalReportWorkflowValue;
 }) {
   const selectedInstances = findSelectedInstances(
     instances,
@@ -72,7 +79,7 @@ export function ClinicalReportPanel({
           <div>
             <CardTitle>访视级临床报告</CardTitle>
             <CardDescription>
-              查询或生成 A20 规则化 ClinicalReport 草稿；当前不支持编辑、医生确认、PDF、下载、重生成或 AI 操作。
+              在 A20 规则化报告基础上，支持 A21 受控编辑、提交待确认与 doctor / admin 最终确认。
             </CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -89,7 +96,8 @@ export function ClinicalReportPanel({
               disabled={
                 reportState.status === 'idle' ||
                 reportState.status === 'loading' ||
-                reportState.generating
+                reportState.generating ||
+                workflow.writingAction !== null
               }
               onClick={() => void reportState.refreshLatest()}
               size="sm"
@@ -109,6 +117,24 @@ export function ClinicalReportPanel({
             className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-info-soft)] px-4 py-3 text-base leading-7 text-[var(--cma-info)]"
           >
             {reportState.liveMessage}
+          </p>
+        ) : null}
+
+        {workflow.liveMessage ? (
+          <p
+            aria-live="polite"
+            className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-info-soft)] px-4 py-3 text-base leading-7 text-[var(--cma-info)]"
+          >
+            {workflow.liveMessage}
+          </p>
+        ) : null}
+
+        {workflow.writeProhibited ? (
+          <p
+            className="rounded-md border border-[var(--cma-danger)] bg-[var(--cma-danger-soft)] px-4 py-3 text-base leading-7 text-[var(--cma-danger)]"
+            role="alert"
+          >
+            报告审计结构或审计上限当前不允许继续安全写入；请保留现有内容并联系管理员处理。
           </p>
         ) : null}
 
@@ -314,8 +340,8 @@ export function ClinicalReportPanel({
                   ? clinicalReportDraftBoundaryStatements
                   : [
                       '当前内容是临床认知评估报告的结构化信息，不得脱离临床背景单独形成诊断。',
-                      'B10 对历史状态只读展示，不提供修改、再次确认或其他报告写操作。',
-                      '报告不包含诊断阈值、疾病风险等级或治疗建议。',
+                      'pending_confirmation 只能等待 doctor / admin 确认；confirmed、archived、corrected 与 voided 均只读。',
+                      '系统规则化部分不自动生成诊断阈值、疾病风险等级、医生意见或治疗建议。',
                       '认知域之间可能重叠，不能跨域求和解释量表总分。',
                     ]
                 ).map((statement) => (
@@ -334,7 +360,27 @@ export function ClinicalReportPanel({
             ) : null}
 
             <ClinicalReportSnapshotSummary report={report} />
-            <ClinicalReportNarrative narrative={report.narrative} />
+            <ClinicalReportNarrative
+              narrative={report.narrative}
+              status={report.status}
+            />
+            <ClinicalReportWorkflowSummary
+              report={report}
+              workflow={workflow}
+            />
+            <ClinicalReportDraftEditor report={report} workflow={workflow} />
+            <ClinicalReportSubmissionPanel report={report} workflow={workflow} />
+            <ClinicalReportConfirmationPanel
+              report={report}
+              workflow={workflow}
+            />
+            {['confirmed', 'archived', 'corrected', 'voided'].includes(
+              report.status,
+            ) ? (
+              <p className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] px-4 py-3 text-base leading-7 text-[var(--cma-muted)]">
+                当前报告为只读状态。confirmed 表示已完成医生或管理员确认，但不表示报告、访视、评分、认知域或媒体已锁定，也不表示已归档或已生成 PDF。
+              </p>
+            ) : null}
             <ClinicalReportTechnicalSummary
               patientId={patientId}
               report={report}

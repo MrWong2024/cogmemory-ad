@@ -34,7 +34,7 @@ export const clinicalReportSourceLabels: Record<ClinicalReportSource, string> = 
   system_draft: '系统规则化草稿',
   ai_draft: '历史 AI 草稿来源',
   imported: '外部导入',
-  mixed: '混合来源',
+  mixed: '系统规则内容与临床人员补充并存（非 AI）',
 };
 
 export const clinicalReportQualityStatusLabels: Record<
@@ -42,7 +42,7 @@ export const clinicalReportQualityStatusLabels: Record<
   string
 > = {
   unchecked: '尚未进行进一步质量确认',
-  passed: '报告流程质量标记已通过',
+  passed: '报告确认流程质量标记已通过',
   needs_review: '报告包含需要进一步复核的内容或证据索引',
   failed: '报告质量检查未通过',
 };
@@ -134,7 +134,7 @@ export const clinicalReportDraftBoundaryStatements = [
   '系统规则化草稿不等于医生结论；draft 报告尚未经医生确认。',
   '当前 A20 规则化草稿生成流程不调用 AI。',
   'A20 不读取原始作答自由文本生成诊断意见，也不分析图片或手写内容。',
-  '报告不包含诊断阈值、正常或异常判断、疾病风险等级或治疗建议。',
+  '系统规则化部分不自动生成医生意见或治疗建议；临床人员可在受控字段中明确补充。',
   '认知域结果尚未独立确认，且存在重叠归因，不能跨域求和解释量表总分。',
   '结果必须结合临床访谈、病史和其他检查综合判断。',
 ];
@@ -215,7 +215,7 @@ export function getClinicalReportApiErrorMessage(
 ): string {
   const messages: Record<ClinicalReportApiErrorKind, string> = {
     unauthenticated: '登录状态已失效，请重新登录。',
-    forbidden: '当前账号无权查询或生成临床报告。',
+    forbidden: '当前账号无权执行该临床报告操作。',
     validation: '报告请求无效，请重新加载页面后再试。',
     patient_not_found: '未找到该患者档案。',
     patient_not_active: '当前患者不是活动状态，不能首次生成报告草稿。',
@@ -252,6 +252,37 @@ export function getClinicalReportApiErrorMessage(
       '报告在并发生成过程中发生变化，请重新加载最新报告。',
     clinical_report_generation_failed:
       '规则化报告草稿生成失败，请保留当前选择并稍后重试。',
+    clinical_report_metadata_unsupported:
+      '报告内部审计结构异常，当前不能继续写入，请联系管理员。',
+    clinical_report_not_editable: '当前报告状态不允许继续编辑。',
+    clinical_report_edit_no_changes:
+      '医生意见和建议与当前报告一致，没有需要保存的变化。',
+    clinical_report_edit_audit_limit_reached:
+      '当前报告已达到编辑审计上限，不能继续修改。',
+    clinical_report_edit_conflict:
+      '报告已被其他操作更新，请重新核对最新报告后再保存。',
+    clinical_report_edit_failed:
+      '报告编辑保存失败，请保留当前输入并稍后重试。',
+    clinical_report_submission_confirmation_required:
+      '请明确确认提交边界后再提交医生确认。',
+    clinical_report_not_ready_for_submission:
+      '当前报告尚未满足提交待确认条件。',
+    clinical_report_submission_conflict:
+      '报告在提交前已发生变化，请重新核对最新内容。',
+    clinical_report_submission_audit_unavailable:
+      '历史提交审计信息不完整，当前不能安全继续确认。',
+    clinical_report_submission_failed:
+      '报告提交待确认失败，请稍后重试。',
+    clinical_report_confirmation_required:
+      '请明确确认当前报告内容后再完成医生确认。',
+    clinical_report_not_ready_for_confirmation:
+      '当前报告尚未进入可确认状态。',
+    clinical_report_confirmation_conflict:
+      '报告在确认前已发生变化，请重新核对最新报告。',
+    clinical_report_confirmation_audit_unavailable:
+      '历史确认审计信息不完整，不能安全推断确认记录。',
+    clinical_report_confirmation_failed:
+      '报告确认失败，请重新加载最新报告后重试。',
     service_unavailable: '报告服务暂时不可用，请稍后手工重试。',
     unknown: '暂时无法完成报告操作，请稍后手工重新加载最新报告。',
   };

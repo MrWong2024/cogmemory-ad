@@ -6,13 +6,15 @@
 
 ## 2. 当前状态与边界
 
+- B11 扩展独立 `clinical-report-api.ts`，在既有访视详情页接入 A21 draft PATCH、submit-confirmation POST 与 confirm POST；保留 A20 latest / generate。
+- 三个 A21 写请求均只使用服务端 `report.updatedAt` 作为 `expectedUpdatedAt`，逐字段重建 Body 白名单且不自动重试；冲突最多自动 latest 一次，不重发原请求。
 - B9 新增独立 `frontend\src\features\assessments\api\cognitive-domain-api.ts`，在既有量表实例页接入 A19 latest / compute。
-- 当前只新增 A19 两个已确认认知域接口；不调用认知域修改 / 确认 / 锁定 / 作废 / 重算、报告或 AI API。
+- 认知域仍只调用 A19 latest / compute；报告当前调用 A20 latest / generate 与 A21 edit / submit / confirm，不调用其他认知域或报告未来 API，也不调用 AI API。
 - API Client 使用 `frontendEnv.apiBaseUrl` 作为后端基础地址。
 - 所有请求统一使用 `credentials: 'include'`，由浏览器携带或接收 HttpOnly Cookie。
 - 所有认证、患者和访视请求使用 `cache: 'no-store'`。
 - 前端不读取 Cookie，不保存 token，不使用 JWT，也不记录密码或认证响应体。
-- 当前没有 BFF 代理；B1-B9 按明确任务口径由浏览器直接请求既有公开 API base URL。
+- 当前没有 BFF 代理；B1-B11 按明确任务口径由浏览器直接请求既有公开 API base URL。
 
 ## 3. 环境变量读取
 
@@ -327,7 +329,7 @@
 
 - Client / 调用方：独立 `clinical-report-api.ts`，由 `useClinicalReport` 在访视详情成功后自动查询一次；不依赖量表目录，不轮询、不自动重试，支持报告区域手工重新加载。
 - Path / 请求：patientId、visitId 均 `encodeURIComponent()`；无 Query / Body。使用 `frontendEnv.apiBaseUrl`、`credentials: 'include'`、`cache: 'no-store'` 与独立 AbortSignal；新请求取消旧请求、卸载取消、Abort 不显示错误。
-- 响应：`ClinicalReportDetailResponse { report }`。前端类型覆盖真实 report type / status / source / quality、patient / visit snapshot、scaleTrace、score / domain / evidence snapshot、五段 narrative、generation、confirmation 与 Date JSON string / null；不定义内部来源 ID 数组、对象键、scoreDetails、clinicalContext、metadata、AI draft 或 signature。
+- 响应：`ClinicalReportDetailResponse { report }`。前端类型覆盖真实 report type / status / source / quality、patient / visit snapshot、scaleTrace、score / domain / evidence snapshot、A20 五段 narrative、A21 doctorOpinion / recommendationText、generation、editorial、submission、confirmationId / confirmation 与 Date JSON string / null；不定义内部来源 ID 数组、对象键、scoreDetails、clinicalContext、metadata、AI draft 或 signature。
 - 状态：idle / loading / not_found / loaded / forbidden / error 独立于访视详情和目录。`CLINICAL_REPORT_NOT_FOUND` 是正常 not_found；403 独立显示无权限；其他失败不清除访视详情或实例列表。
 - 错误：401 返回 `/login`；400 validation；404 `PATIENT_NOT_FOUND` / `VISIT_NOT_FOUND` / `CLINICAL_REPORT_NOT_FOUND`；409 `CLINICAL_REPORT_INCOMPLETE`；500 / 网络映射稳定 service error。后端英文 message 不进入 UI。
 
@@ -341,6 +343,35 @@
 - 错误 code：完整映射 `CLINICAL_REPORT_GENERATION_CONFIRMATION_REQUIRED`、`CLINICAL_REPORT_SCOPE_INVALID`、`PATIENT_NOT_ACTIVE`、`VISIT_NOT_EDITABLE`、`SCALE_INSTANCE_NOT_FOUND`、`SCALE_INSTANCE_CONFIGURATION_UNAVAILABLE`、`CLINICAL_REPORT_SOURCE_SCALE_NOT_READY`、`CLINICAL_REPORT_SOURCE_SCORE_NOT_FINAL`、`CLINICAL_REPORT_SOURCE_DOMAIN_RESULT_REQUIRED`、`CLINICAL_REPORT_SOURCE_DOMAIN_RESULT_INVALID`、`CLINICAL_REPORT_SOURCE_MEDIA_INVALID`、`CLINICAL_REPORT_INPUT_INVALID`、`CLINICAL_REPORT_SCOPE_CONFLICT`、`CLINICAL_REPORT_VOIDED`、`CLINICAL_REPORT_INCOMPLETE`、`CLINICAL_REPORT_GENERATION_CONFLICT`、`CLINICAL_REPORT_GENERATION_FAILED`。
 - 错误行为：scope / source 错误保留合法选择并提供量表入口；SCALE_INSTANCE_NOT_FOUND 提供访视重载；scope conflict / voided / generation conflict 只自动 GET latest 一次，绝不覆盖或重发 POST；incomplete 不伪造报告；401 返回登录，403 仅影响报告区域，网络失败保留 scope。
 - 展示边界：只读展示公开快照、规则正文与审计摘要；system_draft 不写成 AI 或医生确认，quality 不解释患者状态，null 分值不写成 0，不计算 scorePercent、不跨域求和、不调用媒体 API、不输出阈值 / 风险 / 诊断 / 治疗建议。
+
+### 4.28 `updateClinicalReportDraft()` -> `PATCH /patients/:patientId/visits/:visitId/clinical-reports/:reportId/draft`
+
+- Client / 调用方：`clinical-report-api.ts` / `useClinicalReportWorkflow`；仅完整、未锁定 / 归档 / 作废 / 确认的 cognitive_assessment version 1 draft 且 source 为 system_draft / mixed 时开放。
+- Path：patientId、visitId、reportId 均 `encodeURIComponent()`；reportId 先 trim + lowercase 并校验 24 位 MongoId，路径 ID 不进入 Body。
+- Body 白名单：只构造 `{ doctorOpinion: input.doctorOpinion.trim(), recommendationText?: input.recommendationText.trim(), editNote: input.editNote.trim(), expectedUpdatedAt }`。只有属性未提供时才省略 recommendationText；空字符串保留用于清除建议。
+- 禁止字段：不发送 A20 五段 narrative、status、source、qualityStatus、版本 / 编号、scope、快照、generation、editorial、submission、confirmation、actor、eventId、metadata 或 force。
+- 凭证 / 缓存 / 重试：`frontendEnv.apiBaseUrl`、`credentials: 'include'`、`cache: 'no-store'`、JSON PATCH；不自动保存、不自动重试、不在冲突后覆盖或重发。
+- 响应：`UpdateClinicalReportDraftResponse { report, editReceipt }`；成功用完整 report 统一替换当前报告，editReceipt 仅保存在当前页面内存。source=mixed 使用服务端事实；不调用 latest，不修改系统摘要、scope 或快照。
+- 错误：映射 metadata unsupported、not editable、no changes、audit limit、edit conflict / failed，以及通用 401 / 403 / ownership / patient / visit / incomplete / voided。UI 使用稳定中文，不展示后端 message。
+- 冲突行为：edit conflict、not editable、voided、not found 自动 latest 一次；保留 doctorOpinion、recommendationText、editNote，标记 stale，禁止保存。用户明确“基于最新报告继续”后只更新服务端基线，原本地输入不变。
+
+### 4.29 `submitClinicalReportForConfirmation()` -> `POST /patients/:patientId/visits/:visitId/clinical-reports/:reportId/submit-confirmation`
+
+- Client / 调用方：`clinical-report-api.ts` / `useClinicalReportWorkflow`；四个患者工作流角色以后端 Guard 为最终边界。前端要求 mixed draft、合法 doctorOpinion、quality 非 failed、无本地编辑草稿 / 写请求 / stale。
+- Path / Body：三个路径 ID 编码且不进入 Body；严格只构造 `{ confirm: true, submissionNote: input.submissionNote.trim(), expectedUpdatedAt }`。
+- 禁止字段：不发送 doctorOpinion、recommendationText、status、submittedAt / submittedBy / submissionId、metadata、force 或 skipReview。
+- 响应：`SubmitClinicalReportForConfirmationResponse { report, submissionReceipt }`；完整替换 report，首次服务端进入 pending_confirmation。`alreadySubmitted=true` 作为成功处理，不再次 POST、不改写既有提交记录。
+- 并发 / 错误：submission conflict 与 not ready 自动 latest 一次，不重发 POST；保留 submissionNote、清除 checkbox、标记 stale。audit unavailable 不猜测提交人 / 时间。401 返回登录；action 403 保留已加载报告和草稿。
+- 边界：提交不等于确认，不修改 narrative / scope / 快照 / quality / confirmation / lockedAt，不提供退回 draft，也不生成 PDF 或调用 AI。
+
+### 4.30 `confirmClinicalReport()` -> `POST /patients/:patientId/visits/:visitId/clinical-reports/:reportId/confirm`
+
+- Client / 调用方：`clinical-report-api.ts` / `useClinicalReportWorkflow`；前端仅 roles 包含 doctor / admin 时显示可用入口，后端方法级 RolesGuard 是最终权限边界。nurse / research_assistant 只读等待。
+- Path / Body：三个路径 ID 编码且不进入 Body；严格只构造 `{ confirm: true, confirmationNote: input.confirmationNote.trim(), expectedUpdatedAt }`。
+- 禁止字段：不发送 status、confirmedAt / confirmedBy / confirmedByName / confirmedByRole / confirmationId、signatureText、qualityStatus、narrative、metadata、lockAfterConfirm 或 force。
+- 响应：`ConfirmClinicalReportResponse { report, confirmationReceipt }`；完整替换 report，status / qualityStatus / isFinal 全部使用服务端事实。`alreadyConfirmed=true` 作为成功处理，不再次 POST、不修改既有 confirmationId / 时间 / 意见。
+- 并发 / 错误：confirmation conflict / not ready 自动 latest 一次，保留 confirmationNote、清除 checkbox、标记 stale 且不重发。audit unavailable 不猜测确认人、时间或 ID；confirm 403 明确当前账号不具备 doctor / admin 权限并保留报告。
+- 边界：confirmed 后前端只读，但 confirmed 不等于 locked；不生成签名，不设置前端模拟 locked，不锁定 Visit、评分、认知域或媒体，不生成 PDF，不调用 AI。
 
 ## 5. 当前认证公开类型
 
@@ -368,11 +399,13 @@
 - `ProvisionalScoringApiError.kind` 覆盖 unauthenticated、forbidden、validation、患者 / 访视 / 实例 / 配置状态和 A17 全部 `SCORE_*` 业务 code、service_unavailable 与 unknown；UI 使用稳定中文映射。
 - `cognitive-domain-result.ts` 严格覆盖 result status、mapping source / mode、item score、review / quality、domain score、contribution、mapping、computation、versionTrace 与 A19 请求 / 响应；不定义原始作答、评分意见、expectedValue、scoringRule、metadata 或 contribution minScore。
 - `CognitiveDomainApiError.kind` 覆盖 401 / 403 / validation、患者 / 访视 / 实例 / 配置、来源评分和全部 `COGNITIVE_DOMAIN_*` 业务 code、service_unavailable 与 unknown；UI 使用稳定中文映射，不直接显示后端英文 message。
+- B11 `clinical-report.ts` 扩展 clinician-owned narrative、editorial、submission、confirmationId、三类请求与三类 receipt；Date JSON 使用 string / null，不定义 metadata、完整 edit events、previousValues / nextValues、signatureText 或来源 ID 数组。
+- `ClinicalReportApiError.kind` 新增并严格映射全部 A21 metadata、editable、edit、submission、confirmation 业务 code；UI 不直接展示后端英文 message。
 
 ## 7. 当前未对接 API
 
 - 当前没有 A12 / A13 / A14 已接接口之外的患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转调用。
-- 当前除 A16、A17、A18 manual-review / confirm、A19 latest / compute 与 A20 latest / generate 外，没有撤销提交、reopen、评分 lock / void / rerun / 历史、认知域修改 / 确认 / 锁定 / 作废 / 重算、报告编辑 / 确认 / 签名 / 锁定 / 归档 / 更正 / 作废 / 重生成 / version 2 / PDF、AI、用户管理、角色权限管理或科研导出 API 调用。
+- 当前除 A16、A17、A18 manual-review / confirm、A19 latest / compute、A20 latest / generate 与 A21 edit / submit / confirm 外，没有撤销提交、reopen、评分 lock / void / rerun / 历史、认知域修改 / 确认 / 锁定 / 作废 / 重算、报告退回 / reject / reopen / withdraw / 签名 / 锁定 / 归档 / 更正 / 作废 / 重生成 / version 2 / PDF、AI、用户管理、角色权限管理或科研导出 API 调用。
 - 不得在后端 API 未确认并进入明确任务范围前编造前端对接事实。
 
 ## 8. 后续同步规则
