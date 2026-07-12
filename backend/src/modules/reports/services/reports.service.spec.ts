@@ -613,6 +613,7 @@ describe('ReportsService', () => {
 
     expect(clinicalReportModel.findOne).toHaveBeenCalledWith({
       assessmentVisitId,
+      reportType: 'cognitive_assessment',
     });
     expect(sort).toHaveBeenCalledWith({ reportVersion: -1, createdAt: -1 });
     expect(result).toEqual(
@@ -676,7 +677,6 @@ describe('ReportsService', () => {
       patientId,
       assessmentVisitId: visitId,
       reportType: 'cognitive_assessment',
-      reportVersion: 1,
     });
   });
 
@@ -710,6 +710,7 @@ describe('ReportsService', () => {
       reportId: reportId.toString(),
       patientId: patientId.toString(),
       assessmentVisitId: visitId.toString(),
+      reportVersion: 1,
       expectedUpdatedAt,
       narrative,
       metadata,
@@ -743,6 +744,7 @@ describe('ReportsService', () => {
       reportId: reportId.toString(),
       patientId: patientId.toString(),
       assessmentVisitId: visitId.toString(),
+      reportVersion: 1,
       expectedUpdatedAt,
     };
 
@@ -1257,6 +1259,97 @@ describe('ReportsService', () => {
     ).resolves.toEqual([]);
     expect(clinicalReportModel.findOne).not.toHaveBeenCalled();
     expect(clinicalReportModel.find).not.toHaveBeenCalled();
+  });
+
+  it('starts A25 with a single source-only metadata update', async () => {
+    const reportId = new Types.ObjectId();
+    const patientId = new Types.ObjectId();
+    const visitId = new Types.ObjectId();
+    const expectedUpdatedAt = new Date('2026-07-12T09:00:00.000Z');
+    const metadata = { a25Correction: { version: 1, state: 'in_progress' } };
+    clinicalReportModel.findOneAndUpdate.mockReturnValue(
+      createExecQuery(createReportFixture()),
+    );
+    await service.startCorrectionIfUnmodified({
+      reportId: reportId.toString(),
+      patientId: patientId.toString(),
+      assessmentVisitId: visitId.toString(),
+      reportVersion: 1,
+      reportCode: 'rpt-a25-source',
+      expectedUpdatedAt,
+      metadata,
+    });
+    expect(clinicalReportModel.findOneAndUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        _id: reportId,
+        patientId,
+        assessmentVisitId: visitId,
+        reportVersion: 1,
+        reportCode: 'RPT-A25-SOURCE',
+        status: 'archived',
+        correctionRecords: { $size: 0 },
+        updatedAt: expectedUpdatedAt,
+        'metadata.a25Correction': { $exists: false },
+      }),
+      { $set: { metadata } },
+      { new: true, runValidators: true },
+    );
+  });
+
+  it('records and completes only the matching deterministic replacement', async () => {
+    const reportId = new Types.ObjectId();
+    const patientId = new Types.ObjectId();
+    const visitId = new Types.ObjectId();
+    const replacementId = new Types.ObjectId();
+    const actorId = new Types.ObjectId();
+    const metadata = { a25Correction: { version: 1, state: 'completed' } };
+    clinicalReportModel.findOneAndUpdate.mockReturnValue(
+      createExecQuery(createReportFixture()),
+    );
+    const base = {
+      reportId: reportId.toString(),
+      patientId: patientId.toString(),
+      assessmentVisitId: visitId.toString(),
+      reportVersion: 1,
+      reportCode: 'RPT-A25-SOURCE',
+      correctionId: '44444444-4444-4444-8444-444444444444',
+      replacementReportId: replacementId.toString(),
+      replacementReportCode: 'RPT-A25-REPLACEMENT',
+      replacementReportVersion: 2,
+      metadata,
+    };
+    const correctionRecord = {
+      correctionNo: 1,
+      correctedAt: new Date('2026-07-12T09:30:00.000Z'),
+      correctedBy: actorId.toString(),
+      correctedByName: 'A25 Test Doctor',
+      reason: '脱敏更正原因',
+      changeSummary: '脱敏计划变更范围',
+      previousReportCode: 'RPT-A25-SOURCE',
+      replacementReportCode: 'RPT-A25-REPLACEMENT',
+      auditLogId: null,
+    };
+    await service.recordCorrectionReplacementIfMatching(base);
+    await service.completeCorrectionIfMatching({
+      ...base,
+      correctionRecord,
+    });
+    expect(clinicalReportModel.findOneAndUpdate).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        status: 'archived',
+        'metadata.a25Correction.correctionId': base.correctionId,
+        'metadata.a25Correction.replacementReportId': replacementId.toString(),
+      }),
+      {
+        $set: {
+          status: 'corrected',
+          metadata,
+          correctionRecords: [{ ...correctionRecord, correctedBy: actorId }],
+        },
+      },
+      { new: true, runValidators: true },
+    );
   });
 
   it('validates allowed report status transitions without database writes', () => {

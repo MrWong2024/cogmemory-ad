@@ -1,4 +1,8 @@
 import {
+  ClinicalReportCorrectionRuleError,
+  resolveClinicalReportReplacementLineage,
+} from '../lib/clinical-report-correction';
+import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
@@ -70,9 +74,12 @@ export class ClinicalReportReviewWorkflowService {
     currentUser: AuthenticatedUserContext | undefined,
     input: UpdateClinicalReportDraftDto,
   ): Promise<UpdateClinicalReportDraftResponse> {
-    const actor = this.requireWorkflowActor(currentUser);
     const context = await this.loadReportContext(patientId, visitId, reportId);
-    this.assertClinicalWriteState(context);
+    const replacement = this.isReplacementReport(context.report);
+    const actor = replacement
+      ? this.requireReplacementActor(currentUser)
+      : this.requireWorkflowActor(currentUser);
+    this.assertClinicalWriteState(context, replacement);
     this.assertDraftEditable(context.report);
     const editedAt = new Date();
     const eventId = randomUUID();
@@ -96,6 +103,7 @@ export class ClinicalReportReviewWorkflowService {
         reportId,
         patientId,
         assessmentVisitId: visitId,
+        reportVersion: context.report.reportVersion,
         expectedUpdatedAt,
         narrative: prepared.narrative,
         metadata: prepared.metadata,
@@ -134,9 +142,12 @@ export class ClinicalReportReviewWorkflowService {
         message: 'Clinical report submission must be explicit',
       });
     }
-    const actor = this.requireWorkflowActor(currentUser);
     const context = await this.loadReportContext(patientId, visitId, reportId);
-    this.assertClinicalWriteState(context);
+    const replacement = this.isReplacementReport(context.report);
+    const actor = replacement
+      ? this.requireReplacementActor(currentUser)
+      : this.requireWorkflowActor(currentUser);
+    this.assertClinicalWriteState(context, replacement);
     const existing = this.resolveExistingSubmission(context.report);
     if (existing) {
       return existing;
@@ -162,6 +173,7 @@ export class ClinicalReportReviewWorkflowService {
         reportId,
         patientId,
         assessmentVisitId: visitId,
+        reportVersion: context.report.reportVersion,
         expectedUpdatedAt,
         metadata: prepared.metadata,
       });
@@ -199,9 +211,10 @@ export class ClinicalReportReviewWorkflowService {
         message: 'Clinical report confirmation must be explicit',
       });
     }
-    const actor = this.requireConfirmationActor(currentUser);
     const context = await this.loadReportContext(patientId, visitId, reportId);
-    this.assertClinicalWriteState(context);
+    const replacement = this.isReplacementReport(context.report);
+    const actor = this.requireConfirmationActor(currentUser);
+    this.assertClinicalWriteState(context, replacement);
     const existing = this.resolveExistingConfirmation(context.report);
     if (existing) {
       return existing;
@@ -235,6 +248,7 @@ export class ClinicalReportReviewWorkflowService {
         reportId,
         patientId,
         assessmentVisitId: visitId,
+        reportVersion: context.report.reportVersion,
         expectedUpdatedAt,
         confirmation: prepared.confirmation,
         metadata: prepared.metadata,
@@ -299,7 +313,13 @@ export class ClinicalReportReviewWorkflowService {
     return { patient, visit, report };
   }
 
-  private assertClinicalWriteState(context: ReportWorkflowContext): void {
+  private assertClinicalWriteState(
+    context: ReportWorkflowContext,
+    replacement: boolean,
+  ): void {
+    if (replacement) {
+      return;
+    }
     if (context.patient.status !== 'active') {
       throw new ConflictException({
         code: 'PATIENT_NOT_ACTIVE',
@@ -349,6 +369,55 @@ export class ClinicalReportReviewWorkflowService {
     currentUser: AuthenticatedUserContext | undefined,
   ): ClinicalReportWorkflowActor {
     return this.buildActor(currentUser, REPORT_ACTOR_PRIORITY);
+  }
+
+  private requireReplacementActor(
+    currentUser: AuthenticatedUserContext | undefined,
+  ): ClinicalReportWorkflowActor & {
+    operatorRole: Extract<ReportOperatorRole, 'doctor' | 'admin'>;
+  } {
+    const actor = this.buildActor(currentUser, REPORT_ACTOR_PRIORITY);
+    if (actor.operatorRole !== 'doctor' && actor.operatorRole !== 'admin') {
+      throw new ForbiddenException({
+        code: 'CLINICAL_REPORT_CORRECTION_WORKFLOW_FORBIDDEN',
+        message: 'Clinical report correction workflow is forbidden',
+      });
+    }
+    return { ...actor, operatorRole: actor.operatorRole };
+  }
+
+  private isReplacementReport(report: ClinicalReportSummary): boolean {
+    if (report.reportVersion === 1) {
+      return false;
+    }
+    try {
+      const lineage = resolveClinicalReportReplacementLineage(report);
+      if (
+        report.reportVersion < 2 ||
+        !lineage ||
+        report.source !== 'mixed' ||
+        !['draft', 'pending_confirmation', 'confirmed'].includes(
+          report.status,
+        ) ||
+        report.lockedAt !== null ||
+        report.archivedAt !== null ||
+        report.voidedAt !== null
+      ) {
+        throw new Error('invalid replacement lineage');
+      }
+      return true;
+    } catch (error: unknown) {
+      if (
+        error instanceof ClinicalReportCorrectionRuleError ||
+        error instanceof Error
+      ) {
+        throw new ConflictException({
+          code: 'CLINICAL_REPORT_CORRECTION_AUDIT_UNAVAILABLE',
+          message: 'Clinical report correction audit is unavailable',
+        });
+      }
+      throw error;
+    }
   }
 
   private requireConfirmationActor(

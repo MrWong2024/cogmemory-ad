@@ -21,6 +21,7 @@ type Ownership = {
   assessmentVisitId: string;
 };
 type AtomicInput = Ownership & {
+  reportVersion: number;
   expectedUpdatedAt: Date;
   metadata: Record<string, unknown>;
   narrative?: ClinicalReportSummary['narrative'];
@@ -416,5 +417,79 @@ describe('ClinicalReportReviewWorkflowService', () => {
         expectedUpdatedAt: now.toISOString(),
       }),
     ).rejects.toMatchObject({ response: { code: 'VISIT_NOT_EDITABLE' } });
+  });
+
+  it('restricts a valid replacement to doctor/admin and exempts historical states', async () => {
+    const lineage = {
+      version: 1,
+      correctionId: '44444444-4444-4444-8444-444444444444',
+      correctionNo: 1,
+      previousReportId: '507f1f77bcf86cd799439099',
+      previousReportCode: 'RPT-A25-SOURCE',
+      previousReportVersion: 1,
+      replacementReportCode: 'RPT-A25-REPLACEMENT',
+      replacementReportVersion: 2,
+      createdAt: now,
+      createdBy: ids.actor,
+      createdByName: 'A21 Test Doctor',
+      createdByRole: 'doctor',
+      correctionReason: '脱敏更正原因',
+      changeSummary: '脱敏计划变更范围',
+      sourceArchiveId: '33333333-3333-4333-8333-333333333333',
+      sourceArchivedAt: now,
+      sourceFreezeId: '22222222-2222-4222-8222-222222222222',
+      sourceFreezeCompletedAt: now,
+    };
+    report = reportFixture({
+      reportCode: lineage.replacementReportCode,
+      reportVersion: 2,
+      source: 'mixed',
+      qualityStatus: 'needs_review',
+      metadata: {
+        ...(report.metadata ?? {}),
+        a25CorrectionReplacement: lineage,
+      },
+    });
+    mocks.patients.findPatientById.mockResolvedValue({
+      id: ids.patient,
+      status: 'inactive',
+    });
+    mocks.assessments.findVisitByPatientAndId.mockResolvedValue({
+      id: ids.visit,
+      status: 'voided',
+    });
+    await expect(
+      service.updateDraft(ids.patient, ids.visit, ids.report, user(['nurse']), {
+        doctorOpinion: '脱敏 replacement 意见',
+        editNote: '脱敏 replacement 修改依据',
+        expectedUpdatedAt: now.toISOString(),
+      }),
+    ).rejects.toMatchObject({
+      response: { code: 'CLINICAL_REPORT_CORRECTION_WORKFLOW_FORBIDDEN' },
+    });
+    mocks.reports.updateDraftNarrativeIfUnmodified.mockImplementation(
+      (input: AtomicInput) =>
+        Promise.resolve({
+          ...report,
+          narrative: input.narrative ?? null,
+          metadata: input.metadata,
+        }),
+    );
+    const response = await service.updateDraft(
+      ids.patient,
+      ids.visit,
+      ids.report,
+      user(['doctor']),
+      {
+        doctorOpinion: '脱敏 replacement 意见',
+        editNote: '脱敏 replacement 修改依据',
+        expectedUpdatedAt: now.toISOString(),
+      },
+    );
+    expect(response.report.reportVersion).toBe(2);
+    expect(response.report.replacementOf).not.toBeNull();
+    expect(
+      mocks.reports.updateDraftNarrativeIfUnmodified,
+    ).toHaveBeenLastCalledWith(expect.objectContaining({ reportVersion: 2 }));
   });
 });

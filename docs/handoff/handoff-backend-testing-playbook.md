@@ -12,7 +12,7 @@
 - 本地前端默认 origin 为 `http://localhost:3002`。
 - 测试环境默认 `STORAGE_DRIVER=fake`。
 - 测试环境 `LLM_PROVIDER=stub`，不得依赖真实大模型调用。
-- 当前存在十三个真实 HTTP E2E：A12 患者 / 访视、A13 初始化、A14 草稿、A15 媒体、A16 submission、A17 provisional scoring、A18 manual score review / confirmation、A19 cognitive domain computation、A20 clinical report draft、A21 clinical report review、A22 clinical report lock、A23 clinical report source freeze 与 A24 clinical report archive。
+- 当前存在十四个真实 HTTP E2E：A12-A24 既有十三个，加 A25 clinical report correction。
 - TypeScript `rootDir` 当前为 `.`，后端主入口预期 build 产物为 `dist/src/main.js`。
 - `tsBuildInfoFile` 保持 `./dist/tsconfig.build.tsbuildinfo`。
 - `dist` 与 `*.tsbuildinfo` 为生成物，不进入版本库。
@@ -153,7 +153,7 @@
 - 如果 `backend\node_modules` 存在，可执行 `npm test -- --runInBand` 验证单元测试。
 - 如果 `backend\node_modules` 不存在，不应自动执行 `npm install`。
 - 当前任务不调用真实 OSS、阿里云 SMS、大模型或生产数据库。
-- `test:e2e` 脚本已通过 `test/jest-e2e.json` 执行 A12-A24 真实 HTTP 闭环；测试运行时确认 `NODE_ENV=test`、数据库名 `cogmemory_ad_test`、Storage=fake、LLM/SMS=stub，未打印数据库凭证。
+- `test:e2e` 脚本已通过 `test/jest-e2e.json` 执行 A12-A25 真实 HTTP 闭环；测试运行时确认 `NODE_ENV=test`、数据库名 `cogmemory_ad_test`、Storage=fake、LLM/SMS=stub，未打印数据库凭证。
 
 ## 5. 当前单元测试口径
 
@@ -286,6 +286,17 @@
 - A24 当前实际结果：scoped `src/modules/reports + clinical-report-archive.e2e-spec.ts` lint 通过；build 通过；全量 unit 为 72 个套件 / 625 个测试通过；A24 定向 E2E 为 1 个套件 / 6 个测试通过；全量 E2E 为 13 个套件 / 60 个测试通过。A24 完成后补充执行的最近两次全量 E2E 均在 `NODE_ENV=test`、Jest `--runInBand`、隔离 `cogmemory_ad_test`、fake Storage、stub SMS / LLM 和脱敏人工数据环境中完整通过，未调用真实外部服务。此前一次全量复跑曾出现既有跨套件 test catalog / 数据顺序污染现象；该现象在随后两次完整串行复跑中未再次出现。当前验证结论以最近连续两次全量通过为准，但尚不据此宣称潜在测试隔离风险已被永久消除。未运行全模块 lint，既有 scoring 格式技术债未修改。
 
 ## 7. 医疗与量表数据测试红线
+
+### A25 correction 验证口径
+
+- DTO / Controller：strict confirm、reason / summary trim 与长度、strict expectedUpdatedAt、whitelist、Session / Roles Guard、doctor/admin 与 CurrentUser 轻薄转发。
+- 纯函数：完整 archived readiness、lock/freeze/archive anchors、latest、version+1 / correctionNo、确定性 code、start audit、replacement 深复制与生命周期重置、existing validation、record / completion、恢复解析、输入不变与 mismatch conflict。
+- ReportsService / Workflow：Model mock 验证 start / record / complete 原子 filter 与 version-aware A21；依赖 mock 覆盖 ownership、权限、completed 旧 expectedUpdatedAt 幂等、审计异常。单元测试不连接 MongoDB。
+- A20 / A21 regression：generate latest-first、不重复 V1；普通 V1 行为不变；合法 replacement 仅 doctor/admin，Patient inactive / Visit locked / voided 豁免，clinician fields-only 与 lineage metadata 保留。
+- mapper：无 A25、source in_progress/completed、replacementOf、invalid safe-null；不公开 metadata / 原始 correctionRecords / 五类来源 ID。
+- `clinical-report-correction.e2e-spec.ts` 使用真实 AppModule / Cookie / Guard / DTO 与隔离 test DB，fake Storage、stub SMS/LLM、`SUBJ-A25-TEST-*` 脱敏数据；覆盖 401/403、whitelist、非 archived、首次 V2、source 关键事实不变、latest、幂等、replacement A21 edit/submit/confirm 及不自动 lock/freeze/archive。
+- A24 校准后的历史事实继续保留为 13 suites / 60 tests；A25 当前定向结果为 1 suite / 4 tests。全量 lint/build/unit/E2E 数量以本阶段实际 Jest 输出更新，不用历史数量相加推算。
+- A25 最终实际结果：scoped lint 通过；build 通过；全量 unit 75 suites / 653 tests；A25 定向 E2E 1 suite / 4 tests；全量 E2E 14 suites / 64 tests。均在隔离 test DB、fake Storage、stub SMS/LLM 下执行；未使用真实医疗数据或真实外部服务，未处理既有 Mongoose `new` deprecated warning。
 
 - 测试不得使用真实患者数据、真实身份证号、真实手机号、真实病历号或其他可识别个人信息。
 - 量表测试数据应使用脱敏样本或人工构造样本。

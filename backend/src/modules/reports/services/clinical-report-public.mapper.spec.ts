@@ -442,4 +442,89 @@ describe('ClinicalReportPublicMapper', () => {
     expect(invalid.archivedAt).toEqual(archivedAt);
     expect(JSON.stringify(invalid)).not.toContain('must-not-leak');
   });
+
+  it('maps completed source correction without exposing raw audit records', () => {
+    const report = createReport();
+    const replacementId = '507f1f77bcf86cd799439020';
+    report.status = 'corrected';
+    report.source = 'mixed';
+    report.metadata = {
+      ...(report.metadata ?? {}),
+      a25Correction: {
+        version: 1,
+        state: 'completed',
+        correctionId: '44444444-4444-4444-8444-444444444444',
+        correctionNo: 1,
+        startedAt: now,
+        startedBy: id,
+        startedByName: 'A25 Test Doctor',
+        startedByRole: 'doctor',
+        correctionReason: '脱敏更正原因',
+        changeSummary: '脱敏计划变更范围',
+        previousReportCode: report.reportCode,
+        previousReportVersion: 1,
+        replacementReportCode: 'RPT-AAAAAAAAAAAAAAAAAAAAAAAA',
+        replacementReportVersion: 2,
+        sourceArchiveId: '33333333-3333-4333-8333-333333333333',
+        sourceArchivedAt: now,
+        sourceFreezeId: '22222222-2222-4222-8222-222222222222',
+        sourceFreezeCompletedAt: now,
+        replacementReportId: replacementId,
+        replacementCreatedAt: now,
+        completedAt: now,
+        completedBy: id,
+        completedByName: 'A25 Test Admin',
+        completedByRole: 'admin',
+      },
+    };
+    const result = new ClinicalReportPublicMapper().toPublicReport(report);
+    expect(result.correction).toMatchObject({
+      state: 'completed',
+      correctionNo: 1,
+      replacementReportId: replacementId,
+      completedBy: { operatorRole: 'admin' },
+    });
+    expect(result.replacementOf).toBeNull();
+    expect(result).not.toHaveProperty('metadata');
+    expect(result).not.toHaveProperty('correctionRecords');
+  });
+
+  it('maps replacement lineage and returns safe null for invalid A25 metadata', () => {
+    const report = createReport();
+    report.id = '507f1f77bcf86cd799439020';
+    report.reportCode = 'RPT-AAAAAAAAAAAAAAAAAAAAAAAA';
+    report.reportVersion = 2;
+    report.status = 'draft';
+    report.source = 'mixed';
+    report.metadata = {
+      a25CorrectionReplacement: {
+        version: 1,
+        correctionId: '44444444-4444-4444-8444-444444444444',
+        correctionNo: 1,
+        previousReportId: id,
+        previousReportCode: 'RPT-0123456789ABCDEF01234567',
+        previousReportVersion: 1,
+        replacementReportCode: report.reportCode,
+        replacementReportVersion: 2,
+        createdAt: now,
+        createdBy: id,
+        createdByName: 'A25 Test Doctor',
+        createdByRole: 'doctor',
+        correctionReason: '脱敏更正原因',
+        changeSummary: '脱敏计划变更范围',
+        sourceArchiveId: '33333333-3333-4333-8333-333333333333',
+        sourceArchivedAt: now,
+        sourceFreezeId: '22222222-2222-4222-8222-222222222222',
+        sourceFreezeCompletedAt: now,
+      },
+    };
+    const mapper = new ClinicalReportPublicMapper();
+    expect(mapper.toPublicReport(report).replacementOf).toMatchObject({
+      previousReportId: id,
+      replacementReportVersion: 2,
+      createdBy: { operatorRole: 'doctor' },
+    });
+    report.metadata.a25CorrectionReplacement = { version: 2 };
+    expect(mapper.toPublicReport(report).replacementOf).toBeNull();
+  });
 });

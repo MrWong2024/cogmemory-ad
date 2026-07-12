@@ -37,6 +37,11 @@ import type { ClinicalReportConfirmationMetadata } from '../types/clinical-repor
 import type { LockClinicalReportInput } from '../types/clinical-report-lock.types';
 import type { FreezeClinicalReportSourcesInput } from '../types/clinical-report-source-freeze.types';
 import type { ArchiveClinicalReportInput } from '../types/clinical-report-archive.types';
+import type {
+  CompleteClinicalReportCorrectionInput,
+  RecordClinicalReportCorrectionReplacementInput,
+  StartClinicalReportCorrectionInput,
+} from '../types/clinical-report-correction.types';
 
 export type ReportPatientSnapshotSummary = {
   subjectCode?: string;
@@ -220,8 +225,8 @@ export type CreateClinicalReportInput = {
   reportCode: string;
   reportType: Extract<ClinicalReportType, 'cognitive_assessment'>;
   status: Extract<ClinicalReportStatus, 'draft'>;
-  reportVersion: 1;
-  source: Extract<ClinicalReportSource, 'system_draft'>;
+  reportVersion: number;
+  source: Extract<ClinicalReportSource, 'system_draft' | 'mixed'>;
   patientSnapshot: ReportPatientSnapshotSummary;
   visitSnapshot: ReportVisitSnapshotSummary;
   scaleTraces: ReportScaleTraceSummary[];
@@ -238,7 +243,8 @@ export type CreateClinicalReportInput = {
   auditLogRefs: [];
   qualityStatus: Extract<ReportQualityStatus, 'unchecked' | 'needs_review'>;
   qualityHints: null;
-  metadata: { a20Generation: ClinicalReportGenerationMetadata };
+  metadata: Record<string, unknown>;
+  createdAt?: Date;
 };
 
 type ClinicalReportOwnershipInput = {
@@ -248,17 +254,20 @@ type ClinicalReportOwnershipInput = {
 };
 
 export type UpdateClinicalReportDraftInput = ClinicalReportOwnershipInput & {
+  reportVersion: number;
   expectedUpdatedAt: Date;
   narrative: ReportNarrativeSummary;
   metadata: Record<string, unknown>;
 };
 
 export type SubmitClinicalReportInput = ClinicalReportOwnershipInput & {
+  reportVersion: number;
   expectedUpdatedAt: Date;
   metadata: Record<string, unknown>;
 };
 
 export type ConfirmClinicalReportInput = ClinicalReportOwnershipInput & {
+  reportVersion: number;
   expectedUpdatedAt: Date;
   confirmation: ClinicalReportConfirmationMetadata;
   metadata: Record<string, unknown>;
@@ -327,7 +336,10 @@ export class ReportsService {
     }
 
     const report = await this.clinicalReportModel
-      .findOne({ assessmentVisitId: normalizedId })
+      .findOne({
+        assessmentVisitId: normalizedId,
+        reportType: 'cognitive_assessment',
+      })
       .sort({ reportVersion: -1, createdAt: -1 })
       .exec();
 
@@ -373,7 +385,6 @@ export class ReportsService {
       .findOne({
         ...ownership,
         reportType: 'cognitive_assessment',
-        reportVersion: 1,
       })
       .exec();
     return report ? this.mapReport(report) : null;
@@ -391,7 +402,7 @@ export class ReportsService {
         {
           ...ownership,
           reportType: 'cognitive_assessment',
-          reportVersion: 1,
+          reportVersion: input.reportVersion,
           status: 'draft',
           updatedAt: input.expectedUpdatedAt,
         },
@@ -420,7 +431,7 @@ export class ReportsService {
         {
           ...ownership,
           reportType: 'cognitive_assessment',
-          reportVersion: 1,
+          reportVersion: input.reportVersion,
           status: 'draft',
           updatedAt: input.expectedUpdatedAt,
         },
@@ -443,7 +454,7 @@ export class ReportsService {
         {
           ...ownership,
           reportType: 'cognitive_assessment',
-          reportVersion: 1,
+          reportVersion: input.reportVersion,
           status: 'pending_confirmation',
           updatedAt: input.expectedUpdatedAt,
         },
@@ -618,6 +629,171 @@ export class ReportsService {
     return updated ? this.mapReport(updated) : null;
   }
 
+  async startCorrectionIfUnmodified(
+    input: StartClinicalReportCorrectionInput,
+  ): Promise<ClinicalReportSummary | null> {
+    const ownership = this.normalizeClinicalReportOwnership(input);
+    if (
+      !ownership ||
+      !Number.isSafeInteger(input.reportVersion) ||
+      input.reportVersion < 1 ||
+      !Number.isFinite(input.expectedUpdatedAt.getTime())
+    ) {
+      return null;
+    }
+    const updated = await this.clinicalReportModel
+      .findOneAndUpdate(
+        {
+          ...ownership,
+          reportType: 'cognitive_assessment',
+          reportVersion: input.reportVersion,
+          reportCode: this.normalizeReportCode(input.reportCode),
+          status: 'archived',
+          source: 'mixed',
+          qualityStatus: 'passed',
+          lockedAt: { $ne: null },
+          lockedBy: { $ne: null },
+          archivedAt: { $ne: null },
+          archivedBy: { $ne: null },
+          voidedAt: null,
+          voidedBy: null,
+          correctionRecords: { $size: 0 },
+          updatedAt: input.expectedUpdatedAt,
+          'metadata.a23SourceFreeze.state': 'completed',
+          'metadata.a24Archive.version': 1,
+          'metadata.a25Correction': { $exists: false },
+        },
+        { $set: { metadata: input.metadata } },
+        { new: true, runValidators: true },
+      )
+      .exec();
+    return updated ? this.mapReport(updated) : null;
+  }
+
+  async createCorrectionReplacement(
+    input: CreateClinicalReportInput,
+  ): Promise<ClinicalReportSummary> {
+    return this.createClinicalReport(input);
+  }
+
+  async findCorrectionReplacementByCode(
+    reportCode: string,
+  ): Promise<ClinicalReportSummary | null> {
+    return this.findReportByCode(reportCode);
+  }
+
+  async listReportsByVisitTypeVersion(
+    assessmentVisitId: string,
+    reportType: ClinicalReportType,
+    reportVersion: number,
+  ): Promise<ClinicalReportSummary[]> {
+    const normalizedId = this.normalizeObjectId(assessmentVisitId);
+    if (
+      !normalizedId ||
+      !Number.isSafeInteger(reportVersion) ||
+      reportVersion < 1
+    ) {
+      return [];
+    }
+    const reports = await this.clinicalReportModel
+      .find({
+        assessmentVisitId: normalizedId,
+        reportType,
+        reportVersion,
+      })
+      .sort({ createdAt: 1 })
+      .exec();
+    return reports.map((report) => this.mapReport(report));
+  }
+
+  async completeCorrectionIfMatching(
+    input: CompleteClinicalReportCorrectionInput,
+  ): Promise<ClinicalReportSummary | null> {
+    const ownership = this.normalizeClinicalReportOwnership(input);
+    const correctedBy = this.normalizeObjectId(
+      input.correctionRecord.correctedBy,
+    );
+    if (
+      !ownership ||
+      !correctedBy ||
+      !Number.isSafeInteger(input.reportVersion) ||
+      input.reportVersion < 1
+    ) {
+      return null;
+    }
+    const updated = await this.clinicalReportModel
+      .findOneAndUpdate(
+        {
+          ...ownership,
+          reportType: 'cognitive_assessment',
+          reportVersion: input.reportVersion,
+          reportCode: this.normalizeReportCode(input.reportCode),
+          status: 'archived',
+          archivedAt: { $ne: null },
+          archivedBy: { $ne: null },
+          voidedAt: null,
+          voidedBy: null,
+          correctionRecords: { $size: 0 },
+          'metadata.a25Correction.version': 1,
+          'metadata.a25Correction.state': 'in_progress',
+          'metadata.a25Correction.correctionId': input.correctionId,
+          'metadata.a25Correction.replacementReportCode':
+            input.replacementReportCode,
+          'metadata.a25Correction.replacementReportVersion':
+            input.replacementReportVersion,
+          'metadata.a25Correction.replacementReportId':
+            input.replacementReportId,
+        },
+        {
+          $set: {
+            status: 'corrected',
+            correctionRecords: [
+              {
+                ...input.correctionRecord,
+                correctedBy,
+              },
+            ],
+            metadata: input.metadata,
+          },
+        },
+        { new: true, runValidators: true },
+      )
+      .exec();
+    return updated ? this.mapReport(updated) : null;
+  }
+
+  async recordCorrectionReplacementIfMatching(
+    input: RecordClinicalReportCorrectionReplacementInput,
+  ): Promise<ClinicalReportSummary | null> {
+    const ownership = this.normalizeClinicalReportOwnership(input);
+    if (!ownership) {
+      return null;
+    }
+    const updated = await this.clinicalReportModel
+      .findOneAndUpdate(
+        {
+          ...ownership,
+          reportType: 'cognitive_assessment',
+          reportVersion: input.reportVersion,
+          reportCode: this.normalizeReportCode(input.reportCode),
+          status: 'archived',
+          correctionRecords: { $size: 0 },
+          'metadata.a25Correction.version': 1,
+          'metadata.a25Correction.state': 'in_progress',
+          'metadata.a25Correction.correctionId': input.correctionId,
+          'metadata.a25Correction.replacementReportCode':
+            input.replacementReportCode,
+          'metadata.a25Correction.replacementReportVersion':
+            input.replacementReportVersion,
+          'metadata.a25Correction.replacementReportId': { $exists: false },
+        },
+        { $set: { metadata: input.metadata } },
+        { new: true, runValidators: true },
+      )
+      .exec();
+    return updated ? this.mapReport(updated) : null;
+  }
+
   async createClinicalReport(
     input: CreateClinicalReportInput,
   ): Promise<ClinicalReportSummary> {
@@ -676,6 +852,9 @@ export class ReportsService {
       qualityStatus: input.qualityStatus,
       qualityHints: null,
       metadata: input.metadata,
+      ...(input.createdAt
+        ? { createdAt: new Date(input.createdAt.getTime()) }
+        : {}),
     });
     return this.mapReport(created);
   }

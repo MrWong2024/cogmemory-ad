@@ -149,6 +149,43 @@ export type ClinicalReportArchiveSummaryResponse = {
   sourceFreezeCompletedAt: Date | null;
 };
 
+export type ClinicalReportCorrectionStateResponse = 'in_progress' | 'completed';
+
+export type ClinicalReportCorrectionSummaryResponse = {
+  correctionId: string;
+  correctionNo: number;
+  state: ClinicalReportCorrectionStateResponse;
+  startedAt: Date;
+  startedBy: ClinicalReportWorkflowActorResponse;
+  correctionReason: string;
+  changeSummary: string;
+  previousReportCode: string;
+  previousReportVersion: number;
+  replacementReportId: string | null;
+  replacementReportCode: string;
+  replacementReportVersion: number;
+  completedAt: Date | null;
+  completedBy: ClinicalReportWorkflowActorResponse | null;
+};
+
+export type ClinicalReportReplacementLineageResponse = {
+  correctionId: string;
+  correctionNo: number;
+  previousReportId: string;
+  previousReportCode: string;
+  previousReportVersion: number;
+  replacementReportCode: string;
+  replacementReportVersion: number;
+  createdAt: Date;
+  createdBy: ClinicalReportWorkflowActorResponse;
+  correctionReason: string;
+  changeSummary: string;
+  sourceArchiveId: string;
+  sourceArchivedAt: Date;
+  sourceFreezeId: string;
+  sourceFreezeCompletedAt: Date;
+};
+
 export type ClinicalReportSourceFreezeStateResponse =
   | 'in_progress'
   | 'completed';
@@ -205,6 +242,8 @@ export type ClinicalReportResponse = {
   sourceFreeze: ClinicalReportSourceFreezeSummaryResponse | null;
   archivedAt: Date | null;
   archive: ClinicalReportArchiveSummaryResponse | null;
+  correction: ClinicalReportCorrectionSummaryResponse | null;
+  replacementOf: ClinicalReportReplacementLineageResponse | null;
   voidedAt: Date | null;
   voidReason?: string;
   createdAt: Date | null;
@@ -308,4 +347,30 @@ export type FreezeClinicalReportSourcesReceiptResponse = {
 export type FreezeClinicalReportSourcesResponse = {
   report: ClinicalReportResponse;
   sourceFreezeReceipt: FreezeClinicalReportSourcesReceiptResponse;
+};
+
+export type CreateClinicalReportCorrectionReceiptResponse = {
+  sourceReportId: string;
+  replacementReportId: string;
+  correctionId: string;
+  correctionNo: number;
+  state: 'completed';
+  startedAt: Date;
+  startedBy: ClinicalReportWorkflowActorResponse;
+  completedAt: Date;
+  completedBy: ClinicalReportWorkflowActorResponse;
+  correctionReason: string;
+  changeSummary: string;
+  previousReportCode: string;
+  previousReportVersion: number;
+  replacementReportCode: string;
+  replacementReportVersion: number;
+  alreadyCreated: boolean;
+  resumedExisting: boolean;
+};
+
+export type CreateClinicalReportCorrectionResponse = {
+  sourceReport: ClinicalReportResponse;
+  replacementReport: ClinicalReportResponse;
+  correctionReceipt: CreateClinicalReportCorrectionReceiptResponse;
 };

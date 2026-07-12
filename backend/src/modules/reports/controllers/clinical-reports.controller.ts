@@ -19,6 +19,7 @@ import { ClinicalReportVisitParamDto } from '../dto/clinical-report-visit-param.
 import { ClinicalReportResourceParamDto } from '../dto/clinical-report-resource-param.dto';
 import { ArchiveClinicalReportDto } from '../dto/archive-clinical-report.dto';
 import { ConfirmClinicalReportDto } from '../dto/confirm-clinical-report.dto';
+import { CreateClinicalReportCorrectionDto } from '../dto/create-clinical-report-correction.dto';
 import { GenerateClinicalReportDto } from '../dto/generate-clinical-report.dto';
 import { FreezeClinicalReportSourcesDto } from '../dto/freeze-clinical-report-sources.dto';
 import { LockClinicalReportDto } from '../dto/lock-clinical-report.dto';
@@ -29,6 +30,7 @@ import { ClinicalReportArchiveWorkflowService } from '../services/clinical-repor
 import { ClinicalReportLockWorkflowService } from '../services/clinical-report-lock-workflow.service';
 import { ClinicalReportReviewWorkflowService } from '../services/clinical-report-review-workflow.service';
 import { ClinicalReportSourceFreezeWorkflowService } from '../services/clinical-report-source-freeze-workflow.service';
+import { ClinicalReportCorrectionWorkflowService } from '../services/clinical-report-correction-workflow.service';
 import type {
   ConfirmClinicalReportResponse,
   ArchiveClinicalReportResponse,
@@ -38,6 +40,7 @@ import type {
   SubmitClinicalReportForConfirmationResponse,
   UpdateClinicalReportDraftResponse,
   FreezeClinicalReportSourcesResponse,
+  CreateClinicalReportCorrectionResponse,
 } from '../types/clinical-report-response.types';
 
 @Controller('patients/:patientId/visits/:visitId/clinical-reports')
@@ -50,6 +53,7 @@ export class ClinicalReportsController {
     private readonly lockWorkflow: ClinicalReportLockWorkflowService,
     private readonly sourceFreezeWorkflow: ClinicalReportSourceFreezeWorkflowService,
     private readonly archiveWorkflow: ClinicalReportArchiveWorkflowService,
+    private readonly correctionWorkflow: ClinicalReportCorrectionWorkflowService,
   ) {}
 
   @Post('generate')
@@ -169,6 +173,23 @@ export class ClinicalReportsController {
     @Body() input: ArchiveClinicalReportDto,
   ): Promise<ArchiveClinicalReportResponse> {
     return this.archiveWorkflow.archiveClinicalReport(
+      params.patientId,
+      params.visitId,
+      params.reportId,
+      currentUser,
+      input,
+    );
+  }
+
+  @Post(':reportId/corrections')
+  @HttpCode(HttpStatus.OK)
+  @Roles('doctor', 'admin')
+  createCorrection(
+    @Param() params: ClinicalReportResourceParamDto,
+    @CurrentUser() currentUser: AuthenticatedUserContext | undefined,
+    @Body() input: CreateClinicalReportCorrectionDto,
+  ): Promise<CreateClinicalReportCorrectionResponse> {
+    return this.correctionWorkflow.createClinicalReportCorrection(
       params.patientId,
       params.visitId,
       params.reportId,

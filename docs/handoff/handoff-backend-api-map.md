@@ -6,7 +6,7 @@
 
 ## 2. 当前状态
 
-- 当前报告公开 API 已扩展为 A20 generate / latest、A21 edit draft / submit confirmation / confirm、A22 lock、A23 freeze-sources 与 A24 archive 共八个接口。
+- 当前报告公开 API 已扩展为 A20 generate / latest、A21 edit draft / submit confirmation / confirm、A22 lock、A23 freeze-sources、A24 archive 与 A25 corrections 共九个接口。
 - `AuthModule` 当前新增 `AuthController`，仅暴露最小公开认证 API 底座；主登录态仍为服务端 Session + HttpOnly Cookie，不采用 JWT 主登录态。
 - AuthModule 内部 session cookie 名称已统一为 `cogmemory_ad_session`，登录成功下发 HttpOnly Cookie，`SameSite=Lax`，`Path=/`，production 环境启用 `Secure`。
 - 当前没有 users controller，没有公开用户管理 API，没有注册、密码重置、角色权限管理、短信验证码、OAuth / SSO 或 JWT 登录 API。
@@ -358,7 +358,7 @@
 - `backend\src\modules\media` 当前仅通过 `MediaEvidenceController` 暴露上述四个题目级媒体接口；没有全患者 / 访视 / 实例媒体列表、直接对象 key 下载、永久 URL、物理删除、替换、批量、分片、客户端直传、OCR 或 AI 接口。
 - `backend\src\modules\scoring` 当前通过同一 `ScoringController` 暴露 A17 compute / latest 与 A18 manual-review / confirm；没有 lock、void、撤销确认、reopen、重跑、列表、患者级或访视级评分 API。
 - `backend\src\modules\cognitive-domains` 当前通过 `CognitiveDomainResultsController` 暴露 A19 compute / latest；没有人工修改、确认、锁定、作废、重算、历史列表、患者 / 访视级列表或报告 API。
-- `backend\src\modules\reports` 当前通过 `ClinicalReportsController` 暴露 A20-A24 的 generate / latest / edit / submit / confirm / lock / freeze-sources / archive；没有 reportId 查询、列表、签名、unlock / unfreeze / unarchive、更正、作废、重生成、PDF 或 AI API。
+- `backend\src\modules\reports` 当前通过 `ClinicalReportsController` 暴露 A20-A25 的 generate / latest / edit / submit / confirm / lock / freeze-sources / archive / corrections；没有更正列表、cancel、branch、replacement archive、PDF 或 AI API。
 - 当前已定义 A12-A20 对应公开 DTO 和响应类型；仍不定义评分 lock / void / 重跑、认知域人工修改 / 确认 / 锁定 / 重算、报告编辑 / 确认 / PDF、SMS、AI / LLM 或批量 / 分片 / 客户端直传契约；A20 未更新 frontend handoff。
 
 ## 5. 后续同步规则
@@ -440,3 +440,15 @@
 - 并发 / 错误：首次 updatedAt 变化且仍可归档为 409 `CLINICAL_REPORT_ARCHIVE_CONFLICT`；状态、锁定或 sourceFreeze 不满足为 409 `CLINICAL_REPORT_NOT_ARCHIVABLE`；voided 为 `CLINICAL_REPORT_VOIDED`；metadata 根结构不安全为 `CLINICAL_REPORT_METADATA_UNSUPPORTED`；未知持久化失败为 500 `CLINICAL_REPORT_ARCHIVE_FAILED`。不自动重试或覆盖。
 - 隐私 / 非目标：响应和错误不含 metadata、Schema 原始 archivedBy、source IDs / A23 scope、archiveNote 日志、Patient 隐私、Session / Cookie / token 或 Mongo 细节。没有 unarchive、恢复 confirmed、correction / void、delete、PDF / Word / Storage 文件或 AI。
 - 归档后的既有接口：A20 generate 同 scope 只读返回既有 archived 报告；A21 edit / submit 不恢复可写状态，confirm 依既有 final-status 幂等返回；A22 lock 依既有锁定事实幂等；A23 completed freeze-sources 只读幂等。上述路径均不覆盖 archived status 或 a24Archive。
+
+## A25 ClinicalReport versioned correction
+
+### POST `/patients/:patientId/visits/:visitId/clinical-reports/:reportId/corrections`
+
+- roles：doctor / admin；Body 为 `{ confirm: true, correctionReason, changeSummary, expectedUpdatedAt }`，额外字段由 whitelist 拒绝。
+- readiness：source 必须是 ownership 匹配的 latest archived cognitive_assessment，正安全整数版本、mixed / passed / final；A21 confirmation、A22 lock、A23 completed counts、A24 archive 与 freeze anchors 必须完整，且不得有 correction / void / A25 namespace。Patient / Visit 只校验存在与归属。
+- version plan：`nextVersion=sourceVersion+1`、`correctionNo=nextVersion-1`、code 使用 patientId / visitId / type / nextVersion 的既有确定性 builder；同 source / version 只允许一个 replacement，碰撞或分支为 409 `CLINICAL_REPORT_CORRECTION_REPLACEMENT_CONFLICT`。
+- orchestration：source start 单文档原子写 in_progress → create replacement → duplicate 后精确读取与验证 → 记录 replacement anchor → source complete 单文档原子写 corrected / correctionRecords / completed。不是 transaction，不回滚、不删除 replacement；相同 POST 恢复或 completed 幂等。
+- response：`{ sourceReport, replacementReport, correctionReceipt }`；source 安全摘要在 `correction`，replacement 关系在 `replacementOf`。metadata、原始 correctionRecords、来源 ID 与 AuditLog ID 不公开。
+- A20 / A21：generate 与 latest 使用当前 latest；合法 replacement 的 edit / submit / confirm 仅 doctor/admin，Patient inactive / Visit locked / voided 不阻断。V1 不放宽；A22-A24 仍不接受 V2。
+- errors：400 confirmation / DTO；401；403；404 ownership；409 not-correctable / not-latest / conflict / audit-unavailable / replacement-conflict / incomplete；未知持久化失败 500。

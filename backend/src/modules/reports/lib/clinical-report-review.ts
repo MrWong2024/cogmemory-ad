@@ -403,7 +403,8 @@ export function assertClinicalReportBaseComplete(
   const narrative = report.narrative;
   if (
     report.reportType !== 'cognitive_assessment' ||
-    report.reportVersion !== 1 ||
+    !Number.isSafeInteger(report.reportVersion) ||
+    report.reportVersion < 1 ||
     !report.patientSnapshot ||
     !report.visitSnapshot ||
     report.primaryScaleInstanceIds.length < 1 ||

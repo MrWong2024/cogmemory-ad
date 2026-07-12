@@ -477,7 +477,7 @@ describe('ClinicalReportGenerationWorkflowService', () => {
     };
     reports = {
       findReportByVisitTypeVersion: jest.fn().mockResolvedValue(null),
-      findLatestReportByVisitId: jest.fn().mockResolvedValue(fixtures.report),
+      findLatestReportByVisitId: jest.fn().mockResolvedValue(null),
       createVersionOneCognitiveAssessmentReport: jest
         .fn()
         .mockResolvedValue(fixtures.report),
@@ -536,7 +536,7 @@ describe('ClinicalReportGenerationWorkflowService', () => {
   });
 
   it('returns an existing same-scope report without re-reading sources', async () => {
-    reports.findReportByVisitTypeVersion.mockResolvedValue(fixtures.report);
+    reports.findLatestReportByVisitId.mockResolvedValue(fixtures.report);
     const result = await service.generateClinicalReportDraft(
       ids.patient,
       ids.visit,
@@ -557,7 +557,7 @@ describe('ClinicalReportGenerationWorkflowService', () => {
   });
 
   it('rejects different existing scope and voided reports', async () => {
-    reports.findReportByVisitTypeVersion.mockResolvedValue({
+    reports.findLatestReportByVisitId.mockResolvedValue({
       ...fixtures.report,
       primaryScaleInstanceIds: ['507f1f77bcf86cd799439099'],
     });
@@ -569,7 +569,7 @@ describe('ClinicalReportGenerationWorkflowService', () => {
     ).rejects.toMatchObject({
       response: { code: 'CLINICAL_REPORT_SCOPE_CONFLICT' },
     });
-    reports.findReportByVisitTypeVersion.mockResolvedValue({
+    reports.findLatestReportByVisitId.mockResolvedValue({
       ...fixtures.report,
       status: 'voided',
     });
@@ -851,7 +851,7 @@ describe('ClinicalReportGenerationWorkflowService', () => {
     reports.isDuplicateKeyError.mockImplementation(
       (error: unknown) => error === duplicate,
     );
-    reports.findReportByVisitTypeVersion
+    reports.findLatestReportByVisitId
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(fixtures.report);
     const result = await service.generateClinicalReportDraft(
@@ -864,6 +864,7 @@ describe('ClinicalReportGenerationWorkflowService', () => {
   });
 
   it('latest is historical read-only and reports not found safely', async () => {
+    reports.findLatestReportByVisitId.mockResolvedValueOnce(fixtures.report);
     const result = await service.getLatestClinicalReport(
       ids.patient,
       ids.visit,

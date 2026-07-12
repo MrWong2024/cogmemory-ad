@@ -106,10 +106,8 @@ export class ClinicalReportGenerationWorkflowService {
       input.primaryScaleInstanceIds,
     );
     const context = await this.loadVisitContext(patientId, visitId);
-    const existing = await this.reportsService.findReportByVisitTypeVersion(
+    const existing = await this.reportsService.findLatestReportByVisitId(
       context.visit.id,
-      'cognitive_assessment',
-      1,
     );
     if (existing) {
       return this.resolveExistingReport(existing, context, requestedScope);
@@ -644,6 +642,12 @@ export class ClinicalReportGenerationWorkflowService {
     context: VisitContext,
     requestedScope: string[],
   ): GenerateClinicalReportResponse {
+    if (report.reportType !== 'cognitive_assessment') {
+      throw new ConflictException({
+        code: 'CLINICAL_REPORT_SCOPE_CONFLICT',
+        message: 'Clinical report scope conflicts with the existing report',
+      });
+    }
     if (report.status === 'voided') {
       throw new ConflictException({
         code: 'CLINICAL_REPORT_VOIDED',
@@ -721,10 +725,8 @@ export class ClinicalReportGenerationWorkflowService {
     context: VisitContext,
     requestedScope: string[],
   ): Promise<GenerateClinicalReportResponse> {
-    const report = await this.reportsService.findReportByVisitTypeVersion(
+    const report = await this.reportsService.findLatestReportByVisitId(
       context.visit.id,
-      'cognitive_assessment',
-      1,
     );
     if (!report) {
       throw new ConflictException({

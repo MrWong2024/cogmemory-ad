@@ -9,7 +9,7 @@
 - 当前存在公共底座 DTO、响应 type、Storage interface，以及 A12-A22 业务契约；A22 新增不可逆锁定 DTO、安全 lock summary 与 receipt。
 - 当前新增公开认证请求 DTO：`LoginDto`。
 - 当前新增公开患者 / 访视 DTO：`CreatePatientDto`、`ListPatientsQueryDto`、`PatientIdParamDto`、`CreateAssessmentVisitDto`、`ListAssessmentVisitsQueryDto`、`PatientVisitsParamDto`。
-- 当前仍没有用户管理、注册、密码重置、撤销 / reopen / force submit、批量 / 分片 / 客户端直传、认知域人工修改 / 确认 / 锁定 / 重算或报告退回 / 签名 / unlock / unfreeze / unarchive / 更正 / 作废 / PDF 请求 DTO；A24 已新增受控 archive DTO。
+- 当前仍没有用户管理、注册、密码重置、撤销 / reopen / force submit、批量 / 分片 / 客户端直传、认知域人工修改 / 确认 / 锁定 / 重算或报告退回 / 签名 / unlock / unfreeze / unarchive / correction cancel / 作废 / PDF 请求 DTO；A25 已新增受控 correction DTO。
 
 ## 3. 当前 DTO / Type 清单
 
@@ -575,3 +575,10 @@
 - Date JSON：TypeScript response 中时间保持 Date，Nest / JSON 序列化为 ISO string。首次 expectedUpdatedAt 必须来自最新 public report.updatedAt；已 archived / corrected 幂等分支仍要求 DTO 时间格式合法，但允许携带首次归档前的旧值且不写库。
 - historical fallback：archiveId、sourceFreezeId、sourceFreezeCompletedAt 为 null，archivedAt 使用 Schema 兼容字段，archivedBy 只公开 operatorId 且 role=unknown；不猜 operatorName / note，不补写 metadata。
 - public contract 不返回 metadata / 原始 a24Archive、Schema 原始 archivedBy、A23 scope、primaryScaleInstanceIds / scoreResultIds / cognitiveDomainResultIds / mediaEvidenceIds、correctionRecords、Session 或 currentUser。
+
+## A25 ClinicalReport correction DTO / response
+
+- `CreateClinicalReportCorrectionDto`：`confirm` 必须由 Workflow 严格判定为 boolean true；`correctionReason` trim 后 3-2000；`changeSummary` trim 后 3-4000；`expectedUpdatedAt` 为 strict ISO 8601。不得提交 version / code / replacement ID / correction ID / actor / narrative / snapshots / source IDs / metadata / force / resume / rollback。
+- 首次 `expectedUpdatedAt` 必须等于 source 最新 updatedAt；in_progress 恢复和 completed 幂等仍要求 DTO 合法，但允许旧值，且新 reason / summary 不覆盖首次值。
+- `ClinicalReportResponse` 增加 nullable `correction` 与 `replacementOf`；Date 字段经 JSON 返回 ISO string。`CreateClinicalReportCorrectionResponse` 为 `{ sourceReport, replacementReport, correctionReceipt }`，receipt 包含 started/completed actor、版本关系、原 reason/summary、alreadyCreated 与 resumedExisting。
+- public contract 不返回 metadata、a25 原始 namespace、原始 correctionRecords、AuditLog ID、五类来源 ID、Patient 隐私、Session 或 currentUser。

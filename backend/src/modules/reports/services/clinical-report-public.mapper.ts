@@ -11,6 +11,10 @@ import {
 import { resolveExistingClinicalReportLock } from '../lib/clinical-report-lock';
 import { resolveExistingClinicalReportArchive } from '../lib/clinical-report-archive';
 import { resolveExistingSourceFreeze } from '../lib/clinical-report-source-freeze';
+import {
+  resolveClinicalReportReplacementLineage,
+  resolveExistingClinicalReportCorrection,
+} from '../lib/clinical-report-correction';
 import type { ClinicalReportResponse } from '../types/clinical-report-response.types';
 import type {
   ClinicalReportSummary,
@@ -175,6 +179,8 @@ export class ClinicalReportPublicMapper {
       sourceFreeze: this.mapSourceFreeze(report),
       archivedAt: safeDate(report.archivedAt),
       archive: this.mapArchive(report),
+      correction: this.mapCorrection(report),
+      replacementOf: this.mapReplacementOf(report),
       voidedAt: safeDate(report.voidedAt),
       voidReason: report.voidReason,
       createdAt: safeDate(report.createdAt),
@@ -399,6 +405,81 @@ export class ClinicalReportPublicMapper {
         sourceFreezeCompletedAt: archive.sourceFreezeCompletedAt
           ? new Date(archive.sourceFreezeCompletedAt.getTime())
           : null,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private mapCorrection(report: ClinicalReportSummary) {
+    try {
+      const resolution = resolveExistingClinicalReportCorrection(report);
+      if (!resolution) {
+        return null;
+      }
+      const audit = resolution.audit;
+      return {
+        correctionId: audit.correctionId,
+        correctionNo: audit.correctionNo,
+        state: audit.state,
+        startedAt: new Date(audit.startedAt.getTime()),
+        startedBy: {
+          operatorId: audit.startedBy,
+          operatorName: audit.startedByName,
+          operatorRole: audit.startedByRole,
+        },
+        correctionReason: audit.correctionReason,
+        changeSummary: audit.changeSummary,
+        previousReportCode: audit.previousReportCode,
+        previousReportVersion: audit.previousReportVersion,
+        replacementReportId: audit.replacementReportId ?? null,
+        replacementReportCode: audit.replacementReportCode,
+        replacementReportVersion: audit.replacementReportVersion,
+        completedAt: audit.completedAt
+          ? new Date(audit.completedAt.getTime())
+          : null,
+        completedBy:
+          audit.completedBy && audit.completedByName && audit.completedByRole
+            ? {
+                operatorId: audit.completedBy,
+                operatorName: audit.completedByName,
+                operatorRole: audit.completedByRole,
+              }
+            : null,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private mapReplacementOf(report: ClinicalReportSummary) {
+    try {
+      const lineage = resolveClinicalReportReplacementLineage(report);
+      if (!lineage) {
+        return null;
+      }
+      return {
+        correctionId: lineage.correctionId,
+        correctionNo: lineage.correctionNo,
+        previousReportId: lineage.previousReportId,
+        previousReportCode: lineage.previousReportCode,
+        previousReportVersion: lineage.previousReportVersion,
+        replacementReportCode: lineage.replacementReportCode,
+        replacementReportVersion: lineage.replacementReportVersion,
+        createdAt: new Date(lineage.createdAt.getTime()),
+        createdBy: {
+          operatorId: lineage.createdBy,
+          operatorName: lineage.createdByName,
+          operatorRole: lineage.createdByRole,
+        },
+        correctionReason: lineage.correctionReason,
+        changeSummary: lineage.changeSummary,
+        sourceArchiveId: lineage.sourceArchiveId,
+        sourceArchivedAt: new Date(lineage.sourceArchivedAt.getTime()),
+        sourceFreezeId: lineage.sourceFreezeId,
+        sourceFreezeCompletedAt: new Date(
+          lineage.sourceFreezeCompletedAt.getTime(),
+        ),
       };
     } catch {
       return null;

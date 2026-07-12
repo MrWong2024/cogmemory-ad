@@ -418,3 +418,11 @@
 - `ClinicalReportPublicMapper` 无数据库访问，继续返回 top-level archivedAt，并把完整合法 A24 审计或历史 fallback 映射为安全 `archive`；非法 / 不一致审计只令 archive=null，不透传内部值。archive response receipt 增加 alreadyArchived。
 - 与 A22/A23 边界：A22 锁定事实和 A23 completed 审计只读作为首次归档前置，A24 不修改 lockedAt / lockedBy、a22Lock、a23SourceFreeze、confirmation、narrative、快照、scope 或来源对象。重复 archived / corrected 请求允许旧 expectedUpdatedAt 且不写库。
 - 与 A20/A21 既有接口边界：A20 generate 对同 scope archived 报告保持幂等；A21 edit / submit 不恢复可写状态、confirm 保持 final-status 幂等；A22 lock 和 A23 completed freeze-sources 保持只读幂等并保留 a24Archive。无循环、forwardRef、新 Schema、transaction、unarchive / correction / void / PDF / AI。
+
+### A25 ClinicalReport correction workflow
+
+- `ClinicalReportCorrectionWorkflowService` 只依赖 PatientsService、AssessmentsService、ReportsService 与 public mapper；负责 ownership、doctor/admin actor、latest/readiness、start/create-or-resolve/record/complete、in_progress 恢复、completed 幂等与稳定错误。不依赖 Scoring、CognitiveDomains、Media、Storage 或 AI。
+- `clinical-report-correction.ts` 是无 DI / 数据库访问的纯函数：复用 A20 provenance、A21 confirmation、A22 lock、A23 freeze、A24 archive parser；计算线性版本与确定性 code，构建 source / replacement metadata，深复制固定快照，验证 replacement，构建 correction record / completion，且不修改输入。
+- `ReportsService` 增加 startCorrectionIfUnmodified、createCorrectionReplacement、findCorrectionReplacementByCode、listReportsByVisitTypeVersion、recordCorrectionReplacementIfMatching 与 completeCorrectionIfMatching；start / record / complete 各为 source 单文档条件更新，replacement 使用 Model.create + unique reportCode 恢复，不使用 transaction。
+- A20 generation 改为 latest-first；A21 ownership 查询不再固定 V1，三个写 filter 使用已读取 reportVersion。Workflow 验证 a25CorrectionReplacement 后仅 doctor/admin 可写，并只对合法 replacement 豁免 Patient / Visit 后续状态；metadata 保留 lineage。
+- public mapper 纯映射 correction / replacementOf，非法 A25 安全返回 null；A22-A24 Workflow 未修改、未泛化 V2。

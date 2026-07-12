@@ -319,6 +319,15 @@
 - 来源边界：A24 只解析已经完成的 A23 审计，不重新读取、冻结或修改 ScaleInstance、ItemResponse、ScoreResult、CognitiveDomainResult、MediaEvidence 或 Storage；lockedAt / lockedBy、a22Lock、a23SourceFreeze、confirmation、narrative、快照与来源 ID 全部不变。
 - 后续边界：不实现 unarchive 或恢复 confirmed。后续 A25 可从 archived 建设独立受控更正流程；更正不是取消归档，也不能覆盖原归档报告。A24 不实现 correction、void、delete、PDF / Word / download 或 AI。下一阶段建议为前端 B14 归档确认与安全摘要展示。
 
+### D-035：归档更正采用原报告保留、线性 replacement 与可恢复跨文档编排
+
+- 原报告不原地覆盖：latest archived source 保留固定正文、快照、scope、confirmation、lock、freeze、archive、code 与 version，完成时只转 corrected、追加一条版本替换 correctionRecords 并完成 a25Correction。
+- 版本链严格线性：replacementVersion=sourceVersion+1，correctionNo=replacementVersion-1，code 复用确定性 builder；同 source / visit-type-version 只允许一个 replacement，不允许跳号、分支、merge、delete 或 cancel。
+- replacement 固定复制历史快照和 A20 provenance，重置为 draft / mixed / needs_review 与空后续生命周期；a25CorrectionReplacement 保存 previous relation、原发起 actor / reason / summary 与 A24/A23 anchors，不复制 A21-A24 lifecycle metadata。
+- 编排不是 transaction：source 先原子 start，replacement 独立 create/验证并记录 anchor，source 再原子 complete；中断保留 in_progress 和已创建 replacement，相同 POST 恢复，不生成新 correctionId、不覆盖首次文本、不回滚或删除。
+- 合法 replacement 的 A21 仅 doctor/admin，历史 Patient inactive / Visit locked / voided 不阻断；普通 V1 规则保持。A22-A24 泛化到 V2 留给后续独立阶段。
+- 不修改 Schema、ClinicalReportStatus 或 REPORT_STATUS_TRANSITIONS，不创建 AuditLog，不读取/修改五类来源，不生成 PDF/Storage 文件，不调用 AI。
+
 ## 4. 后续同步规则
 
 - 新增关键技术选型、接口设计、数据模型、测试策略或部署策略后，应追加决策记录。

@@ -9,6 +9,7 @@ import { ClinicalReportArchiveWorkflowService } from '../services/clinical-repor
 import { ClinicalReportLockWorkflowService } from '../services/clinical-report-lock-workflow.service';
 import { ClinicalReportReviewWorkflowService } from '../services/clinical-report-review-workflow.service';
 import { ClinicalReportSourceFreezeWorkflowService } from '../services/clinical-report-source-freeze-workflow.service';
+import { ClinicalReportCorrectionWorkflowService } from '../services/clinical-report-correction-workflow.service';
 import { ClinicalReportsController } from './clinical-reports.controller';
 
 describe('ClinicalReportsController', () => {
@@ -25,6 +26,7 @@ describe('ClinicalReportsController', () => {
   let lockWorkflow: { lockClinicalReport: jest.Mock };
   let sourceFreezeWorkflow: { freezeClinicalReportSources: jest.Mock };
   let archiveWorkflow: { archiveClinicalReport: jest.Mock };
+  let correctionWorkflow: { createClinicalReportCorrection: jest.Mock };
 
   beforeEach(async () => {
     workflow = {
@@ -39,6 +41,7 @@ describe('ClinicalReportsController', () => {
     lockWorkflow = { lockClinicalReport: jest.fn() };
     sourceFreezeWorkflow = { freezeClinicalReportSources: jest.fn() };
     archiveWorkflow = { archiveClinicalReport: jest.fn() };
+    correctionWorkflow = { createClinicalReportCorrection: jest.fn() };
     const moduleRef = await Test.createTestingModule({
       controllers: [ClinicalReportsController],
       providers: [
@@ -62,6 +65,10 @@ describe('ClinicalReportsController', () => {
           provide: ClinicalReportArchiveWorkflowService,
           useValue: archiveWorkflow,
         },
+        {
+          provide: ClinicalReportCorrectionWorkflowService,
+          useValue: correctionWorkflow,
+        },
       ],
     })
       .overrideGuard(SessionAuthGuard)
@@ -78,6 +85,13 @@ describe('ClinicalReportsController', () => {
         ROLES_KEY,
         // eslint-disable-next-line @typescript-eslint/unbound-method
         ClinicalReportsController.prototype.confirmReport,
+      ),
+    ).toEqual(['doctor', 'admin']);
+    expect(
+      Reflect.getMetadata(
+        ROLES_KEY,
+        // eslint-disable-next-line @typescript-eslint/unbound-method
+        ClinicalReportsController.prototype.createCorrection,
       ),
     ).toEqual(['doctor', 'admin']);
     expect(
@@ -192,12 +206,19 @@ describe('ClinicalReportsController', () => {
       archiveNote: '脱敏归档说明',
       expectedUpdatedAt,
     };
+    const correction = {
+      confirm: true,
+      correctionReason: '脱敏更正原因',
+      changeSummary: '脱敏计划变更范围',
+      expectedUpdatedAt,
+    };
     reviewWorkflow.updateDraft.mockResolvedValue({});
     reviewWorkflow.submitForConfirmation.mockResolvedValue({});
     reviewWorkflow.confirmReport.mockResolvedValue({});
     lockWorkflow.lockClinicalReport.mockResolvedValue({});
     sourceFreezeWorkflow.freezeClinicalReportSources.mockResolvedValue({});
     archiveWorkflow.archiveClinicalReport.mockResolvedValue({});
+    correctionWorkflow.createClinicalReportCorrection.mockResolvedValue({});
 
     await controller.updateDraft(params, currentUser, edit);
     await controller.submitForConfirmation(params, currentUser, submit);
@@ -205,6 +226,7 @@ describe('ClinicalReportsController', () => {
     await controller.lockReport(params, currentUser, lock);
     await controller.freezeSources(params, currentUser, freeze);
     await controller.archiveReport(params, currentUser, archive);
+    await controller.createCorrection(params, currentUser, correction);
 
     expect(reviewWorkflow.updateDraft).toHaveBeenCalledWith(
       params.patientId,
@@ -249,6 +271,15 @@ describe('ClinicalReportsController', () => {
       params.reportId,
       currentUser,
       archive,
+    );
+    expect(
+      correctionWorkflow.createClinicalReportCorrection,
+    ).toHaveBeenCalledWith(
+      params.patientId,
+      params.visitId,
+      params.reportId,
+      currentUser,
+      correction,
     );
   });
 });
