@@ -26,7 +26,7 @@
 - 当前报告接口增至八个；A12-A24 临床接口显式使用 `SessionAuthGuard` + `RolesGuard`，A21 confirm、A22 lock、A23 freeze-sources 与 A24 archive 仅允许 doctor / admin，其余 A21 写操作沿用四个患者工作流角色。
 - 已完成后端公共底座基础闭环本地验证：`npm install` 成功、`npm run build` 成功、`npm test -- --runInBand` 成功、`npm run start:prod` 启动成功。
 - 单元测试验证结果为 72 个测试套件通过、625 个测试通过。
-- A24 定向真实 HTTP E2E 已在 `NODE_ENV=test` 和隔离 `cogmemory_ad_test` 数据库上通过：1 个测试套件、6 个测试通过；当前全量规模为 13 个套件、61 个测试。全量曾通过一次，但最终复跑因既有套件共享 test catalog / 数据的顺序污染而失败，相关既有 failing suite 定向复跑通过，因此不宣称最终全量稳定通过。使用 fake Storage、stub SMS / LLM 和脱敏人工数据，A24 按 `SUBJ-A24-TEST-*` / `VISIT-A24-TEST-*` 前缀定向清理运行时数据。
+- A24 定向真实 HTTP E2E 已通过：1 个测试套件、6 个测试通过；全量 E2E 为 13 个测试套件、60 个测试通过。A24 完成后补充执行的最近两次全量 E2E 均完整通过，均使用 `NODE_ENV=test`、Jest `--runInBand`、隔离 `cogmemory_ad_test`、fake Storage、stub SMS / LLM 和脱敏人工数据，未调用真实外部服务；A24 按 `SUBJ-A24-TEST-*` / `VISIT-A24-TEST-*` 前缀定向清理运行时数据。此前一次全量复跑曾出现既有跨套件 test catalog / 数据顺序污染现象；该现象在随后两次完整串行复跑中未再次出现。当前验证结论以最近连续两次全量通过为准，但尚不据此宣称潜在测试隔离风险已被永久消除。
 - 后端 TypeScript 编译根目录为 `.`，`outDir` 保持 `./dist`，因此 `src/main.ts` 编译后的主入口产物为 `dist/src/main.js`。
 - `package.json` 中 `start:prod` 保持指向 `./dist/src/main.js`，当前 build 产物路径已与该启动路径对齐。
 - `tsBuildInfoFile` 保持 `./dist/tsconfig.build.tsbuildinfo`；`dist` 与 `*.tsbuildinfo` 均作为生成物处理，不作为项目源文件纳入版本库。
@@ -254,7 +254,7 @@
 - 重复 archived / corrected 归档只读幂等，允许旧 expectedUpdatedAt，不生成新 ID，不改 archivedAt / archivedBy / note / updatedAt。历史完整 archivedAt + archivedBy 且无 a24Archive 时返回 archiveId / sourceFreeze anchor 为 null、actor role=unknown 的安全 fallback，不补写 metadata；字段或审计不一致返回 `CLINICAL_REPORT_ARCHIVE_AUDIT_UNAVAILABLE`。
 - public report 继续保留兼容顶层 archivedAt，并新增 nullable `archive` 安全摘要；写响应为 `{ report, archiveReceipt }`，receipt 额外包含 alreadyArchived。公开响应不含 metadata、Schema 原始 archivedBy、source IDs、A23 scope、Session 或 currentUser。
 - 乐观并发冲突返回 `CLINICAL_REPORT_ARCHIVE_CONFLICT`，不自动重试或覆盖；未知持久化失败为 `CLINICAL_REPORT_ARCHIVE_FAILED`。A24 不修改 lockedAt / lockedBy、a22Lock、a23SourceFreeze、confirmation、narrative、快照、scope、reportCode / version / type 或来源对象。
-- 实际验证：scoped reports/A24 lint 通过；build 通过；全量 unit 72 个套件 / 625 个测试通过；A24 定向 E2E 1 个套件 / 6 个测试通过。全量 E2E 规模为 13 个套件 / 61 个测试，曾通过一次，但最终复跑因既有套件间 test catalog / 数据顺序污染失败；相关既有 suite 定向复跑通过。E2E 使用隔离 `cogmemory_ad_test`、fake Storage、stub SMS / LLM 和脱敏人工数据。未运行全模块 lint，既有 scoring 格式技术债未修改。
+- 实际验证：scoped reports/A24 lint 通过；build 通过；全量 unit 72 个套件 / 625 个测试通过；A24 定向 E2E 1 个套件 / 6 个测试通过；全量 E2E 13 个套件 / 60 个测试通过。A24 完成后补充执行的最近两次全量 E2E 均在 `NODE_ENV=test`、Jest `--runInBand`、隔离 `cogmemory_ad_test`、fake Storage、stub SMS / LLM 和脱敏人工数据环境中完整通过，未调用真实外部服务。此前一次全量复跑曾出现既有跨套件 test catalog / 数据顺序污染现象；该现象在随后两次完整串行复跑中未再次出现。当前验证结论以最近连续两次全量通过为准，但尚不据此宣称潜在测试隔离风险已被永久消除。未运行全模块 lint，既有 scoring 格式技术债未修改。
 
 ## 13. 当前尚未实现
 
@@ -272,8 +272,8 @@
 - 尚无 AI / LLM 调用接口。
 - 尚无患者编辑 / 删除 / 归档、访视编辑 / 删除 / 状态流转，以及 A12-A24 已列接口之外的量表、作答、媒体、计分、认知域、报告等其他业务 Controller 或公开业务 API。
 - 尚未实现用户创建、用户更新、用户禁用、重置密码、角色权限管理、短信验证码、OAuth / SSO、JWT 主登录态、前端登录页、前端认证态或权限菜单。
-- A12-A24 真实 HTTP E2E 已执行；A24 定向通过，最终全量复跑受既有跨套件 test catalog / 数据顺序污染影响未稳定通过。连接隔离 `cogmemory_ad_test`，Storage=fake、SMS / LLM=stub，未调用真实 OSS 或生产服务。
-- 已完成 A24 scoped lint、后端 build、72 个单元测试套件 / 625 个测试和 A24 定向 E2E 1 个套件 / 6 个测试；全量 E2E 当前规模 13 个套件 / 61 个测试，最终复跑失败原因已记录。未运行全模块 lint，既有 scoring 格式技术债未由 A24 修改。
+- A12-A24 真实 HTTP E2E 已执行；A24 定向 E2E 为 1 个套件 / 6 个测试通过，全量 E2E 为 13 个套件 / 60 个测试通过，A24 完成后补充执行的最近两次全量 E2E 均完整通过。执行使用 `NODE_ENV=test`、Jest `--runInBand`、隔离 `cogmemory_ad_test`、fake Storage、stub SMS / LLM 和脱敏人工数据，未调用真实外部服务。
+- 已完成 A24 scoped lint、后端 build、72 个单元测试套件 / 625 个测试通过。此前一次全量复跑曾出现既有跨套件 test catalog / 数据顺序污染现象，该现象在随后两次完整串行复跑中未再次出现；当前验证结论以最近连续两次全量通过为准，但尚不据此宣称潜在测试隔离风险已被永久消除。未运行全模块 lint，既有 scoring 格式技术债未由 A24 修改。
 
 ## 14. 后续同步规则
 

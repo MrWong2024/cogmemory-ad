@@ -32,7 +32,8 @@
 - 当前报告公开 API 共八个：generate、latest、edit draft、submit confirmation、confirm、lock、freeze-sources、archive。
 - A12-A24 临床接口均显式绑定 `SessionAuthGuard` 与 `RolesGuard`；A21 edit / submit 沿用四个患者工作流角色，confirm、A22 lock、A23 freeze-sources 与 A24 archive 方法级限制 doctor / admin；未注册全局 Guard。
 - 当前媒体边界仅为 photo / handwriting；手写轨迹为可选 JSON / strokes，签名 URL 为短期地址，作废不物理删除。仍无批量上传、分片上传、客户端直传、永久 URL、公开 Storage 管理、物理删除、原子替换、OCR 或 AI。
-- A24 验证后为 72 个单元测试套件、625 个测试通过；A24 定向真实 HTTP E2E 为 1 个套件、6 个测试通过，当前全量规模为 13 个套件、61 个测试。全量曾在本次实现过程中通过一次，但最终复跑出现既有套件间共享 test catalog / 数据顺序污染（相关既有套件定向复跑通过），因此不把最终全量 E2E 写成稳定通过；环境仍为隔离 `cogmemory_ad_test`、fake storage、stub SMS / LLM 与脱敏人工数据。
+- A24 最终验证记录为 scoped lint 通过、build 通过、72 个单元测试套件 / 625 个测试通过、A24 定向真实 HTTP E2E 1 个套件 / 6 个测试通过、全量 E2E 13 个套件 / 60 个测试通过。A24 完成后补充执行的最近两次全量 E2E 均完整通过；未运行全模块 lint，既有 scoring 格式技术债未修改。
+- 两次最新全量 E2E 均使用 `NODE_ENV=test`、Jest `--runInBand`、隔离 `cogmemory_ad_test`、fake Storage、stub SMS / LLM 与脱敏人工数据，未调用真实外部服务。此前一次全量复跑曾出现既有跨套件 test catalog / 数据顺序污染现象；该现象在随后两次完整串行复跑中未再次出现。当前验证结论以最近连续两次全量通过为准，但尚不据此宣称潜在测试隔离风险已被永久消除。
 - 当前后端闭环为 A17 阶段性计算 / latest → A18 人工复核 / 确认 → A19 认知域 compute / latest → A20 报告 generate / latest → A21 edit / submit / confirm → A22 lock → A23 freeze-sources → A24 archive。归档不重读来源，仍无 unfreeze / unarchive / 退回 / 签名 / correct / void、重生成、reportVersion=2、PDF 或 AI。
 
 ## 4. 必读基础文档

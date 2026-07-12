@@ -141,7 +141,9 @@
   - build 后 `dist/src/main.js` 已确认存在。
   - `npm test -- --runInBand` 成功。
   - 当前单元测试为 72 个测试套件、625 个测试通过。
-  - 当前全量 E2E 为 13 个测试套件、61 个测试通过。
+  - A24 scoped `src/modules/reports + clinical-report-archive.e2e-spec.ts` lint 通过；A24 定向 E2E 为 1 个测试套件、6 个测试通过。
+  - 当前全量 E2E 为 13 个测试套件、60 个测试通过；A24 完成后补充执行的最近两次全量 E2E 均完整通过。
+  - 两次最新全量 E2E 均使用 `NODE_ENV=test`、Jest `--runInBand`、隔离 `cogmemory_ad_test`、fake Storage、stub SMS / LLM 和脱敏人工数据，未调用真实外部服务。此前一次全量复跑曾出现既有跨套件 test catalog / 数据顺序污染现象；该现象在随后两次完整串行复跑中未再次出现。当前验证结论以最近连续两次全量通过为准，但尚不据此宣称潜在测试隔离风险已被永久消除。
   - 用户已补充验证 `npm run start:prod` 本地启动成功。
   - `dist/src/main.js` 与 `start:prod` 指向的 `./dist/src/main.js` 路径匹配。
 - 当前未验证命令：
@@ -281,7 +283,7 @@
 - A24 public mapper：覆盖 unarchived archive=null、完整 a24Archive、安全 actor / note / anchor、历史 fallback、非法 A24 安全忽略、top-level archivedAt 保留、isFinal 不变，以及 metadata / Schema 原始 archivedBy / source IDs 排除。
 - `clinical-report-archive.e2e-spec.ts` 使用真实 AppModule、Cookie / Session / Roles Guard、全局 DTO、隔离 MongoDB 与 fake Storage；使用 `SUBJ-A24-TEST-*` / `VISIT-A24-TEST-*`、脱敏账号和无真实临床含义 note，定向清理 A24 数据。覆盖 401、system/nurse/research 403、confirmation / whitelist、draft / pending / unlocked / sourceFreeze missing / in_progress、doctor 首次归档、inactive Patient / locked Visit、status / isFinal / top-level archivedAt / archive summary / receipt、锁定 / confirmation / narrative / snapshots / scope / A20-A23 metadata 不变、latest、旧 expectedUpdatedAt 幂等且 updatedAt 不变、并发冲突、corrected historical fallback 和 admin。
 - A24 E2E 执行前确认 `NODE_ENV=test`、数据库为 `cogmemory_ad_test` 且非 dev / prod、Storage=fake、LLM/SMS=stub；未输出连接串或凭证，未调用真实 OSS / SMS / LLM，未使用真实患者、报告、医疗图像或临床结论。
-- A24 当前实际结果：scoped `src/modules/reports + clinical-report-archive.e2e-spec.ts` lint 通过；build 通过；全量 unit 为 72 个套件 / 625 个测试通过；A24 定向 E2E 为 1 个套件 / 6 个测试通过。全量 E2E 当前规模为 13 个套件 / 61 个测试；本次实现过程中曾完整通过一次，但最终复跑出现既有套件共享 test catalog / 数据的顺序污染，表现为既有 review / draft / submission 等套件 409，相关既有 `scale-instance-submission.e2e-spec.ts` 定向复跑通过，因此不记录为最终全量稳定通过。未运行全模块 lint，既有 scoring 格式技术债未修改。
+- A24 当前实际结果：scoped `src/modules/reports + clinical-report-archive.e2e-spec.ts` lint 通过；build 通过；全量 unit 为 72 个套件 / 625 个测试通过；A24 定向 E2E 为 1 个套件 / 6 个测试通过；全量 E2E 为 13 个套件 / 60 个测试通过。A24 完成后补充执行的最近两次全量 E2E 均在 `NODE_ENV=test`、Jest `--runInBand`、隔离 `cogmemory_ad_test`、fake Storage、stub SMS / LLM 和脱敏人工数据环境中完整通过，未调用真实外部服务。此前一次全量复跑曾出现既有跨套件 test catalog / 数据顺序污染现象；该现象在随后两次完整串行复跑中未再次出现。当前验证结论以最近连续两次全量通过为准，但尚不据此宣称潜在测试隔离风险已被永久消除。未运行全模块 lint，既有 scoring 格式技术债未修改。
 
 ## 7. 医疗与量表数据测试红线
 
