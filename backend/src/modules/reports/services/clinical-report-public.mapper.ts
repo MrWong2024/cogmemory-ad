@@ -9,6 +9,7 @@ import {
   readClinicalReportSubmission,
 } from '../lib/clinical-report-review';
 import { resolveExistingClinicalReportLock } from '../lib/clinical-report-lock';
+import { resolveExistingClinicalReportArchive } from '../lib/clinical-report-archive';
 import { resolveExistingSourceFreeze } from '../lib/clinical-report-source-freeze';
 import type { ClinicalReportResponse } from '../types/clinical-report-response.types';
 import type {
@@ -173,6 +174,7 @@ export class ClinicalReportPublicMapper {
       lock: this.mapLock(report),
       sourceFreeze: this.mapSourceFreeze(report),
       archivedAt: safeDate(report.archivedAt),
+      archive: this.mapArchive(report),
       voidedAt: safeDate(report.voidedAt),
       voidReason: report.voidReason,
       createdAt: safeDate(report.createdAt),
@@ -370,6 +372,33 @@ export class ClinicalReportPublicMapper {
                 operatorRole: audit.completedByRole,
               }
             : null,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private mapArchive(report: ClinicalReportSummary) {
+    try {
+      const archive = resolveExistingClinicalReportArchive(report);
+      if (!archive) {
+        return null;
+      }
+      return {
+        archiveId: archive.archiveId,
+        archivedAt: new Date(archive.archivedAt.getTime()),
+        archivedBy: {
+          operatorId: archive.archivedBy.operatorId,
+          ...(archive.archivedBy.operatorName
+            ? { operatorName: archive.archivedBy.operatorName }
+            : {}),
+          operatorRole: archive.archivedBy.operatorRole,
+        },
+        ...(archive.archiveNote ? { archiveNote: archive.archiveNote } : {}),
+        sourceFreezeId: archive.sourceFreezeId,
+        sourceFreezeCompletedAt: archive.sourceFreezeCompletedAt
+          ? new Date(archive.sourceFreezeCompletedAt.getTime())
+          : null,
       };
     } catch {
       return null;

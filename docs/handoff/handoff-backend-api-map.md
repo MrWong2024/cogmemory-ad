@@ -6,12 +6,12 @@
 
 ## 2. 当前状态
 
-- 当前报告公开 API 已扩展为 A20 generate / latest、A21 edit draft / submit confirmation / confirm 与 A22 lock 共六个接口。
+- 当前报告公开 API 已扩展为 A20 generate / latest、A21 edit draft / submit confirmation / confirm、A22 lock、A23 freeze-sources 与 A24 archive 共八个接口。
 - `AuthModule` 当前新增 `AuthController`，仅暴露最小公开认证 API 底座；主登录态仍为服务端 Session + HttpOnly Cookie，不采用 JWT 主登录态。
 - AuthModule 内部 session cookie 名称已统一为 `cogmemory_ad_session`，登录成功下发 HttpOnly Cookie，`SameSite=Lax`，`Path=/`，production 环境启用 `Secure`。
 - 当前没有 users controller，没有公开用户管理 API，没有注册、密码重置、角色权限管理、短信验证码、OAuth / SSO 或 JWT 登录 API。
 - A12 已新增 `PatientsController` 与 `AssessmentVisitsController`，形成第一组受保护临床业务 API；所有五个接口均显式绑定 `SessionAuthGuard`、`RolesGuard` 和 `@Roles('admin', 'doctor', 'nurse', 'research_assistant')`。
-- 当前已有实例 submission、评分、认知域与报告 generate / latest / edit / submit / confirm / lock 最小闭环；仍没有认知域人工修改 / 确认 / 锁定 / 重算、报告退回 / 签名 / unlock / 归档 / 更正 / 作废 / PDF、SMS 或 AI / LLM 公开接口。
+- 当前已有实例 submission、评分、认知域与报告 generate / latest / edit / submit / confirm / lock / freeze-sources / archive 最小闭环；仍没有认知域人工修改 / 确认 / 锁定 / 重算、报告退回 / 签名 / unlock / unfreeze / unarchive / 更正 / 作废 / PDF、SMS 或 AI / LLM 公开接口。
 - 当前 API 事实以实际 Controller、DTO、response type 和对应单元 / E2E 测试为准。
 
 ## 3. 当前 API 清单
@@ -358,7 +358,7 @@
 - `backend\src\modules\media` 当前仅通过 `MediaEvidenceController` 暴露上述四个题目级媒体接口；没有全患者 / 访视 / 实例媒体列表、直接对象 key 下载、永久 URL、物理删除、替换、批量、分片、客户端直传、OCR 或 AI 接口。
 - `backend\src\modules\scoring` 当前通过同一 `ScoringController` 暴露 A17 compute / latest 与 A18 manual-review / confirm；没有 lock、void、撤销确认、reopen、重跑、列表、患者级或访视级评分 API。
 - `backend\src\modules\cognitive-domains` 当前通过 `CognitiveDomainResultsController` 暴露 A19 compute / latest；没有人工修改、确认、锁定、作废、重算、历史列表、患者 / 访视级列表或报告 API。
-- `backend\src\modules\reports` 当前只通过 `ClinicalReportsController` 暴露 A20 generate / latest；没有 reportId 查询、列表、编辑、医生确认、签名、锁定、归档、更正、作废、重生成、PDF 或 AI API。
+- `backend\src\modules\reports` 当前通过 `ClinicalReportsController` 暴露 A20-A24 的 generate / latest / edit / submit / confirm / lock / freeze-sources / archive；没有 reportId 查询、列表、签名、unlock / unfreeze / unarchive、更正、作废、重生成、PDF 或 AI API。
 - 当前已定义 A12-A20 对应公开 DTO 和响应类型；仍不定义评分 lock / void / 重跑、认知域人工修改 / 确认 / 锁定 / 重算、报告编辑 / 确认 / PDF、SMS、AI / LLM 或批量 / 分片 / 客户端直传契约；A20 未更新 frontend handoff。
 
 ## 5. 后续同步规则
@@ -424,3 +424,19 @@
 - 隐私 / 边界：公开响应不含 metadata、scope、ItemResponse IDs 或其他来源 ID；不冻结 Patient、Visit、ScaleDefinition/Version、Storage，不生成 PDF / AI，不创建 AuditLog，不提供 unfreeze。
 - 错误族：ownership / Patient / Visit / report not found，`CLINICAL_REPORT_NOT_SOURCE_FREEZABLE`、`CLINICAL_REPORT_SOURCE_FREEZE_INPUT_INVALID`、`..._SCOPE_INVALID`、`..._CONFLICT`、`..._AUDIT_UNAVAILABLE`、`..._INCOMPLETE`、`..._FAILED` 及既有 metadata / voided 错误。
 - 冻结后写保护：A14 ItemResponse 草稿更新、A15 media 上传/作废与 evidenceRefs 变更、A16 ScaleInstance submit、A18 ScoreResult manual-review/confirm 的原子 filter 均包含 `lockedAt: null`；A17/A19/A20-A22 的既有幂等读取/计算不会覆盖锁定事实或 a23SourceFreeze。
+
+## A24 ClinicalReport archive
+
+### POST `/patients/:patientId/visits/:visitId/clinical-reports/:reportId/archive`
+
+- Controller / Guard / Roles / actor：既有 `ClinicalReportsController`；类级 `SessionAuthGuard` + `RolesGuard`，方法级 `@Roles('doctor', 'admin')`，通过 `@CurrentUser()` 构建受控 actor。未认证 401，system / nurse / research_assistant 403；路径复用 `ClinicalReportResourceParamDto`。
+- Body / whitelist：`ArchiveClinicalReportDto` 只允许 `confirm=true`、trim 3-2000 `archiveNote`、strict ISO `expectedUpdatedAt`。status / source / quality、归档 / 锁定 / 来源冻结 / confirmation / correction / void 字段、actor / archiveId / time、metadata、force / unarchive / correct / void / createPdf 和路径 ID 均由全局 whitelist 拒绝。缺失、false 或字符串 confirmation 返回 400 `CLINICAL_REPORT_ARCHIVE_CONFIRMATION_REQUIRED`。
+- ownership：必须存在 Patient、Patient 下 Visit 与同 Patient / Visit 的 report；跨 ownership 按 404 `PATIENT_NOT_FOUND` / `VISIT_NOT_FOUND` / `CLINICAL_REPORT_NOT_FOUND`。Patient / Visit 只用于存在性与 ownership，Patient inactive 不阻断，Visit locked 不阻断，且 A24 不更新二者。
+- 首次 readiness：report 必须为 cognitive_assessment version 1、confirmed / mixed / passed、confirmation 完整且 isFinal 可安全派生为 true；lockedAt / lockedBy 与合法 A22 audit 一致；`metadata.a23SourceFreeze` 必须是 counts / actor / scope / completed anchor 均完整的 completed 审计；archived / voided 字段为空且 correctionRecords 为空。A24 不重新读取 ScaleInstance、ItemResponse、ScoreResult、CognitiveDomainResult、MediaEvidence 或 Storage。
+- 状态 / 原子更新：复用既有 `canTransitionReportStatus('confirmed', 'archived')`；没有新增状态或修改转换表。`archiveReportIfUnmodified()` 单次 `findOneAndUpdate({ new: true, runValidators: true })` filter 包含 ownership、type/version、confirmed/mixed/passed、锁定非空、归档 / 作废空值、空 correctionRecords、updatedAt、A23 completed 与 A24 namespace 不存在；`$set` 只有 status=archived、archivedAt、archivedBy、metadata。
+- audit：`metadata.a24Archive` version=1，只写一次，包含服务端 randomUUID archiveId、服务端 archivedAt、认证 actor ID/name/doctor-or-admin role、trim archiveNote、sourceFreezeId 与 sourceFreezeCompletedAt。保留 A20-A23 和未来未知合法 metadata namespace，不保存 Patient / Visit、narrative、A23 scope 或来源 ID。
+- response：HTTP 200，`ArchiveClinicalReportResponse { report, archiveReceipt }`。report 继续返回兼容顶层 archivedAt，并新增 nullable `archive` 安全摘要；receipt 返回 archiveId、archivedAt、安全 archivedBy、可选 archiveNote、sourceFreezeId、sourceFreezeCompletedAt、alreadyArchived。status=archived、isFinal=true。
+- 幂等 / historical fallback：archived / corrected 且归档事实安全时直接返回 alreadyArchived=true，不写库，不要求 expectedUpdatedAt 与当前值一致，不生成新 ID、不改时间 / actor / note / updatedAt。历史无 a24Archive 但 archivedAt + archivedBy 完整时 archiveId / sourceFreeze anchor=null、role=unknown，不补写 metadata。字段、actor、时间、role、anchor 或 A24 审计不一致为 409 `CLINICAL_REPORT_ARCHIVE_AUDIT_UNAVAILABLE`。
+- 并发 / 错误：首次 updatedAt 变化且仍可归档为 409 `CLINICAL_REPORT_ARCHIVE_CONFLICT`；状态、锁定或 sourceFreeze 不满足为 409 `CLINICAL_REPORT_NOT_ARCHIVABLE`；voided 为 `CLINICAL_REPORT_VOIDED`；metadata 根结构不安全为 `CLINICAL_REPORT_METADATA_UNSUPPORTED`；未知持久化失败为 500 `CLINICAL_REPORT_ARCHIVE_FAILED`。不自动重试或覆盖。
+- 隐私 / 非目标：响应和错误不含 metadata、Schema 原始 archivedBy、source IDs / A23 scope、archiveNote 日志、Patient 隐私、Session / Cookie / token 或 Mongo 细节。没有 unarchive、恢复 confirmed、correction / void、delete、PDF / Word / Storage 文件或 AI。
+- 归档后的既有接口：A20 generate 同 scope 只读返回既有 archived 报告；A21 edit / submit 不恢复可写状态，confirm 依既有 final-status 幂等返回；A22 lock 依既有锁定事实幂等；A23 completed freeze-sources 只读幂等。上述路径均不覆盖 archived status 或 a24Archive。

@@ -15,6 +15,7 @@ import {
 } from './schemas/clinical-report.schema';
 import { ReportsService } from './services/reports.service';
 import { ClinicalReportGenerationWorkflowService } from './services/clinical-report-generation-workflow.service';
+import { ClinicalReportArchiveWorkflowService } from './services/clinical-report-archive-workflow.service';
 import { ClinicalReportLockWorkflowService } from './services/clinical-report-lock-workflow.service';
 import { ClinicalReportPublicMapper } from './services/clinical-report-public.mapper';
 import { ClinicalReportReviewWorkflowService } from './services/clinical-report-review-workflow.service';
@@ -41,6 +42,7 @@ import { ClinicalReportSourceFreezeWorkflowService } from './services/clinical-r
     ClinicalReportReviewWorkflowService,
     ClinicalReportLockWorkflowService,
     ClinicalReportSourceFreezeWorkflowService,
+    ClinicalReportArchiveWorkflowService,
   ],
   exports: [ReportsService],
 })

@@ -36,6 +36,7 @@ import {
 import type { ClinicalReportConfirmationMetadata } from '../types/clinical-report-review.types';
 import type { LockClinicalReportInput } from '../types/clinical-report-lock.types';
 import type { FreezeClinicalReportSourcesInput } from '../types/clinical-report-source-freeze.types';
+import type { ArchiveClinicalReportInput } from '../types/clinical-report-archive.types';
 
 export type ReportPatientSnapshotSummary = {
   subjectCode?: string;
@@ -562,6 +563,56 @@ export class ReportsService {
         },
         { $set: { metadata: input.metadata } },
         { returnDocument: 'after', runValidators: true },
+      )
+      .exec();
+    return updated ? this.mapReport(updated) : null;
+  }
+
+  async archiveReportIfUnmodified(
+    input: ArchiveClinicalReportInput,
+  ): Promise<ClinicalReportSummary | null> {
+    const ownership = this.normalizeClinicalReportOwnership(input);
+    if (
+      !ownership ||
+      !Number.isFinite(input.expectedUpdatedAt.getTime()) ||
+      !Number.isFinite(input.archivedAt.getTime())
+    ) {
+      return null;
+    }
+    const archivedBy = this.normalizeObjectId(input.archivedBy);
+    if (!archivedBy) {
+      return null;
+    }
+    const updated = await this.clinicalReportModel
+      .findOneAndUpdate(
+        {
+          ...ownership,
+          reportType: 'cognitive_assessment',
+          reportVersion: 1,
+          status: 'confirmed',
+          source: 'mixed',
+          qualityStatus: 'passed',
+          lockedAt: { $ne: null },
+          lockedBy: { $ne: null },
+          archivedAt: null,
+          archivedBy: null,
+          voidedAt: null,
+          voidedBy: null,
+          correctionRecords: { $size: 0 },
+          updatedAt: input.expectedUpdatedAt,
+          'metadata.a23SourceFreeze.version': 1,
+          'metadata.a23SourceFreeze.state': 'completed',
+          'metadata.a24Archive': { $exists: false },
+        },
+        {
+          $set: {
+            status: 'archived',
+            archivedAt: input.archivedAt,
+            archivedBy,
+            metadata: input.metadata,
+          },
+        },
+        { new: true, runValidators: true },
       )
       .exec();
     return updated ? this.mapReport(updated) : null;

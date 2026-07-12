@@ -173,6 +173,7 @@ describe('ClinicalReportPublicMapper', () => {
 
   it('maps only the explicit public report contract', () => {
     const response = mapper.toPublicReport(createReport());
+    expect(response.archive).toBeNull();
     expect(response.generation).toEqual(
       expect.objectContaining({
         generationId: 'generation-a20-test',
@@ -327,6 +328,118 @@ describe('ClinicalReportPublicMapper', () => {
     }
     const invalid = mapper.toPublicReport(historical);
     expect(invalid.lock).toBeNull();
+    expect(JSON.stringify(invalid)).not.toContain('must-not-leak');
+  });
+
+  it('maps full A24 archive summary, historical fallback and invalid audit safely', () => {
+    const report = createReport();
+    const archivedAt = new Date('2026-07-12T10:00:00.000Z');
+    const sourceFreezeCompletedAt = new Date('2026-07-12T09:30:00.000Z');
+    const archivedBy = '507f1f77bcf86cd799439020';
+    const freezeId = '22222222-2222-4222-8222-222222222222';
+    report.status = 'archived';
+    report.archivedAt = archivedAt;
+    report.archivedBy = archivedBy;
+    if (report.metadata) {
+      report.metadata.a23SourceFreeze = {
+        version: 1,
+        state: 'completed',
+        freezeId,
+        startedAt: now,
+        sourceLockedAt: now,
+        startedBy: archivedBy,
+        startedByName: 'A24 Test Doctor',
+        startedByRole: 'doctor',
+        freezeNote: '脱敏来源冻结说明',
+        scope: {
+          scaleInstanceIds: [...report.primaryScaleInstanceIds],
+          itemResponseIds: ['507f1f77bcf86cd799439018'],
+          scoreResultIds: [...report.scoreResultIds],
+          cognitiveDomainResultIds: [...report.cognitiveDomainResultIds],
+          mediaEvidenceIds: [...report.mediaEvidenceIds],
+        },
+        expectedCounts: {
+          scaleInstanceCount: 1,
+          itemResponseCount: 1,
+          scoreResultCount: 1,
+          cognitiveDomainResultCount: 1,
+          mediaEvidenceCount: 1,
+          totalSourceCount: 5,
+        },
+        completedCounts: {
+          scaleInstanceCount: 1,
+          itemResponseCount: 1,
+          scoreResultCount: 1,
+          cognitiveDomainResultCount: 1,
+          mediaEvidenceCount: 1,
+          totalSourceCount: 5,
+        },
+        newlyFrozenCounts: {
+          scaleInstanceCount: 1,
+          itemResponseCount: 1,
+          scoreResultCount: 1,
+          cognitiveDomainResultCount: 1,
+          mediaEvidenceCount: 1,
+          totalSourceCount: 5,
+        },
+        previouslyFrozenCounts: {
+          scaleInstanceCount: 0,
+          itemResponseCount: 0,
+          scoreResultCount: 0,
+          cognitiveDomainResultCount: 0,
+          mediaEvidenceCount: 0,
+          totalSourceCount: 0,
+        },
+        completedAt: sourceFreezeCompletedAt,
+        completedBy: archivedBy,
+        completedByName: 'A24 Test Doctor',
+        completedByRole: 'doctor',
+      };
+      report.metadata.a24Archive = {
+        version: 1,
+        archiveId: '33333333-3333-4333-8333-333333333333',
+        archivedAt,
+        archivedBy,
+        archivedByName: 'A24 Test Doctor',
+        archivedByRole: 'doctor',
+        archiveNote: '脱敏归档说明',
+        sourceFreezeId: freezeId,
+        sourceFreezeCompletedAt,
+      };
+    }
+
+    expect(mapper.toPublicReport(report).archive).toEqual({
+      archiveId: '33333333-3333-4333-8333-333333333333',
+      archivedAt,
+      archivedBy: {
+        operatorId: archivedBy,
+        operatorName: 'A24 Test Doctor',
+        operatorRole: 'doctor',
+      },
+      archiveNote: '脱敏归档说明',
+      sourceFreezeId: freezeId,
+      sourceFreezeCompletedAt,
+    });
+
+    const historical = createReport();
+    historical.status = 'corrected';
+    historical.archivedAt = archivedAt;
+    historical.archivedBy = archivedBy;
+    historical.metadata = null;
+    expect(mapper.toPublicReport(historical).archive).toEqual({
+      archiveId: null,
+      archivedAt,
+      archivedBy: { operatorId: archivedBy, operatorRole: 'unknown' },
+      sourceFreezeId: null,
+      sourceFreezeCompletedAt: null,
+    });
+
+    if (report.metadata) {
+      report.metadata.a24Archive = { archiveNote: 'must-not-leak' };
+    }
+    const invalid = mapper.toPublicReport(report);
+    expect(invalid.archive).toBeNull();
+    expect(invalid.archivedAt).toEqual(archivedAt);
     expect(JSON.stringify(invalid)).not.toContain('must-not-leak');
   });
 });

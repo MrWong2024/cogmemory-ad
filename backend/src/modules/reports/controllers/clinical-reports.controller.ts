@@ -17,6 +17,7 @@ import type { AuthenticatedUserContext } from '../../auth/types/auth-user-contex
 import { PATIENT_WORKFLOW_ROLES } from '../../patients/patients.constants';
 import { ClinicalReportVisitParamDto } from '../dto/clinical-report-visit-param.dto';
 import { ClinicalReportResourceParamDto } from '../dto/clinical-report-resource-param.dto';
+import { ArchiveClinicalReportDto } from '../dto/archive-clinical-report.dto';
 import { ConfirmClinicalReportDto } from '../dto/confirm-clinical-report.dto';
 import { GenerateClinicalReportDto } from '../dto/generate-clinical-report.dto';
 import { FreezeClinicalReportSourcesDto } from '../dto/freeze-clinical-report-sources.dto';
@@ -24,11 +25,13 @@ import { LockClinicalReportDto } from '../dto/lock-clinical-report.dto';
 import { SubmitClinicalReportForConfirmationDto } from '../dto/submit-clinical-report-for-confirmation.dto';
 import { UpdateClinicalReportDraftDto } from '../dto/update-clinical-report-draft.dto';
 import { ClinicalReportGenerationWorkflowService } from '../services/clinical-report-generation-workflow.service';
+import { ClinicalReportArchiveWorkflowService } from '../services/clinical-report-archive-workflow.service';
 import { ClinicalReportLockWorkflowService } from '../services/clinical-report-lock-workflow.service';
 import { ClinicalReportReviewWorkflowService } from '../services/clinical-report-review-workflow.service';
 import { ClinicalReportSourceFreezeWorkflowService } from '../services/clinical-report-source-freeze-workflow.service';
 import type {
   ConfirmClinicalReportResponse,
+  ArchiveClinicalReportResponse,
   ClinicalReportDetailResponse,
   GenerateClinicalReportResponse,
   LockClinicalReportResponse,
@@ -46,6 +49,7 @@ export class ClinicalReportsController {
     private readonly reviewWorkflow: ClinicalReportReviewWorkflowService,
     private readonly lockWorkflow: ClinicalReportLockWorkflowService,
     private readonly sourceFreezeWorkflow: ClinicalReportSourceFreezeWorkflowService,
+    private readonly archiveWorkflow: ClinicalReportArchiveWorkflowService,
   ) {}
 
   @Post('generate')
@@ -148,6 +152,23 @@ export class ClinicalReportsController {
     @Body() input: FreezeClinicalReportSourcesDto,
   ): Promise<FreezeClinicalReportSourcesResponse> {
     return this.sourceFreezeWorkflow.freezeClinicalReportSources(
+      params.patientId,
+      params.visitId,
+      params.reportId,
+      currentUser,
+      input,
+    );
+  }
+
+  @Post(':reportId/archive')
+  @HttpCode(HttpStatus.OK)
+  @Roles('doctor', 'admin')
+  archiveReport(
+    @Param() params: ClinicalReportResourceParamDto,
+    @CurrentUser() currentUser: AuthenticatedUserContext | undefined,
+    @Body() input: ArchiveClinicalReportDto,
+  ): Promise<ArchiveClinicalReportResponse> {
+    return this.archiveWorkflow.archiveClinicalReport(
       params.patientId,
       params.visitId,
       params.reportId,

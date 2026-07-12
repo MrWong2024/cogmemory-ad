@@ -408,3 +408,13 @@
 - `AssessmentsService` 提供 exact ScaleInstance / ItemResponse 查询和批量冻结；`ScoringService` 冻结 confirmed ScoreResult；`CognitiveDomainsService` 只为 computed/confirmed 域结果补 lockedAt；`MediaEvidenceService` 冻结 attached 证据。所有方法限定 patient / visit / 精确 ID，并返回受控批次计数。
 - ReportsModule 保持单向依赖来源模块；不重复注册来源 Schema、不直接注入跨模块 Model、不使用 forwardRef。跨集合操作无 Mongo transaction，in_progress 是恢复锚点；部分失败不回滚或解冻，completed 仅在重读验证全部来源后写入。
 - public mapper 只解析安全 summary，不公开 metadata / scope IDs；A20-A22 metadata 更新继续使用顶层 namespace 合并并保留 a23SourceFreeze。
+
+### A24 ClinicalReport archive workflow
+
+- `ClinicalReportArchiveWorkflowService` 只依赖 `PatientsService`、`AssessmentsService`、`ReportsService` 与 `ClinicalReportPublicMapper`；负责 Patient / Visit / report ownership、认证 doctor/admin actor、既有 archive 幂等 / historical fallback、首次 transition / readiness、expectedUpdatedAt 原子写、miss 重读和安全 response。Patient 与 Visit 不参与可编辑状态判断，inactive / locked 不阻断。
+- Workflow 不依赖 Scoring、CognitiveDomains、Media、Storage 或 AI，也不读取来源 Model；A23 completed 审计是来源冻结事实锚点。A24 不调用来源冻结批量方法，不重新验证来源集合，不修改 Patient / Visit。
+- `clinical-report-archive.ts` 是无 DI / 数据库访问的纯函数，复用 A20/A21 metadata parser、A22 lock resolver 与 A23 source-freeze resolver：校验 confirmed / mixed / passed、confirmation、锁定、completed freeze、归档 / void / correction 边界与乐观并发；构建 actor 和一次性 a24Archive；保留全部既有 / 未知合法 metadata namespace；解析完整 A24 审计和历史 fallback，且不修改输入。
+- `ReportsService.archiveReportIfUnmodified()` 只负责 ObjectId 转换、完整原子 filter 和单次 `findOneAndUpdate({ new: true, runValidators: true })`；update 只包含 status=archived、archivedAt、archivedBy、metadata。Mongoose timestamp 更新 updatedAt；没有 save、自动重试、transaction、分布式锁或来源写入。
+- `ClinicalReportPublicMapper` 无数据库访问，继续返回 top-level archivedAt，并把完整合法 A24 审计或历史 fallback 映射为安全 `archive`；非法 / 不一致审计只令 archive=null，不透传内部值。archive response receipt 增加 alreadyArchived。
+- 与 A22/A23 边界：A22 锁定事实和 A23 completed 审计只读作为首次归档前置，A24 不修改 lockedAt / lockedBy、a22Lock、a23SourceFreeze、confirmation、narrative、快照、scope 或来源对象。重复 archived / corrected 请求允许旧 expectedUpdatedAt 且不写库。
+- 与 A20/A21 既有接口边界：A20 generate 对同 scope archived 报告保持幂等；A21 edit / submit 不恢复可写状态、confirm 保持 final-status 幂等；A22 lock 和 A23 completed freeze-sources 保持只读幂等并保留 a24Archive。无循环、forwardRef、新 Schema、transaction、unarchive / correction / void / PDF / AI。

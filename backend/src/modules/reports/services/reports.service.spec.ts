@@ -886,6 +886,60 @@ describe('ReportsService', () => {
     ).resolves.toBeNull();
   });
 
+  it('atomically archives only the unchanged completed-source-freeze report', async () => {
+    const reportId = new Types.ObjectId();
+    const patientId = new Types.ObjectId();
+    const visitId = new Types.ObjectId();
+    const archivedBy = new Types.ObjectId();
+    const expectedUpdatedAt = new Date('2026-07-12T08:00:00.000Z');
+    const archivedAt = new Date('2026-07-12T08:05:00.000Z');
+    const metadata = { a23SourceFreeze: {}, a24Archive: {} };
+    clinicalReportModel.findOneAndUpdate.mockReturnValue(createExecQuery(null));
+
+    await service.archiveReportIfUnmodified({
+      reportId: reportId.toString(),
+      patientId: patientId.toString(),
+      assessmentVisitId: visitId.toString(),
+      expectedUpdatedAt,
+      archivedAt,
+      archivedBy: archivedBy.toString(),
+      metadata,
+    });
+
+    expect(clinicalReportModel.findOneAndUpdate).toHaveBeenCalledWith(
+      {
+        _id: reportId,
+        patientId,
+        assessmentVisitId: visitId,
+        reportType: 'cognitive_assessment',
+        reportVersion: 1,
+        status: 'confirmed',
+        source: 'mixed',
+        qualityStatus: 'passed',
+        lockedAt: { $ne: null },
+        lockedBy: { $ne: null },
+        archivedAt: null,
+        archivedBy: null,
+        voidedAt: null,
+        voidedBy: null,
+        correctionRecords: { $size: 0 },
+        updatedAt: expectedUpdatedAt,
+        'metadata.a23SourceFreeze.version': 1,
+        'metadata.a23SourceFreeze.state': 'completed',
+        'metadata.a24Archive': { $exists: false },
+      },
+      {
+        $set: {
+          status: 'archived',
+          archivedAt,
+          archivedBy,
+          metadata,
+        },
+      },
+      { new: true, runValidators: true },
+    );
+  });
+
   it('atomically starts source freeze only for the unchanged locked report', async () => {
     const reportId = new Types.ObjectId();
     const patientId = new Types.ObjectId();

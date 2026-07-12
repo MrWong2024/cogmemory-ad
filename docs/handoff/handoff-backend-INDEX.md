@@ -24,16 +24,16 @@
 - `MediaModule` 当前包含既有 `MediaEvidence` Schema / Service，以及 A15 `MediaEvidenceController`、`MediaEvidenceWorkflowService`、安全 public mapper、图片魔数 / 隐私元数据纯校验与手写轨迹 JSON 纯校验；依赖 Auth、Patients、Assessments 与 Storage，不重复注册 ItemResponse Schema。
 - `ScoringModule` 在既有 `ScoreResult` Schema、`ScoringService` 与 `summarizeItemScores()` 基础上，提供 `ScoringController`、A17 `ProvisionalScoringWorkflowService`、A18 `ScoreReviewWorkflowService`、纯评分 / 复核函数和显式 public mapper；公开 compute、latest、单题 manual-review 与 ScoreResult confirm 四个最小 API。
 - `CognitiveDomainsModule` 当前在既有 `CognitiveDomainResult` Schema、`CognitiveDomainsService` 与 `summarizeDomainScores()` 基础上，新增 `CognitiveDomainResultsController`、`CognitiveDomainComputationWorkflowService`、确认评分纯映射 / 校验和安全 public mapper；公开 runNo=1 compute / latest 两个最小 API。
-- `ReportsModule` 当前包含 generation、review、lock 与 A23 `ClinicalReportSourceFreezeWorkflowService`，以及对应纯函数、`ReportsService` 原子持久化和 `ClinicalReportPublicMapper`；公开 generate、latest、edit draft、submit confirmation、confirm、lock、freeze-sources 共七个 API。确认、报告锁定与来源冻结显式限制 doctor / admin。
+- `ReportsModule` 当前包含 generation、review、lock、A23 `ClinicalReportSourceFreezeWorkflowService` 与 A24 `ClinicalReportArchiveWorkflowService`，以及对应纯函数、`ReportsService` 原子持久化和 `ClinicalReportPublicMapper`；公开 generate、latest、edit draft、submit confirmation、confirm、lock、freeze-sources、archive 共八个 API。确认、报告锁定、来源冻结与归档显式限制 doctor / admin。
 - 当前新增 `scales` 内部 MMSE / MoCA 初始配置种子数据底座，包含 MMSE / MoCA seed 常量、`ScaleSeedDataService` 只读读取能力和 `validateScaleSeeds()` 种子数据校验纯函数。
 - `AssessmentExecutionService` 可基于 MMSE / MoCA seed 创建 `ScaleInstance` 与初始 `ItemResponse` 骨架；A13 由 `AssessmentScaleWorkflowService` 受控调用。题目批量创建失败时按本次实例 ID 尝试清理已创建题目和实例，当前为补偿式一致性，不是 Mongo transaction。
 - 当前新增 `users` 内部模块，包含 `User` Schema 与 `UsersService` 内部账号读取、账号编码规范化和安全 mapper 输出能力。
 - 当前新增 `auth` 模块，包含 `Session` Schema、`AuthService` 密码哈希 / 校验、session token 生成 / hash、session 创建 / 校验 / 撤销、账号密码认证编排能力，以及 `@Public()`、`@Roles()`、`@CurrentUser()`、`SessionAuthGuard`、`RolesGuard` 和 `AuthController`；不注册全局 Guard。
-- 当前报告公开 API 共七个：generate、latest、edit draft、submit confirmation、confirm、lock、freeze-sources。
-- A12-A23 临床接口均显式绑定 `SessionAuthGuard` 与 `RolesGuard`；A21 edit / submit 沿用四个患者工作流角色，confirm、A22 lock 与 A23 freeze-sources 方法级限制 doctor / admin；未注册全局 Guard。
+- 当前报告公开 API 共八个：generate、latest、edit draft、submit confirmation、confirm、lock、freeze-sources、archive。
+- A12-A24 临床接口均显式绑定 `SessionAuthGuard` 与 `RolesGuard`；A21 edit / submit 沿用四个患者工作流角色，confirm、A22 lock、A23 freeze-sources 与 A24 archive 方法级限制 doctor / admin；未注册全局 Guard。
 - 当前媒体边界仅为 photo / handwriting；手写轨迹为可选 JSON / strokes，签名 URL 为短期地址，作废不物理删除。仍无批量上传、分片上传、客户端直传、永久 URL、公开 Storage 管理、物理删除、原子替换、OCR 或 AI。
-- A23 验证后为 69 个单元测试套件、597 个测试通过；全量真实 HTTP E2E 为 12 个套件、55 个测试通过，使用隔离 `cogmemory_ad_test`、fake storage、stub SMS / LLM 与脱敏人工数据。
-- 当前后端闭环为 A17 阶段性计算 / latest → A18 人工复核 / 确认 → A19 认知域 compute / latest → A20 报告 generate / latest → A21 edit / submit / confirm → A22 lock → A23 freeze-sources。A23 通过各来源模块 Service 内部方法冻结五类精确来源，仍无 unfreeze / 退回 / 签名 / archive / correct / void、重生成、reportVersion=2、PDF 或 AI。
+- A24 验证后为 72 个单元测试套件、625 个测试通过；A24 定向真实 HTTP E2E 为 1 个套件、6 个测试通过，当前全量规模为 13 个套件、61 个测试。全量曾在本次实现过程中通过一次，但最终复跑出现既有套件间共享 test catalog / 数据顺序污染（相关既有套件定向复跑通过），因此不把最终全量 E2E 写成稳定通过；环境仍为隔离 `cogmemory_ad_test`、fake storage、stub SMS / LLM 与脱敏人工数据。
+- 当前后端闭环为 A17 阶段性计算 / latest → A18 人工复核 / 确认 → A19 认知域 compute / latest → A20 报告 generate / latest → A21 edit / submit / confirm → A22 lock → A23 freeze-sources → A24 archive。归档不重读来源，仍无 unfreeze / unarchive / 退回 / 签名 / correct / void、重生成、reportVersion=2、PDF 或 AI。
 
 ## 4. 必读基础文档
 

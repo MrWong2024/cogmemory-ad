@@ -94,6 +94,10 @@ function hasOnlyKeys(
   return Object.keys(value).every((key) => allowed.has(key));
 }
 
+export const readClinicalReportDate = readDate;
+export const readClinicalReportNonEmptyString = readNonEmptyString;
+export const clinicalReportHasOnlyKeys = hasOnlyKeys;
+
 function readStringArray(value: unknown, allowEmpty = false): string[] | null {
   if (!Array.isArray(value) || (!allowEmpty && value.length === 0)) {
     return null;

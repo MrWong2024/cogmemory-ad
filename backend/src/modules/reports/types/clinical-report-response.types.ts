@@ -140,6 +140,15 @@ export type ClinicalReportLockSummaryResponse = {
   lockNote?: string;
 };
 
+export type ClinicalReportArchiveSummaryResponse = {
+  archiveId: string | null;
+  archivedAt: Date;
+  archivedBy: ClinicalReportWorkflowActorResponse;
+  archiveNote?: string;
+  sourceFreezeId: string | null;
+  sourceFreezeCompletedAt: Date | null;
+};
+
 export type ClinicalReportSourceFreezeStateResponse =
   | 'in_progress'
   | 'completed';
@@ -195,6 +204,7 @@ export type ClinicalReportResponse = {
   lock: ClinicalReportLockSummaryResponse | null;
   sourceFreeze: ClinicalReportSourceFreezeSummaryResponse | null;
   archivedAt: Date | null;
+  archive: ClinicalReportArchiveSummaryResponse | null;
   voidedAt: Date | null;
   voidReason?: string;
   createdAt: Date | null;
@@ -261,6 +271,21 @@ export type LockClinicalReportReceiptResponse = {
 export type LockClinicalReportResponse = {
   report: ClinicalReportResponse;
   lockReceipt: LockClinicalReportReceiptResponse;
+};
+
+export type ArchiveClinicalReportReceiptResponse = {
+  archiveId: string | null;
+  archivedAt: Date;
+  archivedBy: ClinicalReportWorkflowActorResponse;
+  archiveNote?: string;
+  sourceFreezeId: string | null;
+  sourceFreezeCompletedAt: Date | null;
+  alreadyArchived: boolean;
+};
+
+export type ArchiveClinicalReportResponse = {
+  report: ClinicalReportResponse;
+  archiveReceipt: ArchiveClinicalReportReceiptResponse;
 };
 
 export type FreezeClinicalReportSourcesReceiptResponse = {

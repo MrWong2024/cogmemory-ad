@@ -309,6 +309,16 @@
 - 完成与公开：completed 前不宣称整体成功；完成后重复请求只读幂等。公开 report / receipt 仅展示安全 actor、时间、note、状态和 counts，不公开 metadata 或 source IDs。
 - 边界：不冻结 Patient、AssessmentVisit、ScaleDefinition、ScaleVersion 或 Storage，不创建 AuditLog / job，不实现 unfreeze、PDF 或 AI。前端后续 B13 只消费确认交互、进度和安全摘要。
 
+### D-034：归档复用既有 archived 状态并以 completed 来源冻结为不可变锚点
+
+- 状态决策：A24 不新增状态、不修改 `ClinicalReportStatus` 或转换表；首次归档复用既有 `confirmed -> archived`，成功后 status=archived、isFinal=true。archivedAt 与 lockedAt 是不同事实，归档不创建 reportVersion=2，也不等于 PDF 或更正。
+- 前置与 ownership：首次只接受完整 confirmed / mixed / passed、A22 已锁定且 A23 sourceFreeze completed 的 version 1 cognitive_assessment 报告。Patient / Visit 只用于资源存在性和 ownership，Patient inactive 与 Visit locked 不阻断；A24 不修改二者。
+- 审计：`metadata.a24Archive` version=1 且只写一次，保存服务端 UUID / 时间、认证 doctor/admin actor、用户显式 archiveNote，以及 A23 freezeId / completedAt 锚点；构造新 metadata 根对象，保留 A20-A23 和未来未知合法 namespace，不创建 AuditLog 集合。
+- 一致性：以 public report.updatedAt / expectedUpdatedAt 做乐观并发，并用一次 ClinicalReport `findOneAndUpdate()` 同时写 status、archivedAt、archivedBy、metadata。原子 filter 还锚定 ownership、type/version、confirmed/mixed/passed、锁定、无归档 / 作废 / correction、A23 completed 与 A24 namespace 不存在；不使用 transaction、分布式锁、自动重试或跨集合补偿。
+- 幂等与历史：archived / corrected 重复请求只读返回原归档事实，即使 expectedUpdatedAt 已旧也不写库或修改 ID / 时间 / actor / note / updatedAt。历史完整 archivedAt + archivedBy 且无 a24Archive 时提供 role=unknown、nullable ID / source-freeze anchor 的安全 fallback，不补写 metadata；残缺或不一致审计拒绝猜测。
+- 来源边界：A24 只解析已经完成的 A23 审计，不重新读取、冻结或修改 ScaleInstance、ItemResponse、ScoreResult、CognitiveDomainResult、MediaEvidence 或 Storage；lockedAt / lockedBy、a22Lock、a23SourceFreeze、confirmation、narrative、快照与来源 ID 全部不变。
+- 后续边界：不实现 unarchive 或恢复 confirmed。后续 A25 可从 archived 建设独立受控更正流程；更正不是取消归档，也不能覆盖原归档报告。A24 不实现 correction、void、delete、PDF / Word / download 或 AI。下一阶段建议为前端 B14 归档确认与安全摘要展示。
+
 ## 4. 后续同步规则
 
 - 新增关键技术选型、接口设计、数据模型、测试策略或部署策略后，应追加决策记录。

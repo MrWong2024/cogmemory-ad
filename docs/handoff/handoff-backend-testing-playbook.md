@@ -12,7 +12,7 @@
 - 本地前端默认 origin 为 `http://localhost:3002`。
 - 测试环境默认 `STORAGE_DRIVER=fake`。
 - 测试环境 `LLM_PROVIDER=stub`，不得依赖真实大模型调用。
-- 当前存在十一个真实 HTTP E2E：A12 患者 / 访视、A13 初始化、A14 草稿、A15 媒体、A16 submission、A17 provisional scoring、A18 manual score review / confirmation、A19 cognitive domain computation、A20 clinical report draft、A21 clinical report review 与 A22 clinical report lock。
+- 当前存在十三个真实 HTTP E2E：A12 患者 / 访视、A13 初始化、A14 草稿、A15 媒体、A16 submission、A17 provisional scoring、A18 manual score review / confirmation、A19 cognitive domain computation、A20 clinical report draft、A21 clinical report review、A22 clinical report lock、A23 clinical report source freeze 与 A24 clinical report archive。
 - TypeScript `rootDir` 当前为 `.`，后端主入口预期 build 产物为 `dist/src/main.js`。
 - `tsBuildInfoFile` 保持 `./dist/tsconfig.build.tsbuildinfo`。
 - `dist` 与 `*.tsbuildinfo` 为生成物，不进入版本库。
@@ -140,8 +140,8 @@
   - `npm run build` 成功。
   - build 后 `dist/src/main.js` 已确认存在。
   - `npm test -- --runInBand` 成功。
-  - 当前单元测试为 66 个测试套件、582 个测试通过。
-  - 当前全量 E2E 为 11 个测试套件、51 个测试通过。
+  - 当前单元测试为 72 个测试套件、625 个测试通过。
+  - 当前全量 E2E 为 13 个测试套件、61 个测试通过。
   - 用户已补充验证 `npm run start:prod` 本地启动成功。
   - `dist/src/main.js` 与 `start:prod` 指向的 `./dist/src/main.js` 路径匹配。
 - 当前未验证命令：
@@ -151,7 +151,7 @@
 - 如果 `backend\node_modules` 存在，可执行 `npm test -- --runInBand` 验证单元测试。
 - 如果 `backend\node_modules` 不存在，不应自动执行 `npm install`。
 - 当前任务不调用真实 OSS、阿里云 SMS、大模型或生产数据库。
-- `test:e2e` 脚本已通过 `test/jest-e2e.json` 执行 A12-A20 真实 HTTP 闭环；测试运行时确认 `NODE_ENV=test`、数据库名 `cogmemory_ad_test`、Storage=fake、LLM/SMS=stub，未打印数据库凭证。
+- `test:e2e` 脚本已通过 `test/jest-e2e.json` 执行 A12-A24 真实 HTTP 闭环；测试运行时确认 `NODE_ENV=test`、数据库名 `cogmemory_ad_test`、Storage=fake、LLM/SMS=stub，未打印数据库凭证。
 
 ## 5. 当前单元测试口径
 
@@ -273,6 +273,15 @@
 - `clinical-report-source-freeze.e2e-spec.ts` 使用真实 AppModule、Cookie/Session/Roles Guard、全局 DTO、隔离 MongoDB 与 fake Storage；使用 `SUBJ-A23-TEST-*` / `VISIT-A23-TEST-*`、脱敏账号和无临床含义 note，定向清理 A23 数据。覆盖 401、system/nurse/research 403、confirmation/whitelist、doctor 首次精确冻结、domain status 保留、scope 外实例/Patient/Visit/报告锁不变、旧 expectedUpdatedAt 幂等、latest 安全摘要和 admin。
 - A23 执行前确认 `NODE_ENV=test`、数据库为 `cogmemory_ad_test` 且非 dev/prod、Storage=fake、LLM=stub，SMS 使用 test stub 默认值；未输出连接串或凭证，未调用真实 OSS/SMS/LLM。
 - A23 当前实际结果：build 通过；全量 unit 为 69 个套件 / 597 个测试通过；A23 定向 E2E 为 1 个套件 / 4 个测试，全量 E2E 为 12 个套件 / 55 个测试通过。定向 A23/reports lint 通过；按全模块范围执行 lint 时仍报告未由 A23 修改的既有 scoring 纯函数/测试格式问题，因此不写成全量 lint 通过。
+
+- A24 DTO / Controller：覆盖 confirm=true、缺失 / false / 字符串、archiveNote trim / 3-2000、strict expectedUpdatedAt、全部服务器字段 whitelist；类级 Session / Roles Guard、方法级 doctor / admin、CurrentUser 与轻薄转发。
+- A24 纯函数：覆盖 confirmed + locked + completed readiness、draft / pending / 未锁 / quality / confirmation / correction / void 边界、sourceFreeze missing / in_progress / completed、expectedUpdatedAt conflict、actor、UUID audit、metadata A20-A23 / future namespace 保留、sourceFreeze anchor、输入不变、完整既有归档、corrected historical fallback 与不一致 audit unavailable。
+- A24 ReportsService：Model mock 验证 ownership、type/version、confirmed/mixed/passed、lockedAt/by 非空、archivedAt/by 与 voidedAt/by 为空、空 correctionRecords、expectedUpdatedAt、A23 completed、A24 absent 的原子 filter；`$set` 只有 status / archivedAt / archivedBy / metadata，`new=true / runValidators=true`，不连接真实 MongoDB。
+- A24 Workflow：依赖均为 mock，覆盖 confirm、doctor/admin actor、ownership、Patient inactive / Visit locked 不阻断、首次成功、sourceFreeze anchor、旧 updatedAt conflict、archived / corrected 旧 expectedUpdatedAt 幂等、historical fallback、状态 / audit / persistence 错误；没有来源 Service / Storage / AI 依赖。
+- A24 public mapper：覆盖 unarchived archive=null、完整 a24Archive、安全 actor / note / anchor、历史 fallback、非法 A24 安全忽略、top-level archivedAt 保留、isFinal 不变，以及 metadata / Schema 原始 archivedBy / source IDs 排除。
+- `clinical-report-archive.e2e-spec.ts` 使用真实 AppModule、Cookie / Session / Roles Guard、全局 DTO、隔离 MongoDB 与 fake Storage；使用 `SUBJ-A24-TEST-*` / `VISIT-A24-TEST-*`、脱敏账号和无真实临床含义 note，定向清理 A24 数据。覆盖 401、system/nurse/research 403、confirmation / whitelist、draft / pending / unlocked / sourceFreeze missing / in_progress、doctor 首次归档、inactive Patient / locked Visit、status / isFinal / top-level archivedAt / archive summary / receipt、锁定 / confirmation / narrative / snapshots / scope / A20-A23 metadata 不变、latest、旧 expectedUpdatedAt 幂等且 updatedAt 不变、并发冲突、corrected historical fallback 和 admin。
+- A24 E2E 执行前确认 `NODE_ENV=test`、数据库为 `cogmemory_ad_test` 且非 dev / prod、Storage=fake、LLM/SMS=stub；未输出连接串或凭证，未调用真实 OSS / SMS / LLM，未使用真实患者、报告、医疗图像或临床结论。
+- A24 当前实际结果：scoped `src/modules/reports + clinical-report-archive.e2e-spec.ts` lint 通过；build 通过；全量 unit 为 72 个套件 / 625 个测试通过；A24 定向 E2E 为 1 个套件 / 6 个测试通过。全量 E2E 当前规模为 13 个套件 / 61 个测试；本次实现过程中曾完整通过一次，但最终复跑出现既有套件共享 test catalog / 数据的顺序污染，表现为既有 review / draft / submission 等套件 409，相关既有 `scale-instance-submission.e2e-spec.ts` 定向复跑通过，因此不记录为最终全量稳定通过。未运行全模块 lint，既有 scoring 格式技术债未修改。
 
 ## 7. 医疗与量表数据测试红线
 
