@@ -381,6 +381,7 @@ describe('ReportsService', () => {
   let service: ReportsService;
   let clinicalReportModel: {
     findOne: jest.Mock;
+    findOneAndUpdate: jest.Mock;
     find: jest.Mock;
     create: jest.Mock;
   };
@@ -388,6 +389,7 @@ describe('ReportsService', () => {
   beforeEach(async () => {
     clinicalReportModel = {
       findOne: jest.fn(),
+      findOneAndUpdate: jest.fn(),
       find: jest.fn(),
       create: jest.fn(),
     };
@@ -647,6 +649,167 @@ describe('ReportsService', () => {
     });
     expect(sort).toHaveBeenCalledWith({ createdAt: -1 });
     expect(result?.createdAt).toEqual(new Date('2026-01-09T08:00:00.000Z'));
+  });
+
+  it('uses complete ownership for direct report lookup', async () => {
+    const reportId = new Types.ObjectId();
+    const patientId = new Types.ObjectId();
+    const visitId = new Types.ObjectId();
+    clinicalReportModel.findOne.mockReturnValue(
+      createExecQuery(
+        createReportFixture({
+          _id: reportId,
+          patientId,
+          assessmentVisitId: visitId,
+        }),
+      ),
+    );
+
+    await service.findReportByOwnership({
+      reportId: reportId.toString(),
+      patientId: patientId.toString(),
+      assessmentVisitId: visitId.toString(),
+    });
+
+    expect(clinicalReportModel.findOne).toHaveBeenCalledWith({
+      _id: reportId,
+      patientId,
+      assessmentVisitId: visitId,
+      reportType: 'cognitive_assessment',
+      reportVersion: 1,
+    });
+  });
+
+  it('atomically edits only narrative, source and metadata', async () => {
+    const reportId = new Types.ObjectId();
+    const patientId = new Types.ObjectId();
+    const visitId = new Types.ObjectId();
+    const expectedUpdatedAt = new Date('2026-07-12T08:00:00.000Z');
+    clinicalReportModel.findOneAndUpdate.mockReturnValue(
+      createExecQuery(
+        createReportFixture({
+          _id: reportId,
+          patientId,
+          assessmentVisitId: visitId,
+          status: 'draft',
+          source: 'mixed',
+        }),
+      ),
+    );
+    const narrative = {
+      chiefSummary: 'system',
+      scoreSummary: 'system',
+      domainSummary: 'system',
+      evidenceSummary: 'system',
+      limitations: 'system',
+      doctorOpinion: 'controlled edit',
+    };
+    const metadata = { a20Generation: {}, a21Edits: {} };
+
+    await service.updateDraftNarrativeIfUnmodified({
+      reportId: reportId.toString(),
+      patientId: patientId.toString(),
+      assessmentVisitId: visitId.toString(),
+      expectedUpdatedAt,
+      narrative,
+      metadata,
+    });
+
+    expect(clinicalReportModel.findOneAndUpdate).toHaveBeenCalledWith(
+      {
+        _id: reportId,
+        patientId,
+        assessmentVisitId: visitId,
+        reportType: 'cognitive_assessment',
+        reportVersion: 1,
+        status: 'draft',
+        updatedAt: expectedUpdatedAt,
+      },
+      { $set: { narrative, source: 'mixed', metadata } },
+      { new: true, runValidators: true },
+    );
+  });
+
+  it('atomically submits and confirms with distinct allowed states', async () => {
+    const reportId = new Types.ObjectId();
+    const patientId = new Types.ObjectId();
+    const visitId = new Types.ObjectId();
+    const actorId = new Types.ObjectId();
+    const expectedUpdatedAt = new Date('2026-07-12T08:00:00.000Z');
+    clinicalReportModel.findOneAndUpdate.mockReturnValue(
+      createExecQuery(createReportFixture()),
+    );
+    const ownership = {
+      reportId: reportId.toString(),
+      patientId: patientId.toString(),
+      assessmentVisitId: visitId.toString(),
+      expectedUpdatedAt,
+    };
+
+    await service.submitForConfirmationIfUnmodified({
+      ...ownership,
+      metadata: { a21Submission: {} },
+    });
+    await service.confirmReportIfUnmodified({
+      ...ownership,
+      confirmation: {
+        version: 1,
+        confirmationId: 'confirmation-a21-test',
+        confirmedAt: expectedUpdatedAt,
+        confirmedBy: actorId.toString(),
+        confirmedByName: 'A21 Test Doctor',
+        confirmedByRole: 'doctor',
+        confirmationNote: 'De-identified confirmation',
+      },
+      metadata: { a21Confirmation: {} },
+    });
+
+    expect(clinicalReportModel.findOneAndUpdate).toHaveBeenNthCalledWith(
+      1,
+      {
+        _id: reportId,
+        patientId,
+        assessmentVisitId: visitId,
+        reportType: 'cognitive_assessment',
+        reportVersion: 1,
+        status: 'draft',
+        updatedAt: expectedUpdatedAt,
+      },
+      {
+        $set: {
+          status: 'pending_confirmation',
+          metadata: { a21Submission: {} },
+        },
+      },
+      { new: true, runValidators: true },
+    );
+    expect(clinicalReportModel.findOneAndUpdate).toHaveBeenNthCalledWith(
+      2,
+      {
+        _id: reportId,
+        patientId,
+        assessmentVisitId: visitId,
+        reportType: 'cognitive_assessment',
+        reportVersion: 1,
+        status: 'pending_confirmation',
+        updatedAt: expectedUpdatedAt,
+      },
+      {
+        $set: {
+          status: 'confirmed',
+          confirmation: {
+            confirmedAt: expectedUpdatedAt,
+            confirmedBy: actorId,
+            confirmedByName: 'A21 Test Doctor',
+            confirmedByRole: 'doctor',
+            confirmationNote: 'De-identified confirmation',
+          },
+          qualityStatus: 'passed',
+          metadata: { a21Confirmation: {} },
+        },
+      },
+      { new: true, runValidators: true },
+    );
   });
 
   it('creates one complete version-one cognitive assessment document', async () => {

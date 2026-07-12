@@ -282,6 +282,16 @@
 - 影响范围：仅 reports 模块、A20 E2E 与指定 backend handoff / roadmap；未修改任何 Schema、来源业务模块、AppModule、依赖、配置或前端。
 - 后续复查点：A20 不实现报告编辑、pending_confirmation、医生确认、签名、锁定、归档、更正、作废、历史列表、重生成、PDF 或 AI。前端 B10 可先接入 draft generate / latest；A21 / 后续阶段再单独设计编辑与医生确认边界。
 
+### D-031：A21 只开放 clinician narrative，并分离提交与最终确认
+
+- 决策：A20 五段系统规则摘要与 patient / visit / scale / score / domain / evidence 快照保持不可编辑；A21 只允许显式输入 doctorOpinion 和可选 recommendationText，首次成功编辑后 source=mixed。mixed 表示系统快照与人工补充共存，不表示 AI。
+- 审计：编辑事件追加在 `metadata.a21Edits`，单报告最多 200 条；submission / confirmation 分别使用独立 UUID namespace。保留未知顶层 metadata，写入前严格验证 A20 generation 和既有 A21 namespace；不创建 AuditLog 集合。
+- 并发：三个写接口使用服务端 `updatedAt` / 客户端 `expectedUpdatedAt` 乐观并发和单文档条件 `findOneAndUpdate`；不自动覆盖、合并或重试，不引入 revision 字段、transaction 或分布式锁。
+- 状态：draft edit 与 submit 分离，submit 进入 pending_confirmation；仅 doctor / admin 可从 pending_confirmation 显式 confirm。A21 不公开 pending → draft、reject、withdraw 或 reopen。
+- 最终性：确认后 status=confirmed、qualityStatus=passed、public isFinal=true；passed 只表示本阶段报告确认流程通过，不表示患者正常、诊断成立或来源结果锁定。
+- 锁定边界：confirmed 不等于 locked。A21 不设置 lockedAt / signatureText，不锁定 Patient、Visit、ScaleInstance、ItemResponse、ScoreResult、CognitiveDomainResult 或 MediaEvidence，不实现 archive / correct / void / PDF / AI。
+- 后续复查点：前端 B11 可接入受控编辑、提交和 doctor / admin 确认；退回、签名、锁定、来源锁定、更正、归档与 PDF 必须另行设计权限、审计与一致性策略。
+
 ## 4. 后续同步规则
 
 - 新增关键技术选型、接口设计、数据模型、测试策略或部署策略后，应追加决策记录。

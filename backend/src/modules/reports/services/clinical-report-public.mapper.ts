@@ -3,6 +3,11 @@ import type {
   ReportConfirmationRole,
   ReportOperatorRole,
 } from '../schemas/clinical-report.schema';
+import {
+  readClinicalReportConfirmation,
+  readClinicalReportEditEvents,
+  readClinicalReportSubmission,
+} from '../lib/clinical-report-review';
 import type { ClinicalReportResponse } from '../types/clinical-report-response.types';
 import type {
   ClinicalReportSummary,
@@ -141,12 +146,19 @@ export class ClinicalReportPublicMapper {
             scoreSummary: report.narrative.scoreSummary,
             domainSummary: report.narrative.domainSummary,
             evidenceSummary: report.narrative.evidenceSummary,
+            doctorOpinion: report.narrative.doctorOpinion,
+            recommendationText: report.narrative.recommendationText,
             limitations: report.narrative.limitations,
           }
         : null,
       generation: this.mapGeneration(report),
+      editorial: this.mapEditorial(report),
+      submission: this.mapSubmission(report),
       confirmation: report.confirmation
         ? {
+            confirmationId:
+              readClinicalReportConfirmation(report.metadata)?.confirmationId ??
+              null,
             confirmedAt: safeDate(report.confirmation.confirmedAt),
             confirmedByName: report.confirmation.confirmedByName,
             confirmedByRole: this.safeConfirmationRole(
@@ -250,6 +262,41 @@ export class ClinicalReportPublicMapper {
       cognitiveDomainResultCount: cognitiveDomainResultIds.length,
       mediaEvidenceCount: nonNegativeInteger(value.mediaEvidenceCount),
       aiUsed: false,
+    };
+  }
+
+  private mapEditorial(report: ClinicalReportSummary) {
+    const events = readClinicalReportEditEvents(report.metadata);
+    if (!events || events.length === 0) {
+      return null;
+    }
+    const last = events[events.length - 1];
+    return {
+      lastEditedAt: safeDate(last.editedAt),
+      lastEditedBy: {
+        operatorId: last.editedBy,
+        operatorName: last.editedByName,
+        operatorRole: this.safeOperatorRole(last.editedByRole),
+      },
+      editCount: events.length,
+      lastChangedFields: [...last.changedFields],
+    };
+  }
+
+  private mapSubmission(report: ClinicalReportSummary) {
+    const submission = readClinicalReportSubmission(report.metadata);
+    if (!submission) {
+      return null;
+    }
+    return {
+      submissionId: submission.submissionId,
+      submittedAt: safeDate(submission.submittedAt),
+      submittedBy: {
+        operatorId: submission.submittedBy,
+        operatorName: submission.submittedByName,
+        operatorRole: this.safeOperatorRole(submission.submittedByRole),
+      },
+      submissionNote: submission.submissionNote,
     };
   }
 

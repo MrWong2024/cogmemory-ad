@@ -10,7 +10,7 @@
 
 本文档是 CogMemory AD 后端 handoff 文档入口，用于索引后端事实快照、API、DTO、Service、配置、决策和验证手册。
 
-当前内容记录后端公共底座、量表与运行时模型、MMSE / MoCA seed、安全目录与初始化、单实例执行详情、单题草稿、A15 photo / handwriting 媒体证据工作流、A16 submission readiness / submit、A17 阶段性混合评分、A18 人工复核 / 评分确认、A19 确认评分驱动的认知域计算 / latest、A20 访视级规则化 ClinicalReport draft generate / latest，以及认证与角色权限底座。
+当前内容记录后端公共底座、量表与运行时模型、A12-A20 评估至报告 draft 闭环、A21 ClinicalReport 受控编辑 / 提交待确认 / 医生确认，以及认证与角色权限底座。
 
 ## 3. 当前状态
 
@@ -24,16 +24,16 @@
 - `MediaModule` 当前包含既有 `MediaEvidence` Schema / Service，以及 A15 `MediaEvidenceController`、`MediaEvidenceWorkflowService`、安全 public mapper、图片魔数 / 隐私元数据纯校验与手写轨迹 JSON 纯校验；依赖 Auth、Patients、Assessments 与 Storage，不重复注册 ItemResponse Schema。
 - `ScoringModule` 在既有 `ScoreResult` Schema、`ScoringService` 与 `summarizeItemScores()` 基础上，提供 `ScoringController`、A17 `ProvisionalScoringWorkflowService`、A18 `ScoreReviewWorkflowService`、纯评分 / 复核函数和显式 public mapper；公开 compute、latest、单题 manual-review 与 ScoreResult confirm 四个最小 API。
 - `CognitiveDomainsModule` 当前在既有 `CognitiveDomainResult` Schema、`CognitiveDomainsService` 与 `summarizeDomainScores()` 基础上，新增 `CognitiveDomainResultsController`、`CognitiveDomainComputationWorkflowService`、确认评分纯映射 / 校验和安全 public mapper；公开 runNo=1 compute / latest 两个最小 API。
-- `ReportsModule` 当前在既有 `ClinicalReport` Schema、`ReportsService` 内部读取和状态转换纯函数基础上，新增 `ClinicalReportsController`、`ClinicalReportGenerationWorkflowService`、纯 draft builder 与 `ClinicalReportPublicMapper`；公开访视级 generate / latest 两个 API。A20 显式选择同访视 1-10 个 completed / locked ScaleInstance，只接受最终 ScoreResult 与有效 A19 CognitiveDomainResult，生成 reportVersion=1、system_draft、draft 的规则化非 AI 快照报告。
+- `ReportsModule` 当前包含 `ClinicalReportGenerationWorkflowService` 与 A21 `ClinicalReportReviewWorkflowService`、纯 draft / review 函数、`ReportsService` 原子持久化和 `ClinicalReportPublicMapper`；公开 generate、latest、edit draft、submit confirmation、confirm 共五个 API。编辑 / 提交允许四个患者工作流角色，确认方法显式覆盖为 doctor / admin。
 - 当前新增 `scales` 内部 MMSE / MoCA 初始配置种子数据底座，包含 MMSE / MoCA seed 常量、`ScaleSeedDataService` 只读读取能力和 `validateScaleSeeds()` 种子数据校验纯函数。
 - `AssessmentExecutionService` 可基于 MMSE / MoCA seed 创建 `ScaleInstance` 与初始 `ItemResponse` 骨架；A13 由 `AssessmentScaleWorkflowService` 受控调用。题目批量创建失败时按本次实例 ID 尝试清理已创建题目和实例，当前为补偿式一致性，不是 Mongo transaction。
 - 当前新增 `users` 内部模块，包含 `User` Schema 与 `UsersService` 内部账号读取、账号编码规范化和安全 mapper 输出能力。
 - 当前新增 `auth` 模块，包含 `Session` Schema、`AuthService` 密码哈希 / 校验、session token 生成 / hash、session 创建 / 校验 / 撤销、账号密码认证编排能力，以及 `@Public()`、`@Roles()`、`@CurrentUser()`、`SessionAuthGuard`、`RolesGuard` 和 `AuthController`；不注册全局 Guard。
-- 当前公开 API 在 A19 清单上新增 A20 两个接口：访视级 ClinicalReport draft generate 与 latest。
-- A12-A20 临床接口均显式绑定 `SessionAuthGuard`、`RolesGuard` 与四个患者工作流角色；未注册全局 Guard。
+- 当前报告公开 API 共五个：generate、latest、edit draft、submit confirmation、confirm。
+- A12-A21 临床接口均显式绑定 `SessionAuthGuard` 与 `RolesGuard`；A21 edit / submit 沿用四个患者工作流角色，confirm 方法级限制 doctor / admin；未注册全局 Guard。
 - 当前媒体边界仅为 photo / handwriting；手写轨迹为可选 JSON / strokes，签名 URL 为短期地址，作废不物理删除。仍无批量上传、分片上传、客户端直传、永久 URL、公开 Storage 管理、物理删除、原子替换、OCR 或 AI。
-- A20 验证后为 60 个单元测试套件、513 个测试通过；真实 HTTP E2E 为 9 个测试套件、43 个测试通过，使用隔离 `cogmemory_ad_test`、fake storage、stub SMS / LLM 与脱敏人工数据。
-- 当前后端闭环为 A17 阶段性计算 / latest → A18 单题人工复核 → A18 显式确认 → A19 认知域 compute / latest → A20 访视级规则化报告 draft generate / latest。A20 仍无报告编辑、医生确认、签名、锁定、归档、更正、作废、重生成、reportVersion=2、PDF 或 AI。
+- A21 验证后为 63 个单元测试套件、549 个测试通过；真实 HTTP E2E 为 10 个测试套件、46 个测试通过，使用隔离 `cogmemory_ad_test`、fake storage、stub SMS / LLM 与脱敏人工数据。
+- 当前后端闭环为 A17 阶段性计算 / latest → A18 人工复核 / 确认 → A19 认知域 compute / latest → A20 报告 generate / latest → A21 edit / submit / confirm。仍无退回、签名、lock / archive / correct / void、重生成、reportVersion=2、PDF 或 AI。
 
 ## 4. 必读基础文档
 

@@ -6,8 +6,8 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 Service / Provider 与 A12-A20 业务能力；A20 在既有 ReportsService / ClinicalReport Schema 上新增 Controller、Workflow、纯 draft builder 和 public mapper。
-- 当前没有医生、SMS 或 LLM Service；A20 不调用计分 / 认知域 compute、Storage、PDF 或 AI 能力。
+- 当前存在公共底座 Service / Provider 与 A12-A21 业务能力；A21 在 A20 生成边界外新增独立 Review Workflow、纯 review 函数和单文档原子写。
+- 当前没有独立医生、SMS 或 LLM Service；A21 不调用来源计分 / 认知域 / 媒体 Service、Storage、PDF 或 AI 能力。
 
 ## 3. 当前 Service / Provider 清单
 
@@ -380,3 +380,13 @@
 - Service 事实以实际代码、模块边界和测试为准。
 - 不得将未确认业务流程写成已实现 Service 能力。
 - 跨模块调用、事务和一致性要求应在实现后及时补充。
+
+### A21 ClinicalReport review workflow
+
+- `ClinicalReportReviewWorkflowService` 依赖 `PatientsService`、`AssessmentsService`、`ReportsService`、`ClinicalReportPublicMapper`；负责 ownership、Patient / Visit 写状态、认证 actor、状态 / readiness、并发 miss、幂等与安全响应。不依赖 Scoring、CognitiveDomains、Media、Storage、LLM。
+- `clinical-report-review.ts` 是无数据库纯函数：规范化 clinician text，保留 A20 五段 narrative，计算 changedFields / no-change，严格验证并保留 metadata 顶层 namespace，追加最多 200 条 `a21Edits`，构建 submission / confirmation audit，评估 readiness；不修改输入。
+- `ReportsService.findReportByOwnership()` 只按 report + patient + visit + cognitive_assessment version 1 读取；三个 `*IfUnmodified()` 方法使用单次 `findOneAndUpdate`，filter 含 ownership、type、version、当前允许 status、updatedAt，并启用 `new=true / runValidators=true`。
+- edit 原子 `$set` 仅 narrative、source=mixed、metadata；submit 仅 status + metadata；confirm 仅 status + Schema confirmation + qualityStatus + metadata。没有 snapshot / scope / reportCode / version / aiDraft / lockedAt 写入。
+- `ClinicalReportPublicMapper` 容错解析 A21 metadata：公开 doctorOpinion / recommendationText、最后编辑摘要、submission 摘要和 confirmationId；非法 metadata 安全忽略，不返回 metadata、事件数组、previous / next、signatureText。
+- 与 A20 边界：Generation Workflow 仍负责一次性创建规则化 system_draft 和历史来源快照；Review Workflow 只把当前 ClinicalReport 文档作为确认对象，不调用 A17-A20 来源读取 / 重算，不重生成 narrative。
+- 一致性边界是单 ClinicalReport 文档原子更新；没有 Mongo transaction、分布式锁、跨集合补偿、AuditLog 集合或循环依赖 / forwardRef。

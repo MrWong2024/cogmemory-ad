@@ -6,12 +6,12 @@
 
 ## 2. 当前状态
 
-- 当前公开 API 在 A19 清单上新增 A20 的访视级 ClinicalReport draft generate POST 与 latest GET。
+- 当前报告公开 API 已扩展为 A20 generate / latest 与 A21 edit draft / submit confirmation / confirm 共五个接口。
 - `AuthModule` 当前新增 `AuthController`，仅暴露最小公开认证 API 底座；主登录态仍为服务端 Session + HttpOnly Cookie，不采用 JWT 主登录态。
 - AuthModule 内部 session cookie 名称已统一为 `cogmemory_ad_session`，登录成功下发 HttpOnly Cookie，`SameSite=Lax`，`Path=/`，production 环境启用 `Secure`。
 - 当前没有 users controller，没有公开用户管理 API，没有注册、密码重置、角色权限管理、短信验证码、OAuth / SSO 或 JWT 登录 API。
 - A12 已新增 `PatientsController` 与 `AssessmentVisitsController`，形成第一组受保护临床业务 API；所有五个接口均显式绑定 `SessionAuthGuard`、`RolesGuard` 和 `@Roles('admin', 'doctor', 'nurse', 'research_assistant')`。
-- 当前已有实例 submission readiness / submit、评分 compute / latest / manual-review / confirm、认知域 compute / latest，以及报告 draft generate / latest 最小闭环；仍没有认知域人工修改 / 确认 / 锁定 / 重算、报告编辑 / 医生确认 / PDF、SMS 或 AI / LLM 公开接口。
+- 当前已有实例 submission、评分、认知域与报告 generate / latest / edit / submit / confirm 最小闭环；仍没有认知域人工修改 / 确认 / 锁定 / 重算、报告退回 / 签名 / 锁定 / 归档 / 更正 / 作废 / PDF、SMS 或 AI / LLM 公开接口。
 - 当前 API 事实以实际 Controller、DTO、response type 和对应单元 / E2E 测试为准。
 
 ## 3. 当前 API 清单
@@ -366,3 +366,32 @@
 - API 事实以实际 Controller、路由配置、DTO 和测试为准。
 - 未实现或未确认的接口不得提前写入为已存在。
 - 后续 API 变更影响前端时，应按对应任务边界同步前端 API 对接文档。
+
+## A21 ClinicalReport review workflow
+
+### PATCH `/patients/:patientId/visits/:visitId/clinical-reports/:reportId/draft`
+
+- Guard / roles：`SessionAuthGuard` + `RolesGuard`；类级 `admin / doctor / nurse / research_assistant`；使用 `@CurrentUser()`，未认证 401、角色不足 403。
+- Params / body：`ClinicalReportResourceParamDto`；`UpdateClinicalReportDraftDto` 只接收必填 doctorOpinion（trim 3-4000）、可选 recommendationText（空串清除，非空 3-4000）、editNote（3-1000）和严格 ISO `expectedUpdatedAt`。
+- 状态 / 并发：只允许完整、未锁定 / 归档 / 作废 / 确认的 version 1 cognitive_assessment draft，source 为 system_draft / mixed；原子 filter 包含完整 ownership、type、version、draft 与 updatedAt。
+- 响应 / audit：HTTP 200 `UpdateClinicalReportDraftResponse`，含安全完整 report 与 editReceipt。成功后 source=mixed，向 `metadata.a21Edits` 追加 UUID 事件；200 条上限。A20 五段 narrative、scope、快照和来源数据不修改。
+- 错误：`PATIENT_NOT_FOUND`、`PATIENT_NOT_ACTIVE`、`VISIT_NOT_FOUND`、`VISIT_NOT_EDITABLE`、`CLINICAL_REPORT_NOT_FOUND / NOT_EDITABLE / INCOMPLETE / VOIDED / METADATA_UNSUPPORTED / EDIT_NO_CHANGES / EDIT_AUDIT_LIMIT_REACHED / EDIT_CONFLICT / EDIT_FAILED`。
+- 隐私：不返回 metadata、edit history、previousValues / nextValues、editNote 历史、signatureText；不记录正文或意见。
+
+### POST `/patients/:patientId/visits/:visitId/clinical-reports/:reportId/submit-confirmation`
+
+- Guard / roles：同类级四个患者工作流角色；使用 `@CurrentUser()`。
+- Params / body：`ClinicalReportResourceParamDto`；`SubmitClinicalReportForConfirmationDto` 只接收 `confirm=true`、trim 3-2000 submissionNote 与严格 ISO `expectedUpdatedAt`。
+- 状态 / readiness：完整 version 1 mixed draft，doctorOpinion 合法、A20 五段 narrative / snapshots / source ID 数组 / generation metadata 完整、qualityStatus 非 failed；只校验报告自身历史快照，不重读评分、认知域或媒体。
+- 响应 / audit / 幂等：HTTP 200 `SubmitClinicalReportForConfirmationResponse`；首次进入 pending_confirmation 并写 `a21Submission` UUID 回执。pending 重复请求返回 `alreadySubmitted=true` 且不重写 ID / 时间 / actor / note；confirmed / archived / corrected 在 confirmation 可读时安全幂等；不自动确认。
+- 错误：`CLINICAL_REPORT_SUBMISSION_CONFIRMATION_REQUIRED / NOT_READY_FOR_SUBMISSION / SUBMISSION_CONFLICT / SUBMISSION_AUDIT_UNAVAILABLE / SUBMISSION_FAILED`，以及通用 ownership、patient / visit、voided、metadata 错误。
+- 边界：不修改 narrative、scope、快照、qualityStatus、confirmation 或 lockedAt；不返回 metadata。
+
+### POST `/patients/:patientId/visits/:visitId/clinical-reports/:reportId/confirm`
+
+- Guard / roles：`SessionAuthGuard` + `RolesGuard`；方法级显式 `@Roles('doctor', 'admin')` 覆盖类级角色；nurse / research_assistant / system 为 403；使用 `@CurrentUser()`。
+- Params / body：`ClinicalReportResourceParamDto`；`ConfirmClinicalReportDto` 只接收 `confirm=true`、trim 3-2000 confirmationNote 与严格 ISO `expectedUpdatedAt`，不接收签名、锁定、正文、状态或 metadata。
+- 状态 / readiness：首次仅允许完整 pending_confirmation、source=mixed、合法 submission audit / doctorOpinion、qualityStatus 非 failed、confirmation / lockedAt / archivedAt / voidedAt 为空；原子 filter 包含完整 ownership、type、version、pending_confirmation 与 updatedAt。
+- 响应 / audit / 幂等：HTTP 200 `ConfirmClinicalReportResponse`；首次写 Schema confirmation 与 `metadata.a21Confirmation` UUID，status=confirmed、qualityStatus=passed、isFinal=true、`alreadyConfirmed=false`。confirmed / archived / corrected 重复确认不写库；历史缺 A21 audit 时 confirmationId=null 并使用安全 Schema fallback。
+- 错误：`CLINICAL_REPORT_CONFIRMATION_REQUIRED / NOT_READY_FOR_CONFIRMATION / CONFIRMATION_CONFLICT / CONFIRMATION_AUDIT_UNAVAILABLE / CONFIRMATION_FAILED`，以及通用 ownership、patient / visit、voided、metadata 错误。
+- 边界：confirmed 不等于 locked；不设置 signatureText / lockedAt，不修改 narrative、快照或任何来源集合，不生成 PDF / AI。

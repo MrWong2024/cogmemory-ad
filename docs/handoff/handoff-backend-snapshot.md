@@ -17,16 +17,16 @@
 - `MediaModule` 当前在既有媒体证据 Schema / Service 上新增 A15 公开 `MediaEvidenceController`、工作流 Service、安全 mapper、图片与轨迹纯校验；提供题目下列表、multipart 上传、短期签名访问和作废四个接口。
 - `ScoringModule` 当前在计分结果快照 Schema、`ScoringService` 与 `summarizeItemScores()` 通用汇总基础上，提供 A17 阶段性 workflow、A18 `ScoreReviewWorkflowService`、纯评分 / 人工复核函数与安全 public mapper；公开 compute / latest / manual-review / confirm，不提供 lock、void、重跑、认知域或报告接口。
 - `CognitiveDomainsModule` 当前在认知域结果 Schema、内部读取和 `summarizeDomainScores()` 基础上，新增 A19 Controller、Workflow、确认评分纯映射 / 校验、安全 public mapper 与 runNo=1 创建能力；公开认知域 compute / latest，不提供人工修改、确认、锁定、作废、重算或报告接口。
-- `ReportsModule` 当前在临床报告快照 Schema、内部 `ReportsService` 读取底座和报告状态转换纯函数上新增 A20 Controller、Workflow、纯 draft builder 与 public mapper，公开访视级规则化报告 draft generate / latest；仍不提供编辑、医生确认、锁定、归档、更正、作废、重生成、reportVersion=2、PDF 或 AI。
+- `ReportsModule` 当前在 A20 generation / latest 上新增 A21 `ClinicalReportReviewWorkflowService`、纯 review 函数和三个条件原子更新，公开 draft edit、submit-confirmation 与 doctor / admin confirm；仍不提供退回、签名、锁定、归档、更正、作废、重生成、reportVersion=2、PDF 或 AI。
 - `UsersModule` 当前只提供系统账号 `User` Schema 与内部 `UsersService` 读取、规范化和安全 mapper 底座，不提供公开用户管理接口。
 - `AuthModule` 当前提供服务端 `Session` Schema、内部 `AuthService`、基础认证上下文、`@Public()` / `@Roles()` / `@CurrentUser()` 装饰器、`SessionAuthGuard`、`RolesGuard` 与 `AuthController`；公开最小认证 API `POST /auth/login`、`POST /auth/logout`、`GET /auth/me`，且未注册全局 Guard。
 - OSS 业务上传服务、SMS Service、LLM Service 均未实现。
 - 本地默认后端端口为 `5002`。
 - 本地默认前端 origin 为 `http://localhost:3002`。
-- 当前公共接口在 A19 清单上新增 A20 两个报告 API；A12-A20 临床接口均显式使用 `SessionAuthGuard` + `RolesGuard`，允许 `admin`、`doctor`、`nurse`、`research_assistant`。
+- 当前报告接口增至五个；A12-A21 临床接口显式使用 `SessionAuthGuard` + `RolesGuard`，A21 confirm 仅允许 doctor / admin，其余 A21 写操作沿用四个患者工作流角色。
 - 已完成后端公共底座基础闭环本地验证：`npm install` 成功、`npm run build` 成功、`npm test -- --runInBand` 成功、`npm run start:prod` 启动成功。
-- 单元测试验证结果为 60 个测试套件通过、513 个测试通过。
-- A12-A20 真实 HTTP E2E 已在 `NODE_ENV=test` 和隔离 `cogmemory_ad_test` 数据库上通过：9 个测试套件、43 个测试通过；使用 fake / stub 外部服务配置和脱敏人工数据，并按各自测试前缀清理运行时数据。
+- 单元测试验证结果为 63 个测试套件通过、549 个测试通过。
+- A12-A21 真实 HTTP E2E 已在 `NODE_ENV=test` 和隔离 `cogmemory_ad_test` 数据库上通过：10 个测试套件、46 个测试通过；使用 fake / stub 外部服务配置和脱敏人工数据，并按各自测试前缀清理运行时数据。
 - 后端 TypeScript 编译根目录为 `.`，`outDir` 保持 `./dist`，因此 `src/main.ts` 编译后的主入口产物为 `dist/src/main.js`。
 - `package.json` 中 `start:prod` 保持指向 `./dist/src/main.js`，当前 build 产物路径已与该启动路径对齐。
 - `tsBuildInfoFile` 保持 `./dist/tsconfig.build.tsbuildinfo`；`dist` 与 `*.tsbuildinfo` 均作为生成物处理，不作为项目源文件纳入版本库。
@@ -198,6 +198,13 @@
 - 新报告固定 reportType=cognitive_assessment、reportVersion=1、status=draft、source=system_draft、confirmation=null、isFinal=false；reportCode 为 `RPT-{SHA256 前 24 位大写十六进制}` 的确定性非隐私编码。metadata 记录 UUID generationId、generatedAt / actor、engineVersion=`a20-clinical-report-draft-1.0`、显式 scope、内部 source ID 和 `aiUsed=false`。
 - 同一 Visit / type / version 只允许一个结果：同 scope 返回 `alreadyGenerated=true` 且不重读来源或修改报告；不同 scope 返回 `CLINICAL_REPORT_SCOPE_CONFLICT`；voided 返回 `CLINICAL_REPORT_VOIDED`；不完整历史报告拒绝自动修复。并发由既有 reportCode unique 索引兜底，duplicate key 后重读；没有 transaction、分布式锁、临时 draft、覆盖、重生成或 version 2。
 - latest 按 reportVersion、createdAt 倒序只读，允许 inactive / archived Patient 和 locked / voided Visit 的历史读取；公开支持安全展示 draft / pending_confirmation / confirmed / archived / corrected / voided。A20 不实现医生确认、状态写流转、签名、锁定、归档、更正、作废、PDF、Storage 文件或 AI。
+- A21 新增 `ClinicalReportResourceParamDto`、`UpdateClinicalReportDraftDto`、`SubmitClinicalReportForConfirmationDto` 与 `ConfirmClinicalReportDto`，请求严格拒绝客户端 status、source、actor、metadata、snapshot、confirmation、签名或锁定字段。
+- draft PATCH 只修改 `doctorOpinion` 与显式提供的 `recommendationText`；空 recommendation 表示清除。A20 五段系统 narrative、scope、所有结构化快照、aiDraft、reportCode / version / type 均保持不变，成功后 source 固定为 mixed。
+- `metadata.a21Edits` 以 UUID、服务端时间和认证 actor 追加内部审计，保存 changedFields / previousValues / nextValues / editNote，最多 200 条且不静默裁剪；公开只返回 editCount、最后编辑人 / 时间 / changedFields，不返回事件历史或 previous / next。
+- submit 显式要求 `confirm=true` 与 submissionNote，readiness 以 ClinicalReport 自身 A20 快照为准，不重读来源；成功写 `a21Submission` 并进入 pending_confirmation。pending 重复提交返回既有 submissionId / 时间 / actor / note，不重写审计。
+- confirm 仅 doctor / admin，显式要求 confirmationNote；成功写 Schema confirmation 与 `a21Confirmation`，进入 confirmed、qualityStatus=passed、isFinal=true。confirmed / archived / corrected 重复确认幂等；历史报告缺少 A21 namespace 时可从 Schema confirmation 安全回退，confirmedAt 缺失则拒绝猜测。
+- 三个写接口均要求严格 ISO `expectedUpdatedAt`，原子 filter 包含 report / patient / visit ownership、type、version、允许状态和 updatedAt；单次 `findOneAndUpdate({ new: true, runValidators: true })` 完成。没有自动覆盖、自动重试、transaction、分布式锁或 AuditLog 写入。
+- confirmed 与 locked 明确分离：A21 不设置 lockedAt / signatureText，不修改 Patient、Visit、ScaleInstance、ItemResponse、ScoreResult、CognitiveDomainResult、MediaEvidence，不调用来源 Service、Storage、LLM 或 PDF。
 
 ## 10. 当前 users / auth 认证、用户、会话与角色权限底座
 

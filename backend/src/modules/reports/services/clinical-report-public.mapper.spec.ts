@@ -129,6 +129,39 @@ function createReport(): ClinicalReportSummary {
         aiUsed: false,
       },
       private: true,
+      a21Edits: {
+        version: 1,
+        events: [
+          {
+            eventId: 'event-a21-test',
+            editedAt: now,
+            editedBy: '507f1f77bcf86cd799439020',
+            editedByName: '脱敏医生',
+            editedByRole: 'doctor',
+            changedFields: ['doctorOpinion', 'recommendationText'],
+            previousValues: {
+              doctorOpinion: null,
+              recommendationText: null,
+            },
+            nextValues: {
+              doctorOpinion: 'private opinion',
+              recommendationText: 'private recommendation',
+            },
+            editNote: 'private edit note',
+          },
+        ],
+        lastEditedAt: now,
+        lastEditedBy: '507f1f77bcf86cd799439020',
+      },
+      a21Submission: {
+        version: 1,
+        submissionId: 'submission-a21-test',
+        submittedAt: now,
+        submittedBy: '507f1f77bcf86cd799439020',
+        submittedByName: '脱敏医生',
+        submittedByRole: 'doctor',
+        submissionNote: '脱敏提交说明',
+      },
     },
     createdAt: now,
     updatedAt: now,
@@ -163,8 +196,21 @@ describe('ClinicalReportPublicMapper', () => {
       'storageObjectKey',
     );
     expect(response.narrative).not.toHaveProperty('trendSummary');
-    expect(response.narrative).not.toHaveProperty('recommendationText');
-    expect(response.narrative).not.toHaveProperty('doctorOpinion');
+    expect(response.narrative).toEqual(
+      expect.objectContaining({
+        recommendationText: 'private recommendation',
+        doctorOpinion: 'private opinion',
+      }),
+    );
+    expect(response.editorial).toEqual(
+      expect.objectContaining({
+        editCount: 1,
+        lastChangedFields: ['doctorOpinion', 'recommendationText'],
+      }),
+    );
+    expect(response.submission).toEqual(
+      expect.objectContaining({ submissionId: 'submission-a21-test' }),
+    );
     const serialized = JSON.stringify(response);
     expect(serialized).not.toContain('private/object-key');
     expect(serialized).not.toContain('private-ai-text');
@@ -173,6 +219,10 @@ describe('ClinicalReportPublicMapper', () => {
     expect(response).not.toHaveProperty('patientId');
     expect(response).not.toHaveProperty('assessmentVisitId');
     expect(response).not.toHaveProperty('primaryScaleInstanceIds');
+    expect(response).not.toHaveProperty('editHistory');
+    expect(serialized).not.toContain('previousValues');
+    expect(serialized).not.toContain('nextValues');
+    expect(serialized).not.toContain('private edit note');
   });
 
   it('returns a safe null generation for invalid metadata', () => {
@@ -180,6 +230,8 @@ describe('ClinicalReportPublicMapper', () => {
     report.metadata = { a20Generation: { rawSecret: 'must-not-leak' } };
     const response = mapper.toPublicReport(report);
     expect(response.generation).toBeNull();
+    expect(response.editorial).toBeNull();
+    expect(response.submission).toBeNull();
     expect(JSON.stringify(response)).not.toContain('must-not-leak');
   });
 
@@ -192,5 +244,35 @@ describe('ClinicalReportPublicMapper', () => {
     const voided = createReport();
     voided.status = 'voided';
     expect(mapper.toPublicReport(voided).isFinal).toBe(false);
+  });
+
+  it('adds a controlled confirmation id without exposing signature or actor id', () => {
+    const report = createReport();
+    report.status = 'confirmed';
+    report.confirmation = {
+      confirmedAt: now,
+      confirmedBy: '507f1f77bcf86cd799439020',
+      confirmedByName: '脱敏医生',
+      confirmedByRole: 'doctor',
+      confirmationNote: '脱敏确认说明',
+      signatureText: 'must-not-leak',
+    };
+    if (report.metadata) {
+      report.metadata.a21Confirmation = {
+        version: 1,
+        confirmationId: 'confirmation-a21-test',
+        confirmedAt: now,
+        confirmedBy: '507f1f77bcf86cd799439020',
+        confirmedByName: '脱敏医生',
+        confirmedByRole: 'doctor',
+        confirmationNote: '脱敏确认说明',
+      };
+    }
+    const response = mapper.toPublicReport(report);
+    expect(response.confirmation).toEqual(
+      expect.objectContaining({ confirmationId: 'confirmation-a21-test' }),
+    );
+    expect(JSON.stringify(response)).not.toContain('must-not-leak');
+    expect(response.confirmation).not.toHaveProperty('confirmedBy');
   });
 });

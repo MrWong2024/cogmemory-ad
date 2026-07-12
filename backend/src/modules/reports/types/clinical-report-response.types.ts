@@ -100,10 +100,33 @@ export type ClinicalReportNarrativeResponse = {
   scoreSummary?: string;
   domainSummary?: string;
   evidenceSummary?: string;
+  doctorOpinion?: string;
+  recommendationText?: string;
   limitations?: string;
 };
 
+export type ClinicalReportWorkflowActorResponse = {
+  operatorId: string | null;
+  operatorName?: string;
+  operatorRole?: ReportOperatorRole;
+};
+
+export type ClinicalReportEditorialSummaryResponse = {
+  lastEditedAt: Date | null;
+  lastEditedBy: ClinicalReportWorkflowActorResponse | null;
+  editCount: number;
+  lastChangedFields: Array<'doctorOpinion' | 'recommendationText'>;
+};
+
+export type ClinicalReportSubmissionSummaryResponse = {
+  submissionId: string | null;
+  submittedAt: Date | null;
+  submittedBy: ClinicalReportWorkflowActorResponse | null;
+  submissionNote?: string;
+};
+
 export type ClinicalReportConfirmationResponse = {
+  confirmationId: string | null;
   confirmedAt: Date | null;
   confirmedByName?: string;
   confirmedByRole?: ReportConfirmationRole;
@@ -127,6 +150,8 @@ export type ClinicalReportResponse = {
   evidenceSnapshots: ClinicalReportEvidenceSnapshotResponse[];
   narrative: ClinicalReportNarrativeResponse | null;
   generation: ClinicalReportGenerationResponse | null;
+  editorial: ClinicalReportEditorialSummaryResponse | null;
+  submission: ClinicalReportSubmissionSummaryResponse | null;
   confirmation: ClinicalReportConfirmationResponse | null;
   lockedAt: Date | null;
   archivedAt: Date | null;
@@ -144,4 +169,43 @@ export type ClinicalReportDetailResponse = {
 export type GenerateClinicalReportResponse = {
   report: ClinicalReportResponse;
   alreadyGenerated: boolean;
+};
+
+export type ClinicalReportEditReceiptResponse = {
+  eventId: string;
+  editedAt: Date;
+  editedBy: ClinicalReportWorkflowActorResponse;
+  changedFields: Array<'doctorOpinion' | 'recommendationText'>;
+  editNote: string;
+};
+
+export type UpdateClinicalReportDraftResponse = {
+  report: ClinicalReportResponse;
+  editReceipt: ClinicalReportEditReceiptResponse;
+};
+
+export type SubmitClinicalReportReceiptResponse = {
+  submissionId: string | null;
+  submittedAt: Date | null;
+  submittedBy: ClinicalReportWorkflowActorResponse | null;
+  submissionNote?: string;
+  alreadySubmitted: boolean;
+};
+
+export type SubmitClinicalReportForConfirmationResponse = {
+  report: ClinicalReportResponse;
+  submissionReceipt: SubmitClinicalReportReceiptResponse;
+};
+
+export type ConfirmClinicalReportReceiptResponse = {
+  confirmationId: string | null;
+  confirmedAt: Date;
+  confirmedBy: ClinicalReportWorkflowActorResponse;
+  confirmationNote?: string;
+  alreadyConfirmed: boolean;
+};
+
+export type ConfirmClinicalReportResponse = {
+  report: ClinicalReportResponse;
+  confirmationReceipt: ConfirmClinicalReportReceiptResponse;
 };

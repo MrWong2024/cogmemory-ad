@@ -16,6 +16,7 @@ import {
 import { ReportsService } from './services/reports.service';
 import { ClinicalReportGenerationWorkflowService } from './services/clinical-report-generation-workflow.service';
 import { ClinicalReportPublicMapper } from './services/clinical-report-public.mapper';
+import { ClinicalReportReviewWorkflowService } from './services/clinical-report-review-workflow.service';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { ClinicalReportPublicMapper } from './services/clinical-report-public.ma
     ReportsService,
     ClinicalReportGenerationWorkflowService,
     ClinicalReportPublicMapper,
+    ClinicalReportReviewWorkflowService,
   ],
   exports: [ReportsService],
 })

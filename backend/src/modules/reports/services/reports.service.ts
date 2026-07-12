@@ -33,6 +33,7 @@ import {
   ReportVisitSnapshot,
   ReportVisitType,
 } from '../schemas/clinical-report.schema';
+import type { ClinicalReportConfirmationMetadata } from '../types/clinical-report-review.types';
 
 export type ReportPatientSnapshotSummary = {
   subjectCode?: string;
@@ -237,6 +238,29 @@ export type CreateClinicalReportInput = {
   metadata: { a20Generation: ClinicalReportGenerationMetadata };
 };
 
+type ClinicalReportOwnershipInput = {
+  reportId: string;
+  patientId: string;
+  assessmentVisitId: string;
+};
+
+export type UpdateClinicalReportDraftInput = ClinicalReportOwnershipInput & {
+  expectedUpdatedAt: Date;
+  narrative: ReportNarrativeSummary;
+  metadata: Record<string, unknown>;
+};
+
+export type SubmitClinicalReportInput = ClinicalReportOwnershipInput & {
+  expectedUpdatedAt: Date;
+  metadata: Record<string, unknown>;
+};
+
+export type ConfirmClinicalReportInput = ClinicalReportOwnershipInput & {
+  expectedUpdatedAt: Date;
+  confirmation: ClinicalReportConfirmationMetadata;
+  metadata: Record<string, unknown>;
+};
+
 const REPORT_STATUS_TRANSITIONS = {
   draft: ['pending_confirmation', 'voided'],
   pending_confirmation: ['draft', 'confirmed', 'voided'],
@@ -327,6 +351,111 @@ export class ReportsService {
       .sort({ createdAt: -1 })
       .exec();
     return report ? this.mapReport(report) : null;
+  }
+
+  async findReportByOwnership(
+    input: ClinicalReportOwnershipInput,
+  ): Promise<ClinicalReportSummary | null> {
+    const ownership = this.normalizeClinicalReportOwnership(input);
+    if (!ownership) {
+      return null;
+    }
+    const report = await this.clinicalReportModel
+      .findOne({
+        ...ownership,
+        reportType: 'cognitive_assessment',
+        reportVersion: 1,
+      })
+      .exec();
+    return report ? this.mapReport(report) : null;
+  }
+
+  async updateDraftNarrativeIfUnmodified(
+    input: UpdateClinicalReportDraftInput,
+  ): Promise<ClinicalReportSummary | null> {
+    const ownership = this.normalizeClinicalReportOwnership(input);
+    if (!ownership || !Number.isFinite(input.expectedUpdatedAt.getTime())) {
+      return null;
+    }
+    const updated = await this.clinicalReportModel
+      .findOneAndUpdate(
+        {
+          ...ownership,
+          reportType: 'cognitive_assessment',
+          reportVersion: 1,
+          status: 'draft',
+          updatedAt: input.expectedUpdatedAt,
+        },
+        {
+          $set: {
+            narrative: input.narrative,
+            source: 'mixed',
+            metadata: input.metadata,
+          },
+        },
+        { new: true, runValidators: true },
+      )
+      .exec();
+    return updated ? this.mapReport(updated) : null;
+  }
+
+  async submitForConfirmationIfUnmodified(
+    input: SubmitClinicalReportInput,
+  ): Promise<ClinicalReportSummary | null> {
+    const ownership = this.normalizeClinicalReportOwnership(input);
+    if (!ownership || !Number.isFinite(input.expectedUpdatedAt.getTime())) {
+      return null;
+    }
+    const updated = await this.clinicalReportModel
+      .findOneAndUpdate(
+        {
+          ...ownership,
+          reportType: 'cognitive_assessment',
+          reportVersion: 1,
+          status: 'draft',
+          updatedAt: input.expectedUpdatedAt,
+        },
+        { $set: { status: 'pending_confirmation', metadata: input.metadata } },
+        { new: true, runValidators: true },
+      )
+      .exec();
+    return updated ? this.mapReport(updated) : null;
+  }
+
+  async confirmReportIfUnmodified(
+    input: ConfirmClinicalReportInput,
+  ): Promise<ClinicalReportSummary | null> {
+    const ownership = this.normalizeClinicalReportOwnership(input);
+    if (!ownership || !Number.isFinite(input.expectedUpdatedAt.getTime())) {
+      return null;
+    }
+    const updated = await this.clinicalReportModel
+      .findOneAndUpdate(
+        {
+          ...ownership,
+          reportType: 'cognitive_assessment',
+          reportVersion: 1,
+          status: 'pending_confirmation',
+          updatedAt: input.expectedUpdatedAt,
+        },
+        {
+          $set: {
+            status: 'confirmed',
+            confirmation: {
+              confirmedAt: input.confirmation.confirmedAt,
+              confirmedBy: new Types.ObjectId(input.confirmation.confirmedBy),
+              confirmedByName: input.confirmation.confirmedByName,
+              confirmedByRole: input.confirmation.confirmedByRole,
+              confirmationNote: input.confirmation.confirmationNote,
+            },
+            qualityStatus: 'passed',
+            metadata: input.metadata,
+          },
+        },
+        { new: true, runValidators: true },
+      )
+      .exec();
+    return updated ? this.mapReport(updated) : null;
   }
 
   async createClinicalReport(
@@ -508,6 +637,21 @@ export class ReportsService {
     }
 
     return objectId;
+  }
+
+  private normalizeClinicalReportOwnership(
+    input: ClinicalReportOwnershipInput,
+  ): {
+    _id: Types.ObjectId;
+    patientId: Types.ObjectId;
+    assessmentVisitId: Types.ObjectId;
+  } | null {
+    const reportId = this.normalizeObjectId(input.reportId);
+    const patientId = this.normalizeObjectId(input.patientId);
+    const assessmentVisitId = this.normalizeObjectId(input.assessmentVisitId);
+    return reportId && patientId && assessmentVisitId
+      ? { _id: reportId, patientId, assessmentVisitId }
+      : null;
   }
 
   private toObjectIds(ids: string[]): Types.ObjectId[] {
