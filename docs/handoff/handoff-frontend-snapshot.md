@@ -106,6 +106,7 @@
 - 页面不展示 externalRefs、metadata 或 clinicalContext；所有患者 / 访视错误使用稳定中文 UI 文案，不直接展示后端 message。
 - B3 量表目录不定义或展示完整 groups / items、指导语、答案、scoringRule、expectedValue 或 ObjectId；能力摘要只描述配置。B5 仅在实例执行页对真实 photo / handwriting requirement 开放采集，计时能力仍不表示实时计时器。前端不读取 Cookie、不保存 token，也不使用 localStorage / sessionStorage 保存访视、目录、实例或表单状态。
 - B4 执行页只使用 A14 安全 groups / itemResponses；按 itemResponseId 保存内存草稿，切换分组不丢失，未保存时使用浏览器 beforeunload 基础提示，不写 localStorage / sessionStorage。页面不定义或展示 scoringRule、expectedValue、正确答案、score、isCorrect、scoreValue，不提供任意 JSON 编辑器。
+- B3 / B4 及后续量表目录、执行页变更如涉及 MMSE / MoCA 题项展示、指导语、评分提示、CRF 标签、图片素材或 seed 派生渲染，必须实际读取仓库根目录的 `.local/reference/MMSE+MoCA.pdf`，不得仅根据现有 API、seed 摘要或页面实现反推原始业务资料。项目“来源”中的权威原始资料、Codex 本地工作镜像、当前实现事实，以及已确认并落地的修正及内部稳定语义编码之间的完整治理口径见 D-018；发现无法合理解释的不一致时停止相关实现并报告差异。
 - B5 媒体草稿由 `ScaleInstanceExecutionPage` 以 `${itemResponseId}:${evidenceType}` 保存在 React 内存；跨分组保留、详情重载和页面刷新时清除。顶部独立显示未保存作答题目数与未上传证据题目数，任一非零时注册 beforeunload。
 - photo 源 File 只在一次异步 Canvas 处理调用中短暂存在，处理后 input value 重置；React 状态只保留受控 JPEG Blob 与安全元数据。本地预览使用会及时 revoke 的 object URL，不读取 EXIF / XMP，不上传 Base64 或原始 File。
 - handwriting 画布支持 stylus / finger / mouse、pointer capture、`touch-action: none`、撤销和清空；最终上传为 PNG，可选轨迹默认开启并使用相对毫秒、有限坐标 / 压力的固定 strokes JSON，不含患者、访视、实例或题目标识。

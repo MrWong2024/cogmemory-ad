@@ -64,6 +64,9 @@
 - `ensureSeedScaleVersionMaterialized()` 以 definition code 和 definitionId + version 为业务键，使用 `$setOnInsert` upsert 创建或复用记录；已有 definition / version 配置不被覆盖。非 active 记录分别返回 `SCALE_NOT_ACTIVE` / `SCALE_VERSION_NOT_ACTIVE`；追溯字段或分组 / 题目数量冲突返回 `SCALE_CATALOG_VERSION_CONFLICT`；duplicate key 竞态后重新读取。`currentVersionId` 仅在为空或缺失时设置，不覆盖已有引用。
 - 该物化能力仅由 A13 初始化调用，不是全量 seed runner，不在应用启动时执行，也没有 CLI、管理 API 或配置编辑能力。
 - `validateScaleSeeds()` 当前为不落库的种子数据校验纯函数，覆盖量表 code、版本、group code、item code、groupCode 引用、CRF 编码重复风险、scoreRange、证据 / 计时一致性、MoCA 即刻记忆不计分、MoCA 延迟回忆提示后表现保留、MoCA 抽象项 CRF 修正、MMSE 表达第 9 项和绘图第 10 项修正，以及 MMSE / MoCA 连续减 7 分步配置。
+- MMSE / MoCA 资料治理遵循 D-018：项目“来源”中的 `MMSE+MoCA.pdf` 是权威原始资料；仓库根目录与 `docs`、`backend`、`frontend` 同级的 `.local/reference/MMSE+MoCA.pdf` 是 Codex 本地工作镜像，不是第二套业务基线，并由根目录 `.gitignore` 的 `/.local/reference/` 排除而不进入 Git。
+- 涉及 MMSE / MoCA 题项、指导语、评分规则、CRF 编码、图片素材或种子数据时，必须同时实际参阅该 PDF；seed 中的 `sourceDocument` 或其他来源标识只用于追溯，不能代替阅读 PDF，也不得只依据 seed、页面、handoff、代码命名或模型记忆推断。
+- 最新代码和 handoff 是已演进落地的当前实现事实和业务契约；PDF 的明显原始编号或排版错误不得覆盖 MMSE“表达”第 9 项、“绘图”第 10 项、MoCA 抽象项 `N1.2.12.1` / `N1.2.12.2` 等已确认并落地的修正及内部稳定语义编码。如项目来源、本地工作镜像、handoff 与代码出现无法合理解释的不一致，必须停止相关实现并报告差异。
 - MMSE seed 当前来源标识为 `MMSE+MoCA.pdf`，版本为 `1.0`，总分范围 0-30，包含定向力、即刻回忆、注意力和计算力、回忆、语言、视空间 / 绘图分组；题目覆盖时间定向、地点定向、即刻回忆、连续减 7、延迟回忆、命名、重复、阅读并执行、三步指令、表达 / 写完整句子和绘图。
 - MoCA seed 当前来源标识为 `MMSE+MoCA.pdf`，版本为 `1.0`，总分范围 0-30，包含视空间与执行功能、命名、即刻记忆、注意、语言、抽象、延迟回忆和定向分组；题目覆盖交替连线、立方体、钟表、命名、两次即刻记忆记录、数字广度、警觉性、连续减 7、句子复述、词语流畅性、两个抽象项、延迟回忆和定向；`N1.2.15` 总分字段保留在 reporting / research export 映射中。
 - 当前未实现全量 seed runner、完整题目配置公开 API、批量或自动保存、媒体批量 / 分片 / 直传 / 物理删除 / 原子替换、自动或手工评分、认知域、报告或 AI；A16 只完成实例提交，不完成访视或评分。
