@@ -6,8 +6,8 @@
 
 ## 2. 当前状态与边界
 
-- B14 继续扩展独立 `clinical-report-api.ts`，在既有访视详情页接入 A24 archive POST；保留 A20 latest / generate、A21 draft / submit / confirm、A22 lock 与 A23 freeze-sources。
-- A21 / A22 / A23 / A24 写请求均只使用服务端 `report.updatedAt` 作为 `expectedUpdatedAt`，逐字段重建 Body 白名单且不自动重试；受控冲突或结果不完整最多自动 latest 一次，不重发原请求或自动恢复。
+- B15 继续扩展独立 `clinical-report-api.ts`，在既有访视详情页接入 A25 corrections POST；保留 A20–A24 既有调用。
+- A21–A25 写请求均只使用服务端 `report.updatedAt` 作为 `expectedUpdatedAt`，逐字段重建 Body 白名单且不自动重试；更正受控冲突或结果不完整最多自动 latest 一次，不重发原请求或自动恢复。
 - B9 新增独立 `frontend\src\features\assessments\api\cognitive-domain-api.ts`，在既有量表实例页接入 A19 latest / compute。
 - 认知域仍只调用 A19 latest / compute；报告当前调用 A20 latest / generate、A21 edit / submit / confirm 与 A22 lock，不调用其他认知域或报告未来 API，也不调用 AI API。
 - API Client 使用 `frontendEnv.apiBaseUrl` 作为后端基础地址。
@@ -417,12 +417,20 @@
 - 安全摘要 / fallback：完整 A24 archive 校验顶层 archivedAt、UUID、actor、note 与当前 completed sourceFreeze freezeId / completedAt；历史 archived / corrected 可安全显示 archiveId / 锚点为空、actor unknown / 缺姓名的 fallback，不猜测或补写缺失信息且不开放再次归档。archivedAt / archive / status 或锚点不一致时警告并禁止写入。
 - 边界：归档不读取或修改来源，不修改 Patient / Visit、lockedAt / lock、sourceFreeze、confirmation、narrative / snapshots / scope。没有 unarchive / restore confirmed / correction / void / delete / unlock / unfreeze / PDF / Word / 下载或 AI。
 
-B14.1 调用归属更新（接口契约不变）：
+B14.1 / B15 调用归属更新：
 
 - `updateClinicalReportDraft()` 仅由 `useClinicalReportEditAction.ts` 调用；`submitClinicalReportForConfirmation()` 仅由 `useClinicalReportSubmissionAction.ts` 调用；`confirmClinicalReport()` 仅由 `useClinicalReportConfirmationAction.ts` 调用。
 - `lockClinicalReport()` 仅由 `useClinicalReportLockAction.ts` 调用；`freezeClinicalReportSources()` 仅由 `useClinicalReportSourceFreezeAction.ts` 调用；`archiveClinicalReport()` 仅由 `useClinicalReportArchiveAction.ts` 调用。
-- 公开 `useClinicalReportWorkflow.ts` façade 不直接 import API Client；组件仍不调用报告 API。六个既有 API 路径、method、Body 白名单、错误映射、401 / 403、latest 集合、幂等、无自动 retry / polling 语义均未变化。
-- B14.1 没有新增 correction API，也未对接 A25。
+- `createClinicalReportCorrection()` 仅由 `useClinicalReportCorrectionAction.ts` 调用；公开 façade 与组件不直接 import API Client。七类 Action 共享同一写锁、latest 与报告更新入口。
+
+### 4.34 `createClinicalReportCorrection()` -> `POST /patients/:patientId/visits/:visitId/clinical-reports/:reportId/corrections`
+
+- 路径 ID 全部 `encodeURIComponent()`；reportId 继续使用既有 MongoId 防御。
+- Body 只含 `{ confirm: true, correctionReason: trim 后文本, changeSummary: trim 后文本, expectedUpdatedAt }`；不发送版本、code、correction / replacement 标识、状态、正文、metadata、actor、force、resume、rollback 或 path ID。
+- Response 为 `{ sourceReport, replacementReport, correctionReceipt }`；成功以 replacement 更新唯一 latest，source 与 receipt 仅保存在当前页面内存，不再自动 latest、刷新或跳转。
+- 首次创建、`in_progress` 恢复与 `completed` 幂等均需用户明确勾选并调用同一 POST；没有自动 POST、retry、polling 或自动恢复。
+- 401 复用 `onUnauthorized`；403 保留报告与输入；not correctable / not latest / conflict / incomplete / failed / report not found / voided 最多 latest 一次，保留首次文本、清 checkbox、标 stale 且不重发。
+- 安全错误 kind 覆盖 confirmation required、not correctable、not latest、conflict、audit unavailable、replacement conflict、incomplete、failed 与 replacement A21 workflow forbidden；UI 不展示后端英文 message。
 
 ## 5. 当前认证公开类型
 
@@ -456,11 +464,13 @@ B14.1 调用归属更新（接口契约不变）：
 - `ClinicalReportApiError.kind` 继续严格映射 A23 八个来源冻结业务 code；UI 使用稳定中文，不直接展示后端英文 message。
 - B14 `clinical-report.ts` 新增 `ClinicalReportArchiveSummary`、archive request / receipt / response；Date JSON 继续为 string / null，不定义 metadata、a24Archive、Schema 原始 archivedBy、来源 ID、Session 或 currentUser。
 - `ClinicalReportApiError.kind` 严格新增 A24 五个归档业务 code；UI 使用稳定中文，不直接展示后端英文 message。
+- B15 `clinical-report.ts` 新增 correction state / summary、replacement lineage、request / receipt / response；Date JSON 继续为 string / null，不定义 metadata、原始 correctionRecords、内部审计对象、五类来源 ID、AuditLog ID 或分支 / 合并类型。
+- `ClinicalReportApiError.kind` 新增 A25 九个安全 kind，并继续复用认证、资源、完整性、作废、metadata、服务不可用与 unknown 映射。
 
 ## 7. 当前未对接 API
 
 - 当前没有 A12 / A13 / A14 已接接口之外的患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转调用。
-- 当前除 A16、A17、A18 manual-review / confirm、A19 latest / compute、A20 latest / generate、A21 edit / submit / confirm、A22 lock、A23 freeze-sources 与 A24 archive 外，没有撤销提交、reopen、评分 lock / void / rerun / 历史、认知域修改 / 确认 / 作废 / 重算、报告退回 / reject / reopen / withdraw / 签名 / unlock / unfreeze / unarchive / 更正 / 作废 / 重生成 / version 2 / PDF、AI、用户管理、角色权限管理或科研导出 API 调用。
+- 当前除 A16–A25 已接调用外，没有撤销提交、reopen、评分 lock / void / rerun / 历史、认知域修改 / 确认 / 作废 / 重算、报告退回 / reject / reopen / withdraw / 签名 / unlock / unfreeze / unarchive / 作废 / 重生成 / V2 lock / freeze / archive / PDF、AI、用户管理、角色权限管理或科研导出 API 调用。
 - 不得在后端 API 未确认并进入明确任务范围前编造前端对接事实。
 
 ## 8. 后续同步规则

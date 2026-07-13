@@ -56,6 +56,12 @@ export function ClinicalReportWorkflowSummary({
         </p>
       </div>
 
+      {report.replacementOf ? (
+        <p className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] px-4 py-3 text-sm leading-6 text-[var(--cma-muted)]">
+          当前为 V2 替代报告：编辑、提交和确认仅允许医生或管理员；锁定、来源冻结和归档仍不开放，空摘要不代表可执行入口。
+        </p>
+      ) : null}
+
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <section className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] p-4">
           <h4 className="text-lg font-semibold text-[var(--cma-text-strong)]">最新编辑摘要</h4>
@@ -191,6 +197,11 @@ export function ClinicalReportWorkflowSummary({
       {workflow.archiveReceipt ? (
         <p aria-live="polite" className="text-sm leading-6 text-[var(--cma-muted)]">
           本次归档回执：{workflow.archiveReceipt.alreadyArchived ? '此前已归档，本次未重复写入' : '首次归档成功'}；{formatClinicalReportDate(workflow.archiveReceipt.archivedAt)}；归档人 {actorLabel(workflow.archiveReceipt.archivedBy)}；归档流程说明 {workflow.archiveReceipt.archiveNote?.trim() || '—'}；归档追溯号 {traceId(workflow.archiveReceipt.archiveId)}；来源冻结锚点 {traceId(workflow.archiveReceipt.sourceFreezeId)}；锚定完成时间 {formatClinicalReportDate(workflow.archiveReceipt.sourceFreezeCompletedAt)}；alreadyArchived={workflow.archiveReceipt.alreadyArchived ? 'true' : 'false'}。
+        </p>
+      ) : null}
+      {workflow.correctionReceipt ? (
+        <p aria-live="polite" className="text-sm leading-6 text-[var(--cma-muted)]">
+          本次更正回执：{workflow.correctionReceipt.alreadyCreated ? '替代报告此前已创建，本次未重复写入' : workflow.correctionReceipt.resumedExisting ? '既有更正流程已恢复并完成' : '下一线性版本已创建'}；来源 {workflow.correctionReceipt.previousReportCode} / V{workflow.correctionReceipt.previousReportVersion}；替代 {workflow.correctionReceipt.replacementReportCode} / V{workflow.correctionReceipt.replacementReportVersion}；correctionId {workflow.correctionReceipt.correctionId}。
         </p>
       ) : null}
     </section>

@@ -7,7 +7,7 @@
 ## 2. 当前工程状态
 
 - `frontend\` 根目录公共骨架配置与 `frontend\app` / `frontend\src` 公共底座已初始化。
-- 前端 B1-B13 已落地既有认证、患者 / 访视、执行、媒体、提交、评分确认、认知域、规则化报告确认、锁定与来源冻结能力；前端 B14 已在既有访视详情路由接入 A24 报告归档确认、乐观并发、幂等回执与安全摘要展示。
+- 前端 B1-B14 已落地既有闭环；B15 在既有访视详情路由接入 A25 版本化更正发起、恢复、幂等结果、source/replacement 安全摘要及 V2 A21 edit / submit / confirm。
 - 当前首页仍为公共占位，只增加登录页与工作台入口，不调用后端。
 - `/login` 提供账号密码登录，并在登录前通过 `GET /auth/me` 检查已有会话。
 - `/dashboard` 通过 `GET /auth/me` 验证会话、展示当前用户公开信息、提供患者档案入口和登出入口。
@@ -15,7 +15,7 @@
 - Patients API Client 真实调用 A12 五个患者 / 访视 API，支持分页、过滤、GET 请求取消、稳定错误映射和安全请求字段白名单。
 - Assessment Execution API Client 继续调用 A13 / A14 / A16；独立 Provisional Scoring、Cognitive Domain 与 Clinical Report API Client 分别调用 A17 / A18、A19 与 A20 / A21。写请求逐字段重建白名单且不自动重试，latest 使用各自独立 AbortController。
 - 当前视觉遵循医疗系统 / 临床评估 / 低干扰 / 高可读性 / 冷静可信口径，不继承 ReviewX 视觉风格。
-- 当前没有患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、批量或自动保存、评分 lock / void / rerun、认知域人工修改 / 确认 / 作废 / 重算、报告退回 / 签名 / unlock / unfreeze / unarchive / correct / void / PDF / 重生成、AI、用户管理或权限菜单页面；B14 只归档 ClinicalReport，不修改 Patient、Visit、来源对象或 Storage，也不形成临床诊断结论。
+- 当前没有患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、批量或自动保存、评分 lock / void / rerun、认知域人工修改 / 确认 / 作废 / 重算、报告退回 / 签名 / unlock / unfreeze / unarchive / void / PDF / 重生成、AI、用户管理或权限菜单页面；B15 不修改 Patient、Visit、来源对象或 Storage，也不形成临床诊断结论。
 
 ## 3. 当前已确认前端事实
 
@@ -427,14 +427,24 @@
 - E2E、浏览器自动化与浏览器手工联调未执行，六类真实 HTTP、并发、beforeunload 与可访问性场景待开发者使用脱敏数据验证。
 - 后端命令未执行。
 
+本次 B15 验证结果：
+
+- `npm run lint`：通过。
+- `npm run typecheck`：通过，Next 16 route types 生成成功且 TypeScript 无错误。
+- `npm run build`：通过，生产构建路由集合不变并包含既有访视详情动态路由；未新增路由。
+- 静态归属：correction API 仅由 Correction Action 调用；façade / 组件不调用 API；central writingAction 增加 correction 但仍为单一写锁；报告 beforeunload 仍只有一个监听器。
+- V1 edit / submit / confirm 未放宽；合法 V2 仅 doctor/admin 且 lock / freeze / archive 入口关闭。没有自动 POST、retry、polling 或浏览器持久化草稿。
+- E2E、浏览器自动化与浏览器手工联调未执行；A25 真实 HTTP、首次 / 恢复 / 幂等、权限、并发、网络不确定、窄屏与可访问性均待使用脱敏数据验证。
+- 后端命令未执行。
+
 ## 6. 当前未实现前端事实
 
 - `/dashboard` 已有患者档案入口，但不是完整医生工作台。
 - 患者编辑 / 删除 / 归档 / 合并尚未实现。
 - 访视编辑 / 删除 / 状态流转尚未实现；访视详情支持查看、初始化量表实例、进入 B4 执行页以及 B10 / B11 访视级报告闭环。
-- B4-B14 已支持安全题目记录、photo / handwriting 证据、完整性检查、正式实例提交、评分确认、认知域结果、规则化报告、受控编辑、提交待确认、医生 / 管理员确认、报告不可逆锁定、固定 scope 来源链冻结与报告归档；批量 / 自动保存、评分锁定、认知域人工确认、来源解冻与取消归档仍未实现。
-- 报告退回、reject、reopen、withdraw、签名、unlock、unfreeze、unarchive、更正、作废、重生成、version 2、PDF / 下载、AI、用户管理、角色权限管理和权限菜单尚未实现。
-- 当前报告 API 为 A20 latest / generate、A21 edit / submit / confirm、A22 lock、A23 freeze-sources 与 A24 archive；没有评分 lock / void / reopen / rerun、认知域修改 / 确认 / void / rerun、报告 unlock / unfreeze / unarchive / correct / void 或 AI API 调用。
+- B4-B15 已支持安全题目记录、证据、提交、评分确认、认知域、V1 报告完整生命周期、版本化更正与 V2 A21 工作流；批量 / 自动保存、评分锁定、认知域人工确认、来源解冻与取消归档仍未实现。
+- 报告退回、reject、reopen、withdraw、签名、unlock、unfreeze、unarchive、作废、重生成、V2 lock / freeze / archive、PDF / 下载、AI、用户管理、角色权限管理和权限菜单尚未实现。
+- 当前报告 API 为 A20 latest / generate、A21 edit / submit / confirm、A22 lock、A23 freeze-sources、A24 archive 与 A25 corrections；没有报告 unlock / unfreeze / unarchive / void、V2 lock / freeze / archive 或 AI API 调用。
 - 当前不包含路由级服务端认证中间件。
 
 ## 7. 后续同步规则

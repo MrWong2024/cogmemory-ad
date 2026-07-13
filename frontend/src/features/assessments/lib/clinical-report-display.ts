@@ -212,6 +212,12 @@ export const clinicalReportArchiveBoundaryStatements = [
   '归档流程说明只用于本次归档审计，不属于报告正文或医生确认意见。',
 ];
 
+export const clinicalReportCorrectionBoundaryStatements = [
+  '原归档报告保持不变，系统创建下一线性版本；不允许分支或跳号。',
+  '替代报告初始为草稿；更正不会自动完成编辑、确认、锁定、冻结或归档。',
+  '更正不修改原始作答、评分、认知域或媒体，不生成 PDF，也不调用 AI。',
+];
+
 export function formatClinicalReportDate(
   value: string | null | undefined,
 ): string {
@@ -419,6 +425,24 @@ export function getClinicalReportApiErrorMessage(
       '报告归档审计信息不完整，不能安全执行或确认归档状态。',
     clinical_report_archive_failed:
       '报告归档操作未能确认完成，请保留当前归档说明并重新加载最新报告。',
+    clinical_report_correction_confirmation_required:
+      '请明确确认版本化更正边界后再继续。',
+    clinical_report_not_correctable:
+      '当前报告不满足版本化更正要求。',
+    clinical_report_correction_not_latest:
+      '当前报告不是最新版本，不能从旧版本创建新的分支。',
+    clinical_report_correction_conflict:
+      '源报告在更正前已发生变化，请重新核对最新报告。',
+    clinical_report_correction_audit_unavailable:
+      '更正审计信息不完整，不能安全启动、恢复或确认完成状态。',
+    clinical_report_correction_replacement_conflict:
+      '目标替代版本已存在但与当前更正关系不一致。',
+    clinical_report_correction_incomplete:
+      '更正流程尚未完整完成，可重新加载并继续同一流程。',
+    clinical_report_correction_failed:
+      '更正操作未能确认完成，请重新加载最新报告核对。',
+    clinical_report_correction_workflow_forbidden:
+      '替代报告的编辑、提交和确认仅允许医生或管理员。',
     service_unavailable: '报告服务暂时不可用，请稍后手工重试。',
     unknown: '暂时无法完成报告操作，请稍后手工重新加载最新报告。',
   };
@@ -478,6 +502,21 @@ export function getClinicalReportArchiveApiErrorMessage(
   }
   if (kind === 'service_unavailable' || kind === 'unknown') {
     return '归档请求结果暂不确定；系统不会自动重试，请保留当前归档说明并手工重新加载最新报告核对。';
+  }
+  return getClinicalReportApiErrorMessage(kind);
+}
+
+export function getClinicalReportCorrectionApiErrorMessage(
+  kind: ClinicalReportApiErrorKind,
+): string {
+  if (
+    kind === 'forbidden' ||
+    kind === 'clinical_report_correction_workflow_forbidden'
+  ) {
+    return '版本化更正及替代报告的编辑、提交和确认仅允许医生或管理员；报告和本地输入均已保留。';
+  }
+  if (kind === 'service_unavailable' || kind === 'unknown') {
+    return '更正请求结果暂不确定；系统不会自动重试，请保留本地说明并手工重新加载最新报告核对。';
   }
   return getClinicalReportApiErrorMessage(kind);
 }

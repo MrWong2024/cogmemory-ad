@@ -71,6 +71,9 @@ export function useClinicalReportWorkflowCoordinator({
   const setArchiveDraft = useCallback<
     ClinicalReportWorkflowCoordinator['setArchiveDraft']
   >((value) => dispatch({ type: 'SET_ARCHIVE_DRAFT', value }), []);
+  const setCorrectionDraft = useCallback<
+    ClinicalReportWorkflowCoordinator['setCorrectionDraft']
+  >((value) => dispatch({ type: 'SET_CORRECTION_DRAFT', value }), []);
   const setEditError = useCallback<
     ClinicalReportWorkflowCoordinator['setEditError']
   >((error) => dispatch({ type: 'SET_EDIT_ERROR', error }), []);
@@ -89,6 +92,9 @@ export function useClinicalReportWorkflowCoordinator({
   const setArchiveError = useCallback<
     ClinicalReportWorkflowCoordinator['setArchiveError']
   >((error) => dispatch({ type: 'SET_ARCHIVE_ERROR', error }), []);
+  const setCorrectionError = useCallback<
+    ClinicalReportWorkflowCoordinator['setCorrectionError']
+  >((error) => dispatch({ type: 'SET_CORRECTION_ERROR', error }), []);
 
   const activateEdit = useCallback<
     ClinicalReportWorkflowCoordinator['activateEdit']
@@ -108,6 +114,9 @@ export function useClinicalReportWorkflowCoordinator({
   const activateArchive = useCallback<
     ClinicalReportWorkflowCoordinator['activateArchive']
   >((draft) => dispatch({ type: 'OPEN_ARCHIVE', draft }), []);
+  const activateCorrection = useCallback<
+    ClinicalReportWorkflowCoordinator['activateCorrection']
+  >((draft) => dispatch({ type: 'OPEN_CORRECTION', draft }), []);
 
   const clearActionErrors = useCallback(() => {
     dispatch({ type: 'CLEAR_ACTION_ERRORS' });
@@ -151,6 +160,16 @@ export function useClinicalReportWorkflowCoordinator({
   >((receipt, message) => {
     dispatch({ type: 'COMPLETE_ARCHIVE', receipt, message });
   }, []);
+  const completeCorrection = useCallback<
+    ClinicalReportWorkflowCoordinator['completeCorrection']
+  >((receipt, sourceReport, message) => {
+    dispatch({
+      type: 'COMPLETE_CORRECTION',
+      receipt,
+      sourceReport,
+      message,
+    });
+  }, []);
   const cancelActive = useCallback(() => {
     if (writingRef.current !== null) return;
     dispatch({ type: 'CANCEL_ALL' });
@@ -162,6 +181,10 @@ export function useClinicalReportWorkflowCoordinator({
   const cancelArchive = useCallback(() => {
     if (writingRef.current !== null) return;
     dispatch({ type: 'CANCEL_ARCHIVE' });
+  }, []);
+  const cancelCorrection = useCallback(() => {
+    if (writingRef.current !== null) return;
+    dispatch({ type: 'CANCEL_CORRECTION' });
   }, []);
 
   const applyReportUpdate = useCallback(
@@ -223,21 +246,25 @@ export function useClinicalReportWorkflowCoordinator({
     setLockDraft,
     setSourceFreezeDraft,
     setArchiveDraft,
+    setCorrectionDraft,
     setEditError,
     setSubmissionError,
     setConfirmationError,
     setLockError,
     setSourceFreezeError,
     setArchiveError,
+    setCorrectionError,
     activateEdit,
     activateSubmission,
     activateConfirmation,
     activateLock,
     activateSourceFreeze,
     activateArchive,
+    activateCorrection,
     cancelActive,
     cancelSourceFreeze,
     cancelArchive,
+    cancelCorrection,
     clearActionErrors,
     clearAllDrafts,
     setLiveMessage,
@@ -248,6 +275,7 @@ export function useClinicalReportWorkflowCoordinator({
     completeLock,
     completeSourceFreeze,
     completeArchive,
+    completeCorrection,
     execute,
     applyReportUpdate,
     refreshAfterError,

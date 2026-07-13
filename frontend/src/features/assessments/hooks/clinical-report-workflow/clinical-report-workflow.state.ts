@@ -13,6 +13,12 @@ export function createClinicalReportWorkflowState(): ClinicalReportWorkflowState
     lock: { draft: null, error: null, receipt: null },
     sourceFreeze: { draft: null, error: null, receipt: null },
     archive: { draft: null, error: null, receipt: null },
+    correction: {
+      draft: null,
+      error: null,
+      receipt: null,
+      sourceReport: null,
+    },
     liveMessage: null,
     writeProhibited: false,
   };
@@ -29,6 +35,7 @@ function clearDrafts(
     lock: { ...state.lock, draft: null },
     sourceFreeze: { ...state.sourceFreeze, draft: null },
     archive: { ...state.archive, draft: null },
+    correction: { ...state.correction, draft: null },
   };
 }
 
@@ -43,6 +50,7 @@ function clearErrors(
     lock: { ...state.lock, error: null },
     sourceFreeze: { ...state.sourceFreeze, error: null },
     archive: { ...state.archive, error: null },
+    correction: { ...state.correction, error: null },
     liveMessage: null,
   };
 }
@@ -117,6 +125,14 @@ export function clinicalReportWorkflowReducer(
         archive: { ...next.archive, draft: action.draft },
       };
     }
+    case 'OPEN_CORRECTION': {
+      const next = prepareOpen(state);
+      return {
+        ...next,
+        activeMode: 'correction',
+        correction: { ...next.correction, draft: action.draft },
+      };
+    }
     case 'CANCEL_ALL':
       return {
         ...clearDrafts(clearErrors(state)),
@@ -134,6 +150,13 @@ export function clinicalReportWorkflowReducer(
         ...state,
         activeMode: 'idle',
         archive: { ...state.archive, draft: null, error: null },
+        liveMessage: null,
+      };
+    case 'CANCEL_CORRECTION':
+      return {
+        ...state,
+        activeMode: 'idle',
+        correction: { ...state.correction, draft: null, error: null },
         liveMessage: null,
       };
     case 'CLEAR_ACTION_ERRORS':
@@ -188,6 +211,14 @@ export function clinicalReportWorkflowReducer(
           draft: resolveValue(state.archive.draft, action.value),
         },
       };
+    case 'SET_CORRECTION_DRAFT':
+      return {
+        ...state,
+        correction: {
+          ...state.correction,
+          draft: resolveValue(state.correction.draft, action.value),
+        },
+      };
     case 'SET_EDIT_ERROR':
       return { ...state, edit: { ...state.edit, error: action.error } };
     case 'SET_SUBMISSION_ERROR':
@@ -209,6 +240,11 @@ export function clinicalReportWorkflowReducer(
       };
     case 'SET_ARCHIVE_ERROR':
       return { ...state, archive: { ...state.archive, error: action.error } };
+    case 'SET_CORRECTION_ERROR':
+      return {
+        ...state,
+        correction: { ...state.correction, error: action.error },
+      };
     case 'SET_LIVE_MESSAGE':
       return { ...state, liveMessage: action.message };
     case 'SET_WRITE_PROHIBITED':
@@ -241,6 +277,11 @@ export function clinicalReportWorkflowReducer(
           };
         case 'archive':
           return { ...next, archive: { ...next.archive, error: null } };
+        case 'correction':
+          return {
+            ...next,
+            correction: { ...next.correction, error: null },
+          };
       }
     }
     case 'FINISH_WRITE':
@@ -286,6 +327,18 @@ export function clinicalReportWorkflowReducer(
         ...state,
         activeMode: 'idle',
         archive: { draft: null, error: null, receipt: action.receipt },
+        liveMessage: action.message,
+      };
+    case 'COMPLETE_CORRECTION':
+      return {
+        ...state,
+        activeMode: 'idle',
+        correction: {
+          draft: null,
+          error: null,
+          receipt: action.receipt,
+          sourceReport: action.sourceReport,
+        },
         liveMessage: action.message,
       };
   }

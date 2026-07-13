@@ -9,7 +9,7 @@
 - `frontend\src\components\ui` 提供 `Button`、`Card`、`Badge` 三个无业务语义公共组件。
 - `frontend\src\features\auth` 提供 B1 最小认证接入能力。
 - `frontend\src\features\patients` 提供 B2 患者档案与评估访视最小业务闭环。
-- `frontend\src\features\assessments` 已推进至 B14；在 B3-B13 既有能力上新增 A24 已冻结报告归档确认、乐观并发、幂等回执与安全摘要展示。
+- `frontend\src\features\assessments` 已推进至 B15；在 B14.1 治理结构上新增 A25 更正闭环、source/replacement 展示及 V2 A21 接入。
 - 当前组件遵循医疗系统 / 临床评估 / 低干扰 / 高可读性 / 冷静可信视觉基线。
 - B2-B11 未新增公共 Input 组件、第三方 UI 库、状态管理库、数据请求库或权限菜单组件。
 
@@ -631,7 +631,26 @@
 - 协调器：`useClinicalReportWorkflowCoordinator.ts` 唯一持有 mountedRef / writingRef 和 reducer dispatch，统一 begin / finish write、路由报告身份重置、activate / cancel、401、onReportUpdated、latest 恢复与每次只允许一个写请求。
 - 公共恢复 / unload：`clinical-report-workflow-recovery.ts` 固定原 latest error 集合、写阻断分类与最多一次 refresh helper；`useClinicalReportBeforeUnload.ts` 是报告工作流唯一 beforeunload 注册点。
 - 六类 Action：`useClinicalReportEditAction.ts`、`useClinicalReportSubmissionAction.ts`、`useClinicalReportConfirmationAction.ts`、`useClinicalReportLockAction.ts`、`useClinicalReportSourceFreezeAction.ts`、`useClinicalReportArchiveAction.ts` 分别独占各自资格、草稿、校验、dirty / stale、block reason、API、错误、成功消息和回执，不互相 import 或修改对方 slice。
-- 消费边界：全部 ClinicalReport 组件与 `AssessmentVisitExecutionPage` 未修改，继续只接收 façade 的扁平结果；内部模块不得被组件直接 import。B14.1 没有接入 A25 correction。
+- 消费边界：全部 ClinicalReport 组件继续只接收 façade 的扁平结果；内部模块不得被组件直接 import。B15 在此结构上新增第七类 Action，没有把 API 堆回 façade。
+
+### 6.69 B15 correction 类型、纯函数与 Action
+
+- `types/clinical-report.ts`：公开 correction summary、replacement lineage、request / receipt / response；日期保持 string / null，不公开 metadata、原始 correctionRecords、内部审计或五类来源 ID。
+- `lib/clinical-report-correction-draft.ts`：管理 start / resume 草稿、3–2000 / 3–4000 校验、dirty / stale、请求白名单、latest 继续、correction 一致性与 replacement lineage 安全判断；不生成 ID、版本、code 或时间。
+- `hooks/clinical-report-workflow/useClinicalReportCorrectionAction.ts`：唯一调用 A25 API，管理 roleCanCorrect、首次 / 恢复资格、错误、source / receipt 会话状态与成功切换 replacement。central state 增加 correction slice；activeMode / writingAction 增加 correction，仍只有一个 writingRef / mountedRef / latest / beforeunload。
+- 并发：受控错误最多 latest 一次，保留首次 reason / summary、清 checkbox、标 stale 且不重发。latest 出现 in_progress 时只能明确放弃本地输入后转服务端只读恢复；网络不确定只提供手工 latest。
+
+### 6.70 `ClinicalReportCorrectionPanel` / `ClinicalReportCorrectionSummary`
+
+- `ClinicalReportCorrectionPanel.tsx`：内联两步确认，首次文本可编辑，resume 文本来自服务端且只读；显示字符计数、checkbox、stale、401 / 403 / 冲突 / 网络语义。POST 期间共享写锁禁用报告写操作。
+- `ClinicalReportCorrectionSummary.tsx`：展示 source correction 编排、replacementOf lineage、版本关系、actor / 时间、reason / summary、archive / sourceFreeze 锚点；replacementReportId / previousReportId 仅作技术追溯，不伪造链接。
+- 成功后 `ClinicalReportPanel` 原地展示 replacement，并可在当前会话额外展示 sourceReport 与 receipt；刷新后仅依赖 replacementOf。组件不直接调用 API，不使用持久化存储或诊断式推断。
+
+### 6.71 V2 A21 与生命周期边界
+
+- edit / submit / confirm Action 统一使用安全 replacement lineage 判断；合法 V2 仅 doctor/admin，状态分别为 draft 可编辑、mixed draft 可提交、pending_confirmation 可确认。仍只编辑 doctorOpinion / recommendationText。
+- 合法 V2 不受 Patient inactive、Visit locked / voided 阻断，但仍受 reportWriteBlocked、central writingAction、writeProhibited、updatedAt、状态和 lineage 一致性约束。普通 V1 既有角色与资格不放宽。
+- `ClinicalReportPanel` 对 replacement 不渲染 Lock / SourceFreeze / Archive Action 组件；confirmed V2 不自动 lock、freeze 或 archive，不调用 A22–A24。
 
 ## 7. 后续同步规则
 

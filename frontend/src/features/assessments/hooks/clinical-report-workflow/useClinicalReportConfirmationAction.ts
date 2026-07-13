@@ -17,6 +17,10 @@ import {
   validateClinicalReportConfirmationDraft,
 } from '@/src/features/assessments/lib/clinical-report-workflow-draft';
 import type { ClinicalReport } from '@/src/features/assessments/types/clinical-report';
+import {
+  isSafeCorrectionReplacement,
+  isVersionOneReport,
+} from '@/src/features/assessments/lib/clinical-report-correction-draft';
 
 type ConfirmationActionOptions = Pick<
   UseClinicalReportWorkflowOptions,
@@ -34,6 +38,7 @@ function isConfirmableReport(report: ClinicalReport | null): boolean {
   return Boolean(
     report &&
       report.status === 'pending_confirmation' &&
+      (isVersionOneReport(report) || isSafeCorrectionReplacement(report)) &&
       report.submission !== null &&
       report.qualityStatus !== 'failed' &&
       report.lockedAt === null &&

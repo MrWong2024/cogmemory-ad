@@ -23,6 +23,11 @@ const refreshAfterActionErrors = new Set<ClinicalReportApiErrorKind>([
   'clinical_report_not_archivable',
   'clinical_report_archive_conflict',
   'clinical_report_archive_failed',
+  'clinical_report_not_correctable',
+  'clinical_report_correction_not_latest',
+  'clinical_report_correction_conflict',
+  'clinical_report_correction_incomplete',
+  'clinical_report_correction_failed',
 ]);
 
 export function toClinicalReportApiError(
@@ -60,6 +65,11 @@ export function shouldProhibitClinicalReportWrite(
       );
     case 'archive':
       return error.kind === 'clinical_report_archive_audit_unavailable';
+    case 'correction':
+      return (
+        error.kind === 'clinical_report_correction_audit_unavailable' ||
+        error.kind === 'clinical_report_correction_replacement_conflict'
+      );
   }
 }
 

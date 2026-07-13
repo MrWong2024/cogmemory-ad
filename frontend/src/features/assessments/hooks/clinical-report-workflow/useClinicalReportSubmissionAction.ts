@@ -17,10 +17,19 @@ import {
   validateClinicalReportSubmissionDraft,
 } from '@/src/features/assessments/lib/clinical-report-workflow-draft';
 import type { ClinicalReport } from '@/src/features/assessments/types/clinical-report';
+import {
+  canCurrentRolesWriteReplacement,
+  isSafeCorrectionReplacement,
+  isVersionOneReport,
+} from '@/src/features/assessments/lib/clinical-report-correction-draft';
 
 type SubmissionActionOptions = Pick<
   UseClinicalReportWorkflowOptions,
-  'patientId' | 'visitId' | 'report' | 'reportWriteBlocked'
+  | 'patientId'
+  | 'visitId'
+  | 'report'
+  | 'reportWriteBlocked'
+  | 'currentUserRoles'
 > & {
   coordinator: ClinicalReportWorkflowCoordinator;
   hasLocalDraft: boolean;
@@ -33,10 +42,16 @@ function hasValidDoctorOpinion(report: ClinicalReport): boolean {
   return length >= 3 && length <= 4000;
 }
 
-function isSubmittableDraftReport(report: ClinicalReport | null): boolean {
+function isSubmittableDraftReport(
+  report: ClinicalReport | null,
+  currentUserRoles: readonly string[],
+): boolean {
   return Boolean(
     report &&
       report.status === 'draft' &&
+      (isVersionOneReport(report) ||
+        (isSafeCorrectionReplacement(report) &&
+          canCurrentRolesWriteReplacement(currentUserRoles))) &&
       report.source === 'mixed' &&
       report.qualityStatus !== 'failed' &&
       report.lockedAt === null &&
@@ -55,6 +70,7 @@ export function useClinicalReportSubmissionAction({
   visitId,
   report,
   reportWriteBlocked,
+  currentUserRoles,
   coordinator,
   hasLocalDraft,
 }: SubmissionActionOptions) {
@@ -78,7 +94,7 @@ export function useClinicalReportSubmissionAction({
     !reportWriteBlocked &&
     !state.writeProhibited &&
     !hasLocalDraft &&
-    isSubmittableDraftReport(report);
+    isSubmittableDraftReport(report, currentUserRoles);
   const canConfirmSubmission = Boolean(
     submissionDraft &&
       submissionValidation.valid &&
@@ -88,7 +104,7 @@ export function useClinicalReportSubmissionAction({
       state.writingAction === null &&
       !reportWriteBlocked &&
       !state.writeProhibited &&
-      isSubmittableDraftReport(report),
+      isSubmittableDraftReport(report, currentUserRoles),
   );
 
   useEffect(() => {
@@ -135,7 +151,11 @@ export function useClinicalReportSubmissionAction({
   );
 
   const continueSubmissionFromLatest = useCallback(() => {
-    if (!report || !isSubmittableDraftReport(report) || !report.updatedAt) {
+    if (
+      !report ||
+      !isSubmittableDraftReport(report, currentUserRoles) ||
+      !report.updatedAt
+    ) {
       return;
     }
     setSubmissionDraft((current) =>
@@ -150,7 +170,7 @@ export function useClinicalReportSubmissionAction({
         : current,
     );
     setSubmissionError(null);
-  }, [report, setSubmissionDraft, setSubmissionError]);
+  }, [currentUserRoles, report, setSubmissionDraft, setSubmissionError]);
 
   const submitForConfirmation = useCallback(async () => {
     if (!submissionDraft || !canConfirmSubmission) return;

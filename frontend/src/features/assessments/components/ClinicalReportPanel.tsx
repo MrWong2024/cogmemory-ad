@@ -17,6 +17,8 @@ import { ClinicalReportSourceFreezePanel } from '@/src/features/assessments/comp
 import { ClinicalReportSourceFreezeSummary } from '@/src/features/assessments/components/ClinicalReportSourceFreezeSummary';
 import { ClinicalReportArchivePanel } from '@/src/features/assessments/components/ClinicalReportArchivePanel';
 import { ClinicalReportArchiveSummary } from '@/src/features/assessments/components/ClinicalReportArchiveSummary';
+import { ClinicalReportCorrectionPanel } from '@/src/features/assessments/components/ClinicalReportCorrectionPanel';
+import { ClinicalReportCorrectionSummary } from '@/src/features/assessments/components/ClinicalReportCorrectionSummary';
 import { ClinicalReportScopeSelector } from '@/src/features/assessments/components/ClinicalReportScopeSelector';
 import { ClinicalReportSnapshotSummary } from '@/src/features/assessments/components/ClinicalReportSnapshotSummary';
 import { ClinicalReportTechnicalSummary } from '@/src/features/assessments/components/ClinicalReportTechnicalSummary';
@@ -36,6 +38,7 @@ import {
 } from '@/src/features/assessments/lib/clinical-report-display';
 import { getClinicalReportSourceFreezeConsistencyWarning } from '@/src/features/assessments/lib/clinical-report-source-freeze-draft';
 import { getClinicalReportArchiveConsistencyWarning } from '@/src/features/assessments/lib/clinical-report-archive-draft';
+import { isVersionOneReport } from '@/src/features/assessments/lib/clinical-report-correction-draft';
 import type {
   AvailableScaleOption,
   ScaleInstanceListItem,
@@ -98,7 +101,7 @@ export function ClinicalReportPanel({
           <div>
             <CardTitle>访视级临床报告</CardTitle>
             <CardDescription>
-              在 A20–A23 报告工作流基础上，支持 doctor / admin 明确执行 A24 归档，并安全处理 updatedAt 并发、幂等回执与历史归档摘要。
+              支持版本化更正、线性来源追溯及 V1 / V2 受控报告工作流；所有写入共享同一写锁与 updatedAt 并发边界。
             </CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -125,6 +128,13 @@ export function ClinicalReportPanel({
                       ? '冻结未完成'
                       : '来源未冻结'}
                 </Badge>
+                {report.replacementOf ? (
+                  <Badge tone="info">替代版本 V{report.reportVersion}</Badge>
+                ) : report.correction?.state === 'in_progress' ? (
+                  <Badge tone="warning">更正待继续</Badge>
+                ) : report.correction?.state === 'completed' ? (
+                  <Badge tone="success">已由替代版本接续</Badge>
+                ) : null}
                 <Badge
                   tone={
                     report.status === 'archived' ||
@@ -453,35 +463,47 @@ export function ClinicalReportPanel({
               report={report}
               workflow={workflow}
             />
+            <ClinicalReportCorrectionSummary
+              receipt={workflow.correctionReceipt}
+              report={report}
+              sourceReport={workflow.correctionSourceReport}
+            />
             <ClinicalReportDraftEditor report={report} workflow={workflow} />
             <ClinicalReportSubmissionPanel report={report} workflow={workflow} />
             <ClinicalReportConfirmationPanel
               report={report}
               workflow={workflow}
             />
-            <ClinicalReportLockPanel report={report} workflow={workflow} />
-            <ClinicalReportSourceFreezePanel
-              report={report}
-              workflow={workflow}
-            />
-            <ClinicalReportSourceFreezeSummary
-              receipt={workflow.sourceFreezeReceipt}
-              sourceFreeze={report.sourceFreeze}
-            />
-            <ClinicalReportArchivePanel report={report} workflow={workflow} />
-            <ClinicalReportArchiveSummary
-              receipt={workflow.archiveReceipt}
-              report={report}
-            />
+            {isVersionOneReport(report) ? (
+              <>
+                <ClinicalReportLockPanel report={report} workflow={workflow} />
+                <ClinicalReportSourceFreezePanel
+                  report={report}
+                  workflow={workflow}
+                />
+                <ClinicalReportSourceFreezeSummary
+                  receipt={workflow.sourceFreezeReceipt}
+                  sourceFreeze={report.sourceFreeze}
+                />
+                <ClinicalReportArchivePanel report={report} workflow={workflow} />
+                <ClinicalReportArchiveSummary
+                  receipt={workflow.archiveReceipt}
+                  report={report}
+                />
+              </>
+            ) : null}
+            <ClinicalReportCorrectionPanel report={report} workflow={workflow} />
             {['confirmed', 'archived', 'corrected', 'voided'].includes(
               report.status,
             ) ? (
               <p className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] px-4 py-3 text-base leading-7 text-[var(--cma-muted)]">
-                {isClinicalReportLocked(report)
+                {report.replacementOf
+                  ? '当前是版本化更正形成的替代报告。A21 可完成医生或管理员确认；现阶段 V2 不开放报告锁定、来源冻结或归档，也不会自动调用这些接口。'
+                  : isClinicalReportLocked(report)
                   ? report.status === 'archived'
                     ? '当前报告真实 status=archived，报告自身锁定与 completed 来源冻结事实继续保留。归档不修改 Patient、Visit 或来源对象，不等于删除、作废、更正或生成 PDF；当前不提供 unarchive。'
                     : report.status === 'corrected'
-                      ? '当前为已更正历史报告，只读展示原归档摘要；本阶段不提供更正、取消归档、解锁或解冻操作。'
+                      ? '当前为已更正的历史来源报告，只读展示归档与更正摘要；替代报告是下一线性版本，不提供取消更正、取消归档、解锁或解冻操作。'
                       : report.sourceFreeze?.state === 'completed'
                     ? '当前报告自身已经确认并锁定，status 仍为 confirmed；其固定 scope 内来源链已完成冻结。归档仍需 doctor / admin 明确执行；Patient、Visit 与来源对象不会被归档操作修改。'
                     : report.sourceFreeze?.state === 'in_progress'

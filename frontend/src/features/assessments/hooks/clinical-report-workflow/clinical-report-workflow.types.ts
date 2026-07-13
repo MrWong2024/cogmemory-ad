@@ -2,6 +2,10 @@ import type { Dispatch, SetStateAction } from 'react';
 
 import type { ClinicalReportApiError } from '@/src/features/assessments/api/clinical-report-api';
 import type { ClinicalReportArchiveDraft } from '@/src/features/assessments/lib/clinical-report-archive-draft';
+import type {
+  ClinicalReportCorrectionValidation,
+  CorrectionDraft,
+} from '@/src/features/assessments/lib/clinical-report-correction-draft';
 import type { ClinicalReportSourceFreezeDraft } from '@/src/features/assessments/lib/clinical-report-source-freeze-draft';
 import type {
   ClinicalReportConfirmationDraft,
@@ -14,6 +18,7 @@ import type {
   ArchiveClinicalReportReceipt,
   ClinicalReport,
   ClinicalReportEditReceipt,
+  CreateClinicalReportCorrectionReceipt,
   ConfirmClinicalReportReceipt,
   FreezeClinicalReportSourcesReceipt,
   LockClinicalReportReceipt,
@@ -28,7 +33,8 @@ export type ClinicalReportWorkflowMode =
   | 'confirm'
   | 'lock'
   | 'source_freeze'
-  | 'archive';
+  | 'archive'
+  | 'correction';
 
 export type ClinicalReportWritingAction = Exclude<
   ClinicalReportWorkflowMode,
@@ -80,6 +86,12 @@ export type ClinicalReportWorkflowState = {
     error: ClinicalReportApiError | null;
     receipt: ArchiveClinicalReportReceipt | null;
   };
+  correction: {
+    draft: CorrectionDraft | null;
+    error: ClinicalReportApiError | null;
+    receipt: CreateClinicalReportCorrectionReceipt | null;
+    sourceReport: ClinicalReport | null;
+  };
   liveMessage: string | null;
   writeProhibited: boolean;
 };
@@ -104,9 +116,11 @@ export type ClinicalReportWorkflowStateAction =
       draft: ClinicalReportSourceFreezeDraft;
     }
   | { type: 'OPEN_ARCHIVE'; draft: ClinicalReportArchiveDraft }
+  | { type: 'OPEN_CORRECTION'; draft: CorrectionDraft }
   | { type: 'CANCEL_ALL' }
   | { type: 'CANCEL_SOURCE_FREEZE' }
   | { type: 'CANCEL_ARCHIVE' }
+  | { type: 'CANCEL_CORRECTION' }
   | { type: 'CLEAR_ACTION_ERRORS' }
   | { type: 'CLEAR_ALL_DRAFTS' }
   | {
@@ -133,6 +147,10 @@ export type ClinicalReportWorkflowStateAction =
       type: 'SET_ARCHIVE_DRAFT';
       value: SetStateAction<ClinicalReportArchiveDraft | null>;
     }
+  | {
+      type: 'SET_CORRECTION_DRAFT';
+      value: SetStateAction<CorrectionDraft | null>;
+    }
   | { type: 'SET_EDIT_ERROR'; error: ClinicalReportApiError | null }
   | {
       type: 'SET_SUBMISSION_ERROR';
@@ -148,6 +166,7 @@ export type ClinicalReportWorkflowStateAction =
       error: ClinicalReportApiError | null;
     }
   | { type: 'SET_ARCHIVE_ERROR'; error: ClinicalReportApiError | null }
+  | { type: 'SET_CORRECTION_ERROR'; error: ClinicalReportApiError | null }
   | { type: 'SET_LIVE_MESSAGE'; message: string | null }
   | { type: 'SET_WRITE_PROHIBITED'; prohibited: boolean }
   | {
@@ -185,6 +204,12 @@ export type ClinicalReportWorkflowStateAction =
       type: 'COMPLETE_ARCHIVE';
       receipt: ArchiveClinicalReportReceipt;
       message: string;
+    }
+  | {
+      type: 'COMPLETE_CORRECTION';
+      receipt: CreateClinicalReportCorrectionReceipt;
+      sourceReport: ClinicalReport;
+      message: string;
     };
 
 export type ClinicalReportWorkflowActionSetters = {
@@ -200,12 +225,14 @@ export type ClinicalReportWorkflowActionSetters = {
     SetStateAction<ClinicalReportSourceFreezeDraft | null>
   >;
   setArchiveDraft: Dispatch<SetStateAction<ClinicalReportArchiveDraft | null>>;
+  setCorrectionDraft: Dispatch<SetStateAction<CorrectionDraft | null>>;
   setEditError: (error: ClinicalReportApiError | null) => void;
   setSubmissionError: (error: ClinicalReportApiError | null) => void;
   setConfirmationError: (error: ClinicalReportApiError | null) => void;
   setLockError: (error: ClinicalReportApiError | null) => void;
   setSourceFreezeError: (error: ClinicalReportApiError | null) => void;
   setArchiveError: (error: ClinicalReportApiError | null) => void;
+  setCorrectionError: (error: ClinicalReportApiError | null) => void;
 };
 
 export type ClinicalReportWorkflowExecuteOptions<Response> = {
@@ -225,9 +252,11 @@ export type ClinicalReportWorkflowCoordinator =
     activateLock: (draft: ClinicalReportLockDraft) => void;
     activateSourceFreeze: (draft: ClinicalReportSourceFreezeDraft) => void;
     activateArchive: (draft: ClinicalReportArchiveDraft) => void;
+    activateCorrection: (draft: CorrectionDraft) => void;
     cancelActive: () => void;
     cancelSourceFreeze: () => void;
     cancelArchive: () => void;
+    cancelCorrection: () => void;
     clearActionErrors: () => void;
     clearAllDrafts: () => void;
     setLiveMessage: (message: string | null) => void;
@@ -250,6 +279,11 @@ export type ClinicalReportWorkflowCoordinator =
       receipt: ArchiveClinicalReportReceipt,
       message: string,
     ) => void;
+    completeCorrection: (
+      receipt: CreateClinicalReportCorrectionReceipt,
+      sourceReport: ClinicalReport,
+      message: string,
+    ) => void;
     execute: <Response>(
       options: ClinicalReportWorkflowExecuteOptions<Response>,
     ) => Promise<void>;
@@ -267,30 +301,36 @@ export type UseClinicalReportWorkflowResult = {
   lockDraft: ClinicalReportLockDraft | null;
   sourceFreezeDraft: ClinicalReportSourceFreezeDraft | null;
   archiveDraft: ClinicalReportArchiveDraft | null;
+  correctionDraft: CorrectionDraft | null;
   editDirty: boolean;
   submissionDirty: boolean;
   confirmationDirty: boolean;
   lockDirty: boolean;
   sourceFreezeDirty: boolean;
   archiveDirty: boolean;
+  correctionDirty: boolean;
   editValidation: ClinicalReportWorkflowValidation;
   submissionValidation: ClinicalReportWorkflowValidation;
   confirmationValidation: ClinicalReportWorkflowValidation;
   lockValidation: ClinicalReportWorkflowValidation;
   sourceFreezeValidation: ClinicalReportWorkflowValidation;
   archiveValidation: ClinicalReportWorkflowValidation;
+  correctionValidation: ClinicalReportCorrectionValidation;
   editError: ClinicalReportApiError | null;
   submissionError: ClinicalReportApiError | null;
   confirmationError: ClinicalReportApiError | null;
   lockError: ClinicalReportApiError | null;
   sourceFreezeError: ClinicalReportApiError | null;
   archiveError: ClinicalReportApiError | null;
+  correctionError: ClinicalReportApiError | null;
   editReceipt: ClinicalReportEditReceipt | null;
   submissionReceipt: SubmitClinicalReportReceipt | null;
   confirmationReceipt: ConfirmClinicalReportReceipt | null;
   lockReceipt: LockClinicalReportReceipt | null;
   sourceFreezeReceipt: FreezeClinicalReportSourcesReceipt | null;
   archiveReceipt: ArchiveClinicalReportReceipt | null;
+  correctionReceipt: CreateClinicalReportCorrectionReceipt | null;
+  correctionSourceReport: ClinicalReport | null;
   liveMessage: string | null;
   writeProhibited: boolean;
   canEdit: boolean;
@@ -300,16 +340,21 @@ export type UseClinicalReportWorkflowResult = {
   canStartSourceFreeze: boolean;
   canResumeSourceFreeze: boolean;
   canArchive: boolean;
+  canStartCorrection: boolean;
+  canResumeCorrection: boolean;
   canSaveEdit: boolean;
   canConfirmSubmission: boolean;
   canConfirmReport: boolean;
   canConfirmLock: boolean;
   canConfirmSourceFreeze: boolean;
   canConfirmArchive: boolean;
+  canConfirmCorrection: boolean;
   canContinueLockWithLatest: boolean;
   canContinueSourceFreezeWithLatest: boolean;
   canContinueArchiveWithLatest: boolean;
   canDiscardLocalSourceFreezeAndResume: boolean;
+  canContinueCorrectionWithLatest: boolean;
+  canDiscardLocalCorrectionAndResume: boolean;
   lockVersionMatches: boolean;
   sourceFreezeVersionMatches: boolean;
   archiveVersionMatches: boolean;
@@ -318,10 +363,14 @@ export type UseClinicalReportWorkflowResult = {
   sourceFreezeBlockReason: string | null;
   archiveConsistencyWarning: string | null;
   archiveBlockReason: string | null;
+  correctionConsistencyWarning: string | null;
+  correctionBlockReason: string | null;
+  correctionVersionMatches: boolean;
   roleCanConfirm: boolean;
   roleCanLock: boolean;
   roleCanFreezeSources: boolean;
   roleCanArchive: boolean;
+  roleCanCorrect: boolean;
   openEdit: () => void;
   openSubmit: () => void;
   openConfirm: () => void;
@@ -329,9 +378,12 @@ export type UseClinicalReportWorkflowResult = {
   openSourceFreeze: () => void;
   openSourceFreezeResume: () => void;
   openArchive: () => void;
+  openCorrection: () => void;
+  openCorrectionResume: () => void;
   cancelActive: () => void;
   cancelSourceFreeze: () => void;
   cancelArchive: () => void;
+  cancelCorrection: () => void;
   updateEditDraft: (
     field: 'doctorOpinion' | 'recommendationText' | 'editNote',
     value: string,
@@ -346,6 +398,9 @@ export type UseClinicalReportWorkflowResult = {
   setSourceFreezeConfirmed: (confirmed: boolean) => void;
   updateArchiveNote: (value: string) => void;
   setArchiveConfirmed: (confirmed: boolean) => void;
+  updateCorrectionReason: (value: string) => void;
+  updateCorrectionChangeSummary: (value: string) => void;
+  setCorrectionConfirmed: (confirmed: boolean) => void;
   continueEditFromLatest: () => void;
   continueSubmissionFromLatest: () => void;
   continueConfirmationFromLatest: () => void;
@@ -353,12 +408,16 @@ export type UseClinicalReportWorkflowResult = {
   continueSourceFreezeWithLatest: () => void;
   continueArchiveWithLatest: () => void;
   discardLocalSourceFreezeAndResume: () => void;
+  continueCorrectionWithLatest: () => void;
+  discardLocalCorrectionAndResume: () => void;
   reloadLatestAfterSourceFreezeUncertainty: () => Promise<void>;
   reloadLatestAfterArchiveUncertainty: () => Promise<void>;
+  reloadLatestAfterCorrectionUncertainty: () => Promise<void>;
   saveEdit: () => Promise<void>;
   submitForConfirmation: () => Promise<void>;
   confirmReport: () => Promise<void>;
   confirmLock: () => Promise<void>;
   confirmSourceFreeze: () => Promise<void>;
   confirmArchive: () => Promise<void>;
+  confirmCorrection: () => Promise<void>;
 };

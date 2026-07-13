@@ -15,6 +15,7 @@ import {
 } from '@/src/features/assessments/lib/clinical-report-display';
 import { getClinicalReportSourceFreezeConsistencyWarning } from '@/src/features/assessments/lib/clinical-report-source-freeze-draft';
 import { getClinicalReportArchiveConsistencyWarning } from '@/src/features/assessments/lib/clinical-report-archive-draft';
+import { getClinicalReportCorrectionConsistencyWarning } from '@/src/features/assessments/lib/clinical-report-correction-draft';
 import type { ClinicalReport } from '@/src/features/assessments/types/clinical-report';
 
 const mongoIdPattern = /^[a-f\d]{24}$/i;
@@ -46,6 +47,8 @@ export function ClinicalReportTechnicalSummary({
     : report.sourceFreeze;
   const archiveConsistencyWarning =
     getClinicalReportArchiveConsistencyWarning(report);
+  const correctionConsistencyWarning =
+    getClinicalReportCorrectionConsistencyWarning(report);
 
   return (
     <div className="grid gap-5">
@@ -248,6 +251,14 @@ export function ClinicalReportTechnicalSummary({
               {archiveConsistencyWarning}
             </p>
           ) : null}
+          {correctionConsistencyWarning ? (
+            <p
+              className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] px-4 py-3 text-base text-[var(--cma-warning)]"
+              role="alert"
+            >
+              版本化更正关系不完整或不一致：{correctionConsistencyWarning}
+            </p>
+          ) : null}
           <dl className="grid gap-x-5 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
             <div>
               <dt className="text-sm font-semibold text-[var(--cma-muted)]">报告编号</dt>
@@ -338,6 +349,18 @@ export function ClinicalReportTechnicalSummary({
               <dd className="mt-1 text-base text-[var(--cma-text-strong)]">{formatClinicalReportDate(report.archive?.sourceFreezeCompletedAt)}</dd>
             </div>
             <div>
+              <dt className="text-sm font-semibold text-[var(--cma-muted)]">更正状态 / 序号</dt>
+              <dd className="mt-1 text-base text-[var(--cma-text-strong)]">{report.correction ? `${report.correction.state} / ${report.correction.correctionNo}` : '—'}</dd>
+            </div>
+            <div>
+              <dt className="text-sm font-semibold text-[var(--cma-muted)]">更正追溯号</dt>
+              <dd className="mt-1 break-all text-base text-[var(--cma-text-strong)]">{displayValue(report.correction?.correctionId ?? report.replacementOf?.correctionId)}</dd>
+            </div>
+            <div>
+              <dt className="text-sm font-semibold text-[var(--cma-muted)]">替代来源报告 ID</dt>
+              <dd className="mt-1 break-all text-base text-[var(--cma-text-strong)]">{displayValue(report.replacementOf?.previousReportId)}</dd>
+            </div>
+            <div>
               <dt className="text-sm font-semibold text-[var(--cma-muted)]">作废时间</dt>
               <dd className="mt-1 text-base text-[var(--cma-text-strong)]">{formatClinicalReportDate(report.voidedAt)}</dd>
             </div>
@@ -352,7 +375,7 @@ export function ClinicalReportTechnicalSummary({
               报告生成时的量表追溯快照
             </h4>
             <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-              A20 version 1 scope 当前不能修改；后续新增量表实例不会自动加入该报告。
+              报告保存的来源 scope 不能在前端修改；后续新增量表实例不会自动加入当前版本。
             </p>
             {report.scaleTraces.length === 0 ? (
               <p className="mt-3 text-base text-[var(--cma-muted)]">当前安全报告响应未提供量表追溯快照。</p>

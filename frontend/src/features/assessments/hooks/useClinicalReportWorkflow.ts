@@ -3,6 +3,7 @@
 import { useClinicalReportArchiveAction } from '@/src/features/assessments/hooks/clinical-report-workflow/useClinicalReportArchiveAction';
 import { useClinicalReportBeforeUnload } from '@/src/features/assessments/hooks/clinical-report-workflow/useClinicalReportBeforeUnload';
 import { useClinicalReportConfirmationAction } from '@/src/features/assessments/hooks/clinical-report-workflow/useClinicalReportConfirmationAction';
+import { useClinicalReportCorrectionAction } from '@/src/features/assessments/hooks/clinical-report-workflow/useClinicalReportCorrectionAction';
 import { useClinicalReportEditAction } from '@/src/features/assessments/hooks/clinical-report-workflow/useClinicalReportEditAction';
 import { useClinicalReportLockAction } from '@/src/features/assessments/hooks/clinical-report-workflow/useClinicalReportLockAction';
 import { useClinicalReportSourceFreezeAction } from '@/src/features/assessments/hooks/clinical-report-workflow/useClinicalReportSourceFreezeAction';
@@ -46,7 +47,8 @@ export function useClinicalReportWorkflow({
       state.confirmation.draft ||
       state.lock.draft ||
       state.sourceFreeze.draft ||
-      state.archive.draft,
+      state.archive.draft ||
+      state.correction.draft,
   );
 
   const edit = useClinicalReportEditAction({
@@ -54,6 +56,7 @@ export function useClinicalReportWorkflow({
     visitId,
     report,
     reportWriteBlocked,
+    currentUserRoles,
     coordinator,
   });
   const submission = useClinicalReportSubmissionAction({
@@ -61,6 +64,7 @@ export function useClinicalReportWorkflow({
     visitId,
     report,
     reportWriteBlocked,
+    currentUserRoles,
     coordinator,
     hasLocalDraft,
   });
@@ -102,6 +106,15 @@ export function useClinicalReportWorkflow({
     coordinator,
     hasLocalDraft,
   });
+  const correction = useClinicalReportCorrectionAction({
+    patientId,
+    visitId,
+    report,
+    reportWriteBlocked,
+    currentUserRoles,
+    coordinator,
+    hasLocalDraft,
+  });
 
   const shouldWarnBeforeUnload =
     shouldWarnBeforeClinicalReportUnload({
@@ -111,7 +124,8 @@ export function useClinicalReportWorkflow({
       lockDraft: lock.lockDraft,
     }) ||
     sourceFreeze.sourceFreezeDirty ||
-    archive.archiveDirty;
+    archive.archiveDirty ||
+    correction.correctionDirty;
   useClinicalReportBeforeUnload(shouldWarnBeforeUnload);
 
   return {
@@ -123,30 +137,36 @@ export function useClinicalReportWorkflow({
     lockDraft: lock.lockDraft,
     sourceFreezeDraft: sourceFreeze.sourceFreezeDraft,
     archiveDraft: archive.archiveDraft,
+    correctionDraft: correction.correctionDraft,
     editDirty: edit.editDirty,
     submissionDirty: submission.submissionDirty,
     confirmationDirty: confirmation.confirmationDirty,
     lockDirty: lock.lockDirty,
     sourceFreezeDirty: sourceFreeze.sourceFreezeDirty,
     archiveDirty: archive.archiveDirty,
+    correctionDirty: correction.correctionDirty,
     editValidation: edit.editValidation,
     submissionValidation: submission.submissionValidation,
     confirmationValidation: confirmation.confirmationValidation,
     lockValidation: lock.lockValidation,
     sourceFreezeValidation: sourceFreeze.sourceFreezeValidation,
     archiveValidation: archive.archiveValidation,
+    correctionValidation: correction.correctionValidation,
     editError: edit.editError,
     submissionError: submission.submissionError,
     confirmationError: confirmation.confirmationError,
     lockError: lock.lockError,
     sourceFreezeError: sourceFreeze.sourceFreezeError,
     archiveError: archive.archiveError,
+    correctionError: correction.correctionError,
     editReceipt: edit.editReceipt,
     submissionReceipt: submission.submissionReceipt,
     confirmationReceipt: confirmation.confirmationReceipt,
     lockReceipt: lock.lockReceipt,
     sourceFreezeReceipt: sourceFreeze.sourceFreezeReceipt,
     archiveReceipt: archive.archiveReceipt,
+    correctionReceipt: correction.correctionReceipt,
+    correctionSourceReport: correction.correctionSourceReport,
     liveMessage: state.liveMessage,
     writeProhibited: state.writeProhibited,
     canEdit: edit.canEdit,
@@ -156,18 +176,25 @@ export function useClinicalReportWorkflow({
     canStartSourceFreeze: sourceFreeze.canStartSourceFreeze,
     canResumeSourceFreeze: sourceFreeze.canResumeSourceFreeze,
     canArchive: archive.canArchive,
+    canStartCorrection: correction.canStartCorrection,
+    canResumeCorrection: correction.canResumeCorrection,
     canSaveEdit: edit.canSaveEdit,
     canConfirmSubmission: submission.canConfirmSubmission,
     canConfirmReport: confirmation.canConfirmReport,
     canConfirmLock: lock.canConfirmLock,
     canConfirmSourceFreeze: sourceFreeze.canConfirmSourceFreeze,
     canConfirmArchive: archive.canConfirmArchive,
+    canConfirmCorrection: correction.canConfirmCorrection,
     canContinueLockWithLatest: lock.canContinueLockWithLatest,
     canContinueSourceFreezeWithLatest:
       sourceFreeze.canContinueSourceFreezeWithLatest,
     canContinueArchiveWithLatest: archive.canContinueArchiveWithLatest,
     canDiscardLocalSourceFreezeAndResume:
       sourceFreeze.canDiscardLocalSourceFreezeAndResume,
+    canContinueCorrectionWithLatest:
+      correction.canContinueCorrectionWithLatest,
+    canDiscardLocalCorrectionAndResume:
+      correction.canDiscardLocalCorrectionAndResume,
     lockVersionMatches: lock.lockVersionMatches,
     sourceFreezeVersionMatches: sourceFreeze.sourceFreezeVersionMatches,
     archiveVersionMatches: archive.archiveVersionMatches,
@@ -177,10 +204,14 @@ export function useClinicalReportWorkflow({
     sourceFreezeBlockReason: sourceFreeze.sourceFreezeBlockReason,
     archiveConsistencyWarning: archive.archiveConsistencyWarning,
     archiveBlockReason: archive.archiveBlockReason,
+    correctionConsistencyWarning: correction.correctionConsistencyWarning,
+    correctionBlockReason: correction.correctionBlockReason,
+    correctionVersionMatches: correction.correctionVersionMatches,
     roleCanConfirm: confirmation.roleCanConfirm,
     roleCanLock: lock.roleCanLock,
     roleCanFreezeSources: sourceFreeze.roleCanFreezeSources,
     roleCanArchive: archive.roleCanArchive,
+    roleCanCorrect: correction.roleCanCorrect,
     openEdit: edit.openEdit,
     openSubmit: submission.openSubmit,
     openConfirm: confirmation.openConfirm,
@@ -188,9 +219,12 @@ export function useClinicalReportWorkflow({
     openSourceFreeze: sourceFreeze.openSourceFreeze,
     openSourceFreezeResume: sourceFreeze.openSourceFreezeResume,
     openArchive: archive.openArchive,
+    openCorrection: correction.openCorrection,
+    openCorrectionResume: correction.openCorrectionResume,
     cancelActive: coordinator.cancelActive,
     cancelSourceFreeze: coordinator.cancelSourceFreeze,
     cancelArchive: coordinator.cancelArchive,
+    cancelCorrection: correction.cancelCorrection,
     updateEditDraft: edit.updateEditDraft,
     updateSubmissionNote: submission.updateSubmissionNote,
     setSubmissionConfirmed: submission.setSubmissionConfirmed,
@@ -202,6 +236,9 @@ export function useClinicalReportWorkflow({
     setSourceFreezeConfirmed: sourceFreeze.setSourceFreezeConfirmed,
     updateArchiveNote: archive.updateArchiveNote,
     setArchiveConfirmed: archive.setArchiveConfirmed,
+    updateCorrectionReason: correction.updateCorrectionReason,
+    updateCorrectionChangeSummary: correction.updateCorrectionChangeSummary,
+    setCorrectionConfirmed: correction.setCorrectionConfirmed,
     continueEditFromLatest: edit.continueEditFromLatest,
     continueSubmissionFromLatest: submission.continueSubmissionFromLatest,
     continueConfirmationFromLatest:
@@ -212,16 +249,22 @@ export function useClinicalReportWorkflow({
     continueArchiveWithLatest: archive.continueArchiveWithLatest,
     discardLocalSourceFreezeAndResume:
       sourceFreeze.discardLocalSourceFreezeAndResume,
+    continueCorrectionWithLatest: correction.continueCorrectionWithLatest,
+    discardLocalCorrectionAndResume:
+      correction.discardLocalCorrectionAndResume,
     reloadLatestAfterSourceFreezeUncertainty:
       sourceFreeze.reloadLatestAfterSourceFreezeUncertainty,
     reloadLatestAfterArchiveUncertainty:
       archive.reloadLatestAfterArchiveUncertainty,
+    reloadLatestAfterCorrectionUncertainty:
+      correction.reloadLatestAfterCorrectionUncertainty,
     saveEdit: edit.saveEdit,
     submitForConfirmation: submission.submitForConfirmation,
     confirmReport: confirmation.confirmReport,
     confirmLock: lock.confirmLock,
     confirmSourceFreeze: sourceFreeze.confirmSourceFreeze,
     confirmArchive: archive.confirmArchive,
+    confirmCorrection: correction.confirmCorrection,
   } satisfies UseClinicalReportWorkflowResult;
 }
 

@@ -6,6 +6,8 @@ import type {
   ConfirmClinicalReportRequest,
   ConfirmClinicalReportResponse,
   ClinicalReportDetailResponse,
+  CreateClinicalReportCorrectionRequest,
+  CreateClinicalReportCorrectionResponse,
   FreezeClinicalReportSourcesRequest,
   FreezeClinicalReportSourcesResponse,
   GenerateClinicalReportRequest,
@@ -76,6 +78,15 @@ export type ClinicalReportApiErrorKind =
   | 'clinical_report_archive_conflict'
   | 'clinical_report_archive_audit_unavailable'
   | 'clinical_report_archive_failed'
+  | 'clinical_report_correction_confirmation_required'
+  | 'clinical_report_not_correctable'
+  | 'clinical_report_correction_not_latest'
+  | 'clinical_report_correction_conflict'
+  | 'clinical_report_correction_audit_unavailable'
+  | 'clinical_report_correction_replacement_conflict'
+  | 'clinical_report_correction_incomplete'
+  | 'clinical_report_correction_failed'
+  | 'clinical_report_correction_workflow_forbidden'
   | 'service_unavailable'
   | 'unknown';
 
@@ -119,6 +130,16 @@ function mapHttpError(
 ): ClinicalReportApiError {
   if (status === 401) {
     return new ClinicalReportApiError('unauthenticated', status, backendCode);
+  }
+  if (
+    status === 403 &&
+    backendCode === 'CLINICAL_REPORT_CORRECTION_WORKFLOW_FORBIDDEN'
+  ) {
+    return new ClinicalReportApiError(
+      'clinical_report_correction_workflow_forbidden',
+      status,
+      backendCode,
+    );
   }
   if (status === 403) {
     return new ClinicalReportApiError('forbidden', status, backendCode);
@@ -210,6 +231,23 @@ function mapHttpError(
     CLINICAL_REPORT_ARCHIVE_AUDIT_UNAVAILABLE:
       'clinical_report_archive_audit_unavailable',
     CLINICAL_REPORT_ARCHIVE_FAILED: 'clinical_report_archive_failed',
+    CLINICAL_REPORT_CORRECTION_CONFIRMATION_REQUIRED:
+      'clinical_report_correction_confirmation_required',
+    CLINICAL_REPORT_NOT_CORRECTABLE: 'clinical_report_not_correctable',
+    CLINICAL_REPORT_CORRECTION_NOT_LATEST:
+      'clinical_report_correction_not_latest',
+    CLINICAL_REPORT_CORRECTION_CONFLICT:
+      'clinical_report_correction_conflict',
+    CLINICAL_REPORT_CORRECTION_AUDIT_UNAVAILABLE:
+      'clinical_report_correction_audit_unavailable',
+    CLINICAL_REPORT_CORRECTION_REPLACEMENT_CONFLICT:
+      'clinical_report_correction_replacement_conflict',
+    CLINICAL_REPORT_CORRECTION_INCOMPLETE:
+      'clinical_report_correction_incomplete',
+    CLINICAL_REPORT_CORRECTION_FAILED:
+      'clinical_report_correction_failed',
+    CLINICAL_REPORT_CORRECTION_WORKFLOW_FORBIDDEN:
+      'clinical_report_correction_workflow_forbidden',
   };
 
   if (backendCode && businessKinds[backendCode]) {
@@ -481,4 +519,27 @@ export async function archiveClinicalReport(
     },
   );
   return readJson<ArchiveClinicalReportResponse>(response);
+}
+
+export async function createClinicalReportCorrection(
+  patientId: string,
+  visitId: string,
+  reportId: string,
+  input: CreateClinicalReportCorrectionRequest,
+): Promise<CreateClinicalReportCorrectionResponse> {
+  const requestBody: CreateClinicalReportCorrectionRequest = {
+    confirm: true,
+    correctionReason: input.correctionReason.trim(),
+    changeSummary: input.changeSummary.trim(),
+    expectedUpdatedAt: input.expectedUpdatedAt,
+  };
+  const response = await clinicalReportFetch(
+    `${buildClinicalReportResourcePath(patientId, visitId, reportId)}/corrections`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+    },
+  );
+  return readJson<CreateClinicalReportCorrectionResponse>(response);
 }

@@ -19,21 +19,35 @@ import {
   validateClinicalReportEditDraft,
 } from '@/src/features/assessments/lib/clinical-report-workflow-draft';
 import type { ClinicalReport } from '@/src/features/assessments/types/clinical-report';
+import {
+  canCurrentRolesWriteReplacement,
+  isSafeCorrectionReplacement,
+  isVersionOneReport,
+} from '@/src/features/assessments/lib/clinical-report-correction-draft';
 
 type EditActionOptions = Pick<
   UseClinicalReportWorkflowOptions,
-  'patientId' | 'visitId' | 'report' | 'reportWriteBlocked'
+  | 'patientId'
+  | 'visitId'
+  | 'report'
+  | 'reportWriteBlocked'
+  | 'currentUserRoles'
 > & {
   coordinator: ClinicalReportWorkflowCoordinator;
 };
 
-function isEditableDraftReport(report: ClinicalReport | null): boolean {
+function isEditableDraftReport(
+  report: ClinicalReport | null,
+  currentUserRoles: readonly string[],
+): boolean {
   return Boolean(
     report &&
       report.status === 'draft' &&
       report.reportType === 'cognitive_assessment' &&
-      report.reportVersion === 1 &&
-      (report.source === 'system_draft' || report.source === 'mixed') &&
+      ((isVersionOneReport(report) &&
+        (report.source === 'system_draft' || report.source === 'mixed')) ||
+        (isSafeCorrectionReplacement(report) &&
+          canCurrentRolesWriteReplacement(currentUserRoles))) &&
       report.lockedAt === null &&
       report.lock === null &&
       report.archivedAt === null &&
@@ -49,6 +63,7 @@ export function useClinicalReportEditAction({
   visitId,
   report,
   reportWriteBlocked,
+  currentUserRoles,
   coordinator,
 }: EditActionOptions) {
   const { state, setEditDraft, setEditError } = coordinator;
@@ -68,7 +83,7 @@ export function useClinicalReportEditAction({
     state.writingAction === null &&
     !reportWriteBlocked &&
     !state.writeProhibited &&
-    isEditableDraftReport(report);
+    isEditableDraftReport(report, currentUserRoles);
   const canSaveEdit = Boolean(
     editDraft &&
       editValidation.valid &&
@@ -78,7 +93,7 @@ export function useClinicalReportEditAction({
       state.writingAction === null &&
       !reportWriteBlocked &&
       !state.writeProhibited &&
-      isEditableDraftReport(report),
+      isEditableDraftReport(report, currentUserRoles),
   );
 
   useEffect(() => {
@@ -115,7 +130,11 @@ export function useClinicalReportEditAction({
   );
 
   const continueEditFromLatest = useCallback(() => {
-    if (!report || !isEditableDraftReport(report) || !report.updatedAt) return;
+    if (
+      !report ||
+      !isEditableDraftReport(report, currentUserRoles) ||
+      !report.updatedAt
+    ) return;
     setEditDraft((current) =>
       current
         ? {
@@ -133,7 +152,7 @@ export function useClinicalReportEditAction({
         : current,
     );
     setEditError(null);
-  }, [report, setEditDraft, setEditError]);
+  }, [currentUserRoles, report, setEditDraft, setEditError]);
 
   const saveEdit = useCallback(async () => {
     if (!editDraft || !canSaveEdit) return;

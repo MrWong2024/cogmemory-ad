@@ -6,7 +6,7 @@
 
 ## 2. 当前状态
 
-- 当前包含既有公共、认证、患者 / 访视路由与 B4-B9 共用量表实例路由；B10-B14 复用访视详情路由，B14.1 仅治理内部 Hook 结构，未新增报告、锁定、来源冻结、归档或更正路由。
+- 当前包含既有公共、认证、患者 / 访视路由与 B4-B9 共用量表实例路由；B10-B15 全部复用访视详情路由，B15 未新增报告详情、历史或更正路由。
 - `/dashboard` 已提供患者档案入口，但仍不是完整医生工作台。
 - 当前不包含患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、独立评分、评分锁定、独立认知域、独立报告详情、AI、用户管理或权限菜单路由。
 - 当前不包含 Next middleware 或路由级服务端认证中间件。
@@ -92,10 +92,10 @@
 ### 3.8 `/patients/[patientId]/visits/[visitId]`
 
 - 页面名称：访视详情、量表初始化与访视级报告工作流
-- 页面职责：展示访视公开详情、已有量表实例安全摘要和可用目录，初始化量表实例，并在独立报告区域接入 A20 latest / generate、A21 draft 编辑 / 提交 / 确认、A22 confirmed 报告不可逆锁定、A23 已锁报告来源链冻结与 A24 已冻结报告归档
+- 页面职责：展示访视与实例摘要并初始化量表；独立报告区域接入 A20–A24 既有工作流及 A25 版本化更正，展示 source/replacement 线性关系，让合法 V2 进入 doctor/admin A21 编辑 / 提交 / 确认。
 - 动态参数：Server Component 按 Next 16 `params: Promise<{ patientId: string; visitId: string }>` 等待参数后传给 `AssessmentVisitExecutionPage`
 - 访问边界：复用 `/patients/**` 的 `PatientsWorkspaceShell`；Shell 用轻量 `PatientsWorkspaceContext` 提供已取得的安全 AuthUser，不新增第二次 `/auth/me`，不读取 Cookie；角色只控制确认入口可见性，后端 Guard 是最终安全边界
-- 数据来源：既有访视详情 / 量表目录 / 初始化请求，以及 A20 latest / generate、A21 `PATCH .../:reportId/draft`、`POST .../:reportId/submit-confirmation`、`POST .../:reportId/confirm`、A22 `POST .../:reportId/lock`、A23 `POST .../:reportId/freeze-sources` 与 A24 `POST .../:reportId/archive`
+- 数据来源：既有访视详情 / 量表目录 / 初始化请求，以及 A20 latest / generate、A21 draft / submit / confirm、A22 lock、A23 freeze-sources、A24 archive 与 A25 `POST .../:reportId/corrections`。
 - loading：认证检查由工作区承担；访视详情、量表目录与报告 latest 各自独立 loading、AbortController、错误与重试；目录或报告失败不移除访视和既有实例
 - 链接无效：任一动态参数不符合 24 位 MongoId 时不发送 A13 请求，显示“访视链接无效”并提供返回入口
 - 401 / 403 / 404：401 返回 `/login`；403 显示无权限及工作台 / 退出登录入口；患者不存在与访视不存在或归属不符使用不同稳定文案
@@ -127,7 +127,8 @@
 - 安全边界：目录不展示完整 groups / items、指导语、答案、scoringRule、expectedValue 或内部 ObjectId；能力标识不表示媒体、手写或计时已实现
 - 当前非目标：不在访视详情内读取或保存题目，不提供访视状态流转、报告退回 / reject / reopen / withdraw / 签名 / unlock / unfreeze / rollback / unarchive / restore confirmed / 更正 / 作废 / 重生成 / version 2 / PDF / 下载或 AI 操作
 - 关联组件：`AssessmentVisitExecutionPage`、`ScaleInstanceList`、`ScaleInitializationPanel`、`PatientsWorkspaceContext`、`useClinicalReport`、`useClinicalReportWorkflow`、`ClinicalReportLockPanel`、`ClinicalReportSourceFreezePanel`、`ClinicalReportSourceFreezeSummary`、`ClinicalReportArchivePanel`、`ClinicalReportArchiveSummary` 与其他 ClinicalReport 组件
-- B14.1 路由结论：访视详情仍是唯一报告工作流入口，页面 JSX 与路由数据源不变；内部六类 Action 只能经 `useClinicalReportWorkflow` façade 被页面间接使用。B15 版本化更正页面 / 交互尚未实施。
+- B15 路由结论：访视详情仍是唯一报告工作流入口；Correction Action 只能经 `useClinicalReportWorkflow` façade 被页面间接使用。成功后原地切换到 replacement，不刷新、不跳转，也不伪造 report-by-id / history 链接。刷新后仅使用 replacementOf 安全摘要展示来源关系。
+- V2 边界：draft / mixed 可由 doctor/admin 编辑并提交，pending_confirmation 可由 doctor/admin 确认；Patient inactive、Visit locked / voided 不阻断 A21。V2 lock / freeze-sources / archive 入口完全关闭，不调用 A22–A24。
 
 ### 3.9 `/patients/[patientId]/visits/[visitId]/scale-instances/[scaleInstanceId]`
 

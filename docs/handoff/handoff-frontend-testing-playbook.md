@@ -6,12 +6,12 @@
 
 ## 2. 当前状态
 
-- 前端公共底座与 B1-B13 既有闭环已落地；B14 已冻结 ClinicalReport 归档确认、乐观并发、幂等回执与安全摘要展示已落地。
+- 前端公共底座与 B1-B14 既有闭环已落地；B15 版本化更正、source/replacement 展示及 V2 A21 工作流接入已落地。
 - `frontend\package.json` 已存在，自动验证命令以其中真实脚本为准。
 - B2-B14 不新增测试代码、测试框架、E2E 或第三方依赖。
 - 当前自动验证覆盖三个认证 API、A12 五个患者 / 访视 API、A13 三个评估初始化前置 API、A14 两个执行草稿 API、A15 四个媒体证据 API、A16 两个提交 API 与 A17 两个阶段性评分 API 的前端类型、调用代码和页面构建；真实 HTTP / 浏览器联调仍需手工验证。
 
-## 3. B1 / B2 / B3 / B4 / B5 / B6 / B7 / B8 / B9 / B10 / B11 / B12 / B13 / B14 自动验证命令
+## 3. B1 / B2 / B3 / B4 / B5 / B6 / B7 / B8 / B9 / B10 / B11 / B12 / B13 / B14 / B15 自动验证命令
 
 在 `frontend` 目录、且既有 `node_modules` 存在时执行：
 
@@ -163,6 +163,15 @@
 - `npm run build`：通过，既有路由集合不变。
 - 公共 options 9 / result keys 99 静态对照通过；消费者、组件、API Client、ClinicalReport types、draft libs 与 display 均无 diff。
 - E2E / 浏览器自动化 / 浏览器手工验证：未执行；以下 B14.1 浏览器场景均待验证。
+- 后端命令：未执行。
+
+本次 B15 验证结果：
+
+- `npm run lint`：通过。
+- `npm run typecheck`：通过，Next 16 route types 生成成功且 TypeScript 无错误。
+- `npm run build`：通过，既有路由集合不变并包含访视详情动态路由。
+- 静态核对：A25 API 仅在 Correction Action 调用；façade / 组件不调用 API；单一 writingAction、beforeunload、latest 与 onReportUpdated 入口保持；V2 A22–A24 入口关闭。
+- E2E / 浏览器自动化 / 浏览器手工验证：未执行；以下 B15 场景均待使用脱敏数据验证。
 - 后端命令：未执行。
 
 如后续环境中 `frontend/node_modules` 不存在，不得为验证本阶段而执行 `npm install`；应跳过上述命令并说明原因。
@@ -1200,6 +1209,21 @@ B14.1 静态验证不覆盖：
 
 以上真实浏览器联调尚未执行，不得写成已通过。
 
+## 18.1 B15 手工验证建议（待验证）
+
+- 使用脱敏 doctor / admin 账号验证 archived V1 首次更正：原因 3–2000、摘要 3–4000、checkbox、Body 白名单与成功原地切换 V2；确认没有刷新、跳转或额外 latest。
+- 使用脱敏 in_progress source 验证显式恢复：correctionId / No.、started actor / time、版本关系与 replacementReportId 可见；reason / summary 只读，必须重新勾选且不生成新 ID。
+- 验证 completed 幂等：source 不显示再次发起 / 恢复；alreadyCreated 与 resumedExisting 三类成功文案准确，source 与 receipt 仅当前会话保留。
+- 模拟 not correctable / not latest / conflict / incomplete / failed / not found / voided：最多 latest 一次，首次文本保留、checkbox 清除、stale，绝不重发 POST。latest 变 in_progress 时需明确放弃本地内容后恢复；变 corrected / replacement 时提示本地说明未写入。
+- 模拟 401 / 403 / audit unavailable / replacement conflict / 网络中断：401 返回登录页；403 保留报告与输入；审计 / 关系冲突不可绕过；网络不确定只提供手工 latest。
+- 分别以 doctor/admin 与 nurse/research_assistant 验证合法 V2：仅 doctor/admin 可 edit / submit / confirm；Patient inactive、Visit locked / voided 不阻断 A21；V1 既有角色与资格不放宽。
+- 确认 V2 confirmed 不显示 lock / freeze-sources / archive 入口且网络面板没有 A22–A24 请求；不自动完成编辑、确认、锁定、冻结或归档。
+- 验证 source / replacement 摘要没有虚假历史链接、metadata、原始 correctionRecords 或五类来源 ID；刷新后仅使用 replacementOf。
+- 验证小屏纵向布局、可见 label / 字符计数、alert / polite live region、键盘操作与 POST 期间全部报告写操作 disabled。
+- 验证 beforeunload 只有一个监听器：start 模式 reason / summary trim 后非空触发；resume 只读文本本身不触发；不得写 localStorage / sessionStorage / IndexedDB / URL / Cookie。
+
+以上 B15 浏览器自动化与手工联调尚未执行，全部场景待使用脱敏数据验证。
+
 ## 19. 认证与安全验证口径
 
 - 使用浏览器网络面板确认三个认证请求均携带 credentials 语义，并由浏览器处理 HttpOnly Cookie。
@@ -1218,6 +1242,7 @@ B14.1 静态验证不覆盖：
 - B9 页面不得在 console、存储或 URL 中记录认知域结果、贡献、来源评分、请求体或响应体；compute 只能由独立 API Client 构造 `{ confirm: true }`，不得提交 domain、weight、mapping、分数、规则、状态或服务器字段。
 - B13 页面不得在 console、存储或 URL 中记录 freezeNote、sourceFreeze 计数、updatedAt、请求或响应；freeze-sources 只能由独立 API Client 构造 confirm、trim 后 freezeNote 与 expectedUpdatedAt。不得提交或显示内部来源 ID / scope / metadata，不得保存 sourceFreeze 草稿或 receipt 到浏览器持久化存储。
 - B14 页面不得在 console、存储或 URL 中记录 archiveNote、updatedAt、请求或响应；archive 只能由独立 API Client 构造 confirm、trim 后 archiveNote 与 expectedUpdatedAt。不得提交或显示 metadata、Schema 原始 archivedBy 或来源 ID，不得保存 archive 草稿或 receipt 到浏览器持久化存储。
+- B15 页面不得在 console、存储或 URL 中记录 correction reason / summary、source / replacement 响应或临床数据；corrections Body 只含 confirm、trim 后 reason / summary 与 expectedUpdatedAt。不得持久化草稿 / 回执，不得前端生成 correctionId、版本、code、时间或关系。
 
 ## 20. 医疗与隐私展示红线
 
