@@ -16,6 +16,7 @@ import {
   ReportScoreSnapshotSchema,
   ReportVisitSnapshotSchema,
 } from '../schemas/clinical-report.schema';
+import type { ClinicalReportSummary } from './reports.service';
 import { ReportsService } from './reports.service';
 
 function createExecQuery<T>(value: T) {
@@ -680,6 +681,57 @@ describe('ReportsService', () => {
     });
   });
 
+  it('bypasses V1 and scopes a V2 predecessor lookup to current ownership', async () => {
+    const lookup = jest.spyOn(service, 'findReportByOwnership');
+    await expect(
+      service.hasValidReplacementLifecycleLineage({
+        reportVersion: 1,
+      } as ClinicalReportSummary),
+    ).resolves.toBe(true);
+    expect(lookup).not.toHaveBeenCalled();
+
+    const previousReportId = new Types.ObjectId().toString();
+    const current = {
+      id: new Types.ObjectId().toString(),
+      patientId: new Types.ObjectId().toString(),
+      assessmentVisitId: new Types.ObjectId().toString(),
+      reportCode: 'RPT-A26-V2-LOOKUP',
+      reportVersion: 2,
+      metadata: {
+        a25CorrectionReplacement: {
+          version: 1,
+          correctionId: '44444444-4444-4444-8444-444444444444',
+          correctionNo: 1,
+          previousReportId,
+          previousReportCode: 'RPT-A26-V1-LOOKUP',
+          previousReportVersion: 1,
+          replacementReportCode: 'RPT-A26-V2-LOOKUP',
+          replacementReportVersion: 2,
+          createdAt: new Date('2026-07-15T09:00:00.000Z'),
+          createdBy: new Types.ObjectId().toString(),
+          createdByName: 'A26 Test Doctor',
+          createdByRole: 'doctor',
+          correctionReason: 'A26 de-identified correction reason',
+          changeSummary: 'A26 de-identified change summary',
+          sourceArchiveId: '33333333-3333-4333-8333-333333333333',
+          sourceArchivedAt: new Date('2026-07-15T08:00:00.000Z'),
+          sourceFreezeId: '22222222-2222-4222-8222-222222222222',
+          sourceFreezeCompletedAt: new Date('2026-07-15T07:30:00.000Z'),
+        },
+      },
+    } as ClinicalReportSummary;
+    lookup.mockResolvedValue(null);
+
+    await expect(
+      service.hasValidReplacementLifecycleLineage(current),
+    ).resolves.toBe(false);
+    expect(lookup).toHaveBeenCalledWith({
+      reportId: previousReportId,
+      patientId: current.patientId,
+      assessmentVisitId: current.assessmentVisitId,
+    });
+  });
+
   it('atomically edits only narrative, source and metadata', async () => {
     const reportId = new Types.ObjectId();
     const patientId = new Types.ObjectId();
@@ -842,6 +894,7 @@ describe('ReportsService', () => {
       reportId: reportId.toString(),
       patientId: patientId.toString(),
       assessmentVisitId: visitId.toString(),
+      reportVersion: 3,
       expectedUpdatedAt,
       lockedAt,
       lockedBy: lockedBy.toString(),
@@ -854,7 +907,7 @@ describe('ReportsService', () => {
         patientId,
         assessmentVisitId: visitId,
         reportType: 'cognitive_assessment',
-        reportVersion: 1,
+        reportVersion: 3,
         status: 'confirmed',
         source: 'mixed',
         qualityStatus: 'passed',
@@ -880,6 +933,7 @@ describe('ReportsService', () => {
         reportId: id,
         patientId: new Types.ObjectId().toString(),
         assessmentVisitId: new Types.ObjectId().toString(),
+        reportVersion: 1,
         expectedUpdatedAt: new Date('2026-07-12T08:00:00.000Z'),
         lockedAt: new Date('2026-07-12T08:05:00.000Z'),
         lockedBy: new Types.ObjectId().toString(),
@@ -902,6 +956,7 @@ describe('ReportsService', () => {
       reportId: reportId.toString(),
       patientId: patientId.toString(),
       assessmentVisitId: visitId.toString(),
+      reportVersion: 2,
       expectedUpdatedAt,
       archivedAt,
       archivedBy: archivedBy.toString(),
@@ -914,7 +969,7 @@ describe('ReportsService', () => {
         patientId,
         assessmentVisitId: visitId,
         reportType: 'cognitive_assessment',
-        reportVersion: 1,
+        reportVersion: 2,
         status: 'confirmed',
         source: 'mixed',
         qualityStatus: 'passed',
@@ -954,6 +1009,7 @@ describe('ReportsService', () => {
       reportId: reportId.toString(),
       patientId: patientId.toString(),
       assessmentVisitId: visitId.toString(),
+      reportVersion: 2,
       expectedUpdatedAt,
       metadata,
     });
@@ -964,14 +1020,16 @@ describe('ReportsService', () => {
         patientId,
         assessmentVisitId: visitId,
         reportType: 'cognitive_assessment',
-        reportVersion: 1,
+        reportVersion: 2,
         status: 'confirmed',
         source: 'mixed',
         qualityStatus: 'passed',
         lockedAt: { $ne: null },
         lockedBy: { $ne: null },
         archivedAt: null,
+        archivedBy: null,
         voidedAt: null,
+        voidedBy: null,
         correctionRecords: { $size: 0 },
         updatedAt: expectedUpdatedAt,
         'metadata.a23SourceFreeze': { $exists: false },
@@ -986,6 +1044,7 @@ describe('ReportsService', () => {
     const patientId = new Types.ObjectId();
     const visitId = new Types.ObjectId();
     const freezeId = '11111111-1111-4111-8111-111111111111';
+    const expectedUpdatedAt = new Date('2026-07-01T10:15:00.000Z');
     const metadata = { a20Generation: {}, a23SourceFreeze: {} };
     clinicalReportModel.findOneAndUpdate.mockReturnValue(createExecQuery(null));
 
@@ -993,6 +1052,8 @@ describe('ReportsService', () => {
       reportId: reportId.toString(),
       patientId: patientId.toString(),
       assessmentVisitId: visitId.toString(),
+      reportVersion: 2,
+      expectedUpdatedAt,
       freezeId,
       metadata,
     });
@@ -1003,7 +1064,18 @@ describe('ReportsService', () => {
         patientId,
         assessmentVisitId: visitId,
         reportType: 'cognitive_assessment',
-        reportVersion: 1,
+        reportVersion: 2,
+        status: 'confirmed',
+        source: 'mixed',
+        qualityStatus: 'passed',
+        lockedAt: { $ne: null },
+        lockedBy: { $ne: null },
+        archivedAt: null,
+        archivedBy: null,
+        voidedAt: null,
+        voidedBy: null,
+        correctionRecords: { $size: 0 },
+        updatedAt: expectedUpdatedAt,
         'metadata.a23SourceFreeze.version': 1,
         'metadata.a23SourceFreeze.freezeId': freezeId,
         'metadata.a23SourceFreeze.state': 'in_progress',

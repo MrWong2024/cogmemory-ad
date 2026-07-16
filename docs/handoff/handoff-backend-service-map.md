@@ -385,7 +385,7 @@
 
 - `ClinicalReportReviewWorkflowService` 依赖 `PatientsService`、`AssessmentsService`、`ReportsService`、`ClinicalReportPublicMapper`；负责 ownership、Patient / Visit 写状态、认证 actor、状态 / readiness、并发 miss、幂等与安全响应。不依赖 Scoring、CognitiveDomains、Media、Storage、LLM。
 - `clinical-report-review.ts` 是无数据库纯函数：规范化 clinician text，保留 A20 五段 narrative，计算 changedFields / no-change，严格验证并保留 metadata 顶层 namespace，追加最多 200 条 `a21Edits`，构建 submission / confirmation audit，评估 readiness；不修改输入。
-- `ReportsService.findReportByOwnership()` 只按 report + patient + visit + cognitive_assessment version 1 读取；三个 `*IfUnmodified()` 方法使用单次 `findOneAndUpdate`，filter 含 ownership、type、version、当前允许 status、updatedAt，并启用 `new=true / runValidators=true`。
+- `ReportsService.findReportByOwnership()` 按 report + patient + visit + cognitive_assessment 读取服务端真实版本；三个 `*IfUnmodified()` 方法使用单次 `findOneAndUpdate`，filter 含 ownership、type、精确 version、当前允许 status、updatedAt，并启用 `new=true / runValidators=true`。
 - edit 原子 `$set` 仅 narrative、source=mixed、metadata；submit 仅 status + metadata；confirm 仅 status + Schema confirmation + qualityStatus + metadata。没有 snapshot / scope / reportCode / version / aiDraft / lockedAt 写入。
 - `ClinicalReportPublicMapper` 容错解析 A21 metadata：公开 doctorOpinion / recommendationText、最后编辑摘要、submission 摘要和 confirmationId；非法 metadata 安全忽略，不返回 metadata、事件数组、previous / next、signatureText。
 - 与 A20 边界：Generation Workflow 仍负责一次性创建规则化 system_draft 和历史来源快照；Review Workflow 只把当前 ClinicalReport 文档作为确认对象，不调用 A17-A20 来源读取 / 重算，不重生成 narrative。
@@ -404,7 +404,7 @@
 
 - `ClinicalReportSourceFreezeWorkflowService` 依赖 Patients、Assessments、Scoring、CognitiveDomains、Media 的导出 Service，以及 ReportsService / public mapper；负责 ownership、doctor/admin actor、首次 readiness、精确 scope、固定顺序批量冻结、全量重读验证、恢复、completed 幂等和安全回执。
 - `clinical-report-source-freeze.ts` 是无 DI / 数据库的纯函数：验证已锁报告与 A20-A22 metadata，规范化、去重和稳定排序 scope，构建 counts、in_progress / completed audit，保留其他 metadata namespace，并严格解析既有审计与 scope 一致性。
-- `ReportsService.startSourceFreezeIfUnmodified()` 以 ownership + report prerequisite + expectedUpdatedAt + 无既有 A23 审计原子写入 in_progress；`completeSourceFreezeIfMatching()` 只按 ownership + freezeId + in_progress 原子写 completed，不修改正文、快照、confirmation、锁字段或 status。
+- `ReportsService.startSourceFreezeIfUnmodified()` 以 ownership + 精确版本 + report prerequisite + expectedUpdatedAt + 无既有 A23 审计原子写入 in_progress；`completeSourceFreezeIfMatching()` 继续锚定精确版本、相同 report prerequisite、start 后 updatedAt、freezeId + in_progress 后原子写 completed，不修改正文、快照、confirmation、锁字段或 status。
 - `AssessmentsService` 提供 exact ScaleInstance / ItemResponse 查询和批量冻结；`ScoringService` 冻结 confirmed ScoreResult；`CognitiveDomainsService` 只为 computed/confirmed 域结果补 lockedAt；`MediaEvidenceService` 冻结 attached 证据。所有方法限定 patient / visit / 精确 ID，并返回受控批次计数。
 - ReportsModule 保持单向依赖来源模块；不重复注册来源 Schema、不直接注入跨模块 Model、不使用 forwardRef。跨集合操作无 Mongo transaction，in_progress 是恢复锚点；部分失败不回滚或解冻，completed 仅在重读验证全部来源后写入。
 - public mapper 只解析安全 summary，不公开 metadata / scope IDs；A20-A22 metadata 更新继续使用顶层 namespace 合并并保留 a23SourceFreeze。
@@ -425,4 +425,13 @@
 - `clinical-report-correction.ts` 是无 DI / 数据库访问的纯函数：复用 A20 provenance、A21 confirmation、A22 lock、A23 freeze、A24 archive parser；计算线性版本与确定性 code，构建 source / replacement metadata，深复制固定快照，验证 replacement，构建 correction record / completion，且不修改输入。
 - `ReportsService` 增加 startCorrectionIfUnmodified、createCorrectionReplacement、findCorrectionReplacementByCode、listReportsByVisitTypeVersion、recordCorrectionReplacementIfMatching 与 completeCorrectionIfMatching；start / record / complete 各为 source 单文档条件更新，replacement 使用 Model.create + unique reportCode 恢复，不使用 transaction。
 - A20 generation 改为 latest-first；A21 ownership 查询不再固定 V1，三个写 filter 使用已读取 reportVersion。Workflow 验证 a25CorrectionReplacement 后仅 doctor/admin 可写，并只对合法 replacement 豁免 Patient / Visit 后续状态；metadata 保留 lineage。
-- public mapper 纯映射 correction / replacementOf，非法 A25 安全返回 null；A22-A24 Workflow 未修改、未泛化 V2。
+- public mapper 纯映射 correction / replacementOf，非法 A25 安全返回 null；A26 在不改变此公开映射的前提下泛化 A22-A24。
+
+### A26 replacement irreversible lifecycle
+
+- `clinical-report-replacement-lineage.ts` 是职责单一的纯校验：V1 旁路；V2+ 每一跳复用 A25 replacement / correction parser 与 A22-A24 resolver，验证安全整数连续版本、同 ownership/type、前序 corrected、唯一 correctionRecord，以及 source completed audit 与 current replacement metadata 的全部双向关系和 archive / freeze anchors。
+- `ReportsService.hasValidReplacementLifecycleLineage()` 只按当前报告 ownership 逐级读取 `previousReportId` 直到 V1，循环或任一跳不一致返回 false；Workflow 统一映射为 409 `CLINICAL_REPORT_REPLACEMENT_LINEAGE_INVALID`，不会用跨 ownership 查询探测其他报告。
+- Lock / source-freeze / archive Workflow 在初始读取和原子 miss 重读后复用同一 lineage 检查。V1 lock / freeze 保留 active Patient 与 editable Visit；合法 V2+ 只校验 ownership，不受历史 inactive / locked / voided 阻断。archive 延续 ownership-only 资格，且只写当前 replacement。
+- `lockReportIfUnmodified()`、source-freeze start / complete、`archiveReportIfUnmodified()` 都接收服务端读取的真实 reportVersion，并在原子 filter 中精确等值匹配；没有 `>=2` 宽匹配。所有既有状态、void / archive / correction、阶段审计和 expectedUpdatedAt 条件保留或补强。
+- replacement freeze 继续从当前报告快照和精确 ID 建 scope；来源 Service 的条件更新只处理尚未冻结记录。已经由前序版本冻结且状态 / lockedAt / snapshot 完整兼容的共享来源只验证并计入 previouslyFrozen，不更新来源文档；当前 replacement 仍形成独立 in_progress → completed receipt。恢复完成使用持久化 started actor、freezeId、scope 与 note。
+- 未增加 Controller 路由、公开 DTO / response 字段、Schema、collection、依赖、配置、transaction、队列或后台任务；前序 corrected 报告和既有 A22-A25 metadata 均只读。

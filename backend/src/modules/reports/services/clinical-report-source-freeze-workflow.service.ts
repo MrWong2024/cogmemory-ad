@@ -96,6 +96,7 @@ export class ClinicalReportSourceFreezeWorkflowService {
       visitId,
       reportId,
     );
+    await this.assertReplacementLineage(context.report);
     const existing = this.resolveExisting(context.report);
     if (existing?.state === 'completed') {
       return this.buildResponse(context.report, existing, true, false);
@@ -106,7 +107,9 @@ export class ClinicalReportSourceFreezeWorkflowService {
     if (existing) {
       audit = existing;
     } else {
-      this.assertFirstStartResourceState(context);
+      if (context.report.reportVersion === 1) {
+        this.assertFirstStartResourceState(context);
+      }
       this.applyRule(() =>
         evaluateClinicalReportSourceFreezeReadiness({
           report: context.report,
@@ -138,6 +141,7 @@ export class ClinicalReportSourceFreezeWorkflowService {
           reportId,
           patientId,
           assessmentVisitId: visitId,
+          reportVersion: context.report.reportVersion,
           expectedUpdatedAt,
           metadata: start.metadata,
         });
@@ -186,7 +190,11 @@ export class ClinicalReportSourceFreezeWorkflowService {
         report: context.report,
         freezeId: audit.freezeId,
         completedAt: new Date(),
-        actor,
+        actor: {
+          operatorId: audit.startedBy,
+          operatorName: audit.startedByName,
+          operatorRole: audit.startedByRole,
+        },
         completedCounts,
         newlyFrozenCounts,
         previouslyFrozenCounts: audit.previouslyFrozenCounts,
@@ -198,6 +206,8 @@ export class ClinicalReportSourceFreezeWorkflowService {
         reportId,
         patientId,
         assessmentVisitId: visitId,
+        reportVersion: context.report.reportVersion,
+        expectedUpdatedAt: this.requireReportUpdatedAt(context.report),
         freezeId: audit.freezeId,
         metadata: completion.metadata,
       });
@@ -690,6 +700,7 @@ export class ClinicalReportSourceFreezeWorkflowService {
         message: 'Clinical report not found',
       });
     }
+    await this.assertReplacementLineage(report);
     const audit = this.resolveExisting(report);
     if (audit) {
       return { report, audit };
@@ -726,6 +737,7 @@ export class ClinicalReportSourceFreezeWorkflowService {
         message: 'Clinical report not found',
       });
     }
+    await this.assertReplacementLineage(report);
     const audit = this.resolveExisting(report);
     if (audit?.state === 'completed' && audit.freezeId === freezeId) {
       return report;
@@ -766,6 +778,19 @@ export class ClinicalReportSourceFreezeWorkflowService {
         'unknown',
       operatorRole,
     };
+  }
+
+  private async assertReplacementLineage(
+    report: ClinicalReportSummary,
+  ): Promise<void> {
+    if (
+      !(await this.reportsService.hasValidReplacementLifecycleLineage(report))
+    ) {
+      throw new ConflictException({
+        code: 'CLINICAL_REPORT_REPLACEMENT_LINEAGE_INVALID',
+        message: 'Clinical report replacement lineage is invalid',
+      });
+    }
   }
 
   private buildResponse(
@@ -855,6 +880,13 @@ export class ClinicalReportSourceFreezeWorkflowService {
       });
     }
     return parsed;
+  }
+
+  private requireReportUpdatedAt(report: ClinicalReportSummary): Date {
+    if (!report.updatedAt) {
+      throw this.failed();
+    }
+    return new Date(report.updatedAt.getTime());
   }
 
   private applyRule<T>(operation: () => T): T {

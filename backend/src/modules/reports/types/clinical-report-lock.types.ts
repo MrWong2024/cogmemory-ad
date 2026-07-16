@@ -32,6 +32,7 @@ export type LockClinicalReportInput = {
   reportId: string;
   patientId: string;
   assessmentVisitId: string;
+  reportVersion: number;
   expectedUpdatedAt: Date;
   lockedAt: Date;
   lockedBy: string;

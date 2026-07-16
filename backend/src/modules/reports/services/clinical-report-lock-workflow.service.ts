@@ -63,6 +63,7 @@ export class ClinicalReportLockWorkflowService {
     }
     const actor = this.buildLockActor(currentUser);
     const context = await this.loadLockContext(patientId, visitId, reportId);
+    await this.assertReplacementLineage(context.report);
     if (context.report.status === 'voided') {
       this.throwVoided();
     }
@@ -70,7 +71,9 @@ export class ClinicalReportLockWorkflowService {
     if (existing) {
       return this.buildLockResponse(context.report, existing, true);
     }
-    this.assertFirstLockResourceState(context);
+    if (context.report.reportVersion === 1) {
+      this.assertFirstLockResourceState(context);
+    }
     const expectedUpdatedAt = this.parseExpectedUpdatedAt(
       input.expectedUpdatedAt,
     );
@@ -97,6 +100,7 @@ export class ClinicalReportLockWorkflowService {
         reportId,
         patientId,
         assessmentVisitId: visitId,
+        reportVersion: context.report.reportVersion,
         expectedUpdatedAt,
         lockedAt: mutation.lockedAt,
         lockedBy: mutation.lockedBy,
@@ -225,6 +229,7 @@ export class ClinicalReportLockWorkflowService {
         message: 'Clinical report not found',
       });
     }
+    await this.assertReplacementLineage(current);
     if (current.status === 'voided') {
       this.throwVoided();
     }
@@ -272,6 +277,19 @@ export class ClinicalReportLockWorkflowService {
         alreadyLocked,
       },
     };
+  }
+
+  private async assertReplacementLineage(
+    report: ClinicalReportSummary,
+  ): Promise<void> {
+    if (
+      !(await this.reportsService.hasValidReplacementLifecycleLineage(report))
+    ) {
+      throw new ConflictException({
+        code: 'CLINICAL_REPORT_REPLACEMENT_LINEAGE_INVALID',
+        message: 'Clinical report replacement lineage is invalid',
+      });
+    }
   }
 
   private parseExpectedUpdatedAt(value: string): Date {

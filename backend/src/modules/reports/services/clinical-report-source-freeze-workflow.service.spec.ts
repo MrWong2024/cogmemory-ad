@@ -113,6 +113,7 @@ describe('ClinicalReportSourceFreezeWorkflowService', () => {
   };
   const reportsService = {
     findReportByOwnership: jest.fn(),
+    hasValidReplacementLifecycleLineage: jest.fn().mockResolvedValue(true),
     startSourceFreezeIfUnmodified: jest.fn(),
     completeSourceFreezeIfMatching: jest.fn(),
   };
@@ -201,5 +202,38 @@ describe('ClinicalReportSourceFreezeWorkflowService', () => {
     expect(
       reportsService.completeSourceFreezeIfMatching,
     ).not.toHaveBeenCalled();
+  });
+
+  it('returns the stable lineage conflict for an invalid V2 replacement', async () => {
+    const report = { ...completedReport(), reportVersion: 2 };
+    patientsService.findPatientById.mockResolvedValue({
+      id: ids.patient,
+      status: 'inactive',
+    });
+    assessmentsService.findVisitByPatientAndId.mockResolvedValue({
+      id: ids.visit,
+      status: 'voided',
+    });
+    reportsService.findReportByOwnership.mockResolvedValue(report);
+    reportsService.hasValidReplacementLifecycleLineage.mockResolvedValueOnce(
+      false,
+    );
+
+    await expect(
+      service.freezeClinicalReportSources(
+        ids.patient,
+        ids.visit,
+        ids.report,
+        currentUser,
+        {
+          confirm: true,
+          freezeNote: 'A26 de-identified replacement freeze note',
+          expectedUpdatedAt: '2026-07-12T00:00:00.000Z',
+        },
+      ),
+    ).rejects.toMatchObject({
+      response: { code: 'CLINICAL_REPORT_REPLACEMENT_LINEAGE_INVALID' },
+    });
+    expect(reportsService.startSourceFreezeIfUnmodified).not.toHaveBeenCalled();
   });
 });

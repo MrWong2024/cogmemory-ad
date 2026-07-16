@@ -34,6 +34,7 @@ export type ArchiveClinicalReportInput = {
   reportId: string;
   patientId: string;
   assessmentVisitId: string;
+  reportVersion: number;
   expectedUpdatedAt: Date;
   archivedAt: Date;
   archivedBy: string;

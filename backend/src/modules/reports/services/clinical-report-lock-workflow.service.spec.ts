@@ -167,6 +167,9 @@ describe('ClinicalReportLockWorkflowService', () => {
         assessmentVisitId: string;
       }) => Promise<ClinicalReportSummary | null>
     >;
+    hasValidReplacementLifecycleLineage: jest.MockedFunction<
+      (report: ClinicalReportSummary) => Promise<boolean>
+    >;
     lockReportIfUnmodified: jest.MockedFunction<
       (input: LockClinicalReportInput) => Promise<ClinicalReportSummary | null>
     >;
@@ -194,6 +197,9 @@ describe('ClinicalReportLockWorkflowService', () => {
           }) => Promise<ClinicalReportSummary | null>
         >()
         .mockImplementation(() => Promise.resolve(report)),
+      hasValidReplacementLifecycleLineage: jest
+        .fn<(report: ClinicalReportSummary) => Promise<boolean>>()
+        .mockResolvedValue(true),
       lockReportIfUnmodified:
         jest.fn<
           (
@@ -246,6 +252,7 @@ describe('ClinicalReportLockWorkflowService', () => {
         reportId: ids.report,
         patientId: ids.patient,
         assessmentVisitId: ids.visit,
+        reportVersion: 1,
         lockedBy: ids.actor,
       }),
     );
@@ -254,6 +261,56 @@ describe('ClinicalReportLockWorkflowService', () => {
     expect(atomicInput.metadata.a22Lock).toEqual(
       expect.objectContaining({ version: 1, lockNote: input.lockNote }),
     );
+  });
+
+  it('allows a valid V2 replacement despite historical patient and visit states', async () => {
+    report = reportFixture({ reportVersion: 2 });
+    patients.findPatientById.mockResolvedValue({
+      id: ids.patient,
+      status: 'inactive',
+    });
+    assessments.findVisitByPatientAndId.mockResolvedValue({
+      id: ids.visit,
+      status: 'voided',
+    });
+    reports.lockReportIfUnmodified.mockImplementation((atomicInput) =>
+      Promise.resolve({
+        ...report,
+        lockedAt: atomicInput.lockedAt,
+        lockedBy: atomicInput.lockedBy,
+        metadata: atomicInput.metadata,
+      }),
+    );
+
+    await service.lockClinicalReport(
+      ids.patient,
+      ids.visit,
+      ids.report,
+      user(),
+      input,
+    );
+
+    expect(reports.lockReportIfUnmodified).toHaveBeenCalledWith(
+      expect.objectContaining({ reportVersion: 2 }),
+    );
+  });
+
+  it('returns the stable lineage conflict before lifecycle evaluation', async () => {
+    report = reportFixture({ reportVersion: 2 });
+    reports.hasValidReplacementLifecycleLineage.mockResolvedValue(false);
+
+    await expect(
+      service.lockClinicalReport(
+        ids.patient,
+        ids.visit,
+        ids.report,
+        user(),
+        input,
+      ),
+    ).rejects.toMatchObject({
+      response: { code: 'CLINICAL_REPORT_REPLACEMENT_LINEAGE_INVALID' },
+    });
+    expect(reports.lockReportIfUnmodified).not.toHaveBeenCalled();
   });
 
   it.each([undefined, false])(

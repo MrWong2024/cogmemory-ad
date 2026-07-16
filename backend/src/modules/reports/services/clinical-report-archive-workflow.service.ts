@@ -63,6 +63,7 @@ export class ClinicalReportArchiveWorkflowService {
     }
     const actor = this.buildArchiveActor(currentUser);
     const context = await this.loadArchiveContext(patientId, visitId, reportId);
+    await this.assertReplacementLineage(context.report);
     if (context.report.status === 'voided') {
       this.throwVoided();
     }
@@ -102,6 +103,7 @@ export class ClinicalReportArchiveWorkflowService {
         reportId,
         patientId,
         assessmentVisitId: visitId,
+        reportVersion: context.report.reportVersion,
         expectedUpdatedAt,
         archivedAt: mutation.archivedAt,
         archivedBy: mutation.archivedBy,
@@ -218,6 +220,7 @@ export class ClinicalReportArchiveWorkflowService {
         message: 'Clinical report not found',
       });
     }
+    await this.assertReplacementLineage(current);
     if (current.status === 'voided') {
       this.throwVoided();
     }
@@ -264,6 +267,19 @@ export class ClinicalReportArchiveWorkflowService {
         alreadyArchived,
       },
     };
+  }
+
+  private async assertReplacementLineage(
+    report: ClinicalReportSummary,
+  ): Promise<void> {
+    if (
+      !(await this.reportsService.hasValidReplacementLifecycleLineage(report))
+    ) {
+      throw new ConflictException({
+        code: 'CLINICAL_REPORT_REPLACEMENT_LINEAGE_INVALID',
+        message: 'Clinical report replacement lineage is invalid',
+      });
+    }
   }
 
   private parseExpectedUpdatedAt(value: string): Date {

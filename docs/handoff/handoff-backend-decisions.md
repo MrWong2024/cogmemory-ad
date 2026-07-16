@@ -331,6 +331,14 @@
 - 合法 replacement 的 A21 仅 doctor/admin，历史 Patient inactive / Visit locked / voided 不阻断；普通 V1 规则保持。A22-A24 泛化到 V2 留给后续独立阶段。
 - 不修改 Schema、ClinicalReportStatus 或 REPORT_STATUS_TRANSITIONS，不创建 AuditLog，不读取/修改五类来源，不生成 PDF/Storage 文件，不调用 AI。
 
+### D-036：replacement 不可逆生命周期以完整双向 lineage 与精确版本写入为准
+
+- 合法性：V1 继续按 A22-A24 原规则执行；任意 V2+ 必须是正安全整数版本，并沿 `a25CorrectionReplacement.previousReportId` 逐级回溯到 V1。每一跳都要求同 Patient / Visit / reportType、前序版本恰为当前减一、前序为 corrected，且前序 completed `a25Correction`、唯一 correctionRecord、当前 replacement metadata、A22-A24 来源锚点在 ID、code、version、actor、reason / summary、时间和 archive / freeze 关系上双向一致。缺失、单边、跳版、分支或伪造统一为 409 `CLINICAL_REPORT_REPLACEMENT_LINEAGE_INVALID`，跨 ownership 前序不暴露存在性。
+- 资格差异：V1 首次 lock / freeze 继续要求 active Patient 与可编辑 Visit；合法 V2+ 只校验 Patient / Visit / report ownership，历史 Patient inactive、Visit locked / voided 不阻断。archive 延续 ownership-only 语义。doctor / admin、公开 endpoint、DTO、response 与既有稳定错误不变。
+- 来源不可重写：replacement freeze 的 scope 仍只来自当前报告固化快照与来源 ID。前序版本已冻结且与当前精确 scope 兼容的五类共享来源计入 previouslyFrozen / completed，不再次更新 status、lockedAt 或首次不可逆事实；当前 replacement 仍形成独立 freezeId 和 completed receipt。恢复沿用原 freezeId、scope、actor 与 note。
+- 持久化：A22 lock、A23 start / complete、A24 archive 均接收服务端已加载报告的真实 reportVersion，并在原子 filter 中精确等值匹配，不使用 V2 常量或 `>= 2`。filter 继续锚定 ownership、type、状态、锁定 / 归档 / 作废 / correction、阶段审计与 expectedUpdatedAt；A23 complete 同样使用 start 后报告的 updatedAt。
+- 泛化证明：真实 HTTP 测试从 archived V1 建 V2，完成 A21-A24 后再经 A25 建 V3，并再次完成 A21-A24；V3 用于防止实现写死 V2。前序 corrected 报告及 A22-A25 事实保持不变，shared sources 在 V2/V3 freeze 前后逐字段验证未重写。
+
 ## 4. 后续同步规则
 
 - 新增关键技术选型、接口设计、数据模型、测试策略或部署策略后，应追加决策记录。

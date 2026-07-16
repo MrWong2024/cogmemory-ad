@@ -42,6 +42,11 @@ import type {
   RecordClinicalReportCorrectionReplacementInput,
   StartClinicalReportCorrectionInput,
 } from '../types/clinical-report-correction.types';
+import {
+  assertClinicalReportReplacementLineageLink,
+  ClinicalReportReplacementLineageRuleError,
+} from '../lib/clinical-report-replacement-lineage';
+import { resolveClinicalReportReplacementLineage } from '../lib/clinical-report-correction';
 
 export type ReportPatientSnapshotSummary = {
   subjectCode?: string;
@@ -275,6 +280,8 @@ export type ConfirmClinicalReportInput = ClinicalReportOwnershipInput & {
 
 export type CompleteClinicalReportSourceFreezeInput =
   ClinicalReportOwnershipInput & {
+    reportVersion: number;
+    expectedUpdatedAt: Date;
     freezeId: string;
     metadata: Record<string, unknown>;
   };
@@ -390,6 +397,53 @@ export class ReportsService {
     return report ? this.mapReport(report) : null;
   }
 
+  async hasValidReplacementLifecycleLineage(
+    report: ClinicalReportSummary,
+  ): Promise<boolean> {
+    if (report.reportVersion === 1) {
+      return true;
+    }
+    let current = report;
+    const visitedReportIds = new Set<string>();
+    while (current.reportVersion !== 1) {
+      if (visitedReportIds.has(current.id)) {
+        return false;
+      }
+      visitedReportIds.add(current.id);
+      let previousReportId: string;
+      try {
+        const lineage = resolveClinicalReportReplacementLineage(current);
+        if (!lineage) {
+          return false;
+        }
+        previousReportId = lineage.previousReportId;
+      } catch {
+        return false;
+      }
+      const previous = await this.findReportByOwnership({
+        reportId: previousReportId,
+        patientId: current.patientId,
+        assessmentVisitId: current.assessmentVisitId,
+      });
+      if (!previous) {
+        return false;
+      }
+      try {
+        assertClinicalReportReplacementLineageLink({
+          currentReport: current,
+          previousReport: previous,
+        });
+      } catch (error: unknown) {
+        if (error instanceof ClinicalReportReplacementLineageRuleError) {
+          return false;
+        }
+        throw error;
+      }
+      current = previous;
+    }
+    return true;
+  }
+
   async updateDraftNarrativeIfUnmodified(
     input: UpdateClinicalReportDraftInput,
   ): Promise<ClinicalReportSummary | null> {
@@ -484,6 +538,8 @@ export class ReportsService {
     const ownership = this.normalizeClinicalReportOwnership(input);
     if (
       !ownership ||
+      !Number.isSafeInteger(input.reportVersion) ||
+      input.reportVersion < 1 ||
       !Number.isFinite(input.expectedUpdatedAt.getTime()) ||
       !Number.isFinite(input.lockedAt.getTime())
     ) {
@@ -498,7 +554,7 @@ export class ReportsService {
         {
           ...ownership,
           reportType: 'cognitive_assessment',
-          reportVersion: 1,
+          reportVersion: input.reportVersion,
           status: 'confirmed',
           source: 'mixed',
           qualityStatus: 'passed',
@@ -528,7 +584,12 @@ export class ReportsService {
     input: FreezeClinicalReportSourcesInput,
   ): Promise<ClinicalReportSummary | null> {
     const ownership = this.normalizeClinicalReportOwnership(input);
-    if (!ownership || !Number.isFinite(input.expectedUpdatedAt.getTime())) {
+    if (
+      !ownership ||
+      !Number.isSafeInteger(input.reportVersion) ||
+      input.reportVersion < 1 ||
+      !Number.isFinite(input.expectedUpdatedAt.getTime())
+    ) {
       return null;
     }
     const updated = await this.clinicalReportModel
@@ -536,14 +597,16 @@ export class ReportsService {
         {
           ...ownership,
           reportType: 'cognitive_assessment',
-          reportVersion: 1,
+          reportVersion: input.reportVersion,
           status: 'confirmed',
           source: 'mixed',
           qualityStatus: 'passed',
           lockedAt: { $ne: null },
           lockedBy: { $ne: null },
           archivedAt: null,
+          archivedBy: null,
           voidedAt: null,
+          voidedBy: null,
           correctionRecords: { $size: 0 },
           updatedAt: input.expectedUpdatedAt,
           'metadata.a23SourceFreeze': { $exists: false },
@@ -559,7 +622,13 @@ export class ReportsService {
     input: CompleteClinicalReportSourceFreezeInput,
   ): Promise<ClinicalReportSummary | null> {
     const ownership = this.normalizeClinicalReportOwnership(input);
-    if (!ownership || !input.freezeId.trim()) {
+    if (
+      !ownership ||
+      !Number.isSafeInteger(input.reportVersion) ||
+      input.reportVersion < 1 ||
+      !Number.isFinite(input.expectedUpdatedAt.getTime()) ||
+      !input.freezeId.trim()
+    ) {
       return null;
     }
     const updated = await this.clinicalReportModel
@@ -567,7 +636,18 @@ export class ReportsService {
         {
           ...ownership,
           reportType: 'cognitive_assessment',
-          reportVersion: 1,
+          reportVersion: input.reportVersion,
+          status: 'confirmed',
+          source: 'mixed',
+          qualityStatus: 'passed',
+          lockedAt: { $ne: null },
+          lockedBy: { $ne: null },
+          archivedAt: null,
+          archivedBy: null,
+          voidedAt: null,
+          voidedBy: null,
+          correctionRecords: { $size: 0 },
+          updatedAt: input.expectedUpdatedAt,
           'metadata.a23SourceFreeze.version': 1,
           'metadata.a23SourceFreeze.freezeId': input.freezeId,
           'metadata.a23SourceFreeze.state': 'in_progress',
@@ -585,6 +665,8 @@ export class ReportsService {
     const ownership = this.normalizeClinicalReportOwnership(input);
     if (
       !ownership ||
+      !Number.isSafeInteger(input.reportVersion) ||
+      input.reportVersion < 1 ||
       !Number.isFinite(input.expectedUpdatedAt.getTime()) ||
       !Number.isFinite(input.archivedAt.getTime())
     ) {
@@ -599,7 +681,7 @@ export class ReportsService {
         {
           ...ownership,
           reportType: 'cognitive_assessment',
-          reportVersion: 1,
+          reportVersion: input.reportVersion,
           status: 'confirmed',
           source: 'mixed',
           qualityStatus: 'passed',

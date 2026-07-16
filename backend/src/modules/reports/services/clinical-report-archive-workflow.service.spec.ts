@@ -219,6 +219,7 @@ describe('ClinicalReportArchiveWorkflowService', () => {
   let assessmentsService: { findVisitByPatientAndId: jest.Mock };
   let reportsService: {
     findReportByOwnership: jest.Mock;
+    hasValidReplacementLifecycleLineage: jest.Mock;
     archiveReportIfUnmodified: jest.Mock;
     canTransitionReportStatus: jest.Mock;
   };
@@ -248,6 +249,7 @@ describe('ClinicalReportArchiveWorkflowService', () => {
     };
     reportsService = {
       findReportByOwnership: jest.fn().mockResolvedValue(readyReport()),
+      hasValidReplacementLifecycleLineage: jest.fn().mockResolvedValue(true),
       archiveReportIfUnmodified: jest.fn(),
       canTransitionReportStatus: jest.fn().mockReturnValue(true),
     };
@@ -325,6 +327,53 @@ describe('ClinicalReportArchiveWorkflowService', () => {
         alreadyArchived: false,
       }),
     );
+  });
+
+  it('passes the server-confirmed V3 version to the archive atomic write', async () => {
+    const replacement = readyReport({ reportVersion: 3 });
+    reportsService.findReportByOwnership.mockResolvedValue(replacement);
+    reportsService.archiveReportIfUnmodified.mockImplementation(
+      (mutation: { metadata: Record<string, unknown> }) =>
+        Promise.resolve({
+          ...replacement,
+          status: 'archived',
+          archivedAt: new Date('2026-07-12T09:10:00.000Z'),
+          archivedBy: ids.actor,
+          metadata: mutation.metadata,
+        }),
+    );
+
+    await service.archiveClinicalReport(
+      ids.patient,
+      ids.visit,
+      ids.report,
+      currentUser,
+      input,
+    );
+
+    expect(reportsService.archiveReportIfUnmodified).toHaveBeenCalledWith(
+      expect.objectContaining({ reportVersion: 3 }),
+    );
+  });
+
+  it('returns the stable lineage conflict for an invalid replacement', async () => {
+    reportsService.findReportByOwnership.mockResolvedValue(
+      readyReport({ reportVersion: 2 }),
+    );
+    reportsService.hasValidReplacementLifecycleLineage.mockResolvedValue(false);
+
+    await expect(
+      service.archiveClinicalReport(
+        ids.patient,
+        ids.visit,
+        ids.report,
+        currentUser,
+        input,
+      ),
+    ).rejects.toMatchObject({
+      response: { code: 'CLINICAL_REPORT_REPLACEMENT_LINEAGE_INVALID' },
+    });
+    expect(reportsService.archiveReportIfUnmodified).not.toHaveBeenCalled();
   });
 
   it('returns an existing archive with stale expectedUpdatedAt without writing', async () => {

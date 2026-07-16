@@ -906,5 +906,6 @@ describe('clinical report source freeze API (e2e)', () => {
     expect(persistedAudit.state).toBe('completed');
     expect(persistedAudit.freezeId).toBe(freezeId);
     expect(persistedAudit.startedByName).toBe('A23 Original Test Operator');
+    expect(persistedAudit.completedByName).toBe('A23 Original Test Operator');
   });
 });

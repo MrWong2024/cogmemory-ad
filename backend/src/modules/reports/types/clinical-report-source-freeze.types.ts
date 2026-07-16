@@ -72,6 +72,7 @@ export type FreezeClinicalReportSourcesInput = {
   reportId: string;
   patientId: string;
   assessmentVisitId: string;
+  reportVersion: number;
   expectedUpdatedAt: Date;
   metadata: Record<string, unknown>;
 };
