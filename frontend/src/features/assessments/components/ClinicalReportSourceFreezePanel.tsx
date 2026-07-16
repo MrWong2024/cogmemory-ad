@@ -18,6 +18,7 @@ export function ClinicalReportSourceFreezePanel({
 }) {
   const draft = workflow.sourceFreezeDraft;
   const isActive = workflow.activeMode === 'source_freeze' && draft !== null;
+  const targetLabel = `${report.reportCode} / V${report.reportVersion}`;
 
   if (!isActive) {
     if (report.sourceFreeze?.state === 'completed') {
@@ -26,6 +27,9 @@ export function ClinicalReportSourceFreezePanel({
           <h3 className="text-xl font-semibold text-[var(--cma-text-strong)]">
             报告来源链冻结已完成
           </h3>
+          <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
+            当前操作目标：{targetLabel}
+          </p>
           <p className="mt-2 text-base leading-7 text-[var(--cma-muted)]">
             当前不再显示首次冻结或恢复入口；完成事实来自服务端 sourceFreeze，重复请求不会重新冻结来源。
           </p>
@@ -39,6 +43,7 @@ export function ClinicalReportSourceFreezePanel({
           className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] px-4 py-3 text-base leading-7 text-[var(--cma-warning)]"
           role="alert"
         >
+          当前操作目标：{targetLabel}。<br />
           来源冻结安全摘要不完整或不一致；当前不开放首次冻结或恢复操作，请联系管理员。
         </p>
       );
@@ -50,6 +55,9 @@ export function ClinicalReportSourceFreezePanel({
           <h3 className="text-xl font-semibold text-[var(--cma-text-strong)]">
             报告来源冻结
           </h3>
+          <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
+            当前操作目标：{targetLabel}
+          </p>
           <p className="mt-2 text-base leading-7 text-[var(--cma-muted)]">
             {report.sourceFreeze?.state === 'in_progress'
               ? '来源冻结尚未完成；部分来源可能已经冻结。等待医生或管理员明确继续完成同一流程。'
@@ -68,6 +76,7 @@ export function ClinicalReportSourceFreezePanel({
               : '不可逆冻结报告来源'}
           </h3>
           <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
+            当前操作目标：{targetLabel}。
             {report.sourceFreeze?.state === 'in_progress'
               ? '服务端已固化原 freezeId、说明与范围；恢复不会生成新流程，也不会解冻已冻结来源。'
               : '首次发起只面向已确认、已锁定且通过安全资格检查的报告。'}
@@ -112,7 +121,8 @@ export function ClinicalReportSourceFreezePanel({
             : '二次确认继续同一来源冻结流程'}
         </h3>
         <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-          当前 status：{clinicalReportStatusLabels[report.status]}（
+          当前操作目标：{targetLabel}；status：
+          {clinicalReportStatusLabels[report.status]}（
           {report.status}）；报告锁定时间：
           {formatClinicalReportDate(report.lockedAt)}；并发基线：
           {formatClinicalReportDate(draft.baseUpdatedAt)}。

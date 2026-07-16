@@ -71,32 +71,41 @@ function CountTable({
     );
   }
 
+  const hasPreviouslyFrozenSources = previouslyFrozen.totalSourceCount > 0;
+
   return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full border-separate border-spacing-0 text-left text-sm">
-        <thead>
-          <tr>
-            <th className="border-b border-[var(--cma-line)] px-3 py-2 font-semibold text-[var(--cma-muted)]">来源类型</th>
-            <th className="border-b border-[var(--cma-line)] px-3 py-2 font-semibold text-[var(--cma-muted)]">预期数量</th>
-            <th className="border-b border-[var(--cma-line)] px-3 py-2 font-semibold text-[var(--cma-muted)]">完成数量</th>
-            <th className="border-b border-[var(--cma-line)] px-3 py-2 font-semibold text-[var(--cma-muted)]">本次新增冻结</th>
-            <th className="border-b border-[var(--cma-line)] px-3 py-2 font-semibold text-[var(--cma-muted)]">此前已冻结</th>
-          </tr>
-        </thead>
-        <tbody>
-          {countKeys.map((key) => (
-            <tr key={key}>
-              <th className="border-b border-[var(--cma-line)] px-3 py-3 font-semibold text-[var(--cma-text-strong)]">
-                {clinicalReportSourceFreezeCountLabels[key]}
-              </th>
-              <td className="border-b border-[var(--cma-line)] px-3 py-3 text-[var(--cma-text-strong)]">{expected[key]}</td>
-              <td className="border-b border-[var(--cma-line)] px-3 py-3 text-[var(--cma-text-strong)]">{completed ? completed[key] : '待完成'}</td>
-              <td className="border-b border-[var(--cma-line)] px-3 py-3 text-[var(--cma-text-strong)]">{newlyFrozen ? newlyFrozen[key] : '待完成'}</td>
-              <td className="border-b border-[var(--cma-line)] px-3 py-3 text-[var(--cma-text-strong)]">{previouslyFrozen[key]}</td>
+    <div className="grid gap-3">
+      <div className="overflow-x-auto">
+        <table className="min-w-full border-separate border-spacing-0 text-left text-sm">
+          <thead>
+            <tr>
+              <th className="border-b border-[var(--cma-line)] px-3 py-2 font-semibold text-[var(--cma-muted)]">来源类型</th>
+              <th className="border-b border-[var(--cma-line)] px-3 py-2 font-semibold text-[var(--cma-muted)]">预期数量</th>
+              <th className="border-b border-[var(--cma-line)] px-3 py-2 font-semibold text-[var(--cma-muted)]">完成数量</th>
+              <th className="border-b border-[var(--cma-line)] px-3 py-2 font-semibold text-[var(--cma-muted)]">本次新增冻结</th>
+              <th className="border-b border-[var(--cma-line)] px-3 py-2 font-semibold text-[var(--cma-muted)]">此前已冻结</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {countKeys.map((key) => (
+              <tr key={key}>
+                <th className="border-b border-[var(--cma-line)] px-3 py-3 font-semibold text-[var(--cma-text-strong)]">
+                  {clinicalReportSourceFreezeCountLabels[key]}
+                </th>
+                <td className="border-b border-[var(--cma-line)] px-3 py-3 text-[var(--cma-text-strong)]">{expected[key]}</td>
+                <td className="border-b border-[var(--cma-line)] px-3 py-3 text-[var(--cma-text-strong)]">{completed ? completed[key] : '待完成'}</td>
+                <td className="border-b border-[var(--cma-line)] px-3 py-3 text-[var(--cma-text-strong)]">{newlyFrozen ? newlyFrozen[key] : '待完成'}</td>
+                <td className="border-b border-[var(--cma-line)] px-3 py-3 text-[var(--cma-text-strong)]">{previouslyFrozen[key]}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {hasPreviouslyFrozenSources ? (
+        <p className="text-sm leading-6 text-[var(--cma-muted)]">
+          “此前已冻结”表示这些共享来源已在前序报告中完成不可逆冻结，当前版本仅完成兼容性验证；不表示再次冻结或覆盖原冻结事实。
+        </p>
+      ) : null}
     </div>
   );
 }

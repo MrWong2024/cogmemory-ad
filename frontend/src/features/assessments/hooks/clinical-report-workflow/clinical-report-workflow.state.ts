@@ -333,6 +333,12 @@ export function clinicalReportWorkflowReducer(
       return {
         ...state,
         activeMode: 'idle',
+        edit: { draft: null, error: null, receipt: null },
+        submission: { draft: null, error: null, receipt: null },
+        confirmation: { draft: null, error: null, receipt: null },
+        lock: { draft: null, error: null, receipt: null },
+        sourceFreeze: { draft: null, error: null, receipt: null },
+        archive: { draft: null, error: null, receipt: null },
         correction: {
           draft: null,
           error: null,
@@ -340,6 +346,7 @@ export function clinicalReportWorkflowReducer(
           sourceReport: action.sourceReport,
         },
         liveMessage: action.message,
+        writeProhibited: false,
       };
   }
 }

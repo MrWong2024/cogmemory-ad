@@ -2,6 +2,10 @@ import {
   getClinicalReportFinalityWarning,
   getClinicalReportLockConsistencyWarning,
 } from '@/src/features/assessments/lib/clinical-report-display';
+import {
+  getClinicalReportLifecycleTarget,
+  getClinicalReportLifecycleTargetWarning,
+} from '@/src/features/assessments/lib/clinical-report-lifecycle-target';
 import type {
   ClinicalReport,
   ClinicalReportSourceFreezeResourceCounts,
@@ -210,9 +214,9 @@ export function getClinicalReportSourceFreezeStartEligibilityWarning(
   report: ClinicalReport,
   visitStatus: AssessmentVisitStatus | null,
 ): string | null {
-  if (report.reportType !== 'cognitive_assessment' || report.reportVersion !== 1) {
-    return '当前仅支持 cognitive_assessment version 1 报告来源冻结。';
-  }
+  const lifecycleTarget = getClinicalReportLifecycleTarget(report);
+  const lifecycleWarning = getClinicalReportLifecycleTargetWarning(report);
+  if (!lifecycleTarget) return lifecycleWarning;
   if (report.status !== 'confirmed') return '只有已确认报告可以冻结来源。';
   if (report.source !== 'mixed') return '当前报告来源状态不满足来源冻结要求。';
   if (report.qualityStatus !== 'passed') {
@@ -240,7 +244,10 @@ export function getClinicalReportSourceFreezeStartEligibilityWarning(
       ? '服务端已存在来源冻结流程，请进入明确恢复操作。'
       : '报告来源链已经冻结完成。';
   }
-  if (!visitStatus || !firstStartVisitStatuses.has(visitStatus)) {
+  if (
+    lifecycleTarget.kind === 'version_one' &&
+    (!visitStatus || !firstStartVisitStatuses.has(visitStatus))
+  ) {
     return '当前访视状态不允许首次发起来源冻结。';
   }
   if (!isSafeWriteIdentity(report)) {
@@ -252,6 +259,16 @@ export function getClinicalReportSourceFreezeStartEligibilityWarning(
 export function getClinicalReportSourceFreezeResumeEligibilityWarning(
   report: ClinicalReport,
 ): string | null {
+  const lifecycleWarning = getClinicalReportLifecycleTargetWarning(report);
+  if (lifecycleWarning) return lifecycleWarning;
+  if (!report.lockedAt || !report.lock) {
+    return '请先完成报告自身不可逆锁定。';
+  }
+  const lockWarning = getClinicalReportLockConsistencyWarning(report);
+  if (lockWarning) return lockWarning;
+  if (!report.lock.lockId?.trim()) {
+    return '当前报告缺少受控锁定技术追溯号，不能安全恢复来源冻结。';
+  }
   if (
     report.status === 'archived' ||
     report.status === 'corrected' ||

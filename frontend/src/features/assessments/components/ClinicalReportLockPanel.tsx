@@ -19,6 +19,7 @@ export function ClinicalReportLockPanel({
   workflow: UseClinicalReportWorkflowValue;
 }) {
   const consistencyWarning = getClinicalReportLockConsistencyWarning(report);
+  const targetLabel = `${report.reportCode} / V${report.reportVersion}`;
 
   if (
     isClinicalReportLocked(report) &&
@@ -29,6 +30,9 @@ export function ClinicalReportLockPanel({
         <h3 className="text-xl font-semibold text-[var(--cma-text-strong)]">
           报告已锁定
         </h3>
+        <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
+          当前操作目标：{targetLabel}
+        </p>
         <p className="mt-2 text-base leading-7 text-[var(--cma-muted)]">
           当前真实 status 仍为 {report.status}；锁定事实来自服务端 lockedAt。
           本页面不提供再次锁定或解锁入口。
@@ -46,6 +50,7 @@ export function ClinicalReportLockPanel({
         className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] px-4 py-3 text-base leading-7 text-[var(--cma-warning)]"
         role="alert"
       >
+        当前操作目标：{targetLabel}。<br />
         {consistencyWarning}
       </p>
     );
@@ -57,6 +62,9 @@ export function ClinicalReportLockPanel({
         <h3 className="text-xl font-semibold text-[var(--cma-text-strong)]">
           报告锁定
         </h3>
+        <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
+          当前操作目标：{targetLabel}
+        </p>
         <p className="mt-2 text-base leading-7 text-[var(--cma-muted)]">
           报告锁定需由医生或管理员执行。当前账号仍可查看报告和已有锁定摘要，后端 RolesGuard 是最终权限边界。
         </p>
@@ -72,7 +80,7 @@ export function ClinicalReportLockPanel({
             不可逆锁定报告
           </h3>
           <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-            仅 confirmed、尚未锁定且通过安全资格检查的当前报告可进入二次确认。
+            当前操作目标：{targetLabel}。仅 confirmed、尚未锁定且通过安全资格检查的当前报告可进入二次确认。
           </p>
         </div>
         {workflow.canLock ? (
@@ -103,8 +111,9 @@ export function ClinicalReportLockPanel({
           二次确认不可逆锁定
         </h3>
         <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-          当前 status：{clinicalReportStatusLabels[report.status]}（{report.status}
-          ）；isFinal：{report.isFinal ? 'true' : 'false'}；并发基线：
+          当前操作目标：{targetLabel}；status：
+          {clinicalReportStatusLabels[report.status]}（{report.status}）；isFinal：
+          {report.isFinal ? 'true' : 'false'}；并发基线：
           {formatClinicalReportDate(draft.baseUpdatedAt)}。
         </p>
       </div>

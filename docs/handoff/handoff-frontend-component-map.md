@@ -539,7 +539,7 @@
 
 - activeMode / writingAction 扩展 lock，继续复用同一 report、roles、onUnauthorized、onReportUpdated、refreshLatest 与 reportWriteBlocked；没有第二套 latest、认证或 report 合并逻辑。
 - 管理 lockDraft、lockError、lockReceipt、roleCanLock、canLock、dirty / version / stale、基于 latest 继续和 confirmLock。edit / submit / confirm / lock 同一时间只能有一个模式和一个写请求；lockNote dirty 纳入 beforeunload。
-- eligibility 同时校验 cognitive_assessment version 1、confirmed、mixed、passed、isFinal、完整 doctor / admin confirmation、lockedAt / lock / archivedAt / voidedAt 为空、服务端 updatedAt、Visit draft / in_progress / completed、doctor / admin、无其他写入 / 草稿与一致性警告。前端判断不替代后端 A22。
+- eligibility 先复用统一 lifecycle target：V1 保留 confirmed、mixed、passed、isFinal、完整 doctor / admin confirmation、lockedAt / lock / archivedAt / voidedAt 为空、服务端 updatedAt 与 Visit draft / in_progress / completed；安全 replacement V2+ 保留当前报告条件但不因历史 Patient inactive、Visit locked / voided 阻断。前端公开摘要判断不替代后端 A26。
 - LOCK_CONFLICT / NOT_LOCKABLE 保留 lockNote、清 checkbox、标记 stale、最多自动 latest 一次且不重发 POST；用户明确基于最新报告继续后才更新 baseUpdatedAt。latest 已锁定时保留本地说明到明确关闭。
 - 成功完整应用 response.report、保存当前会话 receipt、清草稿并回 idle；alreadyLocked true / false 均是成功。lockedAt 非空后所有 B11 / B12 写入口关闭。
 
@@ -569,7 +569,7 @@
 
 - activeMode / writingAction 新增 source_freeze，继续复用同一 report、roles、onUnauthorized、onReportUpdated、refreshLatest 与 reportWriteBlocked。edit / submit / confirm / lock / source_freeze 同一时间只有一个活动模式和一个写请求；没有第二套 latest、Auth 或 report 合并路径。
 - 管理 sourceFreezeDraft / error / receipt、roleCanFreezeSources、首次 / 恢复 eligibility、dirty / stale / version、consistency warning、block reason、显式转入恢复和 confirmSourceFreeze。首次 note dirty 纳入 beforeunload；恢复只读服务端 note 不计文本 dirty。
-- 首次要求 confirmed / mixed / passed / isFinal、完整一致的报告锁、sourceFreeze=null、Visit draft / in_progress / completed、doctor / admin 且无其他草稿 / 写入；恢复要求安全 in_progress、原 freezeId / note 与当前 updatedAt，不因 Visit 后续 locked / voided 被前端阻断。
+- 首次要求统一 lifecycle target、confirmed / mixed / passed / isFinal、当前报告完整一致的锁、sourceFreeze=null、doctor / admin 且无其他草稿 / 写入；V1 继续要求 Visit draft / in_progress / completed，安全 replacement V2+ 不因 Patient inactive 或 Visit locked / voided 阻断。恢复要求安全 target、当前报告 lock、in_progress、原 freezeId / note 与当前 updatedAt。
 - conflict / not source freezable / incomplete / failed / voided / not found 最多 latest 一次，保留本地首次 note、清 checkbox、标记 stale且不重发 POST。latest 变为 in_progress 时不自动进入恢复；用户必须明确放弃本地说明并转入服务端原说明。网络不确定结果只提供手工 latest。
 - 成功完整应用 response.report、保存内存 receipt、清草稿并回 idle；首次、resumedExisting 与 alreadyFrozen 使用不同稳定文案。receipt 刷新后消失，持久事实来自 report.sourceFreeze。
 
@@ -586,6 +586,7 @@
 - 路径：`frontend\src\features\assessments\components\ClinicalReportSourceFreezeSummary.tsx`
 - 职责：持久展示 state、freezeId、startedAt、sourceLockedAt、startedBy、completedAt、completedBy、首次说明，以及量表实例 / 题目记录 / 评分结果 / 认知域结果 / 媒体证据 / 合计的 expected / completed / newly / previously 计数；in_progress 的完成列显示“待完成”，不计算百分比。
 - 回执：同组件展示当前会话 freeze receipt、alreadyFrozen / resumedExisting 与全部安全计数；不持久化回执，不以 receipt 替代 report.sourceFreeze。
+- B16 对 previouslyFrozenCounts 增加说明：共享来源已在前序报告完成不可逆冻结，当前版本只做兼容性验证；不表示再次冻结、遗漏或覆盖原冻结事实。
 - `ClinicalReportPanel`：在 LockPanel 后组合 SourceFreezePanel / Summary，新增“来源未冻结 / 冻结未完成 / 来源已冻结”Badge 和一致性 alert；报告正文与快照仍可阅读。
 - `ClinicalReportWorkflowSummary`：新增持久来源冻结摘要与当前会话回执；`ClinicalReportTechnicalSummary` 分开显示 report.status、isFinal、report.lockedAt、sourceFreeze.state、sourceLockedAt、startedAt、completedAt、expected / completed total。
 - 安全边界：不显示 operatorId 作为主要字段，不显示来源 ID、内部 scope、metadata 或对象明细；不重新读取 A14–A19 或重新统计计数。明确 A23 非 Mongo transaction、可能部分完成、无自动回滚，Patient / Visit / Storage 未冻结，CognitiveDomainResult 冻结不等于确认。
@@ -602,7 +603,7 @@
 
 - activeMode / writingAction 新增 archive，继续复用同一 report、roles、onUnauthorized、onReportUpdated、refreshLatest 与 reportWriteBlocked。edit / submit / confirm / lock / source_freeze / archive 同一时间只有一个模式和一个写请求；没有第二套 latest、Auth 或 archive Hook。
 - 管理 archiveDraft / error / receipt、roleCanArchive、canArchive、dirty / stale / version、consistency warning、block reason、基于 latest 继续、手工不确定结果核对与 confirmArchive。archiveNote 非空纳入 beforeunload；路由变化或成功后清除草稿，receipt 仅保存在当前 React 页面内存。
-- 首次资格要求 cognitive_assessment version 1、confirmed / mixed / passed / isFinal、完整 doctor / admin confirmation、安全非 fallback lock、completed 且一致的 sourceFreeze、archivedAt / archive / voidedAt 为空、服务端 updatedAt、doctor / admin、无其他草稿 / 写入 / 一致性警告。Patient active、Visit status / editable / locked 不参与归档判断。
+- 首次资格要求统一 lifecycle target、confirmed / mixed / passed / isFinal、完整 doctor / admin confirmation、安全非 fallback lock、completed 且一致的当前报告 sourceFreeze、archivedAt / archive / voidedAt 为空、服务端 updatedAt、doctor / admin、无其他草稿 / 写入 / 一致性警告。V1 原口径不变；安全 replacement V2+ 不因 Patient inactive 或 Visit locked / voided 阻断。
 - conflict / not archivable / failed / voided / not found 保留 archiveNote、清 checkbox、标记 stale、最多 latest 一次且不重发 POST。latest 仍可归档时需明确基于最新继续；latest 已 archived 时保留本地说明到明确关闭。audit unavailable / metadata unsupported 禁止继续安全写入；网络错误只提供手工 latest。
 - 成功完整应用 response.report、保存 archiveReceipt、清草稿并回 idle；alreadyArchived false / true 均是成功。Hook 由 B13 的 1375 行增至 1651 行；未做大规模重构，归档规则与一致性算法已最小提取到独立纯函数，统一公开 API 与单写锁不变。
 
@@ -646,11 +647,19 @@
 - `ClinicalReportCorrectionSummary.tsx`：展示 source correction 编排、replacementOf lineage、版本关系、actor / 时间、reason / summary、archive / sourceFreeze 锚点；replacementReportId / previousReportId 仅作技术追溯，不伪造链接。
 - 成功后 `ClinicalReportPanel` 原地展示 replacement，并可在当前会话额外展示 sourceReport 与 receipt；刷新后仅依赖 replacementOf。组件不直接调用 API，不使用持久化存储或诊断式推断。
 
-### 6.71 V2 A21 与生命周期边界
+### 6.71 replacement A21 与生命周期边界
 
-- edit / submit / confirm Action 统一使用安全 replacement lineage 判断；合法 V2 仅 doctor/admin，状态分别为 draft 可编辑、mixed draft 可提交、pending_confirmation 可确认。仍只编辑 doctorOpinion / recommendationText。
-- 合法 V2 不受 Patient inactive、Visit locked / voided 阻断，但仍受 reportWriteBlocked、central writingAction、writeProhibited、updatedAt、状态和 lineage 一致性约束。普通 V1 既有角色与资格不放宽。
-- `ClinicalReportPanel` 对 replacement 不渲染 Lock / SourceFreeze / Archive Action 组件；confirmed V2 不自动 lock、freeze 或 archive，不调用 A22–A24。
+- edit / submit / confirm Action 继续使用 A21 编辑阶段的安全 replacement 判断；合法 replacement 仅 doctor/admin，状态分别为 draft 可编辑、mixed draft 可提交、pending_confirmation 可确认。仍只编辑 doctorOpinion / recommendationText。
+- 合法 replacement 不受 Patient inactive、Visit locked / voided 阻断，但仍受 reportWriteBlocked、central writingAction、writeProhibited、updatedAt、状态和 lineage 一致性约束。普通 V1 既有角色与资格不放宽。
+- B16 后 A22–A24 不直接复用 A21 的 `isSafeCorrectionReplacement`，因为其要求 lock / sourceFreeze / archive 为空，只适用于编辑阶段；不可逆阶段改用独立 lifecycle target。
+
+### 6.72 B16 replacement 不可逆生命周期
+
+- `lib/clinical-report-lifecycle-target.ts` 集中识别普通 cognitive_assessment V1 与任意安全整数 V2+ replacement。replacement 必须具有完整公开 lineage、相邻版本、当前 reportCode / reportVersion 反向一致及安全 actor / 时间 / 锚点；NaN、Infinity、小数、负数、字符串版本、缺字段或不连续摘要均失败。该守卫只形成 UI 结构门槛，完整双向 lineage 由 A26 后端判定。
+- `ClinicalReportPanel` 对安全 V1 / replacement 复用同一套 LockPanel、SourceFreezePanel / Summary、ArchivePanel / Summary；不创建 replacement 专用页面、路由、Hook 或组件。结构不安全时隐藏三类操作控件并显示安全提示；报告正文、质量摘要和 correction summary 保持。
+- 三个 Panel 动态显示当前 reportCode / Vn；`ClinicalReportWorkflowSummary` 显示当前 replacement 版本及 A21–A24 服务端事实，不再声称后续生命周期关闭。doctor / admin 可操作，nurse / research_assistant 只读，后端 RolesGuard 仍是最终边界。
+- `clinical-report-workflow.state.ts` 的 `COMPLETE_CORRECTION` 在采用 replacement 后清空旧版本 edit / submit / confirmation / lock / sourceFreeze / archive draft、error、receipt 与 writeProhibited，保留本次 correction receipt / sourceReport；因此 V1 的 A21–A24 会话回执不会显示在新 Vn 下。
+- `clinical-report-workflow-recovery.ts` 将 replacement lineage 409 独立归类为最多 latest 一次和 writeProhibited；各 Action 不自动重放 POST。单一 activeMode、writingAction、writingRef、mountedRef、beforeunload、latest 与 report 更新入口保持。
 
 ## 7. 后续同步规则
 

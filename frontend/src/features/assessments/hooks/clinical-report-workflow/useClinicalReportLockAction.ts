@@ -14,6 +14,10 @@ import {
   getClinicalReportLockConsistencyWarning,
 } from '@/src/features/assessments/lib/clinical-report-display';
 import {
+  getClinicalReportLifecycleTarget,
+  getClinicalReportLifecycleTargetWarning,
+} from '@/src/features/assessments/lib/clinical-report-lifecycle-target';
+import {
   buildLockClinicalReportRequest,
   continueClinicalReportLockDraftWithLatest,
   createClinicalReportLockDraft,
@@ -47,10 +51,10 @@ function isLockableReport(
   report: ClinicalReport | null,
   visitStatus: AssessmentVisitStatus | null,
 ): boolean {
+  if (!report) return false;
+  const lifecycleTarget = getClinicalReportLifecycleTarget(report);
   return Boolean(
-    report &&
-      report.reportType === 'cognitive_assessment' &&
-      report.reportVersion === 1 &&
+    lifecycleTarget &&
       report.status === 'confirmed' &&
       report.source === 'mixed' &&
       report.qualityStatus === 'passed' &&
@@ -64,8 +68,8 @@ function isLockableReport(
       report.archivedAt === null &&
       report.archive === null &&
       report.voidedAt === null &&
-      visitStatus !== null &&
-      lockableVisitStatuses.has(visitStatus) &&
+      (lifecycleTarget.kind === 'replacement' ||
+        (visitStatus !== null && lockableVisitStatuses.has(visitStatus))) &&
       getClinicalReportFinalityWarning(report.status, report.isFinal) === null &&
       getClinicalReportLockConsistencyWarning(report) === null &&
       isSafeClinicalReportWriteIdentity(report.id, report.updatedAt),
@@ -140,12 +144,9 @@ export function useClinicalReportLockAction({
     if (getClinicalReportFinalityWarning(report.status, report.isFinal)) {
       return '报告状态与最终性标记不一致，当前不能安全锁定。';
     }
-    if (
-      report.reportType !== 'cognitive_assessment' ||
-      report.reportVersion !== 1
-    ) {
-      return '当前仅支持 cognitive_assessment version 1 报告锁定。';
-    }
+    const lifecycleTarget = getClinicalReportLifecycleTarget(report);
+    const lifecycleWarning = getClinicalReportLifecycleTargetWarning(report);
+    if (!lifecycleTarget) return lifecycleWarning;
     if (report.status !== 'confirmed') return '只有已确认报告可以执行锁定。';
     if (report.source !== 'mixed') return '当前报告来源状态不满足锁定要求。';
     if (report.qualityStatus !== 'passed') {
@@ -163,7 +164,10 @@ export function useClinicalReportLockAction({
     if (report.archivedAt !== null || report.voidedAt !== null) {
       return '已归档或已作废报告不开放首次锁定。';
     }
-    if (!visitStatus || !lockableVisitStatuses.has(visitStatus)) {
+    if (
+      lifecycleTarget.kind === 'version_one' &&
+      (!visitStatus || !lockableVisitStatuses.has(visitStatus))
+    ) {
       return '当前访视状态不允许首次锁定报告。';
     }
     if (!isSafeClinicalReportWriteIdentity(report.id, report.updatedAt)) {

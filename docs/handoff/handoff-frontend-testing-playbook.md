@@ -6,12 +6,12 @@
 
 ## 2. 当前状态
 
-- 前端公共底座与 B1-B14 既有闭环已落地；B15 版本化更正、source/replacement 展示及 V2 A21 工作流接入已落地。
+- 前端公共底座与 B1-B15 既有闭环已落地；B16 replacement V2+ 的 A22 lock、A23 freeze-sources、A24 archive 代码与静态验收已完成，真实浏览器业务矩阵待执行。
 - `frontend\package.json` 已存在，自动验证命令以其中真实脚本为准。
-- B2-B14 不新增测试代码、测试框架、E2E 或第三方依赖。
-- 当前自动验证覆盖三个认证 API、A12 五个患者 / 访视 API、A13 三个评估初始化前置 API、A14 两个执行草稿 API、A15 四个媒体证据 API、A16 两个提交 API 与 A17 两个阶段性评分 API 的前端类型、调用代码和页面构建；真实 HTTP / 浏览器联调仍需手工验证。
+- B2-B16 不新增测试代码、测试框架、E2E 或第三方依赖。
+- 当前自动验证以 ESLint、TypeScript 与 production build 覆盖现有前端类型、调用代码和页面构建；真实 HTTP、角色、并发、浏览器交互与业务数据状态仍需手工验证。
 
-## 3. B1 / B2 / B3 / B4 / B5 / B6 / B7 / B8 / B9 / B10 / B11 / B12 / B13 / B14 / B15 自动验证命令
+## 3. B1 / B2 / B3 / B4 / B5 / B6 / B7 / B8 / B9 / B10 / B11 / B12 / B13 / B14 / B15 / B16 自动验证命令
 
 在 `frontend` 目录、且既有 `node_modules` 存在时执行：
 
@@ -172,6 +172,16 @@
 - `npm run build`：通过，既有路由集合不变并包含访视详情动态路由。
 - 静态核对：A25 API 仅在 Correction Action 调用；façade / 组件不调用 API；单一 writingAction、beforeunload、latest 与 onReportUpdated 入口保持；V2 A22–A24 入口关闭。
 - E2E / 浏览器自动化 / 浏览器手工验证：未执行；以下 B15 场景均待使用脱敏数据验证。
+- 后端命令：未执行。
+
+本次 B16 验证结果：
+
+- 定向检查：`npm run lint:file -- <15 个 B16 代码文件>` 通过。
+- `npm run lint`：通过，无 error / warning。
+- `npm run typecheck`：通过，Next 16 route types 生成成功且 TypeScript 无错误。
+- `npm run build`：通过，既有路由集合不变并包含访视详情动态路由；未新增路由。
+- 静态核对：统一 lifecycle target 是 A22–A24 唯一版本门槛；无 `reportVersion === 2` 业务分支；三条 API Body 未加入版本 / lineage / sourceIds；`COMPLETE_CORRECTION` 清除旧版本 A21–A24 会话状态；lineage invalid 独立映射、最多 latest 一次、writeProhibited 且不自动 POST。
+- 浏览器自动化 / 浏览器手工验证：未执行；`localhost:3002` 与 `localhost:5002` 均不可用，且缺少脱敏四角色账号及 V1 / V2 / V3、in_progress、stale、lineage invalid 数据。WP-02 保持进行中。
 - 后端命令：未执行。
 
 如后续环境中 `frontend/node_modules` 不存在，不得为验证本阶段而执行 `npm install`；应跳过上述命令并说明原因。
@@ -1224,6 +1234,22 @@ B14.1 静态验证不覆盖：
 
 以上 B15 浏览器自动化与手工联调尚未执行，全部场景待使用脱敏数据验证。
 
+## 18.2 B16 核心验证矩阵（待验证）
+
+前置条件：同时可用的本地前后端、脱敏 doctor / admin / nurse / research_assistant 账号，以及可构造 V1、V2、V3、sourceFreeze in_progress、并发 stale 与 lineage invalid 的隔离测试数据。
+
+- V1 回归：doctor/admin 按原顺序 lock → freeze → archive；确认 Visit 非 draft / in_progress / completed 时原 lock / 首次 freeze 限制未放宽，note、checkbox、receipt 与 B12–B14 一致。
+- V2 闭环：从 archived V1 更正并原地切换；不刷新时旧 V1 的 edit / submit / confirmation / lock / freeze / archive receipt 均消失，仅保留 correction receipt / sourceReport；完成 V2 A21 后逐步执行 A22–A24，每步显示当前 reportCode / V2 且不自动进入下一步。
+- V3 防写死：从 archived V2 创建 V3，完成 A21–A24；确认 UI、请求和文案均动态使用 V3，没有 V2 专用分支、页面、Hook 或 endpoint。
+- 历史状态：对安全 replacement 分别验证 Patient inactive、Visit locked、Visit voided 均不阻断当前报告 A22–A24；当前报告自身未确认、未锁定、freeze 未完成、已归档 / corrected / voided 时仍正确阻断。
+- 来源冻结：首次使用当前 updatedAt / 用户 note；in_progress 使用服务端 freezeId 与持久 note 且不可编辑；completed 不写入。检查 expected / completed / newly / previously 计数及“前序已冻结、当前兼容验证”说明，不显示内部来源集合 ID。
+- 幂等 / 并发：alreadyLocked / alreadyFrozen / alreadyArchived 展示原 receipt；lock / archive stale 保留 note、清 checkbox、latest 最多一次且不重发；freeze-before-lock 与 archive-before-freeze 保留各自错误语义。
+- lineage invalid：409 显示安全中文提示，最多 latest 一次，刷新后仍不可安全写入，禁止自动 POST / 跳转 / 修补 replacementOf，页面和日志不泄露 previousReportId、correctionId、来源 ID、堆栈或数据库异常。
+- 权限 / 协调：doctor/admin 可执行；nurse/research_assistant 无可操作按钮但可看安全摘要。快速双击仅一个请求，一个 writingAction 期间不能打开另一模式，beforeunload 生效，结束后释放，不存在 lock → freeze → archive 自动串联或轮询。
+- 网络面板：A22–A24 继续只发送 confirm、当前 note、当前 report.updatedAt；不得发送 reportVersion、previousReportId、replacementOf、correctionId、sourceIds、Patient / Visit 状态或来源范围。
+
+本次 B16 未执行上述真实浏览器矩阵，不得据静态检查写成业务验收通过。
+
 ## 19. 认证与安全验证口径
 
 - 使用浏览器网络面板确认三个认证请求均携带 credentials 语义，并由浏览器处理 HttpOnly Cookie。
@@ -1243,6 +1269,7 @@ B14.1 静态验证不覆盖：
 - B13 页面不得在 console、存储或 URL 中记录 freezeNote、sourceFreeze 计数、updatedAt、请求或响应；freeze-sources 只能由独立 API Client 构造 confirm、trim 后 freezeNote 与 expectedUpdatedAt。不得提交或显示内部来源 ID / scope / metadata，不得保存 sourceFreeze 草稿或 receipt 到浏览器持久化存储。
 - B14 页面不得在 console、存储或 URL 中记录 archiveNote、updatedAt、请求或响应；archive 只能由独立 API Client 构造 confirm、trim 后 archiveNote 与 expectedUpdatedAt。不得提交或显示 metadata、Schema 原始 archivedBy 或来源 ID，不得保存 archive 草稿或 receipt 到浏览器持久化存储。
 - B15 页面不得在 console、存储或 URL 中记录 correction reason / summary、source / replacement 响应或临床数据；corrections Body 只含 confirm、trim 后 reason / summary 与 expectedUpdatedAt。不得持久化草稿 / 回执，不得前端生成 correctionId、版本、code、时间或关系。
+- B16 页面不得在 console、存储或 URL 中记录完整 report、lineage 错误响应、冻结来源快照或内部来源 ID；A22–A24 Body 不得新增 reportVersion、previousReportId、replacementOf、correctionId、sourceIds 或 Patient / Visit 状态字段。
 
 ## 20. 医疗与隐私展示红线
 

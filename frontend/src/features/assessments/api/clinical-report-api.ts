@@ -78,6 +78,7 @@ export type ClinicalReportApiErrorKind =
   | 'clinical_report_archive_conflict'
   | 'clinical_report_archive_audit_unavailable'
   | 'clinical_report_archive_failed'
+  | 'clinical_report_replacement_lineage_invalid'
   | 'clinical_report_correction_confirmation_required'
   | 'clinical_report_not_correctable'
   | 'clinical_report_correction_not_latest'
@@ -231,6 +232,8 @@ function mapHttpError(
     CLINICAL_REPORT_ARCHIVE_AUDIT_UNAVAILABLE:
       'clinical_report_archive_audit_unavailable',
     CLINICAL_REPORT_ARCHIVE_FAILED: 'clinical_report_archive_failed',
+    CLINICAL_REPORT_REPLACEMENT_LINEAGE_INVALID:
+      'clinical_report_replacement_lineage_invalid',
     CLINICAL_REPORT_CORRECTION_CONFIRMATION_REQUIRED:
       'clinical_report_correction_confirmation_required',
     CLINICAL_REPORT_NOT_CORRECTABLE: 'clinical_report_not_correctable',

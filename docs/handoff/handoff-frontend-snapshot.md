@@ -7,7 +7,7 @@
 ## 2. 当前工程状态
 
 - `frontend\` 根目录公共骨架配置与 `frontend\app` / `frontend\src` 公共底座已初始化。
-- 前端 B1-B14 已落地既有闭环；B15 在既有访视详情路由接入 A25 版本化更正发起、恢复、幂等结果、source/replacement 安全摘要及 V2 A21 edit / submit / confirm。
+- 前端 B1-B15 已落地既有闭环；B16 在同一访视详情路由让公开摘要结构安全的任意 replacement V2+ 复用既有 A22 lock、A23 freeze-sources 与 A24 archive。
 - 当前首页仍为公共占位，只增加登录页与工作台入口，不调用后端。
 - `/login` 提供账号密码登录，并在登录前通过 `GET /auth/me` 检查已有会话。
 - `/dashboard` 通过 `GET /auth/me` 验证会话、展示当前用户公开信息、提供患者档案入口和登出入口。
@@ -15,7 +15,7 @@
 - Patients API Client 真实调用 A12 五个患者 / 访视 API，支持分页、过滤、GET 请求取消、稳定错误映射和安全请求字段白名单。
 - Assessment Execution API Client 继续调用 A13 / A14 / A16；独立 Provisional Scoring、Cognitive Domain 与 Clinical Report API Client 分别调用 A17 / A18、A19 与 A20 / A21。写请求逐字段重建白名单且不自动重试，latest 使用各自独立 AbortController。
 - 当前视觉遵循医疗系统 / 临床评估 / 低干扰 / 高可读性 / 冷静可信口径，不继承 ReviewX 视觉风格。
-- 当前没有患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、批量或自动保存、评分 lock / void / rerun、认知域人工修改 / 确认 / 作废 / 重算、报告退回 / 签名 / unlock / unfreeze / unarchive / void / PDF / 重生成、AI、用户管理或权限菜单页面；B15 不修改 Patient、Visit、来源对象或 Storage，也不形成临床诊断结论。
+- 当前没有患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、批量或自动保存、评分 lock / void / rerun、认知域人工修改 / 确认 / 作废 / 重算、报告退回 / 签名 / unlock / unfreeze / unarchive / void / PDF / 重生成、AI、用户管理或权限菜单页面；B16 不修改 Patient、Visit、来源对象或 Storage，也不形成临床诊断结论。
 
 ## 3. 当前已确认前端事实
 
@@ -170,6 +170,11 @@
 - 内部中央纯 reducer 管理 activeMode、writingAction、六类 draft / error / receipt、liveMessage 与 writeProhibited；coordinator 唯一持有 mountedRef / writingRef，统一路由报告身份重置、activate / cancel、clearActionErrors / clearAllDrafts、API 执行、401、onReportUpdated 与 latest 恢复。
 - edit / submit / confirm / lock / source-freeze / archive 六类 Action 分别保留各自动作资格、校验、dirty / stale、block reason、API、错误分类、成功文案与回执；公共 recovery 保留原错误 latest 集合并保证每个写请求最多调用一次，单一 beforeunload 保留原四类草稿加首次 freezeNote / archiveNote 条件。
 - B14.1 仍只有一个 activeMode、writingAction、writingRef、mountedRef、beforeunload、报告成功更新入口和 latest 查询入口；façade 不直接 import API Client，Action 不互相 import，组件不 import 内部模块。A25 correction 未接入。
+- B15 在该结构上接入第七类 correction Action；B16 不增加 mode、Action、store 或 API，而是在 `clinical-report-lifecycle-target.ts` 集中识别普通 V1 和公开摘要结构安全的任意整数 V2+。该判断不使用 A21 `isSafeCorrectionReplacement` 的 lock / freeze / archive 空值条件，也不替代 A26 完整 lineage 校验。
+- B16 的 V1 lock / 首次 freeze 继续保留 Visit draft / in_progress / completed；安全 replacement 的 lock / freeze / archive 不因 Patient inactive 或 Visit locked / voided 被前端阻断，但仍要求当前报告自身 confirmed、确认、lock、sourceFreeze、archive / void / corrected 与 updatedAt 阶段事实。
+- 三个生命周期 Panel 显示当前 reportCode / Vn；`ClinicalReportPanel` 对 V1 和安全 replacement 复用同一套组件，结构不安全时只显示不可操作提示。previously frozen 计数解释为前序版本已不可逆冻结且当前版本做兼容性验证，不表示重复冻结或覆盖。
+- `COMPLETE_CORRECTION` 采用服务端 replacement 后清除前序报告 edit / submit / confirmation / lock / sourceFreeze / archive draft、error、receipt 与旧 writeProhibited，只保留本次 correction receipt / sourceReport，避免 V1 会话回执显示在新 Vn 下。
+- `CLINICAL_REPORT_REPLACEMENT_LINEAGE_INVALID` 有独立 kind 与中文提示；错误后禁止写入、最多 latest 一次、不自动重发 POST、不跳转版本、不修补 replacementOf。endpoint、请求 DTO 与响应未变化。
 - 前端媒体公开类型没有定义 Storage 对象定位、校验和、原始文件名、内部患者关联或删除时间字段；页面也不显示这些字段。
 
 ## 4. 当前文件清单
@@ -235,6 +240,8 @@
 - `frontend\src\features\assessments\lib\clinical-report-workflow-draft.ts`
 - `frontend\src\features\assessments\lib\clinical-report-source-freeze-draft.ts`
 - `frontend\src\features\assessments\lib\clinical-report-archive-draft.ts`
+- `frontend\src\features\assessments\lib\clinical-report-correction-draft.ts`
+- `frontend\src\features\assessments\lib\clinical-report-lifecycle-target.ts`
 - `frontend\src\features\assessments\hooks\useCognitiveDomainResult.ts`
 - `frontend\src\features\assessments\hooks\useClinicalReport.ts`
 - `frontend\src\features\assessments\hooks\useClinicalReportWorkflow.ts`
@@ -434,18 +441,26 @@
 - `npm run typecheck`：通过，Next 16 route types 生成成功且 TypeScript 无错误。
 - `npm run build`：通过，生产构建路由集合不变并包含既有访视详情动态路由；未新增路由。
 - 静态归属：correction API 仅由 Correction Action 调用；façade / 组件不调用 API；central writingAction 增加 correction 但仍为单一写锁；报告 beforeunload 仍只有一个监听器。
-- V1 edit / submit / confirm 未放宽；合法 V2 仅 doctor/admin 且 lock / freeze / archive 入口关闭。没有自动 POST、retry、polling 或浏览器持久化草稿。
+- V1 edit / submit / confirm 未放宽；合法 replacement A21 仅 doctor/admin。没有自动 POST、retry、polling 或浏览器持久化草稿。
 - E2E、浏览器自动化与浏览器手工联调未执行；A25 真实 HTTP、首次 / 恢复 / 幂等、权限、并发、网络不确定、窄屏与可访问性均待使用脱敏数据验证。
 - 后端命令未执行。
+
+本次 B16 验证结果：
+
+- 定向 ESLint（15 个实际修改代码文件）通过；`npm run lint`、`npm run typecheck` 与 `npm run build` 通过，Next 16 route types 和生产路由集合正常，未新增路由。
+- 静态核对通过：A22–A24 不再分别硬编码只接受 V1；唯一 `reportVersion === 1` 位于统一 V1 守卫；没有 `reportVersion === 2` 业务分支、replacement 专用 endpoint / fetch / component / store，也未向请求加入 reportVersion、previousReportId 或 sourceIds。
+- reducer 的 `COMPLETE_CORRECTION` 明确清空前序 A21–A24 草稿、错误和回执；lineage invalid 有独立 API / display / recovery 映射，最多 latest 一次且 writeProhibited，不自动 POST。
+- 浏览器自动化与真实浏览器手工联调未执行。本机 `http://localhost:3002` 与 `http://localhost:5002` 均不可用，且没有可用脱敏 doctor/admin/nurse/research_assistant 账号及 V1/V2/V3、in_progress、冲突数据；V1 回归、V2 完整流程、V3 防写死、历史状态、幂等 / stale / lineage 409、权限与快速双击矩阵待验收。
+- 后端命令未执行；WP-02 因浏览器业务验收未完成而保持进行中，不切换到 WP-04。
 
 ## 6. 当前未实现前端事实
 
 - `/dashboard` 已有患者档案入口，但不是完整医生工作台。
 - 患者编辑 / 删除 / 归档 / 合并尚未实现。
 - 访视编辑 / 删除 / 状态流转尚未实现；访视详情支持查看、初始化量表实例、进入 B4 执行页以及 B10 / B11 访视级报告闭环。
-- B4-B15 已支持安全题目记录、证据、提交、评分确认、认知域、V1 报告完整生命周期、版本化更正与 V2 A21 工作流；批量 / 自动保存、评分锁定、认知域人工确认、来源解冻与取消归档仍未实现。
-- 报告退回、reject、reopen、withdraw、签名、unlock、unfreeze、unarchive、作废、重生成、V2 lock / freeze / archive、PDF / 下载、AI、用户管理、角色权限管理和权限菜单尚未实现。
-- 当前报告 API 为 A20 latest / generate、A21 edit / submit / confirm、A22 lock、A23 freeze-sources、A24 archive 与 A25 corrections；没有报告 unlock / unfreeze / unarchive / void、V2 lock / freeze / archive 或 AI API 调用。
+- B4-B16 已支持安全题目记录、证据、提交、评分确认、认知域、V1 报告完整生命周期、版本化更正与安全 replacement A21–A24；批量 / 自动保存、评分锁定、认知域人工确认、来源解冻与取消归档仍未实现。
+- 报告退回、reject、reopen、withdraw、签名、unlock、unfreeze、unarchive、作废、重生成、PDF / 下载、AI、用户管理、角色权限管理和权限菜单尚未实现。
+- 当前报告 API 为 A20 latest / generate、A21 edit / submit / confirm、A22 lock、A23 freeze-sources、A24 archive 与 A25 corrections；没有 replacement 专用 API、报告 unlock / unfreeze / unarchive / void 或 AI API 调用。
 - 当前不包含路由级服务端认证中间件。
 
 ## 7. 后续同步规则

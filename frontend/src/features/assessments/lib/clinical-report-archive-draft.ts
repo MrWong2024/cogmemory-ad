@@ -6,6 +6,7 @@ import {
   getClinicalReportSourceFreezeConsistencyWarning,
   isCompletedClinicalReportSourceFreeze,
 } from '@/src/features/assessments/lib/clinical-report-source-freeze-draft';
+import { getClinicalReportLifecycleTargetWarning } from '@/src/features/assessments/lib/clinical-report-lifecycle-target';
 import type {
   ArchiveClinicalReportRequest,
   ClinicalReport,
@@ -169,11 +170,10 @@ export function isSafeClinicalReportArchive(report: ClinicalReport): boolean {
 export function getClinicalReportArchiveEligibilityWarning(
   report: ClinicalReport,
 ): string | null {
+  const lifecycleWarning = getClinicalReportLifecycleTargetWarning(report);
+  if (lifecycleWarning) return lifecycleWarning;
   const archiveWarning = getClinicalReportArchiveConsistencyWarning(report);
   if (archiveWarning) return archiveWarning;
-  if (report.reportType !== 'cognitive_assessment' || report.reportVersion !== 1) {
-    return '当前仅支持 cognitive_assessment version 1 报告归档。';
-  }
   if (report.status !== 'confirmed') return '只有已确认报告可以归档。';
   if (report.source !== 'mixed') return '当前报告来源状态不满足归档要求。';
   if (report.qualityStatus !== 'passed') {

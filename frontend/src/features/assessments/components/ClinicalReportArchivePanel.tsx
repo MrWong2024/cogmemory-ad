@@ -21,6 +21,7 @@ export function ClinicalReportArchivePanel({
 }) {
   const draft = workflow.archiveDraft;
   const isActive = workflow.activeMode === 'archive' && draft !== null;
+  const targetLabel = `${report.reportCode} / V${report.reportVersion}`;
 
   if (!isActive) {
     if (isClinicalReportArchived(report)) {
@@ -29,6 +30,9 @@ export function ClinicalReportArchivePanel({
           <h3 className="text-xl font-semibold text-[var(--cma-text-strong)]">
             报告已归档
           </h3>
+          <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
+            当前操作目标：{targetLabel}
+          </p>
           <p className="mt-2 text-base leading-7 text-[var(--cma-muted)]">
             当前报告只读，不显示再次归档或取消归档入口。归档不等于删除、作废、更正或生成 PDF。
           </p>
@@ -42,6 +46,7 @@ export function ClinicalReportArchivePanel({
           className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] px-4 py-3 text-base leading-7 text-[var(--cma-warning)]"
           role="alert"
         >
+          当前操作目标：{targetLabel}。<br />
           {workflow.archiveConsistencyWarning}
         </p>
       );
@@ -54,7 +59,7 @@ export function ClinicalReportArchivePanel({
             报告归档
           </h3>
           <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-            首次归档只面向已确认、已安全锁定且来源冻结完成的报告；Patient 与 Visit 状态不作为前端归档条件。
+            当前操作目标：{targetLabel}。首次归档只面向已确认、已安全锁定且来源冻结完成的报告；Patient 与 Visit 状态不作为前端归档条件。
           </p>
         </div>
         {workflow.canArchive ? (
@@ -84,7 +89,8 @@ export function ClinicalReportArchivePanel({
           二次确认不可撤销归档
         </h3>
         <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-          当前 status：{clinicalReportStatusLabels[report.status]}（
+          当前操作目标：{targetLabel}；status：
+          {clinicalReportStatusLabels[report.status]}（
           {report.status}）；并发基线：
           {formatClinicalReportDate(draft.baseUpdatedAt)}。
         </p>

@@ -10,13 +10,18 @@ import {
   getClinicalReportSourceFreezeConsistencyWarning,
   isCompletedClinicalReportSourceFreeze,
 } from '@/src/features/assessments/lib/clinical-report-source-freeze-draft';
+import { isSafeClinicalReportReplacementLineage } from '@/src/features/assessments/lib/clinical-report-lifecycle-target';
 import type {
   ClinicalReport,
   ClinicalReportCorrectionSummary,
-  ClinicalReportReplacementLineage,
   ClinicalReportWorkflowActor,
   CreateClinicalReportCorrectionRequest,
 } from '@/src/features/assessments/types/clinical-report';
+
+export {
+  isSafeClinicalReportReplacementLineage,
+  isVersionOneReport,
+} from '@/src/features/assessments/lib/clinical-report-lifecycle-target';
 
 const mongoIdPattern = /^[a-f\d]{24}$/i;
 const uuidPattern =
@@ -115,52 +120,6 @@ function isSafeCorrectionSummary(
     isSafeIsoString(correction.completedAt) &&
     isSafeActor(correction.completedBy)
   );
-}
-
-export function isSafeClinicalReportReplacementLineage(
-  lineage: ClinicalReportReplacementLineage | null,
-  report?: ClinicalReport,
-): lineage is ClinicalReportReplacementLineage {
-  if (
-    !lineage ||
-    !uuidPattern.test(lineage.correctionId) ||
-    !isSafePositiveInteger(lineage.correctionNo) ||
-    !mongoIdPattern.test(lineage.previousReportId) ||
-    !lineage.previousReportCode.trim() ||
-    !isSafePositiveInteger(lineage.previousReportVersion) ||
-    !lineage.replacementReportCode.trim() ||
-    !isSafePositiveInteger(lineage.replacementReportVersion) ||
-    lineage.replacementReportVersion !== lineage.previousReportVersion + 1 ||
-    lineage.correctionNo !== lineage.replacementReportVersion - 1 ||
-    !isSafeIsoString(lineage.createdAt) ||
-    !isSafeActor(lineage.createdBy) ||
-    !isSafeCorrectionText(
-      lineage.correctionReason,
-      clinicalReportCorrectionLimits.correctionReason.min,
-      clinicalReportCorrectionLimits.correctionReason.max,
-    ) ||
-    !isSafeCorrectionText(
-      lineage.changeSummary,
-      clinicalReportCorrectionLimits.changeSummary.min,
-      clinicalReportCorrectionLimits.changeSummary.max,
-    ) ||
-    !uuidPattern.test(lineage.sourceArchiveId) ||
-    !isSafeIsoString(lineage.sourceArchivedAt) ||
-    !uuidPattern.test(lineage.sourceFreezeId) ||
-    !isSafeIsoString(lineage.sourceFreezeCompletedAt)
-  ) {
-    return false;
-  }
-
-  return !report || (
-    report.id !== lineage.previousReportId &&
-    report.reportCode === lineage.replacementReportCode &&
-    report.reportVersion === lineage.replacementReportVersion
-  );
-}
-
-export function isVersionOneReport(report: ClinicalReport): boolean {
-  return report.reportVersion === 1 && report.replacementOf === null;
 }
 
 export function canCurrentRolesWriteReplacement(roles: readonly string[]): boolean {

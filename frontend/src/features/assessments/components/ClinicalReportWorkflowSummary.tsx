@@ -6,6 +6,7 @@ import {
   clinicalReportSourceFreezeStateLabels,
   getClinicalReportLockConsistencyWarning,
 } from '@/src/features/assessments/lib/clinical-report-display';
+import { getClinicalReportLifecycleTarget } from '@/src/features/assessments/lib/clinical-report-lifecycle-target';
 import type {
   ClinicalReport,
   ClinicalReportChangedField,
@@ -38,6 +39,7 @@ export function ClinicalReportWorkflowSummary({
   workflow: UseClinicalReportWorkflowValue;
 }) {
   const lockWarning = getClinicalReportLockConsistencyWarning(report);
+  const lifecycleTarget = getClinicalReportLifecycleTarget(report);
 
   return (
     <section
@@ -52,13 +54,15 @@ export function ClinicalReportWorkflowSummary({
           报告工作流摘要
         </h3>
         <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-          仅展示最新公开摘要与当前页面会话回执，不公开完整编辑历史、前后值、metadata 或签名字段。
+          当前报告：{report.reportCode} / V{report.reportVersion}。仅展示最新公开摘要与当前页面会话回执，不公开完整编辑历史、前后值、metadata 或签名字段。
         </p>
       </div>
 
       {report.replacementOf ? (
         <p className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] px-4 py-3 text-sm leading-6 text-[var(--cma-muted)]">
-          当前为 V2 替代报告：编辑、提交和确认仅允许医生或管理员；锁定、来源冻结和归档仍不开放，空摘要不代表可执行入口。
+          {lifecycleTarget?.kind === 'replacement'
+            ? `当前为 replacement 报告 ${report.reportCode} / V${report.reportVersion}；下方 A21 编辑、提交、确认及 A22—A24 锁定、来源冻结、归档事实均属于当前报告。每个不可逆阶段仍按自身前置事实开放。`
+            : '当前 replacement 的公开版本关系摘要不完整或不一致；下方仅展示服务端返回的安全事实，不可逆写入已被安全阻断。'}
         </p>
       ) : null}
 

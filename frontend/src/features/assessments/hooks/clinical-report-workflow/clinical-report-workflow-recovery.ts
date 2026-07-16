@@ -23,6 +23,7 @@ const refreshAfterActionErrors = new Set<ClinicalReportApiErrorKind>([
   'clinical_report_not_archivable',
   'clinical_report_archive_conflict',
   'clinical_report_archive_failed',
+  'clinical_report_replacement_lineage_invalid',
   'clinical_report_not_correctable',
   'clinical_report_correction_not_latest',
   'clinical_report_correction_conflict',
@@ -49,6 +50,9 @@ export function shouldProhibitClinicalReportWrite(
   error: ClinicalReportApiError,
 ): boolean {
   if (error.kind === 'clinical_report_metadata_unsupported') return true;
+  if (error.kind === 'clinical_report_replacement_lineage_invalid') {
+    return true;
+  }
   switch (action) {
     case 'edit':
       return error.kind === 'clinical_report_edit_audit_limit_reached';

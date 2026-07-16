@@ -38,7 +38,10 @@ import {
 } from '@/src/features/assessments/lib/clinical-report-display';
 import { getClinicalReportSourceFreezeConsistencyWarning } from '@/src/features/assessments/lib/clinical-report-source-freeze-draft';
 import { getClinicalReportArchiveConsistencyWarning } from '@/src/features/assessments/lib/clinical-report-archive-draft';
-import { isVersionOneReport } from '@/src/features/assessments/lib/clinical-report-correction-draft';
+import {
+  getClinicalReportLifecycleTarget,
+  getClinicalReportLifecycleTargetWarning,
+} from '@/src/features/assessments/lib/clinical-report-lifecycle-target';
 import type {
   AvailableScaleOption,
   ScaleInstanceListItem,
@@ -93,6 +96,12 @@ export function ClinicalReportPanel({
   const archiveConsistencyWarning = report
     ? getClinicalReportArchiveConsistencyWarning(report)
     : null;
+  const lifecycleTarget = report
+    ? getClinicalReportLifecycleTarget(report)
+    : null;
+  const lifecycleTargetWarning = report
+    ? getClinicalReportLifecycleTargetWarning(report)
+    : null;
 
   return (
     <Card>
@@ -101,7 +110,7 @@ export function ClinicalReportPanel({
           <div>
             <CardTitle>访视级临床报告</CardTitle>
             <CardDescription>
-              支持版本化更正、线性来源追溯及 V1 / V2 受控报告工作流；所有写入共享同一写锁与 updatedAt 并发边界。
+              支持版本化更正、线性来源追溯及当前安全版本的受控报告工作流；所有写入共享同一写锁与 updatedAt 并发边界。
             </CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -474,7 +483,7 @@ export function ClinicalReportPanel({
               report={report}
               workflow={workflow}
             />
-            {isVersionOneReport(report) ? (
+            {lifecycleTarget ? (
               <>
                 <ClinicalReportLockPanel report={report} workflow={workflow} />
                 <ClinicalReportSourceFreezePanel
@@ -491,14 +500,21 @@ export function ClinicalReportPanel({
                   report={report}
                 />
               </>
+            ) : lifecycleTargetWarning ? (
+              <p
+                className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] px-4 py-3 text-base leading-7 text-[var(--cma-warning)]"
+                role="alert"
+              >
+                {lifecycleTargetWarning}
+              </p>
             ) : null}
             <ClinicalReportCorrectionPanel report={report} workflow={workflow} />
             {['confirmed', 'archived', 'corrected', 'voided'].includes(
               report.status,
             ) ? (
               <p className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] px-4 py-3 text-base leading-7 text-[var(--cma-muted)]">
-                {report.replacementOf
-                  ? '当前是版本化更正形成的替代报告。A21 可完成医生或管理员确认；现阶段 V2 不开放报告锁定、来源冻结或归档，也不会自动调用这些接口。'
+                {lifecycleTarget?.kind === 'replacement'
+                  ? `当前是版本化更正形成的 ${report.reportCode} / V${report.reportVersion} 报告。锁定、来源冻结与归档按当前报告自身事实依次开放；每一步均需医生或管理员明确确认，不会自动串联。`
                   : isClinicalReportLocked(report)
                   ? report.status === 'archived'
                     ? '当前报告真实 status=archived，报告自身锁定与 completed 来源冻结事实继续保留。归档不修改 Patient、Visit 或来源对象，不等于删除、作废、更正或生成 PDF；当前不提供 unarchive。'

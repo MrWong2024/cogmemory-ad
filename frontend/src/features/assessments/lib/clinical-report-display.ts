@@ -425,6 +425,8 @@ export function getClinicalReportApiErrorMessage(
       '报告归档审计信息不完整，不能安全执行或确认归档状态。',
     clinical_report_archive_failed:
       '报告归档操作未能确认完成，请保留当前归档说明并重新加载最新报告。',
+    clinical_report_replacement_lineage_invalid:
+      '当前报告版本关系不完整或已发生变化，无法继续执行当前不可逆操作；请重新加载报告或联系管理员核查。',
     clinical_report_correction_confirmation_required:
       '请明确确认版本化更正边界后再继续。',
     clinical_report_not_correctable:
