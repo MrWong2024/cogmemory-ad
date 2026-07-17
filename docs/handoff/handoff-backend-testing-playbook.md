@@ -307,6 +307,25 @@
 - 全量 E2E：`npm run test:e2e`；14 suites / 67 tests 通过。定向与全量 E2E 都由测试启动断言隔离 `_test` 数据库、fake Storage、stub LLM/SMS，使用脱敏人工 fixture；未调用真实外部服务。
 - 核心 A26 断言：V1 原规则完整回归；inactive Patient + voided Visit 下合法 V2/V3 均完成 A21 edit/submit/confirm → A22 lock → A23 freeze → A24 archive；共享五类来源在 V2/V3 freeze 前后 status、lockedAt、updatedAt、metadata 不变；前序 corrected 报告 A22-A25 事实不变；重复 lock/freeze/archive 保留原 ID/time/note/updatedAt；corrected historical archive fallback、非法 lineage、nurse/research 403、freeze-before-lock、archive-before-freeze 与 lock/archive stale expectedUpdatedAt 均保持稳定语义。
 
+### B16 浏览器验收夹具 CLI
+
+- 用途：只为后续 B16 真实浏览器矩阵显式准备隔离账号和 20 个可复现场景；它不是生产 seed、不随启动或测试自动执行，也不代表 B16 浏览器验收已经通过。
+- 运行前必须确认 `NODE_ENV=test`、连接的是项目隔离 test database，且 Storage 为 fake、LLM/SMS 为 stub、Session 为非 production 配置。CLI 在装配 `AppModule` 前先检查 `NODE_ENV`，连接后再按真实 databaseName 二次门禁；任一门禁失败均不写库并返回非 0。
+- 密码只通过当前进程的 `B16_FIXTURE_PASSWORD` 临时提供，不写入仓库、文档、参数、manifest 或日志；namespace 仅允许 3–32 位小写字母、数字和单连字符分隔。
+
+```powershell
+cd backend
+$env:NODE_ENV="test"
+$env:B16_FIXTURE_PASSWORD="<由执行者临时设置>"
+node -r ts-node/register -r tsconfig-paths/register scripts/b16-browser-fixtures.ts prepare --namespace b16-browser
+node -r ts-node/register -r tsconfig-paths/register scripts/b16-browser-fixtures.ts verify --namespace b16-browser
+node -r ts-node/register -r tsconfig-paths/register scripts/b16-browser-fixtures.ts cleanup --namespace b16-browser --confirm-cleanup
+```
+
+- 同 namespace 的重复 `prepare` 默认拒绝；需要替换时必须显式执行 `replace --namespace <name> --confirm-replace`。`cleanup` 先做 namespace 根记录与 ownership 预检，按 Session → report/lifecycle → domain/score/media/item/instance → visit → patient → user 删除，禁止 dropDatabase、清 collection 或无条件 `deleteMany({})`。
+- `prepare` / `verify` 输出 safe manifest：仅含 namespace、databaseName、角色与 `accountName` 登录标识、displayName、scenarioKey、用途、浏览器 route、reportCode/version、安全状态、建议角色、起始阶段和聚合来源计数。严禁密码/hash、Cookie/Session、Mongo URI、前序/替代报告内部 ID、correction/freeze/source ID、报告正文或堆栈。
+- 定向实际验证：新增文件定向 lint、完整 `npm run lint` 与 `npm run build` 通过；`test/b16-browser-fixtures.e2e-spec.ts` 1 suite / 3 tests 通过，覆盖环境/数据库/密码门禁、四角色真实密码登录、20 场景、合法 lineage、公开摘要安全但 A26 返回 409 的内部 lineage 冲突、只读 verify、缺失场景不修复、Session 清理、namespace 外 sentinel、双 namespace、重复 prepare、replace、残留检查和二次 cleanup。相关 A20–A26 E2E 回归 7 suites / 34 tests 通过；全量 unit 76 suites / 666 tests、全量 E2E 15 suites / 70 tests 通过。
+
 - 测试不得使用真实患者数据、真实身份证号、真实手机号、真实病历号或其他可识别个人信息。
 - 量表测试数据应使用脱敏样本或人工构造样本。
 - 不得调用真实短信、真实阿里云 SMS、支付、医保、医院 HIS/LIS/PACS、对象存储生产环境或真实大模型服务，除非未来单独定义受控集成测试。

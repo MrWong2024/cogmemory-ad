@@ -1250,6 +1250,16 @@ B14.1 静态验证不覆盖：
 
 本次 B16 未执行上述真实浏览器矩阵，不得据静态检查写成业务验收通过。
 
+### B16 浏览器矩阵的夹具前置
+
+- 执行上述矩阵前，后端执行者必须先在隔离 test database 运行 B16 fixture `prepare`，再运行只读 `verify`；两者均要求 `NODE_ENV=test` 和仅通过临时进程环境提供的 `B16_FIXTURE_PASSWORD`。密码值不写入本手册，也不得进入浏览器日志、截图或存储。
+- safe manifest 中 `roles` 提供 doctor、admin、nurse、research_assistant 四类脱敏账号的 `accountName` 登录标识；执行者使用同一临时密码登录。`route` 可直接打开对应脱敏 patient/visit 页面，但验收报告不得粘贴实际 ID。
+- 场景用途按 key 分组：`v1_doctor_ready_lock` / `v1_admin_ready_lock` / `v1_visit_ineligible` 验证 V1 回归与资格边界；`archived_v1_for_v2` / `archived_v2_for_v3` 分别作为真实 V2、V3 创建起点；`v2_patient_inactive_ready_lock` / `v2_visit_locked_ready_lock` / `v2_visit_voided_ready_lock` 验证 replacement 历史状态。
+- A23/A24 场景：`v2_ready_freeze`、`v2_freeze_in_progress`、`v2_ready_archive`；并发与幂等场景：`v2_ready_lock_concurrency`、`v2_ready_archive_concurrency`、`v2_already_locked`、`v2_already_frozen`、`v2_already_archived`；前置错误：`v2_freeze_before_lock`、`v2_archive_before_freeze`；内部 lineage 409：`v2_lineage_invalid_internal`。每个 key 都有独立 patient/visit/report 链，不应跨场景复用浏览器写操作。
+- safe manifest 的 purpose、当前版本、安全状态、建议角色、起始阶段和聚合来源计数是验收导航信息；它不会输出密码、Cookie、Session、连接串、报告正文、前序/替代报告内部 ID、correction/freeze/source ID。
+- 浏览器矩阵结束后执行后端 CLI `cleanup --namespace <name> --confirm-cleanup`，并核对残留为 0。夹具 prepare/verify 通过只说明账号与数据前置就绪，不等于 B16 真实浏览器业务验收通过。
+- 当前状态保持不变：B16 真实浏览器矩阵仍待执行，WP-02 仍为进行中，WP-04 尚未开始。
+
 ## 19. 认证与安全验证口径
 
 - 使用浏览器网络面板确认三个认证请求均携带 credentials 语义，并由浏览器处理 HttpOnly Cookie。
