@@ -16,7 +16,9 @@ export type B16ScenarioStage =
   | 'a23_freeze'
   | 'a23_resume'
   | 'a24_archive'
-  | 'a25_correction';
+  | 'a25_correction'
+  | 'a25_resume'
+  | 'a25_blocked';
 
 export type B16BusinessScenarioKey =
   | 'v1_doctor_ready_lock'
@@ -37,7 +39,9 @@ export type B16BusinessScenarioKey =
   | 'v2_already_archived'
   | 'v2_freeze_before_lock'
   | 'v2_archive_before_freeze'
-  | 'v2_lineage_invalid_internal';
+  | 'v2_lineage_invalid_internal'
+  | 'v2_correction_in_progress'
+  | 'v2_replacement_summary_unsafe';
 
 export type B16ScenarioKey = 'roles' | B16BusinessScenarioKey;
 
@@ -48,7 +52,8 @@ export type B16PreparationTarget =
   | 'v2_ready_freeze'
   | 'v2_freeze_in_progress'
   | 'v2_ready_archive'
-  | 'v2_archived';
+  | 'v2_archived'
+  | 'v2_correction_in_progress';
 
 export type B16BusinessScenarioDefinition = {
   scenarioKey: B16BusinessScenarioKey;
@@ -60,6 +65,7 @@ export type B16BusinessScenarioDefinition = {
   patientStatus?: 'inactive';
   visitStatus?: 'locked' | 'voided';
   lineageInvalid?: true;
+  replacementSummaryUnsafe?: true;
 };
 
 export const B16_BUSINESS_SCENARIOS = [
@@ -221,6 +227,24 @@ export const B16_BUSINESS_SCENARIOS = [
     target: 'v2_ready_lock',
     lineageInvalid: true,
   },
+  {
+    scenarioKey: 'v2_correction_in_progress',
+    ordinal: 20,
+    purpose: 'Archived V2 with a durable A25 correction ready to resume as V3',
+    suggestedRole: 'doctor',
+    expectedStartingStage: 'a25_resume',
+    target: 'v2_correction_in_progress',
+  },
+  {
+    scenarioKey: 'v2_replacement_summary_unsafe',
+    ordinal: 21,
+    purpose:
+      'Public replacement summary is unsafe and all irreversible writes must remain blocked',
+    suggestedRole: 'admin',
+    expectedStartingStage: 'a25_blocked',
+    target: 'v2_ready_lock',
+    replacementSummaryUnsafe: true,
+  },
 ] as const satisfies readonly B16BusinessScenarioDefinition[];
 
 export type B16SafeRoleManifest = {
@@ -246,6 +270,9 @@ export type B16SafeScenarioManifest = {
   suggestedRole: B16Role;
   expectedStartingStage: B16ScenarioStage;
   expectedAggregateCounts?: B16SafeAggregateCounts;
+  correctionState?: 'in_progress';
+  plannedReplacementVersion?: 3;
+  expectedUiDisposition?: 'write_prohibited';
 };
 
 export type B16SafeManifest = {

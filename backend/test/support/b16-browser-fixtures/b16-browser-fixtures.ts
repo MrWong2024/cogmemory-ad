@@ -40,6 +40,9 @@ import {
 } from '../../../src/modules/reports/schemas/clinical-report.schema';
 import { resolveExistingClinicalReportArchive } from '../../../src/modules/reports/lib/clinical-report-archive';
 import {
+  buildClinicalReportCorrectionPlan,
+  buildClinicalReportCorrectionStartMetadata,
+  evaluateClinicalReportCorrectionReadiness,
   resolveClinicalReportReplacementLineage,
   resolveExistingClinicalReportCorrection,
 } from '../../../src/modules/reports/lib/clinical-report-correction';
@@ -212,7 +215,11 @@ function safeStatus(
   report: ClinicalReportSummary,
   patientStatus: string,
   visitStatus: string,
-  lineageStatus: 'not_applicable' | 'valid' | 'intentionally_invalid',
+  lineageStatus:
+    | 'not_applicable'
+    | 'valid'
+    | 'intentionally_invalid'
+    | 'public_summary_unsafe',
 ): string {
   const freeze = resolveExistingSourceFreeze(report);
   const parts = [
@@ -629,21 +636,33 @@ export class B16BrowserFixtureManager {
         definition.target === 'v2_ready_freeze' ||
         definition.target === 'v2_freeze_in_progress' ||
         definition.target === 'v2_ready_archive' ||
-        definition.target === 'v2_archived'
+        definition.target === 'v2_archived' ||
+        definition.target === 'v2_correction_in_progress'
       ) {
         root = await this.lockReport(root, actor, definition.scenarioKey);
       }
       if (
         definition.target === 'v2_ready_archive' ||
-        definition.target === 'v2_archived'
+        definition.target === 'v2_archived' ||
+        definition.target === 'v2_correction_in_progress'
       ) {
         root = await this.freezeSources(root, actor, definition.scenarioKey);
       }
-      if (definition.target === 'v2_archived') {
+      if (
+        definition.target === 'v2_archived' ||
+        definition.target === 'v2_correction_in_progress'
+      ) {
         root = await this.archiveReport(root, actor, definition.scenarioKey);
       }
       if (definition.target === 'v2_freeze_in_progress') {
         root = await this.startRecoverableFreeze(
+          root,
+          actor,
+          definition.scenarioKey,
+        );
+      }
+      if (definition.target === 'v2_correction_in_progress') {
+        root = await this.startRecoverableCorrection(
           root,
           actor,
           definition.scenarioKey,
@@ -676,6 +695,9 @@ export class B16BrowserFixtureManager {
     }
     if (definition.lineageInvalid) {
       await this.breakInternalLineage(root, definition.scenarioKey);
+    }
+    if (definition.replacementSummaryUnsafe) {
+      await this.breakPublicReplacementSummary(root, definition.scenarioKey);
     }
   }
 
@@ -1326,6 +1348,84 @@ export class B16BrowserFixtureManager {
     return { ...root, currentReport: started };
   }
 
+  private async startRecoverableCorrection(
+    root: ScenarioRoot,
+    actor: AuthenticatedUserContext,
+    scenarioKey: B16BusinessScenarioKey,
+  ): Promise<ScenarioRoot> {
+    const expectedUpdatedAt = requiredDate(
+      root.currentReport.updatedAt,
+      scenarioKey,
+    );
+    const latest = await this.reportsService.findLatestReportByVisitId(
+      root.visitId,
+    );
+    if (!latest || latest.id !== root.currentReport.id) {
+      throw scenarioFailure(
+        scenarioKey,
+        'Recoverable correction source is not the latest report',
+      );
+    }
+    evaluateClinicalReportCorrectionReadiness({
+      sourceReport: root.currentReport,
+      latestReport: latest,
+      expectedUpdatedAt,
+    });
+    const existingV3 = await this.reportsService.listReportsByVisitTypeVersion(
+      root.visitId,
+      root.currentReport.reportType,
+      3,
+    );
+    if (existingV3.length !== 0) {
+      throw scenarioFailure(
+        scenarioKey,
+        'Recoverable correction fixture already contains V3',
+      );
+    }
+    const plan = buildClinicalReportCorrectionPlan({
+      sourceReport: root.currentReport,
+      correctionId: randomUUID(),
+      startedAt: new Date(),
+      actor: {
+        operatorId: actor.id,
+        operatorName: actor.displayName,
+        operatorRole: 'doctor',
+      },
+      correctionReason: `B16 ${scenarioKey} persisted correction reason`,
+      changeSummary: `B16 ${scenarioKey} persisted change summary`,
+    });
+    const metadata = buildClinicalReportCorrectionStartMetadata({
+      sourceReport: root.currentReport,
+      plan,
+    });
+    const started = await this.reportsService.startCorrectionIfUnmodified({
+      reportId: root.currentReport.id,
+      patientId: root.patientId,
+      assessmentVisitId: root.visitId,
+      reportVersion: root.currentReport.reportVersion,
+      reportCode: root.currentReport.reportCode,
+      expectedUpdatedAt,
+      metadata,
+    });
+    const resolution = started
+      ? resolveExistingClinicalReportCorrection(started)
+      : null;
+    if (
+      !started ||
+      !resolution ||
+      resolution.completed ||
+      resolution.audit.state !== 'in_progress' ||
+      resolution.audit.replacementReportVersion !== 3 ||
+      resolution.audit.replacementReportId !== undefined
+    ) {
+      throw scenarioFailure(
+        scenarioKey,
+        'Recoverable correction start metadata was not persisted completely',
+      );
+    }
+    return { ...root, currentReport: started };
+  }
+
   private async breakInternalLineage(
     root: ScenarioRoot,
     scenarioKey: B16BusinessScenarioKey,
@@ -1357,6 +1457,42 @@ export class B16BrowserFixtureManager {
       throw scenarioFailure(
         scenarioKey,
         'Internal lineage fault was not isolated',
+      );
+    }
+  }
+
+  private async breakPublicReplacementSummary(
+    root: ScenarioRoot,
+    scenarioKey: B16BusinessScenarioKey,
+  ): Promise<void> {
+    const lineage = resolveClinicalReportReplacementLineage(root.currentReport);
+    if (!lineage) {
+      throw scenarioFailure(
+        scenarioKey,
+        'Replacement summary was unavailable before isolation',
+      );
+    }
+    const result = await this.models.reports
+      .updateOne(
+        {
+          _id: new Types.ObjectId(root.currentReport.id),
+          patientId: new Types.ObjectId(root.patientId),
+          assessmentVisitId: new Types.ObjectId(root.visitId),
+          reportVersion: 2,
+          status: 'confirmed',
+        },
+        {
+          $set: {
+            'metadata.a25CorrectionReplacement.previousReportId':
+              root.currentReport.id,
+          },
+        },
+      )
+      .exec();
+    if (result.modifiedCount !== 1) {
+      throw scenarioFailure(
+        scenarioKey,
+        'Unsafe public replacement relation was not isolated',
       );
     }
   }
@@ -1543,6 +1679,7 @@ export class B16BrowserFixtureManager {
         }
       });
       const current = reports[reports.length - 1];
+      let replacementSource: ClinicalReportSummary | null = null;
       if (
         current.patientId !== patient._id.toString() ||
         current.assessmentVisitId !== visit._id.toString() ||
@@ -1565,6 +1702,7 @@ export class B16BrowserFixtureManager {
         }
       } else {
         const source = reports[reports.length - 2];
+        replacementSource = source;
         if (
           source.status !== 'corrected' ||
           source.correctionRecords.length !== 1 ||
@@ -1584,7 +1722,40 @@ export class B16BrowserFixtureManager {
 
       const lineageValid =
         await this.reportsService.hasValidReplacementLifecycleLineage(current);
-      if (definition.lineageInvalid) {
+      if (definition.replacementSummaryUnsafe) {
+        if (
+          lineageValid ||
+          !replacementSource ||
+          !this.publicReplacementSummaryHasSingleUnsafeRelation(
+            current,
+            replacementSource,
+          )
+        ) {
+          throw scenarioFailure(
+            definition.scenarioKey,
+            'Unsafe replacement summary does not preserve the required public gate',
+          );
+        }
+        const afterPublicRead = await this.requireReport(
+          {
+            patientId: patient._id.toString(),
+            visitId: visit._id.toString(),
+          },
+          current.id,
+          definition.scenarioKey,
+        );
+        if (
+          !this.publicReplacementSummaryHasSingleUnsafeRelation(
+            afterPublicRead,
+            replacementSource,
+          )
+        ) {
+          throw scenarioFailure(
+            definition.scenarioKey,
+            'Read-only verification unexpectedly repaired the unsafe relation',
+          );
+        }
+      } else if (definition.lineageInvalid) {
         if (lineageValid || !this.publicReplacementSummaryIsSafe(current)) {
           throw scenarioFailure(
             definition.scenarioKey,
@@ -1599,6 +1770,30 @@ export class B16BrowserFixtureManager {
       }
 
       this.verifyTargetState(current, definition);
+      if (definition.target === 'v2_correction_in_progress') {
+        const latest = await this.reportsService.findLatestReportByVisitId(
+          visit._id,
+        );
+        const v3 = await this.reportsService.listReportsByVisitTypeVersion(
+          visit._id.toString(),
+          current.reportType,
+          3,
+        );
+        const matchingCorrections = reports.filter((report) => {
+          const correction = resolveExistingClinicalReportCorrection(report);
+          return correction?.audit.correctionNo === 2;
+        });
+        if (
+          latest?.id !== current.id ||
+          v3.length !== 0 ||
+          matchingCorrections.length !== 1
+        ) {
+          throw scenarioFailure(
+            definition.scenarioKey,
+            'Recoverable correction is not the unique latest V2 flow',
+          );
+        }
+      }
       if (
         definition.patientStatus &&
         patient.status !== definition.patientStatus
@@ -1630,9 +1825,11 @@ export class B16BrowserFixtureManager {
       const lineageStatus =
         current.reportVersion === 1
           ? 'not_applicable'
-          : definition.lineageInvalid
-            ? 'intentionally_invalid'
-            : 'valid';
+          : definition.replacementSummaryUnsafe
+            ? 'public_summary_unsafe'
+            : definition.lineageInvalid
+              ? 'intentionally_invalid'
+              : 'valid';
       const manifest: B16SafeScenarioManifest = {
         scenarioKey: definition.scenarioKey,
         purpose: definition.purpose,
@@ -1649,6 +1846,15 @@ export class B16BrowserFixtureManager {
         expectedStartingStage: definition.expectedStartingStage,
         ...(shouldExposeAggregateCounts(definition)
           ? { expectedAggregateCounts: aggregateCounts(current) }
+          : {}),
+        ...(definition.target === 'v2_correction_in_progress'
+          ? {
+              correctionState: 'in_progress' as const,
+              plannedReplacementVersion: 3 as const,
+            }
+          : {}),
+        ...(definition.replacementSummaryUnsafe
+          ? { expectedUiDisposition: 'write_prohibited' as const }
           : {}),
       };
       return manifest;
@@ -1718,6 +1924,42 @@ export class B16BrowserFixtureManager {
       }
       return;
     }
+    if (definition.target === 'v2_correction_in_progress') {
+      const correction = resolveExistingClinicalReportCorrection(report);
+      if (
+        report.status !== 'archived' ||
+        !report.lockedAt ||
+        !lock?.lockId ||
+        !freeze ||
+        freeze.state !== 'completed' ||
+        freeze.completedCounts?.totalSourceCount !==
+          SOURCE_COUNTS.totalSourceCount ||
+        freeze.previouslyFrozenCounts.totalSourceCount !==
+          SOURCE_COUNTS.totalSourceCount ||
+        freeze.newlyFrozenCounts?.totalSourceCount !== 0 ||
+        !archive?.archiveId ||
+        archive.sourceFreezeId !== freeze.freezeId ||
+        !correction ||
+        correction.completed ||
+        correction.audit.state !== 'in_progress' ||
+        !correction.audit.correctionId ||
+        correction.audit.correctionNo !== 2 ||
+        !correction.audit.startedAt ||
+        !correction.audit.startedBy ||
+        !correction.audit.startedByName ||
+        !correction.audit.startedByRole ||
+        !correction.audit.correctionReason.trim() ||
+        !correction.audit.changeSummary.trim() ||
+        correction.audit.previousReportCode !== report.reportCode ||
+        correction.audit.previousReportVersion !== report.reportVersion ||
+        !correction.audit.replacementReportCode.trim() ||
+        correction.audit.replacementReportVersion !== 3 ||
+        correction.audit.replacementReportId !== undefined
+      ) {
+        fail('Recoverable A25 correction metadata is incomplete');
+      }
+      return;
+    }
     if (definition.target === 'v2_ready_archive') {
       if (
         report.status !== 'confirmed' ||
@@ -1779,6 +2021,26 @@ export class B16BrowserFixtureManager {
       lineage.correctionNo === lineage.replacementReportVersion - 1 &&
       report.reportCode === lineage.replacementReportCode &&
       report.reportVersion === lineage.replacementReportVersion,
+    );
+  }
+
+  private publicReplacementSummaryHasSingleUnsafeRelation(
+    report: ClinicalReportSummary,
+    previous: ClinicalReportSummary,
+  ): boolean {
+    const publicReport = this.publicMapper.toPublicReport(report);
+    const lineage = publicReport.replacementOf;
+    return Boolean(
+      lineage &&
+      report.id !== previous.id &&
+      lineage.previousReportId === report.id &&
+      lineage.previousReportId !== previous.id &&
+      lineage.previousReportCode === previous.reportCode &&
+      lineage.previousReportVersion === previous.reportVersion &&
+      lineage.replacementReportCode === report.reportCode &&
+      lineage.replacementReportVersion === report.reportVersion &&
+      lineage.replacementReportVersion === lineage.previousReportVersion + 1 &&
+      lineage.correctionNo === lineage.replacementReportVersion - 1,
     );
   }
 

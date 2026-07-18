@@ -23,7 +23,13 @@ import {
   ClinicalReport,
   type ClinicalReportDocument,
 } from '../src/modules/reports/schemas/clinical-report.schema';
+import {
+  resolveClinicalReportReplacementLineage,
+  resolveExistingClinicalReportCorrection,
+} from '../src/modules/reports/lib/clinical-report-correction';
+import { ClinicalReportCorrectionWorkflowService } from '../src/modules/reports/services/clinical-report-correction-workflow.service';
 import { ClinicalReportLockWorkflowService } from '../src/modules/reports/services/clinical-report-lock-workflow.service';
+import { ClinicalReportPublicMapper } from '../src/modules/reports/services/clinical-report-public.mapper';
 import { ReportsService } from '../src/modules/reports/services/reports.service';
 import {
   User,
@@ -61,7 +67,9 @@ describe('B16 browser fixture CLI support (e2e)', () => {
   let manager: B16BrowserFixtureManager;
   let authService: AuthService;
   let reportsService: ReportsService;
+  let correctionWorkflow: ClinicalReportCorrectionWorkflowService;
   let lockWorkflow: ClinicalReportLockWorkflowService;
+  let publicMapper: ClinicalReportPublicMapper;
   let userModel: Model<UserDocument>;
   let sessionModel: Model<SessionDocument>;
   let patientModel: Model<PatientDocument>;
@@ -76,7 +84,9 @@ describe('B16 browser fixture CLI support (e2e)', () => {
     manager = createB16BrowserFixtureManager(app);
     authService = app.get(AuthService);
     reportsService = app.get(ReportsService);
+    correctionWorkflow = app.get(ClinicalReportCorrectionWorkflowService);
     lockWorkflow = app.get(ClinicalReportLockWorkflowService);
+    publicMapper = app.get(ClinicalReportPublicMapper);
     userModel = app.get<Model<UserDocument>>(getModelToken(User.name));
     sessionModel = app.get<Model<SessionDocument>>(getModelToken(Session.name));
     patientModel = app.get<Model<PatientDocument>>(getModelToken(Patient.name));
@@ -155,7 +165,7 @@ describe('B16 browser fixture CLI support (e2e)', () => {
     );
     assertB16SafeManifest(mainManifest);
     expect(mainManifest.roles).toHaveLength(4);
-    expect(mainManifest.scenarios).toHaveLength(20);
+    expect(mainManifest.scenarios).toHaveLength(22);
     expect(
       new Set(mainManifest.scenarios.map((item) => item.scenarioKey)),
     ).toEqual(
@@ -211,16 +221,19 @@ describe('B16 browser fixture CLI support (e2e)', () => {
     ).rejects.toMatchObject({ code: 'B16_FIXTURE_NAMESPACE_EXISTS' });
 
     await thisExpectLineageInvalid409();
+    await thisExpectUnsafeReplacementSummaryReadOnly();
 
     const otherManifest = await manager.prepare(
       namespaceOther,
       process.env.B16_FIXTURE_PASSWORD,
     );
-    expect(otherManifest.summary.scenarioCount).toBe(20);
+    expect(otherManifest.summary.scenarioCount).toBe(22);
     expect(
       (await manager.verify(namespaceMain, process.env.B16_FIXTURE_PASSWORD))
         .summary.scenarioCount,
-    ).toBe(20);
+    ).toBe(22);
+
+    await thisExpectCorrectionResume();
 
     const cleanedMain = await manager.cleanup(namespaceMain);
     expect(cleanedMain.matched).toBe(true);
@@ -233,7 +246,7 @@ describe('B16 browser fixture CLI support (e2e)', () => {
     expect(
       (await manager.verify(namespaceOther, process.env.B16_FIXTURE_PASSWORD))
         .summary.scenarioCount,
-    ).toBe(20);
+    ).toBe(22);
     const cleanedMainAgain = await manager.cleanup(namespaceMain);
     expect(cleanedMainAgain.matched).toBe(false);
     expect(cleanedMainAgain.residualCount).toBe(0);
@@ -242,11 +255,11 @@ describe('B16 browser fixture CLI support (e2e)', () => {
       namespaceOther,
       process.env.B16_FIXTURE_PASSWORD,
     );
-    expect(replacedOther.summary.scenarioCount).toBe(20);
+    expect(replacedOther.summary.scenarioCount).toBe(22);
     expect(
       (await manager.verify(namespaceOther, process.env.B16_FIXTURE_PASSWORD))
         .scenarios,
-    ).toHaveLength(20);
+    ).toHaveLength(22);
     expect((await manager.cleanup(namespaceOther)).residualCount).toBe(0);
     expect(await patientModel.exists({ _id: sentinel._id })).not.toBeNull();
     await patientModel.deleteOne({ _id: sentinel._id }).exec();
@@ -288,6 +301,233 @@ describe('B16 browser fixture CLI support (e2e)', () => {
     ).toBe(0);
     expect((await manager.cleanup(namespaceMissing)).residualCount).toBe(0);
   });
+
+  async function thisExpectUnsafeReplacementSummaryReadOnly(): Promise<void> {
+    const definition = B16_BUSINESS_SCENARIOS.find(
+      (item) => item.scenarioKey === 'v2_replacement_summary_unsafe',
+    );
+    expect(definition).toBeDefined();
+    if (!definition) {
+      throw new Error('unsafe replacement summary definition unavailable');
+    }
+    const patient = await patientModel
+      .findOne({
+        subjectCode: subjectCodeFor(namespaceMain, definition.ordinal),
+      })
+      .exec();
+    expect(patient).not.toBeNull();
+    if (!patient) {
+      throw new Error('unsafe replacement summary patient unavailable');
+    }
+    const visit = await visitModel
+      .findOne({
+        patientId: patient._id,
+        visitCode: visitCodeFor(namespaceMain, definition.ordinal),
+      })
+      .exec();
+    expect(visit).not.toBeNull();
+    if (!visit) {
+      throw new Error('unsafe replacement summary visit unavailable');
+    }
+    const report = await reportsService.findLatestReportByVisitId(visit._id);
+    expect(report).not.toBeNull();
+    if (!report) {
+      throw new Error('unsafe replacement summary report unavailable');
+    }
+    const sourceReports = await reportsService.listReportsByVisitTypeVersion(
+      visit._id.toString(),
+      report.reportType,
+      1,
+    );
+    const beforeCount = await reportModel.countDocuments({
+      patientId: patient._id,
+      assessmentVisitId: visit._id,
+    });
+    const beforeUpdatedAt = report.updatedAt?.getTime();
+    const publicReport = publicMapper.toPublicReport(report);
+    expect(publicReport.id).toBe(report.id);
+    expect(publicReport.reportVersion).toBe(2);
+    expect(publicReport.replacementOf).not.toBeNull();
+    expect(sourceReports).toHaveLength(1);
+    expect(publicReport.replacementOf?.previousReportId).toBe(report.id);
+    expect(publicReport.replacementOf?.previousReportId).not.toBe(
+      sourceReports[0].id,
+    );
+    expect(publicReport.replacementOf?.previousReportCode).toBe(
+      sourceReports[0].reportCode,
+    );
+    expect(publicReport.replacementOf?.previousReportVersion).toBe(1);
+    expect(publicReport.replacementOf?.replacementReportCode).toBe(
+      report.reportCode,
+    );
+    expect(publicReport.replacementOf?.replacementReportVersion).toBe(2);
+    expect(publicReport.correction).toBeNull();
+    expect(publicReport.voidedAt).toBeNull();
+
+    await manager.verify(namespaceMain, process.env.B16_FIXTURE_PASSWORD);
+
+    const unchanged = await reportsService.findLatestReportByVisitId(visit._id);
+    expect(unchanged).not.toBeNull();
+    if (!unchanged) {
+      throw new Error('unsafe replacement summary report disappeared');
+    }
+    expect(
+      publicMapper.toPublicReport(unchanged).replacementOf?.previousReportId,
+    ).toBe(unchanged.id);
+    expect(unchanged.updatedAt?.getTime()).toBe(beforeUpdatedAt);
+    expect(
+      await reportModel.countDocuments({
+        patientId: patient._id,
+        assessmentVisitId: visit._id,
+      }),
+    ).toBe(beforeCount);
+  }
+
+  async function thisExpectCorrectionResume(): Promise<void> {
+    const definition = B16_BUSINESS_SCENARIOS.find(
+      (item) => item.scenarioKey === 'v2_correction_in_progress',
+    );
+    expect(definition).toBeDefined();
+    if (!definition) {
+      throw new Error('correction resume definition unavailable');
+    }
+    const patient = await patientModel
+      .findOne({
+        subjectCode: subjectCodeFor(namespaceMain, definition.ordinal),
+      })
+      .exec();
+    expect(patient).not.toBeNull();
+    if (!patient) {
+      throw new Error('correction resume patient unavailable');
+    }
+    const visit = await visitModel
+      .findOne({
+        patientId: patient._id,
+        visitCode: visitCodeFor(namespaceMain, definition.ordinal),
+      })
+      .exec();
+    const doctor = await userModel
+      .findOne({ accountName: accountNameFor(namespaceMain, 'doctor') })
+      .exec();
+    expect(visit).not.toBeNull();
+    expect(doctor).not.toBeNull();
+    if (!visit || !doctor) {
+      throw new Error('correction resume actor or visit unavailable');
+    }
+    const source = await reportsService.findLatestReportByVisitId(visit._id);
+    expect(source).not.toBeNull();
+    if (!source || !source.updatedAt) {
+      throw new Error('correction resume source unavailable');
+    }
+    const initial = resolveExistingClinicalReportCorrection(source);
+    expect(source.reportVersion).toBe(2);
+    expect(source.status).toBe('archived');
+    expect(
+      await reportsService.hasValidReplacementLifecycleLineage(source),
+    ).toBe(true);
+    expect(initial?.completed).toBe(false);
+    expect(initial?.audit.state).toBe('in_progress');
+    expect(initial?.audit.replacementReportVersion).toBe(3);
+    expect(initial?.audit.replacementReportId).toBeUndefined();
+    expect(
+      await reportsService.listReportsByVisitTypeVersion(
+        visit._id.toString(),
+        source.reportType,
+        3,
+      ),
+    ).toHaveLength(0);
+    if (!initial) {
+      throw new Error('correction resume metadata unavailable');
+    }
+    const actor = {
+      id: doctor._id.toString(),
+      accountName: doctor.accountName,
+      displayName: doctor.displayName,
+      roles: [...doctor.roles],
+      permissions: [...doctor.permissions],
+      userType: doctor.userType,
+    };
+    const resumed = await correctionWorkflow.createClinicalReportCorrection(
+      patient._id.toString(),
+      visit._id.toString(),
+      source.id,
+      actor,
+      {
+        confirm: true,
+        correctionReason: initial.audit.correctionReason,
+        changeSummary: initial.audit.changeSummary,
+        expectedUpdatedAt: source.updatedAt.toISOString(),
+      },
+    );
+    expect(resumed.correctionReceipt.resumedExisting).toBe(true);
+    expect(resumed.correctionReceipt.alreadyCreated).toBe(false);
+    expect(resumed.correctionReceipt.correctionId).toBe(
+      initial.audit.correctionId,
+    );
+    expect(resumed.sourceReport.status).toBe('corrected');
+    expect(resumed.replacementReport.reportVersion).toBe(3);
+    expect(resumed.replacementReport.replacementOf).not.toBeNull();
+    expect(resumed.replacementReport.replacementOf?.previousReportId).toBe(
+      source.id,
+    );
+    const createdV3 = await reportsService.listReportsByVisitTypeVersion(
+      visit._id.toString(),
+      source.reportType,
+      3,
+    );
+    expect(createdV3).toHaveLength(1);
+    expect(
+      resolveClinicalReportReplacementLineage(createdV3[0])?.previousReportId,
+    ).toBe(source.id);
+    expect(
+      await reportsService.hasValidReplacementLifecycleLineage(createdV3[0]),
+    ).toBe(true);
+    const completedSource = await reportsService.findReportByOwnership({
+      reportId: source.id,
+      patientId: patient._id.toString(),
+      assessmentVisitId: visit._id.toString(),
+    });
+    expect(completedSource?.status).toBe('corrected');
+    expect(
+      completedSource
+        ? resolveExistingClinicalReportCorrection(completedSource)?.audit
+            .correctionId
+        : null,
+    ).toBe(initial.audit.correctionId);
+
+    const repeated = await correctionWorkflow.createClinicalReportCorrection(
+      patient._id.toString(),
+      visit._id.toString(),
+      source.id,
+      actor,
+      {
+        confirm: true,
+        correctionReason: initial.audit.correctionReason,
+        changeSummary: initial.audit.changeSummary,
+        expectedUpdatedAt: source.updatedAt.toISOString(),
+      },
+    );
+    expect(repeated.correctionReceipt.alreadyCreated).toBe(true);
+    expect(repeated.correctionReceipt.resumedExisting).toBe(false);
+    expect(repeated.correctionReceipt.correctionId).toBe(
+      initial.audit.correctionId,
+    );
+    expect(repeated.replacementReport.id).toBe(createdV3[0].id);
+    expect(
+      await reportsService.listReportsByVisitTypeVersion(
+        visit._id.toString(),
+        source.reportType,
+        3,
+      ),
+    ).toHaveLength(1);
+    expect(
+      await reportsService.listReportsByVisitTypeVersion(
+        visit._id.toString(),
+        source.reportType,
+        4,
+      ),
+    ).toHaveLength(0);
+  }
 
   async function thisExpectLineageInvalid409(): Promise<void> {
     const definition = B16_BUSINESS_SCENARIOS.find(

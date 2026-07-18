@@ -309,7 +309,7 @@
 
 ### B16 浏览器验收夹具 CLI
 
-- 用途：只为后续 B16 真实浏览器矩阵显式准备隔离账号和 20 个可复现场景；它不是生产 seed、不随启动或测试自动执行，也不代表 B16 浏览器验收已经通过。
+- 用途：只为 B16 真实浏览器矩阵显式准备隔离账号和确定性数据；当前 contract 共 22 个 `scenarioKey`（1 个 `roles` + 21 个业务场景）。它不是生产 seed、不随启动或测试自动执行，也不代表 B16 浏览器验收已经通过。
 - 运行前必须确认 `NODE_ENV=test`、连接的是项目隔离 test database，且 Storage 为 fake、LLM/SMS 为 stub、Session 为非 production 配置。CLI 在装配 `AppModule` 前先检查 `NODE_ENV`，连接后再按真实 databaseName 二次门禁；任一门禁失败均不写库并返回非 0。
 - 密码只通过当前进程的 `B16_FIXTURE_PASSWORD` 临时提供，不写入仓库、文档、参数、manifest 或日志；namespace 仅允许 3–32 位小写字母、数字和单连字符分隔。
 
@@ -323,8 +323,10 @@ node -r ts-node/register -r tsconfig-paths/register scripts/b16-browser-fixtures
 ```
 
 - 同 namespace 的重复 `prepare` 默认拒绝；需要替换时必须显式执行 `replace --namespace <name> --confirm-replace`。`cleanup` 先做 namespace 根记录与 ownership 预检，按 Session → report/lifecycle → domain/score/media/item/instance → visit → patient → user 删除，禁止 dropDatabase、清 collection 或无条件 `deleteMany({})`。
-- `prepare` / `verify` 输出 safe manifest：仅含 namespace、databaseName、角色与 `accountName` 登录标识、displayName、scenarioKey、用途、浏览器 route、reportCode/version、安全状态、建议角色、起始阶段和聚合来源计数。严禁密码/hash、Cookie/Session、Mongo URI、前序/替代报告内部 ID、correction/freeze/source ID、报告正文或堆栈。
-- 定向实际验证：新增文件定向 lint、完整 `npm run lint` 与 `npm run build` 通过；`test/b16-browser-fixtures.e2e-spec.ts` 1 suite / 3 tests 通过，覆盖环境/数据库/密码门禁、四角色真实密码登录、20 场景、合法 lineage、公开摘要安全但 A26 返回 409 的内部 lineage 冲突、只读 verify、缺失场景不修复、Session 清理、namespace 外 sentinel、双 namespace、重复 prepare、replace、残留检查和二次 cleanup。相关 A20–A26 E2E 回归 7 suites / 34 tests 通过；全量 unit 76 suites / 666 tests、全量 E2E 15 suites / 70 tests 通过。
+- `prepare` / `verify` 输出 safe manifest：角色条目只提供脱敏登录导航；业务场景仅提供 scenarioKey、purpose、route、reportCode/version、安全状态、建议角色和起始阶段。`v2_correction_in_progress` 额外只公开 `correctionState=in_progress` 与计划替代版本，`v2_replacement_summary_unsafe` 额外只公开 `expectedUiDisposition=write_prohibited`。严禁密码/hash、Cookie/Session、Mongo URI、前序/替代报告内部 ID、correction/freeze/source ID、报告正文或堆栈。
+- 新增 `v2_correction_in_progress`（`a25_resume`）和 `v2_replacement_summary_unsafe`（`a25_blocked`）。前者先通过真实 A22→A25 形成合法 V2，再完成 V2 的 A21→A24，使用 production correction plan/start builder 和 `ReportsService.startCorrectionIfUnmodified()` 原子写入完整 A25 start metadata，随后立即停止，因此无需中断网络、sleep 或碰撞瞬时状态；后者在另一条合法 V1→V2 链上只做一处 test-only 公开 replacement 关系破坏，public mapper 仍可安全返回，由前端在请求前阻断不可逆写入。
+- 本轮实际验证：变更文件定向 ESLint 通过；`npm run build` 通过；fixture 定向 E2E 1 suite / 3 tests 通过；A25/A26 correction 定向 E2E 1 suite / 7 tests 通过；全量 unit 76 suites / 666 tests、全量 E2E 15 suites / 70 tests 通过。完整 `npm run lint` 未通过，共报告 51 个既有 Prettier 问题，均位于未修改的 scoring 文件；本任务受范围约束未修改这些文件，因此不得声称完整 lint 门禁通过。
+- 固定 namespace 的 `replace` / 只读 `verify` 实际演练均退出 0，得到 4 个角色、22 个 `scenarioKey`、21 个业务场景，safe manifest 禁止字段扫描通过。浏览器验证结束后连续执行两次 cleanup，残留均为 0；namespace 外 sentinel 和双 namespace 隔离由 fixture E2E 覆盖。CLI 仍只有 prepare / verify / cleanup / replace，命令与密码传递方式未变化。
 
 - 测试不得使用真实患者数据、真实身份证号、真实手机号、真实病历号或其他可识别个人信息。
 - 量表测试数据应使用脱敏样本或人工构造样本。
