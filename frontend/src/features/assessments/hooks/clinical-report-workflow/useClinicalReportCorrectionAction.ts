@@ -129,9 +129,6 @@ export function useClinicalReportCorrectionAction({
     if (report.correction?.state === 'completed' || report.status === 'corrected') {
       return '源报告已由下一线性版本替代，不开放再次发起或恢复入口。';
     }
-    if (report.replacementOf !== null) {
-      return '当前是替代报告；来源关系仅用于追溯，不能从此处重复发起同一更正。';
-    }
     const eligibilityWarning = report.correction?.state === 'in_progress'
       ? getClinicalReportCorrectionResumeEligibilityWarning(report)
       : getClinicalReportCorrectionStartEligibilityWarning(report);

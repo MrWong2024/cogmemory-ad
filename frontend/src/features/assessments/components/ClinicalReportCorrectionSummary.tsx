@@ -85,8 +85,6 @@ export function ClinicalReportCorrectionSummary({
             <div><dt className="text-sm font-semibold text-[var(--cma-muted)]">完成人</dt><TraceValue>{actorLabel(correction.completedBy)}</TraceValue></div>
             <div className="sm:col-span-2"><dt className="text-sm font-semibold text-[var(--cma-muted)]">更正原因</dt><TraceValue>{correction.correctionReason}</TraceValue></div>
             <div className="sm:col-span-2"><dt className="text-sm font-semibold text-[var(--cma-muted)]">计划变更摘要</dt><TraceValue>{correction.changeSummary}</TraceValue></div>
-            <div className="sm:col-span-2"><dt className="text-sm font-semibold text-[var(--cma-muted)]">correctionId</dt><TraceValue>{correction.correctionId}</TraceValue></div>
-            <div className="sm:col-span-2"><dt className="text-sm font-semibold text-[var(--cma-muted)]">replacementReportId（仅技术追溯）</dt><TraceValue>{correction.replacementReportId}</TraceValue></div>
           </dl>
         </div>
       ) : null}
@@ -100,19 +98,16 @@ export function ClinicalReportCorrectionSummary({
             <div><dt className="text-sm font-semibold text-[var(--cma-muted)]">报告 / 版本</dt><TraceValue>{`${report.reportCode} / V${report.reportVersion}`}</TraceValue></div>
             <div><dt className="text-sm font-semibold text-[var(--cma-muted)]">状态</dt><TraceValue>{`${clinicalReportStatusLabels[report.status]}（${report.status}）`}</TraceValue></div>
             <div><dt className="text-sm font-semibold text-[var(--cma-muted)]">来源报告 / 版本</dt><TraceValue>{`${lineage.previousReportCode} / V${lineage.previousReportVersion}`}</TraceValue></div>
-            <div><dt className="text-sm font-semibold text-[var(--cma-muted)]">来源报告 ID</dt><TraceValue>{lineage.previousReportId}</TraceValue></div>
-            <div><dt className="text-sm font-semibold text-[var(--cma-muted)]">correctionId / No.</dt><TraceValue>{`${lineage.correctionId} / ${lineage.correctionNo}`}</TraceValue></div>
+            <div><dt className="text-sm font-semibold text-[var(--cma-muted)]">更正序号</dt><TraceValue>{lineage.correctionNo}</TraceValue></div>
             <div><dt className="text-sm font-semibold text-[var(--cma-muted)]">创建时间</dt><TraceValue>{formatClinicalReportDate(lineage.createdAt)}</TraceValue></div>
             <div><dt className="text-sm font-semibold text-[var(--cma-muted)]">创建人</dt><TraceValue>{actorLabel(lineage.createdBy)}</TraceValue></div>
-            <div><dt className="text-sm font-semibold text-[var(--cma-muted)]">来源归档锚点</dt><TraceValue>{lineage.sourceArchiveId}</TraceValue></div>
             <div><dt className="text-sm font-semibold text-[var(--cma-muted)]">来源归档时间</dt><TraceValue>{formatClinicalReportDate(lineage.sourceArchivedAt)}</TraceValue></div>
-            <div><dt className="text-sm font-semibold text-[var(--cma-muted)]">来源冻结锚点</dt><TraceValue>{lineage.sourceFreezeId}</TraceValue></div>
             <div><dt className="text-sm font-semibold text-[var(--cma-muted)]">来源冻结完成</dt><TraceValue>{formatClinicalReportDate(lineage.sourceFreezeCompletedAt)}</TraceValue></div>
             <div className="sm:col-span-2"><dt className="text-sm font-semibold text-[var(--cma-muted)]">更正原因</dt><TraceValue>{lineage.correctionReason}</TraceValue></div>
             <div className="sm:col-span-2"><dt className="text-sm font-semibold text-[var(--cma-muted)]">计划变更摘要</dt><TraceValue>{lineage.changeSummary}</TraceValue></div>
           </dl>
           <p className="mt-3 text-sm leading-6 text-[var(--cma-muted)]">
-            当前没有 report-by-id 或历史 API；来源报告 ID 仅作技术追溯，不提供虚假打开链接。
+            内部关联标识由系统保存，不在页面展示；页面仅呈现临床可理解的版本、时间、操作者、原因与摘要。
           </p>
         </div>
       ) : null}

@@ -10,7 +10,10 @@ import {
   getClinicalReportSourceFreezeConsistencyWarning,
   isCompletedClinicalReportSourceFreeze,
 } from '@/src/features/assessments/lib/clinical-report-source-freeze-draft';
-import { isSafeClinicalReportReplacementLineage } from '@/src/features/assessments/lib/clinical-report-lifecycle-target';
+import {
+  isSafeClinicalReportReplacementLineage,
+  isVersionOneReport,
+} from '@/src/features/assessments/lib/clinical-report-lifecycle-target';
 import type {
   ClinicalReport,
   ClinicalReportCorrectionSummary,
@@ -146,18 +149,22 @@ export function isSafeCorrectionReplacement(report: ClinicalReport): boolean {
 export function getClinicalReportCorrectionConsistencyWarning(
   report: ClinicalReport,
 ): string | null {
-  if (report.replacementOf !== null) {
-    return isSafeClinicalReportReplacementLineage(report.replacementOf, report)
-      ? null
-      : '替代报告的版本来源关系不完整或不一致，不能继续写入。';
+  if (
+    report.replacementOf !== null &&
+    !isSafeClinicalReportReplacementLineage(report.replacementOf, report)
+  ) {
+    return '替代报告的版本来源关系不完整或不一致，不能继续写入。';
   }
-  if (report.correction === null) return null;
-  return isSafeCorrectionSummary(report.correction, report)
-    ? null
-    : '版本化更正安全摘要不完整或不一致，不能启动、恢复或确认完成状态。';
+  if (
+    report.correction !== null &&
+    !isSafeCorrectionSummary(report.correction, report)
+  ) {
+    return '版本化更正安全摘要不完整或不一致，不能启动、恢复或确认完成状态。';
+  }
+  return null;
 }
 
-export function getClinicalReportCorrectionStartEligibilityWarning(
+export function getClinicalReportCorrectionSourceVersionWarning(
   report: ClinicalReport,
 ): string | null {
   if (report.reportType !== 'cognitive_assessment') {
@@ -166,6 +173,22 @@ export function getClinicalReportCorrectionStartEligibilityWarning(
   if (!isSafePositiveInteger(report.reportVersion)) {
     return '当前报告版本号无效，不能安全创建下一线性版本。';
   }
+  if (report.reportVersion === 1) {
+    return isVersionOneReport(report)
+      ? null
+      : '普通 V1 报告不应包含替代来源关系，不能安全创建下一线性版本。';
+  }
+  return isSafeClinicalReportReplacementLineage(report.replacementOf, report)
+    ? null
+    : '当前 V2+ 报告的版本来源关系摘要不完整或不一致，不能安全创建下一线性版本。';
+}
+
+function getClinicalReportCorrectionSourceEligibilityWarning(
+  report: ClinicalReport,
+): string | null {
+  const versionWarning = getClinicalReportCorrectionSourceVersionWarning(report);
+  if (versionWarning) return versionWarning;
+  if (report.voidedAt !== null) return '已作废报告不能发起版本化更正。';
   if (report.status !== 'archived') return '只有已归档报告可以发起版本化更正。';
   if (report.source !== 'mixed' || report.qualityStatus !== 'passed') {
     return '当前报告来源或质量状态不满足版本化更正要求。';
@@ -213,27 +236,33 @@ export function getClinicalReportCorrectionStartEligibilityWarning(
   ) {
     return '归档摘要与来源冻结锚点不一致，不能安全发起更正。';
   }
-  if (report.correction !== null || report.replacementOf !== null) {
-    return '当前报告已存在更正编排或替代来源关系。';
-  }
-  if (report.voidedAt !== null) return '已作废报告不能发起版本化更正。';
   if (!mongoIdPattern.test(report.id) || !isSafeIsoString(report.updatedAt)) {
     return '当前报告缺少安全写入标识或更新时间。';
   }
   return null;
 }
 
+export function getClinicalReportCorrectionStartEligibilityWarning(
+  report: ClinicalReport,
+): string | null {
+  const sourceWarning = getClinicalReportCorrectionSourceEligibilityWarning(report);
+  if (sourceWarning) return sourceWarning;
+  if (report.correction?.state === 'in_progress') {
+    return '当前报告已有进行中的版本化更正，只能恢复同一流程。';
+  }
+  if (report.correction !== null) {
+    return '当前报告已由下一线性版本替代，不能再次发起版本化更正。';
+  }
+  return getClinicalReportCorrectionConsistencyWarning(report);
+}
+
 export function getClinicalReportCorrectionResumeEligibilityWarning(
   report: ClinicalReport,
 ): string | null {
-  if (report.status !== 'archived' || report.correction?.state !== 'in_progress') {
+  const sourceWarning = getClinicalReportCorrectionSourceEligibilityWarning(report);
+  if (sourceWarning) return sourceWarning;
+  if (report.correction?.state !== 'in_progress') {
     return '当前报告没有可显式恢复的版本化更正流程。';
-  }
-  if (report.replacementOf !== null || report.voidedAt !== null) {
-    return '当前报告关系或状态不允许恢复版本化更正。';
-  }
-  if (!mongoIdPattern.test(report.id) || !isSafeIsoString(report.updatedAt)) {
-    return '当前报告缺少安全写入标识或更新时间。';
   }
   return getClinicalReportCorrectionConsistencyWarning(report);
 }

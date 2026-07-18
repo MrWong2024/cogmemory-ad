@@ -353,12 +353,12 @@ export function ClinicalReportTechnicalSummary({
               <dd className="mt-1 text-base text-[var(--cma-text-strong)]">{report.correction ? `${report.correction.state} / ${report.correction.correctionNo}` : '—'}</dd>
             </div>
             <div>
-              <dt className="text-sm font-semibold text-[var(--cma-muted)]">更正追溯号</dt>
-              <dd className="mt-1 break-all text-base text-[var(--cma-text-strong)]">{displayValue(report.correction?.correctionId ?? report.replacementOf?.correctionId)}</dd>
+              <dt className="text-sm font-semibold text-[var(--cma-muted)]">前序报告 / 版本</dt>
+              <dd className="mt-1 text-base text-[var(--cma-text-strong)]">{report.replacementOf ? `${report.replacementOf.previousReportCode} / V${report.replacementOf.previousReportVersion}` : report.correction ? `${report.correction.previousReportCode} / V${report.correction.previousReportVersion}` : '—'}</dd>
             </div>
             <div>
-              <dt className="text-sm font-semibold text-[var(--cma-muted)]">替代来源报告 ID</dt>
-              <dd className="mt-1 break-all text-base text-[var(--cma-text-strong)]">{displayValue(report.replacementOf?.previousReportId)}</dd>
+              <dt className="text-sm font-semibold text-[var(--cma-muted)]">替代报告 / 版本</dt>
+              <dd className="mt-1 text-base text-[var(--cma-text-strong)]">{report.correction ? `${report.correction.replacementReportCode} / V${report.correction.replacementReportVersion}` : report.replacementOf ? `${report.reportCode} / V${report.reportVersion}` : '—'}</dd>
             </div>
             <div>
               <dt className="text-sm font-semibold text-[var(--cma-muted)]">作废时间</dt>

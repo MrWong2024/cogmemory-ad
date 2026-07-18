@@ -5,7 +5,10 @@ import {
   formatClinicalReportDate,
   getClinicalReportCorrectionApiErrorMessage,
 } from '@/src/features/assessments/lib/clinical-report-display';
-import { clinicalReportCorrectionLimits } from '@/src/features/assessments/lib/clinical-report-correction-draft';
+import {
+  clinicalReportCorrectionLimits,
+  isSafeClinicalReportReplacementLineage,
+} from '@/src/features/assessments/lib/clinical-report-correction-draft';
 import type { ClinicalReport } from '@/src/features/assessments/types/clinical-report';
 
 export function ClinicalReportCorrectionPanel({
@@ -17,12 +20,14 @@ export function ClinicalReportCorrectionPanel({
 }) {
   const draft = workflow.correctionDraft;
   const isActive = workflow.activeMode === 'correction' && draft !== null;
+  const nextVersionLabel =
+    Number.isSafeInteger(report.reportVersion) &&
+    report.reportVersion < Number.MAX_SAFE_INTEGER
+      ? `V${report.reportVersion + 1}`
+      : '下一线性版本';
 
   if (!isActive) {
-    if (report.replacementOf !== null || report.status === 'corrected') return null;
-    if (report.status !== 'archived' && report.correction?.state !== 'in_progress') {
-      return null;
-    }
+    if (report.status === 'corrected') return null;
     return (
       <section className="grid gap-3 rounded-md border border-[var(--cma-line)] p-4">
         <div>
@@ -30,7 +35,7 @@ export function ClinicalReportCorrectionPanel({
             版本化更正
           </h3>
           <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-            更正保留原归档报告，并创建下一线性版本；Patient 与 Visit 状态不作为该流程的前端阻断条件。
+            当前报告：{report.reportCode} / V{report.reportVersion}；确认后将请求服务端创建 {nextVersionLabel}。更正保留原归档报告，完整版本关系仍由服务端裁决。
           </p>
         </div>
         {workflow.canResumeCorrection ? (
@@ -41,7 +46,7 @@ export function ClinicalReportCorrectionPanel({
           <Button onClick={workflow.openCorrection}>准备版本化更正</Button>
         ) : (
           <p className="text-sm leading-6 text-[var(--cma-muted)]">
-            {workflow.correctionBlockReason}
+            {workflow.correctionBlockReason ?? '当前报告暂不满足版本化更正条件。'}
           </p>
         )}
       </section>
@@ -50,9 +55,17 @@ export function ClinicalReportCorrectionPanel({
 
   const isWriting = workflow.writingAction === 'correction';
   const persisted = draft.mode === 'resume';
+  const latestIsCurrentCorrectionReplacement = Boolean(
+    draft.stale &&
+      report.id !== draft.sourceReportId &&
+      isSafeClinicalReportReplacementLineage(report.replacementOf, report) &&
+      report.replacementOf.previousReportId === draft.sourceReportId &&
+      (draft.correctionId === null ||
+        report.replacementOf.correctionId === draft.correctionId),
+  );
   const latestIsReplacementOrCorrected = Boolean(
     draft.stale &&
-      (report.replacementOf !== null ||
+      (latestIsCurrentCorrectionReplacement ||
         report.status === 'corrected' ||
         report.correction?.state === 'completed'),
   );
@@ -75,7 +88,7 @@ export function ClinicalReportCorrectionPanel({
         </p>
         {persisted ? (
           <p className="mt-2 text-sm leading-6 text-[var(--cma-muted)]">
-            correctionId：{draft.correctionId}。原始原因与摘要来自服务端，只读且不会被本页面覆盖；本次不会生成新的 correctionId。
+            正在继续服务端已保存的同一版本化更正流程。原始原因与摘要只读且不会被本页面覆盖；内部关联标识由系统保存，不在页面展示。
           </p>
         ) : null}
       </div>

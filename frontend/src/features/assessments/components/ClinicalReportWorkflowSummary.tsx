@@ -205,7 +205,7 @@ export function ClinicalReportWorkflowSummary({
       ) : null}
       {workflow.correctionReceipt ? (
         <p aria-live="polite" className="text-sm leading-6 text-[var(--cma-muted)]">
-          本次更正回执：{workflow.correctionReceipt.alreadyCreated ? '替代报告此前已创建，本次未重复写入' : workflow.correctionReceipt.resumedExisting ? '既有更正流程已恢复并完成' : '下一线性版本已创建'}；来源 {workflow.correctionReceipt.previousReportCode} / V{workflow.correctionReceipt.previousReportVersion}；替代 {workflow.correctionReceipt.replacementReportCode} / V{workflow.correctionReceipt.replacementReportVersion}；correctionId {workflow.correctionReceipt.correctionId}。
+          本次更正回执：{workflow.correctionReceipt.alreadyCreated ? '替代报告此前已创建，本次未重复写入' : workflow.correctionReceipt.resumedExisting ? '既有更正流程已恢复并完成' : '下一线性版本已创建'}；来源 {workflow.correctionReceipt.previousReportCode} / V{workflow.correctionReceipt.previousReportVersion}；替代 {workflow.correctionReceipt.replacementReportCode} / V{workflow.correctionReceipt.replacementReportVersion}。
         </p>
       ) : null}
     </section>
