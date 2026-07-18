@@ -17,7 +17,7 @@
 ## 3. 当前状态
 
 - `frontend\` 根目录公共骨架配置与 `frontend\app` / `frontend\src` 公共底座已初始化。
-- 前端已完成 B16 代码与静态验收：在 B15 更正及 replacement A21 基础上，合法线性 V2+ 复用既有 A22 lock、A23 freeze-sources、A24 archive 完成当前报告不可逆生命周期；真实浏览器业务矩阵待验收。
+- 前端 B16 已完成：在 B15 更正及 replacement A21 基础上，合法线性 V2+ 复用既有 A22 lock、A23 freeze-sources、A24 archive 完成当前报告不可逆生命周期；前轮完整浏览器矩阵、Resume / unsafe 补齐矩阵与本轮 Web Storage 审计共同构成 WP-02 最终验收证据。
 - 当前路由包含 `/login`、`/dashboard`、`/patients`、`/patients/new`、`/patients/[patientId]`、`/patients/[patientId]/visits/new`、`/patients/[patientId]/visits/[visitId]` 与 `/patients/[patientId]/visits/[visitId]/scale-instances/[scaleInstanceId]`。
 - 当前已新增 Auth 类型、Auth API Client、`useAuth()` 认证状态 Hook、`LoginForm` 和 `AuthDashboard`。
 - 当前已新增 patients feature：患者 / 访视公开类型、Patients API Client、展示与日期纯函数、认证工作区、患者列表 / 创建 / 详情及访视列表 / 创建组件。
@@ -50,7 +50,7 @@
 - B16 新增统一 `clinical-report-lifecycle-target.ts`：V1 保持既有资格；replacement 使用任意安全整数 V2+ 与完整公开 replacementOf 摘要作结构性 UI 门槛，不以 `isSafeCorrectionReplacement` 的编辑阶段空值要求阻断已锁定 / 已冻结版本，完整 lineage 仍由 A26 后端裁决。
 - B16 对安全 replacement 复用同一套 Lock / SourceFreeze / Archive Action 与 Panel。V2+ 不因 Patient inactive、Visit locked / voided 被前端阻断；V1 原 Visit 资格不放宽。三个请求 DTO、endpoint、response 不变，不发送 reportVersion、previousReportId、correctionId 或 sourceIds。
 - B16 在 `COMPLETE_CORRECTION` 切换 replacement 时清除旧版本 edit / submit / confirm / lock / freeze / archive 草稿、错误、回执和写禁止状态，只保留本次 correction receipt 与 sourceReport；`CLINICAL_REPORT_REPLACEMENT_LINEAGE_INVALID` 会显示安全中文提示、最多 latest 一次、禁止后续写入且不自动重放 POST。
-- B16 定向 ESLint、完整 lint、typecheck 与 production build 已通过；本机 `localhost:3002` / `localhost:5002` 不可用且无脱敏角色账号 / V1-V3 数据，真实浏览器矩阵未执行，WP-02 仍在进行中。
+- B16 最终验收已通过：Codex 内置浏览器在 `http://localhost:3002` 单 origin 完成登录前、登录后、报告页、未提交草稿后与刷新后的审计；localStorage、sessionStorage、IndexedDB 均未发现敏感业务持久化，未提交草稿刷新后未恢复且没有自动写请求，HttpOnly 会话 Cookie 不对页面脚本开放。WP-02 replacement 生命周期闭环完成；接口、DTO 与 response 均无变化。
 - 当前仍未实现患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、批量或自动保存、评分锁定、认知域人工修改 / 确认 / 锁定 / 作废 / 重算、报告退回 / reject / reopen / withdraw / 签名 / unlock / unfreeze / unarchive / 作废 / 重生成 / PDF、AI、用户管理或权限菜单。
 
 ## 4. 必读基础文档

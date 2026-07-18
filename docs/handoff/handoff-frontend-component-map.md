@@ -660,6 +660,7 @@
 - 三个 Panel 动态显示当前 reportCode / Vn；`ClinicalReportWorkflowSummary` 显示当前 replacement 版本及 A21–A24 服务端事实，不再声称后续生命周期关闭。doctor / admin 可操作，nurse / research_assistant 只读，后端 RolesGuard 仍是最终边界。
 - `clinical-report-workflow.state.ts` 的 `COMPLETE_CORRECTION` 在采用 replacement 后清空旧版本 edit / submit / confirmation / lock / sourceFreeze / archive draft、error、receipt 与 writeProhibited，保留本次 correction receipt / sourceReport；因此 V1 的 A21–A24 会话回执不会显示在新 Vn 下。
 - `clinical-report-workflow-recovery.ts` 将 replacement lineage 409 独立归类为最多 latest 一次和 writeProhibited；各 Action 不自动重放 POST。单一 activeMode、writingAction、writingRef、mountedRef、beforeunload、latest 与 report 更新入口保持。
+- B16 浏览器验收确认安全 archived Vn 可继续形成 V(n+1)，A25 Resume、unsafe replacement summary 写门禁与 lineage 隐私边界均已通过；报告工作流草稿只保留在当前 React 内存，不持久化到 localStorage、sessionStorage 或 IndexedDB。
 
 ## 7. 后续同步规则
 

@@ -327,6 +327,7 @@ node -r ts-node/register -r tsconfig-paths/register scripts/b16-browser-fixtures
 - 新增 `v2_correction_in_progress`（`a25_resume`）和 `v2_replacement_summary_unsafe`（`a25_blocked`）。前者先通过真实 A22→A25 形成合法 V2，再完成 V2 的 A21→A24，使用 production correction plan/start builder 和 `ReportsService.startCorrectionIfUnmodified()` 原子写入完整 A25 start metadata，随后立即停止，因此无需中断网络、sleep 或碰撞瞬时状态；后者在另一条合法 V1→V2 链上只做一处 test-only 公开 replacement 关系破坏，public mapper 仍可安全返回，由前端在请求前阻断不可逆写入。
 - 本轮实际验证：变更文件定向 ESLint 通过；`npm run build` 通过；fixture 定向 E2E 1 suite / 3 tests 通过；A25/A26 correction 定向 E2E 1 suite / 7 tests 通过；全量 unit 76 suites / 666 tests、全量 E2E 15 suites / 70 tests 通过。完整 `npm run lint` 未通过，共报告 51 个既有 Prettier 问题，均位于未修改的 scoring 文件；本任务受范围约束未修改这些文件，因此不得声称完整 lint 门禁通过。
 - 固定 namespace 的 `replace` / 只读 `verify` 实际演练均退出 0，得到 4 个角色、22 个 `scenarioKey`、21 个业务场景，safe manifest 禁止字段扫描通过。浏览器验证结束后连续执行两次 cleanup，残留均为 0；namespace 外 sentinel 和双 namespace 隔离由 fixture E2E 覆盖。CLI 仍只有 prepare / verify / cleanup / replace，命令与密码传递方式未变化。
+- B16 最终关闭审计基于 `9099f66` 再次验证 fixture 三个变更文件的定向 ESLint、backend build 和 fixture 定向 E2E，结果分别为通过、通过、1 suite / 3 tests 通过。完整 backend lint 仅执行一次，仍严格为 51 个 error、0 warning，且全部是既有 Prettier 格式问题，只位于 `manual-score-review.ts`、`manual-score-review.spec.ts`、`score-review-workflow.service.spec.ts`；数量、文件和类型均未增加。这 51 项早于 WP-02，三个文件均未被 WP-02 修改，作为独立非阻断格式技术债处理，不得写成完整 lint 通过，也不再阻止 WP-02 产品关闭。
 
 - 测试不得使用真实患者数据、真实身份证号、真实手机号、真实病历号或其他可识别个人信息。
 - 量表测试数据应使用脱敏样本或人工构造样本。

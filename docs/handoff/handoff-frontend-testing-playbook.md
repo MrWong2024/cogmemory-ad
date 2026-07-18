@@ -6,10 +6,10 @@
 
 ## 2. 当前状态
 
-- 前端公共底座与 B1-B15 既有闭环已落地；B16 replacement V2+ 产品代码保持在基线 `066ee87`。该基线的前轮完整浏览器矩阵证据继续有效，本轮已补测确定性 V2+ Resume 与不安全公开 replacement 摘要门禁，但完整 lint 和 Web Storage 审计门禁尚未闭合，因此 B16/WP-02 仍为进行中。
+- 前端公共底座与 B1-B15 既有闭环已落地；B16 replacement V2+ 产品代码保持在基线 `066ee87`。该基线的前轮完整浏览器矩阵、确定性 V2+ Resume / unsafe summary 补齐矩阵与 `9099f66` 的 Codex 内置浏览器 Web Storage 审计共同构成最终证据，B16 / WP-02 已完成。
 - `frontend\package.json` 已存在，自动验证命令以其中真实脚本为准。
 - B2-B16 不新增测试代码、测试框架、E2E 或第三方依赖。
-- 当前自动验证以 ESLint、TypeScript 与 production build 覆盖现有前端类型、调用代码和页面构建；真实 HTTP、角色、并发、浏览器交互与业务数据状态由分轮 Chrome 验收补充，未执行的安全存储检查必须明确保留为未完成项。
+- 当前自动验证以 ESLint、TypeScript 与 production build 覆盖现有前端类型、调用代码和页面构建；真实 HTTP、角色、并发、浏览器交互与业务数据状态由前轮 Chrome 矩阵补充，最终安全存储检查由 Codex 内置浏览器 `@Browser` 在隔离上下文中完成。
 
 ## 3. B1 / B2 / B3 / B4 / B5 / B6 / B7 / B8 / B9 / B10 / B11 / B12 / B13 / B14 / B15 / B16 自动验证命令
 
@@ -174,14 +174,14 @@
 - E2E / 浏览器自动化 / 浏览器手工验证：未执行；以下 B15 场景均待使用脱敏数据验证。
 - 后端命令：未执行。
 
-本次 B16 验证结果：
+本次 B16 实现时静态验证结果（历史记录）：
 
 - 定向检查：`npm run lint:file -- <15 个 B16 代码文件>` 通过。
 - `npm run lint`：通过，无 error / warning。
 - `npm run typecheck`：通过，Next 16 route types 生成成功且 TypeScript 无错误。
 - `npm run build`：通过，既有路由集合不变并包含访视详情动态路由；未新增路由。
 - 静态核对：统一 lifecycle target 是 A22–A24 唯一版本门槛；无 `reportVersion === 2` 业务分支；三条 API Body 未加入版本 / lineage / sourceIds；`COMPLETE_CORRECTION` 清除旧版本 A21–A24 会话状态；lineage invalid 独立映射、最多 latest 一次、writeProhibited 且不自动 POST。
-- 浏览器自动化 / 浏览器手工验证：未执行；`localhost:3002` 与 `localhost:5002` 均不可用，且缺少脱敏四角色账号及 V1 / V2 / V3、in_progress、stale、lineage invalid 数据。WP-02 保持进行中。
+- 该实现时点浏览器自动化 / 浏览器手工验证尚未执行；后续完整业务矩阵、Resume / unsafe 补齐矩阵与本文末尾的 Codex 内置浏览器 Web Storage 最终审计已经补齐并关闭 WP-02。
 - 后端命令：未执行。
 
 如后续环境中 `frontend/node_modules` 不存在，不得为验证本阶段而执行 `npm install`；应跳过上述命令并说明原因。
@@ -1258,7 +1258,7 @@ B14.1 静态验证不覆盖：
 - A23/A24 场景：`v2_ready_freeze`、`v2_freeze_in_progress`、`v2_ready_archive`；并发与幂等场景：`v2_ready_lock_concurrency`、`v2_ready_archive_concurrency`、`v2_already_locked`、`v2_already_frozen`、`v2_already_archived`；前置错误：`v2_freeze_before_lock`、`v2_archive_before_freeze`；内部 lineage 409：`v2_lineage_invalid_internal`。新增 `v2_correction_in_progress` 用于恢复同一 A25 correction，新增 `v2_replacement_summary_unsafe` 用于公开摘要前端写阻断。contract 共 22 个 `scenarioKey`（1 个 roles + 21 个业务场景），每个业务 key 都有独立 patient/visit/report 链，不应跨场景复用浏览器写操作。
 - safe manifest 的 purpose、当前版本、安全状态、建议角色、起始阶段和聚合来源计数是验收导航信息；它不会输出密码、Cookie、Session、连接串、报告正文、前序/替代报告内部 ID、correction/freeze/source ID。
 - 浏览器矩阵结束后执行后端 CLI `cleanup --namespace <name> --confirm-cleanup`，并核对残留为 0。夹具 prepare/verify 通过只说明账号与数据前置就绪，不等于 B16 真实浏览器业务验收通过。
-- 当前状态：前轮完整矩阵与本轮针对性 Chrome 结果均已记录，但本轮完成门禁未全部满足；B16/WP-02 仍为进行中，WP-04 尚未开始。
+- 当前状态：前轮完整矩阵、Resume / unsafe 针对性 Chrome 结果与最终 `@Browser` Web Storage 审计均已记录；B16 / WP-02 已完成，WP-04 尚未实施。
 
 ### B16 最终门禁补齐的本轮结果
 
@@ -1267,8 +1267,18 @@ B14.1 静态验证不覆盖：
 - 真实 Chrome 的 `v2_replacement_summary_unsafe`：页面和公开报告映射正常，显示安全阻断说明；A22–A25 入口均不开放，写请求为 0，刷新后不修补、不跳转。页面、DOM、URL 和 Console 未发现内部 lineage 标识或被破坏关系的原始值。
 - 指定冒烟通过：安全 archived V2→V3 为 1 次 A25 POST / HTTP 200；internal lineage invalid 为 1 次 A22 POST / HTTP 409、错误码保持稳定、latest 1 次且自动重发 0；nurse 和 research_assistant 无 correction 入口；非 archived replacement 无 correction Start；Resume 键盘焦点可见。beforeunload、双会话并发、完整 V1/V2、历史 Patient/Visit、幂等和 freeze 矩阵沿用同一产品代码基线 `066ee87` 的前轮证据。
 - fixture 定向 E2E 1 suite / 3 tests、A25/A26 定向 E2E 1 suite / 7 tests、全量 unit 76 suites / 666 tests、全量 E2E 15 suites / 70 tests、build 均通过。完整 lint 因三个未修改 scoring 文件中的 51 个既有 Prettier 问题失败；受本任务范围约束未修复。
-- Chrome 控制规范禁止读取浏览器 Cookie、Local Storage、Session Storage、profile、密码或 session store，因此本轮未执行强制 Web Storage 泄露检查。该验证能力限制与完整 lint 失败共同阻止 B16/WP-02 完成；未发现新的产品行为缺陷，不切换 WP-04。
-- 浏览器验证后 fixture cleanup 连续执行两次，残留为 0；本任务启动的服务已停止。未修改任何 frontend 产品文件。
+- 上述 Chrome 补齐矩阵不承担 Web Storage 取证；完整 backend lint 的 51 个问题已确认严格为三个未修改 scoring 文件中的既有 Prettier 技术债，不是 WP-02 回归，也不再作为 WP-02 产品完成门禁。
+
+### B16 Codex 内置浏览器 Web Storage 最终审计
+
+- 使用 `@Browser`，不是 `@Chrome`；使用新的隔离浏览器标签页和完整 CDP，检查严格限制在 `http://localhost:3002`。未读取浏览器 profile、Chrome session store、历史、下载、其他 origin、Cookie 存储或密码管理器。
+- 五个时点的 localStorage key 数依次为 0、0、0、0、0；key 名称均为空，key / value 禁止模式命中数均为 0。unsafe replacement summary 复核仍为 0。value 只在页面执行环境内做布尔扫描并返回长度与 true / false，执行报告未记录任何 value。
+- 五个时点的 sessionStorage key 数依次为 1、1、2、3、4；unsafe replacement summary 复核为 5。全部 key 名称均符合 `__next_debug_channel:*`，判断为 Next.js dev 调试通道；key / value 禁止模式命中数均为 0，没有认证、患者、报告、草稿、correction / lineage 或来源集合持久化。未输出任何 value。
+- 五个时点与 unsafe 页面 IndexedDB 数据库数均为 0，数据库名称与 object store 名称均为空，名称禁止模式命中数为 0；未打开或读取任何 object store 记录。
+- doctor 登录成功，CORS 精确允许 frontend origin 且 credentials 正常。所有选定时点的 `document.cookie` 均为空，没有可由脚本读取的认证凭证；只记录布尔结果，不记录实际字符串或 Cookie 值。
+- 在可编辑 A22 表单输入未提交脱敏说明草稿后，localStorage / sessionStorage / IndexedDB 无相关业务记录，写请求为 0。内置浏览器首次刷新触发既有 beforeunload 且自动取消；确认事件后，仅通过 CDP 临时移除旧页面的两个 beforeunload listener 以完成真实刷新，导航后该临时处理不保留。真实刷新后草稿未恢复、页面仅恢复服务端事实，自动 POST / PATCH 为 0。
+- 报告页与 unsafe summary 的 Console 禁止模式命中为 0；URL query / hash 与 DOM 未发现密码、token、报告正文、correction / lineage 内部 ID 或来源集合 ID。unsafe 页面继续显示安全阻断说明，未开放不可逆写入口且写请求为 0。
+- fixture replace / verify 均退出 0，得到 4 个角色、22 个 `scenarioKey`、21 个业务场景，safe manifest 扫描通过；审计后 cleanup 连续执行两次，残留均为 0。frontend lint、typecheck、build 均通过，Web Storage 门禁通过。
 
 ## 19. 认证与安全验证口径
 

@@ -7,7 +7,7 @@
 ## 2. 当前工程状态
 
 - `frontend\` 根目录公共骨架配置与 `frontend\app` / `frontend\src` 公共底座已初始化。
-- 前端 B1-B15 已落地既有闭环；B16 在同一访视详情路由让公开摘要结构安全的任意 replacement V2+ 复用既有 A22 lock、A23 freeze-sources 与 A24 archive。
+- 前端 B1-B15 已落地既有闭环；B16 已完成，在同一访视详情路由让公开摘要结构安全的任意 replacement V2+ 复用既有 A22 lock、A23 freeze-sources 与 A24 archive。当前 frontend 产品代码基线为 `066ee87`，fixture / test 基线为 `9099f66`。
 - 当前首页仍为公共占位，只增加登录页与工作台入口，不调用后端。
 - `/login` 提供账号密码登录，并在登录前通过 `GET /auth/me` 检查已有会话。
 - `/dashboard` 通过 `GET /auth/me` 验证会话、展示当前用户公开信息、提供患者档案入口和登出入口。
@@ -447,11 +447,13 @@
 
 本次 B16 验证结果：
 
-- 定向 ESLint（15 个实际修改代码文件）通过；`npm run lint`、`npm run typecheck` 与 `npm run build` 通过，Next 16 route types 和生产路由集合正常，未新增路由。
-- 静态核对通过：A22–A24 不再分别硬编码只接受 V1；唯一 `reportVersion === 1` 位于统一 V1 守卫；没有 `reportVersion === 2` 业务分支、replacement 专用 endpoint / fetch / component / store，也未向请求加入 reportVersion、previousReportId 或 sourceIds。
-- reducer 的 `COMPLETE_CORRECTION` 明确清空前序 A21–A24 草稿、错误和回执；lineage invalid 有独立 API / display / recovery 映射，最多 latest 一次且 writeProhibited，不自动 POST。
-- 浏览器自动化与真实浏览器手工联调未执行。本机 `http://localhost:3002` 与 `http://localhost:5002` 均不可用，且没有可用脱敏 doctor/admin/nurse/research_assistant 账号及 V1/V2/V3、in_progress、冲突数据；V1 回归、V2 完整流程、V3 防写死、历史状态、幂等 / stale / lineage 409、权限与快速双击矩阵待验收。
-- 后端命令未执行；WP-02 因浏览器业务验收未完成而保持进行中，不切换到 WP-04。
+- B16 最终完成；产品代码继续保持 `066ee87`，本轮 fixture / test 基线为 `9099f66`，没有 frontend 产品文件变化。
+- 前轮完整 V1 / V2 / V3、角色、历史状态、幂等 / 并发与单写锁矩阵，以及后续 Resume / unsafe 补齐矩阵继续有效；本轮不重复业务场景，只补齐最终 Web Storage 门禁。
+- 使用 Codex 内置浏览器的隔离标签页和完整 CDP，检查严格限制在 `http://localhost:3002`。审计时点为登录前、登录后、报告页、输入未提交脱敏草稿后、真实刷新后，并额外复核 unsafe replacement summary 页面。
+- localStorage 未发现 key；sessionStorage 只出现 Next.js dev 的 `__next_debug_channel:*` 框架调试 key，key 与 value 布尔扫描均无禁止模式命中；IndexedDB 数据库和 object store 均为 0。未读取任何 storage value、Cookie 存储、IndexedDB 记录、浏览器 profile 或 Chrome session store。
+- 未提交草稿刷新后未恢复，页面只恢复服务端业务事实且没有自动 POST / PATCH；`document.cookie` 为空且未发现可由脚本读取的认证凭证，Console 与 URL 未发现敏感信息。
+- frontend `npm run lint`、`npm run typecheck`、`npm run build` 均通过；接口、DTO、response、路由与依赖不变。
+- fixture namespace 在审计后连续 cleanup 两次，残留均为 0；B16 / WP-02 已关闭，WP-04 尚未实施。
 
 ## 6. 当前未实现前端事实
 
