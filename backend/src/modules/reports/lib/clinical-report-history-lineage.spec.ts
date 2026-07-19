@@ -40,47 +40,50 @@ function zeroCounts() {
 
 function createChain(total: number): ClinicalReportHistoryRecord[] {
   const confirmedAt = new Date('2026-07-19T07:00:00.000Z');
-  const reports = Array.from({ length: total }, (_, index) => {
-    const version = index + 1;
-    const createdAt = new Date(`2026-07-19T0${version}:00:00.000Z`);
-    return {
-      id: reportIds[index],
-      patientId,
-      assessmentVisitId: visitId,
-      reportCode: `RPT-HISTORY-V${version}`,
-      reportType: 'cognitive_assessment' as const,
-      status: 'confirmed' as const,
-      reportVersion: version,
-      source: 'mixed' as const,
-      qualityStatus: 'passed' as const,
-      confirmation: {
-        confirmedAt,
-        confirmedBy: actorId,
-        confirmedByName: 'History Test Doctor',
-        confirmedByRole: 'doctor' as const,
-        confirmationNote: 'De-identified confirmation note',
-      },
-      lockedAt: null,
-      lockedBy: null,
-      archivedAt: null,
-      archivedBy: null,
-      correctionRecords: [],
-      voidedAt: null,
-      metadata: {
-        a21Confirmation: {
-          version: 1,
-          confirmationId: `confirmation-${version}`,
+  const reports: ClinicalReportHistoryRecord[] = Array.from(
+    { length: total },
+    (_, index) => {
+      const version = index + 1;
+      const createdAt = new Date(`2026-07-19T0${version}:00:00.000Z`);
+      return {
+        id: reportIds[index],
+        patientId,
+        assessmentVisitId: visitId,
+        reportCode: `RPT-HISTORY-V${version}`,
+        reportType: 'cognitive_assessment' as const,
+        status: 'confirmed' as const,
+        reportVersion: version,
+        source: 'mixed' as const,
+        qualityStatus: 'passed' as const,
+        confirmation: {
           confirmedAt,
           confirmedBy: actorId,
           confirmedByName: 'History Test Doctor',
-          confirmedByRole: 'doctor',
+          confirmedByRole: 'doctor' as const,
           confirmationNote: 'De-identified confirmation note',
         },
-      },
-      createdAt,
-      updatedAt: createdAt,
-    } satisfies ClinicalReportHistoryRecord;
-  });
+        lockedAt: null,
+        lockedBy: null,
+        archivedAt: null,
+        archivedBy: null,
+        correctionRecords: [],
+        voidedAt: null,
+        metadata: {
+          a21Confirmation: {
+            version: 1,
+            confirmationId: `confirmation-${version}`,
+            confirmedAt,
+            confirmedBy: actorId,
+            confirmedByName: 'History Test Doctor',
+            confirmedByRole: 'doctor',
+            confirmationNote: 'De-identified confirmation note',
+          },
+        },
+        createdAt,
+        updatedAt: createdAt,
+      } satisfies ClinicalReportHistoryRecord;
+    },
+  );
   for (let index = 0; index < reports.length - 1; index += 1) {
     const previous = reports[index];
     const current = reports[index + 1];

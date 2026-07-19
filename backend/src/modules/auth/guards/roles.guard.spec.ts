@@ -1,6 +1,7 @@
 // backend/src/modules/auth/guards/roles.guard.spec.ts
 import { ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { ExecutionContextHost } from '@nestjs/core/helpers/execution-context-host';
 import { Test } from '@nestjs/testing';
 import type {
   AuthenticatedUserContext,
@@ -23,15 +24,9 @@ function createExecutionContext(
   const handler = () => undefined;
   class TestController {}
 
-  return {
-    getHandler: () => handler,
-    getClass: () => TestController,
-    switchToHttp: () => ({
-      getRequest: <T = unknown>() => request as T,
-      getResponse: <T = unknown>() => undefined as T,
-      getNext: <T = unknown>() => undefined as T,
-    }),
-  } as ExecutionContext;
+  const context = new ExecutionContextHost([request], TestController, handler);
+  context.setType('http');
+  return context;
 }
 
 function createAuthenticatedUser(

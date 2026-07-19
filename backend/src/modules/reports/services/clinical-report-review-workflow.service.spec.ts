@@ -1,8 +1,12 @@
 import { ForbiddenException } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
 import type { AuthenticatedUserContext } from '../../auth/types/auth-user-context.type';
+import { AssessmentsService } from '../../assessments/services/assessments.service';
+import { PatientsService } from '../../patients/services/patients.service';
 import { ClinicalReportPublicMapper } from './clinical-report-public.mapper';
 import { ClinicalReportReviewWorkflowService } from './clinical-report-review-workflow.service';
 import type { ClinicalReportSummary } from './reports.service';
+import { ReportsService } from './reports.service';
 
 const ids = {
   report: '507f1f77bcf86cd799439011',
@@ -142,34 +146,34 @@ function mocksFixture() {
   return {
     patients: {
       findPatientById: jest
-        .fn<(id: string) => Promise<{ id: string; status: string } | null>>()
+        .fn<Promise<{ id: string; status: string } | null>, [id: string]>()
         .mockResolvedValue({ id: ids.patient, status: 'active' }),
     },
     assessments: {
       findVisitByPatientAndId: jest
         .fn<
-          (
-            patientId: string,
-            visitId: string,
-          ) => Promise<{ id: string; status: string } | null>
+          Promise<{ id: string; status: string } | null>,
+          [patientId: string, visitId: string]
         >()
         .mockResolvedValue({ id: ids.visit, status: 'completed' }),
     },
     reports: {
-      findReportByOwnership:
-        jest.fn<(input: Ownership) => Promise<ClinicalReportSummary | null>>(),
-      updateDraftNarrativeIfUnmodified:
-        jest.fn<
-          (input: AtomicInput) => Promise<ClinicalReportSummary | null>
-        >(),
-      submitForConfirmationIfUnmodified:
-        jest.fn<
-          (input: AtomicInput) => Promise<ClinicalReportSummary | null>
-        >(),
-      confirmReportIfUnmodified:
-        jest.fn<
-          (input: AtomicInput) => Promise<ClinicalReportSummary | null>
-        >(),
+      findReportByOwnership: jest.fn<
+        Promise<ClinicalReportSummary | null>,
+        [input: Ownership]
+      >(),
+      updateDraftNarrativeIfUnmodified: jest.fn<
+        Promise<ClinicalReportSummary | null>,
+        [input: AtomicInput]
+      >(),
+      submitForConfirmationIfUnmodified: jest.fn<
+        Promise<ClinicalReportSummary | null>,
+        [input: AtomicInput]
+      >(),
+      confirmReportIfUnmodified: jest.fn<
+        Promise<ClinicalReportSummary | null>,
+        [input: AtomicInput]
+      >(),
     },
   };
 }
@@ -179,18 +183,22 @@ describe('ClinicalReportReviewWorkflowService', () => {
   let mocks: ReturnType<typeof mocksFixture>;
   let service: ClinicalReportReviewWorkflowService;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     report = reportFixture();
     mocks = mocksFixture();
     mocks.reports.findReportByOwnership.mockImplementation(() =>
       Promise.resolve(report),
     );
-    service = new ClinicalReportReviewWorkflowService(
-      mocks.patients,
-      mocks.assessments,
-      mocks.reports,
-      new ClinicalReportPublicMapper(),
-    );
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        ClinicalReportReviewWorkflowService,
+        ClinicalReportPublicMapper,
+        { provide: PatientsService, useValue: mocks.patients },
+        { provide: AssessmentsService, useValue: mocks.assessments },
+        { provide: ReportsService, useValue: mocks.reports },
+      ],
+    }).compile();
+    service = moduleRef.get(ClinicalReportReviewWorkflowService);
   });
 
   it('edits draft and reports stale updatedAt conflicts', async () => {

@@ -36,6 +36,7 @@ const currentUser: AuthenticatedUserContext = {
   accountName: 'doctor-a23-test',
   displayName: 'A23 Test Doctor',
   roles: ['doctor'],
+  permissions: [],
 };
 
 function completedReport(): ClinicalReportSummary {

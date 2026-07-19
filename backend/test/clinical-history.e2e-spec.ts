@@ -6,6 +6,7 @@ import { Connection, Model, Types } from 'mongoose';
 import request, { type Response } from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
+import { requireInitialized } from './support/e2e-initialization';
 import {
   ASSESSMENT_STATUSES,
   AssessmentVisit,
@@ -58,7 +59,7 @@ const PASSWORD = 'A27-History-Test-Password!';
 const SUBJECT_PREFIX = 'SUBJ-A27-HISTORY-';
 const VISIT_PREFIX = 'VISIT-A27-HISTORY-';
 
-type SupertestApp = Parameters<typeof request.agent>[0];
+type SupertestApp = NonNullable<Parameters<typeof request.agent>[0]>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -223,7 +224,10 @@ describe('clinical history read APIs (e2e)', () => {
         status: 'active',
       },
     ]);
-    server = app.getHttpServer() as SupertestApp;
+    server = requireInitialized<SupertestApp>(
+      app.getHttpServer() as SupertestApp | undefined,
+      'HTTP server',
+    );
     doctorAgent = request.agent(server);
     nurseAgent = request.agent(server);
     researchAgent = request.agent(server);

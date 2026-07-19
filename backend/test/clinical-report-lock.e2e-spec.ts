@@ -6,6 +6,7 @@ import { Connection, Model, Types } from 'mongoose';
 import request, { type Response } from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
+import { requireInitialized } from './support/e2e-initialization';
 import {
   AssessmentVisit,
   AssessmentVisitDocument,
@@ -43,7 +44,11 @@ import {
   ScoreResult,
   ScoreResultDocument,
 } from '../src/modules/scoring/schemas/score-result.schema';
-import { User, UserDocument } from '../src/modules/users/schemas/user.schema';
+import {
+  User,
+  UserDocument,
+  type UserType,
+} from '../src/modules/users/schemas/user.schema';
 
 jest.setTimeout(30000);
 
@@ -55,13 +60,20 @@ const ACCOUNTS = {
   research_assistant: 'research-a22-test',
   system: 'system-a22-test',
 } as const;
+const ACCOUNT_ENTRIES = [
+  ['doctor', ACCOUNTS.doctor],
+  ['admin', ACCOUNTS.admin],
+  ['nurse', ACCOUNTS.nurse],
+  ['research_assistant', ACCOUNTS.research_assistant],
+  ['system', ACCOUNTS.system],
+] as const satisfies readonly (readonly [UserType, string])[];
 const SUBJECT_PREFIX = 'SUBJ-A22-TEST-';
 const VISIT_PREFIX = 'VISIT-A22-TEST-';
 const VALID_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
   'base64',
 );
-type SupertestApp = Parameters<typeof request.agent>[0];
+type SupertestApp = NonNullable<Parameters<typeof request.agent>[0]>;
 
 type Fixture = {
   patientId: string;
@@ -633,7 +645,7 @@ describe('clinical report lock API (e2e)', () => {
     modelsReady = true;
     await cleanup();
     const passwordHash = await authService.hashPassword(PASSWORD);
-    for (const [role, accountName] of Object.entries(ACCOUNTS)) {
+    for (const [role, accountName] of ACCOUNT_ENTRIES) {
       await userModel.create({
         accountName,
         displayName: `A22 ${role} Test Operator`,
@@ -650,7 +662,10 @@ describe('clinical report lock API (e2e)', () => {
     const doctor = await userModel.findOne({ accountName: ACCOUNTS.doctor });
     if (!doctor) throw new Error('Expected A22 doctor account');
     doctorId = doctor._id;
-    server = app.getHttpServer() as SupertestApp;
+    server = requireInitialized<SupertestApp>(
+      app.getHttpServer() as SupertestApp | undefined,
+      'HTTP server',
+    );
     doctorAgent = request.agent(server);
     adminAgent = request.agent(server);
     nurseAgent = request.agent(server);

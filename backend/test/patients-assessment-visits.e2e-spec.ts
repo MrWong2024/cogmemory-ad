@@ -6,6 +6,7 @@ import { Connection, Model, Types } from 'mongoose';
 import request, { type Response, type Test as SupertestTest } from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
+import { requireInitialized } from './support/e2e-initialization';
 import {
   AssessmentVisit,
   AssessmentVisitDocument,
@@ -28,7 +29,7 @@ const SYSTEM_ACCOUNT = 'system-a12-test';
 const TEST_PATIENT_PREFIX = 'SUBJ-A12-TEST-';
 const TEST_VISIT_PREFIX = 'VISIT-A12-TEST-';
 
-type SupertestApp = Parameters<typeof request.agent>[0];
+type SupertestApp = NonNullable<Parameters<typeof request.agent>[0]>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -173,7 +174,10 @@ describe('patient and assessment visit public APIs (e2e)', () => {
     });
     doctorUserId = doctorUser._id;
 
-    httpServer = app.getHttpServer() as SupertestApp;
+    httpServer = requireInitialized<SupertestApp>(
+      app.getHttpServer() as SupertestApp | undefined,
+      'HTTP server',
+    );
     doctorAgent = request.agent(httpServer);
     systemAgent = request.agent(httpServer);
 

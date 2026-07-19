@@ -233,7 +233,10 @@ describe('AssessmentVisitsController', () => {
           patientId: '507f1f77bcf86cd799439012',
           visitId: '507f1f77bcf86cd799439013',
         },
-        { scaleCode: 'mmse' },
+        {
+          scaleCode: 'mmse',
+          administrationMode: 'clinician_administered',
+        },
         undefined,
       ),
     ).toThrow(UnauthorizedException);

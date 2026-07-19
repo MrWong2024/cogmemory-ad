@@ -359,8 +359,12 @@ function getRuleValue(item: ScaleSeedItem, propertyName: string): unknown {
   return rule[propertyName];
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function getRecord(value: unknown): Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+  if (!isRecord(value)) {
     throw new Error('Expected record value');
   }
 

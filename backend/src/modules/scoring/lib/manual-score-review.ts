@@ -21,6 +21,13 @@ import type {
 export const MAX_A18_MANUAL_REVIEW_EVENTS = 500;
 const SCORE_STEP_EPSILON = 1e-9;
 
+export type ManualScoreReviewSourceInput = Omit<
+  ScoreResultSummary,
+  'metadata'
+> & {
+  metadata: unknown;
+};
+
 export type ScoreReviewRuleErrorCode =
   | 'SCORE_INPUT_INVALID'
   | 'SCORE_ITEM_NOT_FOUND'
@@ -116,9 +123,10 @@ function validateManualScoreValue(
   }
 }
 
-function cloneMetadataForManualReview(
-  metadata: ScoreResultSummary['metadata'],
-): { metadata: Record<string, unknown>; events: unknown[] } {
+function cloneMetadataForManualReview(metadata: unknown): {
+  metadata: Record<string, unknown>;
+  events: unknown[];
+} {
   if (metadata !== null && !isPlainRecord(metadata)) {
     throw new ScoreReviewRuleError('SCORE_RESULT_METADATA_UNSUPPORTED');
   }
@@ -140,7 +148,7 @@ function cloneMetadataForManualReview(
 }
 
 export function prepareManualScoreReview(input: {
-  result: ScoreResultSummary;
+  result: ManualScoreReviewSourceInput;
   version: ScaleVersionSummary;
   itemResponseId: string;
   scoreValue: number;

@@ -187,6 +187,114 @@ function createReportFixture(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function createClinicalReportSummaryFixture(
+  overrides: Partial<ClinicalReportSummary> = {},
+): ClinicalReportSummary {
+  const scaleInstanceId = new Types.ObjectId().toString();
+  const scoreResultId = new Types.ObjectId().toString();
+  const domainResultId = new Types.ObjectId().toString();
+  const mediaEvidenceId = new Types.ObjectId().toString();
+  const itemResponseId = new Types.ObjectId().toString();
+
+  return {
+    id: new Types.ObjectId().toString(),
+    patientId: new Types.ObjectId().toString(),
+    assessmentVisitId: new Types.ObjectId().toString(),
+    primaryScaleInstanceIds: [scaleInstanceId],
+    scoreResultIds: [scoreResultId],
+    cognitiveDomainResultIds: [domainResultId],
+    mediaEvidenceIds: [mediaEvidenceId],
+    subjectCode: 'SUBJ-A26-TYPECHECK-TEST',
+    reportCode: 'RPT-A26-TYPECHECK-V1',
+    reportType: 'cognitive_assessment',
+    status: 'confirmed',
+    reportVersion: 1,
+    source: 'mixed',
+    patientSnapshot: {
+      subjectCode: 'SUBJ-A26-TYPECHECK-TEST',
+      displayName: 'A26 De-identified Subject',
+      sex: 'unknown',
+      birthDate: null,
+      educationYears: null,
+    },
+    visitSnapshot: {
+      visitCode: 'VISIT-A26-TYPECHECK-TEST',
+      visitType: 'baseline',
+      assessmentDate: new Date('2026-07-15T06:00:00.000Z'),
+      operatorName: 'A26 Test Doctor',
+      operatorRole: 'doctor',
+      clinicalContext: null,
+    },
+    scaleTraces: [{ scaleInstanceId, scaleCode: 'moca', scaleVersion: '1.0' }],
+    scoreSnapshots: [
+      {
+        scoreResultId,
+        scaleCode: 'moca',
+        totalScoreValue: 24,
+        totalMaxScore: 30,
+        totalMinScore: 0,
+        scorePercent: 80,
+        scoreStatus: 'confirmed',
+        qualityStatus: 'passed',
+        scoreDetails: null,
+      },
+    ],
+    domainSnapshots: [
+      {
+        cognitiveDomainResultId: domainResultId,
+        scaleCode: 'moca',
+        domainCode: 'memory',
+        scoreValue: 4,
+        maxScore: 5,
+        scorePercent: 80,
+        weightedScore: 4,
+        weightedMaxScore: 5,
+        itemCount: 1,
+        needsReviewItemCount: 0,
+      },
+    ],
+    evidenceSnapshots: [
+      {
+        mediaEvidenceId,
+        itemResponseId,
+        scaleCode: 'moca',
+        itemCode: 'moca.visuospatial.clock',
+        evidenceType: 'handwriting',
+        captureMode: 'tablet_handwriting',
+        qualityStatus: 'passed',
+      },
+    ],
+    narrative: { chiefSummary: 'A26 de-identified summary' },
+    aiDraft: {
+      aiAnalysisResultId: null,
+      generatedAt: null,
+      status: 'not_requested',
+      doctorEdited: false,
+    },
+    confirmation: {
+      confirmedAt: new Date('2026-07-15T06:30:00.000Z'),
+      confirmedBy: new Types.ObjectId().toString(),
+      confirmedByName: 'A26 Test Doctor',
+      confirmedByRole: 'doctor',
+      confirmationNote: 'A26 de-identified confirmation note',
+    },
+    lockedAt: null,
+    lockedBy: null,
+    archivedAt: null,
+    archivedBy: null,
+    correctionRecords: [],
+    voidedAt: null,
+    voidedBy: null,
+    auditLogRefs: [],
+    qualityStatus: 'passed',
+    qualityHints: null,
+    metadata: null,
+    createdAt: new Date('2026-07-15T06:00:00.000Z'),
+    updatedAt: new Date('2026-07-15T06:30:00.000Z'),
+    ...overrides,
+  };
+}
+
 describe('ClinicalReport schema', () => {
   it('defines collection and indexes', () => {
     expect(ClinicalReportSchema.get('collection')).toBe('clinical_reports');
@@ -684,20 +792,116 @@ describe('ReportsService', () => {
   it('bypasses V1 and scopes a V2 predecessor lookup to current ownership', async () => {
     const lookup = jest.spyOn(service, 'findReportByOwnership');
     await expect(
-      service.hasValidReplacementLifecycleLineage({
-        reportVersion: 1,
-      } as ClinicalReportSummary),
+      service.hasValidReplacementLifecycleLineage(
+        createClinicalReportSummaryFixture({ reportVersion: 1 }),
+      ),
     ).resolves.toBe(true);
     expect(lookup).not.toHaveBeenCalled();
 
     const previousReportId = new Types.ObjectId().toString();
-    const current = {
-      id: new Types.ObjectId().toString(),
-      patientId: new Types.ObjectId().toString(),
-      assessmentVisitId: new Types.ObjectId().toString(),
+    const currentId = new Types.ObjectId().toString();
+    const patientId = new Types.ObjectId().toString();
+    const assessmentVisitId = new Types.ObjectId().toString();
+    const actorId = new Types.ObjectId().toString();
+    const scaleInstanceId = new Types.ObjectId().toString();
+    const scoreResultId = new Types.ObjectId().toString();
+    const domainResultId = new Types.ObjectId().toString();
+    const lockedAt = new Date('2026-07-15T07:00:00.000Z');
+    const freezeCompletedAt = new Date('2026-07-15T07:30:00.000Z');
+    const archivedAt = new Date('2026-07-15T08:00:00.000Z');
+    const replacementCreatedAt = new Date('2026-07-15T09:00:00.000Z');
+    const current = createClinicalReportSummaryFixture({
+      id: currentId,
+      patientId,
+      assessmentVisitId,
+      primaryScaleInstanceIds: [scaleInstanceId],
+      scoreResultIds: [scoreResultId],
+      cognitiveDomainResultIds: [domainResultId],
+      mediaEvidenceIds: [],
       reportCode: 'RPT-A26-V2-LOOKUP',
       reportVersion: 2,
+      status: 'archived',
+      lockedAt,
+      lockedBy: actorId,
+      archivedAt,
+      archivedBy: actorId,
+      createdAt: replacementCreatedAt,
+      updatedAt: archivedAt,
       metadata: {
+        a22Lock: {
+          version: 1,
+          lockId: '11111111-1111-4111-8111-111111111111',
+          lockedAt,
+          lockedBy: actorId,
+          lockedByName: 'A26 Test Doctor',
+          lockedByRole: 'doctor',
+          lockNote: 'A26 de-identified lock note',
+        },
+        a23SourceFreeze: {
+          version: 1,
+          state: 'completed',
+          freezeId: '22222222-2222-4222-8222-222222222222',
+          startedAt: lockedAt,
+          sourceLockedAt: lockedAt,
+          startedBy: actorId,
+          startedByName: 'A26 Test Doctor',
+          startedByRole: 'doctor',
+          freezeNote: 'A26 de-identified freeze note',
+          scope: {
+            scaleInstanceIds: [scaleInstanceId],
+            itemResponseIds: [],
+            scoreResultIds: [scoreResultId],
+            cognitiveDomainResultIds: [domainResultId],
+            mediaEvidenceIds: [],
+          },
+          expectedCounts: {
+            scaleInstanceCount: 1,
+            itemResponseCount: 0,
+            scoreResultCount: 1,
+            cognitiveDomainResultCount: 1,
+            mediaEvidenceCount: 0,
+            totalSourceCount: 3,
+          },
+          completedCounts: {
+            scaleInstanceCount: 1,
+            itemResponseCount: 0,
+            scoreResultCount: 1,
+            cognitiveDomainResultCount: 1,
+            mediaEvidenceCount: 0,
+            totalSourceCount: 3,
+          },
+          newlyFrozenCounts: {
+            scaleInstanceCount: 1,
+            itemResponseCount: 0,
+            scoreResultCount: 1,
+            cognitiveDomainResultCount: 1,
+            mediaEvidenceCount: 0,
+            totalSourceCount: 3,
+          },
+          previouslyFrozenCounts: {
+            scaleInstanceCount: 0,
+            itemResponseCount: 0,
+            scoreResultCount: 0,
+            cognitiveDomainResultCount: 0,
+            mediaEvidenceCount: 0,
+            totalSourceCount: 0,
+          },
+          completedAt: freezeCompletedAt,
+          completedBy: actorId,
+          completedByName: 'A26 Test Doctor',
+          completedByRole: 'doctor',
+        },
+        a24Archive: {
+          version: 1,
+          archiveId: '33333333-3333-4333-8333-333333333333',
+          archivedAt,
+          archivedBy: actorId,
+          archivedByName: 'A26 Test Doctor',
+          archivedByRole: 'doctor',
+          archiveNote: 'A26 de-identified archive note',
+          sourceFreezeId: '22222222-2222-4222-8222-222222222222',
+          sourceFreezeCompletedAt: freezeCompletedAt,
+        },
         a25CorrectionReplacement: {
           version: 1,
           correctionId: '44444444-4444-4444-8444-444444444444',
@@ -707,19 +911,19 @@ describe('ReportsService', () => {
           previousReportVersion: 1,
           replacementReportCode: 'RPT-A26-V2-LOOKUP',
           replacementReportVersion: 2,
-          createdAt: new Date('2026-07-15T09:00:00.000Z'),
-          createdBy: new Types.ObjectId().toString(),
+          createdAt: replacementCreatedAt,
+          createdBy: actorId,
           createdByName: 'A26 Test Doctor',
           createdByRole: 'doctor',
           correctionReason: 'A26 de-identified correction reason',
           changeSummary: 'A26 de-identified change summary',
           sourceArchiveId: '33333333-3333-4333-8333-333333333333',
-          sourceArchivedAt: new Date('2026-07-15T08:00:00.000Z'),
+          sourceArchivedAt: archivedAt,
           sourceFreezeId: '22222222-2222-4222-8222-222222222222',
-          sourceFreezeCompletedAt: new Date('2026-07-15T07:30:00.000Z'),
+          sourceFreezeCompletedAt: freezeCompletedAt,
         },
       },
-    } as ClinicalReportSummary;
+    });
     lookup.mockResolvedValue(null);
 
     await expect(

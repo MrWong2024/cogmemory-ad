@@ -6,6 +6,7 @@ import { Connection, Model, Types } from 'mongoose';
 import request, { type Response } from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
+import { requireInitialized } from './support/e2e-initialization';
 import {
   AssessmentVisit,
   AssessmentVisitDocument,
@@ -30,6 +31,7 @@ import {
 import {
   MediaEvidence,
   MediaEvidenceDocument,
+  type MediaStorageSnapshot,
 } from '../src/modules/media/schemas/media-evidence.schema';
 import {
   Patient,
@@ -43,7 +45,11 @@ import {
   ScoreResult,
   ScoreResultDocument,
 } from '../src/modules/scoring/schemas/score-result.schema';
-import { User, UserDocument } from '../src/modules/users/schemas/user.schema';
+import {
+  User,
+  UserDocument,
+  type UserType,
+} from '../src/modules/users/schemas/user.schema';
 
 jest.setTimeout(30000);
 
@@ -55,9 +61,16 @@ const ACCOUNTS = {
   research_assistant: 'research-a25-test',
   system: 'system-a25-test',
 } as const;
+const ACCOUNT_ENTRIES = [
+  ['doctor', ACCOUNTS.doctor],
+  ['admin', ACCOUNTS.admin],
+  ['nurse', ACCOUNTS.nurse],
+  ['research_assistant', ACCOUNTS.research_assistant],
+  ['system', ACCOUNTS.system],
+] as const satisfies readonly (readonly [UserType, string])[];
 const REASON = 'A25 de-identified correction reason';
 const SUMMARY = 'A25 de-identified planned change scope';
-type SupertestApp = Parameters<typeof request.agent>[0];
+type SupertestApp = NonNullable<Parameters<typeof request.agent>[0]>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -225,7 +238,7 @@ describe('clinical report correction API (e2e)', () => {
       checksum: `a26-checksum-${suffix}`,
       checksumAlgorithm: 'sha256',
       storedAt: new Date('2026-07-01T08:30:00.000Z'),
-    };
+    } satisfies MediaStorageSnapshot;
     const evidenceId = new Types.ObjectId();
     const evidence = await mediaModel.create({
       _id: evidenceId,
@@ -747,7 +760,7 @@ describe('clinical report correction API (e2e)', () => {
     reportModel = app.get(getModelToken(ClinicalReport.name));
     await cleanup();
     const passwordHash = await authService.hashPassword(PASSWORD);
-    for (const [role, accountName] of Object.entries(ACCOUNTS)) {
+    for (const [role, accountName] of ACCOUNT_ENTRIES) {
       await userModel.create({
         accountName,
         displayName: `A25 ${role} Test Operator`,
@@ -764,7 +777,10 @@ describe('clinical report correction API (e2e)', () => {
     const doctor = await userModel.findOne({ accountName: ACCOUNTS.doctor });
     if (!doctor) throw new Error('Expected A25 doctor account');
     doctorId = doctor._id;
-    server = app.getHttpServer() as SupertestApp;
+    server = requireInitialized<SupertestApp>(
+      app.getHttpServer() as SupertestApp | undefined,
+      'HTTP server',
+    );
     doctorAgent = request.agent(server);
     adminAgent = request.agent(server);
     nurseAgent = request.agent(server);

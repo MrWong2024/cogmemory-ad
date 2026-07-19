@@ -149,7 +149,13 @@ describe('shared clinical history source qualification', () => {
   it.each([
     score({ patientId: '507f1f77bcf86cd799439099' }),
     score({ qualityStatus: 'failed' }),
-    score({ review: { reviewStatus: 'pending' } }),
+    score({
+      review: {
+        reviewStatus: 'pending',
+        reviewedAt: null,
+        reviewerId: null,
+      },
+    }),
     score({ confirmedAt: null }),
     score({ lockedAt: null }),
     score({ totalScore: null }),

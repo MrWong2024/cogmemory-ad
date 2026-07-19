@@ -6,6 +6,7 @@ import { Connection, Model, Types } from 'mongoose';
 import request, { type Response } from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
+import { requireInitialized } from './support/e2e-initialization';
 import {
   AssessmentVisit,
   AssessmentVisitDocument,
@@ -56,7 +57,7 @@ const PASSWORD = 'A28-Trend-Test-Password!';
 const SUBJECT_PREFIX = 'SUBJ-A28-TREND-';
 const VISIT_PREFIX = 'VISIT-A28-TREND-';
 
-type SupertestApp = Parameters<typeof request.agent>[0];
+type SupertestApp = NonNullable<Parameters<typeof request.agent>[0]>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -221,7 +222,10 @@ describe('follow-up trends read API (e2e)', () => {
         status: 'active',
       },
     ]);
-    server = app.getHttpServer() as SupertestApp;
+    server = requireInitialized<SupertestApp>(
+      app.getHttpServer() as SupertestApp | undefined,
+      'HTTP server',
+    );
     doctorAgent = request.agent(server);
     nurseAgent = request.agent(server);
     researchAgent = request.agent(server);
@@ -832,7 +836,9 @@ describe('follow-up trends read API (e2e)', () => {
       metadata: null,
     });
     const collectionsBefore = (
-      await connection.db.listCollections({}, { nameOnly: true }).toArray()
+      await requireInitialized(connection.db, 'MongoDB database')
+        .listCollections({}, { nameOnly: true })
+        .toArray()
     )
       .map((collection) => collection.name)
       .sort();
@@ -1023,7 +1029,9 @@ describe('follow-up trends read API (e2e)', () => {
     ]);
     expect(after).toEqual(before);
     const collectionsAfter = (
-      await connection.db.listCollections({}, { nameOnly: true }).toArray()
+      await requireInitialized(connection.db, 'MongoDB database')
+        .listCollections({}, { nameOnly: true })
+        .toArray()
     )
       .map((collection) => collection.name)
       .sort();

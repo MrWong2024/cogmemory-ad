@@ -1,4 +1,5 @@
 import { HttpException } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
 import { PatientsService } from '../../patients/services/patients.service';
 import { ScalesService } from '../../scales/services/scales.service';
 import type {
@@ -129,7 +130,7 @@ describe('ScaleInstanceSubmissionService', () => {
   };
   let service: ScaleInstanceSubmissionService;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     patientsService = { findPatientById: jest.fn() };
     assessmentsService = {
       findVisitByPatientAndId: jest.fn(),
@@ -152,11 +153,15 @@ describe('ScaleInstanceSubmissionService', () => {
       findDefinitionByCode: jest.fn(),
       findVersionByScaleCodeAndVersion: jest.fn(),
     };
-    service = new ScaleInstanceSubmissionService(
-      patientsService as PatientsService,
-      assessmentsService as AssessmentsService,
-      scalesService as ScalesService,
-    );
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        ScaleInstanceSubmissionService,
+        { provide: PatientsService, useValue: patientsService },
+        { provide: AssessmentsService, useValue: assessmentsService },
+        { provide: ScalesService, useValue: scalesService },
+      ],
+    }).compile();
+    service = moduleRef.get(ScaleInstanceSubmissionService);
 
     patientsService.findPatientById.mockResolvedValue({
       id: patientId,

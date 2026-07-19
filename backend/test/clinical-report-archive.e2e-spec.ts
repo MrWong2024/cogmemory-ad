@@ -6,6 +6,7 @@ import { Connection, Model, Types } from 'mongoose';
 import request, { type Response } from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
+import { requireInitialized } from './support/e2e-initialization';
 import {
   AssessmentVisit,
   AssessmentVisitDocument,
@@ -23,7 +24,11 @@ import {
   ClinicalReport,
   ClinicalReportDocument,
 } from '../src/modules/reports/schemas/clinical-report.schema';
-import { User, UserDocument } from '../src/modules/users/schemas/user.schema';
+import {
+  User,
+  UserDocument,
+  type UserType,
+} from '../src/modules/users/schemas/user.schema';
 
 jest.setTimeout(30000);
 
@@ -35,10 +40,17 @@ const ACCOUNTS = {
   research_assistant: 'research-a24-test',
   system: 'system-a24-test',
 } as const;
+const ACCOUNT_ENTRIES = [
+  ['doctor', ACCOUNTS.doctor],
+  ['admin', ACCOUNTS.admin],
+  ['nurse', ACCOUNTS.nurse],
+  ['research_assistant', ACCOUNTS.research_assistant],
+  ['system', ACCOUNTS.system],
+] as const satisfies readonly (readonly [UserType, string])[];
 const SUBJECT_PREFIX = 'SUBJ-A24-TEST-';
 const VISIT_PREFIX = 'VISIT-A24-TEST-';
 const ARCHIVE_NOTE = 'A24 de-identified archive note';
-type SupertestApp = Parameters<typeof request.agent>[0];
+type SupertestApp = NonNullable<Parameters<typeof request.agent>[0]>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -365,7 +377,7 @@ describe('clinical report archive API (e2e)', () => {
     reportModel = app.get(getModelToken(ClinicalReport.name));
     await cleanup();
     const passwordHash = await authService.hashPassword(PASSWORD);
-    for (const [role, accountName] of Object.entries(ACCOUNTS)) {
+    for (const [role, accountName] of ACCOUNT_ENTRIES) {
       await userModel.create({
         accountName,
         displayName: `A24 ${role} Test Operator`,
@@ -382,7 +394,10 @@ describe('clinical report archive API (e2e)', () => {
     const doctor = await userModel.findOne({ accountName: ACCOUNTS.doctor });
     if (!doctor) throw new Error('Expected A24 doctor account');
     doctorId = doctor._id;
-    server = app.getHttpServer() as SupertestApp;
+    server = requireInitialized<SupertestApp>(
+      app.getHttpServer() as SupertestApp | undefined,
+      'HTTP server',
+    );
     doctorAgent = request.agent(server);
     adminAgent = request.agent(server);
     nurseAgent = request.agent(server);
@@ -548,7 +563,7 @@ describe('clinical report archive API (e2e)', () => {
       (before.metadata as Record<string, unknown>).a23SourceFreeze,
     );
     expect(metadata.futureNamespace).toEqual({ preserved: true });
-    const persistedUpdatedAt: unknown = after.updatedAt;
+    const persistedUpdatedAt: unknown = persisted.get('updatedAt');
     if (!(persistedUpdatedAt instanceof Date)) {
       throw new Error('Expected updatedAt');
     }

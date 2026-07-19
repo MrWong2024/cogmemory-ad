@@ -254,6 +254,11 @@ function createReplacement(source: ClinicalReportSummary) {
   return createSource({
     ...input,
     id: ids.replacement,
+    aiDraft: {
+      ...input.aiDraft,
+      aiAnalysisResultId: null,
+      generatedAt: null,
+    },
     lockedBy: null,
     archivedBy: null,
     voidedBy: null,

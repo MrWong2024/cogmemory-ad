@@ -129,9 +129,9 @@ describe('Clinical report review DTOs', () => {
         ? { submissionNote: 'valid submission note' }
         : { confirmationNote: 'valid confirmation note' };
     await expect(
-      transformBody(
+      pipe.transform(
         { confirm: true, ...note, expectedUpdatedAt, ...override },
-        metatype,
+        { type: 'body', metatype },
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
   });

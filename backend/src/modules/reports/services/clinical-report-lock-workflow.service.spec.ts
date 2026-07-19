@@ -190,22 +190,23 @@ describe('ClinicalReportLockWorkflowService', () => {
     reports = {
       findReportByOwnership: jest
         .fn<
-          (input: {
-            reportId: string;
-            patientId: string;
-            assessmentVisitId: string;
-          }) => Promise<ClinicalReportSummary | null>
+          Promise<ClinicalReportSummary | null>,
+          [
+            input: {
+              reportId: string;
+              patientId: string;
+              assessmentVisitId: string;
+            },
+          ]
         >()
         .mockImplementation(() => Promise.resolve(report)),
       hasValidReplacementLifecycleLineage: jest
-        .fn<(report: ClinicalReportSummary) => Promise<boolean>>()
+        .fn<Promise<boolean>, [report: ClinicalReportSummary]>()
         .mockResolvedValue(true),
-      lockReportIfUnmodified:
-        jest.fn<
-          (
-            input: LockClinicalReportInput,
-          ) => Promise<ClinicalReportSummary | null>
-        >(),
+      lockReportIfUnmodified: jest.fn<
+        Promise<ClinicalReportSummary | null>,
+        [input: LockClinicalReportInput]
+      >(),
     };
     const moduleRef = await Test.createTestingModule({
       providers: [

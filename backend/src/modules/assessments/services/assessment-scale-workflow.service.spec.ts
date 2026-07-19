@@ -183,7 +183,7 @@ describe('AssessmentScaleWorkflowService', () => {
       service.initializeScaleInstance(
         patientId,
         visitId,
-        { scaleCode: 'mmse' },
+        { scaleCode: 'mmse', administrationMode: 'clinician_administered' },
         operatorSnapshot,
       ),
       404,
@@ -199,7 +199,7 @@ describe('AssessmentScaleWorkflowService', () => {
       service.initializeScaleInstance(
         patientId,
         visitId,
-        { scaleCode: 'mmse' },
+        { scaleCode: 'mmse', administrationMode: 'clinician_administered' },
         operatorSnapshot,
       ),
       409,
@@ -215,7 +215,7 @@ describe('AssessmentScaleWorkflowService', () => {
       service.initializeScaleInstance(
         patientId,
         visitId,
-        { scaleCode: 'mmse' },
+        { scaleCode: 'mmse', administrationMode: 'clinician_administered' },
         operatorSnapshot,
       ),
       404,
@@ -240,7 +240,7 @@ describe('AssessmentScaleWorkflowService', () => {
         service.initializeScaleInstance(
           patientId,
           visitId,
-          { scaleCode: 'mmse' },
+          { scaleCode: 'mmse', administrationMode: 'clinician_administered' },
           operatorSnapshot,
         ),
         409,
@@ -262,7 +262,7 @@ describe('AssessmentScaleWorkflowService', () => {
     await service.initializeScaleInstance(
       patientId,
       visitId,
-      { scaleCode: 'mmse' },
+      { scaleCode: 'mmse', administrationMode: 'clinician_administered' },
       operatorSnapshot,
     );
 
@@ -283,7 +283,7 @@ describe('AssessmentScaleWorkflowService', () => {
       service.initializeScaleInstance(
         patientId,
         visitId,
-        { scaleCode: 'unknown' },
+        { scaleCode: 'unknown', administrationMode: 'clinician_administered' },
         operatorSnapshot,
       ),
       404,
@@ -300,7 +300,7 @@ describe('AssessmentScaleWorkflowService', () => {
       service.initializeScaleInstance(
         patientId,
         visitId,
-        { scaleCode: 'mmse' },
+        { scaleCode: 'mmse', administrationMode: 'clinician_administered' },
         operatorSnapshot,
       ),
       409,
@@ -325,7 +325,7 @@ describe('AssessmentScaleWorkflowService', () => {
       service.initializeScaleInstance(
         patientId,
         visitId,
-        { scaleCode: 'mmse' },
+        { scaleCode: 'mmse', administrationMode: 'clinician_administered' },
         operatorSnapshot,
       ),
       409,
@@ -340,7 +340,7 @@ describe('AssessmentScaleWorkflowService', () => {
       service.initializeScaleInstance(
         patientId,
         visitId,
-        { scaleCode: 'mmse' },
+        { scaleCode: 'mmse', administrationMode: 'clinician_administered' },
         operatorSnapshot,
       ),
       500,
@@ -357,7 +357,7 @@ describe('AssessmentScaleWorkflowService', () => {
       service.initializeScaleInstance(
         patientId,
         visitId,
-        { scaleCode: 'mmse' },
+        { scaleCode: 'mmse', administrationMode: 'clinician_administered' },
         operatorSnapshot,
       ),
       500,

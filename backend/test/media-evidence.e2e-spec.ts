@@ -6,6 +6,7 @@ import { Connection, Model, Types } from 'mongoose';
 import request, { type Response, type Test as SupertestTest } from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
+import { requireInitialized } from './support/e2e-initialization';
 import {
   AssessmentVisit,
   AssessmentVisitDocument,
@@ -53,7 +54,7 @@ const VALID_PNG = Buffer.from(
   'base64',
 );
 
-type SupertestApp = Parameters<typeof request.agent>[0];
+type SupertestApp = NonNullable<Parameters<typeof request.agent>[0]>;
 
 type ExecutionFixture = {
   patientId: string;
@@ -384,7 +385,10 @@ describe('media evidence APIs (e2e)', () => {
       metadata: null,
     });
 
-    httpServer = app.getHttpServer() as SupertestApp;
+    httpServer = requireInitialized<SupertestApp>(
+      app.getHttpServer() as SupertestApp | undefined,
+      'HTTP server',
+    );
     doctorAgent = request.agent(httpServer);
     systemAgent = request.agent(httpServer);
 

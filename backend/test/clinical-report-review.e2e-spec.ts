@@ -6,6 +6,7 @@ import { Connection, Model } from 'mongoose';
 import request, { type Response } from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
+import { requireInitialized } from './support/e2e-initialization';
 import {
   AssessmentVisit,
   AssessmentVisitDocument,
@@ -68,7 +69,7 @@ const VALID_PNG = Buffer.from(
   'base64',
 );
 
-type SupertestApp = Parameters<typeof request.agent>[0];
+type SupertestApp = NonNullable<Parameters<typeof request.agent>[0]>;
 type Fixture = { patientId: string; visitId: string; scaleInstanceId: string };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -497,7 +498,10 @@ describe('clinical report review APIs (e2e)', () => {
       status: 'active',
       metadata: null,
     });
-    server = app.getHttpServer() as SupertestApp;
+    server = requireInitialized<SupertestApp>(
+      app.getHttpServer() as SupertestApp | undefined,
+      'HTTP server',
+    );
     doctorAgent = request.agent(server);
     systemAgent = request.agent(server);
     nurseAgent = request.agent(server);
