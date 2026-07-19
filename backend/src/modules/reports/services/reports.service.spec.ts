@@ -779,7 +779,7 @@ describe('ReportsService', () => {
         updatedAt: expectedUpdatedAt,
       },
       { $set: { narrative, source: 'mixed', metadata } },
-      { new: true, runValidators: true },
+      { returnDocument: 'after', runValidators: true },
     );
   });
 
@@ -835,7 +835,7 @@ describe('ReportsService', () => {
           metadata: { a21Submission: {} },
         },
       },
-      { new: true, runValidators: true },
+      { returnDocument: 'after', runValidators: true },
     );
     expect(clinicalReportModel.findOneAndUpdate).toHaveBeenNthCalledWith(
       2,
@@ -862,7 +862,7 @@ describe('ReportsService', () => {
           metadata: { a21Confirmation: {} },
         },
       },
-      { new: true, runValidators: true },
+      { returnDocument: 'after', runValidators: true },
     );
   });
 
@@ -921,7 +921,7 @@ describe('ReportsService', () => {
         updatedAt: expectedUpdatedAt,
       },
       { $set: { lockedAt, lockedBy, metadata } },
-      { new: true, runValidators: true },
+      { returnDocument: 'after', runValidators: true },
     );
   });
 
@@ -993,7 +993,7 @@ describe('ReportsService', () => {
           metadata,
         },
       },
-      { new: true, runValidators: true },
+      { returnDocument: 'after', runValidators: true },
     );
   });
 
@@ -1364,7 +1364,7 @@ describe('ReportsService', () => {
         'metadata.a25Correction': { $exists: false },
       }),
       { $set: { metadata } },
-      { new: true, runValidators: true },
+      { returnDocument: 'after', runValidators: true },
     );
   });
 
@@ -1420,7 +1420,7 @@ describe('ReportsService', () => {
           correctionRecords: [{ ...correctionRecord, correctedBy: actorId }],
         },
       },
-      { new: true, runValidators: true },
+      { returnDocument: 'after', runValidators: true },
     );
   });
 

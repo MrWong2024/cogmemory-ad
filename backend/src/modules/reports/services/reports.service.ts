@@ -511,7 +511,7 @@ export class ReportsService {
             metadata: input.metadata,
           },
         },
-        { new: true, runValidators: true },
+        { returnDocument: 'after', runValidators: true },
       )
       .exec();
     return updated ? this.mapReport(updated) : null;
@@ -534,7 +534,7 @@ export class ReportsService {
           updatedAt: input.expectedUpdatedAt,
         },
         { $set: { status: 'pending_confirmation', metadata: input.metadata } },
-        { new: true, runValidators: true },
+        { returnDocument: 'after', runValidators: true },
       )
       .exec();
     return updated ? this.mapReport(updated) : null;
@@ -570,7 +570,7 @@ export class ReportsService {
             metadata: input.metadata,
           },
         },
-        { new: true, runValidators: true },
+        { returnDocument: 'after', runValidators: true },
       )
       .exec();
     return updated ? this.mapReport(updated) : null;
@@ -618,7 +618,7 @@ export class ReportsService {
             metadata: input.metadata,
           },
         },
-        { new: true, runValidators: true },
+        { returnDocument: 'after', runValidators: true },
       )
       .exec();
     return updated ? this.mapReport(updated) : null;
@@ -749,7 +749,7 @@ export class ReportsService {
             metadata: input.metadata,
           },
         },
-        { new: true, runValidators: true },
+        { returnDocument: 'after', runValidators: true },
       )
       .exec();
     return updated ? this.mapReport(updated) : null;
@@ -790,7 +790,7 @@ export class ReportsService {
           'metadata.a25Correction': { $exists: false },
         },
         { $set: { metadata: input.metadata } },
-        { new: true, runValidators: true },
+        { returnDocument: 'after', runValidators: true },
       )
       .exec();
     return updated ? this.mapReport(updated) : null;
@@ -882,7 +882,7 @@ export class ReportsService {
             metadata: input.metadata,
           },
         },
-        { new: true, runValidators: true },
+        { returnDocument: 'after', runValidators: true },
       )
       .exec();
     return updated ? this.mapReport(updated) : null;
@@ -914,7 +914,7 @@ export class ReportsService {
           'metadata.a25Correction.replacementReportId': { $exists: false },
         },
         { $set: { metadata: input.metadata } },
-        { new: true, runValidators: true },
+        { returnDocument: 'after', runValidators: true },
       )
       .exec();
     return updated ? this.mapReport(updated) : null;
