@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
@@ -17,6 +18,8 @@ import type { AuthenticatedUserContext } from '../../auth/types/auth-user-contex
 import { PATIENT_WORKFLOW_ROLES } from '../../patients/patients.constants';
 import { ClinicalReportVisitParamDto } from '../dto/clinical-report-visit-param.dto';
 import { ClinicalReportResourceParamDto } from '../dto/clinical-report-resource-param.dto';
+import { ClinicalReportHistoryParamDto } from '../dto/clinical-report-history-param.dto';
+import { ListClinicalReportVersionsQueryDto } from '../dto/list-clinical-report-versions-query.dto';
 import { ArchiveClinicalReportDto } from '../dto/archive-clinical-report.dto';
 import { ConfirmClinicalReportDto } from '../dto/confirm-clinical-report.dto';
 import { CreateClinicalReportCorrectionDto } from '../dto/create-clinical-report-correction.dto';
@@ -31,6 +34,7 @@ import { ClinicalReportLockWorkflowService } from '../services/clinical-report-l
 import { ClinicalReportReviewWorkflowService } from '../services/clinical-report-review-workflow.service';
 import { ClinicalReportSourceFreezeWorkflowService } from '../services/clinical-report-source-freeze-workflow.service';
 import { ClinicalReportCorrectionWorkflowService } from '../services/clinical-report-correction-workflow.service';
+import { ClinicalReportHistoryQueryService } from '../services/clinical-report-history-query.service';
 import type {
   ConfirmClinicalReportResponse,
   ArchiveClinicalReportResponse,
@@ -42,6 +46,7 @@ import type {
   FreezeClinicalReportSourcesResponse,
   CreateClinicalReportCorrectionResponse,
 } from '../types/clinical-report-response.types';
+import type { ClinicalReportVersionListResponse } from '../types/clinical-report-history-response.types';
 
 @Controller('patients/:patientId/visits/:visitId/clinical-reports')
 @UseGuards(SessionAuthGuard, RolesGuard)
@@ -54,6 +59,7 @@ export class ClinicalReportsController {
     private readonly sourceFreezeWorkflow: ClinicalReportSourceFreezeWorkflowService,
     private readonly archiveWorkflow: ClinicalReportArchiveWorkflowService,
     private readonly correctionWorkflow: ClinicalReportCorrectionWorkflowService,
+    private readonly historyQuery: ClinicalReportHistoryQueryService,
   ) {}
 
   @Post('generate')
@@ -71,6 +77,18 @@ export class ClinicalReportsController {
     );
   }
 
+  @Get()
+  versions(
+    @Param() params: ClinicalReportVisitParamDto,
+    @Query() query: ListClinicalReportVersionsQueryDto,
+  ): Promise<ClinicalReportVersionListResponse> {
+    return this.historyQuery.listVersions(
+      params.patientId,
+      params.visitId,
+      query,
+    );
+  }
+
   @Get('latest')
   latest(
     @Param() params: ClinicalReportVisitParamDto,
@@ -78,6 +96,17 @@ export class ClinicalReportsController {
     return this.workflow.getLatestClinicalReport(
       params.patientId,
       params.visitId,
+    );
+  }
+
+  @Get(':reportId')
+  historicalReport(
+    @Param() params: ClinicalReportHistoryParamDto,
+  ): Promise<ClinicalReportDetailResponse> {
+    return this.historyQuery.getHistoricalReport(
+      params.patientId,
+      params.visitId,
+      params.reportId,
     );
   }
 

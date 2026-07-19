@@ -91,6 +91,89 @@ export type AssessmentVisitSummary = {
   metadata: AssessmentVisitMetadata;
 };
 
+export type AssessmentHistoryVisitSummary = Pick<
+  AssessmentVisitSummary,
+  | 'id'
+  | 'patientId'
+  | 'visitCode'
+  | 'visitType'
+  | 'status'
+  | 'assessmentDate'
+  | 'startedAt'
+  | 'completedAt'
+  | 'lockedAt'
+  | 'voidedAt'
+>;
+
+export type AssessmentHistoryVisitIdentity = {
+  id: string;
+  patientId: string;
+};
+
+export type AssessmentHistoryVisitQuery = {
+  page: number;
+  pageSize: number;
+  dateFrom?: Date;
+  dateTo?: Date;
+  visitType?: AssessmentVisitType;
+  status?: AssessmentStatus;
+  visitIds?: readonly string[];
+};
+
+export type AssessmentHistoryScaleInstanceSummary = Pick<
+  ScaleInstanceSummary,
+  | 'id'
+  | 'assessmentVisitId'
+  | 'patientId'
+  | 'scaleCode'
+  | 'scaleVersion'
+  | 'instanceCode'
+  | 'instanceNo'
+  | 'status'
+  | 'administrationMode'
+  | 'versionTrace'
+  | 'startedAt'
+  | 'completedAt'
+  | 'lockedAt'
+  | 'voidedAt'
+  | 'durationMs'
+>;
+
+type AssessmentHistoryVisitLean = {
+  _id: Types.ObjectId;
+  patientId: Types.ObjectId;
+  visitCode: string;
+  visitType: AssessmentVisitType;
+  status: AssessmentStatus;
+  assessmentDate: Date;
+  startedAt?: Date | null;
+  completedAt?: Date | null;
+  lockedAt?: Date | null;
+  voidedAt?: Date | null;
+};
+
+type AssessmentHistoryScaleInstanceLean = {
+  _id: Types.ObjectId;
+  assessmentVisitId: Types.ObjectId;
+  patientId: Types.ObjectId;
+  scaleCode: string;
+  scaleVersion: string;
+  instanceCode: string;
+  instanceNo: number;
+  status: AssessmentStatus;
+  administrationMode: ScaleAdministrationMode;
+  versionTrace?: ScaleVersionTrace | null;
+  startedAt?: Date | null;
+  completedAt?: Date | null;
+  lockedAt?: Date | null;
+  voidedAt?: Date | null;
+  durationMs?: number | null;
+};
+
+type AssessmentHistoryVisitIdLean = {
+  assessmentVisitId: Types.ObjectId;
+};
+
 export type CreateVisitOperatorSnapshot = {
   operatorId: string;
   operatorName: string;
@@ -386,6 +469,176 @@ export class AssessmentsService {
       .exec();
 
     return visit ? this.mapVisit(visit) : null;
+  }
+
+  async findAssessmentHistoryVisitIdentity(
+    patientId: Types.ObjectId | string,
+    visitId: Types.ObjectId | string,
+  ): Promise<AssessmentHistoryVisitIdentity | null> {
+    const normalizedPatientId = this.normalizeObjectId(patientId);
+    const normalizedVisitId = this.normalizeObjectId(visitId);
+    if (!normalizedPatientId || !normalizedVisitId) {
+      return null;
+    }
+    const visit = await this.assessmentVisitModel
+      .findOne({ _id: normalizedVisitId, patientId: normalizedPatientId })
+      .select({ _id: 1, patientId: 1 })
+      .lean<{ _id: Types.ObjectId; patientId: Types.ObjectId } | null>()
+      .exec();
+    return visit
+      ? { id: visit._id.toString(), patientId: visit.patientId.toString() }
+      : null;
+  }
+
+  async listPatientAssessmentHistoryVisits(
+    patientId: Types.ObjectId | string,
+    query: AssessmentHistoryVisitQuery,
+  ): Promise<{ items: AssessmentHistoryVisitSummary[]; total: number }> {
+    const normalizedPatientId = this.normalizeObjectId(patientId);
+    if (!normalizedPatientId) {
+      return { items: [], total: 0 };
+    }
+    const filter: AssessmentVisitListFilter & {
+      _id?: { $in: Types.ObjectId[] };
+    } = { patientId: normalizedPatientId };
+    if (query.dateFrom || query.dateTo) {
+      filter.assessmentDate = {
+        ...(query.dateFrom ? { $gte: query.dateFrom } : {}),
+        ...(query.dateTo ? { $lte: query.dateTo } : {}),
+      };
+    }
+    if (query.visitType) {
+      filter.visitType = query.visitType;
+    }
+    if (query.status) {
+      filter.status = query.status;
+    }
+    if (query.visitIds) {
+      const ids = this.normalizeObjectIds(query.visitIds);
+      if (!ids || ids.length === 0) {
+        return { items: [], total: 0 };
+      }
+      filter._id = { $in: ids };
+    }
+    const projection = {
+      _id: 1,
+      patientId: 1,
+      visitCode: 1,
+      visitType: 1,
+      status: 1,
+      assessmentDate: 1,
+      startedAt: 1,
+      completedAt: 1,
+      lockedAt: 1,
+      voidedAt: 1,
+    };
+    const [visits, total] = await Promise.all([
+      this.assessmentVisitModel
+        .find(filter)
+        .select(projection)
+        .sort({ assessmentDate: -1, _id: -1 })
+        .skip((query.page - 1) * query.pageSize)
+        .limit(query.pageSize)
+        .lean<AssessmentHistoryVisitLean[]>()
+        .exec(),
+      this.assessmentVisitModel.countDocuments(filter).exec(),
+    ]);
+    return {
+      items: visits.map((visit) => ({
+        id: visit._id.toString(),
+        patientId: visit.patientId.toString(),
+        visitCode: visit.visitCode,
+        visitType: visit.visitType,
+        status: visit.status,
+        assessmentDate: visit.assessmentDate,
+        startedAt: visit.startedAt ?? null,
+        completedAt: visit.completedAt ?? null,
+        lockedAt: visit.lockedAt ?? null,
+        voidedAt: visit.voidedAt ?? null,
+      })),
+      total,
+    };
+  }
+
+  async listPatientVisitIdsByScaleCode(
+    patientId: Types.ObjectId | string,
+    scaleCode: string,
+  ): Promise<string[]> {
+    const normalizedPatientId = this.normalizeObjectId(patientId);
+    const normalizedScaleCode = this.normalizeScaleCode(scaleCode);
+    if (!normalizedPatientId || !normalizedScaleCode) {
+      return [];
+    }
+    const rows = await this.scaleInstanceModel
+      .find({ patientId: normalizedPatientId, scaleCode: normalizedScaleCode })
+      .select({ assessmentVisitId: 1, _id: 0 })
+      .lean<AssessmentHistoryVisitIdLean[]>()
+      .exec();
+    return [...new Set(rows.map((row) => row.assessmentVisitId.toString()))];
+  }
+
+  async listAssessmentHistoryScaleInstances(
+    patientId: Types.ObjectId | string,
+    visitIds: readonly string[],
+  ): Promise<AssessmentHistoryScaleInstanceSummary[]> {
+    const normalizedPatientId = this.normalizeObjectId(patientId);
+    const normalizedVisitIds = this.normalizeObjectIds(visitIds);
+    if (
+      !normalizedPatientId ||
+      !normalizedVisitIds ||
+      normalizedVisitIds.length === 0
+    ) {
+      return [];
+    }
+    const instances = await this.scaleInstanceModel
+      .find({
+        patientId: normalizedPatientId,
+        assessmentVisitId: { $in: normalizedVisitIds },
+      })
+      .select({
+        _id: 1,
+        assessmentVisitId: 1,
+        patientId: 1,
+        scaleCode: 1,
+        scaleVersion: 1,
+        instanceCode: 1,
+        instanceNo: 1,
+        status: 1,
+        administrationMode: 1,
+        versionTrace: 1,
+        startedAt: 1,
+        completedAt: 1,
+        lockedAt: 1,
+        voidedAt: 1,
+        durationMs: 1,
+      })
+      .sort({ scaleCode: 1, instanceNo: 1, _id: 1 })
+      .lean<AssessmentHistoryScaleInstanceLean[]>()
+      .exec();
+    return instances.map((instance) => ({
+      id: instance._id.toString(),
+      assessmentVisitId: instance.assessmentVisitId.toString(),
+      patientId: instance.patientId.toString(),
+      scaleCode: instance.scaleCode,
+      scaleVersion: instance.scaleVersion,
+      instanceCode: instance.instanceCode,
+      instanceNo: instance.instanceNo,
+      status: instance.status,
+      administrationMode: instance.administrationMode,
+      versionTrace: instance.versionTrace
+        ? {
+            crfVersion: instance.versionTrace.crfVersion,
+            scoringRuleVersion: instance.versionTrace.scoringRuleVersion,
+            fieldEncodingVersion: instance.versionTrace.fieldEncodingVersion,
+            sourceDocument: instance.versionTrace.sourceDocument,
+          }
+        : null,
+      startedAt: instance.startedAt ?? null,
+      completedAt: instance.completedAt ?? null,
+      lockedAt: instance.lockedAt ?? null,
+      voidedAt: instance.voidedAt ?? null,
+      durationMs: instance.durationMs ?? null,
+    }));
   }
 
   async getVisitExecutionDetail(

@@ -136,6 +136,50 @@ export type CognitiveDomainResultSummary = {
   updatedAt: Date;
 };
 
+export type AssessmentHistoryCognitiveDomainResultSummary = {
+  id: string;
+  patientId: string;
+  assessmentVisitId: string;
+  scaleInstanceId: string;
+  scoreResultId: string;
+  scaleCode: string;
+  runNo: number;
+  status: CognitiveDomainResultStatus;
+  mappingSource: CognitiveDomainMappingSource;
+  mappingMode: CognitiveDomainMappingMode;
+  versionTrace: CognitiveDomainVersionTraceSummary | null;
+  domainScores: CognitiveDomainScoreSummary[];
+  mappingSnapshot: {
+    mappingVersion?: string;
+    domainCodes: string[];
+  } | null;
+  computation: {
+    computedAt: Date | null;
+    warningCount: number;
+  } | null;
+  qualityStatus: CognitiveDomainQualityStatus;
+  voidedAt: Date | null;
+};
+
+type AssessmentHistoryCognitiveDomainResultLean = {
+  _id: Types.ObjectId;
+  patientId: Types.ObjectId;
+  assessmentVisitId: Types.ObjectId;
+  scaleInstanceId: Types.ObjectId;
+  scoreResultId: Types.ObjectId;
+  scaleCode: string;
+  runNo: number;
+  status: CognitiveDomainResultStatus;
+  mappingSource: CognitiveDomainMappingSource;
+  mappingMode: CognitiveDomainMappingMode;
+  versionTrace?: CognitiveDomainVersionTrace | null;
+  domainScores?: CognitiveDomainScoreSnapshot[];
+  mappingSnapshot?: CognitiveDomainMappingSnapshot | null;
+  computation?: CognitiveDomainComputationSnapshot | null;
+  qualityStatus: CognitiveDomainQualityStatus;
+  voidedAt?: Date | null;
+};
+
 export type CognitiveDomainSourceFreezeItem = {
   id: string;
   patientId: string;
@@ -351,6 +395,111 @@ export class CognitiveDomainsService {
       .sort({ _id: 1 })
       .exec();
     return results.map((result) => this.mapDomainResult(result));
+  }
+
+  async listAssessmentHistoryDomainResults(
+    patientId: Types.ObjectId | string,
+    visitIds: readonly string[],
+    scaleInstanceIds: readonly string[],
+    scoreResultIds: readonly string[],
+  ): Promise<AssessmentHistoryCognitiveDomainResultSummary[]> {
+    const normalizedPatientId = this.normalizeObjectId(patientId);
+    const normalizedVisitIds = this.normalizeObjectIds(visitIds);
+    const normalizedScaleIds = this.normalizeObjectIds(scaleInstanceIds);
+    const normalizedScoreIds = this.normalizeObjectIds(scoreResultIds);
+    if (
+      !normalizedPatientId ||
+      !normalizedVisitIds ||
+      !normalizedScaleIds ||
+      !normalizedScoreIds ||
+      normalizedVisitIds.length === 0 ||
+      normalizedScaleIds.length === 0 ||
+      normalizedScoreIds.length === 0
+    ) {
+      return [];
+    }
+    const results = await this.cognitiveDomainResultModel
+      .find({
+        patientId: normalizedPatientId,
+        assessmentVisitId: { $in: normalizedVisitIds },
+        scaleInstanceId: { $in: normalizedScaleIds },
+        scoreResultId: { $in: normalizedScoreIds },
+        runNo: 1,
+      })
+      .select({
+        _id: 1,
+        patientId: 1,
+        assessmentVisitId: 1,
+        scaleInstanceId: 1,
+        scoreResultId: 1,
+        scaleCode: 1,
+        runNo: 1,
+        status: 1,
+        mappingSource: 1,
+        mappingMode: 1,
+        versionTrace: 1,
+        domainScores: 1,
+        mappingSnapshot: 1,
+        computation: 1,
+        qualityStatus: 1,
+        voidedAt: 1,
+      })
+      .sort({ _id: 1 })
+      .lean<AssessmentHistoryCognitiveDomainResultLean[]>()
+      .exec();
+    return results.map((result) => ({
+      id: result._id.toString(),
+      patientId: result.patientId.toString(),
+      assessmentVisitId: result.assessmentVisitId.toString(),
+      scaleInstanceId: result.scaleInstanceId.toString(),
+      scoreResultId: result.scoreResultId.toString(),
+      scaleCode: result.scaleCode,
+      runNo: result.runNo,
+      status: result.status,
+      mappingSource: result.mappingSource,
+      mappingMode: result.mappingMode,
+      versionTrace: result.versionTrace
+        ? {
+            scaleVersion: result.versionTrace.scaleVersion,
+            crfVersion: result.versionTrace.crfVersion,
+            scoringRuleVersion: result.versionTrace.scoringRuleVersion,
+            fieldEncodingVersion: result.versionTrace.fieldEncodingVersion,
+            domainMappingVersion: result.versionTrace.domainMappingVersion,
+            sourceDocument: result.versionTrace.sourceDocument,
+          }
+        : null,
+      domainScores: (result.domainScores ?? []).map((score) => ({
+        domainCode: score.domainCode,
+        domainTitle: score.domainTitle,
+        scoreValue: score.scoreValue ?? null,
+        maxScore: score.maxScore ?? null,
+        minScore: score.minScore ?? null,
+        scorePercent: score.scorePercent ?? null,
+        weightedScore: score.weightedScore ?? null,
+        weightedMaxScore: score.weightedMaxScore ?? null,
+        itemCount: score.itemCount,
+        scoredItemCount: score.scoredItemCount,
+        unscoredItemCount: score.unscoredItemCount,
+        missingItemCount: score.missingItemCount,
+        needsReviewItemCount: score.needsReviewItemCount,
+        excludedItemCount: score.excludedItemCount,
+        note: score.note,
+      })),
+      mappingSnapshot: result.mappingSnapshot
+        ? {
+            mappingVersion: result.mappingSnapshot.mappingVersion,
+            domainCodes: [...(result.mappingSnapshot.domainCodes ?? [])],
+          }
+        : null,
+      computation: result.computation
+        ? {
+            computedAt: result.computation.computedAt ?? null,
+            warningCount: result.computation.warningCount,
+          }
+        : null,
+      qualityStatus: result.qualityStatus,
+      voidedAt: result.voidedAt ?? null,
+    }));
   }
 
   async freezeCognitiveDomainResultsByIds(

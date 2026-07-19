@@ -6,7 +6,7 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 DTO、响应 type、Storage interface，以及 A12-A22 业务契约；A22 新增不可逆锁定 DTO、安全 lock summary 与 receipt。
+- 当前存在公共底座 DTO、响应 type、Storage interface，以及 A12-A27 业务契约；A27 新增历史评估与报告版本/详情只读 DTO 和安全响应。
 - 当前新增公开认证请求 DTO：`LoginDto`。
 - 当前新增公开患者 / 访视 DTO：`CreatePatientDto`、`ListPatientsQueryDto`、`PatientIdParamDto`、`CreateAssessmentVisitDto`、`ListAssessmentVisitsQueryDto`、`PatientVisitsParamDto`。
 - 当前仍没有用户管理、注册、密码重置、撤销 / reopen / force submit、批量 / 分片 / 客户端直传、认知域人工修改 / 确认 / 锁定 / 重算或报告退回 / 签名 / unlock / unfreeze / unarchive / correction cancel / 作废 / PDF 请求 DTO；A25 已新增受控 correction DTO。
@@ -582,3 +582,13 @@
 - 首次 `expectedUpdatedAt` 必须等于 source 最新 updatedAt；in_progress 恢复和 completed 幂等仍要求 DTO 合法，但允许旧值，且新 reason / summary 不覆盖首次值。
 - `ClinicalReportResponse` 增加 nullable `correction` 与 `replacementOf`；Date 字段经 JSON 返回 ISO string。`CreateClinicalReportCorrectionResponse` 为 `{ sourceReport, replacementReport, correctionReceipt }`，receipt 包含 started/completed actor、版本关系、原 reason/summary、alreadyCreated 与 resumedExisting。
 - public contract 不返回 metadata、a25 原始 namespace、原始 correctionRecords、AuditLog ID、五类来源 ID、Patient 隐私、Session 或 currentUser。
+
+## A27 Clinical history DTO / response
+
+- `PatientHistoryParamDto`：`patientId` 必填 canonical MongoId。
+- `ListPatientAssessmentHistoryQueryDto`：`page` 默认 1、min 1；`pageSize` 默认 20、1–100；`dateFrom/dateTo` 可选 strict ISO Date 且含边界；`visitType` / `status` 复用 Assessment 枚举；`scaleCode` 可选、trim + lowercase、空串 400；不接受 sort。日期倒置由 QueryService 返回 400 `INVALID_DATE_RANGE`。
+- `PatientAssessmentHistoryResponse`：`{ items,page,pageSize,total }`。每项只含 Visit 白名单、`scaleSummaries` 和 `reportSummary`；Score/Domain `availability` 为 available / source_not_final / source_voided / source_incomplete。Score 结果不存在才为 null；Domain 在 Score 不存在或精确绑定 Domain 不存在时为 null；其他不可用状态保留摘要但数值/mapping 为 null/0。
+- `ListClinicalReportVersionsQueryDto`：只允许 `page` 默认 1 与 `pageSize` 默认 20（max 100）；不接受 type/sort/status/lineage。
+- `ClinicalReportHistoryParamDto`：patientId、visitId、reportId 均为必填 canonical MongoId。
+- `ClinicalReportVersionListResponse`：`{ items,page,pageSize,total,lineage }`；lineage 固定 valid 且含 firstVersion/latestVersion/totalVersions。item 时间 nullable 按合同返回；sourceFreezeStatus 为 none/in_progress/completed；previous/replacement 只含 code/version，内部 lineage ID 不公开。
+- 指定历史详情继续使用既有 `ClinicalReportDetailResponse { report }`，没有第二套详情响应或附加版本链。

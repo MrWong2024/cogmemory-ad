@@ -8,7 +8,7 @@
 
 - `backend\src` 公共底座已初始化。
 - 已具备 NestJS 启动入口、根模块、全局应用配置、健康检查、配置加载与校验、MongoDB 连接底座、全局 ValidationPipe、全局异常过滤器和 Storage 公共模块。
-- `backend\src\modules` 当前包含 `storage`、`scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains`、`reports`、`users` 与 `auth`。
+- `backend\src\modules` 当前包含 `storage`、`scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains`、`reports`、`clinical-history`、`users` 与 `auth`。
 - `StorageModule` 当前只提供 fake / OSS 底层 driver 结构和 `STORAGE_SERVICE` token，不提供业务上传接口。
 - `ScalesModule` 当前提供量表定义 / 量表版本 Schema、内部 `ScalesService`、MMSE / MoCA seed、只读 `ScaleSeedDataService`、`validateScaleSeeds()`、公开只读 `ScalesController` 和 `ScaleCatalogService`。`GET /scales/available` 只返回安全摘要且不写数据库；量表初始化时才按需幂等物化对应 seed 版本。
 - `PatientsModule` 当前提供患者 / 受试者基础档案 Schema、内部读取底座，以及 `GET /patients`、`POST /patients`、`GET /patients/:patientId` 三个患者最小公开 API。
@@ -17,15 +17,16 @@
 - `MediaModule` 当前在既有媒体证据 Schema / Service 上新增 A15 公开 `MediaEvidenceController`、工作流 Service、安全 mapper、图片与轨迹纯校验；提供题目下列表、multipart 上传、短期签名访问和作废四个接口。
 - `ScoringModule` 当前在计分结果快照 Schema、`ScoringService` 与 `summarizeItemScores()` 通用汇总基础上，提供 A17 阶段性 workflow、A18 `ScoreReviewWorkflowService`、纯评分 / 人工复核函数与安全 public mapper；公开 compute / latest / manual-review / confirm，不提供 lock、void、重跑、认知域或报告接口。
 - `CognitiveDomainsModule` 当前在认知域结果 Schema、内部读取和 `summarizeDomainScores()` 基础上，新增 A19 Controller、Workflow、确认评分纯映射 / 校验、安全 public mapper 与 runNo=1 创建能力；公开认知域 compute / latest，不提供人工修改、确认、锁定、作废、重算或报告接口。
-- `ReportsModule` 当前提供 A20 generation / latest、A21 review、A22 lock、A23 source freeze、A24 archive、A25 corrections 与 A26 replacement lifecycle；合法任意 V2+ 已可复用既有 lock / freeze-sources / archive endpoint。仍不提供退回、签名、unlock / unfreeze / unarchive、correction cancel / branch、作废、PDF 或 AI。
+- `ReportsModule` 当前提供 A20 generation / latest、A21 review、A22 lock、A23 source freeze、A24 archive、A25 corrections、A26 replacement lifecycle，以及 A27 报告版本列表与指定历史详情。新增 `ClinicalHistoryModule` 提供患者 assessment-history；基础 follow-up-trends 仍未实现。
 - `UsersModule` 当前只提供系统账号 `User` Schema 与内部 `UsersService` 读取、规范化和安全 mapper 底座，不提供公开用户管理接口。
 - `AuthModule` 当前提供服务端 `Session` Schema、内部 `AuthService`、基础认证上下文、`@Public()` / `@Roles()` / `@CurrentUser()` 装饰器、`SessionAuthGuard`、`RolesGuard` 与 `AuthController`；公开最小认证 API `POST /auth/login`、`POST /auth/logout`、`GET /auth/me`，且未注册全局 Guard。
 - OSS 业务上传服务、SMS Service、LLM Service 均未实现。
 - 本地默认后端端口为 `5002`。
 - 本地默认前端 origin 为 `http://localhost:3002`。
-- 当前报告接口保持九个；A12-A26 临床接口显式使用 `SessionAuthGuard` + `RolesGuard`。普通 V1 A21 edit / submit 沿用四个患者工作流角色；replacement A21 与 confirm、lock、freeze-sources、archive、corrections 仅 doctor / admin。
+- 当前报告接口为十一个，另有 A27 患者历史评估接口；A12-A27 临床接口显式使用 `SessionAuthGuard` + `RolesGuard`。A27 三个只读接口允许四个患者工作流角色且不读取 CurrentUser。
 - 已完成后端公共底座基础闭环本地验证：`npm install` 成功、`npm run build` 成功、`npm test -- --runInBand` 成功、`npm run start:prod` 启动成功。
 - 当前 A26 验证结果为 76 个单元测试套件 / 666 个测试通过；A26 定向真实 HTTP E2E 为 1 个套件 / 7 个测试通过；全量 E2E 为 14 个套件 / 67 个测试通过。
+- A27 实现三个只读接口、ClinicalHistoryModule、完整报告历史链 evaluator 与轻量批量读取。实际验证：变更范围定向 ESLint 通过；`npm run build` 通过；全量 unit 84 suites / 707 tests；全量 E2E 16 suites / 73 tests，隔离 test DB、fake Storage、stub SMS/LLM、脱敏数据且无真实外部调用。完整 lint 仍为既有 scoring 三文件 51 个 Prettier error、0 warning。
 - A24 定向真实 HTTP E2E 已通过：1 个测试套件、6 个测试通过；全量 E2E 为 13 个测试套件、60 个测试通过。A24 完成后补充执行的最近两次全量 E2E 均完整通过，均使用 `NODE_ENV=test`、Jest `--runInBand`、隔离 `cogmemory_ad_test`、fake Storage、stub SMS / LLM 和脱敏人工数据，未调用真实外部服务；A24 按 `SUBJ-A24-TEST-*` / `VISIT-A24-TEST-*` 前缀定向清理运行时数据。此前一次全量复跑曾出现既有跨套件 test catalog / 数据顺序污染现象；该现象在随后两次完整串行复跑中未再次出现。当前验证结论以最近连续两次全量通过为准，但尚不据此宣称潜在测试隔离风险已被永久消除。
 - 后端 TypeScript 编译根目录为 `.`，`outDir` 保持 `./dist`，因此 `src/main.ts` 编译后的主入口产物为 `dist/src/main.js`。
 - `package.json` 中 `start:prod` 保持指向 `./dist/src/main.js`，当前 build 产物路径已与该启动路径对齐。
@@ -283,17 +284,17 @@
 
 - 尚无公开用户管理接口、角色权限管理接口、短信验证码接口、OAuth / SSO 接口或密码重置接口。
 - 尚无医生端或患者端业务。
-- A12-A26 已覆盖评分计算/复核/确认、认知域计算、报告生成/编辑/确认/锁定/来源冻结/归档/版本化更正与 replacement 后续生命周期；仍无评分独立 lock / void / reopen / 重跑、认知域人工修改 / 确认 / 作废 / 重算、报告签名 / unfreeze / unarchive、correction cancel / branch 或 PDF 接口。
+- A12-A27 已覆盖评分计算/复核/确认、认知域计算、报告生成/编辑/确认/锁定/来源冻结/归档/版本化更正、replacement 后续生命周期和阶段一历史读取；仍无基础随访趋势、评分独立 lock / void / reopen / 重跑、认知域人工修改 / 确认 / 作废 / 重算、报告签名 / unfreeze / unarchive、correction cancel / branch 或 PDF 接口。
 - 尚无批量作答、自动保存调度、计时动作、提交撤销 / reopen / lock / force submit 或访视状态流转接口。
 - 媒体当前仅有题目下列表、服务端 multipart 上传、短期签名访问与逻辑作废；尚无全患者 / 访视 / 实例媒体列表、直接 objectKey 下载、永久 URL、物理删除、替换、批量、分片或客户端直传接口。
 - 尚无全量数据库 seed runner、量表管理或完整 MMSE / MoCA 题目配置公开接口；A13 只在初始化时按需物化并提供安全摘要。
 - 已有 A17 compute / latest 与 A18 单题人工复核 / 确认；尚无批量人工评分、锁定、作废、撤销确认、reopen、重跑或历史列表接口。
 - 已有 A19 认知域 compute / latest；尚无认知域人工复核、确认、锁定、作废、重算、历史列表、跨量表合并或报告接口。
-- 已有 A20-A26 报告 generate / latest / edit / submit / confirm / lock / freeze-sources / archive / corrections，以及任意合法线性 replacement 的同一生命周期；尚无签名、unlock / unfreeze / unarchive、correction cancel / branch、历史列表、PDF / Word / 打印导出、AuditLog 模型或 AI 报告。
+- 已有 A20-A27 报告 generate / latest / edit / submit / confirm / lock / freeze-sources / archive / corrections、版本列表和指定历史详情，以及患者历史评估；尚无 follow-up-trends、签名、unlock / unfreeze / unarchive、correction cancel / branch、PDF / Word / 打印导出、AuditLog 模型或 AI 报告。
 - 尚无作答提交后自动计分或自动认知域计算触发；A17 / A19 均由显式 compute 触发，不包含 MMSE / MoCA itemCode、domain title 或诊断规则硬编码。
 - 尚无短信发送接口。
 - 尚无 AI / LLM 调用接口。
-- 尚无患者编辑 / 删除 / 归档、访视编辑 / 删除 / 状态流转，以及 A12-A26 已列接口之外的量表、作答、媒体、计分、认知域、报告等其他业务 Controller 或公开业务 API。
+- 尚无患者编辑 / 删除 / 归档、访视编辑 / 删除 / 状态流转，以及 A12-A27 已列接口之外的量表、作答、媒体、计分、认知域、报告等其他业务 Controller 或公开业务 API。
 - 尚未实现用户创建、用户更新、用户禁用、重置密码、角色权限管理、短信验证码、OAuth / SSO、JWT 主登录态、前端登录页、前端认证态或权限菜单。
 - A12-A24 真实 HTTP E2E 已执行；A24 定向 E2E 为 1 个套件 / 6 个测试通过，全量 E2E 为 13 个套件 / 60 个测试通过，A24 完成后补充执行的最近两次全量 E2E 均完整通过。执行使用 `NODE_ENV=test`、Jest `--runInBand`、隔离 `cogmemory_ad_test`、fake Storage、stub SMS / LLM 和脱敏人工数据，未调用真实外部服务。
 - 已完成 A24 scoped lint、后端 build、72 个单元测试套件 / 625 个测试通过。此前一次全量复跑曾出现既有跨套件 test catalog / 数据顺序污染现象，该现象在随后两次完整串行复跑中未再次出现；当前验证结论以最近连续两次全量通过为准，但尚不据此宣称潜在测试隔离风险已被永久消除。未运行全模块 lint，既有 scoring 格式技术债未由 A24 修改。

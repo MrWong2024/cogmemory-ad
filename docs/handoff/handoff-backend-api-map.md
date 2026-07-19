@@ -6,7 +6,7 @@
 
 ## 2. 当前状态
 
-- 当前报告公开 API 已扩展为 A20 generate / latest、A21 edit draft / submit confirmation / confirm、A22 lock、A23 freeze-sources、A24 archive 与 A25 corrections 共九个接口。
+- 当前报告公开 API 已扩展为既有九个生命周期接口，加 A27 报告版本列表与指定历史详情共十一个；另新增患者 `assessment-history` 只读接口。基础 `follow-up-trends` 尚未实现。
 - `AuthModule` 当前新增 `AuthController`，仅暴露最小公开认证 API 底座；主登录态仍为服务端 Session + HttpOnly Cookie，不采用 JWT 主登录态。
 - AuthModule 内部 session cookie 名称已统一为 `cogmemory_ad_session`，登录成功下发 HttpOnly Cookie，`SameSite=Lax`，`Path=/`，production 环境启用 `Secure`。
 - 当前没有 users controller，没有公开用户管理 API，没有注册、密码重置、角色权限管理、短信验证码、OAuth / SSO 或 JWT 登录 API。
@@ -452,3 +452,26 @@
 - response：`{ sourceReport, replacementReport, correctionReceipt }`；source 安全摘要在 `correction`，replacement 关系在 `replacementOf`。metadata、原始 correctionRecords、来源 ID 与 AuditLog ID 不公开。
 - A20 / A21 / A26：generate 与 latest 使用当前 latest；合法 replacement 的 edit / submit / confirm / lock / freeze-sources / archive 仅 doctor/admin，Patient inactive / Visit locked / voided 不阻断。V1 的 A21-A23 资格不放宽；公开 endpoint、DTO 与 response 未变化。
 - errors：400 confirmation / DTO；401；403；404 ownership；409 not-correctable / not-latest / conflict / audit-unavailable / replacement-conflict / incomplete；未知持久化失败 500。
+
+## A27 WP-04 后端阶段一历史读取
+
+### GET `/patients/:patientId/assessment-history`
+
+- Controller / 权限：`ClinicalHistoryController`；`SessionAuthGuard` + `RolesGuard`；doctor / nurse / research_assistant / admin；不使用 CurrentUser、Body 或写入。
+- DTO：`PatientHistoryParamDto`；`ListPatientAssessmentHistoryQueryDto` 支持 page=1、pageSize=20（1–100）、含边界 ISO `dateFrom/dateTo`、visitType、status 与 trim/lowercase 非空 `scaleCode`；未知 sort/query 400，日期倒置 400 `INVALID_DATE_RANGE`。
+- 响应 / 排序：`PatientAssessmentHistoryResponse { items,page,pageSize,total }`；Visit 按 assessmentDate desc、`_id` desc 后分页，scale summary 按 scaleCode / instanceNo / `_id` asc。Score / Domain 只公开资格摘要，缺结果为 null，不重新读取作答、评分或计算认知域。
+- ownership / 错误：先校验 Patient；不存在 404 `PATIENT_NOT_FOUND`。inactive / archived Patient 和全部 Visit 历史状态可读；超范围页 200 空 items 且保留真实 total。
+- 隐私 / 查询：按 Patient + 可选 scaleCode 先筛 Visit，再对当前页各一次批量读取 ScaleInstance、runNo=1 Score、runNo=1 Domain 和 cognitive_assessment report 轻量投影；不读取 ItemResponse、MediaEvidence、报告 narrative/快照或顶层来源 ID 数组，不输出 ownership、raw/Mixed、reviewer、metadata 或来源内部 ID。
+
+### GET `/patients/:patientId/visits/:visitId/clinical-reports`
+
+- DTO / 权限：复用 `ClinicalReportVisitParamDto` + `ListClinicalReportVersionsQueryDto`（page=1、pageSize=20、max=100）；四个患者工作流角色；reportType 服务端固定 cognitive_assessment。
+- 响应：`ClinicalReportVersionListResponse`；完整轻量集合先验证 V1…Vn 和 A25/A26 双向关系，再在内存按 reportVersion / createdAt / `_id` desc 分页。空链为 valid 0/0/0；previous/replacement 只含 reportCode/reportVersion。
+- 错误：Patient 404 `PATIENT_NOT_FOUND`；Visit 越界 404 `VISIT_NOT_FOUND`；独立基础/lifecycle 不安全 409 `CLINICAL_REPORT_INCOMPLETE`；重复、缺口、跳版、单边、孤儿、branch/merge 或 anchor 错位 409 `CLINICAL_REPORT_HISTORY_LINEAGE_INVALID`。
+- 隐私：轻量投影不加载 narrative、evidence/score/domain 大快照、AI draft 或顶层来源 ID 数组；响应不含 metadata、correction/freeze/archive 内部 ID 或 previous/replacement report ID。
+
+### GET `/patients/:patientId/visits/:visitId/clinical-reports/:reportId`
+
+- 路由 / DTO：静态 `latest` 先于动态 `:reportId`；`ClinicalReportHistoryParamDto` 校验三个 MongoId。四角色只读，不改变 existing latest。
+- ownership / 状态：按 Patient → Patient 下 Visit → 同 Patient/Visit/type report 校验；跨归属统一 404 `CLINICAL_REPORT_NOT_FOUND`。允许六种报告状态、三种 Patient 状态和全部 Visit 状态。
+- 响应 / 完整性：原样复用 `ClinicalReportDetailResponse`、`ClinicalReportPublicMapper` 与现有 readable report 完整性；目标报告不完整为 409 `CLINICAL_REPORT_INCOMPLETE`，不附版本列表或内部 lineage。

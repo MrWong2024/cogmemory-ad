@@ -21,6 +21,7 @@ import { ClinicalReportPublicMapper } from './services/clinical-report-public.ma
 import { ClinicalReportReviewWorkflowService } from './services/clinical-report-review-workflow.service';
 import { ClinicalReportSourceFreezeWorkflowService } from './services/clinical-report-source-freeze-workflow.service';
 import { ClinicalReportCorrectionWorkflowService } from './services/clinical-report-correction-workflow.service';
+import { ClinicalReportHistoryQueryService } from './services/clinical-report-history-query.service';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { ClinicalReportCorrectionWorkflowService } from './services/clinical-rep
     ClinicalReportSourceFreezeWorkflowService,
     ClinicalReportArchiveWorkflowService,
     ClinicalReportCorrectionWorkflowService,
+    ClinicalReportHistoryQueryService,
   ],
   exports: [ReportsService],
 })

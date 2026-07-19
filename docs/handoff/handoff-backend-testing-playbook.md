@@ -12,7 +12,7 @@
 - 本地前端默认 origin 为 `http://localhost:3002`。
 - 测试环境默认 `STORAGE_DRIVER=fake`。
 - 测试环境 `LLM_PROVIDER=stub`，不得依赖真实大模型调用。
-- 当前存在十四个真实 HTTP E2E；A26 扩展既有 clinical report correction 套件，不增加重复套件。
+- 当前存在十六个真实 HTTP E2E；A27 新增 `clinical-history.e2e-spec.ts`，其余套件继续串行执行。
 - TypeScript `rootDir` 当前为 `.`，后端主入口预期 build 产物为 `dist/src/main.js`。
 - `tsBuildInfoFile` 保持 `./dist/tsconfig.build.tsbuildinfo`。
 - `dist` 与 `*.tsbuildinfo` 为生成物，不进入版本库。
@@ -152,7 +152,7 @@
 - 如果 `backend\node_modules` 存在，可执行 `npm test -- --runInBand` 验证单元测试。
 - 如果 `backend\node_modules` 不存在，不应自动执行 `npm install`。
 - 当前任务不调用真实 OSS、阿里云 SMS、大模型或生产数据库。
-- `test:e2e` 脚本已通过 `test/jest-e2e.json` 执行 A12-A26 真实 HTTP 闭环；测试运行时确认 `NODE_ENV=test`、数据库名 `cogmemory_ad_test`、Storage=fake、LLM/SMS=stub，未打印数据库凭证。
+- `test:e2e` 脚本已通过 `test/jest-e2e.json` 执行 A12-A27 真实 HTTP 闭环；测试运行时确认 `NODE_ENV=test`、数据库名 `cogmemory_ad_test`、Storage=fake、LLM/SMS=stub，未打印数据库凭证。
 
 ## 5. 当前单元测试口径
 
@@ -306,6 +306,16 @@
 - A26 定向 E2E：`node -e "process.env.NODE_ENV='test'; require('jest').run(['--config','./test/jest-e2e.json','--runInBand','test/clinical-report-correction.e2e-spec.ts'])"`；1 suite / 7 tests 通过。
 - 全量 E2E：`npm run test:e2e`；14 suites / 67 tests 通过。定向与全量 E2E 都由测试启动断言隔离 `_test` 数据库、fake Storage、stub LLM/SMS，使用脱敏人工 fixture；未调用真实外部服务。
 - 核心 A26 断言：V1 原规则完整回归；inactive Patient + voided Visit 下合法 V2/V3 均完成 A21 edit/submit/confirm → A22 lock → A23 freeze → A24 archive；共享五类来源在 V2/V3 freeze 前后 status、lockedAt、updatedAt、metadata 不变；前序 corrected 报告 A22-A25 事实不变；重复 lock/freeze/archive 保留原 ID/time/note/updatedAt；corrected historical archive fallback、非法 lineage、nurse/research 403、freeze-before-lock、archive-before-freeze 与 lock/archive stale expectedUpdatedAt 均保持稳定语义。
+
+### A27 定向验证
+
+- 定向 unit：`npx jest --runInBand src/modules/clinical-history src/modules/reports/dto/clinical-report-history-dto.spec.ts src/modules/reports/lib/clinical-report-history-lineage.spec.ts src/modules/reports/lib/clinical-report-version.mapper.spec.ts src/modules/reports/services/clinical-report-history-query.service.spec.ts src/modules/reports/controllers/clinical-reports.controller.spec.ts`。
+- 定向 E2E：`node -e "process.env.NODE_ENV='test'; require('jest').run(['--config','./test/jest-e2e.json','--runInBand','test/clinical-history.e2e-spec.ts'])"`。package `test:e2e` 脚本本身固定运行全部 E2E，额外 CLI 参数不会缩小 Jest 参数数组。
+- fixture：只用 `SUBJ-A27-HISTORY-*` / `VISIT-A27-HISTORY-*` 与人工分数；Patient 可为 inactive，Visit 覆盖 locked/voided；直接构造 runNo=1 locked Score / Domain 与 V1 draft report。清理严格按账号和 Patient 前缀 ownership 删除，不 drop DB/collection。
+- invalid lineage：单元测试用 V1/V2/V3 完整 A21-A26 audit 构造合法链，再逐项破坏重复/缺口/code/ownership/latest；基础时间或 lifecycle namespace 破坏应映射 incomplete，关系/anchor 破坏映射 lineage invalid。不得通过删掉全部 metadata 把不同错误混为一类。
+- 响应安全：递归扫描 history / version list，禁止 patient/visit/source result internal ID、metadata、item/domain 明细、narrative、previous/replacement internal ID；历史详情单独复用既有 mapper 契约。调用前后比较 Patient/Visit/Instance/Score/Domain/Report updatedAt，证明三个 GET 不写入。
+- latest 回归：`latest` 静态路由必须在 `:reportId` 前，既有 controller unit 和全量 E2E 必须继续通过。
+- A27 实际结果：变更范围定向 ESLint 通过；build 通过；A27 定向 E2E 1 suite / 3 tests；全量 unit 84 suites / 707 tests；全量 E2E 16 suites / 73 tests。完整 lint 执行一次，仍为 51 errors / 0 warnings，且仅在未修改的 `manual-score-review.ts`、`manual-score-review.spec.ts`、`score-review-workflow.service.spec.ts` 三个既有 scoring 文件。
 
 ### B16 浏览器验收夹具 CLI
 

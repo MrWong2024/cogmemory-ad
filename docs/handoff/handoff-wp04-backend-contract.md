@@ -3,7 +3,7 @@
 ## 0. 文档状态
 
 - 契约状态：**已锁定**。
-- 产品状态：**未实施**；本文只定义后续实现约束，不代表接口、DTO、模块或测试已经存在。
+- 产品状态：**进行中**；后端阶段一 A27 已实施，患者历史评估、报告版本列表与指定历史报告详情三个只读接口已存在；基础随访趋势仍未实施，WP-04 尚未完成。
 - 基线：`95b778448603e5eb4f96eafb82136edc36d3ab0e`。
 - 范围：四个只读 GET；无 Body、无写入、无 `expectedUpdatedAt`、无 `confirm`、无 AuditLog、无缓存、无导出、无 PDF、无 AI、无诊断。
 - 兼容边界：不改变现有 `latest`、Patient / Visit list 或 A17–A26 API；不改变 `ClinicalReportPublicMapper`。
@@ -712,7 +712,7 @@ Visit voided 必须保留 point 且不得 available。Patient inactive/archived 
 
 ## 16. 明确非目标
 
-不实现产品代码、前端、图表、report diff、narrative 比较、跨量表换算/合成、诊断/概率/AI、随访计划/提醒、科研导出、PDF/打印/下载、AuditLog、报告作废新流程、签名/撤销、患者/Visit 编辑合并删除、自动保存、缓存/预聚合/异步任务、report-by-code 路由、MMSE/MoCA/CRF/seed/评分规则修改或既有 scoring 格式技术债。
+A27 不实现前端、基础随访趋势、图表、report diff、narrative 比较、跨量表换算/合成、诊断/概率/AI、随访计划/提醒、科研导出、PDF/打印/下载、AuditLog、报告作废新流程、签名/撤销、患者/Visit 编辑合并删除、自动保存、缓存/预聚合/异步任务、report-by-code 路由、MMSE/MoCA/CRF/seed/评分规则修改或既有 scoring 格式技术债。
 
 与后续工作包边界：WP-05 消费稳定历史访问但自行定义导出/脱敏；WP-06 自行定义 AI 输入审核；WP-07 自行定义读取/操作审计；TC-05 自行定义报告作废及相关链路规则。WP-04 不预设这些契约。
 
@@ -720,4 +720,5 @@ Visit voided 必须保留 point 且不得 available。Patient inactive/archived 
 
 - 接口路径、Controller 归属、Param/Query 字段、默认值、上限、排序、分页、角色、ownership、错误码、nullable、dataStatus、comparison status/reason、数值来源、exact trace、domain mapping、查询编排、索引和模块方向均已锁定。
 - 未决产品/技术项：**0**。
-- 因此可据本文生成后端实施阶段一指令；WP-04 仍未实施。
+- 后端阶段一已按本文完成 A27：`assessment-history`、`clinical-reports` 版本列表与 `clinical-reports/:reportId` 已实施。
+- 第四个 `follow-up-trends` endpoint 仍仅为锁定契约、尚未实施；WP-04 继续进行中，下一阶段不在本文预分配编号。

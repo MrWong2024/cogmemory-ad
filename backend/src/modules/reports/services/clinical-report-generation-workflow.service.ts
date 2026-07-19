@@ -28,6 +28,7 @@ import type { ScoreResultSummary } from '../../scoring/services/scoring.service'
 import { ScoringService } from '../../scoring/services/scoring.service';
 import type { GenerateClinicalReportDto } from '../dto/generate-clinical-report.dto';
 import { buildClinicalReportDraft } from '../lib/clinical-report-draft-builder';
+import { assertReadableClinicalReport } from '../lib/clinical-report-readability';
 import type { ReportOperatorRole } from '../schemas/clinical-report.schema';
 import type {
   ClinicalReportGenerationActor,
@@ -698,27 +699,7 @@ export class ClinicalReportGenerationWorkflowService {
     report: ClinicalReportSummary,
     context: VisitContext,
   ): void {
-    if (
-      report.patientId !== context.patient.id ||
-      report.assessmentVisitId !== context.visit.id ||
-      !report.reportCode ||
-      !report.createdAt ||
-      !report.updatedAt ||
-      !report.patientSnapshot ||
-      !report.visitSnapshot ||
-      report.scaleTraces.length < 1 ||
-      report.scoreSnapshots.length < 1 ||
-      report.domainSnapshots.length < 1 ||
-      !report.narrative ||
-      !report.aiDraft ||
-      (['confirmed', 'archived', 'corrected'].includes(report.status) &&
-        (!report.confirmation || !report.confirmation.confirmedAt))
-    ) {
-      throw new ConflictException({
-        code: 'CLINICAL_REPORT_INCOMPLETE',
-        message: 'Clinical report is incomplete',
-      });
-    }
+    assertReadableClinicalReport(report, context.patient.id, context.visit.id);
   }
 
   private async recoverDuplicateKey(

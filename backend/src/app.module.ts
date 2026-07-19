@@ -10,6 +10,7 @@ import { envValidationSchema } from './config/env.validation';
 import { AssessmentsModule } from './modules/assessments/assessments.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CognitiveDomainsModule } from './modules/cognitive-domains/cognitive-domains.module';
+import { ClinicalHistoryModule } from './modules/clinical-history/clinical-history.module';
 import { MediaModule } from './modules/media/media.module';
 import { PatientsModule } from './modules/patients/patients.module';
 import { ReportsModule } from './modules/reports/reports.module';
@@ -43,6 +44,7 @@ import { UsersModule } from './modules/users/users.module';
     ScoringModule,
     CognitiveDomainsModule,
     ReportsModule,
+    ClinicalHistoryModule,
     UsersModule,
     AuthModule,
     StorageModule,

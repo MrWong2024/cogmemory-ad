@@ -203,6 +203,50 @@ export type ClinicalReportSummary = {
   updatedAt: Date | null;
 };
 
+export type ClinicalReportHistoryRecord = {
+  id: string;
+  patientId: string;
+  assessmentVisitId: string;
+  reportCode: string;
+  reportType: ClinicalReportType;
+  status: ClinicalReportStatus;
+  reportVersion: number;
+  source: ClinicalReportSource;
+  qualityStatus: ReportQualityStatus;
+  confirmation: ReportConfirmationSummary | null;
+  lockedAt: Date | null;
+  lockedBy: string | null;
+  archivedAt: Date | null;
+  archivedBy: string | null;
+  correctionRecords: ReportCorrectionSummary[];
+  voidedAt: Date | null;
+  metadata: ClinicalReportMetadata;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+};
+
+type ClinicalReportHistoryLean = {
+  _id: Types.ObjectId;
+  patientId: Types.ObjectId;
+  assessmentVisitId: Types.ObjectId;
+  reportCode: string;
+  reportType: ClinicalReportType;
+  status: ClinicalReportStatus;
+  reportVersion: number;
+  source: ClinicalReportSource;
+  qualityStatus: ReportQualityStatus;
+  confirmation?: ReportConfirmationSnapshot | null;
+  lockedAt?: Date | null;
+  lockedBy?: Types.ObjectId | null;
+  archivedAt?: Date | null;
+  archivedBy?: Types.ObjectId | null;
+  correctionRecords?: ReportCorrectionRecord[];
+  voidedAt?: Date | null;
+  metadata?: ClinicalReportMetadata;
+  createdAt?: Date;
+  updatedAt?: Date;
+};
+
 export type ClinicalReportGenerationMetadata = {
   version: 1;
   generationId: string;
@@ -973,6 +1017,79 @@ export class ReportsService {
     return reports.map((report) => this.mapReport(report));
   }
 
+  async listClinicalReportHistoryRecords(
+    patientId: Types.ObjectId | string,
+    assessmentVisitIds: readonly string[],
+  ): Promise<ClinicalReportHistoryRecord[]> {
+    const normalizedPatientId = this.normalizeObjectId(patientId);
+    const normalizedVisitIds = this.normalizeObjectIds(assessmentVisitIds);
+    if (
+      !normalizedPatientId ||
+      !normalizedVisitIds ||
+      normalizedVisitIds.length === 0
+    ) {
+      return [];
+    }
+    const reports = await this.clinicalReportModel
+      .find({
+        patientId: normalizedPatientId,
+        assessmentVisitId: { $in: normalizedVisitIds },
+        reportType: 'cognitive_assessment',
+      })
+      .select({
+        _id: 1,
+        patientId: 1,
+        assessmentVisitId: 1,
+        reportCode: 1,
+        reportType: 1,
+        status: 1,
+        reportVersion: 1,
+        source: 1,
+        qualityStatus: 1,
+        confirmation: 1,
+        lockedAt: 1,
+        lockedBy: 1,
+        archivedAt: 1,
+        archivedBy: 1,
+        correctionRecords: 1,
+        voidedAt: 1,
+        'metadata.a21Confirmation': 1,
+        'metadata.a22Lock': 1,
+        'metadata.a23SourceFreeze': 1,
+        'metadata.a24Archive': 1,
+        'metadata.a25Correction': 1,
+        'metadata.a25CorrectionReplacement': 1,
+        createdAt: 1,
+        updatedAt: 1,
+      })
+      .sort({ reportVersion: 1, createdAt: 1, _id: 1 })
+      .lean<ClinicalReportHistoryLean[]>()
+      .exec();
+    return reports.map((report) => ({
+      id: report._id.toString(),
+      patientId: report.patientId.toString(),
+      assessmentVisitId: report.assessmentVisitId.toString(),
+      reportCode: report.reportCode,
+      reportType: report.reportType,
+      status: report.status,
+      reportVersion: report.reportVersion,
+      source: report.source,
+      qualityStatus: report.qualityStatus,
+      confirmation: this.mapConfirmation(report.confirmation),
+      lockedAt: report.lockedAt ?? null,
+      lockedBy: this.mapOptionalObjectId(report.lockedBy),
+      archivedAt: report.archivedAt ?? null,
+      archivedBy: this.mapOptionalObjectId(report.archivedBy),
+      correctionRecords: (report.correctionRecords ?? []).map((record) =>
+        this.mapCorrectionRecord(record),
+      ),
+      voidedAt: report.voidedAt ?? null,
+      metadata: report.metadata ?? null,
+      createdAt: report.createdAt ?? null,
+      updatedAt: report.updatedAt ?? null,
+    }));
+  }
+
   async listReportsByPatientId(
     patientId: Types.ObjectId | string,
   ): Promise<ClinicalReportSummary[]> {
@@ -1058,6 +1175,13 @@ export class ReportsService {
     }
 
     return objectId;
+  }
+
+  private normalizeObjectIds(ids: readonly string[]): Types.ObjectId[] | null {
+    const normalized = ids.map((id) => this.normalizeObjectId(id));
+    return normalized.some((id) => id === null)
+      ? null
+      : normalized.filter((id): id is Types.ObjectId => id !== null);
   }
 
   private normalizeClinicalReportOwnership(

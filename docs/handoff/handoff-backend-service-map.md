@@ -6,7 +6,7 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 Service / Provider 与 A12-A22 业务能力；A21 在 A20 生成边界外提供独立 Review Workflow，A22 再提供独立 Lock Workflow、纯 lock 函数和单文档原子写。
+- 当前存在公共底座 Service / Provider 与 A12-A27 业务能力；A27 在既有写入工作流外新增无 Schema 的只读历史编排与纯安全 evaluator / mapper。
 - 当前没有独立医生、SMS 或 LLM Service；A21 不调用来源计分 / 认知域 / 媒体 Service、Storage、PDF 或 AI 能力。
 
 ## 3. 当前 Service / Provider 清单
@@ -435,3 +435,12 @@
 - `lockReportIfUnmodified()`、source-freeze start / complete、`archiveReportIfUnmodified()` 都接收服务端读取的真实 reportVersion，并在原子 filter 中精确等值匹配；没有 `>=2` 宽匹配。所有既有状态、void / archive / correction、阶段审计和 expectedUpdatedAt 条件保留或补强。
 - replacement freeze 继续从当前报告快照和精确 ID 建 scope；来源 Service 的条件更新只处理尚未冻结记录。已经由前序版本冻结且状态 / lockedAt / snapshot 完整兼容的共享来源只验证并计入 previouslyFrozen，不更新来源文档；当前 replacement 仍形成独立 in_progress → completed receipt。恢复完成使用持久化 started actor、freezeId、scope 与 note。
 - 未增加 Controller 路由、公开 DTO / response 字段、Schema、collection、依赖、配置、transaction、队列或后台任务；前序 corrected 报告和既有 A22-A25 metadata 均只读。
+
+### A27 WP-04 后端阶段一历史读取
+
+- `ClinicalHistoryModule` 只导入 Auth、Patients、Assessments、Scoring、CognitiveDomains 与 Reports；没有 `MongooseModule.forFeature`、重复 Schema、Model 直连、`forwardRef` 或循环依赖。`ClinicalHistoryController` 只暴露 assessment-history，`ClinicalHistoryQueryService` 负责 Patient 校验、scaleCode 预分页过滤、Visit count/page 与四类批量读取。
+- `PatientsService.findPatientHistoryIdentityById()`、`AssessmentsService.findAssessmentHistoryVisitIdentity()` 只投影 ownership identity；Assessments 另提供 scaleCode 唯一 Visit IDs、稳定 Visit page/count 和页内 ScaleInstance 批量读取；Scoring / CognitiveDomains 各提供 ownership-scoped runNo=1 轻量批量读取；Reports 提供固定 cognitive_assessment 的轻量历史集合读取。全部为 lean + explicit projection，不把 Mongoose document 或 Model 暴露给编排层。
+- `assessment-history.mapper.ts` 为无 IO 纯安全边界：对 Score / Domain 精确 ownership、final/void、quality/review/time/trace/数值/mapping 资格进行保守判定；不重算总分或认知域，Domain 不完整不抹掉已可用 Score；输出严格白名单。
+- `ClinicalReportHistoryQueryService` 负责版本列表和指定历史详情 ownership。版本列表先读取完整轻量集合、调用完整链 evaluator，再内存分页；详情复用 `assertReadableClinicalReport()` 和 `ClinicalReportPublicMapper`，`latest` 也复用同一 readable 规则。
+- `clinical-report-history-lineage.ts` 无 IO：集合层验证 ownership/type、唯一连续 V1…Vn、唯一 code、incoming/outgoing、latest/in-progress 边界；相邻 hop 复用 A26 单跳校验。基础或 lifecycle parser 错误分类 incomplete，关系结构/anchor 错误分类 lineage invalid。`clinical-report-version.mapper.ts` 不输出内部 ID。
+- A27 不新增 collection、Schema、index、缓存、read model、transaction、队列或写入；不调用内部 HTTP，不加载历史列表不需要的大快照。

@@ -127,6 +127,41 @@ export type ScoreResultSummary = {
   updatedAt: Date;
 };
 
+export type AssessmentHistoryScoreResultSummary = Pick<
+  ScoreResultSummary,
+  | 'id'
+  | 'patientId'
+  | 'assessmentVisitId'
+  | 'scaleInstanceId'
+  | 'scaleCode'
+  | 'runNo'
+  | 'status'
+  | 'versionTrace'
+  | 'totalScore'
+  | 'review'
+  | 'qualityStatus'
+  | 'confirmedAt'
+  | 'lockedAt'
+  | 'voidedAt'
+>;
+
+type AssessmentHistoryScoreResultLean = {
+  _id: Types.ObjectId;
+  patientId: Types.ObjectId;
+  assessmentVisitId: Types.ObjectId;
+  scaleInstanceId: Types.ObjectId;
+  scaleCode: string;
+  runNo: number;
+  status: ScoreResultStatus;
+  versionTrace?: ScoreVersionTrace | null;
+  totalScore?: TotalScoreSnapshot | null;
+  review?: ScoreReviewSnapshot | null;
+  qualityStatus: ScoreQualityStatus;
+  confirmedAt?: Date | null;
+  lockedAt?: Date | null;
+  voidedAt?: Date | null;
+};
+
 export type ScoreResultSourceFreezeItem = {
   id: string;
   patientId: string;
@@ -376,6 +411,95 @@ export class ScoringService {
       .sort({ _id: 1 })
       .exec();
     return results.map((result) => this.mapScoreResult(result));
+  }
+
+  async listAssessmentHistoryScoreResults(
+    patientId: Types.ObjectId | string,
+    visitIds: readonly string[],
+    scaleInstanceIds: readonly string[],
+  ): Promise<AssessmentHistoryScoreResultSummary[]> {
+    const normalizedPatientId = this.normalizeObjectId(patientId);
+    const normalizedVisitIds = this.normalizeObjectIds(visitIds);
+    const normalizedScaleIds = this.normalizeObjectIds(scaleInstanceIds);
+    if (
+      !normalizedPatientId ||
+      !normalizedVisitIds ||
+      !normalizedScaleIds ||
+      normalizedVisitIds.length === 0 ||
+      normalizedScaleIds.length === 0
+    ) {
+      return [];
+    }
+    const results = await this.scoreResultModel
+      .find({
+        patientId: normalizedPatientId,
+        assessmentVisitId: { $in: normalizedVisitIds },
+        scaleInstanceId: { $in: normalizedScaleIds },
+        runNo: 1,
+      })
+      .select({
+        _id: 1,
+        patientId: 1,
+        assessmentVisitId: 1,
+        scaleInstanceId: 1,
+        scaleCode: 1,
+        runNo: 1,
+        status: 1,
+        versionTrace: 1,
+        totalScore: 1,
+        review: 1,
+        qualityStatus: 1,
+        confirmedAt: 1,
+        lockedAt: 1,
+        voidedAt: 1,
+      })
+      .sort({ _id: 1 })
+      .lean<AssessmentHistoryScoreResultLean[]>()
+      .exec();
+    return results.map((result) => ({
+      id: result._id.toString(),
+      patientId: result.patientId.toString(),
+      assessmentVisitId: result.assessmentVisitId.toString(),
+      scaleInstanceId: result.scaleInstanceId.toString(),
+      scaleCode: result.scaleCode,
+      runNo: result.runNo,
+      status: result.status,
+      versionTrace: result.versionTrace
+        ? {
+            scaleVersion: result.versionTrace.scaleVersion,
+            crfVersion: result.versionTrace.crfVersion,
+            scoringRuleVersion: result.versionTrace.scoringRuleVersion,
+            fieldEncodingVersion: result.versionTrace.fieldEncodingVersion,
+            sourceDocument: result.versionTrace.sourceDocument,
+          }
+        : null,
+      totalScore: result.totalScore
+        ? {
+            scoreValue: result.totalScore.scoreValue ?? null,
+            maxScore: result.totalScore.maxScore ?? null,
+            minScore: result.totalScore.minScore ?? null,
+            scorePercent: result.totalScore.scorePercent ?? null,
+            scoredItemCount: result.totalScore.scoredItemCount,
+            totalItemCount: result.totalScore.totalItemCount,
+            unscoredItemCount: result.totalScore.unscoredItemCount,
+            missingItemCount: result.totalScore.missingItemCount,
+            needsReviewItemCount: result.totalScore.needsReviewItemCount,
+          }
+        : null,
+      review: result.review
+        ? {
+            reviewStatus: result.review.reviewStatus,
+            reviewedAt: result.review.reviewedAt ?? null,
+            reviewerId: result.review.reviewerId?.toString() ?? null,
+            reviewerName: result.review.reviewerName,
+            reviewNote: result.review.reviewNote,
+          }
+        : null,
+      qualityStatus: result.qualityStatus,
+      confirmedAt: result.confirmedAt ?? null,
+      lockedAt: result.lockedAt ?? null,
+      voidedAt: result.voidedAt ?? null,
+    }));
   }
 
   async freezeScoreResultsByIds(

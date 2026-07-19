@@ -10,6 +10,7 @@ import { ClinicalReportLockWorkflowService } from '../services/clinical-report-l
 import { ClinicalReportReviewWorkflowService } from '../services/clinical-report-review-workflow.service';
 import { ClinicalReportSourceFreezeWorkflowService } from '../services/clinical-report-source-freeze-workflow.service';
 import { ClinicalReportCorrectionWorkflowService } from '../services/clinical-report-correction-workflow.service';
+import { ClinicalReportHistoryQueryService } from '../services/clinical-report-history-query.service';
 import { ClinicalReportsController } from './clinical-reports.controller';
 
 describe('ClinicalReportsController', () => {
@@ -27,6 +28,10 @@ describe('ClinicalReportsController', () => {
   let sourceFreezeWorkflow: { freezeClinicalReportSources: jest.Mock };
   let archiveWorkflow: { archiveClinicalReport: jest.Mock };
   let correctionWorkflow: { createClinicalReportCorrection: jest.Mock };
+  let historyQuery: {
+    listVersions: jest.Mock;
+    getHistoricalReport: jest.Mock;
+  };
 
   beforeEach(async () => {
     workflow = {
@@ -42,6 +47,10 @@ describe('ClinicalReportsController', () => {
     sourceFreezeWorkflow = { freezeClinicalReportSources: jest.fn() };
     archiveWorkflow = { archiveClinicalReport: jest.fn() };
     correctionWorkflow = { createClinicalReportCorrection: jest.fn() };
+    historyQuery = {
+      listVersions: jest.fn(),
+      getHistoricalReport: jest.fn(),
+    };
     const moduleRef = await Test.createTestingModule({
       controllers: [ClinicalReportsController],
       providers: [
@@ -68,6 +77,10 @@ describe('ClinicalReportsController', () => {
         {
           provide: ClinicalReportCorrectionWorkflowService,
           useValue: correctionWorkflow,
+        },
+        {
+          provide: ClinicalReportHistoryQueryService,
+          useValue: historyQuery,
         },
       ],
     })
@@ -159,6 +172,34 @@ describe('ClinicalReportsController', () => {
     expect(workflow.getLatestClinicalReport).toHaveBeenCalledWith(
       params.patientId,
       params.visitId,
+    );
+  });
+
+  it('forwards version list and historical detail without CurrentUser', async () => {
+    const params = {
+      patientId: '507f1f77bcf86cd799439011',
+      visitId: '507f1f77bcf86cd799439012',
+    };
+    const reportParams = {
+      ...params,
+      reportId: '507f1f77bcf86cd799439013',
+    };
+    const query = { page: 2, pageSize: 10 };
+    historyQuery.listVersions.mockResolvedValue({ items: [] });
+    historyQuery.getHistoricalReport.mockResolvedValue({});
+
+    await controller.versions(params, query);
+    await controller.historicalReport(reportParams);
+
+    expect(historyQuery.listVersions).toHaveBeenCalledWith(
+      params.patientId,
+      params.visitId,
+      query,
+    );
+    expect(historyQuery.getHistoricalReport).toHaveBeenCalledWith(
+      params.patientId,
+      params.visitId,
+      reportParams.reportId,
     );
   });
 

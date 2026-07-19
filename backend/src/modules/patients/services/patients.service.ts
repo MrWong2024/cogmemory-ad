@@ -37,6 +37,14 @@ export type PatientSummary = {
   metadata: PatientMetadata;
 };
 
+export type PatientHistoryIdentity = {
+  id: string;
+};
+
+type PatientHistoryIdentityLean = {
+  _id: Types.ObjectId;
+};
+
 type MongoDuplicateKeyError = {
   code: number;
 };
@@ -102,6 +110,21 @@ export class PatientsService {
       .exec();
 
     return patient ? this.mapPatient(patient) : null;
+  }
+
+  async findPatientHistoryIdentityById(
+    patientId: Types.ObjectId | string,
+  ): Promise<PatientHistoryIdentity | null> {
+    const normalizedId = this.normalizeObjectId(patientId);
+    if (!normalizedId) {
+      return null;
+    }
+    const patient = await this.patientModel
+      .findOne({ _id: normalizedId })
+      .select({ _id: 1 })
+      .lean<PatientHistoryIdentityLean | null>()
+      .exec();
+    return patient ? { id: patient._id.toString() } : null;
   }
 
   async listActivePatients(): Promise<PatientSummary[]> {
