@@ -315,16 +315,16 @@ describe('manual score review pure functions', () => {
     ] as const) {
       expectRuleError(
         () =>
-        prepareManualScoreReview({
-          result: resultFixture(),
-          version: versionFixture(),
-          itemResponseId,
-          scoreValue,
-          reviewNote: 'manual test review',
-          reviewedAt: NOW,
-          eventId: 'event-rejected',
-          actor: ACTOR,
-        }),
+          prepareManualScoreReview({
+            result: resultFixture(),
+            version: versionFixture(),
+            itemResponseId,
+            scoreValue,
+            reviewNote: 'manual test review',
+            reviewedAt: NOW,
+            eventId: 'event-rejected',
+            actor: ACTOR,
+          }),
         code,
       );
     }
@@ -333,16 +333,16 @@ describe('manual score review pure functions', () => {
   it('rejects unsupported metadata and the 500 event audit boundary', () => {
     expectRuleError(
       () =>
-      prepareManualScoreReview({
-        result: { ...resultFixture(), metadata: ['unsupported'] },
-        version: versionFixture(),
-        itemResponseId: ITEM_ONE,
-        scoreValue: 0,
-        reviewNote: 'manual test review',
-        reviewedAt: NOW,
-        eventId: 'event-rejected',
-        actor: ACTOR,
-      }),
+        prepareManualScoreReview({
+          result: { ...resultFixture(), metadata: ['unsupported'] },
+          version: versionFixture(),
+          itemResponseId: ITEM_ONE,
+          scoreValue: 0,
+          reviewNote: 'manual test review',
+          reviewedAt: NOW,
+          eventId: 'event-rejected',
+          actor: ACTOR,
+        }),
       'SCORE_RESULT_METADATA_UNSUPPORTED',
     );
     const events = Array.from(
@@ -351,19 +351,19 @@ describe('manual score review pure functions', () => {
     );
     expectRuleError(
       () =>
-      prepareManualScoreReview({
-        result: {
-          ...resultFixture(),
-          metadata: { a18ManualReview: { version: 1, events } },
-        },
-        version: versionFixture(),
-        itemResponseId: ITEM_ONE,
-        scoreValue: 0,
-        reviewNote: 'manual test review',
-        reviewedAt: NOW,
-        eventId: 'event-limit',
-        actor: ACTOR,
-      }),
+        prepareManualScoreReview({
+          result: {
+            ...resultFixture(),
+            metadata: { a18ManualReview: { version: 1, events } },
+          },
+          version: versionFixture(),
+          itemResponseId: ITEM_ONE,
+          scoreValue: 0,
+          reviewNote: 'manual test review',
+          reviewedAt: NOW,
+          eventId: 'event-limit',
+          actor: ACTOR,
+        }),
       'SCORE_REVIEW_AUDIT_LIMIT_REACHED',
     );
   });
@@ -408,26 +408,26 @@ describe('manual score review pure functions', () => {
 
     expectRuleError(
       () =>
-      evaluateScoreConfirmationReadiness({
-        result: {
-          ...computed,
-          computation: { ...computed.computation!, warningCount: 1 },
-        },
-        version: versionFixture(),
-        summary,
-      }),
+        evaluateScoreConfirmationReadiness({
+          result: {
+            ...computed,
+            computation: { ...computed.computation!, warningCount: 1 },
+          },
+          version: versionFixture(),
+          summary,
+        }),
       'SCORE_RESULT_CONFIRMATION_WARNINGS_PRESENT',
     );
     expectRuleError(
       () =>
-      evaluateScoreConfirmationReadiness({
-        result: {
-          ...computed,
-          totalScore: { ...computed.totalScore!, scoreValue: 2 },
-        },
-        version: versionFixture(),
-        summary,
-      }),
+        evaluateScoreConfirmationReadiness({
+          result: {
+            ...computed,
+            totalScore: { ...computed.totalScore!, scoreValue: 2 },
+          },
+          version: versionFixture(),
+          summary,
+        }),
       'SCORE_RESULT_NOT_READY_FOR_CONFIRMATION',
     );
   });

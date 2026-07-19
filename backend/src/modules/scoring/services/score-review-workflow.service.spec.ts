@@ -259,9 +259,7 @@ describe('ScoreReviewWorkflowService', () => {
       }),
     };
     scoring = {
-      findScoreResultByOwnership: jest
-        .fn()
-        .mockResolvedValue(resultFixture()),
+      findScoreResultByOwnership: jest.fn().mockResolvedValue(resultFixture()),
       summarizeItemScores: jest.fn().mockReturnValue(summaryFixture(true)),
       reviewScoreItemIfUnmodified: jest
         .fn()

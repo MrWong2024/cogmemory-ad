@@ -457,8 +457,7 @@ export function evaluateScoreConfirmationReadiness(input: {
     const sourceMatches =
       (item.scoreStatus === 'auto_scored' &&
         item.scoreSource === 'auto_rule') ||
-      (item.scoreStatus === 'manual_scored' &&
-        item.scoreSource === 'operator');
+      (item.scoreStatus === 'manual_scored' && item.scoreSource === 'operator');
     if (!sourceMatches || !item.includedInTotal) {
       throw new ScoreReviewRuleError('SCORE_RESULT_NOT_READY_FOR_CONFIRMATION');
     }
