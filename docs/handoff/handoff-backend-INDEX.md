@@ -12,7 +12,7 @@
 
 项目整体进度、当前业务阶段、一期剩余工作包与二期候选能力统一由 `handoff-roadmap.md` 作为项目控制面板维护；本入口不承担阶段时间线。
 
-当前内容记录后端公共底座、量表与运行时模型、A12-A20 评估至报告 draft 闭环、A21 ClinicalReport 受控编辑 / 提交待确认 / 医生确认、A22-A24 不可逆报告生命周期、A25 线性更正与 A26 replacement 生命周期泛化，以及认证与角色权限底座。
+当前内容记录后端公共底座、量表与运行时模型、A12-A20 评估至报告 draft 闭环、A21 ClinicalReport 受控编辑 / 提交待确认 / 医生确认、A22-A24 不可逆报告生命周期、A25 线性更正与 A26 replacement 生命周期泛化，以及认证与角色权限底座。当前后端产品实现仍停留在 A26；WP-04 后端契约已锁定但尚未实施。
 
 ## 3. 当前状态
 
@@ -58,6 +58,7 @@
 - `docs\handoff\handoff-backend-config-matrix.md`
 - `docs\handoff\handoff-backend-decisions.md`
 - `docs\handoff\handoff-backend-testing-playbook.md`
+- `docs\handoff\handoff-wp04-backend-contract.md`（WP-04 已锁定、未实施的历史评估 / 报告版本 / 基础趋势契约；不是 implemented API 清单）
 
 ## 6. 后续同步规则
 

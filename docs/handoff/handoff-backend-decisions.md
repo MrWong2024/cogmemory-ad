@@ -339,6 +339,17 @@
 - 持久化：A22 lock、A23 start / complete、A24 archive 均接收服务端已加载报告的真实 reportVersion，并在原子 filter 中精确等值匹配，不使用 V2 常量或 `>= 2`。filter 继续锚定 ownership、type、状态、锁定 / 归档 / 作废 / correction、阶段审计与 expectedUpdatedAt；A23 complete 同样使用 start 后报告的 updatedAt。
 - 泛化证明：真实 HTTP 测试从 archived V1 建 V2，完成 A21-A24 后再经 A25 建 V3，并再次完成 A21-A24；V3 用于防止实现写死 V2。前序 corrected 报告及 A22-A25 事实保持不变，shared sources 在 V2/V3 freeze 前后逐字段验证未重写。
 
+### D-037：WP-04 历史与趋势采用只读投影、完整线性报告关系和精确版本可比性
+
+- 日期：2026-07-19
+- 只读接口：WP-04 锁定患者历史评估、访视报告版本列表、指定历史报告详情和患者单量表基础随访趋势四个 GET。统一使用 SessionAuthGuard、RolesGuard 与 doctor / nurse / research_assistant / admin；不使用 CurrentUser、不写库、不创建读取 AuditLog。报告列表/detail 留在 ReportsModule，历史/趋势后续进入无 Schema 的 ClinicalHistoryModule。
+- 历史与报告关系：报告列表在分页前读取并验证同 Visit、固定 cognitive_assessment 类型的完整轻量版本集合；V1..Vn 必须连续唯一，每一跳复用 A25/A26 双向关系与 archive/freeze anchors，不允许跳版、分支、合并或孤儿。公开 previous/replacement 只含 reportCode/reportVersion，不公开关系 ID、correctionId、archive/freeze ID 或 metadata；不可信整链统一 409 `CLINICAL_REPORT_HISTORY_LINEAGE_INVALID`。
+- 数值来源：趋势总分只取同 Visit / scaleCode 唯一 ScaleInstance 的 runNo=1 最终且 passed/review 完整 ScoreResult；认知域只取与该实例和评分精确绑定、mapping 和 quality 完整的 runNo=1 CognitiveDomainResult。不得重新执行评分/认知域计算，不读原始作答，不从 ClinicalReport narrative 或报告快照推导趋势。
+- 可比性：总分比较要求相邻时间点的 scaleVersion、crfVersion、scoringRuleVersion、fieldEncodingVersion、administrationMode 和 score range 全部精确一致；认知域再要求 domainMappingVersion、mapping source/mode、domain set、逐域 range 与 weighted null/value 语义一致。delta 固定为当前减紧邻前一点，不跳过缺失/不可比 Visit，不做跨量表换算。
+- 缺失与解释：日期范围内每个 Visit 都形成 point；无 source、非 final、voided、不完整或多实例 ambiguous 均显式返回稳定 dataStatus/reason，不静默删除。只公开原始得分、得分比例和简单差值；scorePercent 不是概率，不输出改善/恶化、诊断、风险、预测或 AI 解释。
+- 性能与持久化：采用 ownership-scoped lean/projection 批量查询和内存纯 evaluator，禁止 N+1 与 controller 直连 Model。现有 Patient/date、Visit/scale/runNo 和 Visit/type/version 索引足以支撑首次实现；不新增 collection、持久化 read model、索引、缓存、预聚合或后台任务。
+- 实施与边界：推荐先实现患者历史、报告版本/详情及 lineage 安全公开，再实现基础趋势与 comparability。WP-04 不实现 WP-05 科研导出、WP-06 AI、WP-07 审计或 TC-05 报告作废/新链路规则，也不为后续阶段预分配编号。
+
 ## 4. 后续同步规则
 
 - 新增关键技术选型、接口设计、数据模型、测试策略或部署策略后，应追加决策记录。
