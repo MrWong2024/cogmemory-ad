@@ -490,6 +490,14 @@ TrendComparison = {
 
 ## 8. 可比性与稳定 reason code
 
+### 8.0 Domain 来源资格与公开可达性澄清
+
+在 `wp04-exact-trace-v1` 中，Domain 比较先受来源资格约束。每个参与比较的时间点都必须同时满足 `mappingSource === "scale_config"` 与 `mappingMode === "item_domain_codes"`；任一点不满足时，该点不生成可用的 Domain comparison context。公开结果固定为 `domainDeltas.status = "unavailable"`、`domainDeltas.reasons = ["domain_source_incomplete"]`、`domainDeltas.items = []`，总分比较结果不受此安全降级影响。
+
+`domain_mapping_source_changed` 与 `domain_mapping_mode_changed` 继续保留在纯比较器的 reason 类型和排序中，作为防御性或未来兼容分支；在当前公开 API 的来源准入规则下，它们不属于浏览器必达矩阵，不得通过放宽来源资格或伪造 comparison context 强行触达。`domain_mapping_version_changed` 仍是当前公开 API 可达的不可比较 reason，`domain_set_changed` 与 `domain_range_changed` 仍按既有规则可达。
+
+本澄清不改变接口字段、DTO、response union 或 A28 产品实现，不构成新的业务 Decision。
+
 ### 8.1 总分 exact trace
 
 两个相邻 available point 只有以下字段全部完全相等才为 comparable：

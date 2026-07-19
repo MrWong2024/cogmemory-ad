@@ -397,6 +397,29 @@ node -r ts-node/register -r tsconfig-paths/register scripts/b16-browser-fixtures
 - 固定 namespace 的 `replace` / 只读 `verify` 实际演练均退出 0，得到 4 个角色、22 个 `scenarioKey`、21 个业务场景，safe manifest 禁止字段扫描通过。浏览器验证结束后连续执行两次 cleanup，残留均为 0；namespace 外 sentinel 和双 namespace 隔离由 fixture E2E 覆盖。CLI 仍只有 prepare / verify / cleanup / replace，命令与密码传递方式未变化。
 - B16 最终关闭审计基于 `9099f66` 再次验证 fixture 三个变更文件的定向 ESLint、backend build 和 fixture 定向 E2E，结果分别为通过、通过、1 suite / 3 tests 通过。完整 backend lint 仅执行一次，仍严格为 51 个 error、0 warning，且全部是既有 Prettier 格式问题，只位于 `manual-score-review.ts`、`manual-score-review.spec.ts`、`score-review-workflow.service.spec.ts`；数量、文件和类型均未增加。这 51 项早于 WP-02，三个文件均未被 WP-02 修改，作为独立非阻断格式技术债处理，不得写成完整 lint 通过，也不再阻止 WP-02 产品关闭。
 
+### WP-04 / B17 浏览器验收夹具 CLI
+
+- 用途：为 B17 完整浏览器矩阵显式准备隔离、脱敏、确定性数据；contract 共 44 个 `scenarioKey`（1 个 `roles` + 43 个业务场景），覆盖 history、report versions、report detail、trend data status、total comparison、Domain comparison、范围和 Patient 状态。夹具不是 production seed，不随应用或测试自动执行；准备成功不等于 B17 浏览器验收完成。
+- CLI 支持 `prepare`、只读 `verify`、`cleanup --confirm-cleanup` 和 `replace --confirm-replace`。`NODE_ENV=test` 在加载 `AppModule` 前检查，连接后还会校验隔离 test database、`APP_ENV=test`、fake Storage、stub SMS/LLM 和非 production Session 配置。
+- `WP04_FIXTURE_PASSWORD` 只由当前进程环境临时提供，不接受命令行 password，不进入配置、文档、manifest 或日志；五个账号角色固定为 doctor、admin、nurse、research_assistant、system。namespace 仅允许 3–32 位小写字母、数字与单连字符分隔。
+
+```powershell
+cd backend
+$env:NODE_ENV="test"
+$env:WP04_FIXTURE_PASSWORD="<由执行者临时设置>"
+node -r ts-node/register -r tsconfig-paths/register scripts/wp04-browser-fixtures.ts prepare --namespace <name>
+node -r ts-node/register -r tsconfig-paths/register scripts/wp04-browser-fixtures.ts verify --namespace <name>
+node -r ts-node/register -r tsconfig-paths/register scripts/wp04-browser-fixtures.ts cleanup --namespace <name> --confirm-cleanup
+node -r ts-node/register -r tsconfig-paths/register scripts/wp04-browser-fixtures.ts replace --namespace <name> --confirm-replace
+Remove-Item Env:WP04_FIXTURE_PASSWORD
+```
+
+- Domain mapping source/mode 是公开 Domain 数据可用性的前置资格。两个专用场景的总分仍为 `comparable`，但公开 `domainDeltas` 必须严格为 `status=unavailable`、`reasons=[domain_source_incomplete]`、`items=[]`；pure comparator 中的 `domain_mapping_source_changed` / `domain_mapping_mode_changed` 是防御性或未来兼容 reason，不属于当前 API 可达矩阵。
+- safe manifest 只输出账号登录标识、显示名、scenario contract、导航 route 和预期公开结果；route 是唯一可含导航 ID 的白名单字段。递归扫描禁止 password/hash、Cookie/Session/token、Mongo URI、独立业务内部 ID、metadata、完整 narrative、来源 ID 与原始作答；不得直接输出 Mongoose document 或完整 Service response。
+- 实际演练：`wp04-cli-smoke` 的 prepare、verify、cleanup、二次 cleanup 均退出 0，5 roles、44 keys / 43 business scenarios 验证通过且最终残留为 0；正式 namespace `wp04-browser-final` 的 replace 与 verify 均退出 0，已保留给 B17 浏览器验收。
+- fixture 定向 E2E 为 1 suite / 3 tests，通过 prepare、verify、只读/不修复、双 namespace、sentinel、cleanup/二次 cleanup、replace、安全门禁、safe manifest 和 source/mode 修订口径；A28 comparator/source 定向 unit 为 2 suites / 14 tests，受影响回归为 6 suites / 24 tests。当前最终门禁依次为 lint 0 errors / 0 warnings、typecheck 0 errors、build 通过、full unit 88 suites / 751 tests、full E2E 18 suites / 79 tests。
+- 浏览器矩阵完成后必须对 `wp04-browser-final` 执行显式 cleanup 并核对残留为 0；在此之前不得把 WP-04 或 B17 标记为完成。
+
 - 测试不得使用真实患者数据、真实身份证号、真实手机号、真实病历号或其他可识别个人信息。
 - 量表测试数据应使用脱敏样本或人工构造样本。
 - 不得调用真实短信、真实阿里云 SMS、支付、医保、医院 HIS/LIS/PACS、对象存储生产环境或真实大模型服务，除非未来单独定义受控集成测试。
