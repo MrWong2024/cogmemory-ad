@@ -322,6 +322,102 @@ return projects.map(toProjectSummaryResponse);
 
 ---
 
+## 后端 TypeScript 全量类型检查门禁（强制）
+
+### 触发范围
+
+凡任务修改以下任一内容，必须在 `backend` 目录执行 `npm run typecheck`：
+
+- `backend/src/**/*.ts`
+- `backend/test/**/*.ts`
+- `backend/scripts/**/*.ts`
+- `backend/**/*.spec.ts`
+- `backend/**/*.e2e-spec.ts`
+- `backend/test/support/**/*.ts`
+- `backend/tsconfig*.json`
+- `backend/package.json` 中会影响 TypeScript、测试或构建的 script
+
+以下情况均不得免除全量类型检查：
+
+- 即使只修改一个 spec，也必须执行。
+- 即使只修改一个 E2E，也必须执行。
+- 即使 Jest 实际运行通过，也必须执行。
+- 即使 build 通过，也必须执行。
+- 即使修改主要是类型、fixture、mock 或 helper，也必须执行。
+
+### 命令口径
+
+- 固定命令：`npm run typecheck`。
+- 执行目录：`backend`。
+- 不得用临时 `npx tsc` 命令替代正式 package script 作为最终验收。
+- 不得只检查某个文件或目录后宣称全量类型检查通过。
+- 不得改用 `tsconfig.build.json` 替代 `tsconfig.typecheck.json`。
+- 不得在命令尾部过滤错误输出。
+- 不得使用 `|| true`、PowerShell 等价吞错写法、修改脚本吞掉退出码或忽略退出码。
+
+### 不可替代性
+
+- build 只验证其编译范围，不能替代全量 typecheck。
+- Jest 运行测试不代表所有测试源码已完成全量 TypeScript 检查。
+- lint、unit 和 E2E 均不能替代 typecheck。
+- typecheck 是独立门禁，必须在结果中单独报告。
+
+### 完成标准
+
+`npm run typecheck` 必须同时满足以下条件才算通过：
+
+- 命令退出码为 0。
+- TypeScript errors 为 0。
+- 没有通过 exclude 排除失败文件。
+- 没有降低 TypeScript 严格度。
+- 没有新增 suppression。
+- 没有生成应进入 Git 的编译产物或缓存文件。
+
+### 失败处理
+
+如果 `npm run typecheck` 失败，必须报告：
+
+- 错误总数。
+- 涉及文件。
+- 错误码。
+- 哪些错误属于本次修改。
+- 哪些错误属于任务前既有问题。
+
+本次修改引入的错误必须修复。任务范围外既有问题不得被静默修改。如果任务目标要求全量后端门禁，`npm run typecheck` 未通过时不得宣称后端任务完成。
+
+不得为了制造 typecheck 通过而：
+
+- 修改 exclude 排除失败文件。
+- 关闭 `strictNullChecks` 或降低其他 TypeScript 严格度。
+- 新增 `any` 消音。
+- 添加双重断言。
+- 添加批量非空断言。
+- 添加 `@ts-ignore` 或 `@ts-expect-error`。
+- 删除或跳过测试。
+- 修改脚本吞掉退出码。
+
+### 后端完整最终门禁
+
+后端代码任务的完整最终门禁顺序固定为：
+
+1. `npm run lint`
+2. `npm run typecheck`
+3. `npm run build`
+4. `npm test -- --runInBand`
+5. `npm run test:e2e`
+
+执行要求：
+
+- 开发过程中可以执行定向 lint、定向 unit 或定向 E2E，但定向验证不能替代最终完整门禁。
+- 最终代码态必须重新按上述顺序执行完整门禁。
+- 后端代码、测试、script 或 TypeScript 配置任务默认执行完整门禁。
+- 五项结果必须分别报告，不得合并表述为“静态验证通过”或“测试通过”。
+- 后端代码任务如因环境原因无法执行完整门禁中的任一项，必须如实报告未执行项及原因，不得把该项写成通过，也不得宣称任务完成。
+- `npm run typecheck` 未通过时，不得宣称后端任务完成。
+- 任务指令明确不需要 E2E 的纯文档或非代码任务，按任务范围执行文档与 Git 检查，不机械运行上述门禁。
+
+---
+
 ## 后端测试分层策略（强制）
 
 后端任务应按变更风险选择测试层级，不要求所有规则变化都新增 E2E，也不得把 `service.spec.ts` 视为真实 HTTP 链路的替代品。

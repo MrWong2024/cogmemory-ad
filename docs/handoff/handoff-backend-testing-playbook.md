@@ -20,6 +20,7 @@
 ## 3. 当前 package.json 脚本
 
 - `build`
+- `typecheck`
 - `format`
 - `start`
 - `start:dev`
@@ -35,12 +36,27 @@
 - `test:debug`
 - `test:e2e`
 
-## 4. 当前可执行性说明
+## 4. 当前 TypeScript 检查结构
+
+- `backend/package.json` 中的 `typecheck` script 实际为 `tsc --project tsconfig.typecheck.json`。
+- `tsconfig.build.json` 服务于生产 build，其编译范围不包含 test 和 spec，不作为 spec / E2E 全量类型门禁。
+- `tsconfig.typecheck.json`：
+  - extends `tsconfig.json`；
+  - 设置 `noEmit: true`；
+  - 覆盖 `src/**/*.ts`、`test/**/*.ts`、`scripts/**/*.ts`；
+  - exclude 仅包含 `node_modules`、`dist`、`coverage`，不排除 spec / E2E；
+  - 通过 `npm run typecheck` 执行。
+- 全量 typecheck 用于覆盖生产源码、单元测试、E2E、fixture、mock、helper 与脚本的 TypeScript 类型检查；生产 build 的通过结果不能替代该门禁。
+
+## 5. 当前可执行性说明
 
 - 当前已验证命令：
   - `npm install`
+  - `npm run lint`
+  - `npm run typecheck`
   - `npm run build`
   - `npm test -- --runInBand`
+  - `npm run test:e2e`
   - `npm run start:prod`
 - 本次后端 A1 已验证命令：
   - `npm run lint:file -- src/modules/scales src/app.module.ts`
@@ -135,18 +151,20 @@
   - `npm run build`
   - 检查 `dist/src/main.js` 存在
   - `npm run start:prod`
-- 当前验证结果：
+- 当前验证结果（基于 `ea26edc` 已完成的第一步验证）：
   - `npm install` 成功。
+  - `npm run lint`：0 errors / 0 warnings。
+  - `npm run typecheck`：0 errors。
   - `npm run build` 成功。
   - build 后 `dist/src/main.js` 已确认存在。
-  - `npm test -- --runInBand` 成功。
-  - 当前单元测试为 88 个测试套件、751 个测试通过。
-  - A28 变更范围定向 ESLint 通过；A28 定向 E2E 为 1 个测试套件、3 个测试通过。
-  - 当前全量 E2E 为 17 个测试套件、76 个测试通过。
-  - 最新 A28 全量 E2E 使用 `NODE_ENV=test`、Jest `--runInBand`、隔离 `cogmemory_ad_test`、fake Storage、stub SMS / LLM 和脱敏人工数据，未调用真实外部服务。既有 Mongoose `new` deprecated warning 仍存在，不影响本次通过结论。
+  - `npm test -- --runInBand`：88 个测试套件、751 个测试，全部通过。
+  - `npm run test:e2e`：17 个测试套件、76 个测试，全部通过。
+  - 全量 E2E 使用 `NODE_ENV=test`、Jest `--runInBand`、隔离 `cogmemory_ad_test`、fake Storage、stub SMS / LLM 和脱敏人工数据，未调用真实外部服务。
+  - `ea26edc` 前的首次全量 TypeScript 检查发现 79 个类型错误，现已清理为 0。问题主要来自 fixture 完整性、E2E 初始化收窄、枚举 key 扩宽、timestamp 类型访问和运行时输入边界；无需在本手册逐个复制 31 个错误文件，治理结果是生产源码、测试源码与 scripts 已纳入独立全量类型门禁。
+  - 目标 Mongoose `new` deprecated warning 已清除。Node `sys`、WASI、SQLite 等范围外 runtime warning 仍按客观口径保留，不得把 ESLint 的 0 warnings 误写为所有运行时 warning 均已清零。
   - 用户已补充验证 `npm run start:prod` 本地启动成功。
   - `dist/src/main.js` 与 `start:prod` 指向的 `./dist/src/main.js` 路径匹配。
-- 当前 lint 口径：A28 变更范围定向文件 lint 通过；全模块 lint 执行一次后仍严格为 51 errors / 0 warnings，全部是既有 scoring 三文件的 Prettier 格式问题，未由 A28 修改。
+- 当前 lint 口径：完整 `npm run lint` 为 0 errors / 0 warnings。历史阶段曾出现的 51 个 scoring Prettier errors 已清理，不再是当前状态；A27、A28、B16 等阶段记录中的数字仅保留其当时的历史语境。
 - 如果 `backend\node_modules` 存在，可执行 `npm run build` 验证 TypeScript 编译。
 - 当前 `start:prod` 验证仅为本地基础启动验证，不代表真实生产环境部署完成。
 - 如果 `backend\node_modules` 存在，可执行 `npm test -- --runInBand` 验证单元测试。
@@ -154,7 +172,36 @@
 - 当前任务不调用真实 OSS、阿里云 SMS、大模型或生产数据库。
 - `test:e2e` 脚本已通过 `test/jest-e2e.json` 执行 A12-A28 真实 HTTP 闭环；测试运行时确认 `NODE_ENV=test`、数据库名 `cogmemory_ad_test`、Storage=fake、LLM/SMS=stub，未打印数据库凭证。
 
-## 5. 当前单元测试口径
+## 6. 后端完整最终门禁
+
+- 执行目录固定为 `backend`，最终代码态必须按以下顺序执行：
+
+  1. `npm run lint`
+  2. `npm run typecheck`
+  3. `npm run build`
+  4. `npm test -- --runInBand`
+  5. `npm run test:e2e`
+
+- 开发过程中可以执行定向 lint、定向 unit 或定向 E2E，用于快速反馈；定向检查不能替代最终代码态的完整门禁。
+- build 只验证生产编译范围，unit 与 E2E 只验证 Jest 实际运行路径；build、unit 和 E2E 均不能替代 typecheck，lint 也不能替代 typecheck。
+- `npm run typecheck` 未通过时不得宣称后端任务完成。
+- 五项结果必须分别报告。纯文档或任务明确不需要 E2E 的非代码任务，按任务范围执行文档与 Git 检查，不机械运行完整后端门禁。
+- 因环境原因无法执行完整门禁中的某项时，必须如实报告未执行项、原因和环境限制，不得把未执行写成通过，也不得宣称任务完成。
+
+## 7. 后端验证结果报告模板
+
+- lint：通过 / 失败；errors / warnings。
+- typecheck：通过 / 失败；TypeScript errors。
+- build：通过 / 失败。
+- unit：通过 / 失败；X suites / X tests。
+- E2E：通过 / 失败；X suites / X tests。
+- 未执行项及原因：无 / 具体命令与原因。
+- 环境限制：无 / 具体限制。
+- suppression / exclude：是否新增；如有必须说明位置与原因。
+
+结果使用上述摘要即可，不要求粘贴大段命令日志。
+
+## 8. 当前单元测试口径
 
 - `backend\src\app.controller.spec.ts`：验证 `GET /health` 的 controller 返回结构。
 - `backend\src\modules\storage\storage.service.spec.ts`：验证 fake storage 不依赖 OSS 配置，并验证 OSS driver 缺少配置时抛出明确异常。
@@ -219,7 +266,7 @@
 - `backend\src\modules\auth\guards\session-auth.guard.spec.ts`：验证 `SessionAuthGuard` 对 `@Public()` 路由直通、缺少 Cookie 抛 `UnauthorizedException`、从 cookie-parser cookies 读取 `cogmemory_ad_session`、从原始 cookie header 解析 `cogmemory_ad_session`、校验成功挂载 `req.user`、校验失败抛 `UnauthorizedException`；不连接真实 MongoDB，不调用外部服务。
 - `backend\src\modules\auth\guards\roles.guard.spec.ts`：验证 `RolesGuard` 在没有 `@Roles()` 时直通、用户包含要求角色时通过、已认证但角色不足时抛 `ForbiddenException`、没有 `req.user` 时抛 `ForbiddenException`；不连接真实 MongoDB，不调用外部服务。
 
-## 6. E2E 测试口径
+## 9. E2E 测试口径
 
 - E2E 遵循 `docs\e2e-testing.md`，通过现有 `test:e2e` 脚本在 import AppModule 前设置 `NODE_ENV=test`。
 - `patients-assessment-visits.e2e-spec.ts` 使用真实 AppModule、`configureApp()`、全局 ValidationPipe / AllExceptionsFilter、Cookie、SessionAuthGuard、RolesGuard 和 MongoDB 模型。
@@ -284,7 +331,7 @@
 - A24 E2E 执行前确认 `NODE_ENV=test`、数据库为 `cogmemory_ad_test` 且非 dev / prod、Storage=fake、LLM/SMS=stub；未输出连接串或凭证，未调用真实 OSS / SMS / LLM，未使用真实患者、报告、医疗图像或临床结论。
 - A24 当前实际结果：scoped `src/modules/reports + clinical-report-archive.e2e-spec.ts` lint 通过；build 通过；全量 unit 为 72 个套件 / 625 个测试通过；A24 定向 E2E 为 1 个套件 / 6 个测试通过；全量 E2E 为 13 个套件 / 60 个测试通过。A24 完成后补充执行的最近两次全量 E2E 均在 `NODE_ENV=test`、Jest `--runInBand`、隔离 `cogmemory_ad_test`、fake Storage、stub SMS / LLM 和脱敏人工数据环境中完整通过，未调用真实外部服务。此前一次全量复跑曾出现既有跨套件 test catalog / 数据顺序污染现象；该现象在随后两次完整串行复跑中未再次出现。当前验证结论以最近连续两次全量通过为准，但尚不据此宣称潜在测试隔离风险已被永久消除。未运行全模块 lint，既有 scoring 格式技术债未修改。
 
-## 7. 医疗与量表数据测试红线
+## 10. 医疗与量表数据测试红线
 
 ### A25 correction 验证口径
 
@@ -355,7 +402,7 @@ node -r ts-node/register -r tsconfig-paths/register scripts/b16-browser-fixtures
 - 不得调用真实短信、真实阿里云 SMS、支付、医保、医院 HIS/LIS/PACS、对象存储生产环境或真实大模型服务，除非未来单独定义受控集成测试。
 - 不得在测试断言中生成真实医疗诊断结论。
 
-## 8. 后续同步规则
+## 11. 后续同步规则
 
 - 后端新增或调整测试脚本后，应同步更新自动验证命令。
 - 新增 Service、Controller、DTO、权限或 E2E 用例后，应同步补充对应验证口径。
