@@ -6,9 +6,9 @@
 
 ## 2. 当前状态
 
-- 当前包含既有公共、认证、患者 / 访视路由与 B4-B9 共用量表实例路由；B10-B15 全部复用访视详情路由，B15 未新增报告详情、历史或更正路由。
+- 当前包含既有公共、认证、患者 / 访视与量表实例路由；B17 新增患者历史、随访趋势和指定历史报告只读详情三个路由，报告版本面板继续落在访视详情。
 - `/dashboard` 已提供患者档案入口，但仍不是完整医生工作台。
-- 当前不包含患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、独立评分、评分锁定、独立认知域、独立报告详情、AI、用户管理或权限菜单路由。
+- 当前不包含患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、独立评分、评分锁定、独立认知域、current 报告专用详情、AI、用户管理或权限菜单路由。
 - 当前不包含 Next middleware 或路由级服务端认证中间件。
 
 ## 3. 当前路由清单
@@ -185,6 +185,31 @@
 - 错误态：页面自身即为兜底展示
 - 关联组件：`Badge`、`Card`
 - 备注：不调用后端
+
+### 3.11 `/patients/[patientId]/history`
+
+- 页面名称：患者评估历史
+- 页面职责：展示患者安全摘要、URL 可分享筛选、分页 Visit/Scale/Score/Domain availability 与报告摘要；顺序完全采用后端。
+- 访问边界：认证后 doctor、nurse、research_assistant、admin；后端 Guard 为最终边界。
+- 数据来源：`getPatient()` 与 `listPatientAssessmentHistory()` 两个独立 GET；401 返回登录，403/Patient 404/空结果/筛选空结果各自稳定展示。
+- 导航：患者详情始终提供“评估历史”和“随访趋势”；历史项可打开 Visit 与安全历史报告详情。inactive/archived 患者仍保留历史/趋势入口，新建访视资格不放宽。
+- URL：`page`、`pageSize`、`status`、`visitType`、`dateFrom`、`dateTo`、`scaleCode`；查询、分页和浏览器前进/后退恢复 URL 状态。
+
+### 3.12 `/patients/[patientId]/trends`
+
+- 页面名称：患者随访趋势
+- 页面职责：明确选择量表后展示保留全部 Visit 的基础趋势、纯 SVG 图和完整表；未选择量表不请求趋势。
+- 数据来源：`getPatient()`、`listAvailableScales()`、`getPatientFollowUpTrend()` 独立 GET；query 为 `scaleCode`、可选日期和 `maxPoints`。
+- 图表边界：0–100 服务端 percent；所有 Visit 有 X 位置；仅 backend comparison 可比的相邻点连线，missing/not_comparable 不连接，不跨缺失点；marker 可聚焦且 aria 不含内部 ID。
+- 文案边界：固定显示“得分比例，不是疾病概率”；不输出诊断、风险、概率、改善、恶化、进展或治疗结论。
+
+### 3.13 `/patients/[patientId]/visits/[visitId]/clinical-reports/[reportId]`
+
+- 页面名称：历史报告只读视图
+- 页面职责：读取指定历史报告，复用安全快照和正文展示基础；展示 reportCode/version/status/source/quality/isFinal 与创建/更新时间。
+- 访问边界：认证后四个 WP-04 允许角色；三个路径 ID 在请求前校验。401、403、Patient/Visit/Report 404、response incomplete 409 和服务错误分开处理。
+- 导航：返回 Visit、患者评估历史、患者详情和工作台。
+- 安全边界：不挂载 current workflow Hook，不调用 latest 或 A21–A25 写接口，没有编辑、提交、确认、锁定、冻结、归档或更正按钮；不渲染内部 lineage ID。
 
 ## 4. 后续同步规则
 

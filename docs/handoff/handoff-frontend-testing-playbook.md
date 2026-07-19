@@ -7,11 +7,12 @@
 ## 2. 当前状态
 
 - 前端公共底座与 B1-B15 既有闭环已落地；B16 replacement V2+ 产品代码保持在基线 `066ee87`。该基线的前轮完整浏览器矩阵、确定性 V2+ Resume / unsafe summary 补齐矩阵与 `9099f66` 的 Codex 内置浏览器 Web Storage 审计共同构成最终证据，B16 / WP-02 已完成。
+- B17 WP-04 前端实现和静态门禁已完成；现有数据可覆盖的部分真实浏览器矩阵通过，但完整多 Visit/长链/dataStatus/comparison/domain mapping 矩阵未执行，WP-04 继续进行中。
 - `frontend\package.json` 已存在，自动验证命令以其中真实脚本为准。
-- B2-B16 不新增测试代码、测试框架、E2E 或第三方依赖。
+- B2-B17 不新增测试代码、测试框架、E2E 或第三方依赖。
 - 当前自动验证以 ESLint、TypeScript 与 production build 覆盖现有前端类型、调用代码和页面构建；真实 HTTP、角色、并发、浏览器交互与业务数据状态由前轮 Chrome 矩阵补充，最终安全存储检查由 Codex 内置浏览器 `@Browser` 在隔离上下文中完成。
 
-## 3. B1 / B2 / B3 / B4 / B5 / B6 / B7 / B8 / B9 / B10 / B11 / B12 / B13 / B14 / B15 / B16 自动验证命令
+## 3. B1 / B2 / B3 / B4 / B5 / B6 / B7 / B8 / B9 / B10 / B11 / B12 / B13 / B14 / B15 / B16 / B17 自动验证命令
 
 在 `frontend` 目录、且既有 `node_modules` 存在时执行：
 
@@ -1279,6 +1280,26 @@ B14.1 静态验证不覆盖：
 - 在可编辑 A22 表单输入未提交脱敏说明草稿后，localStorage / sessionStorage / IndexedDB 无相关业务记录，写请求为 0。内置浏览器首次刷新触发既有 beforeunload 且自动取消；确认事件后，仅通过 CDP 临时移除旧页面的两个 beforeunload listener 以完成真实刷新，导航后该临时处理不保留。真实刷新后草稿未恢复、页面仅恢复服务端事实，自动 POST / PATCH 为 0。
 - 报告页与 unsafe summary 的 Console 禁止模式命中为 0；URL query / hash 与 DOM 未发现密码、token、报告正文、correction / lineage 内部 ID 或来源集合 ID。unsafe 页面继续显示安全阻断说明，未开放不可逆写入口且写请求为 0。
 - fixture replace / verify 均退出 0，得到 4 个角色、22 个 `scenarioKey`、21 个业务场景，safe manifest 扫描通过；审计后 cleanup 连续执行两次，残留均为 0。frontend lint、typecheck、build 均通过，Web Storage 门禁通过。
+
+## 18.3 B17 WP-04 核心验证矩阵（部分已执行）
+
+静态门禁：对全部 B17 新增/修改 TS/TSX 执行定向 ESLint，再执行 `npm run lint`、`npm run typecheck`、`npm run build` 和仓库根目录 `git diff --check`。构建路由必须包含 `/patients/[patientId]/history`、`/patients/[patientId]/trends`、`/patients/[patientId]/visits/[visitId]/clinical-reports/[reportId]`；同时搜索直接组件 fetch、GET Body、缺失 credentials/no-store/AbortSignal、自动 retry/polling、localStorage/sessionStorage/IndexedDB、chart dependency、Canvas、`any`、前端 delta/percent 重算、非 available point 过滤、workflow Hook 和内部 lineage 字段渲染。
+
+浏览器前置：需要可访问的 frontend/backend、四个允许角色、无报告/单 V1/V1→V2/V1→V2→V3/长链和六种报告状态、多个 Visit 的完整 trend dataStatus/exact trace/domain mapping 数据。只允许脱敏隔离数据；不得在 B17 中新增 backend fixture 或手工直改数据库。无完整数据时逐项记“未执行”，不得以静态检查替代或关闭 WP-04。
+
+历史列表矩阵：四角色、未认证、403、Patient 404；默认与 20/50/100 分页、日期边界/倒置、visitType/status/scaleCode（含退役 code）、翻页保留筛选和浏览器前后退；empty/filtered empty；score available/not_final/voided/incomplete/null，domain available/incomplete/null 且不可用 domain 不抹总分；report none/available/incomplete、latest 与 latestArchivedVersion 区分、draft latest 不冒充归档；Visit/历史报告导航与内部字段扫描。
+
+报告版本/详情矩阵：无报告、单 V1、V1→V2、V1→V2→V3、分页、latest、previous/replacement code/version、corrected 归档事实、draft latest、voided；lineage invalid 必须安全报错且无部分链，同时 current workflow 保持；incomplete 单独提示。详情覆盖 draft/pending_confirmation/confirmed/archived/corrected/voided、inactive/archived Patient、locked/voided Visit、Patient/Visit/Report 三类 404 与 incomplete 409；不得出现写按钮或 A21–A25 POST/PATCH，latest 路由不得回归，DOM 不得显示内部 lineage ID。
+
+趋势矩阵：目录、未选 scale 不请求、不可用 scale、日期、maxPoints 2/50/100、range-too-large 409、无 Visit、全 Visit 无该 scale、同日 Visit 顺序、历史 Patient；逐一覆盖 available/source_missing/source_not_final/source_voided/source_incomplete/source_ambiguous，保证每个 Visit 保留且 null 不显示 0。总分比较覆盖 first_point/comparable 与 scale/CRF/scoring rule/field encoding/administration mode/score range/trace incomplete reasons，多 reason 原顺序、available→missing→available 不跨越、delta 直接采用后端。Domain 覆盖 available/source incomplete、mapping version/source/mode/domain set/domain range/domain missing、comparable/partially comparable/not comparable/unavailable，且不影响可用总分。
+
+图表/表格/可访问性矩阵：所有 Visit 有 X 位置；只有相邻 comparable 连接，not comparable/missing 不连且不跨 missing；isolated marker、总分/Domain 切换、0–100 轴、“不是疾病概率”、无改善/恶化颜色语义。验证 1280×720 与 390px、无 document 非预期横向溢出、窄屏表格局部滚动、筛选/指标/`details` 键盘、marker tabindex/aria、alert/aria-live、标题、焦点和非单一色彩表达。
+
+Network/隐私矩阵：四个 B17 GET 无 Body、不发送 reportVersion 或内部 lineage ID、无自动 retry/polling；Console 无完整 response；DOM/URL 无 previousReportId、patient name、报告正文或内部 lineage。不得脚本读取 HttpOnly Cookie。Web Storage/IndexedDB 只能在所用浏览器工具安全规则允许时检查；如工具禁止读取，必须写“未执行”，不能从代码搜索推导为浏览器审计通过。
+
+本次实际结果：生产构建 frontend `localhost:3002`、test backend `localhost:5002`、隔离 `cogmemory_ad_test` 与既有 B16 脱敏 fixture CLI 可用。四角色 history、未认证跳转、Patient 404、默认分页/status URL/浏览器返回、inactive Patient 入口、latest/最近正式归档区分；单 V1、V1→V2、latest/previous/replacement、lineage invalid 409 无部分链；指定历史详情 GET、Report 404、快照/正文、导航、无写入口；目录、未选 scale 0 趋势请求、不可用 scale 404、source_missing/source_incomplete、null、SVG marker、完整表与窄屏布局均通过。四个 API 为 GET 且无 Body，Console warn/error=0，DOM 未见内部 lineage 字段。
+
+本次未执行：403（四个现有账号均被允许）、无报告 Visit、V1→V2→V3、长链分页、六种详情状态全集、incomplete/range-too-large 409、完整 six dataStatus、available/comparable、多 Visit exact trace/domain mapping、相邻连线/断线/跨 missing、Domain 指标切换和完整键盘矩阵。原因是现有 fixture 每患者仅一个 Visit，报告链最长 V2，趋势仅提供 source_missing/source_incomplete；B17 没有新增数据 fixture。浏览器技能禁止读取 Cookie/localStorage/sessionStorage/IndexedDB，因此相应浏览器审计明确未执行。验收后 `b17-browser` namespace cleanup residualCount=0。结论：B17 实现与静态验收完成，浏览器核心矩阵未完整完成，WP-04 继续进行中。
 
 ## 19. 认证与安全验证口径
 

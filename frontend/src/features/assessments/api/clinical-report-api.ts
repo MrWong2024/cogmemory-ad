@@ -19,6 +19,10 @@ import type {
   UpdateClinicalReportDraftRequest,
   UpdateClinicalReportDraftResponse,
 } from '@/src/features/assessments/types/clinical-report';
+import type {
+  ClinicalReportVersionListResponse,
+  ListClinicalReportVersionsQuery,
+} from '@/src/features/assessments/types/clinical-report-history';
 
 export type ClinicalReportApiErrorKind =
   | 'unauthenticated'
@@ -40,6 +44,7 @@ export type ClinicalReportApiErrorKind =
   | 'clinical_report_input_invalid'
   | 'clinical_report_not_found'
   | 'clinical_report_incomplete'
+  | 'clinical_report_history_lineage_invalid'
   | 'clinical_report_voided'
   | 'clinical_report_scope_conflict'
   | 'clinical_report_generation_conflict'
@@ -170,6 +175,8 @@ function mapHttpError(
     CLINICAL_REPORT_INPUT_INVALID: 'clinical_report_input_invalid',
     CLINICAL_REPORT_NOT_FOUND: 'clinical_report_not_found',
     CLINICAL_REPORT_INCOMPLETE: 'clinical_report_incomplete',
+    CLINICAL_REPORT_HISTORY_LINEAGE_INVALID:
+      'clinical_report_history_lineage_invalid',
     CLINICAL_REPORT_VOIDED: 'clinical_report_voided',
     CLINICAL_REPORT_SCOPE_CONFLICT: 'clinical_report_scope_conflict',
     CLINICAL_REPORT_GENERATION_CONFLICT:
@@ -344,6 +351,42 @@ export function normalizeClinicalReportScopeIds(ids: string[]): string[] {
     );
   }
   return normalizedIds;
+}
+
+export async function listClinicalReportVersions(
+  patientId: string,
+  visitId: string,
+  query: ListClinicalReportVersionsQuery = {},
+  options: RequestOptions = {},
+): Promise<ClinicalReportVersionListResponse> {
+  const searchParams = new URLSearchParams();
+  if (query.page !== undefined) {
+    searchParams.set('page', String(query.page));
+  }
+  if (query.pageSize !== undefined) {
+    searchParams.set('pageSize', String(query.pageSize));
+  }
+  const queryString = searchParams.toString();
+  const response = await clinicalReportFetch(
+    `${buildClinicalReportPath(patientId, visitId)}${queryString ? `?${queryString}` : ''}`,
+    { method: 'GET', signal: options.signal },
+  );
+
+  return readJson<ClinicalReportVersionListResponse>(response);
+}
+
+export async function getHistoricalClinicalReport(
+  patientId: string,
+  visitId: string,
+  reportId: string,
+  options: RequestOptions = {},
+): Promise<ClinicalReportDetailResponse> {
+  const response = await clinicalReportFetch(
+    buildClinicalReportResourcePath(patientId, visitId, reportId),
+    { method: 'GET', signal: options.signal },
+  );
+
+  return readJson<ClinicalReportDetailResponse>(response);
 }
 
 export async function getLatestClinicalReport(

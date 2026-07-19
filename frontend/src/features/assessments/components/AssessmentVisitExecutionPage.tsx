@@ -25,6 +25,7 @@ import {
   type InitializationFeedback,
 } from '@/src/features/assessments/components/ScaleInitializationPanel';
 import { ClinicalReportPanel } from '@/src/features/assessments/components/ClinicalReportPanel';
+import { ClinicalReportVersionPanel } from '@/src/features/assessments/components/ClinicalReportVersionPanel';
 import { ScaleInstanceList } from '@/src/features/assessments/components/ScaleInstanceList';
 import { useClinicalReport } from '@/src/features/assessments/hooks/useClinicalReport';
 import { useClinicalReportWorkflow } from '@/src/features/assessments/hooks/useClinicalReportWorkflow';
@@ -715,6 +716,8 @@ export function AssessmentVisitExecutionPage({
         visitId={visitId}
         workflow={reportWorkflow}
       />
+
+      <ClinicalReportVersionPanel patientId={patientId} visitId={visitId} />
 
       <ScaleInitializationPanel
         catalogError={catalogError}

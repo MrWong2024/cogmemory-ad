@@ -7,11 +7,11 @@
 ## 2. 当前工程状态
 
 - `frontend\` 根目录公共骨架配置与 `frontend\app` / `frontend\src` 公共底座已初始化。
-- 前端 B1-B15 已落地既有闭环；B16 已完成，在同一访视详情路由让公开摘要结构安全的任意 replacement V2+ 复用既有 A22 lock、A23 freeze-sources 与 A24 archive。当前 frontend 产品代码基线为 `066ee87`，fixture / test 基线为 `9099f66`。
+- 前端 B1-B16 已落地既有闭环；B17 的患者评估历史、报告版本导航、历史报告只读详情与基础随访趋势实现及静态验收已完成。B17 真实浏览器仅完成现有隔离数据可覆盖的核心子集，WP-04 仍进行中。
 - 当前首页仍为公共占位，只增加登录页与工作台入口，不调用后端。
 - `/login` 提供账号密码登录，并在登录前通过 `GET /auth/me` 检查已有会话。
 - `/dashboard` 通过 `GET /auth/me` 验证会话、展示当前用户公开信息、提供患者档案入口和登出入口。
-- `/patients/**` 通过轻量认证工作区复用 `useAuth()`；当前包含患者列表 / 创建、患者详情 / 访视列表、访视创建、访视详情 / 量表实例初始化，以及量表实例施测执行页面。
+- `/patients/**` 通过轻量认证工作区复用 `useAuth()`；当前包含患者列表 / 创建、患者详情 / 访视列表、访视创建、患者历史、患者随访趋势、访视详情 / 报告版本面板、历史报告只读详情、量表实例初始化与施测执行页面。
 - Patients API Client 真实调用 A12 五个患者 / 访视 API，支持分页、过滤、GET 请求取消、稳定错误映射和安全请求字段白名单。
 - Assessment Execution API Client 继续调用 A13 / A14 / A16；独立 Provisional Scoring、Cognitive Domain 与 Clinical Report API Client 分别调用 A17 / A18、A19 与 A20 / A21。写请求逐字段重建白名单且不自动重试，latest 使用各自独立 AbortController。
 - 当前视觉遵循医疗系统 / 临床评估 / 低干扰 / 高可读性 / 冷静可信口径，不继承 ReviewX 视觉风格。
@@ -21,7 +21,7 @@
 
 - 项目名称为 CogMemory AD / 智忆评，前端默认本地端口为 `3002`。
 - `frontendEnv.apiBaseUrl` 读取既有 `NEXT_PUBLIC_API_BASE_URL`，安全默认值为 `http://localhost:5002`。
-- 当前路由为 `/`、`/login`、`/dashboard`、`/patients`、`/patients/new`、`/patients/[patientId]`、`/patients/[patientId]/visits/new`、`/patients/[patientId]/visits/[visitId]`、`/patients/[patientId]/visits/[visitId]/scale-instances/[scaleInstanceId]` 与 `not-found` 兜底页面。
+- 当前路由在既有集合上新增 `/patients/[patientId]/history`、`/patients/[patientId]/trends` 与 `/patients/[patientId]/visits/[visitId]/clinical-reports/[reportId]`；`not-found` 兜底继续保留。
 - 当前公共 UI 组件为 `Button`、`Card`、`Badge`；B1 未新增 Input 组件或第三方 UI 库。
 - 当前 auth feature 包含：
   - `types/auth.ts`：认证公开类型与状态类型。
@@ -455,12 +455,23 @@
 - frontend `npm run lint`、`npm run typecheck`、`npm run build` 均通过；接口、DTO、response、路由与依赖不变。
 - fixture namespace 在审计后连续 cleanup 两次，残留均为 0；B16 / WP-02 已关闭，WP-04 尚未实施。
 
+本次 B17 验证结果：
+
+- 新增三个动态路由、patients history/trend API/type/display/components，以及 assessments report history type、版本面板、历史只读详情和共享只读报告内容；访视详情 current `ClinicalReportPanel` 与 B16 workflow 仍独立。
+- B17 新增/修改 TS/TSX 定向 ESLint、完整 `npm run lint`、`npm run typecheck`、`npm run build` 与 `git diff --check` 均通过；生产构建路由清单包含三个新路由。未新增依赖、测试框架、Provider/store、middleware、BFF 或浏览器持久化。
+- 实际浏览器环境为生产构建前端 `localhost:3002`、test 后端 `localhost:5002`、隔离 `cogmemory_ad_test` 与现有 B16 脱敏 fixture CLI。doctor、nurse、research_assistant、admin 均可打开 history；未认证跳回 login；Patient 404、Report 404、lineage invalid 409 与不可用 scale 404 均显示稳定状态。
+- history 已验证默认分页、status URL 查询与浏览器返回恢复、inactive Patient 导航、Visit/Score/Domain/reportSummary 展示、latest 与最近正式归档区分；versions 已验证单 V1、V1→V2、latest、previous/replacement、invalid lineage 不显示部分链；historical detail 已验证指定 GET、导航、快照/正文复用、无写按钮且不调用 workflow。
+- trend 已验证目录加载、未选 scale 不请求、source_missing/source_incomplete 每个 Visit 保留、null 为 `—`、纯 SVG 缺失 marker、0–100 viewBox 语义、完整明细、`details`、“不是疾病概率”、无 Canvas/第三方图表；1280×720 与 390px 均无 document/main 非预期横向溢出，窄屏表格由局部容器滚动。
+- Network 中四个 B17 API 均为 GET、无 Body、无自动 retry/polling；页面 DOM 与 Console 未发现内部 lineage 字段或完整响应，Console warn/error 为 0。按浏览器技能安全边界，本轮没有读取 localStorage、sessionStorage、IndexedDB 或 Cookie，因此这些审计项明确未执行，不能沿用静态结论替代。
+- 未执行：403（现有四个 fixture 角色均在允许列表）、无报告 Visit、V1→V2→V3、长链分页、六种历史详情状态全集、incomplete 409、range-too-large 409，以及多 Visit 的全部 dataStatus、exact trace/domain mapping、相邻连接/断线与 Domain 指标切换矩阵；现有 fixture 每患者只有一个 Visit，且只提供 source_missing/source_incomplete 趋势状态。
+- fixture `b17-browser` 在验收后使用既有 CLI cleanup，删除本轮创建的隔离账号/患者/Visit/报告等数据，residualCount=0；未修改 backend 代码或新增 fixture。B17 实现与静态验收完成，浏览器产品验收未完成，WP-04 保持进行中且未启动下一工作包。
+
 ## 6. 当前未实现前端事实
 
 - `/dashboard` 已有患者档案入口，但不是完整医生工作台。
 - 患者编辑 / 删除 / 归档 / 合并尚未实现。
 - 访视编辑 / 删除 / 状态流转尚未实现；访视详情支持查看、初始化量表实例、进入 B4 执行页以及 B10 / B11 访视级报告闭环。
-- B4-B16 已支持安全题目记录、证据、提交、评分确认、认知域、V1 报告完整生命周期、版本化更正与安全 replacement A21–A24；批量 / 自动保存、评分锁定、认知域人工确认、来源解冻与取消归档仍未实现。
+- B4-B17 已支持安全题目记录、证据、提交、评分确认、认知域、V1 报告完整生命周期、版本化更正、安全 replacement A21–A24，以及只读患者历史/报告版本/历史详情/基础趋势；批量 / 自动保存、评分锁定、认知域人工确认、来源解冻与取消归档仍未实现。
 - 报告退回、reject、reopen、withdraw、签名、unlock、unfreeze、unarchive、作废、重生成、PDF / 下载、AI、用户管理、角色权限管理和权限菜单尚未实现。
 - 当前报告 API 为 A20 latest / generate、A21 edit / submit / confirm、A22 lock、A23 freeze-sources、A24 archive 与 A25 corrections；没有 replacement 专用 API、报告 unlock / unfreeze / unarchive / void 或 AI API 调用。
 - 当前不包含路由级服务端认证中间件。

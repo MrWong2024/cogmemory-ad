@@ -7,6 +7,7 @@
 ## 2. 当前状态与边界
 
 - B16 不新增接口：合法 V1 与公开摘要结构安全的 replacement V2+ 共用既有 A22 lock、A23 freeze-sources、A24 archive；A25 corrections 与 A20 / A21 调用保持。
+- B17 对接 A27/A28 四个只读 GET：patient assessment history、clinical report versions、specified historical report、patient follow-up trends；不修改既有接口、DTO/response 或写请求。
 - A21–A25 写请求均只使用当前服务端 `report.updatedAt` 作为 `expectedUpdatedAt`，逐字段重建 Body 白名单且不自动重试；受控冲突最多自动 latest 一次，不重发原请求或自动恢复。
 - B9 新增独立 `frontend\src\features\assessments\api\cognitive-domain-api.ts`，在既有量表实例页接入 A19 latest / compute。
 - 认知域仍只调用 A19 latest / compute；报告调用 A20 latest / generate、A21 edit / submit / confirm、A22 lock、A23 freeze-sources、A24 archive 与 A25 corrections，不调用 replacement 专用平行 API 或 AI API。
@@ -435,6 +436,29 @@ B14.1 / B15 / B16 调用归属更新：
 - 首次创建、`in_progress` 恢复与 `completed` 幂等均需用户明确勾选并调用同一 POST；没有自动 POST、retry、polling 或自动恢复。
 - 401 复用 `onUnauthorized`；403 保留报告与输入；not correctable / not latest / conflict / incomplete / failed / report not found / voided 最多 latest 一次，保留首次文本、清 checkbox、标 stale 且不重发。
 - 安全错误 kind 覆盖 confirmation required、not correctable、not latest、conflict、audit unavailable、replacement conflict、incomplete、failed 与 replacement A21 workflow forbidden；UI 不展示后端英文 message。
+
+### 4.35 `listPatientAssessmentHistory()` -> `GET /patients/:patientId/assessment-history`
+
+- 位于 `patients/api/clinical-history-api.ts`；query 仅允许 `page`、`pageSize`、`status`、`visitType`、`dateFrom`、`dateTo`、`scaleCode`，使用 `URLSearchParams`。日期由页面把本地日边界转为 ISO 字符串；scaleCode trim/lowercase 后发送，历史退役 code 不依赖当前目录。
+- 响应严格建模 `items`、`pagination`、Visit / Scale / Score / Domain availability 和 `reportSummary`；列表保持后端顺序，前端不重排、不补分、不从 archived pointer 冒充 latest。
+
+### 4.36 `listClinicalReportVersions()` -> `GET /patients/:patientId/visits/:visitId/clinical-reports`
+
+- 位于既有 `assessments/api/clinical-report-api.ts`；query 只含 `page`、`pageSize`。响应使用 `ClinicalReportVersionListResponse`，只展示公开 reportCode/version/status/source/quality/isFinal/时间和 previous/replacement code/version。
+- HTTP 409 `CLINICAL_REPORT_HISTORY_LINEAGE_INVALID` 映射为独立 `clinical_report_history_lineage_invalid`；版本面板不展示部分链，也不影响 current latest/workflow 请求。
+
+### 4.37 `getHistoricalClinicalReport()` -> `GET /patients/:patientId/visits/:visitId/clinical-reports/:reportId`
+
+- 路径三个 ID 均在发请求前执行 MongoId 形状校验并 `encodeURIComponent()`；请求不带 query 或 Body。
+- 响应复用 `ClinicalReportResponse` 安全公开 mapper/type；历史页只挂载只读展示组件，不调用 latest、workflow Hook 或 A21–A25 Action。404 与 `CLINICAL_REPORT_RESPONSE_INCOMPLETE` 409 分开映射。
+
+### 4.38 `getPatientFollowUpTrend()` -> `GET /patients/:patientId/follow-up-trends`
+
+- 位于 `patients/api/clinical-history-api.ts`；query 只允许必填 `scaleCode`、可选 `dateFrom`、`dateTo`、`maxPoints`。未选择量表时页面不调用接口；`maxPoints` 仅接受 2–100 整数。
+- 响应严格建模所有 Visit 点、`dataStatus`、score/domain、相邻 comparison/reasons 和服务端 delta。页面不删除非 available 点、不跨缺失点连线、不重算百分比或 delta。
+- 映射 `SCALE_NOT_AVAILABLE`、`FOLLOW_UP_TREND_RANGE_TOO_LARGE`、`FOLLOW_UP_TREND_DATA_INVALID` 等稳定错误；无自动 retry/polling。
+
+B17 四个 GET 的共同边界：全部使用 `frontendEnv.apiBaseUrl`、`credentials: 'include'`、`cache: 'no-store'`、无 Body，并接收 `AbortSignal`；401 返回登录，403/404/409/500 使用前端稳定中文文案，不记录或显示完整后端响应。未新增 BFF、middleware、依赖或请求状态库。
 
 ## 5. 当前认证公开类型
 

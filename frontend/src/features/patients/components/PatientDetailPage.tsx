@@ -512,6 +512,18 @@ export function PatientDetailPage({ patientId }: { patientId: string }) {
               新建访视
             </Link>
           ) : null}
+          <Link
+            className={secondaryLinkClassName}
+            href={`/patients/${encodeURIComponent(patient.id)}/history`}
+          >
+            评估历史
+          </Link>
+          <Link
+            className={secondaryLinkClassName}
+            href={`/patients/${encodeURIComponent(patient.id)}/trends`}
+          >
+            随访趋势
+          </Link>
           <Link className={secondaryLinkClassName} href="/patients">
             返回患者列表
           </Link>

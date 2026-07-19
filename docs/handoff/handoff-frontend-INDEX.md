@@ -12,13 +12,15 @@
 
 项目整体进度、当前业务阶段、一期剩余工作包与二期候选能力统一由 `handoff-roadmap.md` 作为项目控制面板维护；本入口不承担阶段时间线。
 
-当前内容记录前端公共底座、B1-B14 既有闭环、B14.1 报告工作流结构治理、B15 版本化更正与 B16 replacement V2+ 不可逆生命周期接入。当前仍未实现患者完整管理、评分锁定、认知域人工确认、报告退回 / 签名 / unlock / unfreeze / unarchive / 作废 / PDF、AI、用户管理或权限菜单。
+当前内容记录前端公共底座、B1-B14 既有闭环、B14.1 报告工作流结构治理、B15 版本化更正、B16 replacement V2+ 不可逆生命周期，以及 B17 的患者评估历史、报告版本导航、历史报告只读详情与基础随访趋势实现。当前仍未实现患者完整管理、评分锁定、认知域人工确认、报告退回 / 签名 / unlock / unfreeze / unarchive / 作废 / PDF、AI、用户管理或权限菜单。
 
 ## 3. 当前状态
 
 - `frontend\` 根目录公共骨架配置与 `frontend\app` / `frontend\src` 公共底座已初始化。
 - 前端 B16 已完成：在 B15 更正及 replacement A21 基础上，合法线性 V2+ 复用既有 A22 lock、A23 freeze-sources、A24 archive 完成当前报告不可逆生命周期；前轮完整浏览器矩阵、Resume / unsafe 补齐矩阵与本轮 Web Storage 审计共同构成 WP-02 最终验收证据。
-- 当前路由包含 `/login`、`/dashboard`、`/patients`、`/patients/new`、`/patients/[patientId]`、`/patients/[patientId]/visits/new`、`/patients/[patientId]/visits/[visitId]` 与 `/patients/[patientId]/visits/[visitId]/scale-instances/[scaleInstanceId]`。
+- 前端 B17 实现与静态验收已完成：新增患者历史、随访趋势和指定历史报告只读详情三个路由，并在访视详情接入独立报告版本面板；只使用 A27/A28 四个只读 GET，不新增 Provider/store、依赖、BFF、middleware 或浏览器持久化。
+- B17 已在隔离 test database 和生产构建前端执行部分真实浏览器验收：四个允许角色均可打开历史页，历史筛选/URL 回退、单 V1、V1→V2、invalid lineage 409、历史详情只读、缺失/不完整趋势点、1280×720 与 390px 布局通过。因现有夹具缺少多 Visit、V3、全 dataStatus/comparison/domain mapping 和完整错误数据，核心矩阵未完整执行；WP-04 继续进行中，不得表述为产品验收完成。
+- 当前路由包含 `/login`、`/dashboard`、`/patients`、`/patients/new`、`/patients/[patientId]`、`/patients/[patientId]/history`、`/patients/[patientId]/trends`、`/patients/[patientId]/visits/new`、`/patients/[patientId]/visits/[visitId]`、`/patients/[patientId]/visits/[visitId]/clinical-reports/[reportId]` 与 `/patients/[patientId]/visits/[visitId]/scale-instances/[scaleInstanceId]`。
 - 当前已新增 Auth 类型、Auth API Client、`useAuth()` 认证状态 Hook、`LoginForm` 和 `AuthDashboard`。
 - 当前已新增 patients feature：患者 / 访视公开类型、Patients API Client、展示与日期纯函数、认证工作区、患者列表 / 创建 / 详情及访视列表 / 创建组件。
 - 当前 assessments feature 已包含 A13-A25 安全公开类型、评估 / 媒体 / 评分 / 认知域 / 报告 API Client、展示纯函数与独立状态 Hook，以及逐题记录、媒体证据、正式提交、评分确认、认知域展示和访视级报告工作流组件。
@@ -51,6 +53,8 @@
 - B16 对安全 replacement 复用同一套 Lock / SourceFreeze / Archive Action 与 Panel。V2+ 不因 Patient inactive、Visit locked / voided 被前端阻断；V1 原 Visit 资格不放宽。三个请求 DTO、endpoint、response 不变，不发送 reportVersion、previousReportId、correctionId 或 sourceIds。
 - B16 在 `COMPLETE_CORRECTION` 切换 replacement 时清除旧版本 edit / submit / confirm / lock / freeze / archive 草稿、错误、回执和写禁止状态，只保留本次 correction receipt 与 sourceReport；`CLINICAL_REPORT_REPLACEMENT_LINEAGE_INVALID` 会显示安全中文提示、最多 latest 一次、禁止后续写入且不自动重放 POST。
 - B16 最终验收已通过：Codex 内置浏览器在 `http://localhost:3002` 单 origin 完成登录前、登录后、报告页、未提交草稿后与刷新后的审计；localStorage、sessionStorage、IndexedDB 均未发现敏感业务持久化，未提交草稿刷新后未恢复且没有自动写请求，HttpOnly 会话 Cookie 不对页面脚本开放。WP-02 replacement 生命周期闭环完成；接口、DTO 与 response 均无变化。
+- B17 patients 侧新增独立 history/trend API Client、精确公开类型、URL 查询状态、历史筛选/分页、保留全部 Visit 的 SVG 趋势图与完整明细表；所有百分比、delta、comparison、reason 与 domain 直接使用后端事实，不重排、不补算、不跨缺失点连线。
+- B17 assessments 侧在既有访视页增加独立版本列表面板，并复用安全报告快照/正文组件形成历史详情；版本面板失败不阻断 current report workflow，历史详情不挂载 workflow Hook 且没有 A21–A25 写入口。页面不渲染内部 lineage ID，不输出诊断、风险、概率、改善、恶化、进展或治疗结论。
 - 当前仍未实现患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、批量或自动保存、评分锁定、认知域人工修改 / 确认 / 锁定 / 作废 / 重算、报告退回 / reject / reopen / withdraw / 签名 / unlock / unfreeze / unarchive / 作废 / 重生成 / PDF、AI、用户管理或权限菜单。
 
 ## 4. 必读基础文档

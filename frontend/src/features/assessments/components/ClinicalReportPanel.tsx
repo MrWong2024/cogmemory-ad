@@ -7,7 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/src/components/ui/Card';
-import { ClinicalReportNarrative } from '@/src/features/assessments/components/ClinicalReportNarrative';
+import { ClinicalReportReadOnlyContent } from '@/src/features/assessments/components/ClinicalReportReadOnlyContent';
 import { ClinicalReportDraftEditor } from '@/src/features/assessments/components/ClinicalReportDraftEditor';
 import { ClinicalReportSubmissionPanel } from '@/src/features/assessments/components/ClinicalReportSubmissionPanel';
 import { ClinicalReportConfirmationPanel } from '@/src/features/assessments/components/ClinicalReportConfirmationPanel';
@@ -20,7 +20,6 @@ import { ClinicalReportArchiveSummary } from '@/src/features/assessments/compone
 import { ClinicalReportCorrectionPanel } from '@/src/features/assessments/components/ClinicalReportCorrectionPanel';
 import { ClinicalReportCorrectionSummary } from '@/src/features/assessments/components/ClinicalReportCorrectionSummary';
 import { ClinicalReportScopeSelector } from '@/src/features/assessments/components/ClinicalReportScopeSelector';
-import { ClinicalReportSnapshotSummary } from '@/src/features/assessments/components/ClinicalReportSnapshotSummary';
 import { ClinicalReportTechnicalSummary } from '@/src/features/assessments/components/ClinicalReportTechnicalSummary';
 import type { UseClinicalReportValue } from '@/src/features/assessments/hooks/useClinicalReport';
 import type { UseClinicalReportWorkflowValue } from '@/src/features/assessments/hooks/useClinicalReportWorkflow';
@@ -463,11 +462,7 @@ export function ClinicalReportPanel({
               </p>
             ) : null}
 
-            <ClinicalReportSnapshotSummary report={report} />
-            <ClinicalReportNarrative
-              narrative={report.narrative}
-              status={report.status}
-            />
+            <ClinicalReportReadOnlyContent report={report} />
             <ClinicalReportWorkflowSummary
               report={report}
               workflow={workflow}

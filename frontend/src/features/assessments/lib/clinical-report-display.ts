@@ -351,6 +351,8 @@ export function getClinicalReportApiErrorMessage(
     clinical_report_not_found: '当前访视尚未生成临床报告草稿。',
     clinical_report_incomplete:
       '当前存在不完整的历史报告记录，系统不能自动修复，请联系管理员。',
+    clinical_report_history_lineage_invalid:
+      '报告版本关系暂时无法安全展示；不会展示部分版本或推测内部关系。',
     clinical_report_voided:
       '当前访视的 version 1 报告已作废，A20 不支持重新生成。',
     clinical_report_scope_conflict:

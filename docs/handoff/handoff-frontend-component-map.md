@@ -8,10 +8,10 @@
 
 - `frontend\src\components\ui` 提供 `Button`、`Card`、`Badge` 三个无业务语义公共组件。
 - `frontend\src\features\auth` 提供 B1 最小认证接入能力。
-- `frontend\src\features\patients` 提供 B2 患者档案与评估访视最小业务闭环。
-- `frontend\src\features\assessments` 已推进至 B15；在 B14.1 治理结构上新增 A25 更正闭环、source/replacement 展示及 V2 A21 接入。
+- `frontend\src\features\patients` 提供患者档案、评估访视与 B17 患者历史/基础趋势。
+- `frontend\src\features\assessments` 已推进至 B17；在既有报告 workflow 外新增独立版本面板、历史报告只读详情与共享安全只读内容。
 - 当前组件遵循医疗系统 / 临床评估 / 低干扰 / 高可读性 / 冷静可信视觉基线。
-- B2-B11 未新增公共 Input 组件、第三方 UI 库、状态管理库、数据请求库或权限菜单组件。
+- B2-B17 未新增公共 Input 组件、第三方 UI 库、状态管理库、数据请求库或权限菜单组件。
 
 ## 3. 公共 UI 组件
 
@@ -661,6 +661,26 @@
 - `clinical-report-workflow.state.ts` 的 `COMPLETE_CORRECTION` 在采用 replacement 后清空旧版本 edit / submit / confirmation / lock / sourceFreeze / archive draft、error、receipt 与 writeProhibited，保留本次 correction receipt / sourceReport；因此 V1 的 A21–A24 会话回执不会显示在新 Vn 下。
 - `clinical-report-workflow-recovery.ts` 将 replacement lineage 409 独立归类为最多 latest 一次和 writeProhibited；各 Action 不自动重放 POST。单一 activeMode、writingAction、writingRef、mountedRef、beforeunload、latest 与 report 更新入口保持。
 - B16 浏览器验收确认安全 archived Vn 可继续形成 V(n+1)，A25 Resume、unsafe replacement summary 写门禁与 lineage 隐私边界均已通过；报告工作流草稿只保留在当前 React 内存，不持久化到 localStorage、sessionStorage 或 IndexedDB。
+
+### 6.73 B17 patients 历史与趋势组件
+
+- `PatientAssessmentHistoryPage` 编排患者摘要与独立历史请求；`AssessmentHistoryFilters` 负责 URL 可分享筛选，`AssessmentHistoryList` 保持后端 Visit/Scale 顺序并展示 score/domain availability、reportSummary、分页和安全历史详情入口。
+- `PatientFollowUpTrendPage` 独立加载患者、量表目录和趋势；`FollowUpTrendControls` 负责 scale/date/maxPoints 与 URL 状态，未选择 scale 不请求趋势。
+- `FollowUpTrendChart` 使用纯 SVG 和 0–100 percent 轴，所有 Visit 均有 X 位置；marker 可聚焦且 aria-label 不含内部 ID。只有后端 comparison 可比的相邻点才连线，missing/not_comparable 不连，也不跨 missing。
+- `FollowUpTrendTable` 展示后端总分、percent、delta、comparison、reason 原顺序和可折叠 Domain 明细；null 显示 `—`，不生成排名、方向、诊断、风险或概率解释。
+- patients history/trend 状态保持在页面 React state 与 URL；未新增 Context、Provider、全局 store 或浏览器持久化。
+
+### 6.74 B17 报告版本面板与历史只读详情
+
+- `ClinicalReportVersionPanel` 作为 `AssessmentVisitExecutionPage` 的独立 sibling 区域加载版本列表、分页和公开 lineage 摘要；其 loading/error/retry 不阻断现有 `ClinicalReportPanel` 或 B16 workflow。lineage invalid/incomplete 均不展示部分链。
+- `HistoricalClinicalReportDetailPage` 校验 patient/visit/report 三个路径 ID，加载指定历史报告并提供返回 Visit、历史、Patient 和工作台导航；没有编辑、提交、确认、锁定、冻结、归档或更正入口，也不挂载 `useClinicalReportWorkflow`。
+- `ClinicalReportReadOnlyContent` 从既有 current panel 抽出安全快照与正文展示基础；`ClinicalReportPanel` 与历史详情共同复用，但 current workflow Action 顺序和状态入口不变。
+- `clinical-report-history.ts` 只建模公开 reportCode/version/relationship，不在 UI type 中暴露 previousReportId、replacementReportId 或其他内部 lineage 标识。
+
+### 6.75 B17 加载、错误与验证事实
+
+- history、trend、version list、historical detail 各自维护 loading/error/AbortController；只有可重试服务错误显示手工重载，没有自动 retry 或 polling。
+- 实际浏览器已覆盖四角色 history、URL 筛选回退、单 V1、V1→V2、lineage invalid 409、只读详情、source_missing/source_incomplete marker、1280×720 与 390px 布局。多 Visit/V3/完整 trend comparison 与 domain mapping 矩阵因夹具缺失未执行，WP-04 仍进行中。
 
 ## 7. 后续同步规则
 
