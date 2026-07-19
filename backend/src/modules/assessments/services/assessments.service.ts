@@ -139,6 +139,41 @@ export type AssessmentHistoryScaleInstanceSummary = Pick<
   | 'durationMs'
 >;
 
+export type FollowUpTrendVisitSummary = Pick<
+  AssessmentVisitSummary,
+  'id' | 'patientId' | 'visitCode' | 'visitType' | 'status' | 'assessmentDate'
+>;
+
+export type FollowUpTrendVisitQuery = {
+  dateFrom?: Date;
+  dateTo?: Date;
+  limit: number;
+};
+
+export type FollowUpTrendScaleInstanceSummary = Omit<
+  Pick<
+    ScaleInstanceSummary,
+    | 'id'
+    | 'assessmentVisitId'
+    | 'patientId'
+    | 'scaleCode'
+    | 'scaleVersion'
+    | 'instanceCode'
+    | 'instanceNo'
+    | 'status'
+    | 'administrationMode'
+    | 'versionTrace'
+    | 'voidedAt'
+    | 'durationMs'
+  >,
+  'versionTrace'
+> & {
+  versionTrace: Pick<
+    ScaleVersionTraceSummary,
+    'crfVersion' | 'scoringRuleVersion' | 'fieldEncodingVersion'
+  > | null;
+};
+
 type AssessmentHistoryVisitLean = {
   _id: Types.ObjectId;
   patientId: Types.ObjectId;
@@ -172,6 +207,34 @@ type AssessmentHistoryScaleInstanceLean = {
 
 type AssessmentHistoryVisitIdLean = {
   assessmentVisitId: Types.ObjectId;
+};
+
+type FollowUpTrendVisitLean = {
+  _id: Types.ObjectId;
+  patientId: Types.ObjectId;
+  visitCode: string;
+  visitType: AssessmentVisitType;
+  status: AssessmentStatus;
+  assessmentDate: Date;
+};
+
+type FollowUpTrendScaleInstanceLean = {
+  _id: Types.ObjectId;
+  assessmentVisitId: Types.ObjectId;
+  patientId: Types.ObjectId;
+  scaleCode: string;
+  scaleVersion: string;
+  instanceCode: string;
+  instanceNo: number;
+  status: AssessmentStatus;
+  administrationMode: ScaleAdministrationMode;
+  versionTrace?: {
+    crfVersion?: string;
+    scoringRuleVersion?: string;
+    fieldEncodingVersion?: string;
+  } | null;
+  voidedAt?: Date | null;
+  durationMs?: number | null;
 };
 
 export type CreateVisitOperatorSnapshot = {
@@ -636,6 +699,110 @@ export class AssessmentsService {
       startedAt: instance.startedAt ?? null,
       completedAt: instance.completedAt ?? null,
       lockedAt: instance.lockedAt ?? null,
+      voidedAt: instance.voidedAt ?? null,
+      durationMs: instance.durationMs ?? null,
+    }));
+  }
+
+  async listPatientFollowUpTrendVisits(
+    patientId: Types.ObjectId | string,
+    query: FollowUpTrendVisitQuery,
+  ): Promise<FollowUpTrendVisitSummary[]> {
+    const normalizedPatientId = this.normalizeObjectId(patientId);
+    if (!normalizedPatientId) {
+      return [];
+    }
+    const filter: AssessmentVisitListFilter = {
+      patientId: normalizedPatientId,
+    };
+    if (query.dateFrom || query.dateTo) {
+      filter.assessmentDate = {
+        ...(query.dateFrom ? { $gte: query.dateFrom } : {}),
+        ...(query.dateTo ? { $lte: query.dateTo } : {}),
+      };
+    }
+    const visits = await this.assessmentVisitModel
+      .find(filter)
+      .select({
+        _id: 1,
+        patientId: 1,
+        visitCode: 1,
+        visitType: 1,
+        status: 1,
+        assessmentDate: 1,
+      })
+      .sort({ assessmentDate: 1, _id: 1 })
+      .limit(query.limit)
+      .lean<FollowUpTrendVisitLean[]>()
+      .exec();
+    return visits.map((visit) => ({
+      id: visit._id.toString(),
+      patientId: visit.patientId.toString(),
+      visitCode: visit.visitCode,
+      visitType: visit.visitType,
+      status: visit.status,
+      assessmentDate: visit.assessmentDate,
+    }));
+  }
+
+  async listPatientFollowUpTrendScaleInstances(
+    patientId: Types.ObjectId | string,
+    visitIds: readonly string[],
+    scaleCode: string,
+  ): Promise<FollowUpTrendScaleInstanceSummary[]> {
+    const normalizedPatientId = this.normalizeObjectId(patientId);
+    const normalizedVisitIds = this.normalizeObjectIds(visitIds);
+    const normalizedScaleCode = this.normalizeScaleCode(scaleCode);
+    if (
+      !normalizedPatientId ||
+      !normalizedVisitIds ||
+      normalizedVisitIds.length === 0 ||
+      !normalizedScaleCode
+    ) {
+      return [];
+    }
+    const instances = await this.scaleInstanceModel
+      .find({
+        patientId: normalizedPatientId,
+        assessmentVisitId: { $in: normalizedVisitIds },
+        scaleCode: normalizedScaleCode,
+      })
+      .select({
+        _id: 1,
+        patientId: 1,
+        assessmentVisitId: 1,
+        instanceCode: 1,
+        instanceNo: 1,
+        scaleCode: 1,
+        scaleVersion: 1,
+        administrationMode: 1,
+        status: 1,
+        durationMs: 1,
+        voidedAt: 1,
+        'versionTrace.crfVersion': 1,
+        'versionTrace.scoringRuleVersion': 1,
+        'versionTrace.fieldEncodingVersion': 1,
+      })
+      .sort({ assessmentVisitId: 1, instanceNo: 1, _id: 1 })
+      .lean<FollowUpTrendScaleInstanceLean[]>()
+      .exec();
+    return instances.map((instance) => ({
+      id: instance._id.toString(),
+      assessmentVisitId: instance.assessmentVisitId.toString(),
+      patientId: instance.patientId.toString(),
+      scaleCode: instance.scaleCode,
+      scaleVersion: instance.scaleVersion,
+      instanceCode: instance.instanceCode,
+      instanceNo: instance.instanceNo,
+      status: instance.status,
+      administrationMode: instance.administrationMode,
+      versionTrace: instance.versionTrace
+        ? {
+            crfVersion: instance.versionTrace.crfVersion,
+            scoringRuleVersion: instance.versionTrace.scoringRuleVersion,
+            fieldEncodingVersion: instance.versionTrace.fieldEncodingVersion,
+          }
+        : null,
       voidedAt: instance.voidedAt ?? null,
       durationMs: instance.durationMs ?? null,
     }));

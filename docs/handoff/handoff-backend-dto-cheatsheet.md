@@ -6,7 +6,7 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 DTO、响应 type、Storage interface，以及 A12-A27 业务契约；A27 新增历史评估与报告版本/详情只读 DTO 和安全响应。
+- 当前存在公共底座 DTO、响应 type、Storage interface，以及 A12-A28 业务契约；A27 新增历史评估与报告版本/详情只读 DTO 和安全响应，A28 新增基础随访趋势 query 与显式安全响应 type。
 - 当前新增公开认证请求 DTO：`LoginDto`。
 - 当前新增公开患者 / 访视 DTO：`CreatePatientDto`、`ListPatientsQueryDto`、`PatientIdParamDto`、`CreateAssessmentVisitDto`、`ListAssessmentVisitsQueryDto`、`PatientVisitsParamDto`。
 - 当前仍没有用户管理、注册、密码重置、撤销 / reopen / force submit、批量 / 分片 / 客户端直传、认知域人工修改 / 确认 / 锁定 / 重算或报告退回 / 签名 / unlock / unfreeze / unarchive / correction cancel / 作废 / PDF 请求 DTO；A25 已新增受控 correction DTO。
@@ -592,3 +592,13 @@
 - `ClinicalReportHistoryParamDto`：patientId、visitId、reportId 均为必填 canonical MongoId。
 - `ClinicalReportVersionListResponse`：`{ items,page,pageSize,total,lineage }`；lineage 固定 valid 且含 firstVersion/latestVersion/totalVersions。item 时间 nullable 按合同返回；sourceFreezeStatus 为 none/in_progress/completed；previous/replacement 只含 code/version，内部 lineage ID 不公开。
 - 指定历史详情继续使用既有 `ClinicalReportDetailResponse { report }`，没有第二套详情响应或附加版本链。
+
+## A28 Follow-up trend DTO / response
+
+- `GetPatientFollowUpTrendQueryDto`：`scaleCode` 必填，string、trim + lowercase、最短 1；`dateFrom/dateTo` 可选 strict ISO Date 且含边界；`maxPoints` 默认 50，integer 2–100。不接受 sort、status、visitType、分页、版本、mapping 或诊断参数；未知字段由全局 whitelist/forbidNonWhitelisted 返回 400，日期倒置为 400 `INVALID_DATE_RANGE`。
+- `PatientFollowUpTrendResponse`：`{ scale,range,comparabilityPolicy,points }`。`scale` 只含当前 catalog 的 `scaleCode/displayName`；`range` 为 nullable dateFrom/dateTo 与实际 `pointCount`；不返回 Patient identity。
+- `PatientFollowUpTrendPoint`：每个日期范围内 Visit 固定保留一项，只含 Visit `id/visitCode/visitType/status/assessmentDate`、nullable `scaleInstance`、`dataStatus`、nullable `score`、`domains[]`、`comparisonToPrevious`。`scaleInstance` 只公开自身 id/code、scale code/version、administrationMode、status、nullable duration 与四项 nullable versionTrace；不公开 ownership / definition / version 内部 ID。
+- `TrendDataStatus` 为 `available | source_missing | source_not_final | source_voided | source_incomplete | source_ambiguous`。available score 只允许 confirmed/locked、qualityStatus=passed、有限且范围有效的 total/min/max/percent、有效 confirmedAt 与 nullable lockedAt；Domain item 只公开 code/title、score/range/percent、nullable 成对 weighted 值和 itemCount。
+- `TrendComparisonResponse` 的 status 为 `first_point | comparable | not_comparable | unavailable`，只表示当前点减紧邻前一点；包含 nullable `scoreDelta/scorePercentDelta` 与 `domainDeltas`。Domain 聚合 status 为 `comparable | partially_comparable | not_comparable | unavailable`，item status 为 comparable/not_comparable，delta 不舍入。
+- reason code 固定为：`scale_version_changed`、`crf_version_changed`、`scoring_rule_version_changed`、`field_encoding_version_changed`、`administration_mode_changed`、`score_range_changed`、`version_trace_incomplete`、`source_missing`、`source_not_final`、`source_voided`、`source_incomplete`、`source_ambiguous`、`domain_mapping_version_changed`、`domain_mapping_source_changed`、`domain_mapping_mode_changed`、`domain_set_changed`、`domain_range_changed`、`domain_missing`、`domain_source_incomplete`；输出顺序按服务端固定优先级稳定排序。
+- `comparabilityPolicy` 固定为 version=`wp04-exact-trace-v1`、comparisonDirection=`current_minus_immediately_previous`、totalScoreRequiresExactTrace/domainScoreRequiresExactMapping/scorePercentIsNotProbability/noDiagnosticInterpretation 均为 true；客户端不得将 scorePercent 或 delta 解释为概率、诊断、改善或恶化。

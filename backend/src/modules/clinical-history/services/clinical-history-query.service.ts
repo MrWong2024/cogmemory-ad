@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -8,10 +9,15 @@ import { AssessmentsService } from '../../assessments/services/assessments.servi
 import { CognitiveDomainsService } from '../../cognitive-domains/services/cognitive-domains.service';
 import { PatientsService } from '../../patients/services/patients.service';
 import { ReportsService } from '../../reports/services/reports.service';
+import { ScaleCatalogService } from '../../scales/services/scale-catalog.service';
 import { ScoringService } from '../../scoring/services/scoring.service';
+import type { GetPatientFollowUpTrendQueryDto } from '../dto/get-patient-follow-up-trend-query.dto';
 import type { ListPatientAssessmentHistoryQueryDto } from '../dto/list-patient-assessment-history-query.dto';
 import { mapPatientAssessmentHistoryItem } from '../lib/assessment-history.mapper';
+import { mapPatientFollowUpTrendResponse } from '../lib/follow-up-trend.mapper';
+import { evaluateFollowUpTrendSource } from '../lib/follow-up-trend-source';
 import type { PatientAssessmentHistoryResponse } from '../types/clinical-history.types';
+import type { PatientFollowUpTrendResponse } from '../types/follow-up-trend.types';
 
 @Injectable()
 export class ClinicalHistoryQueryService {
@@ -21,6 +27,7 @@ export class ClinicalHistoryQueryService {
     private readonly scoringService: ScoringService,
     private readonly cognitiveDomainsService: CognitiveDomainsService,
     private readonly reportsService: ReportsService,
+    private readonly scaleCatalogService: ScaleCatalogService,
   ) {}
 
   async listPatientAssessmentHistory(
@@ -131,5 +138,107 @@ export class ClinicalHistoryQueryService {
       pageSize: query.pageSize,
       total: visitPage.total,
     };
+  }
+
+  async getPatientFollowUpTrend(
+    patientId: string,
+    query: GetPatientFollowUpTrendQueryDto,
+  ): Promise<PatientFollowUpTrendResponse> {
+    if (
+      query.dateFrom &&
+      query.dateTo &&
+      query.dateFrom.getTime() > query.dateTo.getTime()
+    ) {
+      throw new BadRequestException({
+        code: 'INVALID_DATE_RANGE',
+        message: 'dateFrom must not be later than dateTo',
+      });
+    }
+    const patient =
+      await this.patientsService.findPatientHistoryIdentityById(patientId);
+    if (!patient) {
+      throw new NotFoundException({
+        code: 'PATIENT_NOT_FOUND',
+        message: 'Patient not found',
+      });
+    }
+    const scale = this.scaleCatalogService.getAvailableScaleOption(
+      query.scaleCode,
+    );
+    const visits = await this.assessmentsService.listPatientFollowUpTrendVisits(
+      patient.id,
+      {
+        ...(query.dateFrom ? { dateFrom: query.dateFrom } : {}),
+        ...(query.dateTo ? { dateTo: query.dateTo } : {}),
+        limit: query.maxPoints + 1,
+      },
+    );
+    if (
+      visits.some(
+        (visit) =>
+          !(visit.assessmentDate instanceof Date) ||
+          !Number.isFinite(visit.assessmentDate.getTime()),
+      )
+    ) {
+      throw new InternalServerErrorException({
+        code: 'FOLLOW_UP_TREND_DATA_INVALID',
+        message: 'Follow-up trend data is invalid',
+      });
+    }
+    if (visits.length > query.maxPoints) {
+      throw new ConflictException({
+        code: 'FOLLOW_UP_TREND_RANGE_TOO_LARGE',
+        message: 'Narrow the date range and try again',
+      });
+    }
+    if (visits.length === 0) {
+      return mapPatientFollowUpTrendResponse({
+        scale,
+        ...(query.dateFrom ? { dateFrom: query.dateFrom } : {}),
+        ...(query.dateTo ? { dateTo: query.dateTo } : {}),
+        points: [],
+      });
+    }
+    const visitIds = visits.map((visit) => visit.id);
+    const instances =
+      await this.assessmentsService.listPatientFollowUpTrendScaleInstances(
+        patient.id,
+        visitIds,
+        scale.code,
+      );
+    const instanceIds = instances.map((instance) => instance.id);
+    const scores = await this.scoringService.listAssessmentHistoryScoreResults(
+      patient.id,
+      visitIds,
+      instanceIds,
+    );
+    const domains =
+      await this.cognitiveDomainsService.listAssessmentHistoryDomainResults(
+        patient.id,
+        visitIds,
+        instanceIds,
+        scores.map((score) => score.id),
+      );
+    return mapPatientFollowUpTrendResponse({
+      scale,
+      ...(query.dateFrom ? { dateFrom: query.dateFrom } : {}),
+      ...(query.dateTo ? { dateTo: query.dateTo } : {}),
+      points: visits.map((visit) => ({
+        visit,
+        evaluation: evaluateFollowUpTrendSource({
+          visit,
+          scaleCode: scale.code,
+          scaleInstances: instances.filter(
+            (instance) => instance.assessmentVisitId === visit.id,
+          ),
+          scoreResults: scores.filter(
+            (score) => score.assessmentVisitId === visit.id,
+          ),
+          domainResults: domains.filter(
+            (domain) => domain.assessmentVisitId === visit.id,
+          ),
+        }),
+      })),
+    });
   }
 }

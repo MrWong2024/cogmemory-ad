@@ -17,7 +17,7 @@ import {
   type AssessmentVisitType,
 } from '../../assessments/schemas/assessment-visit.schema';
 
-function toIsoDate(value: unknown): unknown {
+export function toStrictIsoDate(value: unknown): unknown {
   if (typeof value !== 'string' || !isISO8601(value, { strict: true })) {
     return value;
   }
@@ -39,12 +39,12 @@ export class ListPatientAssessmentHistoryQueryDto {
   pageSize = 20;
 
   @IsOptional()
-  @Transform(({ value }: { value: unknown }) => toIsoDate(value))
+  @Transform(({ value }: { value: unknown }) => toStrictIsoDate(value))
   @IsDate()
   dateFrom?: Date;
 
   @IsOptional()
-  @Transform(({ value }: { value: unknown }) => toIsoDate(value))
+  @Transform(({ value }: { value: unknown }) => toStrictIsoDate(value))
   @IsDate()
   dateTo?: Date;
 

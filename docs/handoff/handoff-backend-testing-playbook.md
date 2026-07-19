@@ -12,7 +12,7 @@
 - 本地前端默认 origin 为 `http://localhost:3002`。
 - 测试环境默认 `STORAGE_DRIVER=fake`。
 - 测试环境 `LLM_PROVIDER=stub`，不得依赖真实大模型调用。
-- 当前存在十六个真实 HTTP E2E；A27 新增 `clinical-history.e2e-spec.ts`，其余套件继续串行执行。
+- 当前存在十七个真实 HTTP E2E；A27 的 `clinical-history.e2e-spec.ts` 与 A28 的 `follow-up-trends.e2e-spec.ts` 均纳入固定 `--runInBand` 全量执行。
 - TypeScript `rootDir` 当前为 `.`，后端主入口预期 build 产物为 `dist/src/main.js`。
 - `tsBuildInfoFile` 保持 `./dist/tsconfig.build.tsbuildinfo`。
 - `dist` 与 `*.tsbuildinfo` 为生成物，不进入版本库。
@@ -140,19 +140,19 @@
   - `npm run build` 成功。
   - build 后 `dist/src/main.js` 已确认存在。
   - `npm test -- --runInBand` 成功。
-  - 当前单元测试为 76 个测试套件、666 个测试通过。
-  - A26 变更文件定向 ESLint 通过；A26 定向 E2E 为 1 个测试套件、7 个测试通过。
-  - 当前全量 E2E 为 14 个测试套件、67 个测试通过。
-  - 最新 A26 全量 E2E 使用 `NODE_ENV=test`、Jest `--runInBand`、隔离 `cogmemory_ad_test`、fake Storage、stub SMS / LLM 和脱敏人工数据，未调用真实外部服务。既有 Mongoose `new` deprecated warning 仍存在，不影响本次通过结论。
+  - 当前单元测试为 88 个测试套件、751 个测试通过。
+  - A28 变更范围定向 ESLint 通过；A28 定向 E2E 为 1 个测试套件、3 个测试通过。
+  - 当前全量 E2E 为 17 个测试套件、76 个测试通过。
+  - 最新 A28 全量 E2E 使用 `NODE_ENV=test`、Jest `--runInBand`、隔离 `cogmemory_ad_test`、fake Storage、stub SMS / LLM 和脱敏人工数据，未调用真实外部服务。既有 Mongoose `new` deprecated warning 仍存在，不影响本次通过结论。
   - 用户已补充验证 `npm run start:prod` 本地启动成功。
   - `dist/src/main.js` 与 `start:prod` 指向的 `./dist/src/main.js` 路径匹配。
-- 当前 lint 口径：A26 定向文件 lint 通过；全模块 lint 仍被既有 scoring 格式问题阻断，未通过且未由 A26 修改。
+- 当前 lint 口径：A28 变更范围定向文件 lint 通过；全模块 lint 执行一次后仍严格为 51 errors / 0 warnings，全部是既有 scoring 三文件的 Prettier 格式问题，未由 A28 修改。
 - 如果 `backend\node_modules` 存在，可执行 `npm run build` 验证 TypeScript 编译。
 - 当前 `start:prod` 验证仅为本地基础启动验证，不代表真实生产环境部署完成。
 - 如果 `backend\node_modules` 存在，可执行 `npm test -- --runInBand` 验证单元测试。
 - 如果 `backend\node_modules` 不存在，不应自动执行 `npm install`。
 - 当前任务不调用真实 OSS、阿里云 SMS、大模型或生产数据库。
-- `test:e2e` 脚本已通过 `test/jest-e2e.json` 执行 A12-A27 真实 HTTP 闭环；测试运行时确认 `NODE_ENV=test`、数据库名 `cogmemory_ad_test`、Storage=fake、LLM/SMS=stub，未打印数据库凭证。
+- `test:e2e` 脚本已通过 `test/jest-e2e.json` 执行 A12-A28 真实 HTTP 闭环；测试运行时确认 `NODE_ENV=test`、数据库名 `cogmemory_ad_test`、Storage=fake、LLM/SMS=stub，未打印数据库凭证。
 
 ## 5. 当前单元测试口径
 
@@ -316,6 +316,17 @@
 - 响应安全：递归扫描 history / version list，禁止 patient/visit/source result internal ID、metadata、item/domain 明细、narrative、previous/replacement internal ID；历史详情单独复用既有 mapper 契约。调用前后比较 Patient/Visit/Instance/Score/Domain/Report updatedAt，证明三个 GET 不写入。
 - latest 回归：`latest` 静态路由必须在 `:reportId` 前，既有 controller unit 和全量 E2E 必须继续通过。
 - A27 实际结果：变更范围定向 ESLint 通过；build 通过；A27 定向 E2E 1 suite / 3 tests；全量 unit 84 suites / 707 tests；全量 E2E 16 suites / 73 tests。完整 lint 执行一次，仍为 51 errors / 0 warnings，且仅在未修改的 `manual-score-review.ts`、`manual-score-review.spec.ts`、`score-review-workflow.service.spec.ts` 三个既有 scoring 文件。
+
+### A28 定向验证
+
+- 定向 lint：`npm run lint:file -- src/modules/clinical-history src/modules/assessments/services/assessments.service.ts src/modules/assessments/services/assessments.service.spec.ts test/follow-up-trends.e2e-spec.ts`；通过。
+- build：`npm run build`；通过。
+- A27+A28 定向 unit：`npx jest --runInBand src/modules/clinical-history src/modules/assessments/services/assessments.service.spec.ts src/modules/reports/dto/clinical-report-history-dto.spec.ts src/modules/reports/lib/clinical-report-history-lineage.spec.ts src/modules/reports/lib/clinical-report-version.mapper.spec.ts src/modules/reports/services/clinical-report-history-query.service.spec.ts src/modules/reports/controllers/clinical-reports.controller.spec.ts`；14 suites / 126 tests 通过。更窄的 A28/Assessments 定向命令为 9 suites / 98 tests 通过。
+- A28 定向 E2E：`node -e "process.env.NODE_ENV='test'; require('jest').run(['--config','./test/jest-e2e.json','--runInBand','test/follow-up-trends.e2e-spec.ts'])"`；1 suite / 3 tests 通过。
+- A27 回归 E2E：同一 Jest 入口定向 `test/clinical-history.e2e-spec.ts`；1 suite / 3 tests 通过。A28 E2E 另回归调用 assessment-history 与 report version list；全量 E2E 继续覆盖静态 `latest` 路由。
+- fixture：只用 `SUBJ-A28-TREND-*` / `VISIT-A28-TREND-*`、隔离账号和人工分数；覆盖四个读角色、401/403、DTO/date/catalog/Patient 错误、inactive/archived Patient、locked/voided Visit、日期边界、稳定升序、空范围、maxPoints 409、missing/ambiguous/non-final/voided/incomplete/available source、Domain 缺失独立性、exact trace/admin/range、domain mapping/set/range/weighted/null 变化、reason 顺序和相邻不可跨越语义。按账号与 Patient ownership 定向清理，不 drop DB/collection。
+- 安全 / 只读：递归扫描 response，禁止 Patient identity、ownership/source 内部 ID、metadata、raw answer、reviewer/opinion、report/narrative、media/storage、AI 与诊断字段；调用前后比较 Patient/Visit/Instance/Score/Domain `updatedAt`，证明 GET 不写入。单元测试断言 Visit max+1 与三类 batch lean/projection，不读取 ItemResponse/ClinicalReport，不产生 N+1。
+- 全量结果：`npm test -- --runInBand` 为 88 suites / 751 tests；`npm run test:e2e` 为 17 suites / 76 tests。完整 `npm run lint` 未通过，仍严格为 51 errors / 0 warnings，仅位于未修改的 `manual-score-review.ts`、`manual-score-review.spec.ts`、`score-review-workflow.service.spec.ts`，均为 Prettier 格式技术债；不得写成完整 lint 通过。
 
 ### B16 浏览器验收夹具 CLI
 

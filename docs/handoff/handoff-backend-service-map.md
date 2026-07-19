@@ -6,7 +6,7 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 Service / Provider 与 A12-A27 业务能力；A27 在既有写入工作流外新增无 Schema 的只读历史编排与纯安全 evaluator / mapper。
+- 当前存在公共底座 Service / Provider 与 A12-A28 业务能力；A27 在既有写入工作流外新增无 Schema 的只读历史编排，A28 在同一模块增加 catalog 校验、Visit 保留式趋势编排、共享 source evaluator、纯 comparability 与显式安全 mapper。
 - 当前没有独立医生、SMS 或 LLM Service；A21 不调用来源计分 / 认知域 / 媒体 Service、Storage、PDF 或 AI 能力。
 
 ## 3. 当前 Service / Provider 清单
@@ -444,3 +444,14 @@
 - `ClinicalReportHistoryQueryService` 负责版本列表和指定历史详情 ownership。版本列表先读取完整轻量集合、调用完整链 evaluator，再内存分页；详情复用 `assertReadableClinicalReport()` 和 `ClinicalReportPublicMapper`，`latest` 也复用同一 readable 规则。
 - `clinical-report-history-lineage.ts` 无 IO：集合层验证 ownership/type、唯一连续 V1…Vn、唯一 code、incoming/outgoing、latest/in-progress 边界；相邻 hop 复用 A26 单跳校验。基础或 lifecycle parser 错误分类 incomplete，关系结构/anchor 错误分类 lineage invalid。`clinical-report-version.mapper.ts` 不输出内部 ID。
 - A27 不新增 collection、Schema、index、缓存、read model、transaction、队列或写入；不调用内部 HTTP，不加载历史列表不需要的大快照。
+
+### A28 WP-04 后端阶段二基础随访趋势
+
+- `ClinicalHistoryModule` 增加单向 `ScalesModule` 导入；当前 Controller 在共同 `patients/:patientId` 根下暴露 `assessment-history` 与 `follow-up-trends`。模块仍无 Schema / Model、`forwardRef` 或循环依赖，Controller 只做 Guard、DTO 与 QueryService 委派。
+- `ClinicalHistoryQueryService.getPatientFollowUpTrend()` 的固定顺序为：日期倒置校验 → Patient ownership identity → 当前 `ScaleCatalogService` 可用量表校验 → 按日期升序读取 `maxPoints+1` 个 Visit → Visit 日期事实校验 → 超限 409 → 空范围直接响应 → 一次 ScaleInstance batch → 一次 ScoreResult batch → 一次 CognitiveDomainResult batch → 每 Visit source 评估 → 纯 mapper 相邻比较。它不调用 ReportsService、内部 HTTP、ItemResponse、评分/认知域计算 workflow 或任何写方法。
+- `AssessmentsService.listPatientFollowUpTrendVisits()` 只按 patient/date 过滤，不按 Visit status 或目标量表存在性过滤；显式投影 Visit id/patient/visitCode/type/status/date，按 assessmentDate/_id asc 并 limit max+1。`listPatientFollowUpTrendScaleInstances()` 按 patient + visit IDs + normalized scaleCode 批量读取显式 source 资格字段；二者均 lean。
+- `clinical-history-source-evaluator.ts` 是 A27/A28 共用的无 IO 资格原语：有限数/有效日期/非空文本、ownership、Score final/quality/review/time/range/exact trace、Domain final/quality/mapping/warning/trace/数值/weighted pair。A27 mapper 已改为复用它，既有公开语义保持不变。
+- `follow-up-trend-source.ts` 按固定优先级评估每个 Visit：Visit voided → multiple instance ambiguous → no instance missing → instance/Score voided → Score missing → instance/Score non-final → ownership/quality/time/value/trace incomplete → available。Domain 缺失/不完整独立记录，不会把 available 总分降级；不擅自选择多个实例或结果。
+- `follow-up-trend-comparability.ts` 只比较紧邻点。总分 exact 条件为 scaleCode/scaleVersion/CRF/scoring/encoding/admin mode/min/max 全相等；Domain 先要求 mapping version/source/mode/set 全相等，再逐 domain 检查 range、weightedMax 与 nullable 一致性。delta 为 current-previous 原始运算、无舍入、无跳点；reason 使用固定排序。
+- `follow-up-trend.mapper.ts` 只输出闭合 response type 与固定 `wp04-exact-trace-v1` policy，按 date/id asc 再生成 adjacent comparison；不 spread 内部 summary，不暴露 Patient、ownership/source 内部 ID、metadata、raw/Mixed、report、media、AI 或诊断字段。
+- A28 不新增 collection、Schema、index、缓存、read model、transaction、dependency、queue/job 或写入；查询数随 point 数保持常数级 batch，不存在逐 Visit / 逐实例 N+1。

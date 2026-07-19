@@ -9,7 +9,10 @@ import { ClinicalHistoryController } from './clinical-history.controller';
 
 describe('ClinicalHistoryController', () => {
   it('binds guards and roles and forwards a read without CurrentUser', async () => {
-    const queryService = { listPatientAssessmentHistory: jest.fn() };
+    const queryService = {
+      listPatientAssessmentHistory: jest.fn(),
+      getPatientFollowUpTrend: jest.fn(),
+    };
     const moduleRef = await Test.createTestingModule({
       controllers: [ClinicalHistoryController],
       providers: [
@@ -37,6 +40,14 @@ describe('ClinicalHistoryController', () => {
     expect(queryService.listPatientAssessmentHistory).toHaveBeenCalledWith(
       params.patientId,
       query,
+    );
+
+    const trendQuery = { scaleCode: 'moca', maxPoints: 50 };
+    queryService.getPatientFollowUpTrend.mockResolvedValue({ points: [] });
+    await controller.getFollowUpTrend(params, trendQuery);
+    expect(queryService.getPatientFollowUpTrend).toHaveBeenCalledWith(
+      params.patientId,
+      trendQuery,
     );
   });
 });

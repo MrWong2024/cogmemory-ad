@@ -370,6 +370,123 @@ describe('AssessmentsService', () => {
     ).toBe('mmse.attention.serial_sevens.step_1');
   });
 
+  it('reads follow-up trend Visits with an ascending bounded lean projection', async () => {
+    const patientId = new Types.ObjectId();
+    const visitId = new Types.ObjectId();
+    const assessmentDate = new Date('2026-07-19T08:00:00.000Z');
+    const exec = jest.fn().mockResolvedValue([
+      {
+        _id: visitId,
+        patientId,
+        visitCode: 'VIS-TREND-1',
+        visitType: 'follow_up',
+        status: 'voided',
+        assessmentDate,
+      },
+    ]);
+    const lean = jest.fn().mockReturnValue({ exec });
+    const limit = jest.fn().mockReturnValue({ lean });
+    const sort = jest.fn().mockReturnValue({ limit });
+    const select = jest.fn().mockReturnValue({ sort });
+    assessmentVisitModel.find.mockReturnValue({ select });
+
+    await expect(
+      service.listPatientFollowUpTrendVisits(patientId, {
+        dateFrom: assessmentDate,
+        dateTo: assessmentDate,
+        limit: 51,
+      }),
+    ).resolves.toEqual([
+      {
+        id: visitId.toString(),
+        patientId: patientId.toString(),
+        visitCode: 'VIS-TREND-1',
+        visitType: 'follow_up',
+        status: 'voided',
+        assessmentDate,
+      },
+    ]);
+    expect(assessmentVisitModel.find).toHaveBeenCalledWith({
+      patientId,
+      assessmentDate: { $gte: assessmentDate, $lte: assessmentDate },
+    });
+    expect(sort).toHaveBeenCalledWith({ assessmentDate: 1, _id: 1 });
+    expect(limit).toHaveBeenCalledWith(51);
+    expect(select).toHaveBeenCalledWith({
+      _id: 1,
+      patientId: 1,
+      visitCode: 1,
+      visitType: 1,
+      status: 1,
+      assessmentDate: 1,
+    });
+  });
+
+  it('batch reads only the requested trend scale instances with a lean projection', async () => {
+    const patientId = new Types.ObjectId();
+    const visitId = new Types.ObjectId();
+    const instanceId = new Types.ObjectId();
+    const exec = jest.fn().mockResolvedValue([
+      {
+        _id: instanceId,
+        patientId,
+        assessmentVisitId: visitId,
+        instanceCode: 'SI-TREND-1',
+        instanceNo: 2,
+        scaleCode: 'moca',
+        scaleVersion: '1.0',
+        administrationMode: 'clinician_administered',
+        status: 'completed',
+        durationMs: 1000,
+        voidedAt: null,
+        versionTrace: {
+          crfVersion: 'crf-1',
+          scoringRuleVersion: 'score-1',
+          fieldEncodingVersion: 'field-1',
+        },
+      },
+    ]);
+    const lean = jest.fn().mockReturnValue({ exec });
+    const sort = jest.fn().mockReturnValue({ lean });
+    const select = jest.fn().mockReturnValue({ sort });
+    scaleInstanceModel.find.mockReturnValue({ select });
+
+    const result = await service.listPatientFollowUpTrendScaleInstances(
+      patientId,
+      [visitId.toString()],
+      ' MoCA ',
+    );
+    expect(scaleInstanceModel.find).toHaveBeenCalledWith({
+      patientId,
+      assessmentVisitId: { $in: [visitId] },
+      scaleCode: 'moca',
+    });
+    expect(select).toHaveBeenCalledWith({
+      _id: 1,
+      patientId: 1,
+      assessmentVisitId: 1,
+      instanceCode: 1,
+      instanceNo: 1,
+      scaleCode: 1,
+      scaleVersion: 1,
+      administrationMode: 1,
+      status: 1,
+      durationMs: 1,
+      voidedAt: 1,
+      'versionTrace.crfVersion': 1,
+      'versionTrace.scoringRuleVersion': 1,
+      'versionTrace.fieldEncodingVersion': 1,
+    });
+    expect(result).toEqual([
+      expect.objectContaining({
+        id: instanceId.toString(),
+        assessmentVisitId: visitId.toString(),
+        instanceNo: 2,
+        scaleCode: 'moca',
+      }),
+    ]);
+  });
+
   it('returns null when visit is not found', async () => {
     assessmentVisitModel.findOne.mockReturnValue(createExecQuery(null));
 

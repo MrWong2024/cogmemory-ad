@@ -12,7 +12,7 @@
 
 项目整体进度、当前业务阶段、一期剩余工作包与二期候选能力统一由 `handoff-roadmap.md` 作为项目控制面板维护；本入口不承担阶段时间线。
 
-当前内容记录后端公共底座、量表与运行时模型、A12-A20 评估至报告 draft 闭环、A21 ClinicalReport 受控编辑 / 提交待确认 / 医生确认、A22-A24 不可逆报告生命周期、A25 线性更正、A26 replacement 生命周期泛化，以及 A27 患者历史评估 / 报告版本与指定历史详情。当前后端产品实现完成至 A27；WP-04 后端阶段一已完成，但基础随访趋势尚未实施，WP-04 仍进行中。
+当前内容记录后端公共底座、量表与运行时模型、A12-A20 评估至报告 draft 闭环、A21 ClinicalReport 受控编辑 / 提交待确认 / 医生确认、A22-A24 不可逆报告生命周期、A25 线性更正、A26 replacement 生命周期泛化、A27 患者历史评估 / 报告版本与指定历史详情，以及 A28 基础随访趋势。当前后端产品实现完成至 A28；WP-04 后端范围已完成，但前端尚未实施，WP-04 仍进行中。
 
 ## 3. 当前状态
 
@@ -27,20 +27,21 @@
 - `ScoringModule` 在既有 `ScoreResult` Schema、`ScoringService` 与 `summarizeItemScores()` 基础上，提供 `ScoringController`、A17 `ProvisionalScoringWorkflowService`、A18 `ScoreReviewWorkflowService`、纯评分 / 复核函数和显式 public mapper；公开 compute、latest、单题 manual-review 与 ScoreResult confirm 四个最小 API。
 - `CognitiveDomainsModule` 当前在既有 `CognitiveDomainResult` Schema、`CognitiveDomainsService` 与 `summarizeDomainScores()` 基础上，新增 `CognitiveDomainResultsController`、`CognitiveDomainComputationWorkflowService`、确认评分纯映射 / 校验和安全 public mapper；公开 runNo=1 compute / latest 两个最小 API。
 - `ReportsModule` 当前在既有 generation / review / lock / source-freeze / archive / correction 与 A26 单跳校验上，新增 A27 `ClinicalReportHistoryQueryService`、完整轻量版本链 evaluator、版本安全 mapper，以及版本列表和指定历史详情两个只读 API；`latest` 语义未变化。
-- 新增无 Schema 的 `ClinicalHistoryModule`，只导入 Patients / Assessments / Scoring / CognitiveDomains / Reports 领域模块并编排 `assessment-history`；Controller 不接触 Model，不使用 `forwardRef`，未形成循环依赖。
+- 无 Schema 的 `ClinicalHistoryModule` 只导入 Patients / Assessments / Scoring / CognitiveDomains / Reports / Scales 领域模块，编排 `assessment-history` 与 `follow-up-trends`；Controller 不接触 Model，不使用 `forwardRef`，未形成循环依赖。A28 使用共享 source evaluator、趋势 source/comparability 纯函数和显式安全 mapper，不重算评分或认知域。
 - 当前新增 `scales` 内部 MMSE / MoCA 初始配置种子数据底座，包含 MMSE / MoCA seed 常量、`ScaleSeedDataService` 只读读取能力和 `validateScaleSeeds()` 种子数据校验纯函数。
 - `AssessmentExecutionService` 可基于 MMSE / MoCA seed 创建 `ScaleInstance` 与初始 `ItemResponse` 骨架；A13 由 `AssessmentScaleWorkflowService` 受控调用。题目批量创建失败时按本次实例 ID 尝试清理已创建题目和实例，当前为补偿式一致性，不是 Mongo transaction。
 - 当前新增 `users` 内部模块，包含 `User` Schema 与 `UsersService` 内部账号读取、账号编码规范化和安全 mapper 输出能力。
 - 当前新增 `auth` 模块，包含 `Session` Schema、`AuthService` 密码哈希 / 校验、session token 生成 / hash、session 创建 / 校验 / 撤销、账号密码认证编排能力，以及 `@Public()`、`@Roles()`、`@CurrentUser()`、`SessionAuthGuard`、`RolesGuard` 和 `AuthController`；不注册全局 Guard。
-- 当前报告公开 API 共十一个：既有九个写入/最新读取接口，加 A27 版本列表与指定历史详情；另有 `ClinicalHistoryController` 的患者历史评估接口。
-- A12-A27 临床接口均显式绑定 `SessionAuthGuard` 与 `RolesGuard`；A27 三个只读接口允许 doctor / nurse / research_assistant / admin 且不读取 CurrentUser；未注册全局 Guard。
+- 当前报告公开 API 共十一个：既有九个写入/最新读取接口，加 A27 版本列表与指定历史详情；另有 `ClinicalHistoryController` 的患者历史评估与基础随访趋势两个接口。
+- A12-A28 临床接口均显式绑定 `SessionAuthGuard` 与 `RolesGuard`；WP-04 四个只读接口允许 doctor / nurse / research_assistant / admin 且不读取 CurrentUser；未注册全局 Guard。
 - 当前媒体边界仅为 photo / handwriting；手写轨迹为可选 JSON / strokes，签名 URL 为短期地址，作废不物理删除。仍无批量上传、分片上传、客户端直传、永久 URL、公开 Storage 管理、物理删除、原子替换、OCR 或 AI。
 - A24 最终验证记录为 scoped lint 通过、build 通过、72 个单元测试套件 / 625 个测试通过、A24 定向真实 HTTP E2E 1 个套件 / 6 个测试通过、全量 E2E 13 个套件 / 60 个测试通过。A24 完成后补充执行的最近两次全量 E2E 均完整通过；未运行全模块 lint，既有 scoring 格式技术债未修改。
 - A25 实际验证为 scoped reports + A25 E2E lint 通过、build 通过、75 个单元测试套件 / 653 个测试通过、A25 定向 E2E 1 个套件 / 4 个测试通过、全量 E2E 14 个套件 / 64 个测试通过；运行环境为隔离 test DB、fake Storage、stub SMS / LLM。上述数量来自本阶段实际 Jest 执行；A24 的 13 / 60 历史事实保留。
 - A26 实际验证为变更文件定向 lint、build、5 个定向 unit suites / 57 tests、全量 unit 76 suites / 666 tests、A26 定向 E2E 1 suite / 7 tests、全量 E2E 14 suites / 67 tests 全部通过；V1、V2、V3、共享来源不重写、非法 lineage、权限、幂等、恢复与并发均有回归证据。
 - A27 实际验证为变更范围定向 lint 通过、build 通过、全量 unit 84 suites / 707 tests、全量 E2E 16 suites / 73 tests 全部通过；完整 backend lint 仍为既有 scoring 三文件 51 个 Prettier error、0 warning，A27 未新增 lint 债务。
+- A28 实际验证为变更范围定向 lint、build、A27+A28 定向 unit 14 suites / 126 tests、A28 定向 E2E 1 suite / 3 tests、A27 定向 E2E 1 suite / 3 tests、全量 unit 88 suites / 751 tests、全量 E2E 17 suites / 76 tests 全部通过；完整 backend lint 仍仅为相同 scoring 三文件 51 个 Prettier errors、0 warnings，A28 未新增 lint 债务。
 - 两次最新全量 E2E 均使用 `NODE_ENV=test`、Jest `--runInBand`、隔离 `cogmemory_ad_test`、fake Storage、stub SMS / LLM 与脱敏人工数据，未调用真实外部服务。此前一次全量复跑曾出现既有跨套件 test catalog / 数据顺序污染现象；该现象在随后两次完整串行复跑中未再次出现。当前验证结论以最近连续两次全量通过为准，但尚不据此宣称潜在测试隔离风险已被永久消除。
-- 当前后端闭环为 A17 → A18 → A19 → A20 generate / latest → A21 edit / submit / confirm → A22 lock → A23 freeze-sources → A24 archive → A25 corrections，由 A26 让任意合法线性 replacement 重复 A21-A24，并由 A27 提供稳定只读历史访问。基础随访趋势、cancel / branch、PDF 与 AI 仍未实现。
+- 当前后端闭环为 A17 → A18 → A19 → A20 generate / latest → A21 edit / submit / confirm → A22 lock → A23 freeze-sources → A24 archive → A25 corrections，由 A26 让任意合法线性 replacement 重复 A21-A24，A27 提供稳定只读历史访问，A28 提供按 Visit 保留缺失点且仅相邻 exact-trace 可比的基础随访趋势。前端趋势展示、cancel / branch、PDF 与 AI 仍未实现。
 
 ## 4. 必读基础文档
 
@@ -60,7 +61,7 @@
 - `docs\handoff\handoff-backend-config-matrix.md`
 - `docs\handoff\handoff-backend-decisions.md`
 - `docs\handoff\handoff-backend-testing-playbook.md`
-- `docs\handoff\handoff-wp04-backend-contract.md`（WP-04 已锁定契约；A27 后端阶段一已实施，基础趋势仍未实施）
+- `docs\handoff\handoff-wp04-backend-contract.md`（WP-04 已锁定契约；A27/A28 后端范围已实施，前端仍未实施）
 
 ## 6. 后续同步规则
 

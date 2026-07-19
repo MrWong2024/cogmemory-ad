@@ -6,7 +6,7 @@
 
 ## 2. 当前状态
 
-- 当前报告公开 API 已扩展为既有九个生命周期接口，加 A27 报告版本列表与指定历史详情共十一个；另新增患者 `assessment-history` 只读接口。基础 `follow-up-trends` 尚未实现。
+- 当前报告公开 API 已扩展为既有九个生命周期接口，加 A27 报告版本列表与指定历史详情共十一个；`ClinicalHistoryController` 另提供患者 `assessment-history` 与 A28 `follow-up-trends` 两个只读接口。WP-04 后端范围已完成。
 - `AuthModule` 当前新增 `AuthController`，仅暴露最小公开认证 API 底座；主登录态仍为服务端 Session + HttpOnly Cookie，不采用 JWT 主登录态。
 - AuthModule 内部 session cookie 名称已统一为 `cogmemory_ad_session`，登录成功下发 HttpOnly Cookie，`SameSite=Lax`，`Path=/`，production 环境启用 `Secure`。
 - 当前没有 users controller，没有公开用户管理 API，没有注册、密码重置、角色权限管理、短信验证码、OAuth / SSO 或 JWT 登录 API。
@@ -475,3 +475,14 @@
 - 路由 / DTO：静态 `latest` 先于动态 `:reportId`；`ClinicalReportHistoryParamDto` 校验三个 MongoId。四角色只读，不改变 existing latest。
 - ownership / 状态：按 Patient → Patient 下 Visit → 同 Patient/Visit/type report 校验；跨归属统一 404 `CLINICAL_REPORT_NOT_FOUND`。允许六种报告状态、三种 Patient 状态和全部 Visit 状态。
 - 响应 / 完整性：原样复用 `ClinicalReportDetailResponse`、`ClinicalReportPublicMapper` 与现有 readable report 完整性；目标报告不完整为 409 `CLINICAL_REPORT_INCOMPLETE`，不附版本列表或内部 lineage。
+
+## A28 WP-04 后端阶段二基础随访趋势
+
+### GET `/patients/:patientId/follow-up-trends`
+
+- Controller / 权限：`ClinicalHistoryController`；`SessionAuthGuard` + `RolesGuard`；doctor / nurse / research_assistant / admin；不使用 CurrentUser、Body 或任何写入。inactive / archived Patient 与 Visit 全部历史状态可读。
+- DTO：复用 `PatientHistoryParamDto`；`GetPatientFollowUpTrendQueryDto` 要求 trim/lowercase 非空 `scaleCode`，支持含边界严格 ISO `dateFrom/dateTo` 与 `maxPoints=50`（integer 2–100）；未知 query、无效日期或倒置日期为 400 `INVALID_DATE_RANGE` / 全局 DTO 错误。
+- 响应 / 排序：`PatientFollowUpTrendResponse { scale,range,comparabilityPolicy,points }`；先保留日期范围内每个 Visit，再按 assessmentDate / `_id` asc 输出。空范围 200；超过 `maxPoints` 不截断，409 `FOLLOW_UP_TREND_RANGE_TOO_LARGE`；Patient 404 `PATIENT_NOT_FOUND`，当前 catalog 无可用 scale 为 404 `SCALE_NOT_AVAILABLE`。
+- source 语义：每个 Visit 对目标量表 0 个实例为 `source_missing`，多个为 `source_ambiguous`；Visit/instance/Score void、非 final、ownership / quality / time / total / exact trace 不完整分别保守映射为 `source_voided | source_not_final | source_incomplete`。只有唯一且完整的 confirmed/locked Score 为 `available`；Domain 缺失或不完整不会抹掉可用总分。
+- 比较语义：只比较当前点与紧邻前一点，不跨越缺失点；方向固定 `current_minus_immediately_previous`，不舍入。总分要求 scale code/version、CRF、scoring rule、field encoding、administration mode 与 min/max exact 一致；Domain 另要求 mapping version/source/mode/set exact，并按 domain range / weightedMax/null 语义给出 comparable、partially_comparable、not_comparable 或 unavailable。reason 顺序稳定，`scorePercent` 明确不是概率。
+- 隐私 / 查询：先校验 Patient 与当前 catalog，再一次读取 `maxPoints+1` 个轻量 Visit；非空范围各一次批量读取 ScaleInstance、ScoreResult、CognitiveDomainResult，纯 evaluator/comparability/mapper 组装。响应不含 Patient identity、ownership ID、内部 source / definition / version ID、raw answer、reviewer/opinion、metadata、report/narrative、media/storage、AI 或诊断字段；不读取 ItemResponse 或 ClinicalReport。
