@@ -44,7 +44,7 @@
 
 - `handoff-wp04-backend-contract.md` 已锁定四个只读 endpoint、字段级 DTO/response、完整报告 lineage、趋势来源、exact trace/domain mapping 可比性、缺失语义、权限、错误、批量查询和模块边界。
 - A27 已完成患者历史评估、报告版本列表、指定历史报告详情及完整安全 lineage；A28 已完成单量表基础随访趋势，包括 Visit 保留式 dataStatus、相邻 exact trace / domain mapping 可比性、缺失与版本变化 reason。
-- A28 实际验证为定向 lint/build、全量 unit 88 suites / 751 tests、全量 E2E 17 suites / 76 tests 通过；完整 lint 仍仅有既有 scoring 三文件的 51 个 Prettier errors、0 warnings。
+- A28 阶段的后端功能与回归验证已通过；当前后端 lint、typecheck、build、unit 和 E2E 门禁状态以最新 `handoff-backend-testing-playbook.md` 为准。
 - B17 已完成三个路由、四个 GET API Client、history/trend 页面、版本面板和历史只读详情；定向/完整 lint、typecheck、build、diff check 均通过。基线提交 `7dd6f52` 上的正式 fixture verify、同日排序增强验证与 safe manifest 扫描通过。
 - 完整真实浏览器矩阵共 44 个 scenarioKey，结果为 44 通过、0 失败、0 未执行；覆盖历史分页与同日顺序、无版本/V1/V2/V3/长链及异常 lineage、六种历史详情状态、基础趋势、全部 dataStatus、总分与 Domain 可比性、缺失/断线、范围错误及 Patient 状态。
 - doctor、admin、nurse、research_assistant 的允许访问、system 403、未认证保护路由和三个独立 404 均通过；两种 viewport、用户协助的真实键盘操作、焦点与无键盘陷阱、浏览器返回/前进均通过。
