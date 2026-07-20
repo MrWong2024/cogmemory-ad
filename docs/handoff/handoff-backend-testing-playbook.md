@@ -420,6 +420,16 @@ Remove-Item Env:WP04_FIXTURE_PASSWORD
 - fixture 定向 E2E 为 1 suite / 3 tests，通过 prepare、verify、只读/不修复、双 namespace、sentinel、cleanup/二次 cleanup、replace、安全门禁、safe manifest 和 source/mode 修订口径；A28 comparator/source 定向 unit 为 2 suites / 14 tests，受影响回归为 6 suites / 24 tests。当前最终门禁依次为 lint 0 errors / 0 warnings、typecheck 0 errors、build 通过、full unit 88 suites / 751 tests、full E2E 18 suites / 79 tests。
 - 浏览器矩阵完成后必须对 `wp04-browser-final` 执行显式 cleanup 并核对残留为 0；在此之前不得把 WP-04 或 B17 标记为完成。
 
+### WP-04 `history_pagination` 同日排序夹具纠偏
+
+- 原夹具把前两条 Visit 的 day-of-month 都设为 1，但 month 仍随数组下标变化，实际时间戳分别落在不同月份，因此没有形成可验证的同日 tie-break。修复后两个公开 fixture 标识不同的 Visit 使用完全相同的固定 UTC timestamp；该时间晚于同场景其余 103 条 Visit，因此两条都稳定落在历史列表第一页。其余 103 条日期分布、状态/类型分布和总数 105 保持不变，其他 scenarioKey 未改变。
+- `verify --namespace` 对 `history_pagination` 继续严格验证 total=105、20/50/100 分页和 pageSize=100 的第二页 5 条，并新增：精确定位两个公开 fixture 标识、时间戳严格相同、`_id` 不同、同一 Patient ownership、公开标识不同；再通过真实 `ClinicalHistoryQueryService` 请求 page=1/pageSize=20，确认 pair 都在第一页、彼此相邻，并按生产规则 `assessmentDate desc, _id desc` 返回。验证只读，不修改 timestamp，不创建 Session，也不修复损坏数据。
+- 同日 pair 缺失、ownership/标识/时间戳不符合预期时使用安全错误码 `WP04_HISTORY_SAME_DAY_FIXTURE_MISSING`；QueryService 第一页相邻性或 `_id desc` 不符合时使用 `WP04_HISTORY_SAME_DAY_ORDER_INVALID`。两类错误都只附 `scenarioKey=history_pagination` 和安全说明，不输出 Patient/Visit/ObjectId。
+- fixture 定向 E2E 最终为 1 suite / 4 tests，65.25 s；新增真实数据库 + QueryService 断言覆盖完全相同 timestamp、不同 `_id`、第一页相邻、`_id desc`、total=105、20/50/100 和第二页 5 条。破坏性用例使用独立 namespace，把其中一条日期最小改动 1 ms，确认只读 verify 以预期安全错误失败、数据未被修复，随后 cleanup 与第二次 cleanup 均残留 0。`clinical-history.e2e-spec.ts` 回归为 1 suite / 3 tests，8.171 s。
+- 最终代码态门禁结果：定向 ESLint 最终 0 errors / 0 warnings；完整 `npm run lint` 为 0 errors / 0 warnings；`npm run typecheck` 为 0 errors；`npm run build` 通过；full unit 为 88 suites / 751 tests，39.314 s；full E2E 为 18 suites / 80 tests，138.443 s。定向 ESLint 首轮发现 10 个本次格式问题，修正后完整重跑通过；五项完整后端门禁均在最终代码态一次通过。Node `sys`、WASI、SQLite 运行时 warning 仍按既有非目标保留。
+- smoke namespace `wp04-fix-smoke` 的 prepare / verify / cleanup / 第二次 cleanup 均成功：5 roles、44 keys / 43 business scenarios，同日 pair 增强验证通过，首次与二次 cleanup 的 residualCount 均为 0。正式 namespace `wp04-browser-final` 已按修复后夹具执行 replace + verify：5/44/43 与同日 pair 增强验证均通过，namespace 继续保留给下一次 B17 定向复验，不执行正式 cleanup。
+- 本次仅修改 WP-04 test-only fixture、verify、E2E 与 testing playbook；未修改 `backend/src/**` 产品代码、接口、DTO/response、Schema、collection、index、角色或业务契约。fixture 修复和 CLI verify 不等于 B17 最终浏览器验收完成；WP-04 继续进行中。
+
 - 测试不得使用真实患者数据、真实身份证号、真实手机号、真实病历号或其他可识别个人信息。
 - 量表测试数据应使用脱敏样本或人工构造样本。
 - 不得调用真实短信、真实阿里云 SMS、支付、医保、医院 HIS/LIS/PACS、对象存储生产环境或真实大模型服务，除非未来单独定义受控集成测试。
