@@ -54,7 +54,7 @@ const secondaryLinkClassName =
   'inline-flex min-h-11 items-center justify-center rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-surface)] px-4 py-2 text-base font-semibold text-[var(--cma-text-strong)] transition-colors hover:border-[var(--cma-primary)] hover:bg-[var(--cma-primary-soft)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cma-ring)]';
 
 const inputClassName =
-  'min-h-11 w-full rounded-md border border-[var(--cma-line-strong)] bg-white px-3 py-2 text-base text-[var(--cma-text-strong)] outline-none transition-colors focus:border-[var(--cma-primary)] focus:ring-2 focus:ring-[var(--cma-ring)] disabled:bg-[var(--cma-surface-muted)]';
+  'min-h-11 min-w-0 w-full rounded-md border border-[var(--cma-line-strong)] bg-white px-3 py-2 text-base text-[var(--cma-text-strong)] outline-none transition-colors focus:border-[var(--cma-primary)] focus:ring-2 focus:ring-[var(--cma-ring)] disabled:bg-[var(--cma-surface-muted)]';
 
 type VisitFilterForm = {
   status: '' | AssessmentVisitStatus;
@@ -492,18 +492,18 @@ export function PatientDetailPage({ patientId }: { patientId: string }) {
   );
 
   return (
-    <div className="grid gap-6">
-      <header className="flex flex-wrap items-start justify-between gap-5 border-b border-[var(--cma-line)] pb-6">
-        <div>
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-6">
+      <header className="flex min-w-0 flex-wrap items-start justify-between gap-5 border-b border-[var(--cma-line)] pb-6">
+        <div className="min-w-0">
           <Badge tone="info">患者详情</Badge>
-          <h1 className="mt-3 text-3xl font-semibold text-[var(--cma-text-strong)] sm:text-4xl">
+          <h1 className="mt-3 break-words text-3xl font-semibold text-[var(--cma-text-strong)] [overflow-wrap:anywhere] sm:text-4xl">
             {patient.subjectCode}
           </h1>
-          <p className="mt-2 text-lg leading-8 text-[var(--cma-muted)]">
+          <p className="mt-2 break-words text-lg leading-8 text-[var(--cma-muted)] [overflow-wrap:anywhere]">
             {patient.displayName || '未设置展示名称'}
           </p>
         </div>
-        <div className="flex flex-wrap gap-3">
+        <div className="flex min-w-0 flex-wrap gap-3">
           {patient.status === 'active' ? (
             <Link
               className={primaryLinkClassName}
@@ -533,10 +533,10 @@ export function PatientDetailPage({ patientId }: { patientId: string }) {
         </div>
       </header>
 
-      <Card>
+      <Card className="min-w-0">
         <CardHeader className="border-b border-[var(--cma-line)]">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
+          <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
               <CardTitle>公开档案信息</CardTitle>
               <CardDescription>仅展示当前公开患者档案字段。</CardDescription>
             </div>
@@ -544,20 +544,20 @@ export function PatientDetailPage({ patientId }: { patientId: string }) {
           </div>
         </CardHeader>
         <CardContent className="pt-5">
-          <dl className="grid gap-x-8 gap-y-5 sm:grid-cols-2 lg:grid-cols-4">
-            <div>
+          <dl className="grid min-w-0 gap-x-8 gap-y-5 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="min-w-0">
               <dt className="text-sm font-semibold text-[var(--cma-muted)]">
                 患者编号
               </dt>
-              <dd className="mt-1 text-lg font-semibold text-[var(--cma-text-strong)]">
+              <dd className="mt-1 break-words text-lg font-semibold text-[var(--cma-text-strong)] [overflow-wrap:anywhere]">
                 {patient.subjectCode}
               </dd>
             </div>
-            <div>
+            <div className="min-w-0">
               <dt className="text-sm font-semibold text-[var(--cma-muted)]">
                 展示名称
               </dt>
-              <dd className="mt-1 text-lg text-[var(--cma-text-strong)]">
+              <dd className="mt-1 break-words text-lg text-[var(--cma-text-strong)] [overflow-wrap:anywhere]">
                 {patient.displayName || '—'}
               </dd>
             </div>
@@ -611,21 +611,28 @@ export function PatientDetailPage({ patientId }: { patientId: string }) {
                 <PatientStatusBadge status={patient.status} />
               </dd>
             </div>
-            <div className="sm:col-span-2 lg:col-span-4">
+            <div className="min-w-0 sm:col-span-2 lg:col-span-4">
               <dt className="text-sm font-semibold text-[var(--cma-muted)]">
                 标签
               </dt>
-              <dd className="mt-2 flex flex-wrap gap-2">
+              <dd className="mt-2 flex min-w-0 flex-wrap gap-2">
                 {patient.tags.length > 0
-                  ? patient.tags.map((tag) => <Badge key={tag}>{tag}</Badge>)
+                  ? patient.tags.map((tag) => (
+                      <Badge
+                        className="max-w-full whitespace-normal break-words [overflow-wrap:anywhere]"
+                        key={tag}
+                      >
+                        {tag}
+                      </Badge>
+                    ))
                   : '—'}
               </dd>
             </div>
-            <div className="sm:col-span-2 lg:col-span-4">
+            <div className="min-w-0 sm:col-span-2 lg:col-span-4">
               <dt className="text-sm font-semibold text-[var(--cma-muted)]">
                 备注
               </dt>
-              <dd className="mt-1 whitespace-pre-wrap text-base leading-7 text-[var(--cma-text-strong)]">
+              <dd className="mt-1 whitespace-pre-wrap break-words text-base leading-7 text-[var(--cma-text-strong)] [overflow-wrap:anywhere]">
                 {patient.notes || '—'}
               </dd>
             </div>
@@ -635,7 +642,7 @@ export function PatientDetailPage({ patientId }: { patientId: string }) {
 
       {patient.status !== 'active' ? (
         <div
-          className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] px-5 py-4 text-base leading-7 text-[var(--cma-warning)]"
+          className="min-w-0 break-words rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] px-5 py-4 text-base leading-7 text-[var(--cma-warning)] [overflow-wrap:anywhere]"
           role="status"
         >
           当前患者状态为“
@@ -643,7 +650,7 @@ export function PatientDetailPage({ patientId }: { patientId: string }) {
         </div>
       ) : null}
 
-      <Card>
+      <Card className="min-w-0">
         <CardHeader>
           <CardTitle>评估访视</CardTitle>
           <CardDescription>
@@ -652,10 +659,10 @@ export function PatientDetailPage({ patientId }: { patientId: string }) {
         </CardHeader>
         <CardContent>
           <form
-            className="grid gap-4 md:grid-cols-2 xl:grid-cols-5"
+            className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-5"
             onSubmit={handleFilterSubmit}
           >
-            <div className="grid gap-2">
+            <div className="grid min-w-0 gap-2">
               <label
                 className="font-semibold text-[var(--cma-text-strong)]"
                 htmlFor="visit-status"
@@ -681,7 +688,7 @@ export function PatientDetailPage({ patientId }: { patientId: string }) {
                 ))}
               </select>
             </div>
-            <div className="grid gap-2">
+            <div className="grid min-w-0 gap-2">
               <label
                 className="font-semibold text-[var(--cma-text-strong)]"
                 htmlFor="visit-type"
@@ -708,7 +715,7 @@ export function PatientDetailPage({ patientId }: { patientId: string }) {
                 ))}
               </select>
             </div>
-            <div className="grid gap-2">
+            <div className="grid min-w-0 gap-2">
               <label
                 className="font-semibold text-[var(--cma-text-strong)]"
                 htmlFor="visit-date-from"
@@ -728,7 +735,7 @@ export function PatientDetailPage({ patientId }: { patientId: string }) {
                 value={filters.dateFrom}
               />
             </div>
-            <div className="grid gap-2">
+            <div className="grid min-w-0 gap-2">
               <label
                 className="font-semibold text-[var(--cma-text-strong)]"
                 htmlFor="visit-date-to"
@@ -748,7 +755,7 @@ export function PatientDetailPage({ patientId }: { patientId: string }) {
                 value={filters.dateTo}
               />
             </div>
-            <div className="grid gap-2">
+            <div className="grid min-w-0 gap-2">
               <label
                 className="font-semibold text-[var(--cma-text-strong)]"
                 htmlFor="visit-page-size"
@@ -783,7 +790,7 @@ export function PatientDetailPage({ patientId }: { patientId: string }) {
                 {filterError}
               </p>
             ) : null}
-            <div className="flex flex-wrap items-end gap-3 md:col-span-2 xl:col-span-5">
+            <div className="flex min-w-0 flex-wrap items-end gap-3 md:col-span-2 xl:col-span-5">
               <Button disabled={isVisitsLoading} type="submit">
                 查询
               </Button>
@@ -800,7 +807,7 @@ export function PatientDetailPage({ patientId }: { patientId: string }) {
       </Card>
 
       {isVisitsLoading && !visits ? (
-        <Card aria-live="polite" role="status">
+        <Card aria-live="polite" className="min-w-0" role="status">
           <CardHeader>
             <CardTitle className="text-xl">正在加载评估访视</CardTitle>
             <CardDescription>正在读取当前患者的访视记录。</CardDescription>
@@ -809,7 +816,7 @@ export function PatientDetailPage({ patientId }: { patientId: string }) {
       ) : null}
 
       {visitError ? (
-        <Card role="alert">
+        <Card className="min-w-0" role="alert">
           <CardHeader>
             <Badge tone="warning">
               {visitError.kind === 'forbidden' ? '无权限' : '加载失败'}
@@ -834,10 +841,10 @@ export function PatientDetailPage({ patientId }: { patientId: string }) {
       ) : null}
 
       {!visitError && visits ? (
-        <Card>
+        <Card className="min-w-0">
           <CardHeader className="border-b border-[var(--cma-line)]">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
                 <CardTitle className="text-xl">访视列表</CardTitle>
                 <CardDescription>
                   {isVisitsLoading
@@ -870,7 +877,7 @@ export function PatientDetailPage({ patientId }: { patientId: string }) {
               ) : null}
             </CardContent>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="max-w-full min-w-0 overflow-x-auto">
               <table className="min-w-[1280px] w-full border-collapse text-left">
                 <thead className="bg-[var(--cma-surface-muted)] text-sm text-[var(--cma-muted)]">
                   <tr>

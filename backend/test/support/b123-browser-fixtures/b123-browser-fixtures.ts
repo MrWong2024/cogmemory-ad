@@ -1053,7 +1053,6 @@ export class B123BrowserFixtureManager {
         return {
           defaultPageSize: B123_PATIENT_DEFAULT_PAGE_SIZE,
           preparedListRowCount: B123_PATIENT_LIST_EXTRA_COUNT,
-          tagKeyword: '分页矩阵',
         };
       case 'patient_create_matrix':
         return {

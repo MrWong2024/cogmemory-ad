@@ -229,7 +229,7 @@ export const B123_BUSINESS_SCENARIOS = [
     scenarioKey: 'patients_list_matrix',
     ordinal: 7,
     purpose:
-      'Patient pagination, keyword, status, source type, tags, and stable ordering',
+      'Patient pagination, keyword, status, source type, and stable ordering',
     auditIds: ['B2-MV-001', 'B2-MV-002', 'B2-MV-024', 'B2-MV-025'],
     routeKind: 'patients',
     suggestedRole: 'doctor',
@@ -240,7 +240,7 @@ export const B123_BUSINESS_SCENARIOS = [
     expectedHttpStatus: 200,
     expectedBusinessCode: null,
     expectedSummary:
-      'The fixture exceeds the real default page size and includes searchable matrix values',
+      'The fixture exceeds the real default page size and provides keyword, status, source type, total, and stable-ordering evidence',
   },
   {
     scenarioKey: 'patient_create_matrix',

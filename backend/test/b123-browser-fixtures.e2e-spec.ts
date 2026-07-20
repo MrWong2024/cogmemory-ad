@@ -312,6 +312,36 @@ describe('B1-B3 browser fixture CLI support (e2e)', () => {
     );
     assertB123SafeManifest(primary);
 
+    const patientsListScenario = primary.scenarios.find(
+      (entry) => entry.scenarioKey === 'patients_list_matrix',
+    );
+    expect(patientsListScenario).toEqual(
+      expect.objectContaining({
+        purpose:
+          'Patient pagination, keyword, status, source type, and stable ordering',
+        auditIds: ['B2-MV-001', 'B2-MV-002', 'B2-MV-024', 'B2-MV-025'],
+        expectedSummary:
+          'The fixture exceeds the real default page size and provides keyword, status, source type, total, and stable-ordering evidence',
+        testInput: {
+          defaultPageSize: B123_PATIENT_DEFAULT_PAGE_SIZE,
+          preparedListRowCount: B123_PATIENT_LIST_EXTRA_COUNT,
+        },
+      }),
+    );
+    expect(patientsListScenario?.testInput).not.toHaveProperty('tagKeyword');
+
+    const patientCreateScenario = primary.scenarios.find(
+      (entry) => entry.scenarioKey === 'patient_create_matrix',
+    );
+    expect(patientCreateScenario?.testInput?.tagsInput).toBe(
+      '记忆门诊， 随访\n记忆门诊,研究',
+    );
+    expect(patientCreateScenario?.testInput?.expectedTags).toEqual([
+      '记忆门诊',
+      '随访',
+      '研究',
+    ]);
+
     const pageOne = await patientsService.listPatients({
       page: 1,
       pageSize: B123_PATIENT_DEFAULT_PAGE_SIZE,

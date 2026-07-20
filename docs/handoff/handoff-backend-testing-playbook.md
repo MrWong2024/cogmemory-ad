@@ -464,6 +464,19 @@ Remove-Item Env:WP04_FIXTURE_PASSWORD
 - smoke 生命周期 `b123-cli-smoke` 已完成 prepare、prepared verify、cleanup、第二次 cleanup，最终 `residualCount=0`；正式 namespace `b123-browser-final` 已完成 replace 与 prepared verify，并继续保留给 Batch A Browser 使用。
 - 本轮未执行 Browser，未把任何 B1–B3 待验项提前标记为已验证。
 
+### Batch A 首轮 Browser 合同纠偏与响应式修复门禁
+
+- `patients_list_matrix` 已纠偏为只提供 Patient pagination、keyword、status、source type 与 stable ordering 的 fixture 证据；safe manifest 不再提供标签筛选输入。该场景的 B2-MV-001、B2-MV-002、B2-MV-024、B2-MV-025 四个 primary owner 不变。
+- Patient list 正式查询 DTO、Service 与产品 API 未修改，仍只有 page/pageSize、keyword、status、sourceType 和既有排序。患者数据可继续包含 tags，但标签输入、中文/英文逗号、换行、trim 与去重验证只属于 `patient_create_matrix`，B2-MV-007 归属不变。
+- contract 自动平衡继续为 27 个 scenarioKey、26 个业务场景、58 个唯一 audit ID、21 direct、37 fixture-required；无新增/删除 key，无缺失、重复或额外 primary owner。
+- test-only 修改仅涉及 contract、safe manifest 与 fixture E2E；`scenario-builders.ts` 不需要修改，Patient 创建 tags 数据和 post-browser 精确归一断言完整保留。未修改 `backend/src/**`、Controller、DTO、Service、Schema、endpoint、状态码、错误码、Session 或 MMSE/MoCA seed。
+- 定向 ESLint 首轮发现新增 matcher 的 2 个 `no-unsafe-assignment`，改为强类型的精确 tags 输入/归一结果断言后重跑为 0 errors / 0 warnings。fixture 定向 E2E 为 1 suite / 5 tests；A12/A13 回归为 2 suites / 14 tests。
+- 最终五项后端门禁按顺序串行通过：`npm run lint` 0 errors / 0 warnings；`npm run typecheck` 0 errors；`npm run build` 通过；full unit 88 suites / 751 tests；full E2E 19 suites / 85 tests。没有并发运行 Jest。
+- smoke namespace `b123-fix-smoke` 的 prepare、prepared verify、cleanup 与第二次 cleanup 均成功，计数为 5 roles / 27 keys / 26 business scenarios / 58 audit IDs / 21 direct / 37 fixture-required，首次与幂等二次 cleanup 的 `residualCount` 均为 0。
+- 正式 namespace `b123-browser-final` 已按纠偏后 contract 执行 replace 与 prepared verify，计数同为 5/27/26/58/21/37，并继续保留；本轮没有执行正式 cleanup，也没有执行 post-browser verify。
+- 本轮只做患者列表和详情的只读定向响应式 Browser 复验，没有执行完整 Batch A Browser 矩阵，没有创建 Patient、Visit 或 ScaleInstance，没有执行 transition。`auth_login_matrix`、真实键盘与其余矩阵仍待后续完整重跑，fixture 准备成功不得写成 Batch A 完成。
+- `B123_FIXTURE_PASSWORD=<固定测试密码已设置>` 只存在于各 CLI 当前进程，未进入参数、配置、仓库或 manifest；命令结束后已清除。
+
 ## 11. 后续同步规则
 
 - 后端新增或调整测试脚本后，应同步更新自动验证命令。

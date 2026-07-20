@@ -18,11 +18,11 @@ export function PaginationControls({
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4 border-t border-[var(--cma-line)] px-5 py-4">
-      <p className="text-base text-[var(--cma-muted)]">
+    <div className="flex min-w-0 flex-wrap items-center justify-between gap-4 border-t border-[var(--cma-line)] px-5 py-4">
+      <p className="min-w-0 break-words text-base text-[var(--cma-muted)]">
         共 {total} 条，第 {page} / {totalPages} 页
       </p>
-      <div className="flex gap-3">
+      <div className="flex min-w-0 flex-wrap gap-3">
         <Button
           disabled={isLoading || page <= 1}
           onClick={() => onPageChange(page - 1)}

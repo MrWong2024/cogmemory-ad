@@ -44,7 +44,7 @@ const secondaryLinkClassName =
   'inline-flex min-h-11 items-center justify-center rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-surface)] px-4 py-2 text-base font-semibold text-[var(--cma-text-strong)] transition-colors hover:border-[var(--cma-primary)] hover:bg-[var(--cma-primary-soft)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cma-ring)]';
 
 const inputClassName =
-  'min-h-11 w-full rounded-md border border-[var(--cma-line-strong)] bg-white px-3 py-2 text-base text-[var(--cma-text-strong)] outline-none transition-colors focus:border-[var(--cma-primary)] focus:ring-2 focus:ring-[var(--cma-ring)] disabled:bg-[var(--cma-surface-muted)]';
+  'min-h-11 min-w-0 w-full rounded-md border border-[var(--cma-line-strong)] bg-white px-3 py-2 text-base text-[var(--cma-text-strong)] outline-none transition-colors focus:border-[var(--cma-primary)] focus:ring-2 focus:ring-[var(--cma-ring)] disabled:bg-[var(--cma-surface-muted)]';
 
 type PatientFilterForm = {
   keyword: string;
@@ -224,9 +224,9 @@ export function PatientsListPage() {
   const hasFilters = Boolean(query.keyword || query.status || query.sourceType);
 
   return (
-    <div className="grid gap-6">
-      <header className="flex flex-wrap items-start justify-between gap-5 border-b border-[var(--cma-line)] pb-6">
-        <div>
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-6">
+      <header className="flex min-w-0 flex-wrap items-start justify-between gap-5 border-b border-[var(--cma-line)] pb-6">
+        <div className="min-w-0">
           <Badge tone="info">患者与访视</Badge>
           <h1 className="mt-3 text-3xl font-semibold text-[var(--cma-text-strong)] sm:text-4xl">
             患者档案
@@ -235,7 +235,7 @@ export function PatientsListPage() {
             用于查看患者 / 受试者档案并进入评估访视记录。
           </p>
         </div>
-        <div className="flex flex-wrap gap-3">
+        <div className="flex min-w-0 flex-wrap gap-3">
           <Link className={primaryLinkClassName} href="/patients/new">
             新建患者
           </Link>
@@ -245,7 +245,7 @@ export function PatientsListPage() {
         </div>
       </header>
 
-      <Card>
+      <Card className="min-w-0">
         <CardHeader>
           <CardTitle className="text-xl">筛选患者档案</CardTitle>
           <CardDescription>
@@ -254,10 +254,10 @@ export function PatientsListPage() {
         </CardHeader>
         <CardContent>
           <form
-            className="grid gap-4 md:grid-cols-2 xl:grid-cols-5"
+            className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-5"
             onSubmit={handleFilterSubmit}
           >
-            <div className="grid gap-2 xl:col-span-2">
+            <div className="grid min-w-0 gap-2 xl:col-span-2">
               <label
                 className="font-semibold text-[var(--cma-text-strong)]"
                 htmlFor="patient-keyword"
@@ -279,7 +279,7 @@ export function PatientsListPage() {
                 value={filters.keyword}
               />
             </div>
-            <div className="grid gap-2">
+            <div className="grid min-w-0 gap-2">
               <label
                 className="font-semibold text-[var(--cma-text-strong)]"
                 htmlFor="patient-status"
@@ -305,7 +305,7 @@ export function PatientsListPage() {
                 ))}
               </select>
             </div>
-            <div className="grid gap-2">
+            <div className="grid min-w-0 gap-2">
               <label
                 className="font-semibold text-[var(--cma-text-strong)]"
                 htmlFor="patient-source"
@@ -332,7 +332,7 @@ export function PatientsListPage() {
                 ))}
               </select>
             </div>
-            <div className="grid gap-2">
+            <div className="grid min-w-0 gap-2">
               <label
                 className="font-semibold text-[var(--cma-text-strong)]"
                 htmlFor="patient-page-size"
@@ -359,7 +359,7 @@ export function PatientsListPage() {
                 ))}
               </select>
             </div>
-            <div className="flex flex-wrap items-end gap-3 md:col-span-2 xl:col-span-5">
+            <div className="flex min-w-0 flex-wrap items-end gap-3 md:col-span-2 xl:col-span-5">
               <Button disabled={isLoading} type="submit">
                 查询
               </Button>
@@ -376,7 +376,7 @@ export function PatientsListPage() {
       </Card>
 
       {isLoading && !data ? (
-        <Card aria-live="polite" role="status">
+        <Card aria-live="polite" className="min-w-0" role="status">
           <CardHeader>
             <CardTitle className="text-xl">正在加载患者档案</CardTitle>
             <CardDescription>正在读取当前页数据，请稍候。</CardDescription>
@@ -385,7 +385,7 @@ export function PatientsListPage() {
       ) : null}
 
       {error ? (
-        <Card role="alert">
+        <Card className="min-w-0" role="alert">
           <CardHeader>
             <Badge tone="warning">
               {error.kind === 'forbidden' ? '无权限' : '加载失败'}
@@ -409,10 +409,10 @@ export function PatientsListPage() {
       ) : null}
 
       {!error && data ? (
-        <Card>
+        <Card className="min-w-0">
           <CardHeader className="border-b border-[var(--cma-line)]">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
                 <CardTitle className="text-xl">档案列表</CardTitle>
                 <CardDescription>
                   {isLoading ? '正在更新列表...' : `共找到 ${data.total} 条记录。`}
@@ -433,7 +433,7 @@ export function PatientsListPage() {
               </p>
             </CardContent>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="max-w-full min-w-0 overflow-x-auto">
               <table className="min-w-[1120px] w-full border-collapse text-left">
                 <thead className="bg-[var(--cma-surface-muted)] text-sm text-[var(--cma-muted)]">
                   <tr>
