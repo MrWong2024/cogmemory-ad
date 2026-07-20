@@ -488,6 +488,26 @@ Remove-Item Env:WP04_FIXTURE_PASSWORD
 - 本次只执行前端静态门禁、fixture verify/transition/cleanup 和真实 Browser 验收；未修改 `backend/src/**`、backend scripts/test、API/DTO/response、Schema/index 或任何后端产品代码，因此未重跑或改写既有后端代码门禁结果。上一代码阶段记录的 fixture E2E 1 suite / 5 tests、A12/A13 2 suites / 14 tests、full unit 88 suites / 751 tests 与 full E2E 19 suites / 85 tests 保持为该代码基线的历史门禁证据，本次不冒充为重跑。
 - Batch A 的 58 个本次 Browser audit ID 均通过，结合 6 个既有 Browser 证据、2 个用户人工视觉签收和 1 个 obsolete，67 个验证原子已全部有明确处置。Batch A Browser 验收与 fixture 生命周期收口完成，roadmap 不变，未启动 Batch B。
 
+### B4–B6 / Batch B 浏览器验收 fixture CLI
+
+- 用途：为 B4 量表作答、B5 媒体证据和 B6 最终提交的桌面 Browser 验收提供独立、确定性且可回收的 test-only 数据；本节只记录 fixture 基础设施，Browser 尚未执行，不改变 roadmap，也不启动 Batch C 或其他业务工作包。
+- 入口：`backend/scripts/b456-browser-fixtures.ts`；固定 contract 为 32 个 `scenarioKey`，其中 1 个 `roles` 与 31 个业务场景，共 135 个唯一 primary audit ID；B4/B5/B6 分别为 44/54/37，严格分类为 15 个 Browser-direct 与 120 个 fixture-required，缺失、重复、额外 ID 均为 0。
+- 环境变量只在本地进程临时设置：`NODE_ENV=test` 与 `B456_FIXTURE_PASSWORD=<固定测试密码已设置>`；密码不接受 CLI 参数，不写入仓库、配置、manifest 或报告。基础命令为：
+  - `npx ts-node scripts/b456-browser-fixtures.ts prepare --namespace <namespace>`
+  - `npx ts-node scripts/b456-browser-fixtures.ts verify --phase prepared --namespace <namespace>`
+  - `npx ts-node scripts/b456-browser-fixtures.ts verify --phase post-browser --namespace <namespace>`
+  - `npx ts-node scripts/b456-browser-fixtures.ts cleanup --confirm-cleanup --namespace <namespace>`
+  - `npx ts-node scripts/b456-browser-fixtures.ts replace --confirm-replace --namespace <namespace>`
+- transition 审计结论为当前 31 个业务场景均不需要页面加载后的持久服务端切换：固定前置状态由 prepare 建立，单次网络故障由后续 Browser 在客户端中止请求，并发由真实双会话触发。因此 CLI 不提供 transition 子命令，所有场景 `transitionMode=none`；prepared/post-browser verify 与 cleanup 均拒绝或检查 transition 遗留，cleanup 按恢复优先顺序执行该空白名单。
+- prepare 使用真实认证服务建立 doctor、admin、nurse、research_assistant、system 五个脱敏账号，并准备真实 MMSE/MoCA 工作流数据。B4 覆盖输入类型、serial7、delayed recall、missing reason、timing、媒体题型、逐题草稿、progress/dirty、状态矩阵、ownership、stale/not-found、401/403 与 Browser 写入预留；B5 覆盖媒体要求、文件校验、上传/预览、作废重传、手写轨迹、只读/错误/并发；B6 覆盖 readiness、dirty/未上传/stale、issue 定位、确认提交、幂等/并发、提交后只读、授权错误与单次网络故障最终状态。
+- Browser 上传文件仅在操作系统临时目录生成，包含 JPEG、PNG、WebP、超尺寸、MIME 不符、无效图片、handwriting PNG 及合法/超限 trajectory JSON；safe manifest 仅通过专用 `fileInputs` 暴露后续 Browser 所需定位，不写入仓库。cleanup 删除这些临时文件。
+- safe manifest 只使用合同白名单字段；除 `route` 与临时 `fileInputs` 外不输出内部定位，也不输出密码、Cookie、Session、连接信息、metadata、完整请求/响应、答案或评分规则。namespace 只接受小写字母、数字和单连字符；AppModule 导入前强制 `NODE_ENV=test`，连接后验证隔离 test database、fake Storage、stub SMS/LLM 与非 production Session。
+- `verify --phase prepared` 是只读门禁，检查 5/32/31/135/15/120 计数、账号 hash/verify、状态/ownership/目录、Browser 写入预留、临时文件签名与大小、无 transition 遗留，并确认 verify 前后记录标识、`updatedAt` 与会话数量不变。`verify --phase post-browser` 只读检查实际草稿、timing/missing/prompt/serial7、progress/dirty、媒体上传/作废/重传/trajectory、失败或禁止写入无副作用、最终提交恰好一次、幂等/并发不重复、提交后只读及网络故障最终服务端状态；verify 自身不修复数据。
+- cleanup 先处理 transition 恢复门禁，再按 namespace 精确删除后续 Browser 可能创建的会话和全部下游业务数据，最后删除账号、根数据与临时文件；保留全局 MMSE/MoCA seed，不使用 `dropDatabase()` 或无条件 `deleteMany({})`，支持双 namespace 隔离与二次幂等 cleanup。
+- fixture E2E `test/b456-browser-fixtures.e2e-spec.ts` 已通过，1 suite / 5 tests；A14–A16 回归 3 suites / 18 tests，B123/B16/WP04 fixture 回归 3 suites / 12 tests，均通过。定向 ESLint 与完整 `npm run lint` 均为 0 errors / 0 warnings；`npm run typecheck` 0 errors；`npm run build` 通过；full unit 88 suites / 751 tests；full E2E 20 suites / 90 tests。所有 Jest 与 fixture CLI 均串行执行。
+- smoke namespace `b456-cli-smoke` 已完成 prepare、prepared verify、cleanup 与第二次 cleanup，两次 cleanup 的 `residualCount` 均为 0。正式 namespace `b456-browser-final` 已完成 replace 与 prepared verify，5/32/31/135/15/120 计数全部通过并继续保留。
+- 本轮未执行 Browser，未执行 post-browser verify；B5 的 8 个真实设备/人工项继续保留到 Batch E。
+
 ## 11. 后续同步规则
 
 - 后端新增或调整测试脚本后，应同步更新自动验证命令。
