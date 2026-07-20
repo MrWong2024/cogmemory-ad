@@ -442,6 +442,28 @@ Remove-Item Env:WP04_FIXTURE_PASSWORD
 - 不得调用真实短信、真实阿里云 SMS、支付、医保、医院 HIS/LIS/PACS、对象存储生产环境或真实大模型服务，除非未来单独定义受控集成测试。
 - 不得在测试断言中生成真实医疗诊断结论。
 
+### B1–B3 / Batch A 浏览器验收 fixture CLI
+
+- 用途：为 B1–B3 Batch A 后续真实 Browser 验收提供独立、确定性且可回收的 test-only 数据；fixture 完成不等于 Browser 验收完成，不改变 roadmap 或工作包状态。
+- 入口：`backend/scripts/b123-browser-fixtures.ts`；固定 contract 为 27 个 `scenarioKey`，其中 1 个 `roles` 账号场景和 26 个业务场景，共有 58 个唯一 primary audit ID，分类为 21 个 Browser direct 与 37 个 fixture-required。
+- 环境变量只在本地进程临时设置：`NODE_ENV=test` 与 `B123_FIXTURE_PASSWORD=<固定测试密码已设置>`；密码不接受 CLI 参数，不写入仓库、配置或 manifest。
+- 基础命令：
+  - `node -r ts-node/register -r tsconfig-paths/register scripts/b123-browser-fixtures.ts prepare --namespace <namespace>`
+  - `node -r ts-node/register -r tsconfig-paths/register scripts/b123-browser-fixtures.ts verify --namespace <namespace> --phase prepared`
+  - `node -r ts-node/register -r tsconfig-paths/register scripts/b123-browser-fixtures.ts verify --namespace <namespace> --phase post-browser`
+  - `node -r ts-node/register -r tsconfig-paths/register scripts/b123-browser-fixtures.ts cleanup --namespace <namespace> --confirm-cleanup`
+  - `node -r ts-node/register -r tsconfig-paths/register scripts/b123-browser-fixtures.ts replace --namespace <namespace> --confirm-replace`
+- 受控 transition 仅允许 `dashboard_session_matrix`、`catalog_error_matrix`、`scale_unavailable` 三个白名单场景，并使用 `transition --namespace <namespace> --scenario <scenarioKey> --action arm|restore --confirm-transition`。它们分别撤销/恢复 namespace doctor Session、制造/恢复真实 MMSE materialized version trace 冲突、停用/恢复真实 MoCA definition。目录 transition 仅允许在隔离 test database 中使用；`verify --phase prepared` 拒绝遗留 transition，cleanup 会先恢复。
+- 网络故障不写入 fixture：登录、`/auth/me`、Patient GET、Visit 列表 GET、Visit POST 与 catalog GET 由后续 Browser 使用 CDP abort 或等价真实网络失败模拟；写请求不得自动重试。
+- `prepared` verify 只读检查账号、Patient/Visit 状态矩阵、真实 MMSE/MoCA catalog、初始化矩阵、duplicate/forbidden/not-found 前置、Browser 写入预留不存在、transition 已恢复、ID/`updatedAt`/Session 数不变。`post-browser` verify 只读检查 Browser 创建 Patient、Visit、MMSE/MoCA 实例与无副作用断言，不修复数据。
+- safe manifest 顶层只包含 `namespace`、`databaseName`、`roles`、`scenarios`、`summary`；仅 `route` 可携带本地导航所需内部 ID，`testInput` 只包含合成公开表单输入。scanner 拒绝密码、hash、Cookie、Session、token、Mongo URI、内部 ID 字段、metadata、operatorSnapshot、完整 request/response 等字段。
+- cleanup 按 Session、Report/Domain/Score/Media/Item、ScaleInstance、AssessmentVisit、Patient、User 顺序精确删除 namespace 数据，包含后续 Browser 创建数据；不删除全局 scale seed，不使用 `dropDatabase()` 或无条件 `deleteMany({})`，支持双 namespace 隔离和二次幂等 cleanup。
+- fixture E2E：`test/b123-browser-fixtures.e2e-spec.ts` 实际通过，1 suite / 5 tests；覆盖 contract 计数、环境/CLI/safe manifest 门禁、真实账号 hash 验证、分页与状态、真实 MMSE/MoCA 骨架、双 namespace、三类 transition/restore、Browser 写入模拟、post-browser verify、cleanup/replace 与只读损坏检测。
+- 定向回归：A12/A13 为 2 suites / 14 tests，B16 fixture 为 1 suite / 3 tests，WP-04 fixture 为 1 suite / 4 tests，全部通过；未修改 B16/WP-04 fixture 行为。
+- 最终完整后端门禁：定向 ESLint 0 errors / 0 warnings；`npm run lint` 0 errors / 0 warnings；`npm run typecheck` 0 errors；`npm run build` 通过；`npm test -- --runInBand` 为 88 suites / 751 tests；`npm run test:e2e` 为 19 suites / 85 tests。
+- smoke 生命周期 `b123-cli-smoke` 已完成 prepare、prepared verify、cleanup、第二次 cleanup，最终 `residualCount=0`；正式 namespace `b123-browser-final` 已完成 replace 与 prepared verify，并继续保留给 Batch A Browser 使用。
+- 本轮未执行 Browser，未把任何 B1–B3 待验项提前标记为已验证。
+
 ## 11. 后续同步规则
 
 - 后端新增或调整测试脚本后，应同步更新自动验证命令。
