@@ -477,6 +477,17 @@ Remove-Item Env:WP04_FIXTURE_PASSWORD
 - 本轮只做患者列表和详情的只读定向响应式 Browser 复验，没有执行完整 Batch A Browser 矩阵，没有创建 Patient、Visit 或 ScaleInstance，没有执行 transition。`auth_login_matrix`、真实键盘与其余矩阵仍待后续完整重跑，fixture 准备成功不得写成 Batch A 完成。
 - `B123_FIXTURE_PASSWORD=<固定测试密码已设置>` 只存在于各 CLI 当前进程，未进入参数、配置、仓库或 manifest；命令结束后已清除。
 
+### B1–B3 / Batch A 完整 Browser 验收后的 fixture 生命周期收口
+
+- 最终验收基线为 `3a9c784c5fba290f29dc83864f55000622292df4`，沿用正式 namespace `b123-browser-final`，未执行 replace。浏览器前的只读 prepared verify 通过：5 roles / 27 scenarioKey / 26 business scenarios / 58 audit IDs / 21 direct / 37 fixture-required，Browser Patient/Visit/Scale 写入预留均不存在，所有 transition 已恢复。
+- 真实 Browser 创建 Patient 和 Visit 各1条，以及 MMSE/MoCA 实例各1个；Visit operator 由 doctor Session 生成，客户端未控制状态、operatorSnapshot 或 metadata。MMSE 和 MoCA 的生产初始化 Body 只有 `scaleCode`、`scaleVersion`、`administrationMode`，骨架数分别为 11 与 16。
+- Patient/Visit duplicate 各为单次 409，MMSE/MoCA 由两标签未刷新页各产生一次真实 stale 409，所有写请求自动重试为 0。inactive/archived/completed/locked/voided、system 403、not-found/归属不匹配、专用失败 Visit、catalog conflict 和 scale unavailable 均无副作用。
+- Dashboard Session、MMSE catalog conflict 和 MoCA unavailable 三个受控 transition 均执行 `arm -> Browser 行为 -> restore`；每次 restore 成功后才继续其他场景，post-browser verify 与 cleanup 前无 transition 遗留。登录 POST、`/auth/me` GET、Patient GET、Visit list GET、Visit POST 和 catalog GET 六类故障均仅由 Browser 中止一次，未伪造 HTTP 业务响应。
+- 技术矩阵与用户真实键盘验收完成后，`verify --phase post-browser` 只读通过：Patient/Visit 数量、日期/tags、Session operator、MMSE/MoCA 单实例与 11/16 骨架、duplicate 无额外记录、禁止状态无实例、网络失败 Visit 不存在、catalog conflict/unavailable 无实例全部符合。该 verify 没有修复或新增数据，27/26/58/21/37 计数保持不变。
+- 用户明确签收 B1-MV-017 与 B1-MV-018 均通过后，Browser 已 logout 并关闭。紧随执行第一次正式 cleanup，命令成功且 `residualCount=0`；随后对同一 namespace 执行第二次幂等 cleanup，命令再次成功且 `residualCount=0`。正式 namespace 已删除，transition 无遗留，全局 MMSE/MoCA seed 不在 cleanup 删除范围，没有使用 dropDatabase 或无条件 deleteMany。
+- 本次只执行前端静态门禁、fixture verify/transition/cleanup 和真实 Browser 验收；未修改 `backend/src/**`、backend scripts/test、API/DTO/response、Schema/index 或任何后端产品代码，因此未重跑或改写既有后端代码门禁结果。上一代码阶段记录的 fixture E2E 1 suite / 5 tests、A12/A13 2 suites / 14 tests、full unit 88 suites / 751 tests 与 full E2E 19 suites / 85 tests 保持为该代码基线的历史门禁证据，本次不冒充为重跑。
+- Batch A 的 58 个本次 Browser audit ID 均通过，结合 6 个既有 Browser 证据、2 个用户人工视觉签收和 1 个 obsolete，67 个验证原子已全部有明确处置。Batch A Browser 验收与 fixture 生命周期收口完成，roadmap 不变，未启动 Batch B。
+
 ## 11. 后续同步规则
 
 - 后端新增或调整测试脚本后，应同步更新自动验证命令。
