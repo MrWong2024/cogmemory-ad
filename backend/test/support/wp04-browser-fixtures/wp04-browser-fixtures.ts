@@ -46,6 +46,7 @@ import {
   requireWp04FixturePassword,
   subjectCodeFor,
   validateWp04Namespace,
+  visitCodeFor,
   type Wp04BusinessScenarioKey,
   type Wp04Role,
   type Wp04SafeCleanupSummary,
@@ -55,6 +56,7 @@ import {
   type Wp04ScenarioDefinition,
 } from './fixture-contract';
 import {
+  WP04_HISTORY_SAME_DAY_VISIT_SUFFIXES,
   Wp04ScenarioBuilder,
   type Wp04FixtureModels,
   type Wp04FixtureWorkflows,
@@ -83,6 +85,15 @@ function scenarioFailure(
   message: string,
 ): Wp04FixtureError {
   return new Wp04FixtureError('WP04_FIXTURE_SCENARIO_INVALID', message, key);
+}
+
+function historySameDayFailure(
+  code:
+    | 'WP04_HISTORY_SAME_DAY_FIXTURE_MISSING'
+    | 'WP04_HISTORY_SAME_DAY_ORDER_INVALID',
+  message: string,
+): Wp04FixtureError {
+  return new Wp04FixtureError(code, message, 'history_pagination');
 }
 
 function escapeRegExp(value: string): string {
@@ -429,7 +440,12 @@ export class Wp04BrowserFixtureManager {
       expectedPage: definition.expectedPage,
     } as const;
     if (definition.group === 'history') {
-      return this.verifyHistoryScenario(base, patientId);
+      return this.verifyHistoryScenario(
+        base,
+        patientId,
+        namespace,
+        definition.ordinal,
+      );
     }
     if (definition.group === 'reportVersions') {
       return this.verifyReportVersionScenario(base, patientId, visits);
@@ -446,6 +462,8 @@ export class Wp04BrowserFixtureManager {
       'scenarioKey' | 'purpose' | 'suggestedRole' | 'expectedPage'
     >,
     patientId: string,
+    namespace: string,
+    ordinal: number,
   ): Promise<Wp04SafeScenarioManifest> {
     const key = base.scenarioKey as Wp04BusinessScenarioKey;
     const history = await this.historyService.listPatientAssessmentHistory(
@@ -458,6 +476,14 @@ export class Wp04BrowserFixtureManager {
     if (key === 'history_empty' && history.total !== 0)
       throw scenarioFailure(key, 'History empty scenario is not empty');
     if (key === 'history_pagination') {
+      const expectedVisitCodes = WP04_HISTORY_SAME_DAY_VISIT_SUFFIXES.map(
+        (suffix) => visitCodeFor(namespace, ordinal, suffix),
+      );
+      const patientObjectId = new Types.ObjectId(patientId);
+      const sameDayPair = await this.models.visits
+        .find({ visitCode: { $in: expectedVisitCodes } })
+        .select({ _id: 1, patientId: 1, visitCode: 1, assessmentDate: 1 })
+        .exec();
       const page20 = await this.historyService.listPatientAssessmentHistory(
         patientId,
         { page: 1, pageSize: 20 },
@@ -470,6 +496,11 @@ export class Wp04BrowserFixtureManager {
         patientId,
         { page: 1, pageSize: 100 },
       );
+      const page100Remainder =
+        await this.historyService.listPatientAssessmentHistory(patientId, {
+          page: 2,
+          pageSize: 100,
+        });
       const empty = await this.historyService.listPatientAssessmentHistory(
         patientId,
         { page: 99, pageSize: 20 },
@@ -479,6 +510,7 @@ export class Wp04BrowserFixtureManager {
         page20.items.length !== 20 ||
         page50.items.length !== 50 ||
         page100.items.length !== 100 ||
+        page100Remainder.items.length !== 5 ||
         empty.items.length !== 0
       ) {
         throw scenarioFailure(
@@ -489,6 +521,48 @@ export class Wp04BrowserFixtureManager {
       const orderedIds = page100.items.map((item) => item.visit.id);
       if (new Set(orderedIds).size !== orderedIds.length)
         throw scenarioFailure(key, 'History pagination ordering is unstable');
+      if (
+        sameDayPair.length !== 2 ||
+        new Set(sameDayPair.map((visit) => visit.visitCode)).size !== 2 ||
+        expectedVisitCodes.some(
+          (visitCode) =>
+            !sameDayPair.some((visit) => visit.visitCode === visitCode),
+        ) ||
+        sameDayPair.some((visit) => !visit.patientId.equals(patientObjectId)) ||
+        sameDayPair[0]._id.equals(sameDayPair[1]._id) ||
+        sameDayPair[0].assessmentDate.getTime() !==
+          sameDayPair[1].assessmentDate.getTime()
+      ) {
+        throw historySameDayFailure(
+          'WP04_HISTORY_SAME_DAY_FIXTURE_MISSING',
+          'The expected same-day history pair is missing or invalid',
+        );
+      }
+      const expectedOrder = [...sameDayPair]
+        .sort((left, right) =>
+          right._id.toHexString().localeCompare(left._id.toHexString()),
+        )
+        .map((visit) => visit.visitCode);
+      const page20VisitCodes = page20.items.map((item) => item.visit.visitCode);
+      const pairIndexes = expectedVisitCodes
+        .map((visitCode) => page20VisitCodes.indexOf(visitCode))
+        .sort((left, right) => left - right);
+      if (pairIndexes.some((index) => index < 0)) {
+        throw historySameDayFailure(
+          'WP04_HISTORY_SAME_DAY_FIXTURE_MISSING',
+          'The expected same-day history pair is not present on page one',
+        );
+      }
+      if (
+        pairIndexes[1] !== pairIndexes[0] + 1 ||
+        page20VisitCodes[pairIndexes[0]] !== expectedOrder[0] ||
+        page20VisitCodes[pairIndexes[1]] !== expectedOrder[1]
+      ) {
+        throw historySameDayFailure(
+          'WP04_HISTORY_SAME_DAY_ORDER_INVALID',
+          'The same-day history pair does not follow the stable descending order',
+        );
+      }
     }
     if (key === 'history_filters') {
       for (const status of [

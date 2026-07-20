@@ -10,6 +10,15 @@ import {
   type SessionDocument,
 } from '../src/modules/auth/schemas/session.schema';
 import {
+  AssessmentVisit,
+  type AssessmentVisitDocument,
+} from '../src/modules/assessments/schemas/assessment-visit.schema';
+import { ClinicalHistoryQueryService } from '../src/modules/clinical-history/services/clinical-history-query.service';
+import {
+  Patient,
+  type PatientDocument,
+} from '../src/modules/patients/schemas/patient.schema';
+import {
   User,
   type UserDocument,
 } from '../src/modules/users/schemas/user.schema';
@@ -21,8 +30,11 @@ import {
   assertWp04PreImportEnvironment,
   assertWp04RuntimeEnvironment,
   assertWp04SafeManifest,
+  subjectCodeFor,
   validateWp04Namespace,
+  visitCodeFor,
 } from './support/wp04-browser-fixtures/fixture-contract';
+import { WP04_HISTORY_SAME_DAY_VISIT_SUFFIXES } from './support/wp04-browser-fixtures/scenario-builders';
 import {
   createWp04BrowserFixtureManager,
   type Wp04BrowserFixtureManager,
@@ -32,7 +44,23 @@ jest.setTimeout(240000);
 
 const PRIMARY_NAMESPACE = 'wp04-e2e-main';
 const SENTINEL_NAMESPACE = 'wp04-e2e-sentinel';
+const CORRUPTION_NAMESPACE = 'wp04-e2e-same-day';
 const TEST_PASSWORD = 'WP04-E2E-Isolated-Temporary!';
+
+function historyPaginationDefinition() {
+  const definition = WP04_BUSINESS_SCENARIOS.find(
+    (scenario) => scenario.scenarioKey === 'history_pagination',
+  );
+  if (!definition) throw new Error('History pagination contract is missing');
+  return definition;
+}
+
+function sameDayVisitCodes(namespace: string): string[] {
+  const definition = historyPaginationDefinition();
+  return WP04_HISTORY_SAME_DAY_VISIT_SUFFIXES.map((suffix) =>
+    visitCodeFor(namespace, definition.ordinal, suffix),
+  );
+}
 
 function expectFixtureCode(action: () => void, code: string): void {
   try {
@@ -51,6 +79,9 @@ describe('WP-04 browser fixture CLI support (e2e)', () => {
   let manager: Wp04BrowserFixtureManager;
   let userModel: Model<UserDocument>;
   let sessionModel: Model<SessionDocument>;
+  let patientModel: Model<PatientDocument>;
+  let visitModel: Model<AssessmentVisitDocument>;
+  let historyService: ClinicalHistoryQueryService;
 
   beforeAll(async () => {
     if (process.env.NODE_ENV !== 'test') {
@@ -73,14 +104,19 @@ describe('WP-04 browser fixture CLI support (e2e)', () => {
     manager = createWp04BrowserFixtureManager(app);
     userModel = app.get(getModelToken(User.name));
     sessionModel = app.get(getModelToken(Session.name));
+    patientModel = app.get(getModelToken(Patient.name));
+    visitModel = app.get(getModelToken(AssessmentVisit.name));
+    historyService = app.get(ClinicalHistoryQueryService);
     await manager.cleanup(PRIMARY_NAMESPACE);
     await manager.cleanup(SENTINEL_NAMESPACE);
+    await manager.cleanup(CORRUPTION_NAMESPACE);
   });
 
   afterAll(async () => {
     if (manager) {
       await manager.cleanup(PRIMARY_NAMESPACE);
       await manager.cleanup(SENTINEL_NAMESPACE);
+      await manager.cleanup(CORRUPTION_NAMESPACE);
     }
     if (app) await app.close();
     if (connection?.readyState) await connection.close();
@@ -180,6 +216,85 @@ describe('WP-04 browser fixture CLI support (e2e)', () => {
       ]),
     );
     assertWp04SafeManifest(manifest);
+    const historyDefinition = historyPaginationDefinition();
+    const historyPatient = await patientModel
+      .findOne({
+        subjectCode: subjectCodeFor(
+          PRIMARY_NAMESPACE,
+          historyDefinition.ordinal,
+        ),
+      })
+      .exec();
+    expect(historyPatient).not.toBeNull();
+    if (!historyPatient) throw new Error('History pagination patient missing');
+    const expectedVisitCodes = sameDayVisitCodes(PRIMARY_NAMESPACE);
+    const sameDayPair = await visitModel
+      .find({
+        patientId: historyPatient._id,
+        visitCode: { $in: expectedVisitCodes },
+      })
+      .exec();
+    expect(sameDayPair).toHaveLength(2);
+    expect(sameDayPair[0].assessmentDate.getTime()).toBe(
+      sameDayPair[1].assessmentDate.getTime(),
+    );
+    expect(sameDayPair[0]._id.equals(sameDayPair[1]._id)).toBe(false);
+    expect(
+      sameDayPair.every((visit) => visit.patientId.equals(historyPatient._id)),
+    ).toBe(true);
+    expect(new Set(sameDayPair.map((visit) => visit.visitCode)).size).toBe(2);
+    const firstCreated = sameDayPair.find(
+      (visit) => visit.visitCode === expectedVisitCodes[0],
+    );
+    const secondCreated = sameDayPair.find(
+      (visit) => visit.visitCode === expectedVisitCodes[1],
+    );
+    expect(firstCreated).toBeDefined();
+    expect(secondCreated).toBeDefined();
+    if (!firstCreated || !secondCreated)
+      throw new Error('Same-day Visit identities are incomplete');
+    expect(
+      secondCreated._id
+        .toHexString()
+        .localeCompare(firstCreated._id.toHexString()),
+    ).toBeGreaterThan(0);
+    const page20 = await historyService.listPatientAssessmentHistory(
+      historyPatient._id.toString(),
+      { page: 1, pageSize: 20 },
+    );
+    const page50 = await historyService.listPatientAssessmentHistory(
+      historyPatient._id.toString(),
+      { page: 1, pageSize: 50 },
+    );
+    const page100 = await historyService.listPatientAssessmentHistory(
+      historyPatient._id.toString(),
+      { page: 1, pageSize: 100 },
+    );
+    const page100Remainder = await historyService.listPatientAssessmentHistory(
+      historyPatient._id.toString(),
+      { page: 2, pageSize: 100 },
+    );
+    expect(page20).toEqual(
+      expect.objectContaining({ total: 105, pageSize: 20 }),
+    );
+    expect(page20.items).toHaveLength(20);
+    expect(page50.items).toHaveLength(50);
+    expect(page100.items).toHaveLength(100);
+    expect(page100Remainder.items).toHaveLength(5);
+    const expectedDescending = [...sameDayPair]
+      .sort((left, right) =>
+        right._id.toHexString().localeCompare(left._id.toHexString()),
+      )
+      .map((visit) => visit.visitCode);
+    const page20VisitCodes = page20.items.map((item) => item.visit.visitCode);
+    const pairIndexes = expectedVisitCodes
+      .map((visitCode) => page20VisitCodes.indexOf(visitCode))
+      .sort((left, right) => left - right);
+    expect(pairIndexes[0]).toBeGreaterThanOrEqual(0);
+    expect(pairIndexes[1]).toBe(pairIndexes[0] + 1);
+    expect(page20VisitCodes.slice(pairIndexes[0], pairIndexes[1] + 1)).toEqual(
+      expectedDescending,
+    );
     const source = manifest.scenarios.find(
       (item) => item.scenarioKey === 'trend_domain_mapping_source_changed',
     );
@@ -223,6 +338,48 @@ describe('WP-04 browser fixture CLI support (e2e)', () => {
         userId: { $in: users.map((user) => user._id) },
       }),
     ).toBe(0);
+  });
+
+  it('detects a damaged same-day pair without repairing the isolated namespace', async () => {
+    try {
+      await manager.prepare(CORRUPTION_NAMESPACE, TEST_PASSWORD);
+      const definition = historyPaginationDefinition();
+      const patient = await patientModel
+        .findOne({
+          subjectCode: subjectCodeFor(CORRUPTION_NAMESPACE, definition.ordinal),
+        })
+        .exec();
+      expect(patient).not.toBeNull();
+      if (!patient) throw new Error('Corruption scenario patient missing');
+      const visitCode = sameDayVisitCodes(CORRUPTION_NAMESPACE)[0];
+      const visit = await visitModel.findOne({ visitCode }).exec();
+      expect(visit).not.toBeNull();
+      if (!visit) throw new Error('Corruption scenario Visit missing');
+      const damagedTimestamp = new Date(visit.assessmentDate.getTime() - 1);
+      await visitModel
+        .updateOne(
+          { _id: visit._id, patientId: patient._id },
+          { $set: { assessmentDate: damagedTimestamp } },
+        )
+        .exec();
+      await expect(
+        manager.verify(CORRUPTION_NAMESPACE, TEST_PASSWORD),
+      ).rejects.toMatchObject({
+        code: 'WP04_HISTORY_SAME_DAY_FIXTURE_MISSING',
+        scenarioKey: 'history_pagination',
+      });
+      const persisted = await visitModel.findOne({ visitCode }).exec();
+      expect(persisted?.assessmentDate.getTime()).toBe(
+        damagedTimestamp.getTime(),
+      );
+    } finally {
+      const cleanup = await manager.cleanup(CORRUPTION_NAMESPACE);
+      expect(cleanup.residualCount).toBe(0);
+      const secondCleanup = await manager.cleanup(CORRUPTION_NAMESPACE);
+      expect(secondCleanup).toEqual(
+        expect.objectContaining({ matched: false, residualCount: 0 }),
+      );
+    }
   });
 
   it('does not repair corruption and keeps cleanup and replace namespace-scoped', async () => {

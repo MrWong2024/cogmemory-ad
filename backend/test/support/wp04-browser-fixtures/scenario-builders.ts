@@ -113,6 +113,12 @@ type TrendSourceInput = TraceInput & {
 };
 
 const BASE_DATE = new Date('2026-06-01T08:00:00.000Z');
+const HISTORY_SAME_DAY_ASSESSMENT_DATE = new Date('2027-01-15T08:00:00.000Z');
+
+export const WP04_HISTORY_SAME_DAY_VISIT_SUFFIXES = [
+  'PAGE-1',
+  'PAGE-2',
+] as const;
 
 function fixtureFailure(
   scenarioKey: Wp04BusinessScenarioKey,
@@ -436,7 +442,9 @@ export class Wp04ScenarioBuilder {
 
   private async buildHistoryPagination(root: PatientRoot): Promise<void> {
     const visits = Array.from({ length: 105 }, (_, index) => {
-      const day = index < 2 ? 1 : (index % 28) + 1;
+      const isSameDayVisit =
+        index < WP04_HISTORY_SAME_DAY_VISIT_SUFFIXES.length;
+      const day = (index % 28) + 1;
       const status = ['draft', 'in_progress', 'completed', 'locked', 'voided'][
         index % 5
       ];
@@ -450,9 +458,11 @@ export class Wp04ScenarioBuilder {
         ),
         visitType: index % 2 === 0 ? 'baseline' : 'follow_up',
         status,
-        assessmentDate: new Date(
-          Date.UTC(2025 + Math.floor(index / 84), index % 12, day, 8),
-        ),
+        assessmentDate: isSameDayVisit
+          ? new Date(HISTORY_SAME_DAY_ASSESSMENT_DATE.getTime())
+          : new Date(
+              Date.UTC(2025 + Math.floor(index / 84), index % 12, day, 8),
+            ),
         completedAt: ['completed', 'locked', 'voided'].includes(status)
           ? BASE_DATE
           : null,
