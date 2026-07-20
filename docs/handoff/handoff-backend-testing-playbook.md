@@ -430,6 +430,13 @@ Remove-Item Env:WP04_FIXTURE_PASSWORD
 - smoke namespace `wp04-fix-smoke` 的 prepare / verify / cleanup / 第二次 cleanup 均成功：5 roles、44 keys / 43 business scenarios，同日 pair 增强验证通过，首次与二次 cleanup 的 residualCount 均为 0。正式 namespace `wp04-browser-final` 已按修复后夹具执行 replace + verify：5/44/43 与同日 pair 增强验证均通过，namespace 继续保留给下一次 B17 定向复验，不执行正式 cleanup。
 - 本次仅修改 WP-04 test-only fixture、verify、E2E 与 testing playbook；未修改 `backend/src/**` 产品代码、接口、DTO/response、Schema、collection、index、角色或业务契约。fixture 修复和 CLI verify 不等于 B17 最终浏览器验收完成；WP-04 继续进行中。
 
+### WP-04 / B17 最终浏览器验收后的 fixture 生命周期收口
+
+- 最终验收沿用正式 namespace `wp04-browser-final`；最终 verify、5 roles、44 keys / 43 business scenarios、同日 pair 增强验证与 safe manifest 扫描均通过。
+- 浏览器退出登录后执行第一次正式 cleanup，命令成功且 residualCount=0；随后对同一 namespace 执行第二次幂等 cleanup，命令再次成功且 residualCount=0。
+- 正式 namespace 已删除，未影响其他 namespace；清理继续遵守显式 namespace 与确认参数边界，没有使用 dropDatabase 或无条件 deleteMany。
+- 本次最终收口未修改 `backend/src/**` 产品代码，因此不重跑或改写后端产品代码门禁；前述 fixture 定向 E2E、full unit、full E2E 与完整后端门禁保留其各自历史阶段结果。
+
 - 测试不得使用真实患者数据、真实身份证号、真实手机号、真实病历号或其他可识别个人信息。
 - 量表测试数据应使用脱敏样本或人工构造样本。
 - 不得调用真实短信、真实阿里云 SMS、支付、医保、医院 HIS/LIS/PACS、对象存储生产环境或真实大模型服务，除非未来单独定义受控集成测试。

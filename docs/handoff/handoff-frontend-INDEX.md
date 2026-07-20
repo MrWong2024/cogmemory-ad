@@ -18,8 +18,8 @@
 
 - `frontend\` 根目录公共骨架配置与 `frontend\app` / `frontend\src` 公共底座已初始化。
 - 前端 B16 已完成：在 B15 更正及 replacement A21 基础上，合法线性 V2+ 复用既有 A22 lock、A23 freeze-sources、A24 archive 完成当前报告不可逆生命周期；前轮完整浏览器矩阵、Resume / unsafe 补齐矩阵与本轮 Web Storage 审计共同构成 WP-02 最终验收证据。
-- 前端 B17 实现与静态验收已完成：新增患者历史、随访趋势和指定历史报告只读详情三个路由，并在访视详情接入独立报告版本面板；只使用 A27/A28 四个只读 GET，不新增 Provider/store、依赖、BFF、middleware 或浏览器持久化。
-- B17 已在隔离 test database 和生产构建前端执行部分真实浏览器验收：四个允许角色均可打开历史页，历史筛选/URL 回退、单 V1、V1→V2、invalid lineage 409、历史详情只读、缺失/不完整趋势点、1280×720 与 390px 布局通过。因现有夹具缺少多 Visit、V3、全 dataStatus/comparison/domain mapping 和完整错误数据，核心矩阵未完整执行；WP-04 继续进行中，不得表述为产品验收完成。
+- 前端 B17 实现、静态门禁与完整真实浏览器验收已完成：新增患者历史、随访趋势和指定历史报告只读详情三个路由，并在访视详情接入独立报告版本面板；只使用 A27/A28 四个只读 GET，不新增 Provider/store、依赖、BFF、middleware 或浏览器持久化。
+- B17 的 44 个 scenarioKey、角色/错误、双 viewport、用户协助真实键盘、网络、Runtime Storage 八时点与双次 fixture cleanup 均通过，WP-04 已完成；当前未启动下一工作包。详细证据见事实快照与验证手册。
 - 当前路由包含 `/login`、`/dashboard`、`/patients`、`/patients/new`、`/patients/[patientId]`、`/patients/[patientId]/history`、`/patients/[patientId]/trends`、`/patients/[patientId]/visits/new`、`/patients/[patientId]/visits/[visitId]`、`/patients/[patientId]/visits/[visitId]/clinical-reports/[reportId]` 与 `/patients/[patientId]/visits/[visitId]/scale-instances/[scaleInstanceId]`。
 - 当前已新增 Auth 类型、Auth API Client、`useAuth()` 认证状态 Hook、`LoginForm` 和 `AuthDashboard`。
 - 当前已新增 patients feature：患者 / 访视公开类型、Patients API Client、展示与日期纯函数、认证工作区、患者列表 / 创建 / 详情及访视列表 / 创建组件。

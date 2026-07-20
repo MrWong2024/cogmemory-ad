@@ -7,7 +7,7 @@
 ## 2. 当前工程状态
 
 - `frontend\` 根目录公共骨架配置与 `frontend\app` / `frontend\src` 公共底座已初始化。
-- 前端 B1-B16 已落地既有闭环；B17 的患者评估历史、报告版本导航、历史报告只读详情与基础随访趋势实现及静态验收已完成。B17 真实浏览器仅完成现有隔离数据可覆盖的核心子集，WP-04 仍进行中。
+- 前端 B1-B17 已落地既有闭环；B17 的患者评估历史、报告版本导航、历史报告只读详情与基础随访趋势已完成实现、静态门禁和完整真实浏览器验收，WP-04 已完成。
 - 当前首页仍为公共占位，只增加登录页与工作台入口，不调用后端。
 - `/login` 提供账号密码登录，并在登录前通过 `GET /auth/me` 检查已有会话。
 - `/dashboard` 通过 `GET /auth/me` 验证会话、展示当前用户公开信息、提供患者档案入口和登出入口。
@@ -455,7 +455,7 @@
 - frontend `npm run lint`、`npm run typecheck`、`npm run build` 均通过；接口、DTO、response、路由与依赖不变。
 - fixture namespace 在审计后连续 cleanup 两次，残留均为 0；B16 / WP-02 已关闭，WP-04 尚未实施。
 
-本次 B17 验证结果：
+本次 B17 首轮验证结果（历史记录）：
 
 - 新增三个动态路由、patients history/trend API/type/display/components，以及 assessments report history type、版本面板、历史只读详情和共享只读报告内容；访视详情 current `ClinicalReportPanel` 与 B16 workflow 仍独立。
 - B17 新增/修改 TS/TSX 定向 ESLint、完整 `npm run lint`、`npm run typecheck`、`npm run build` 与 `git diff --check` 均通过；生产构建路由清单包含三个新路由。未新增依赖、测试框架、Provider/store、middleware、BFF 或浏览器持久化。
@@ -465,6 +465,17 @@
 - Network 中四个 B17 API 均为 GET、无 Body、无自动 retry/polling；页面 DOM 与 Console 未发现内部 lineage 字段或完整响应，Console warn/error 为 0。按浏览器技能安全边界，本轮没有读取 localStorage、sessionStorage、IndexedDB 或 Cookie，因此这些审计项明确未执行，不能沿用静态结论替代。
 - 未执行：403（现有四个 fixture 角色均在允许列表）、无报告 Visit、V1→V2→V3、长链分页、六种历史详情状态全集、incomplete 409、range-too-large 409，以及多 Visit 的全部 dataStatus、exact trace/domain mapping、相邻连接/断线与 Domain 指标切换矩阵；现有 fixture 每患者只有一个 Visit，且只提供 source_missing/source_incomplete 趋势状态。
 - fixture `b17-browser` 在验收后使用既有 CLI cleanup，删除本轮创建的隔离账号/患者/Visit/报告等数据，residualCount=0；未修改 backend 代码或新增 fixture。B17 实现与静态验收完成，浏览器产品验收未完成，WP-04 保持进行中且未启动下一工作包。
+
+本次 B17 最终定向复验与 WP-04 收口结果：
+
+- 基线提交 `7dd6f52` 上的前端 lint、typecheck、production build 与生产路由核对通过；正式 fixture verify、同日排序增强验证和 safe manifest 扫描通过。
+- 44 个 scenarioKey / 43 个业务场景由真实浏览器全部复验，结果为 44 通过、0 失败、0 未执行。覆盖 history、report versions、historical detail、trends、四个允许角色、system 403、未认证保护、三个独立 404 和业务 409。
+- history 的完整分页、URL/返回前进及同日顺序通过；无版本、V1/V2/V3、21 条长链 20+1 分页和异常 lineage 通过。版本面板子树与 sibling current workflow 分离，历史详情保持只读且返回/前进通过；长链无历史详情预取或 N+1。
+- 基础趋势、全部 dataStatus、总分和 Domain 可比性、缺失/不可比原因、相邻连接/断线与 source/mode 纠偏口径通过。B17 已验收能力仅限患者历史、报告版本、指定历史详情和基础趋势，不扩展为 AI、诊断、科研导出或一期整体完成。
+- 历史、版本、历史详情和趋势四类页面在 1280×720 与 390×844 下通过；用户协助的真实键盘验证覆盖 Tab/Shift+Tab、Enter/Space、select、分页、链接、history details/summary、图表 marker、焦点可见和无键盘陷阱。
+- 网络稳定窗内仅有预期只读 GET，无请求 Body、B17 写请求、自动重试、轮询或 N+1；Console warn/error 为 0，业务 DOM、URL 和 Console 未发现敏感信息。
+- Runtime Storage 在八个规定时点完成 localStorage、sessionStorage、IndexedDB 和脚本可读 Cookie 检查，均无业务持久化或禁止模式命中；未读取 HttpOnly Cookie。
+- 退出登录后正式 fixture 连续 cleanup 两次，首次与幂等二次清理均成功、残留为 0，namespace 已删除。B17 / WP-04 完成，未启动下一工作包。
 
 ## 6. 当前未实现前端事实
 
