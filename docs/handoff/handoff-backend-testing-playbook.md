@@ -17,6 +17,55 @@
 - `tsBuildInfoFile` 保持 `./dist/tsconfig.build.tsbuildinfo`。
 - `dist` 与 `*.tsbuildinfo` 为生成物，不进入版本库。
 
+## 2.1 项目级数据库用途映射与隔离状态
+
+本节是当前项目数据库治理口径；后文按阶段保留的旧 fixture 与验证记录只表示当时事实，如与本节的当前状态冲突，以本节为准。
+
+### 用途与具体数据库映射
+
+| 用途类别 | 本项目数据库 | 用途 |
+|---|---|---|
+| `development` | `cogmemory_ad_dev` | 日常开发和人工调试 |
+| `standard_test` | `cogmemory_ad_test` | unit、普通 E2E 及允许重建目录的自动化测试 |
+| `browser_acceptance` | `cogmemory_ad_browser_test` | Browser fixture、Browser / Chrome 验收和 post-browser verify |
+
+- `none` 不映射数据库，必须保持不连接数据库。
+- `production_or_operations` 不由本表推断具体数据库；只有用户明确授权目标环境和允许操作后，才可按任务输入解析。
+
+### 使用与隔离规则
+
+1. 普通 unit / E2E 必须使用 `cogmemory_ad_test`。
+2. Browser fixture CLI 与 Browser 验收后端必须同时使用 `cogmemory_ad_browser_test`。
+3. 普通 E2E 禁止连接 `cogmemory_ad_browser_test`。
+4. Browser fixture 禁止连接 `cogmemory_ad_test` 或 `cogmemory_ad_dev`。
+5. 不得把 Browser 专用连接写入普通 `.env.test`，避免普通 E2E 误连 Browser 验收库。
+6. 同一任务同时包含普通测试与 Browser 验收时，必须分别启动独立进程并分别注入进程级环境变量；禁止复用已经设置数据库连接的 shell 上下文。
+7. 每个实际连接建立后都必须读取真实数据库名，并与该进程声明的允许数据库逐字校验；不一致时立即停止，不得自动回退或改连其他数据库。
+8. namespace 继续隔离各批次业务数据，但不能替代数据库级隔离。
+9. Browser 验收库中的量表定义、版本和实例绑定必须从 fixture prepare 到 post-browser verify 全程保持稳定。
+10. cleanup 仍须按 namespace 精确执行；使用 Browser 专用库不构成 `dropDatabase()`、清空 collection 或无条件删除的授权。
+
+### Browser 验收数据库用户
+
+| 用户 | 预期权限 | 用途 |
+|---|---|---|
+| `cogmemory_ad_browser_test_app` | `readWrite` | Browser test backend |
+| `cogmemory_ad_browser_test_db_admin` | `dbOwner` | fixture prepare、verify、cleanup |
+
+- `cogmemory_ad_browser_test` 已创建，以上两个用户也已创建。
+- app 用户的连接和 `readWrite` 角色已实际验证。
+- db_admin 用户的连接已实际验证；其设计权限为 `dbOwner`，但仓库当前没有独立验证该实际角色的证据，代码接入前应再次核验，不得写成“`dbOwner` 已验证”。
+- 本手册不记录两个用户的密码或完整 MongoDB URI；连接信息只允许通过受控环境变量注入目标进程。
+
+### 当前实施与认证边界
+
+1. Browser 专用数据库和两个账号已经准备完成。
+2. 代码接入尚未实施：代码层数据库选择、Browser 专用启动入口和连接后的实际数据库名门禁均待后续落地。
+3. 普通 E2E 与 Browser 数据库隔离回归尚未实施。
+4. 当前失效的旧 `b456-browser-final` 位于共享普通测试库 `cogmemory_ad_test`，只能作为取证样本，不能用于最终工程认证。
+5. Batch B 已取得 135 项功能证据，但尚未最终工程收口；最终工程认证仍待专用数据库接入后重新形成终态，不得把这 135 项证据写成最终完成。
+6. 本轮只固化文档治理和项目映射，不表示代码级隔离、启动入口、实际库名门禁或隔离回归已经完成，也不改变 roadmap 或业务工作包状态。
+
 ## 3. 当前 package.json 脚本
 
 - `build`

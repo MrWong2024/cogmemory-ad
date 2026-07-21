@@ -350,6 +350,15 @@
 - 性能与持久化：采用 ownership-scoped lean/projection 批量查询和内存纯 evaluator，禁止 N+1 与 controller 直连 Model。现有 Patient/date、Visit/scale/runNo 和 Visit/type/version 索引足以支撑首次实现；不新增 collection、持久化 read model、索引、缓存、预聚合或后台任务。
 - 实施与边界：推荐先实现患者历史、报告版本/详情及 lineage 安全公开，再实现基础趋势与 comparability。WP-04 不实现 WP-05 科研导出、WP-06 AI、WP-07 审计或 TC-05 报告作废/新链路规则，也不为后续阶段预分配编号。
 
+### D-038：Browser 验收数据与普通自动化测试数据采用数据库级隔离
+
+- 日期：2026-07-21
+- 状态：决策已锁定；代码接入尚未实施，尚待下一阶段实施。
+- 背景：普通 E2E 会删除并重新物化全局 MMSE / MoCA 定义和版本；长期保留的 Browser fixture 则依赖稳定的定义、版本和实例绑定。namespace 只能隔离患者、访视和业务记录，不能隔离全局量表目录；两者共库会造成目录代际漂移和实例绑定失效。
+- 决策：普通自动化测试与 Browser 验收使用不同数据库；Browser fixture CLI 与 Browser test backend 使用同一个 Browser 专用数据库。具体数据库名、用户和操作命令以 `handoff-backend-testing-playbook.md` 为准；通用 Codex 规则只规定抽象用途分类，不保存项目具体映射。
+- 后果：后续需要实现代码级数据库名门禁和 Browser 专用启动入口；普通 E2E 可继续重建普通测试库；Browser fixture 可跨多轮保留而不受普通 E2E 影响；Browser 专用库仍须执行 namespace cleanup 和 sentinel 回归。
+- 影响范围：本决策只锁定测试环境隔离原则，不修改产品 Schema、catalog resolver 或业务校验，不表示数据库选择代码、启动入口、实际库名门禁或隔离回归已经完成。
+
 ## 4. 后续同步规则
 
 - 新增关键技术选型、接口设计、数据模型、测试策略或部署策略后，应追加决策记录。
