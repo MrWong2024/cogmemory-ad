@@ -293,16 +293,17 @@ export const B456_BUSINESS_SCENARIOS = [
   {
     scenarioKey: 'media_file_validation',
     ordinal: 13,
-    purpose: 'JPEG, PNG, WebP, size, MIME, signature, and decode validation',
+    purpose:
+      'Safe image decoding, Canvas JPEG re-encoding, processed dimension and size limits, and client-side failure blocking',
     auditIds: [...auditRange('B5', 6, 7), ...auditRange('B5', 9, 13)],
     scaleCode: 'moca',
     expectedPage: 'media-file-validation',
-    expectedStatus: 400,
-    expectedBusinessCode: 'MEDIA_FILE_SIGNATURE_INVALID',
+    expectedStatus: null,
+    expectedBusinessCode: null,
     faultMode: 'none',
     transitionMode: 'none',
     expectedSummary:
-      'Dedicated temporary files cover accepted formats and every rejected file class',
+      'Valid JPEG, PNG, and WebP plus decodable MIME-mismatched bytes are safely re-encoded as JPEG; undecodable files are blocked client-side without uploading source bytes; oversized sources are accepted only when the processed Blob satisfies current dimension and size limits',
     fileInputKeys: [
       'jpeg',
       'png',

@@ -72,9 +72,14 @@ import {
   type B456ScenarioDefinition,
 } from './fixture-contract';
 import {
+  B456_IMAGE_FILE_EXPECTATIONS,
+  B456_MEDIA_FILE_LIMIT_BYTES,
+  B456_OVERSIZED_SOURCE_DIMENSIONS,
+  B456_PHOTO_MAX_LONG_EDGE,
   B456ScenarioBuilder,
   b456FilePathsFor,
   b456TempDirectoryFor,
+  inspectB456ImageFixture,
   otherOwnerSubjectCodeFor,
   ownedSubjectCodesFor,
   type B456FixtureModels,
@@ -443,6 +448,7 @@ export class B456BrowserFixtureManager {
       jpeg,
       png,
       webp,
+      oversized,
       wrongMime,
       invalidImage,
       trajectory,
@@ -451,6 +457,7 @@ export class B456BrowserFixtureManager {
       readFile(paths.jpeg),
       readFile(paths.png),
       readFile(paths.webp),
+      readFile(paths.oversized),
       readFile(paths.wrongMime),
       readFile(paths.invalidImage),
       readFile(paths.trajectoryValid),
@@ -469,23 +476,33 @@ export class B456BrowserFixtureManager {
         'Temporary trajectory fixture is not valid JSON',
       );
     }
-    const jpegValid = jpeg[0] === 0xff && jpeg[1] === 0xd8;
-    const pngValid = png.subarray(1, 4).toString('ascii') === 'PNG';
-    const webpValid =
-      webp.subarray(0, 4).toString('ascii') === 'RIFF' &&
-      webp.subarray(8, 12).toString('ascii') === 'WEBP';
-    const wrongMimeCarriesPng =
-      wrongMime.subarray(1, 4).toString('ascii') === 'PNG';
-    const invalidLacksSignature =
-      invalidImage.subarray(1, 4).toString('ascii') !== 'PNG';
+    const decoded = {
+      jpeg: inspectB456ImageFixture(jpeg),
+      png: inspectB456ImageFixture(png),
+      webp: inspectB456ImageFixture(webp),
+      oversized: inspectB456ImageFixture(oversized),
+      wrongMime: inspectB456ImageFixture(wrongMime),
+      invalidImage: inspectB456ImageFixture(invalidImage),
+    };
+    const wrongMimeExpectation = B456_IMAGE_FILE_EXPECTATIONS.wrongMime;
+    const wrongMimeActuallyMismatched =
+      wrongMimeExpectation.declaredMime !==
+      `image/${wrongMimeExpectation.encoding}`;
     if (
       entries.length !== 9 ||
-      !jpegValid ||
-      !pngValid ||
-      !webpValid ||
-      !wrongMimeCarriesPng ||
-      !invalidLacksSignature ||
-      sizes.oversized !== 10 * 1024 * 1024 + 1 ||
+      decoded.jpeg?.encoding !== B456_IMAGE_FILE_EXPECTATIONS.jpeg.encoding ||
+      decoded.png?.encoding !== B456_IMAGE_FILE_EXPECTATIONS.png.encoding ||
+      decoded.webp?.encoding !== B456_IMAGE_FILE_EXPECTATIONS.webp.encoding ||
+      decoded.wrongMime?.encoding !== wrongMimeExpectation.encoding ||
+      !wrongMimeActuallyMismatched ||
+      decoded.invalidImage !== null ||
+      decoded.oversized?.encoding !==
+        B456_IMAGE_FILE_EXPECTATIONS.oversized.encoding ||
+      decoded.oversized.width !== B456_OVERSIZED_SOURCE_DIMENSIONS.width ||
+      decoded.oversized.height !== B456_OVERSIZED_SOURCE_DIMENSIONS.height ||
+      Math.max(decoded.oversized.width, decoded.oversized.height) <=
+        B456_PHOTO_MAX_LONG_EDGE ||
+      sizes.oversized <= B456_MEDIA_FILE_LIMIT_BYTES ||
       sizes.trajectoryOversized <= 2 * 1024 * 1024 ||
       typeof trajectoryValue !== 'object' ||
       trajectoryValue === null ||

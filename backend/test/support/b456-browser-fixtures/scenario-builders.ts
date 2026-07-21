@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
+import { inflateSync } from 'zlib';
 import type { Model } from 'mongoose';
 import { Types } from 'mongoose';
 import type { AuthenticatedUserContext } from '../../../src/modules/auth/types/auth-user-context.type';
@@ -68,9 +69,13 @@ const VALID_JPEG = Buffer.from(
   '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAF//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABBQJ//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAwEBPwF//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAgEBPwF//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQAGPwJ//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPyF//9oADAMBAAIAAwAAABD/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAEDAQE/EB//xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAECAQE/EB//xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAE/EB//2Q==',
   'base64',
 );
-const VALID_WEBP = Buffer.from(
+const WEBP_WITH_TRAILING_PADDING = Buffer.from(
   'UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AA/vuUAAA=',
   'base64',
+);
+const VALID_WEBP = WEBP_WITH_TRAILING_PADDING.subarray(
+  0,
+  WEBP_WITH_TRAILING_PADDING.readUInt32LE(4) + 8,
 );
 const VALID_TRAJECTORY = Buffer.from(
   JSON.stringify({
@@ -83,6 +88,229 @@ const VALID_TRAJECTORY = Buffer.from(
     ],
   }),
 );
+
+export const B456_MEDIA_FILE_LIMIT_BYTES = 10 * 1024 * 1024;
+export const B456_PHOTO_MAX_LONG_EDGE = 2560;
+export const B456_OVERSIZED_SOURCE_DIMENSIONS = {
+  width: 3000,
+  height: 1400,
+} as const;
+
+type B456ImageEncoding = 'jpeg' | 'png' | 'webp' | 'bmp';
+
+export type B456DecodedImageFixture = {
+  encoding: B456ImageEncoding;
+  width: number;
+  height: number;
+};
+
+export const B456_IMAGE_FILE_EXPECTATIONS = {
+  jpeg: { declaredMime: 'image/jpeg', encoding: 'jpeg' },
+  png: { declaredMime: 'image/png', encoding: 'png' },
+  webp: { declaredMime: 'image/webp', encoding: 'webp' },
+  oversized: { declaredMime: 'image/bmp', encoding: 'bmp' },
+  wrongMime: { declaredMime: 'text/plain', encoding: 'png' },
+  invalidImage: { declaredMime: 'image/png', encoding: null },
+} as const satisfies Readonly<
+  Record<
+    'jpeg' | 'png' | 'webp' | 'oversized' | 'wrongMime' | 'invalidImage',
+    { declaredMime: string; encoding: B456ImageEncoding | null }
+  >
+>;
+
+function positiveDimensions(
+  encoding: B456ImageEncoding,
+  width: number,
+  height: number,
+): B456DecodedImageFixture | null {
+  return width > 0 && height > 0 ? { encoding, width, height } : null;
+}
+
+function inspectPng(buffer: Buffer): B456DecodedImageFixture | null {
+  const signature = Buffer.from([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+  ]);
+  if (buffer.length < 45 || !buffer.subarray(0, 8).equals(signature))
+    return null;
+  let offset = 8;
+  let width = 0;
+  let height = 0;
+  let bitDepth = 0;
+  let colorType = -1;
+  let sawIend = false;
+  const idatChunks: Buffer[] = [];
+  while (offset + 12 <= buffer.length) {
+    const length = buffer.readUInt32BE(offset);
+    const end = offset + 12 + length;
+    if (end > buffer.length) return null;
+    const type = buffer.subarray(offset + 4, offset + 8).toString('ascii');
+    const data = buffer.subarray(offset + 8, offset + 8 + length);
+    if (type === 'IHDR') {
+      if (length !== 13 || width !== 0 || height !== 0) return null;
+      width = data.readUInt32BE(0);
+      height = data.readUInt32BE(4);
+      bitDepth = data[8];
+      colorType = data[9];
+    } else if (type === 'IDAT') {
+      idatChunks.push(data);
+    } else if (type === 'IEND') {
+      sawIend = length === 0;
+      break;
+    }
+    offset = end;
+  }
+  if (!sawIend || idatChunks.length === 0 || bitDepth !== 8) return null;
+  const channels = new Map([
+    [0, 1],
+    [2, 3],
+    [3, 1],
+    [4, 2],
+    [6, 4],
+  ]).get(colorType);
+  if (!channels) return null;
+  const decoded = inflateSync(Buffer.concat(idatChunks));
+  if (decoded.length !== height * (1 + width * channels)) return null;
+  return positiveDimensions('png', width, height);
+}
+
+function inspectJpeg(buffer: Buffer): B456DecodedImageFixture | null {
+  if (
+    buffer.length < 4 ||
+    buffer[0] !== 0xff ||
+    buffer[1] !== 0xd8 ||
+    buffer[buffer.length - 2] !== 0xff ||
+    buffer[buffer.length - 1] !== 0xd9
+  ) {
+    return null;
+  }
+  let offset = 2;
+  let dimensions: B456DecodedImageFixture | null = null;
+  while (offset + 3 < buffer.length) {
+    if (buffer[offset] !== 0xff) return null;
+    while (buffer[offset] === 0xff) offset += 1;
+    const marker = buffer[offset];
+    offset += 1;
+    if (marker === 0xda) return dimensions;
+    if (marker === 0xd8 || marker === 0xd9 || marker === 0x01) continue;
+    if (offset + 2 > buffer.length) return null;
+    const length = buffer.readUInt16BE(offset);
+    if (length < 2 || offset + length > buffer.length) return null;
+    if (
+      [
+        0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce,
+        0xcf,
+      ].includes(marker)
+    ) {
+      if (length < 8) return null;
+      dimensions = positiveDimensions(
+        'jpeg',
+        buffer.readUInt16BE(offset + 5),
+        buffer.readUInt16BE(offset + 3),
+      );
+    }
+    offset += length;
+  }
+  return null;
+}
+
+function inspectWebp(buffer: Buffer): B456DecodedImageFixture | null {
+  if (
+    buffer.length < 30 ||
+    buffer.subarray(0, 4).toString('ascii') !== 'RIFF' ||
+    buffer.subarray(8, 12).toString('ascii') !== 'WEBP' ||
+    buffer.readUInt32LE(4) + 8 !== buffer.length
+  ) {
+    return null;
+  }
+  const chunkType = buffer.subarray(12, 16).toString('ascii');
+  const chunkLength = buffer.readUInt32LE(16);
+  if (20 + chunkLength > buffer.length) return null;
+  if (
+    chunkType === 'VP8 ' &&
+    buffer.subarray(23, 26).equals(Buffer.from([0x9d, 0x01, 0x2a]))
+  ) {
+    return positiveDimensions(
+      'webp',
+      buffer.readUInt16LE(26) & 0x3fff,
+      buffer.readUInt16LE(28) & 0x3fff,
+    );
+  }
+  if (chunkType === 'VP8L' && buffer[20] === 0x2f) {
+    const bits = buffer.readUInt32LE(21);
+    return positiveDimensions(
+      'webp',
+      (bits & 0x3fff) + 1,
+      ((bits >>> 14) & 0x3fff) + 1,
+    );
+  }
+  if (chunkType === 'VP8X' && chunkLength >= 10) {
+    return positiveDimensions(
+      'webp',
+      buffer.readUIntLE(24, 3) + 1,
+      buffer.readUIntLE(27, 3) + 1,
+    );
+  }
+  return null;
+}
+
+function inspectBmp(buffer: Buffer): B456DecodedImageFixture | null {
+  if (
+    buffer.length < 54 ||
+    buffer.subarray(0, 2).toString('ascii') !== 'BM' ||
+    buffer.readUInt32LE(2) !== buffer.length ||
+    buffer.readUInt32LE(14) < 40 ||
+    buffer.readUInt16LE(26) !== 1 ||
+    buffer.readUInt16LE(28) !== 24 ||
+    buffer.readUInt32LE(30) !== 0
+  ) {
+    return null;
+  }
+  const width = buffer.readInt32LE(18);
+  const height = Math.abs(buffer.readInt32LE(22));
+  const pixelOffset = buffer.readUInt32LE(10);
+  const rowBytes = Math.ceil((width * 3) / 4) * 4;
+  if (
+    width <= 0 ||
+    height <= 0 ||
+    pixelOffset + rowBytes * height > buffer.length
+  ) {
+    return null;
+  }
+  return positiveDimensions('bmp', width, height);
+}
+
+export function inspectB456ImageFixture(
+  buffer: Buffer,
+): B456DecodedImageFixture | null {
+  try {
+    return (
+      inspectPng(buffer) ??
+      inspectJpeg(buffer) ??
+      inspectWebp(buffer) ??
+      inspectBmp(buffer)
+    );
+  } catch {
+    return null;
+  }
+}
+
+function createOversizedBmp(): Buffer {
+  const { width, height } = B456_OVERSIZED_SOURCE_DIMENSIONS;
+  const pixelOffset = 54;
+  const rowBytes = Math.ceil((width * 3) / 4) * 4;
+  const pixelBytes = rowBytes * height;
+  const buffer = Buffer.alloc(pixelOffset + pixelBytes);
+  buffer.write('BM', 0, 'ascii');
+  buffer.writeUInt32LE(buffer.length, 2);
+  buffer.writeUInt32LE(pixelOffset, 10);
+  buffer.writeUInt32LE(40, 14);
+  buffer.writeInt32LE(width, 18);
+  buffer.writeInt32LE(height, 22);
+  buffer.writeUInt16LE(1, 26);
+  buffer.writeUInt16LE(24, 28);
+  buffer.writeUInt32LE(pixelBytes, 34);
+  return buffer;
+}
 
 function fixtureFailure(
   scenarioKey: B456BusinessScenarioKey,
@@ -129,7 +357,7 @@ export function b456FilePathsFor(
     jpeg: join(directory, 'synthetic-photo.jpg'),
     png: join(directory, 'synthetic-scan.png'),
     webp: join(directory, 'synthetic-photo.webp'),
-    oversized: join(directory, 'synthetic-oversized.png'),
+    oversized: join(directory, 'synthetic-oversized.bmp'),
     wrongMime: join(directory, 'synthetic-wrong-mime.txt'),
     invalidImage: join(directory, 'synthetic-invalid.png'),
     handwritingPng: join(directory, 'synthetic-handwriting.png'),
@@ -150,7 +378,7 @@ export async function createB456TemporaryFiles(
     writeFile(paths.jpeg, VALID_JPEG),
     writeFile(paths.png, VALID_PNG),
     writeFile(paths.webp, VALID_WEBP),
-    writeFile(paths.oversized, Buffer.alloc(10 * 1024 * 1024 + 1)),
+    writeFile(paths.oversized, createOversizedBmp()),
     writeFile(paths.wrongMime, VALID_PNG),
     writeFile(paths.invalidImage, Buffer.from('not-an-image')),
     writeFile(paths.handwritingPng, VALID_PNG),

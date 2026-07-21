@@ -508,6 +508,19 @@ Remove-Item Env:WP04_FIXTURE_PASSWORD
 - smoke namespace `b456-cli-smoke` 已完成 prepare、prepared verify、cleanup 与第二次 cleanup，两次 cleanup 的 `residualCount` 均为 0。正式 namespace `b456-browser-final` 已完成 replace 与 prepared verify，5/32/31/135/15/120 计数全部通过并继续保留。
 - 本轮未执行 Browser，未执行 post-browser verify；B5 的 8 个真实设备/人工项继续保留到 Batch E。
 
+### Batch B 媒体文件验收合同纠偏与定向 Browser 冒烟
+
+- `media_file_validation` 已从不可达的服务端 signature 400 预期修正为真实 UI 合同：安全解码、Canvas JPEG 重编码、处理后尺寸 / 大小限制和客户端失败阻断；`expectedStatus=null`、`expectedBusinessCode=null`，不再要求正常 UI 返回 `MEDIA_FILE_SIGNATURE_INVALID`。
+- audit ID 归属未变：该场景继续拥有 B5-MV-006、B5-MV-007、B5-MV-009～013。合同仍为 32 个 scenarioKey、31 个业务场景、135 个唯一 audit ID、15 direct、120 fixture-required，缺失、重复、额外 ID 均为 0。
+- test-only 临时文件口径已修正：JPEG、PNG、WebP 均为可解码图片；wrongMime 为声明 `text/plain`、实际 PNG 的可解码字节；invalidImage 保持不可解码；oversized 改为确定性 3000×1400、12,600,054 B 的可解码 BMP，源大小超过 10 MiB 且可由现有前端策略稳定缩放 / 压缩。
+- fixture manager 与 E2E 现会检查 JPEG/PNG/WebP/BMP 的结构、正尺寸和可解码数据边界，确认 wrongMime 声明与实际编码不一致、invalidImage 不可解码、oversized 源大小及长边均超产品源侧观察值；Browser 再证明实际浏览器解码与 Canvas 输出。
+- 定向 ESLint 0 errors / 0 warnings；B456 fixture E2E 1 suite / 5 tests；A15 媒体 E2E 与 B123/B16/WP04 fixture 回归合计 4 suites / 18 tests。后端最终五项门禁按顺序通过：`npm run lint`、`npm run typecheck`、`npm run build`、full unit 88 suites / 751 tests、full E2E 20 suites / 90 tests。
+- `media-evidence` E2E 继续证明服务端 `MEDIA_FILE_SIGNATURE_INVALID`、类型禁止和文件过大防御；本次没有修改任何 `backend/src/**` 产品代码、API、DTO、Schema、依赖或配置。
+- `b456-media-smoke` 完成 prepare 与 prepared verify 后，真实 UI 的 JPEG、PNG、WebP、wrongMime、oversized 均重编码为 `image/jpeg` 并单次 201 上传；invalidImage 在客户端阻断且上传 POST=0。oversized 从 12,600,054 B、3000×1400 处理为 18,758 B、2560×1195；5 次有效上传均未携带源文件名或源字节，自动重试=0，Console warn/error=0，无选定场景根之外的写请求。
+- 冒烟完成后已 logout、关闭 Browser 并停止两端服务；`b456-media-smoke` 第一次 cleanup 为 `residualCount=0; matched=true`，第二次幂等 cleanup 为 `residualCount=0; matched=false`。
+- 正式 `b456-browser-final` 仅在定向冒烟通过后执行 replace 与 prepared verify，5/32/31/135/15/120 全部通过并继续保留；未执行正式 cleanup，也未执行 post-browser verify。
+- 两份 testing playbook 已同步，roadmap 未修改。Batch B 仍未完成，下一步必须从头完整重跑 B4–B6 / Batch B，不得把本次定向冒烟写成 Batch B 完成。
+
 ## 11. 后续同步规则
 
 - 后端新增或调整测试脚本后，应同步更新自动验证命令。

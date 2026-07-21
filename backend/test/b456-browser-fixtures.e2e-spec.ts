@@ -4,7 +4,7 @@ import { getConnectionToken, getModelToken } from '@nestjs/mongoose';
 import { NestFactory } from '@nestjs/core';
 import { spawnSync } from 'child_process';
 import { randomUUID } from 'crypto';
-import { stat } from 'fs/promises';
+import { readFile, stat } from 'fs/promises';
 import type { Connection, Model } from 'mongoose';
 import { AppModule } from '../src/app.module';
 import {
@@ -44,7 +44,12 @@ import {
   validateB456Namespace,
 } from './support/b456-browser-fixtures/fixture-contract';
 import {
+  B456_IMAGE_FILE_EXPECTATIONS,
+  B456_MEDIA_FILE_LIMIT_BYTES,
+  B456_OVERSIZED_SOURCE_DIMENSIONS,
+  B456_PHOTO_MAX_LONG_EDGE,
   b456FilePathsFor,
+  inspectB456ImageFixture,
   ownedSubjectCodesFor,
 } from './support/b456-browser-fixtures/scenario-builders';
 import {
@@ -56,6 +61,13 @@ jest.setTimeout(300000);
 
 const PRIMARY_NAMESPACE = 'b456-e2e-main';
 const SENTINEL_NAMESPACE = 'b456-e2e-sentinel';
+
+function auditRange(batch: 'B4' | 'B5' | 'B6', start: number, end: number) {
+  return Array.from(
+    { length: end - start + 1 },
+    (_, index) => `${batch}-MV-${(start + index).toString().padStart(3, '0')}`,
+  );
+}
 
 function expectFixtureCode(action: () => void, code: string): void {
   try {
@@ -159,6 +171,48 @@ describe('B4-B6 browser fixture CLI support (e2e)', () => {
     for (const excluded of B456_EXCLUDED_AUDIT_IDS) {
       expect(auditIds).not.toContain(excluded);
     }
+    const expectedAuditIds = [
+      ...auditRange('B4', 1, 44),
+      ...auditRange('B5', 1, 62).filter(
+        (auditId) =>
+          !B456_EXCLUDED_AUDIT_IDS.includes(
+            auditId as (typeof B456_EXCLUDED_AUDIT_IDS)[number],
+          ),
+      ),
+      ...auditRange('B6', 1, 37),
+    ];
+    expect(
+      expectedAuditIds.filter((auditId) => !auditIds.includes(auditId)),
+    ).toEqual([]);
+    expect(
+      auditIds.filter((auditId) => !expectedAuditIds.includes(auditId)),
+    ).toEqual([]);
+    expect(auditIds.length - new Set(auditIds).size).toBe(0);
+
+    const mediaFileValidation = B456_BUSINESS_SCENARIOS.find(
+      ({ scenarioKey }) => scenarioKey === 'media_file_validation',
+    );
+    expect(mediaFileValidation).toMatchObject({
+      auditIds: [
+        'B5-MV-006',
+        'B5-MV-007',
+        'B5-MV-009',
+        'B5-MV-010',
+        'B5-MV-011',
+        'B5-MV-012',
+        'B5-MV-013',
+      ],
+      expectedStatus: null,
+      expectedBusinessCode: null,
+    });
+    expect(mediaFileValidation?.purpose).toContain('Canvas JPEG re-encoding');
+    expect(mediaFileValidation?.expectedSummary).toContain(
+      'MIME-mismatched bytes',
+    );
+    expect(mediaFileValidation?.expectedSummary).toContain(
+      'blocked client-side',
+    );
+    expect(mediaFileValidation?.expectedSummary).toContain('processed Blob');
 
     expectFixtureCode(
       () => assertB456PreImportEnvironment('development'),
@@ -244,11 +298,57 @@ describe('B4-B6 browser fixture CLI support (e2e)', () => {
         subjectCode: { $in: ownedSubjectCodesFor(PRIMARY_NAMESPACE) },
       }),
     ).toBe(32);
-    await Promise.all(
-      Object.values(b456FilePathsFor(PRIMARY_NAMESPACE)).map((path) =>
-        stat(path),
+    const filePaths = b456FilePathsFor(PRIMARY_NAMESPACE);
+    const fileStats = new Map(
+      await Promise.all(
+        Object.entries(filePaths).map(
+          async ([key, path]) => [key, await stat(path)] as const,
+        ),
       ),
     );
+    const [jpeg, png, webp, oversized, wrongMime, invalidImage] =
+      await Promise.all([
+        readFile(filePaths.jpeg),
+        readFile(filePaths.png),
+        readFile(filePaths.webp),
+        readFile(filePaths.oversized),
+        readFile(filePaths.wrongMime),
+        readFile(filePaths.invalidImage),
+      ]);
+    const decoded = {
+      jpeg: inspectB456ImageFixture(jpeg),
+      png: inspectB456ImageFixture(png),
+      webp: inspectB456ImageFixture(webp),
+      oversized: inspectB456ImageFixture(oversized),
+      wrongMime: inspectB456ImageFixture(wrongMime),
+      invalidImage: inspectB456ImageFixture(invalidImage),
+    };
+    expect(decoded.jpeg?.encoding).toBe(
+      B456_IMAGE_FILE_EXPECTATIONS.jpeg.encoding,
+    );
+    expect(decoded.png?.encoding).toBe(
+      B456_IMAGE_FILE_EXPECTATIONS.png.encoding,
+    );
+    expect(decoded.webp?.encoding).toBe(
+      B456_IMAGE_FILE_EXPECTATIONS.webp.encoding,
+    );
+    expect(decoded.wrongMime?.encoding).toBe(
+      B456_IMAGE_FILE_EXPECTATIONS.wrongMime.encoding,
+    );
+    expect(B456_IMAGE_FILE_EXPECTATIONS.wrongMime.declaredMime).not.toBe(
+      `image/${decoded.wrongMime?.encoding}`,
+    );
+    expect(decoded.invalidImage).toBeNull();
+    expect(decoded.oversized).toEqual({
+      encoding: B456_IMAGE_FILE_EXPECTATIONS.oversized.encoding,
+      ...B456_OVERSIZED_SOURCE_DIMENSIONS,
+    });
+    expect(fileStats.get('oversized')?.size).toBeGreaterThan(
+      B456_MEDIA_FILE_LIMIT_BYTES,
+    );
+    expect(
+      Math.max(decoded.oversized?.width ?? 0, decoded.oversized?.height ?? 0),
+    ).toBeGreaterThan(B456_PHOTO_MAX_LONG_EDGE);
     const sessionsBefore = await sessionModel.countDocuments({
       userId: {
         $in: await userModel.distinct('_id', {
