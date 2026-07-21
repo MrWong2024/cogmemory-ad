@@ -43,6 +43,7 @@ import {
   assertB456SafeManifest,
   requireB456FixturePassword,
   scenarioSubjectCodeFor,
+  toB456SafeErrorPayload,
   validateB456Namespace,
 } from './support/b456-browser-fixtures/fixture-contract';
 import {
@@ -56,6 +57,7 @@ import {
 } from './support/b456-browser-fixtures/scenario-builders';
 import {
   createB456BrowserFixtureManager,
+  withB456VerifyStage,
   type B456BrowserFixtureManager,
 } from './support/b456-browser-fixtures/b456-browser-fixtures';
 
@@ -300,6 +302,46 @@ describe('B4-B6 browser fixture CLI support (e2e)', () => {
     expect(cli.status).toBe(1);
     expect(cli.stderr).toContain('B456_FIXTURE_COMMAND_INVALID');
     expect(cli.stderr).not.toContain('mongodb');
+  });
+
+  it('wraps unknown verify-stage failures without leaking internal error details', async () => {
+    const existing = new B456FixtureError(
+      'B456_FIXTURE_SCENARIO_INVALID',
+      'Existing safe error',
+      'handwriting_trajectory',
+    );
+    await expect(
+      withB456VerifyStage('B5', 'post-browser', () => {
+        throw existing;
+      }),
+    ).rejects.toBe(existing);
+
+    let wrapped: unknown;
+    try {
+      await withB456VerifyStage(
+        'B5',
+        'post-browser',
+        () => {
+          throw new Error('internal path, query, and identifier details');
+        },
+        'handwriting_trajectory',
+      );
+    } catch (error: unknown) {
+      wrapped = error;
+    }
+    expect(wrapped).toBeInstanceOf(B456FixtureError);
+    const payload = toB456SafeErrorPayload(wrapped);
+    expect(payload).toEqual({
+      ok: false,
+      code: 'B456_FIXTURE_VERIFY_STAGE_FAILED',
+      message: 'B4-B6 fixture verification failed in a named read-only stage',
+      scenarioKey: 'handwriting_trajectory',
+      stage: 'B5',
+      phase: 'post-browser',
+    });
+    expect(JSON.stringify(payload)).not.toContain('internal path');
+    expect(JSON.stringify(payload)).not.toContain('query');
+    expect(JSON.stringify(payload)).not.toContain('identifier');
   });
 
   it('prepares and read-only verifies two isolated namespaces and temporary files', async () => {

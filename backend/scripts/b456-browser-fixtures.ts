@@ -7,6 +7,7 @@ import {
   B456FixtureError,
   assertB456PreImportEnvironment,
   requireB456FixturePassword,
+  toB456SafeErrorPayload,
   validateB456Namespace,
 } from '../test/support/b456-browser-fixtures/fixture-contract';
 
@@ -132,25 +133,7 @@ function parseCommand(argv: string[]): ParsedCommand {
 }
 
 function writeSafeError(error: unknown): void {
-  if (error instanceof B456FixtureError) {
-    console.error(
-      JSON.stringify({
-        ok: false,
-        code: error.code,
-        message: error.safeMessage,
-        ...(error.scenarioKey ? { scenarioKey: error.scenarioKey } : {}),
-      }),
-    );
-    return;
-  }
-  console.error(
-    JSON.stringify({
-      ok: false,
-      code: 'B456_FIXTURE_OPERATION_FAILED',
-      message:
-        'B4-B6 browser fixture operation failed without exposing internal details',
-    }),
-  );
+  console.error(JSON.stringify(toB456SafeErrorPayload(error)));
 }
 
 async function run(): Promise<void> {

@@ -18,6 +18,21 @@ export type B456EvidenceMode = 'browser' | 'automated_boundary';
 export type B456FaultMode = 'none' | 'cdp-abort';
 export type B456TransitionMode = 'none';
 export type B456ScaleCode = 'mmse' | 'moca';
+export type B456VerifyPhase = 'prepared' | 'post-browser';
+export const B456_VERIFY_STAGES = [
+  'contract',
+  'initial_snapshot',
+  'users_and_password',
+  'temporary_files',
+  'root_matrix',
+  'B4',
+  'B5',
+  'B6',
+  'transition_residue',
+  'final_snapshot',
+  'safe_manifest',
+] as const;
+export type B456VerifyStage = (typeof B456_VERIFY_STAGES)[number];
 
 export const B456_DIRECT_AUDIT_IDS = [
   'B5-MV-002',
@@ -696,9 +711,39 @@ export class B456FixtureError extends Error {
     readonly code: string,
     readonly safeMessage: string,
     readonly scenarioKey?: B456ScenarioKey,
+    readonly verifyStage?: B456VerifyStage,
+    readonly verifyPhase?: B456VerifyPhase,
   ) {
     super(code);
   }
+}
+
+export type B456SafeErrorPayload = {
+  ok: false;
+  code: string;
+  message: string;
+  scenarioKey?: B456ScenarioKey;
+  stage?: B456VerifyStage;
+  phase?: B456VerifyPhase;
+};
+
+export function toB456SafeErrorPayload(error: unknown): B456SafeErrorPayload {
+  if (error instanceof B456FixtureError) {
+    return {
+      ok: false,
+      code: error.code,
+      message: error.safeMessage,
+      ...(error.scenarioKey ? { scenarioKey: error.scenarioKey } : {}),
+      ...(error.verifyStage ? { stage: error.verifyStage } : {}),
+      ...(error.verifyPhase ? { phase: error.verifyPhase } : {}),
+    };
+  }
+  return {
+    ok: false,
+    code: 'B456_FIXTURE_OPERATION_FAILED',
+    message:
+      'B4-B6 browser fixture operation failed without exposing internal details',
+  };
 }
 
 export function validateB456Namespace(value: string): string {

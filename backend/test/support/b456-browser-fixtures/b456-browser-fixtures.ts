@@ -1,4 +1,4 @@
-import type { INestApplicationContext } from '@nestjs/common';
+import { HttpException, type INestApplicationContext } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { getConnectionToken, getModelToken } from '@nestjs/mongoose';
 import { readFile, rm, stat } from 'fs/promises';
@@ -11,6 +11,7 @@ import {
 } from '../../../src/modules/auth/schemas/session.schema';
 import { AuthService } from '../../../src/modules/auth/services/auth.service';
 import { AssessmentVisit } from '../../../src/modules/assessments/schemas/assessment-visit.schema';
+import type { ScaleSubmissionReadinessResponse } from '../../../src/modules/assessments/types/scale-instance-submission-response.types';
 import {
   ItemResponse,
   type ItemResponseDocument,
@@ -70,6 +71,8 @@ import {
   type B456SafeRoleManifest,
   type B456SafeScenarioManifest,
   type B456ScenarioDefinition,
+  type B456VerifyPhase,
+  type B456VerifyStage,
 } from './fixture-contract';
 import {
   B456_IMAGE_FILE_EXPECTATIONS,
@@ -139,6 +142,26 @@ function scenarioFailure(
     safeMessage,
     scenarioKey,
   );
+}
+
+export async function withB456VerifyStage<T>(
+  stage: B456VerifyStage,
+  phase: B456VerifyPhase,
+  action: () => T | Promise<T>,
+  scenarioKey?: B456BusinessScenarioKey,
+): Promise<T> {
+  try {
+    return await action();
+  } catch (error: unknown) {
+    if (error instanceof B456FixtureError) throw error;
+    throw new B456FixtureError(
+      'B456_FIXTURE_VERIFY_STAGE_FAILED',
+      'B4-B6 fixture verification failed in a named read-only stage',
+      scenarioKey,
+      stage,
+      phase,
+    );
+  }
 }
 
 function memoryFile(
@@ -329,41 +352,69 @@ export class B456BrowserFixtureManager {
   private async verifyInternal(
     namespace: string,
     password: string,
-    phase: 'prepared' | 'post-browser',
+    phase: B456VerifyPhase,
   ): Promise<B456SafeManifest> {
-    assertB456Contract();
-    const before = await this.readOnlySnapshot(namespace);
-    const roles = await this.verifyUsers(namespace, password);
-    await this.verifyTemporaryFiles(namespace);
-    await this.verifyFixtureData(namespace, phase);
-    await this.assertNoTransitionResidue(namespace);
-    const scenarios: B456SafeScenarioManifest[] = [
-      {
-        scenarioKey: 'roles',
-        auditIds: [],
-        executionClass: 'fixture-required',
-        route: '/login',
-        expectedPage: 'login',
-        expectedStatus: 200,
-        expectedBusinessCode: null,
-        testInput: null,
-        fileInputs: null,
-        faultMode: 'none',
-        transitionMode: 'none',
-        expectedSummary:
-          'Five synthetic accounts cover four permitted clinical roles and one forbidden system role',
+    await withB456VerifyStage('contract', phase, () => assertB456Contract());
+    const before = await withB456VerifyStage('initial_snapshot', phase, () =>
+      this.readOnlySnapshot(namespace),
+    );
+    const roles = await withB456VerifyStage('users_and_password', phase, () =>
+      this.verifyUsers(namespace, password),
+    );
+    await withB456VerifyStage('temporary_files', phase, () =>
+      this.verifyTemporaryFiles(namespace),
+    );
+    await withB456VerifyStage('root_matrix', phase, () =>
+      this.verifyRootMatrix(namespace),
+    );
+    await withB456VerifyStage('B4', phase, () =>
+      this.verifyB4Data(namespace, phase),
+    );
+    await withB456VerifyStage('B5', phase, () =>
+      this.verifyB5Data(namespace, phase),
+    );
+    await withB456VerifyStage('B6', phase, () =>
+      this.verifyB6Data(namespace, phase),
+    );
+    await withB456VerifyStage('transition_residue', phase, () =>
+      this.assertNoTransitionResidue(namespace),
+    );
+    const scenarios = await withB456VerifyStage(
+      'safe_manifest',
+      phase,
+      async (): Promise<B456SafeScenarioManifest[]> => {
+        const result: B456SafeScenarioManifest[] = [
+          {
+            scenarioKey: 'roles',
+            auditIds: [],
+            executionClass: 'fixture-required',
+            route: '/login',
+            expectedPage: 'login',
+            expectedStatus: 200,
+            expectedBusinessCode: null,
+            testInput: null,
+            fileInputs: null,
+            faultMode: 'none',
+            transitionMode: 'none',
+            expectedSummary:
+              'Five synthetic accounts cover four permitted clinical roles and one forbidden system role',
+          },
+        ];
+        for (const definition of B456_BUSINESS_SCENARIOS) {
+          result.push(await this.buildSafeScenario(namespace, definition));
+        }
+        return result;
       },
-    ];
-    for (const definition of B456_BUSINESS_SCENARIOS) {
-      scenarios.push(await this.buildSafeScenario(namespace, definition));
-    }
-    const after = await this.readOnlySnapshot(namespace);
-    if (JSON.stringify(after) !== JSON.stringify(before)) {
-      throw new B456FixtureError(
-        'B456_FIXTURE_VERIFY_MUTATED_DATA',
-        'Verify must not create sessions, change identifiers or timestamps, or repair fixture data',
-      );
-    }
+    );
+    await withB456VerifyStage('final_snapshot', phase, async () => {
+      const after = await this.readOnlySnapshot(namespace);
+      if (JSON.stringify(after) !== JSON.stringify(before)) {
+        throw new B456FixtureError(
+          'B456_FIXTURE_VERIFY_MUTATED_DATA',
+          'Verify must not create sessions, change identifiers or timestamps, or repair fixture data',
+        );
+      }
+    });
     const manifest: B456SafeManifest = {
       namespace,
       databaseName: this.databaseName,
@@ -373,7 +424,9 @@ export class B456BrowserFixtureManager {
         `phase=${phase}; roles=5; scenarioKeys=32; businessScenarios=31; ` +
         'auditIds=135; browserDirect=15; fixtureRequired=120',
     };
-    assertB456SafeManifest(manifest);
+    await withB456VerifyStage('safe_manifest', phase, () =>
+      assertB456SafeManifest(manifest),
+    );
     return manifest;
   }
 
@@ -516,10 +569,7 @@ export class B456BrowserFixtureManager {
     }
   }
 
-  private async verifyFixtureData(
-    namespace: string,
-    phase: 'prepared' | 'post-browser',
-  ): Promise<void> {
+  private async verifyRootMatrix(namespace: string): Promise<void> {
     const patients = await this.models.patients
       .find({ subjectCode: { $in: ownedSubjectCodesFor(namespace) } })
       .exec();
@@ -542,9 +592,6 @@ export class B456BrowserFixtureManager {
         );
       }
     }
-    await this.verifyB4Data(namespace, phase);
-    await this.verifyB5Data(namespace, phase);
-    await this.verifyB6Data(namespace, phase);
   }
 
   private async verifyB4Data(
@@ -850,143 +897,332 @@ export class B456BrowserFixtureManager {
     namespace: string,
     phase: 'prepared' | 'post-browser',
   ): Promise<void> {
-    const readiness = await this.requireRoot(
-      namespace,
+    await withB456VerifyStage(
+      'B6',
+      phase,
+      async () => {
+        const readiness = await this.requireRoot(
+          namespace,
+          'submission_readiness_matrix',
+        );
+        await this.assertB6ReadinessContext(
+          readiness.patientId,
+          readiness.visitId,
+          readiness.scaleInstanceId,
+          phase,
+        );
+        let blocking: ScaleSubmissionReadinessResponse;
+        try {
+          blocking = await this.workflows.submission.getSubmissionReadiness(
+            readiness.patientId.toString(),
+            readiness.visitId.toString(),
+            readiness.scaleInstanceId.toString(),
+          );
+        } catch (error: unknown) {
+          if (error instanceof B456FixtureError) throw error;
+          const status =
+            error instanceof HttpException ? error.getStatus() : null;
+          throw new B456FixtureError(
+            status === 404
+              ? 'B456_FIXTURE_READINESS_PRIMARY_CONTEXT_MISSING'
+              : status === 409
+                ? 'B456_FIXTURE_READINESS_PRIMARY_CONTEXT_INVALID'
+                : 'B456_FIXTURE_READINESS_PRIMARY_EVALUATION_FAILED',
+            'The primary readiness target could not be evaluated safely',
+            'submission_readiness_matrix',
+            'B6',
+            phase,
+          );
+        }
+        const readyVisit = await this.models.visits
+          .findOne({
+            visitCode: scenarioVisitCodeFor(
+              namespace,
+              readiness.ordinal,
+              'READY',
+            ),
+          })
+          .exec();
+        const readyInstance = readyVisit
+          ? await this.models.scaleInstances
+              .findOne({ assessmentVisitId: readyVisit._id })
+              .exec()
+          : null;
+        if (!readyVisit || !readyInstance) {
+          throw scenarioFailure(
+            'submission_readiness_matrix',
+            'The ready companion is missing',
+          );
+        }
+        await this.assertB6ReadinessContext(
+          readiness.patientId,
+          readyVisit._id,
+          readyInstance._id,
+          phase,
+        );
+        let ready: ScaleSubmissionReadinessResponse;
+        try {
+          ready = await this.workflows.submission.getSubmissionReadiness(
+            readiness.patientId.toString(),
+            readyVisit._id.toString(),
+            readyInstance._id.toString(),
+          );
+        } catch (error: unknown) {
+          if (error instanceof B456FixtureError) throw error;
+          throw new B456FixtureError(
+            'B456_FIXTURE_READINESS_COMPANION_EVALUATION_FAILED',
+            'The companion readiness target could not be evaluated safely',
+            'submission_readiness_matrix',
+            'B6',
+            phase,
+          );
+        }
+        if (
+          blocking.ready ||
+          blocking.blockingIssues.length === 0 ||
+          !ready.ready ||
+          !ready.canSubmitNow
+        ) {
+          throw scenarioFailure(
+            'submission_readiness_matrix',
+            'The real readiness matrix is invalid',
+          );
+        }
+      },
       'submission_readiness_matrix',
     );
-    const blocking = await this.workflows.submission.getSubmissionReadiness(
-      readiness.patientId.toString(),
-      readiness.visitId.toString(),
-      readiness.scaleInstanceId.toString(),
-    );
-    const readyVisit = await this.models.visits
-      .findOne({
-        visitCode: scenarioVisitCodeFor(namespace, readiness.ordinal, 'READY'),
-      })
-      .exec();
-    const readyInstance = readyVisit
-      ? await this.models.scaleInstances
-          .findOne({ assessmentVisitId: readyVisit._id })
-          .exec()
-      : null;
-    if (!readyVisit || !readyInstance) {
-      throw scenarioFailure(
-        'submission_readiness_matrix',
-        'The ready companion is missing',
-      );
-    }
-    const ready = await this.workflows.submission.getSubmissionReadiness(
-      readiness.patientId.toString(),
-      readyVisit._id.toString(),
-      readyInstance._id.toString(),
-    );
-    if (
-      blocking.ready ||
-      blocking.blockingIssues.length === 0 ||
-      !ready.ready ||
-      !ready.canSubmitNow
-    ) {
-      throw scenarioFailure(
-        'submission_readiness_matrix',
-        'The real readiness matrix is invalid',
-      );
-    }
-    const completedPrepared = await this.requireRoot(
-      namespace,
+    await withB456VerifyStage(
+      'B6',
+      phase,
+      async () => {
+        const completedPrepared = await this.requireRoot(
+          namespace,
+          'submission_post_submit_read_only',
+        );
+        if (
+          (
+            await this.models.scaleInstances
+              .findById(completedPrepared.scaleInstanceId)
+              .exec()
+          )?.status !== 'completed'
+        ) {
+          throw scenarioFailure(
+            'submission_post_submit_read_only',
+            'The completed read-only target is missing',
+          );
+        }
+      },
       'submission_post_submit_read_only',
     );
-    if (
-      (
-        await this.models.scaleInstances
-          .findById(completedPrepared.scaleInstanceId)
-          .exec()
-      )?.status !== 'completed'
-    ) {
-      throw scenarioFailure(
-        'submission_post_submit_read_only',
-        'The completed read-only target is missing',
-      );
-    }
     const submitKeys = [
       'submission_ready_confirm',
       'submission_idempotency_concurrency',
       'submission_network_final_state',
     ] as const;
     for (const key of submitKeys) {
-      const root = await this.requireRoot(namespace, key);
-      const instance = await this.models.scaleInstances
-        .findById(root.scaleInstanceId)
-        .exec();
-      if (phase === 'prepared') {
-        const state = await this.workflows.submission.getSubmissionReadiness(
-          root.patientId.toString(),
-          root.visitId.toString(),
-          root.scaleInstanceId.toString(),
-        );
-        if (
-          instance?.status !== 'draft' ||
-          !state.ready ||
-          !state.canSubmitNow
-        ) {
-          throw scenarioFailure(
-            key,
-            'Prepared final-submission target is not ready and clean',
-          );
-        }
-      } else if (instance?.status !== 'completed') {
-        throw scenarioFailure(key, 'Browser final submission did not persist');
-      }
+      await withB456VerifyStage(
+        'B6',
+        phase,
+        async () => {
+          const root = await this.requireRoot(namespace, key);
+          const instance = await this.models.scaleInstances
+            .findById(root.scaleInstanceId)
+            .exec();
+          if (phase === 'prepared') {
+            const state =
+              await this.workflows.submission.getSubmissionReadiness(
+                root.patientId.toString(),
+                root.visitId.toString(),
+                root.scaleInstanceId.toString(),
+              );
+            if (
+              instance?.status !== 'draft' ||
+              !state.ready ||
+              !state.canSubmitNow
+            ) {
+              throw scenarioFailure(
+                key,
+                'Prepared final-submission target is not ready and clean',
+              );
+            }
+          } else if (instance?.status !== 'completed') {
+            throw scenarioFailure(
+              key,
+              'Browser final submission did not persist',
+            );
+          }
+        },
+        key,
+      );
     }
     if (phase === 'post-browser') {
       for (const key of [
         ...submitKeys,
         'submission_post_submit_read_only',
       ] as const) {
-        const root = await this.requireRoot(namespace, key);
-        const instance = await this.models.scaleInstances
-          .findById(root.scaleInstanceId)
-          .exec();
-        const submission = instance?.metadata?.submission;
-        if (typeof submission !== 'object' || submission === null) {
-          throw scenarioFailure(
-            key,
-            'Exactly one stored submission audit is required',
-          );
-        }
-        const downstream = await Promise.all([
-          this.models.scoreResults.countDocuments({
-            scaleInstanceId: root.scaleInstanceId,
-          }),
-          this.models.cognitiveDomainResults.countDocuments({
-            scaleInstanceId: root.scaleInstanceId,
-          }),
-          this.models.reports.countDocuments({
-            scaleInstanceId: root.scaleInstanceId,
-          }),
-        ]);
-        if (downstream.some((count) => count !== 0)) {
-          throw scenarioFailure(
-            key,
-            'Final submission created forbidden downstream side effects',
-          );
-        }
+        await withB456VerifyStage(
+          'B6',
+          phase,
+          async () => {
+            const root = await this.requireRoot(namespace, key);
+            const instance = await this.models.scaleInstances
+              .findById(root.scaleInstanceId)
+              .exec();
+            const submission = instance?.metadata?.submission;
+            if (typeof submission !== 'object' || submission === null) {
+              throw scenarioFailure(
+                key,
+                'Exactly one stored submission audit is required',
+              );
+            }
+            const downstream = await Promise.all([
+              this.models.scoreResults.countDocuments({
+                scaleInstanceId: root.scaleInstanceId,
+              }),
+              this.models.cognitiveDomainResults.countDocuments({
+                scaleInstanceId: root.scaleInstanceId,
+              }),
+              this.models.reports.countDocuments({
+                scaleInstanceId: root.scaleInstanceId,
+              }),
+            ]);
+            if (downstream.some((count) => count !== 0)) {
+              throw scenarioFailure(
+                key,
+                'Final submission created forbidden downstream side effects',
+              );
+            }
+          },
+          key,
+        );
       }
     }
-    const authz = await this.requireRoot(
-      namespace,
+    await withB456VerifyStage(
+      'B6',
+      phase,
+      async () => {
+        const authz = await this.requireRoot(
+          namespace,
+          'submission_authz_error_matrix',
+        );
+        const authzInstance = await this.models.scaleInstances
+          .findById(authz.scaleInstanceId)
+          .exec();
+        if (
+          (await this.models.patients.findById(authz.patientId).exec())
+            ?.status !== 'inactive' ||
+          authzInstance?.status !== 'draft'
+        ) {
+          throw scenarioFailure(
+            'submission_authz_error_matrix',
+            'Submission error targets were mutated',
+          );
+        }
+      },
       'submission_authz_error_matrix',
     );
-    const authzInstance = await this.models.scaleInstances
-      .findById(authz.scaleInstanceId)
+  }
+
+  private async assertB6ReadinessContext(
+    patientId: Types.ObjectId,
+    visitId: Types.ObjectId,
+    scaleInstanceId: Types.ObjectId,
+    phase: B456VerifyPhase,
+  ): Promise<void> {
+    const instance = await this.models.scaleInstances
+      .findById(scaleInstanceId)
       .exec();
     if (
-      (await this.models.patients.findById(authz.patientId).exec())?.status !==
-        'inactive' ||
-      authzInstance?.status !== 'draft'
+      !instance ||
+      instance.patientId.toString() !== patientId.toString() ||
+      instance.assessmentVisitId.toString() !== visitId.toString()
     ) {
-      throw scenarioFailure(
-        'submission_authz_error_matrix',
-        'Submission error targets were mutated',
+      throw new B456FixtureError(
+        'B456_FIXTURE_READINESS_INSTANCE_CONTEXT_INVALID',
+        'The readiness instance ownership contract is invalid',
+        'submission_readiness_matrix',
+        'B6',
+        phase,
+      );
+    }
+    const [definition, version, itemResponses] = await Promise.all([
+      this.models.scaleDefinitions.findOne({ code: instance.scaleCode }).exec(),
+      this.models.scaleVersions
+        .findOne({
+          scaleCode: instance.scaleCode,
+          version: instance.scaleVersion,
+        })
+        .exec(),
+      this.models.itemResponses.find({ scaleInstanceId }).exec(),
+    ]);
+    if (!definition || !version) {
+      throw new B456FixtureError(
+        'B456_FIXTURE_READINESS_CATALOG_MISSING',
+        'The readiness scale catalog is missing',
+        'submission_readiness_matrix',
+        'B6',
+        phase,
+      );
+    }
+    if (definition._id.toString() !== instance.scaleDefinitionId.toString()) {
+      throw new B456FixtureError(
+        'B456_FIXTURE_READINESS_DEFINITION_BINDING_INVALID',
+        'The readiness definition binding is invalid',
+        'submission_readiness_matrix',
+        'B6',
+        phase,
+      );
+    }
+    if (version._id.toString() !== instance.scaleVersionId.toString()) {
+      throw new B456FixtureError(
+        'B456_FIXTURE_READINESS_VERSION_BINDING_INVALID',
+        'The readiness version binding is invalid',
+        'submission_readiness_matrix',
+        'B6',
+        phase,
+      );
+    }
+    if (version.scaleDefinitionId.toString() !== definition._id.toString()) {
+      throw new B456FixtureError(
+        'B456_FIXTURE_READINESS_VERSION_DEFINITION_INVALID',
+        'The readiness version definition binding is invalid',
+        'submission_readiness_matrix',
+        'B6',
+        phase,
+      );
+    }
+    if (
+      version.scaleCode !== instance.scaleCode ||
+      version.version !== instance.scaleVersion
+    ) {
+      throw new B456FixtureError(
+        'B456_FIXTURE_READINESS_VERSION_IDENTITY_INVALID',
+        'The readiness version identity contract is invalid',
+        'submission_readiness_matrix',
+        'B6',
+        phase,
+      );
+    }
+    if (
+      itemResponses.some(
+        (item) =>
+          item.patientId.toString() !== patientId.toString() ||
+          item.assessmentVisitId.toString() !== visitId.toString() ||
+          item.scaleInstanceId.toString() !== scaleInstanceId.toString() ||
+          item.scaleDefinitionId.toString() !==
+            instance.scaleDefinitionId.toString() ||
+          item.scaleVersionId.toString() !==
+            instance.scaleVersionId.toString() ||
+          item.scaleCode !== instance.scaleCode ||
+          item.scaleVersion !== instance.scaleVersion,
+      )
+    ) {
+      throw new B456FixtureError(
+        'B456_FIXTURE_READINESS_ITEM_CONTEXT_INVALID',
+        'The readiness item ownership contract is invalid',
+        'submission_readiness_matrix',
+        'B6',
+        phase,
       );
     }
   }
