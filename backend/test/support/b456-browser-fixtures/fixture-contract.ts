@@ -14,6 +14,7 @@ export type B456ExecutionClass =
   | 'browser-direct'
   | 'fixture-required'
   | 'mixed';
+export type B456EvidenceMode = 'browser' | 'automated_boundary';
 export type B456FaultMode = 'none' | 'cdp-abort';
 export type B456TransitionMode = 'none';
 export type B456ScaleCode = 'mmse' | 'moca';
@@ -45,6 +46,11 @@ export const B456_EXCLUDED_AUDIT_IDS = [
   'B5-MV-060',
   'B5-MV-061',
   'B5-MV-062',
+] as const;
+
+export const B456_AUTOMATED_BOUNDARY_AUDIT_IDS = [
+  'B5-MV-042',
+  'B5-MV-043',
 ] as const;
 
 export type B456BusinessScenarioKey =
@@ -601,6 +607,30 @@ export const B456_BUSINESS_SCENARIOS = [
   },
 ] as const satisfies readonly B456ScenarioDefinition[];
 
+export type B456AuditEvidenceDefinition = {
+  auditId: string;
+  scenarioKey: B456BusinessScenarioKey;
+  evidenceMode: B456EvidenceMode;
+};
+
+const automatedBoundaryAuditIds = new Set<string>(
+  B456_AUTOMATED_BOUNDARY_AUDIT_IDS,
+);
+
+export const B456_AUDIT_EVIDENCE = (
+  B456_BUSINESS_SCENARIOS as readonly B456ScenarioDefinition[]
+).flatMap(({ scenarioKey, auditIds }) =>
+  auditIds.map(
+    (auditId): B456AuditEvidenceDefinition => ({
+      auditId,
+      scenarioKey,
+      evidenceMode: automatedBoundaryAuditIds.has(auditId)
+        ? 'automated_boundary'
+        : 'browser',
+    }),
+  ),
+);
+
 export const B456_FILE_INPUT_KEYS = [
   'jpeg',
   'png',
@@ -790,6 +820,16 @@ export function assertB456Contract(): void {
   ];
   const actual = new Set(auditIds);
   const direct = new Set<string>(B456_DIRECT_AUDIT_IDS);
+  const evidenceAuditIds = B456_AUDIT_EVIDENCE.map(({ auditId }) => auditId);
+  const automatedEvidence = B456_AUDIT_EVIDENCE.filter(
+    ({ evidenceMode }) => evidenceMode === 'automated_boundary',
+  );
+  const browserEvidenceCount = B456_AUDIT_EVIDENCE.filter(
+    ({ evidenceMode }) => evidenceMode === 'browser',
+  ).length;
+  const handwritingTrajectory = B456_BUSINESS_SCENARIOS.find(
+    ({ scenarioKey }) => scenarioKey === 'handwriting_trajectory',
+  );
   if (
     keys.length !== 32 ||
     new Set(keys).size !== 32 ||
@@ -800,7 +840,20 @@ export function assertB456Contract(): void {
     actual.size !== expected.length ||
     direct.size !== 15 ||
     [...direct].some((id) => !actual.has(id)) ||
-    auditIds.filter((id) => !direct.has(id)).length !== 120
+    auditIds.filter((id) => !direct.has(id)).length !== 120 ||
+    B456_AUDIT_EVIDENCE.length !== 135 ||
+    new Set(evidenceAuditIds).size !== 135 ||
+    evidenceAuditIds.some((id) => !actual.has(id)) ||
+    browserEvidenceCount !== 133 ||
+    automatedEvidence.length !== 2 ||
+    automatedEvidence.some(
+      ({ auditId, scenarioKey }) =>
+        !B456_AUTOMATED_BOUNDARY_AUDIT_IDS.includes(
+          auditId as (typeof B456_AUTOMATED_BOUNDARY_AUDIT_IDS)[number],
+        ) ||
+        scenarioKey !== 'handwriting_trajectory' ||
+        !handwritingTrajectory?.auditIds.includes(auditId),
+    )
   ) {
     throw new B456FixtureError(
       'B456_FIXTURE_CONTRACT_INVALID',

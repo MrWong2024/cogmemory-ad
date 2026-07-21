@@ -29,6 +29,8 @@ import {
   type UserDocument,
 } from '../src/modules/users/schemas/user.schema';
 import {
+  B456_AUDIT_EVIDENCE,
+  B456_AUTOMATED_BOUNDARY_AUDIT_IDS,
   B456_BUSINESS_SCENARIOS,
   B456_DIRECT_AUDIT_IDS,
   B456_EXCLUDED_AUDIT_IDS,
@@ -188,6 +190,35 @@ describe('B4-B6 browser fixture CLI support (e2e)', () => {
       auditIds.filter((auditId) => !expectedAuditIds.includes(auditId)),
     ).toEqual([]);
     expect(auditIds.length - new Set(auditIds).size).toBe(0);
+
+    expect(B456_AUDIT_EVIDENCE).toHaveLength(135);
+    expect(
+      new Set(B456_AUDIT_EVIDENCE.map(({ auditId }) => auditId)).size,
+    ).toBe(135);
+    expect(
+      B456_AUDIT_EVIDENCE.filter(
+        ({ evidenceMode }) => evidenceMode === 'browser',
+      ),
+    ).toHaveLength(133);
+    const automatedBoundaryEvidence = B456_AUDIT_EVIDENCE.filter(
+      ({ evidenceMode }) => evidenceMode === 'automated_boundary',
+    );
+    expect(automatedBoundaryEvidence).toEqual([
+      {
+        auditId: 'B5-MV-042',
+        scenarioKey: 'handwriting_trajectory',
+        evidenceMode: 'automated_boundary',
+      },
+      {
+        auditId: 'B5-MV-043',
+        scenarioKey: 'handwriting_trajectory',
+        evidenceMode: 'automated_boundary',
+      },
+    ]);
+    expect(B456_AUTOMATED_BOUNDARY_AUDIT_IDS).toEqual([
+      'B5-MV-042',
+      'B5-MV-043',
+    ]);
 
     const mediaFileValidation = B456_BUSINESS_SCENARIOS.find(
       ({ scenarioKey }) => scenarioKey === 'media_file_validation',
