@@ -1,4 +1,9 @@
 // backend/src/config/configuration.ts
+import {
+  resolveTestDatabasePurpose,
+  type TestDatabasePurpose,
+} from './database-purpose';
+
 const DEFAULT_PORT = 5002;
 const DEFAULT_FRONTEND_URL = 'http://localhost:3002';
 const DEFAULT_PRODUCTION_MONGO_URI = '';
@@ -90,8 +95,16 @@ function resolveAppEnvironment(): AppEnvironment {
   return 'development';
 }
 
-function getDefaultMongoUri(env: AppEnvironment): string {
+function getDefaultMongoUri(
+  env: AppEnvironment,
+  purpose: TestDatabasePurpose | undefined,
+): string {
   if (env === 'test') {
+    if (purpose === 'browser_acceptance') {
+      throw new Error(
+        'MONGO_URI must be provided for browser_acceptance processes',
+      );
+    }
     return 'mongodb://cogmemory_ad_test_app:{COGMEMORY_AD_TEST_APP_PASSWORD}@127.0.0.1:27017/cogmemory_ad_test?authSource=cogmemory_ad_test';
   }
 
@@ -106,8 +119,16 @@ function getDefaultMongoAutoIndex(env: AppEnvironment): boolean {
   return env !== 'production';
 }
 
-function getDefaultMongoAdminUri(env: AppEnvironment): string {
+function getDefaultMongoAdminUri(
+  env: AppEnvironment,
+  purpose: TestDatabasePurpose | undefined,
+): string {
   if (env === 'test') {
+    if (purpose === 'browser_acceptance') {
+      throw new Error(
+        'MONGO_ADMIN_URI must be provided for browser_acceptance processes',
+      );
+    }
     return 'mongodb://cogmemory_ad_test_db_admin:{COGMEMORY_AD_TEST_DB_ADMIN_PASSWORD}@127.0.0.1:27017/cogmemory_ad_test?authSource=cogmemory_ad_test';
   }
 
@@ -162,25 +183,31 @@ function parseSmsAuthProvider(
 function resolveMongoUri(
   value: string | undefined,
   env: AppEnvironment,
+  purpose: TestDatabasePurpose | undefined,
 ): string {
   if (!value) {
-    return getDefaultMongoUri(env);
+    return getDefaultMongoUri(env, purpose);
   }
 
   const trimmedValue = value.trim();
-  return trimmedValue.length > 0 ? trimmedValue : getDefaultMongoUri(env);
+  return trimmedValue.length > 0
+    ? trimmedValue
+    : getDefaultMongoUri(env, purpose);
 }
 
 function resolveMongoAdminUri(
   value: string | undefined,
   env: AppEnvironment,
+  purpose: TestDatabasePurpose | undefined,
 ): string {
   if (!value) {
-    return getDefaultMongoAdminUri(env);
+    return getDefaultMongoAdminUri(env, purpose);
   }
 
   const trimmedValue = value.trim();
-  return trimmedValue.length > 0 ? trimmedValue : getDefaultMongoAdminUri(env);
+  return trimmedValue.length > 0
+    ? trimmedValue
+    : getDefaultMongoAdminUri(env, purpose);
 }
 
 function optionalString(value: string | undefined, fallback = ''): string {
@@ -195,6 +222,10 @@ function getDefaultOssInternalEndpoint(env: AppEnvironment): string {
 
 export default () => {
   const env = resolveAppEnvironment();
+  const databasePurpose = resolveTestDatabasePurpose(
+    env,
+    process.env.COGMEMORY_DATABASE_PURPOSE,
+  );
 
   return {
     app: {
@@ -207,8 +238,13 @@ export default () => {
         DEFAULT_FRONTEND_URL,
     },
     mongo: {
-      uri: resolveMongoUri(process.env.MONGO_URI, env),
-      adminUri: resolveMongoAdminUri(process.env.MONGO_ADMIN_URI, env),
+      purpose: databasePurpose,
+      uri: resolveMongoUri(process.env.MONGO_URI, env, databasePurpose),
+      adminUri: resolveMongoAdminUri(
+        process.env.MONGO_ADMIN_URI,
+        env,
+        databasePurpose,
+      ),
       autoIndex: parseBoolean(
         process.env.MONGO_AUTO_INDEX,
         getDefaultMongoAutoIndex(env),

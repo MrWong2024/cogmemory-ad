@@ -1,6 +1,11 @@
 import 'reflect-metadata';
 import type { INestApplicationContext, Type } from '@nestjs/common';
 import type { Connection } from 'mongoose';
+import {
+  DatabaseGateError,
+  assertBrowserAcceptancePreImportEnvironment,
+  assertBrowserFixtureDatabaseAccess,
+} from '../src/config/database-purpose';
 import type { Wp04BrowserFixtureManager } from '../test/support/wp04-browser-fixtures/wp04-browser-fixtures';
 import {
   WP04_DEFAULT_NAMESPACE,
@@ -83,6 +88,16 @@ function parseCommand(argv: string[]): ParsedCommand {
 }
 
 function writeSafeError(error: unknown): void {
+  if (error instanceof DatabaseGateError) {
+    console.error(
+      JSON.stringify({
+        ok: false,
+        code: error.code,
+        message: error.message,
+      }),
+    );
+    return;
+  }
   if (error instanceof Wp04FixtureError) {
     console.error(
       JSON.stringify({
@@ -114,6 +129,11 @@ async function run(): Promise<void> {
       parsed.command === 'cleanup'
         ? undefined
         : requireWp04FixturePassword(process.env.WP04_FIXTURE_PASSWORD);
+    assertBrowserAcceptancePreImportEnvironment({
+      nodeEnv: process.env.NODE_ENV,
+      purpose: process.env.COGMEMORY_DATABASE_PURPOSE,
+      mongoUri: process.env.MONGO_URI,
+    });
     const [{ NestFactory }, mongooseModule] = await Promise.all([
       import('@nestjs/core'),
       import('@nestjs/mongoose'),
@@ -125,9 +145,11 @@ async function run(): Promise<void> {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       require('../test/support/wp04-browser-fixtures/wp04-browser-fixtures') as ManagerModuleExport;
     app = await NestFactory.createApplicationContext(AppModule, {
+      abortOnError: false,
       logger: false,
     });
     connection = app.get<Connection>(mongooseModule.getConnectionToken());
+    await assertBrowserFixtureDatabaseAccess(connection);
     const manager = managerModule.createWp04BrowserFixtureManager(app);
     const result =
       parsed.command === 'prepare'

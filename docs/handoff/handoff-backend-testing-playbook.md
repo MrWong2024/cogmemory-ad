@@ -12,7 +12,7 @@
 - 本地前端默认 origin 为 `http://localhost:3002`。
 - 测试环境默认 `STORAGE_DRIVER=fake`。
 - 测试环境 `LLM_PROVIDER=stub`，不得依赖真实大模型调用。
-- 当前存在十七个真实 HTTP E2E；A27 的 `clinical-history.e2e-spec.ts` 与 A28 的 `follow-up-trends.e2e-spec.ts` 均纳入固定 `--runInBand` 全量执行。
+- 当前存在二十一个真实 HTTP / 数据库门禁 E2E；A27 的 `clinical-history.e2e-spec.ts`、A28 的 `follow-up-trends.e2e-spec.ts` 与 D-038 的 `database-purpose-gates.e2e-spec.ts` 均纳入固定 `--runInBand` 全量执行。
 - TypeScript `rootDir` 当前为 `.`，后端主入口预期 build 产物为 `dist/src/main.js`。
 - `tsBuildInfoFile` 保持 `./dist/tsconfig.build.tsbuildinfo`。
 - `dist` 与 `*.tsbuildinfo` 为生成物，不进入版本库。
@@ -54,17 +54,58 @@
 
 - `cogmemory_ad_browser_test` 已创建，以上两个用户也已创建。
 - app 用户的连接和 `readWrite` 角色已实际验证。
-- db_admin 用户的连接已实际验证；其设计权限为 `dbOwner`，但仓库当前没有独立验证该实际角色的证据，代码接入前应再次核验，不得写成“`dbOwner` 已验证”。
+- db_admin 用户的连接和 `dbOwner` 角色已实际验证。
 - 本手册不记录两个用户的密码或完整 MongoDB URI；连接信息只允许通过受控环境变量注入目标进程。
 
 ### 当前实施与认证边界
 
-1. Browser 专用数据库和两个账号已经准备完成。
-2. 代码接入尚未实施：代码层数据库选择、Browser 专用启动入口和连接后的实际数据库名门禁均待后续落地。
-3. 普通 E2E 与 Browser 数据库隔离回归尚未实施。
-4. 当前失效的旧 `b456-browser-final` 位于共享普通测试库 `cogmemory_ad_test`，只能作为取证样本，不能用于最终工程认证。
-5. Batch B 已取得 135 项功能证据，但尚未最终工程收口；最终工程认证仍待专用数据库接入后重新形成终态，不得把这 135 项证据写成最终完成。
-6. 本轮只固化文档治理和项目映射，不表示代码级隔离、启动入口、实际库名门禁或隔离回归已经完成，也不改变 roadmap 或业务工作包状态。
+1. `COGMEMORY_DATABASE_PURPOSE` 已接入 `standard_test` 与 `browser_acceptance`；`NODE_ENV=test` 未显式指定时默认 `standard_test`，项目映射固定且不接受任意 expected database name 覆盖。
+2. AppModule 在连接前校验 URI 声明的数据库，并在 Mongoose 连接建立后按 `connection.name` 再次校验；普通 E2E 与 Browser fixture 形成双向拒绝。
+3. B123、B16、B456、WP04 真实 Browser fixture CLI 均要求显式 `browser_acceptance`，连接后只接受 Browser 专用库中的 db_admin + `dbOwner`；普通 fixture E2E 仍在 `standard_test` 中直接测试 manager。
+4. `npm run start:browser-test` 是 test-only Browser backend 启动入口；连接后只接受 Browser 专用库中的 app + `readWrite`，角色通过后才监听端口，继续复用既有 configureApp、CORS、Cookie、fake Storage 与 stub SMS / LLM。
+5. `b456-isolation-sentinel` 在完整 standard_test unit / E2E 前后均完成 prepared verify，5/32/31/135/15/120 计数与完整安全 manifest 哈希一致；两次精确 cleanup 均为 `residualCount=0`。
+6. 新 `b456-browser-final` 已在 `cogmemory_ad_browser_test` 完成 replace 与 prepared verify，5/32/31/135/15/120 全部通过并继续保留；未执行 Browser 页面矩阵或 post-browser verify。
+7. 旧共享普通测试库中的同名 namespace 仅保留为历史取证事实，不再用于 Browser 认证或最终工程认证。
+8. Batch B 的 135 项既有功能证据继续有效，但尚未最终工程收口；下一步只在 Browser 专用库重新形成最终写入终态并执行 post-browser verify，不改变 roadmap 或业务工作包状态。
+
+### D-038 命令模板与双向门禁
+
+普通 E2E 显式使用 `standard_test`，且不继承 Browser 连接变量：
+
+```powershell
+cd backend
+$env:NODE_ENV="test"
+$env:COGMEMORY_DATABASE_PURPOSE="standard_test"
+Remove-Item Env:MONGO_URI,Env:MONGO_ADMIN_URI -ErrorAction SilentlyContinue
+npm run test:e2e
+```
+
+Browser fixture CLI 使用 db_admin 连接信息；以下只给出无凭据模板：
+
+```powershell
+cd backend
+$env:NODE_ENV="test"
+$env:COGMEMORY_DATABASE_PURPOSE="browser_acceptance"
+$env:MONGO_URI="<Browser db_admin URI>"
+$env:MONGO_ADMIN_URI=$env:MONGO_URI
+$env:B456_FIXTURE_PASSWORD="<由执行者临时设置>"
+node -r ts-node/register -r tsconfig-paths/register scripts/b456-browser-fixtures.ts verify --phase prepared --namespace <name>
+```
+
+Browser test backend 使用 app 连接信息，`MONGO_ADMIN_URI` 仍只作为受控管理连接输入，不得把 db_admin 放入 `MONGO_URI`：
+
+```powershell
+cd backend
+$env:NODE_ENV="test"
+$env:COGMEMORY_DATABASE_PURPOSE="browser_acceptance"
+$env:MONGO_URI="<Browser app URI>"
+$env:MONGO_ADMIN_URI="<Browser db_admin URI>"
+npm run start:browser-test
+```
+
+- 任何模板中的 URI 和密码都只允许存在于目标进程环境，不得写入 `.env.test`、仓库、日志或报告。
+- Browser CLI 指向普通测试库或开发库时在 AppModule 导入前拒绝；普通 E2E 指向 Browser 库时在连接前拒绝。连接成功后仍按实际库名二次校验。
+- Browser fixture 使用 app 用户、Browser backend 使用 db_admin 用户时均拒绝；错误信息不输出 URI、密码或认证凭据。
 
 ## 3. 当前 package.json 脚本
 
@@ -74,6 +115,7 @@
 - `start`
 - `start:dev`
 - `start:debug`
+- `start:browser-test`
 - `start:prod`
 - `lint`
 - `lint:fix`

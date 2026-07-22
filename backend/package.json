@@ -11,6 +11,7 @@
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
+    "start:browser-test": "node -r ts-node/register -r tsconfig-paths/register scripts/start-browser-test-backend.ts",
     "start:prod": "node -e \"process.env.NODE_ENV='production'; require('./dist/src/main.js')\"",
     "lint": "eslint \"{src,test,scripts}/**/*.ts\"",
     "lint:fix": "eslint \"{src,test,scripts}/**/*.ts\" --fix",
@@ -20,7 +21,7 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "node -e \"process.env.NODE_ENV='test'; require('jest').run(['--config', './test/jest-e2e.json', '--runInBand'])\""
+    "test:e2e": "node -e \"process.env.NODE_ENV='test'; process.env.COGMEMORY_DATABASE_PURPOSE='standard_test'; require('jest').run(['--config', './test/jest-e2e.json', '--runInBand'])\""
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",

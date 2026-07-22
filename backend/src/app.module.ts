@@ -2,10 +2,16 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
+import type { Connection } from 'mongoose';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import configuration from './config/configuration';
+import {
+  assertConnectedDatabaseMatchesPurpose,
+  assertDeclaredDatabaseMatchesPurpose,
+  type TestDatabasePurpose,
+} from './config/database-purpose';
 import { envValidationSchema } from './config/env.validation';
 import { AssessmentsModule } from './modules/assessments/assessments.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -29,13 +35,33 @@ import { UsersModule } from './modules/users/users.module';
     }),
     MongooseModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        uri: configService.getOrThrow<string>('mongo.uri'),
-        autoIndex: configService.getOrThrow<boolean>('mongo.autoIndex'),
-        serverSelectionTimeoutMS: configService.getOrThrow<number>(
-          'mongo.serverSelectionTimeoutMs',
-        ),
-      }),
+      useFactory: (configService: ConfigService) => {
+        const nodeEnv = configService.getOrThrow<string>('app.env');
+        const purpose = configService.get<TestDatabasePurpose>('mongo.purpose');
+        const uri = configService.getOrThrow<string>('mongo.uri');
+        assertDeclaredDatabaseMatchesPurpose({
+          nodeEnv,
+          purpose,
+          mongoUri: uri,
+        });
+
+        return {
+          uri,
+          autoIndex: configService.getOrThrow<boolean>('mongo.autoIndex'),
+          serverSelectionTimeoutMS: configService.getOrThrow<number>(
+            'mongo.serverSelectionTimeoutMs',
+          ),
+          retryAttempts: nodeEnv === 'test' ? 1 : undefined,
+          connectionFactory: (connection: Connection) => {
+            assertConnectedDatabaseMatchesPurpose({
+              nodeEnv,
+              purpose,
+              databaseName: connection.name,
+            });
+            return connection;
+          },
+        };
+      },
     }),
     PatientsModule,
     AssessmentsModule,

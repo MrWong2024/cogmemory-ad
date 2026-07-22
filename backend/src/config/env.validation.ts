@@ -78,12 +78,25 @@ export const envValidationSchema = Joi.object({
   PORT: Joi.number().port().default(5002),
   FRONTEND_URL: Joi.string().trim().min(1).default('http://localhost:3002'),
   CORS_ORIGIN: Joi.string().trim().min(1).default('http://localhost:3002'),
+  COGMEMORY_DATABASE_PURPOSE: Joi.when('NODE_ENV', {
+    is: 'test',
+    then: Joi.string()
+      .valid('standard_test', 'browser_acceptance')
+      .default('standard_test'),
+    otherwise: Joi.string()
+      .valid('standard_test', 'browser_acceptance')
+      .optional(),
+  }),
   MONGO_URI: Joi.when('NODE_ENV', {
     is: 'production',
     then: mongoUriSchema.required(),
     otherwise: Joi.when('NODE_ENV', {
       is: 'test',
-      then: mongoUriSchema.default(DEFAULT_TEST_MONGO_URI),
+      then: Joi.when('COGMEMORY_DATABASE_PURPOSE', {
+        is: 'browser_acceptance',
+        then: mongoUriSchema.required(),
+        otherwise: mongoUriSchema.default(DEFAULT_TEST_MONGO_URI),
+      }),
       otherwise: mongoUriSchema.default(DEFAULT_DEV_MONGO_URI),
     }),
   }),
@@ -92,7 +105,11 @@ export const envValidationSchema = Joi.object({
     then: mongoUriSchema.required(),
     otherwise: Joi.when('NODE_ENV', {
       is: 'test',
-      then: mongoUriSchema.default(DEFAULT_TEST_MONGO_ADMIN_URI),
+      then: Joi.when('COGMEMORY_DATABASE_PURPOSE', {
+        is: 'browser_acceptance',
+        then: mongoUriSchema.required(),
+        otherwise: mongoUriSchema.default(DEFAULT_TEST_MONGO_ADMIN_URI),
+      }),
       otherwise: mongoUriSchema.default(DEFAULT_DEV_MONGO_ADMIN_URI),
     }),
   }),

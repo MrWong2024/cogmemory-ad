@@ -353,11 +353,13 @@
 ### D-038：Browser 验收数据与普通自动化测试数据采用数据库级隔离
 
 - 日期：2026-07-21
-- 状态：决策已锁定；代码接入尚未实施，尚待下一阶段实施。
+- 状态：决策已锁定；代码接入、Browser 专用启动入口、实际库名与用户角色门禁、隔离回归均已实施。
 - 背景：普通 E2E 会删除并重新物化全局 MMSE / MoCA 定义和版本；长期保留的 Browser fixture 则依赖稳定的定义、版本和实例绑定。namespace 只能隔离患者、访视和业务记录，不能隔离全局量表目录；两者共库会造成目录代际漂移和实例绑定失效。
 - 决策：普通自动化测试与 Browser 验收使用不同数据库；Browser fixture CLI 与 Browser test backend 使用同一个 Browser 专用数据库。具体数据库名、用户和操作命令以 `handoff-backend-testing-playbook.md` 为准；通用 Codex 规则只规定抽象用途分类，不保存项目具体映射。
-- 后果：后续需要实现代码级数据库名门禁和 Browser 专用启动入口；普通 E2E 可继续重建普通测试库；Browser fixture 可跨多轮保留而不受普通 E2E 影响；Browser 专用库仍须执行 namespace cleanup 和 sentinel 回归。
-- 影响范围：本决策只锁定测试环境隔离原则，不修改产品 Schema、catalog resolver 或业务校验，不表示数据库选择代码、启动入口、实际库名门禁或隔离回归已经完成。
+- 实施：`standard_test` 与 `browser_acceptance` 采用固定项目映射；AppModule 在连接前校验 URI 声明库名并在连接后校验 `connection.name`。四套 Browser fixture CLI 只接受 Browser db_admin + `dbOwner`，test-only Browser backend 只接受 Browser app + `readWrite` 且通过后才监听。
+- 回归：Browser sentinel 在完整 standard_test unit / E2E 前后 prepared verify 与安全 manifest 哈希一致，随后两次 namespace cleanup 均零残留；新 `b456-browser-final` 已在 Browser 专用库 prepared verify 并保留。
+- 后果：普通 E2E 可继续重建普通测试库；Browser fixture 可跨多轮保留而不受普通 E2E 影响。Browser 专用库仍须精确执行 namespace cleanup，Batch B 仍待在专用库重新形成最终写入终态并执行 post-browser verify。
+- 影响范围：实现仅涉及测试数据库用途、配置/连接门禁、fixture CLI、test-only 启动入口与测试；未修改产品 Schema、catalog resolver、readiness、量表规则或业务接口。
 
 ## 4. 后续同步规则
 

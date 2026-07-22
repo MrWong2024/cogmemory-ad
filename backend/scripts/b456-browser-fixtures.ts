@@ -1,6 +1,11 @@
 import 'reflect-metadata';
 import type { INestApplicationContext, Type } from '@nestjs/common';
 import type { Connection } from 'mongoose';
+import {
+  DatabaseGateError,
+  assertBrowserAcceptancePreImportEnvironment,
+  assertBrowserFixtureDatabaseAccess,
+} from '../src/config/database-purpose';
 import type { B456BrowserFixtureManager } from '../test/support/b456-browser-fixtures/b456-browser-fixtures';
 import {
   B456_DEFAULT_NAMESPACE,
@@ -133,6 +138,16 @@ function parseCommand(argv: string[]): ParsedCommand {
 }
 
 function writeSafeError(error: unknown): void {
+  if (error instanceof DatabaseGateError) {
+    console.error(
+      JSON.stringify({
+        ok: false,
+        code: error.code,
+        message: error.message,
+      }),
+    );
+    return;
+  }
   console.error(JSON.stringify(toB456SafeErrorPayload(error)));
 }
 
@@ -146,6 +161,11 @@ async function run(): Promise<void> {
       parsed.command === 'cleanup'
         ? undefined
         : requireB456FixturePassword(process.env.B456_FIXTURE_PASSWORD);
+    assertBrowserAcceptancePreImportEnvironment({
+      nodeEnv: process.env.NODE_ENV,
+      purpose: process.env.COGMEMORY_DATABASE_PURPOSE,
+      mongoUri: process.env.MONGO_URI,
+    });
     const [{ NestFactory }, mongooseModule] = await Promise.all([
       import('@nestjs/core'),
       import('@nestjs/mongoose'),
@@ -157,9 +177,11 @@ async function run(): Promise<void> {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       require('../test/support/b456-browser-fixtures/b456-browser-fixtures') as ManagerModuleExport;
     app = await NestFactory.createApplicationContext(AppModule, {
+      abortOnError: false,
       logger: false,
     });
     connection = app.get<Connection>(mongooseModule.getConnectionToken());
+    await assertBrowserFixtureDatabaseAccess(connection);
     const manager = managerModule.createB456BrowserFixtureManager(app);
     const result =
       parsed.command === 'prepare'

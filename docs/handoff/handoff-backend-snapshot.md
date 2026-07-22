@@ -23,11 +23,14 @@
 - OSS 业务上传服务、SMS Service、LLM Service 均未实现。
 - 本地默认后端端口为 `5002`。
 - 本地默认前端 origin 为 `http://localhost:3002`。
+- test 数据库用途已分为 `standard_test` → `cogmemory_ad_test` 与 `browser_acceptance` → `cogmemory_ad_browser_test`；未显式指定的 `NODE_ENV=test` 进程默认 `standard_test`。配置 URI 在连接前按固定映射校验，连接后再按 Mongoose `connection.name` 校验。
+- `npm run start:browser-test` 是 Browser test backend 专用入口：仅接受 Browser app 用户及目标库 `readWrite` 角色，通过实际库名与角色门禁后才监听；B123/B16/B456/WP04 CLI 则仅接受 Browser db_admin 用户及目标库 `dbOwner` 角色。
 - 当前报告接口为十一个，另有患者历史评估与基础随访趋势两个接口；A12-A28 临床接口显式使用 `SessionAuthGuard` + `RolesGuard`。WP-04 四个只读接口允许四个患者工作流角色且不读取 CurrentUser。
 - 已完成后端公共底座基础闭环本地验证：`npm install` 成功、`npm run build` 成功、`npm test -- --runInBand` 成功、`npm run start:prod` 启动成功。
 - 当前 A26 验证结果为 76 个单元测试套件 / 666 个测试通过；A26 定向真实 HTTP E2E 为 1 个套件 / 7 个测试通过；全量 E2E 为 14 个套件 / 67 个测试通过。
 - A27 实现三个只读接口、ClinicalHistoryModule、完整报告历史链 evaluator 与轻量批量读取。实际验证：变更范围定向 ESLint 通过；`npm run build` 通过；全量 unit 84 suites / 707 tests；全量 E2E 16 suites / 73 tests，隔离 test DB、fake Storage、stub SMS/LLM、脱敏数据且无真实外部调用。完整 lint 仍为既有 scoring 三文件 51 个 Prettier error、0 warning。
 - A28 实现第四个 `GET /patients/:patientId/follow-up-trends`、共享 source evaluator、Visit 保留式 source 判定、相邻 exact trace/domain mapping 可比性与轻量 batch 读取。实际验证：变更范围定向 ESLint 与 build 通过；A27+A28 定向 unit 14 suites / 126 tests、A28 定向 E2E 1 suite / 3 tests、A27 定向 E2E 1 suite / 3 tests、全量 unit 88 suites / 751 tests、全量 E2E 17 suites / 76 tests 通过。完整 lint 仍仅有相同 scoring 三文件 51 个 Prettier errors、0 warnings。
+- D-038 最终门禁：lint 0 errors / 0 warnings，typecheck 0 errors，build 通过，full unit 89 suites / 761 tests，full E2E 21 suites / 94 tests；E2E 实际连接 `cogmemory_ad_test`。Browser sentinel 在完整回归前后 prepared verify 与安全 manifest 哈希一致，两次 cleanup 均 `residualCount=0`；新 `b456-browser-final` 已在 `cogmemory_ad_browser_test` prepared verify 并保留。Browser backend 使用 app 用户通过角色门禁后 health=200，随后已停止。
 - A24 定向真实 HTTP E2E 已通过：1 个测试套件、6 个测试通过；全量 E2E 为 13 个测试套件、60 个测试通过。A24 完成后补充执行的最近两次全量 E2E 均完整通过，均使用 `NODE_ENV=test`、Jest `--runInBand`、隔离 `cogmemory_ad_test`、fake Storage、stub SMS / LLM 和脱敏人工数据，未调用真实外部服务；A24 按 `SUBJ-A24-TEST-*` / `VISIT-A24-TEST-*` 前缀定向清理运行时数据。此前一次全量复跑曾出现既有跨套件 test catalog / 数据顺序污染现象；该现象在随后两次完整串行复跑中未再次出现。当前验证结论以最近连续两次全量通过为准，但尚不据此宣称潜在测试隔离风险已被永久消除。
 - 后端 TypeScript 编译根目录为 `.`，`outDir` 保持 `./dist`，因此 `src/main.ts` 编译后的主入口产物为 `dist/src/main.js`。
 - `package.json` 中 `start:prod` 保持指向 `./dist/src/main.js`，当前 build 产物路径已与该启动路径对齐。
@@ -39,7 +42,7 @@
 
 - 项目名称为 CogMemory AD / 智忆评。
 - health 响应 service 为 `cogmemory-ad-backend`。
-- MongoDB 默认命名口径为 `cogmemory_ad_dev`、`cogmemory_ad_test` 和 `cogmemory_ad`。
+- MongoDB 当前命名口径包含 development 的 `cogmemory_ad_dev`、普通自动化测试的 `cogmemory_ad_test`、Browser 验收的 `cogmemory_ad_browser_test` 和 production 的 `cogmemory_ad`。
 - 配置模块中的 Session cookie 默认名为 `cogmemory_ad_session`；A11 已将 `AuthModule` 内部 `SESSION_COOKIE_NAME` 统一为 `cogmemory_ad_session`，与当前项目配置默认口径一致。
 - Storage object prefix 默认值为 `cogmemory_ad`。
 - development / test 默认 `STORAGE_DRIVER=fake`，production 默认 `STORAGE_DRIVER=oss`。

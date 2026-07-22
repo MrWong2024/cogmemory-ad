@@ -1,6 +1,11 @@
 import 'reflect-metadata';
 import type { INestApplicationContext, Type } from '@nestjs/common';
 import type { Connection } from 'mongoose';
+import {
+  DatabaseGateError,
+  assertBrowserAcceptancePreImportEnvironment,
+  assertBrowserFixtureDatabaseAccess,
+} from '../src/config/database-purpose';
 import type { B123BrowserFixtureManager } from '../test/support/b123-browser-fixtures/b123-browser-fixtures';
 import {
   B123_DEFAULT_NAMESPACE,
@@ -167,6 +172,16 @@ function parseCommand(argv: string[]): ParsedCommand {
 }
 
 function writeSafeError(error: unknown): void {
+  if (error instanceof DatabaseGateError) {
+    console.error(
+      JSON.stringify({
+        ok: false,
+        code: error.code,
+        message: error.message,
+      }),
+    );
+    return;
+  }
   if (error instanceof B123FixtureError) {
     console.error(
       JSON.stringify({
@@ -200,6 +215,11 @@ async function run(): Promise<void> {
       parsed.command === 'replace'
         ? requireB123FixturePassword(process.env.B123_FIXTURE_PASSWORD)
         : undefined;
+    assertBrowserAcceptancePreImportEnvironment({
+      nodeEnv: process.env.NODE_ENV,
+      purpose: process.env.COGMEMORY_DATABASE_PURPOSE,
+      mongoUri: process.env.MONGO_URI,
+    });
     const [{ NestFactory }, mongooseModule] = await Promise.all([
       import('@nestjs/core'),
       import('@nestjs/mongoose'),
@@ -211,9 +231,11 @@ async function run(): Promise<void> {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       require('../test/support/b123-browser-fixtures/b123-browser-fixtures') as ManagerModuleExport;
     app = await NestFactory.createApplicationContext(AppModule, {
+      abortOnError: false,
       logger: false,
     });
     connection = app.get<Connection>(mongooseModule.getConnectionToken());
+    await assertBrowserFixtureDatabaseAccess(connection);
     const manager = managerModule.createB123BrowserFixtureManager(app);
     const result =
       parsed.command === 'prepare'
