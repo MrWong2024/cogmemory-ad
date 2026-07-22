@@ -38,12 +38,42 @@
 2. Browser fixture CLI 与 Browser 验收后端必须同时使用 `cogmemory_ad_browser_test`。
 3. 普通 E2E 禁止连接 `cogmemory_ad_browser_test`。
 4. Browser fixture 禁止连接 `cogmemory_ad_test` 或 `cogmemory_ad_dev`。
-5. 不得把 Browser 专用连接写入普通 `.env.test`，避免普通 E2E 误连 Browser 验收库。
+5. 不得把 Browser 专用连接写入 `backend/.env.test`，避免普通 E2E 误连 Browser 验收库。
 6. 同一任务同时包含普通测试与 Browser 验收时，必须分别启动独立进程并分别注入进程级环境变量；禁止复用已经设置数据库连接的 shell 上下文。
 7. 每个实际连接建立后都必须读取真实数据库名，并与该进程声明的允许数据库逐字校验；不一致时立即停止，不得自动回退或改连其他数据库。
 8. namespace 继续隔离各批次业务数据，但不能替代数据库级隔离。
 9. Browser 验收库中的量表定义、版本和实例绑定必须从 fixture prepare 到 post-browser verify 全程保持稳定。
 10. cleanup 仍须按 namespace 精确执行；使用 Browser 专用库不构成 `dropDatabase()`、清空 collection 或无条件删除的授权。
+
+### 本地固定凭据来源与进程隔离
+
+| 数据库用途 | 本地凭据来源文件 | 文件职责 |
+|---|---|---|
+| `standard_test` | `backend/.env.test` | 仅供 `standard_test`；普通 unit / E2E 进程只能加载该文件，不得加载 `backend/.env.browser-acceptance` |
+| `browser_acceptance` | `backend/.env.browser-acceptance` | 仅供 `browser_acceptance`；它是本地凭据来源文件，不由 Nest 默认与 `backend/.env.test` 叠加加载 |
+
+- `backend/.env.browser-acceptance` 当前使用 `COGMEMORY_DATABASE_PURPOSE`、`BROWSER_ACCEPTANCE_APP_MONGO_URI` 和 `BROWSER_ACCEPTANCE_ADMIN_MONGO_URI`；本手册只记录键名和映射，不记录实际值。
+- 两个 env 文件可以同时存在于磁盘，Codex 可以读取它们以获得各自测试用途的本地固定凭据；同一进程只能加载其中一个用途的配置。
+- 同一任务同时涉及 `standard_test` 与 `browser_acceptance` 时，必须启动两个独立进程：前者只加载 `backend/.env.test`，后者只加载 `backend/.env.browser-acceptance`。禁止依赖 dotenv 加载顺序、shell 旧变量或后加载覆盖行为选择数据库。
+- 本地隔离测试固定密码按普通测试凭据处理，Codex 可以从上述项目约定的本地忽略文件或任务明确给定值自动读取、使用并注入目标进程或测试数据构造流程，不要求剪贴板授权、一次性密码、Secret Manager、人工输入、人工交互或每次询问用户。该口径同样适用于 unit / E2E / fixture / Browser 验收过程中创建的测试应用用户固定密码及其他只能访问本地隔离测试数据的确定性凭据。
+- 固定测试凭据不得复制到 Git 跟踪文件、文档、日志、生成物、最终报告或提交记录。它们不要求仅为了保密而在每一步立即清空；切换数据库用途或复用 shell 前，必须优先启动独立进程，或清除或覆盖 `MONGO_URI`、`MONGO_ADMIN_URI`、`COGMEMORY_DATABASE_PURPOSE` 等用途相关变量。该清理是防止串库的数据库隔离要求，不是密码保密仪式。
+
+Browser backend 必须在只加载 `backend/.env.browser-acceptance` 的独立进程中显式映射 app 主连接和受控管理连接：
+
+```powershell
+$env:MONGO_URI = $env:BROWSER_ACCEPTANCE_APP_MONGO_URI
+$env:MONGO_ADMIN_URI = $env:BROWSER_ACCEPTANCE_ADMIN_MONGO_URI
+```
+
+Browser fixture CLI 必须在另一个只加载 `backend/.env.browser-acceptance` 的独立进程中显式把主连接与管理连接都映射为 db_admin：
+
+```powershell
+$env:MONGO_URI = $env:BROWSER_ACCEPTANCE_ADMIN_MONGO_URI
+$env:MONGO_ADMIN_URI = $env:BROWSER_ACCEPTANCE_ADMIN_MONGO_URI
+```
+
+- 不得让 Browser backend 使用 db_admin 作为 `MONGO_URI`，也不得让 Browser fixture CLI 使用 app 用户作为主连接。
+- D-038 的建连前用途 / 库名门禁、建连后实际数据库名校验和用户名 / 角色门禁继续有效；文件来源与变量映射不能替代任何门禁。
 
 ### Browser 验收数据库用户
 
@@ -70,7 +100,7 @@
 
 ### D-038 命令模板与双向门禁
 
-普通 E2E 显式使用 `standard_test`，且不继承 Browser 连接变量：
+普通 E2E 必须在只加载 `backend/.env.test` 的独立 `standard_test` 进程中执行，且不继承 Browser 连接变量：
 
 ```powershell
 cd backend
@@ -80,30 +110,27 @@ Remove-Item Env:MONGO_URI,Env:MONGO_ADMIN_URI -ErrorAction SilentlyContinue
 npm run test:e2e
 ```
 
-Browser fixture CLI 使用 db_admin 连接信息；以下只给出无凭据模板：
+Browser fixture CLI 在另一个独立进程中只加载 `backend/.env.browser-acceptance`，并按本节映射使用 db_admin 主连接；fixture 创建的应用用户固定密码可从项目约定的本地忽略凭据源或任务明确值自动注入。以下模板不含实际凭据：
 
 ```powershell
 cd backend
 $env:NODE_ENV="test"
-$env:COGMEMORY_DATABASE_PURPOSE="browser_acceptance"
-$env:MONGO_URI="<Browser db_admin URI>"
-$env:MONGO_ADMIN_URI=$env:MONGO_URI
-$env:B456_FIXTURE_PASSWORD="<由执行者临时设置>"
+$env:MONGO_URI = $env:BROWSER_ACCEPTANCE_ADMIN_MONGO_URI
+$env:MONGO_ADMIN_URI = $env:BROWSER_ACCEPTANCE_ADMIN_MONGO_URI
 node -r ts-node/register -r tsconfig-paths/register scripts/b456-browser-fixtures.ts verify --phase prepared --namespace <name>
 ```
 
-Browser test backend 使用 app 连接信息，`MONGO_ADMIN_URI` 仍只作为受控管理连接输入，不得把 db_admin 放入 `MONGO_URI`：
+Browser test backend 必须在另一个独立进程中只加载 `backend/.env.browser-acceptance`，使用 app 主连接；`MONGO_ADMIN_URI` 仍只作为受控管理连接输入，不得把 db_admin 放入 `MONGO_URI`：
 
 ```powershell
 cd backend
 $env:NODE_ENV="test"
-$env:COGMEMORY_DATABASE_PURPOSE="browser_acceptance"
-$env:MONGO_URI="<Browser app URI>"
-$env:MONGO_ADMIN_URI="<Browser db_admin URI>"
+$env:MONGO_URI = $env:BROWSER_ACCEPTANCE_APP_MONGO_URI
+$env:MONGO_ADMIN_URI = $env:BROWSER_ACCEPTANCE_ADMIN_MONGO_URI
 npm run start:browser-test
 ```
 
-- 任何模板中的 URI 和密码都只允许存在于目标进程环境，不得写入 `.env.test`、仓库、日志或报告。
+- Browser 凭据值保留在 `backend/.env.browser-acceptance` 或任务明确授权的进程级输入中，不得复制到 `backend/.env.test`、Git 跟踪文件、文档、日志、生成物、最终报告或提交记录。
 - Browser CLI 指向普通测试库或开发库时在 AppModule 导入前拒绝；普通 E2E 指向 Browser 库时在连接前拒绝。连接成功后仍按实际库名二次校验。
 - Browser fixture 使用 app 用户、Browser backend 使用 db_admin 用户时均拒绝；错误信息不输出 URI、密码或认证凭据。
 
@@ -470,12 +497,11 @@ npm run start:browser-test
 
 - 用途：只为 B16 真实浏览器矩阵显式准备隔离账号和确定性数据；当前 contract 共 22 个 `scenarioKey`（1 个 `roles` + 21 个业务场景）。它不是生产 seed、不随启动或测试自动执行，也不代表 B16 浏览器验收已经通过。
 - 运行前必须确认 `NODE_ENV=test`、连接的是项目隔离 test database，且 Storage 为 fake、LLM/SMS 为 stub、Session 为非 production 配置。CLI 在装配 `AppModule` 前先检查 `NODE_ENV`，连接后再按真实 databaseName 二次门禁；任一门禁失败均不写库并返回非 0。
-- 密码只通过当前进程的 `B16_FIXTURE_PASSWORD` 临时提供，不写入仓库、文档、参数、manifest 或日志；namespace 仅允许 3–32 位小写字母、数字和单连字符分隔。
+- 固定测试密码通过独立目标进程的 `B16_FIXTURE_PASSWORD` 提供，可以从项目约定的本地忽略凭据源或任务明确值自动注入，不要求人工输入；不得写入仓库、文档、参数、manifest 或日志。namespace 仅允许 3–32 位小写字母、数字和单连字符分隔。
 
 ```powershell
 cd backend
 $env:NODE_ENV="test"
-$env:B16_FIXTURE_PASSWORD="<由执行者临时设置>"
 node -r ts-node/register -r tsconfig-paths/register scripts/b16-browser-fixtures.ts prepare --namespace b16-browser
 node -r ts-node/register -r tsconfig-paths/register scripts/b16-browser-fixtures.ts verify --namespace b16-browser
 node -r ts-node/register -r tsconfig-paths/register scripts/b16-browser-fixtures.ts cleanup --namespace b16-browser --confirm-cleanup
@@ -492,17 +518,15 @@ node -r ts-node/register -r tsconfig-paths/register scripts/b16-browser-fixtures
 
 - 用途：为 B17 完整浏览器矩阵显式准备隔离、脱敏、确定性数据；contract 共 44 个 `scenarioKey`（1 个 `roles` + 43 个业务场景），覆盖 history、report versions、report detail、trend data status、total comparison、Domain comparison、范围和 Patient 状态。夹具不是 production seed，不随应用或测试自动执行；准备成功不等于 B17 浏览器验收完成。
 - CLI 支持 `prepare`、只读 `verify`、`cleanup --confirm-cleanup` 和 `replace --confirm-replace`。`NODE_ENV=test` 在加载 `AppModule` 前检查，连接后还会校验隔离 test database、`APP_ENV=test`、fake Storage、stub SMS/LLM 和非 production Session 配置。
-- `WP04_FIXTURE_PASSWORD` 只由当前进程环境临时提供，不接受命令行 password，不进入配置、文档、manifest 或日志；五个账号角色固定为 doctor、admin、nurse、research_assistant、system。namespace 仅允许 3–32 位小写字母、数字与单连字符分隔。
+- 固定测试密码通过独立目标进程的 `WP04_FIXTURE_PASSWORD` 提供，可以从项目约定的本地忽略凭据源或任务明确值自动注入，不要求人工输入；不接受命令行 password，不进入 Git 跟踪配置、文档、manifest 或日志。五个账号角色固定为 doctor、admin、nurse、research_assistant、system。namespace 仅允许 3–32 位小写字母、数字与单连字符分隔。
 
 ```powershell
 cd backend
 $env:NODE_ENV="test"
-$env:WP04_FIXTURE_PASSWORD="<由执行者临时设置>"
 node -r ts-node/register -r tsconfig-paths/register scripts/wp04-browser-fixtures.ts prepare --namespace <name>
 node -r ts-node/register -r tsconfig-paths/register scripts/wp04-browser-fixtures.ts verify --namespace <name>
 node -r ts-node/register -r tsconfig-paths/register scripts/wp04-browser-fixtures.ts cleanup --namespace <name> --confirm-cleanup
 node -r ts-node/register -r tsconfig-paths/register scripts/wp04-browser-fixtures.ts replace --namespace <name> --confirm-replace
-Remove-Item Env:WP04_FIXTURE_PASSWORD
 ```
 
 - Domain mapping source/mode 是公开 Domain 数据可用性的前置资格。两个专用场景的总分仍为 `comparable`，但公开 `domainDeltas` 必须严格为 `status=unavailable`、`reasons=[domain_source_incomplete]`、`items=[]`；pure comparator 中的 `domain_mapping_source_changed` / `domain_mapping_mode_changed` 是防御性或未来兼容 reason，不属于当前 API 可达矩阵。
