@@ -612,6 +612,15 @@ Remove-Item Env:WP04_FIXTURE_PASSWORD
 - 正式 `b456-browser-final` 仅在定向冒烟通过后执行 replace 与 prepared verify，5/32/31/135/15/120 全部通过并继续保留；未执行正式 cleanup，也未执行 post-browser verify。
 - 两份 testing playbook 已同步，roadmap 未修改。Batch B 仍未完成，下一步必须从头完整重跑 B4–B6 / Batch B，不得把本次定向冒烟写成 Batch B 完成。
 
+### Batch B Browser 专用库最终工程认证与 fixture 生命周期收口
+
+- 最终收口基线为 `f528efb7152b5770e9f873683fbd03c814108b81`。Fixture CLI 使用 `cogmemory_ad_browser_test_db_admin` / `dbOwner`；Browser backend 使用 `cogmemory_ad_browser_test_app` / `readWrite`，并在实际数据库名与角色门禁通过后才监听。frontend 使用既有 production build；backend health 返回 200。
+- prepared 终态、`scale_execution_timing` 的真实 UI 单字段 `timing.durationMs` 补写以及 post-browser verify 全部位于 Browser 专用数据库 `cogmemory_ad_browser_test`。目标 UI 保存为单次 PATCH / HTTP 200，计划外业务写请求与自动重试均为 0；`standard_test` 数据库和 standard_test unit/E2E 进程均未参与。
+- db_admin/dbOwner 进程执行 `verify --phase post-browser` 成功，退出码为 0；verify 只读且前后快照一致，5 roles、32 个 scenarioKey、31 个业务场景、135 个 audit ID、15 个 Browser-direct、120 个 fixture-required 全部通过。
+- post-browser verify 通过后，对正式 `b456-browser-final` 连续执行两次精确 cleanup。第一次实际命中、第二次幂等确认，两次均为 `residualCount=0`；正式 namespace、namespace-owned 记录和操作系统临时目录中的 fixture 文件均已删除，全局 MMSE/MoCA seed 保持在 cleanup 范围之外。
+- 本次没有修改 `backend/src/**` 产品代码、backend fixture、script、测试、API/DTO/Schema、配置或 seed，也没有重跑 backend unit/E2E 或完整代码门禁；既有代码基线门禁证据保持历史事实。本次只同步两份 testing playbook，roadmap 未修改，Batch C 未启动。
+- Batch B 桌面范围最终证据为 Browser 133 项 + automated boundary 2 项 = 135 项，fail=0、not_executed=0；桌面范围已经完成，Batch E 的 8 个真实设备/人工项目继续保留。
+
 ## 11. 后续同步规则
 
 - 后端新增或调整测试脚本后，应同步更新自动验证命令。
