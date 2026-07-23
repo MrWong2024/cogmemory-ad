@@ -42,7 +42,7 @@
 
 **契约与工作包结论**
 
-- `handoff-wp04-backend-contract.md` 已锁定四个只读 endpoint、字段级 DTO/response、完整报告 lineage、趋势来源、exact trace/domain mapping 可比性、缺失语义、权限、错误、批量查询和模块边界。
+- A27/A28 已按锁定的 WP-04 四接口契约完成实施；当前接口、响应、查询编排和前端消费事实分别由 backend/frontend map 维护。原 WP-04 契约可从删除前基线 `66d2ae4d96b6302104c772dcc2b3be57b5ffa433` 的 Git 历史查看。
 - A27 已完成患者历史评估、报告版本列表、指定历史报告详情及完整安全 lineage；A28 已完成单量表基础随访趋势，包括 Visit 保留式 dataStatus、相邻 exact trace / domain mapping 可比性、缺失与版本变化 reason。
 - B17 已完成三个路由、四个 GET API Client、history/trend 页面、版本面板和历史只读详情；WP-04 / B17 至此完成，没有启动下一工作包。
 - 当前后端门禁、Browser 批次、验证数字、evidence commit、verify 与 cleanup 见 `handoff-backend-testing-playbook.md` 和 `handoff-frontend-testing-playbook.md`。

@@ -57,7 +57,9 @@
 - `docs\handoff\handoff-backend-config-matrix.md`
 - `docs\handoff\handoff-backend-decisions.md`
 - `docs\handoff\handoff-backend-testing-playbook.md`
-- `docs\handoff\handoff-wp04-backend-contract.md`（WP-04 已锁定并实施的契约；A27/A28 后端与 B17 前端均已完成）
+- `docs\handoff\handoff-frontend-testing-playbook.md`
+
+WP-04 当前事实入口：接口、权限、响应及错误见 backend API map，DTO/response 字段见 DTO cheatsheet，查询、lineage、趋势及模块职责见 Service map，工程能力边界见 backend snapshot；后端门禁及前端 Browser、evidence、verify 与 cleanup 分别见两份 testing playbook。
 
 ## 6. 后续同步规则
 
