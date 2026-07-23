@@ -2,543 +2,92 @@
 
 ## 1. 文档定位
 
-本文档用于记录 CogMemory AD 前端自动验证命令、人工验证口径、认证状态验证口径、医疗与隐私展示红线，供后续开发和交接使用。
+本文档是前端验证的 active playbook，只维护当前静态门禁、Browser 通用验收策略、仍待执行的 Batch C / D / E 合同，以及已完成范围的最终证据索引。已完成 B1–B6、B16、B17 的逐场景操作、失败过程、旧端口、旧 namespace 和重复命令由 Git 历史追溯，不在本文继续累积。
 
-## 2. 当前状态
+本文档不改变产品、接口、DTO、Schema、测试合同或 roadmap。下文 B7–B15 的阶段内序号保持减肥前基线顺序，序号即该阶段稳定验证项；不得重排、合并或用数量摘要替代验证意图。
 
-- 前端公共底座与 B1-B15 既有闭环已落地；B16 replacement V2+ 产品代码保持在基线 `066ee87`。该基线的前轮完整浏览器矩阵、确定性 V2+ Resume / unsafe summary 补齐矩阵与 `9099f66` 的 Codex 内置浏览器 Web Storage 审计共同构成最终证据，B16 / WP-02 已完成。
-- B17 / WP-04 的前端实现、静态门禁与完整真实浏览器矩阵均已完成；44 个 scenarioKey 全部通过，正式 fixture 已双次清理且残留为 0。
-- `frontend\package.json` 已存在，自动验证命令以其中真实脚本为准。
-- B2-B17 不新增测试代码、测试框架、E2E 或第三方依赖。
-- 当前自动验证以 ESLint、TypeScript 与 production build 覆盖现有前端类型、调用代码和页面构建；真实 HTTP、角色、并发、浏览器交互与业务数据状态由前轮 Chrome 矩阵补充，最终安全存储检查由 Codex 内置浏览器 `@Browser` 在隔离上下文中完成。
+## 2. 当前验证状态总表
 
-## 3. B1 / B2 / B3 / B4 / B5 / B6 / B7 / B8 / B9 / B10 / B11 / B12 / B13 / B14 / B15 / B16 / B17 自动验证命令
+| 范围 | 当前状态 | 唯一当前事实 |
+|---|---|---|
+| WP-02 / B16 | 已完成 | replacement V2+ 生命周期矩阵、Resume / unsafe 边界和 Web Storage 最终审计均已关闭 |
+| WP-04 / B17 | 已完成 | 44 个 scenarioKey 全部通过，正式 fixture 双次 cleanup，残留为 0 |
+| Batch A / B1–B3 | 已完成 | 67 个验证原子全部有明确处置，正式 fixture 双次 cleanup，残留为 0 |
+| Batch B / B4–B6 | 桌面范围已完成 | Browser 133 + automated boundary 2 = 135；post-browser verify 通过；双次 cleanup `residualCount=0`；产品缺陷 0 |
+| Batch C / B7–B10 | 尚未启动 | 本文第 5 节是当前待验合同 |
+| Batch D / B11–B15 | 尚未启动 | 包含 B14.1 当前仍待验的 Browser 行为等价回归；本文第 6 节是当前待验合同 |
+| Batch E | 保留 8 项 | 真实设备、辅助技术或人工验收；不被桌面 Browser、大屏抽查或 automated boundary 替代 |
 
-在 `frontend` 目录、且既有 `node_modules` 存在时执行：
+Batch B 的正式 namespace 和临时文件已经删除，不存在“尚待 post-browser verify”或“下一步重建 Batch B 终态”的当前任务。Batch C / D 尚未准备正式 fixture，也未执行 Browser；不得把 B16 / B17 或 Batch A / B 的证据外推为 B7–B15 已通过。
 
-- `npm run lint`
-- `npm run typecheck`
-- `npm run build`
+## 3. 标准静态门禁
 
-本次 B1 验证结果：
+在 `frontend` 目录且既有 `node_modules` 存在时，最终前端代码态执行：
 
-- `npm run lint`：通过。
-- `npm run typecheck`：通过，Next route types 生成成功且 TypeScript 无错误。
-- `npm run build`：通过，生产构建包含 `/`、`/login` 与 `/dashboard`。
-- E2E / 浏览器自动化：未执行；本阶段明确不新增或执行 E2E。
-- 后端命令：未执行。
+1. `npm run lint`
+2. `npm run typecheck`
+3. `npm run build`
 
-本次 B2 验证结果：
+三项必须分别报告，互不替代。lint 不证明类型和路由生成；typecheck 不证明 production build；build 不替代 lint 或全量 TypeScript 检查。定向检查只用于开发反馈，不能替代最终三项门禁。
 
-- `npm run lint`：通过。
-- `npm run typecheck`：通过，Next 16 route types 生成成功且 TypeScript 无错误。
-- `npm run build`：通过，生产构建包含 `/patients`、`/patients/new`、`/patients/[patientId]`、`/patients/[patientId]/visits/new`。
-- E2E / 浏览器自动化：未执行；本阶段明确不新增或执行 E2E。
-- 浏览器手工验证：未执行，以下 B2 手工场景均为待验证。
-- 后端命令：未执行。
+若 `frontend/node_modules` 不存在，不得为验证擅自执行 `npm install`；应如实记录未执行项及原因。纯文档任务只执行文档与 Git 检查，不机械运行前端门禁。
 
-本次 B3 验证结果：
+静态门禁只能证明类型、白名单调用路径、App Router 路由生成和 production build，不证明真实 HTTP、Cookie / CORS、数据库状态、角色、并发、Browser 交互、响应式、键盘、Storage 或人工视觉已经通过。
 
-- `npm run lint`：通过。
-- `npm run typecheck`：通过，Next 16 route types 生成成功且 TypeScript 无错误。
-- `npm run build`：通过，生产构建包含 `/patients/[patientId]/visits/[visitId]`。
-- 未新增自动测试：当前前端没有既有测试框架，任务明确不新增测试框架或浏览器 E2E；本阶段使用 lint、typecheck 与生产构建验证。
-- E2E / 浏览器自动化：未执行；本阶段明确不新增或执行 E2E。
-- 浏览器手工验证：未执行，以下 B3 手工场景均为待验证。
-- 后端命令：未执行。
+## 4. Browser 通用验收策略
 
-本次 B4 验证结果：
+### 4.1 运行拓扑与 fixture 生命周期
 
-- `npm run lint`：通过。
-- `npm run typecheck`：通过，Next 16 量表实例执行动态路由类型生成成功且 TypeScript 无错误。
-- `npm run build`：通过，生产构建包含 `/patients/[patientId]/visits/[visitId]/scale-instances/[scaleInstanceId]`。
-- 未新增自动测试：当前前端没有既有测试框架，任务明确不新增测试框架或浏览器 E2E；本阶段使用 lint、typecheck 与生产构建验证。
-- E2E / 浏览器自动化：未执行；本阶段明确不执行浏览器 E2E。
-- 浏览器手工验证：未执行，以下 B4 场景均为待验证。
-- 后端命令：未执行。
+Browser 验收必须使用 production frontend 和真实 test backend，不以 mock server、静态检查或伪造响应替代真实 HTTP。数据库用途固定为 `browser_acceptance`，后端和 fixture CLI 必须分别使用 app / `readWrite` 与 db_admin / `dbOwner` 独立进程；数据库门禁、凭据来源和 cleanup 规则见 backend testing playbook。
 
-本次 B5 验证结果：
+每个 Batch 按同一生命周期执行：
 
-- `npm run lint`：通过。
-- `npm run typecheck`：通过，Next 16 量表实例执行动态路由类型生成成功且 TypeScript 无错误。
-- `npm run build`：通过，生产构建包含既有量表实例动态路由，B5 未新增路由。
-- 未新增自动测试：当前前端没有既有测试框架，任务明确不新增测试框架或浏览器 E2E；本阶段继续使用 lint、typecheck 与生产构建验证。
-- E2E / 浏览器自动化：未执行；本阶段明确不执行浏览器 E2E。
-- 浏览器手工验证：未执行，以下 B5 场景均为待验证。
-- 后端命令：未执行。
+1. 根据本文待验项设计脱敏、确定性、可回收的 fixture contract，明确每个验证项的 primary owner、前置状态和预期副作用。
+2. 执行 fixture `prepare` 或显式 `replace`，再执行只读 prepared verify；前置未通过不得进入 Browser。
+3. 启动 production frontend 与真实 Browser test backend，确认 health、CORS、Cookie 和 origin。
+4. 执行真实 Browser 矩阵；多角色、双 Session、并发和幂等必须使用真实独立会话，写请求不得自动重试。
+5. 执行只读 post-browser verify，核对最终数据库事实、请求次数、无副作用和合同计数；verify 不创建、不修复、不删除业务结果。
+6. logout、关闭 Browser、停止进程，按 namespace 精确 cleanup；再执行第二次幂等 cleanup，两次均要求 `residualCount=0`。
 
-本次 B6 验证结果：
+prepare / prepared verify 只说明账号和前置数据就绪，不等于 Browser 通过；Browser 页面场景通过但没有 post-browser verify 或 cleanup，也不得宣布工程收口。旧 Batch namespace、端口和临时文件名不是未来 fixture 合同。
 
-- `npm run lint`：通过。
-- `npm run typecheck`：通过，Next 16 量表实例执行动态路由类型生成成功且 TypeScript 无错误。
-- `npm run build`：通过，生产构建包含既有量表实例动态路由，B6 未新增路由。
-- 未新增自动测试：当前前端没有既有测试框架，任务明确不新增测试框架或浏览器 E2E；本阶段继续使用 lint、typecheck 与生产构建验证。
-- E2E / 浏览器自动化：未执行；本阶段明确不执行浏览器 E2E。
-- 浏览器手工验证：未执行，以下 B6 场景均为待验证。
-- 后端命令：未执行。
+### 4.2 Network、Console、Storage、Cookie、CORS 与隐私
 
-本次 B7 验证结果：
+- Network：按请求类别记录 method、状态、次数、initiator 和安全 URL 模式；写请求必须验证白名单 Body、无自动 retry / polling / N+1。不得在报告中粘贴密码、动态内部 ID、完整请求体或响应体。
+- Console：稳定观察窗内检查 warn/error；不得输出完整业务响应、堆栈、患者数据、报告正文、token、Cookie 或内部 lineage/source ID。
+- Storage：检查 localStorage、sessionStorage、IndexedDB 的 key / database / object-store 名称和禁止模式；value 只允许在同源 runtime 内做布尔扫描，不输出实际 value。
+- Cookie：只判断脚本可读 Cookie 是否为空或是否命中禁止模式，不读取 HttpOnly Cookie，不导出 Cookie 存储。
+- CORS：production frontend origin 必须被精确允许，credentials 正常；不得用关闭浏览器安全策略掩盖配置问题。
+- DOM / URL：不得出现密码、token、Cookie、内部 ObjectId、metadata、Storage 定位、完整临床正文或其他非公开字段。
+- 登录取证：密码框仍有值时不得采集完整 DOM；提交后确认登录页卸载或密码值清空，再进行 DOM、Console 或 Storage 取证。
 
-- `npm run lint`：通过。
-- `npm run typecheck`：通过，Next 16 量表实例执行动态路由类型生成成功且 TypeScript 无错误。
-- `npm run build`：通过，生产构建包含既有量表实例动态路由，B7 未新增路由。
-- 未新增自动测试：当前前端没有既有测试框架，任务明确不新增测试框架或浏览器 E2E；本阶段继续使用 lint、typecheck 与生产构建验证。
-- E2E / 浏览器自动化：未执行；本阶段明确不执行浏览器 E2E。
-- 浏览器手工验证：未执行，以下 B7 场景均为待验证。
-- 后端命令：未执行。
+### 4.3 Viewport 与响应式口径
 
-本次 B8 验证结果：
+- 主业务矩阵使用 Browser 的自然内容 viewport，不启用设备模拟，不长期强制固定为 1280×720。
+- 代表性响应式抽查尺寸固定为 `1280×720`、`768×900`、`390×844`；只抽查代表页，不按每个 viewport 重跑完整业务矩阵。
+- 页面不得产生非预期 document/main 横向溢出；宽表格可由明确的局部容器滚动，表单、提示、操作和焦点仍须可见。
+- 真正大屏只使用普通最大化 Chrome，缩放 100%，关闭会压缩页面的侧边栏、DevTools 或其他面板；必须实测 `window.innerWidth >= 1440`，外层窗口尺寸不能替代 CSS viewport。
 
-- `npm run lint`：通过。
-- `npm run typecheck`：通过，Next 16 量表实例执行动态路由类型生成成功且 TypeScript 无错误。
-- `npm run build`：通过，生产构建包含既有量表实例动态路由，B8 未新增路由。
-- 未新增自动测试：当前前端没有既有测试框架，任务明确不新增测试框架或浏览器 E2E；本阶段使用 lint、typecheck 与生产构建验证。
-- E2E / 浏览器自动化：未执行。
-- 浏览器手工验证：未执行，以下 B8 场景均为待验证。
-- 后端命令：未执行。
+### 4.4 键盘风险抽样
 
-本次 B9 验证结果：
+- 普通原生 `button`、`a`、`input`、`select`、`label` 不在每个场景重复完整 Tab / Shift+Tab / Enter / Space 矩阵，但仍自动检查语义、可访问名称和明显 `tabindex` 问题。
+- 自定义复合控件、Modal / Dialog、菜单、下拉框、交互图表、Canvas、富文本、全局导航或焦点管理变更，以及无障碍修复，必须做真实键盘验证。
+- 真实键盘验证应覆盖正向/反向焦点、适用的 Enter/Space、焦点环、退出区域和状态变化；工具不能可靠产生原生事件时标记未执行，转人工协助，不得用 DOM 属性替代。
+- 明显焦点陷阱始终阻断；鼠标/触摸优先不等于取消基本可访问性。
 
-- `npm run lint`：通过。
-- `npm run typecheck`：通过，Next 16 既有量表实例执行动态路由类型生成成功且 TypeScript 无错误。
-- `npm run build`：通过，生产构建包含既有量表实例动态路由，B9 未新增路由。
-- 未新增自动测试：当前前端没有既有测试框架，任务明确不新增测试框架或浏览器 E2E；本阶段使用 lint、typecheck 与生产构建验证。
-- E2E / 浏览器自动化：未执行。
-- 浏览器手工验证：未执行，以下 B9 场景均为待验证。
-- 后端命令：未执行。
+### 4.5 结果报告
 
-本次 B10 验证结果：
+每个验证项只能是 pass、fail、not_executed 或明确 obsolete；fixture-ready、静态通过、工具限制和人工待签收不得写成 pass。报告必须区分静态门禁、Browser 场景、automated boundary、人工验收、post-browser verify、cleanup 与产品缺陷。
 
-- `npm run lint`：通过。
-- `npm run typecheck`：通过，Next 16 既有动态路由类型生成成功且 TypeScript 无错误。
-- `npm run build`：通过，生产构建包含既有访视详情动态路由，B10 未新增路由。
-- 未新增自动测试：当前前端没有既有测试框架，任务明确不新增测试框架或浏览器 E2E；本阶段使用 lint、typecheck 与生产构建验证。
-- E2E / 浏览器自动化：未执行。
-- 浏览器手工验证：未执行，以下 B10 场景均为待验证。
-- 后端命令：未执行。
+## 5. Batch C 当前待验合同：B7–B10
 
-本次 B11 验证结果：
+Batch C 尚未启动。以下序号与减肥前基线完全一致；fixture 设计必须覆盖列出的前置状态、角色、错误、无副作用、Network 和隐私边界。
 
-- `npm run lint`：通过。
-- `npm run typecheck`：通过，Next 16 既有动态路由类型生成成功且 TypeScript 无错误。
-- `npm run build`：通过，生产构建包含既有 `/patients/[patientId]/visits/[visitId]`，B11 未新增路由。
-- 未新增自动测试：当前前端没有既有测试框架，本阶段使用 lint、typecheck 与生产构建验证。
-- E2E / 浏览器自动化：未执行；本阶段明确不执行。
-- 浏览器手工验证：未执行，以下 B11 场景均待开发者使用脱敏数据本地验证。
-- 后端命令：未执行。
+阶段所有权口径：条目中的“页面不存在后续能力/入口”用于证明本阶段组件或动作不创建、不自动触发、不越权接管后续能力；后来已实现的 B8–B16 sibling 区域可以按当前状态合法共存。执行时应限定目标组件 DOM、请求 initiator 和动作前置状态，不得用页面全局文本误判，也不得为了满足旧阶段字面值隐藏当前合法能力。
 
-本次 B12 验证结果：
+### 5.1 B7 阶段性评分：40 项
 
-- `npm run lint`：通过。
-- `npm run typecheck`：通过，Next 16 既有动态路由类型生成成功且 TypeScript 无错误。
-- `npm run build`：通过，生产构建包含既有 `/patients/[patientId]/visits/[visitId]`，B12 未新增路由。
-- 未新增自动测试：当前前端没有既有测试框架，本阶段使用 lint、typecheck 与生产构建验证。
-- E2E / 浏览器自动化：未执行；本阶段明确不执行。
-- 浏览器手工验证：未执行，以下 B12 场景均待开发者使用脱敏数据本地验证。
-- 后端命令：未执行。
-
-本次 B13 验证结果：
-
-- `npm run lint`：通过。
-- `npm run typecheck`：通过，Next 16 既有动态路由类型生成成功且 TypeScript 无错误。
-- `npm run build`：通过，生产构建包含既有 `/patients/[patientId]/visits/[visitId]`，B13 未新增路由。
-- 未新增自动测试：当前前端没有既有测试框架，本阶段使用 lint、typecheck 与生产构建验证。
-- E2E / 浏览器自动化：未执行；本阶段明确不执行。
-- 浏览器手工验证：未执行，以下 B13 场景均待开发者使用脱敏数据本地验证。
-- 后端命令：未执行。
-
-本次 B14 验证结果：
-
-- `npm run lint`：通过。
-- `npm run typecheck`：通过，Next 16 既有动态路由类型生成成功且 TypeScript 无错误。
-- `npm run build`：通过，生产构建包含既有 `/patients/[patientId]/visits/[visitId]`，B14 未新增路由。
-- 未新增自动测试：当前前端没有既有测试框架，本阶段使用 lint、typecheck 与生产构建验证。
-- E2E / 浏览器自动化：未执行；本阶段明确不执行。
-- 浏览器手工验证：未执行，以下 B14 场景均待开发者使用脱敏数据本地验证。
-- 后端命令：未执行。
-
-本次 B14.1 验证结果：
-
-- `npm run lint`：通过。
-- `npm run typecheck`：通过，Next 16 route types 生成成功且 TypeScript 无错误。
-- `npm run build`：通过，既有路由集合不变。
-- 公共 options 9 / result keys 99 静态对照通过；消费者、组件、API Client、ClinicalReport types、draft libs 与 display 均无 diff。
-- E2E / 浏览器自动化 / 浏览器手工验证：未执行；以下 B14.1 浏览器场景均待验证。
-- 后端命令：未执行。
-
-本次 B15 验证结果：
-
-- `npm run lint`：通过。
-- `npm run typecheck`：通过，Next 16 route types 生成成功且 TypeScript 无错误。
-- `npm run build`：通过，既有路由集合不变并包含访视详情动态路由。
-- 静态核对：A25 API 仅在 Correction Action 调用；façade / 组件不调用 API；单一 writingAction、beforeunload、latest 与 onReportUpdated 入口保持；V2 A22–A24 入口关闭。
-- E2E / 浏览器自动化 / 浏览器手工验证：未执行；以下 B15 场景均待使用脱敏数据验证。
-- 后端命令：未执行。
-
-本次 B16 实现时静态验证结果（历史记录）：
-
-- 定向检查：`npm run lint:file -- <15 个 B16 代码文件>` 通过。
-- `npm run lint`：通过，无 error / warning。
-- `npm run typecheck`：通过，Next 16 route types 生成成功且 TypeScript 无错误。
-- `npm run build`：通过，既有路由集合不变并包含访视详情动态路由；未新增路由。
-- 静态核对：统一 lifecycle target 是 A22–A24 唯一版本门槛；无 `reportVersion === 2` 业务分支；三条 API Body 未加入版本 / lineage / sourceIds；`COMPLETE_CORRECTION` 清除旧版本 A21–A24 会话状态；lineage invalid 独立映射、最多 latest 一次、writeProhibited 且不自动 POST。
-- 该实现时点浏览器自动化 / 浏览器手工验证尚未执行；后续完整业务矩阵、Resume / unsafe 补齐矩阵与本文末尾的 Codex 内置浏览器 Web Storage 最终审计已经补齐并关闭 WP-02。
-- 后端命令：未执行。
-
-如后续环境中 `frontend/node_modules` 不存在，不得为验证本阶段而执行 `npm install`；应跳过上述命令并说明原因。
-
-## 4. 自动验证覆盖范围
-
-B1 静态与构建验证覆盖：
-
-- Auth 类型、API Client、Hook 和 Client Component 的 lint 与类型检查。
-- `/login`、`/dashboard` 与公共首页的 Next.js 生产构建。
-- App Router 路由类型生成。
-
-B1 自动验证不覆盖：
-
-- 真实后端、数据库与测试用户联调。
-- 浏览器 Cookie 行为、CORS 与实际部署拓扑。
-- 患者、评估、量表、媒体、计分、认知域、报告、AI、用户管理或权限菜单。
-- E2E 与浏览器自动化。
-
-以上结果不代表真实医疗业务或业务 MVP 完成验收。
-
-B2 静态与构建验证额外覆盖：
-
-- patients 公开类型、Patients API Client、日期 / 展示纯函数和 Client Components 的 lint 与类型检查。
-- 四条 patients 路由的 App Router route types；两个动态页面使用 Next 16 Promise params 契约。
-- 患者列表 / 创建、患者详情 / 访视列表、访视创建及 `/patients/**` 认证布局的生产构建。
-
-B2 自动验证不覆盖：
-
-- 真实患者 / 访视 API、数据库、测试用户、HttpOnly Cookie、CORS 与浏览器导航联调。
-- 患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 详情 / 状态流转。
-- MMSE / MoCA 执行、作答、媒体、计分、认知域、报告、AI、用户管理和权限菜单。
-
-B3 静态与构建验证额外覆盖：
-
-- assessment execution 公开类型、API Client、展示纯函数与三个业务组件的 lint 和类型检查。
-- `/patients/[patientId]/visits/[visitId]` 的 Next 16 Promise params 路由类型与生产构建。
-- PatientDetailPage 新增访视入口，以及目录 / 详情独立状态和初始化交互的静态代码路径。
-
-B3 自动验证不覆盖：
-
-- 真实 A13 HTTP、数据库写入、测试用户、HttpOnly Cookie、CORS、浏览器导航和重复请求竞态联调。
-- ItemResponse 查询 / 保存 / 提交、真实 MMSE / MoCA 题目作答、媒体、计时、计分、认知域、报告或 AI。
-
-B4 静态与构建验证额外覆盖：
-
-- A14 安全公开类型、错误 code 映射、执行详情 GET、逐题 PATCH 白名单和草稿转换纯函数的 lint 与类型检查。
-- `/patients/[patientId]/visits/[visitId]/scale-instances/[scaleInstanceId]` 的 Next 16 Promise params 路由类型与生产构建。
-- 动态分组、逐题编辑器、step / prompt / timing / evidence 子组件、dirty / beforeunload、只读状态和 B3 实例入口的静态代码路径。
-
-B4 自动验证不覆盖：
-
-- 真实 A14 HTTP、数据库写入、测试用户、HttpOnly Cookie、CORS、浏览器导航、GET 取消与 PATCH 竞态联调。
-- 浏览器 beforeunload 的实际提示样式与触发策略；该行为由浏览器决定。
-- B4 当时不覆盖媒体与整份量表提交；对应静态路径现分别由下方 B5、B6 验证覆盖。批量或自动保存、实时计时、计分、认知域、报告或 AI 仍未实现。
-
-B5 静态与构建验证额外覆盖：
-
-- A15 安全公开类型、四个 API Client 方法、FormData 白名单、固定安全文件名、错误 code 映射、GET AbortSignal 和 POST 不重试路径的 lint 与类型检查。
-- photo Canvas 解码 / JPEG 重编码与有界压缩代码、handwriting Pointer Events / 轨迹 / PNG 代码，以及列表 / 预览 / 作废 / 父级媒体草稿集成的生产构建。
-- 同一 B4 路由的 B5 组件集成；B5 未新增页面路由、依赖、BFF、middleware 或远程图片域名配置。
-
-B5 自动验证不覆盖：
-
-- 真实 A15 HTTP、Storage、测试用户、Cookie / CORS、浏览器文件解码差异、移动端 capture 提示、触控笔 / 触屏 Pointer Events、临时 URL 域名与过期行为。
-- 浏览器 Canvas 输出的临床可读性、不同源图格式兼容性、真实网络竞态、作废后重传和 beforeunload 提示；均需使用脱敏人工测试数据手工验证。
-- B5 当时不覆盖整份量表最终提交；该静态路径现由下方 B6 验证覆盖。自动保存、评分、认知域、报告、OCR、图像识别或 AI 仍未实现。
-
-B6 静态与构建验证额外覆盖：
-
-- A16 安全类型、两个 API Client 方法、GET AbortSignal、submit confirm 白名单、7 个提交业务错误映射和 POST 不重试路径的 lint 与类型检查。
-- submission 展示纯函数、面板、issue 列表、readiness stale、本地 dirty / 写请求阻断、内联 checkbox、submit 临时只读、服务端状态合并、幂等回执和题目定位代码路径。
-- 同一 B4 / B5 动态路由的 B6 集成；B6 未新增路由、依赖、BFF、middleware、持久化状态或配置。
-
-B6 自动验证不覆盖：
-
-- 真实 A16 HTTP、数据库状态迁移、Cookie / CORS、并发提交、已提交历史审计差异、滚动 / focus 和浏览器可访问性行为。
-- 真实本地草稿与上传竞态、submit 期间各浏览器控件 disabled 表现、网络中断后的服务器最终状态；均需使用脱敏人工测试数据手工验证。
-- B6 自动验证当时不覆盖评分；A17 / A18 当前静态路径分别由 B7 / B8 覆盖。访视完成 / 锁定、报告、撤销 / reopen / lock / force submit 或 AI 仍未实现。
-
-B7 静态与构建验证额外覆盖：
-
-- A17 安全类型、独立 API Client、latest AbortSignal、compute confirm 白名单、全部受控业务错误映射和 POST 不重试路径的 lint 与类型检查。
-- 阶段性 total / group / item、reviewQueue、12 个 reason、2 个 warning、状态 / 来源 / review / quality、版本追溯、内联确认、本地阻断、幂等回执和通用题目定位代码路径。
-- 同一 B4-B6 动态路由的 B7 集成；B7 未新增路由、依赖、BFF、middleware、持久化状态或配置。
-
-B7 自动验证不覆盖：
-
-- 真实 A17 HTTP、数据库 ScoreResult、Cookie / CORS、并发计算、幂等重读、各种历史状态、滚动 / focus 和浏览器可访问性行为。
-- 真实网络中断后的服务器最终状态、窄屏布局和后端数据组合；均需使用脱敏人工测试数据手工验证。
-- B7 自动验证当时不覆盖人工评分与确认；这些静态路径当前由 B8 覆盖。评分锁定 / 作废 / 重算 / 历史、认知域、报告或 AI 仍未实现。
-
-B8 静态与构建验证额外覆盖：
-
-- A18 安全类型、manual-review / confirm 请求白名单、credentials / no-store、全部错误 code 映射和写请求不重试路径。
-- 人工评分 finite number / 0 / min / max、reviewNote、step="any"、单活动草稿、dirty / stale、updatedAt 基线、冲突刷新、回执与 beforeunload 静态路径。
-- 确认 eligibility、warning 阻断、两步内联交互、checkbox、确认冲突、alreadyConfirmed、安全 confirmation 摘要和 final 文案。
-- 同一既有动态路由集成；未新增依赖、路由、BFF、middleware、持久化状态或配置。
-
-B8 自动验证不覆盖：
-
-- 真实 A18 HTTP、数据库更新、Cookie / CORS、多操作者并发、审计上限与历史异常组合。
-- 浏览器 beforeunload、滚动 / focus、窄屏、屏幕阅读器 live region 与真实表单控件行为。
-- B8 自身不覆盖认知域；该静态路径现由下方 B9 覆盖。评分 lock / void / reopen / rerun、认知域确认、报告、诊断或 AI 仍未实现。
-
-B9 静态与构建验证额外覆盖：
-
-- A19 安全类型、独立 API Client、latest AbortSignal、compute `{ confirm: true }` 白名单、全部业务错误映射和 POST 不重试路径。
-- 独立 Hook 的来源 ScoreResult 依赖、waiting / not_found / forbidden / error、latest 取消、首次计算二次确认、dirty / writing 阻断、幂等回执与冲突后只读刷新路径。
-- domainScores、itemContributions、mapping policy / interpretation、computation / warning / versionTrace / 来源评分摘要、7 个真实 seed domain code 标签和统一题目定位的静态路径。
-- 同一既有动态路由集成；未新增依赖、路由、BFF、middleware、持久化状态、图表库或配置。
-
-B9 自动验证不覆盖：
-
-- 真实 A19 HTTP、数据库 CognitiveDomainResult、Cookie / CORS、并发计算、幂等重读、历史状态和业务错误组合。
-- 浏览器 beforeunload、scrollIntoView / focus、窄屏横向表格、屏幕阅读器 live region 与真实 checkbox / disabled 行为。
-- 认知域人工修改 / 确认 / 锁定 / 作废 / 重算、weighted mapping 编辑、报告、诊断或 AI；这些能力未实现。
-
-B12 静态与构建验证额外覆盖：
-
-- A22 lock 安全类型、API Body 白名单、五个业务错误映射、Path 编码 / MongoId 防御、credentials / no-store 与 POST 不自动重试路径。
-- lock mode、统一报告写锁、doctor / admin role gate、eligibility、3–2000 字 lockNote、checkbox、服务端 updatedAt 基线、dirty / stale / beforeunload、冲突 latest 一次、alreadyLocked 与完整 report 应用路径。
-- lock 安全摘要、当前会话 receipt、status / lockedAt / lock / isFinal 分离、一致性警告、已锁定只读和同一访视详情路由集成；未新增依赖、路由、BFF、middleware、持久化状态或配置。
-
-B12 自动验证不覆盖：
-
-- 真实 A22 HTTP、数据库锁定、Cookie / CORS、多操作者并发、历史安全 fallback、审计异常与幂等重读组合。
-- 浏览器 beforeunload、窄屏布局、屏幕阅读器 alert / live region、真实 checkbox / disabled 行为和网络中断后的最终服务端状态。
-- B12 自动验证不覆盖来源数据冻结；该静态路径现由下方 B13 覆盖。unlock / reopen / return / reject / withdraw、签名、归档、更正、作废、PDF / 下载或 AI 仍未实现。
-
-B13 静态与构建验证额外覆盖：
-
-- A23 sourceFreeze 安全类型、freeze request / receipt / response、八个业务错误映射、Path 编码 / MongoId 防御、Body 白名单、credentials / no-store 与 POST 不自动重试路径。
-- 独立 start / resume 草稿纯函数、3–2000 字 freezeNote、服务端 updatedAt 基线、持久说明只读、dirty / stale / beforeunload、计数 / 状态 / actor 一致性与请求构建。
-- source_freeze 统一报告写锁、doctor / admin role gate、首次 / 恢复 Visit 口径、冲突 / incomplete / failed latest 一次、显式转入恢复、alreadyFrozen / resumedExisting 与完整 report 应用路径。
-- SourceFreezePanel / Summary、五类 + total expected / completed / newly / previously 计数、null / in_progress / completed Badge、技术字段分离与既有访视详情路由集成；未新增依赖、路由、BFF、middleware、持久化状态或配置。
-
-B13 自动验证不覆盖：
-
-- 真实 A23 HTTP、数据库跨集合冻结、Cookie / CORS、多操作者并发、中断恢复、部分失败、审计异常与幂等重读组合。
-- 浏览器 beforeunload、窄屏计数表、屏幕阅读器 alert / live region、真实 checkbox / disabled 行为和网络中断后的最终服务端状态。
-- unfreeze / rollback / 自动恢复 / 轮询、Patient / Visit / Storage 冻结、archive / correct / void、PDF / 下载或 AI；这些能力未实现。
-
-B14 静态与构建验证额外覆盖：
-
-- A24 archive 安全类型、request / receipt / response、五个业务错误映射、Path 编码 / MongoId 防御、Body 白名单、credentials / no-store 与 POST 不自动重试路径。
-- 独立归档草稿与一致性纯函数、3–2000 字 archiveNote、服务端 updatedAt / lock / sourceFreeze anchor 冻结上下文、dirty / stale / beforeunload、完整 A24 / historical fallback / 异常摘要判断。
-- archive 统一报告写锁、doctor / admin role gate、不依赖 Patient active / Visit editable / Visit locked 的 eligibility、冲突 / failed latest 一次、alreadyArchived 与完整 report 应用路径。
-- ArchivePanel / Summary、status / archivedAt / archive / receipt 分离、归档 actor / note / sourceFreeze anchor、安全警告与既有访视详情路由集成；未新增依赖、路由、BFF、middleware、持久化状态或配置。
-
-B14 自动验证不覆盖：
-
-- 真实 A24 HTTP、数据库归档、Cookie / CORS、多操作者并发、幂等重读、历史 fallback 与各种审计异常组合。
-- 浏览器 beforeunload、窄屏布局、屏幕阅读器 alert / live region、真实 checkbox / disabled 行为和网络中断后的最终服务端状态。
-- unarchive / restore confirmed / correction / void / delete / unlock / unfreeze / PDF / Word / 下载或 AI；这些能力未实现。
-
-B14.1 静态回归矩阵：
-
-- 公共：options 字段与 null 语义不变；99 个 result keys 不变；mode 仍为 idle / edit / submit / confirm / lock / source_freeze / archive；writingAction、mountedRef、writingRef、activeMode 和 beforeunload 各自唯一；组件无 diff，API Client 无 diff，未新增 correction。
-- Edit：open / update / no-change / save / conflict / 403 / receipt / stale / beforeunload 条件与 B11 一致；本地三个字段在网络与冲突错误后保留。
-- Submit：readiness、submissionNote、checkbox、success / alreadySubmitted、conflict 与 pending read-only 条件一致；不自动重发。
-- Confirm：doctor / admin role、confirmationNote、checkbox、success / alreadyConfirmed、conflict 与 403 文案一致；不模拟 lock。
-- Lock：doctor / admin、Visit draft / in_progress / completed、success / alreadyLocked、conflict、consistency warning 与 confirmed status 不变；lockNote 保留。
-- Source-freeze：start / resume、服务端 persisted note、显式 discard local、in_progress / incomplete / failed、alreadyFrozen / resumedExisting 与 no polling 语义一致；不自动进入恢复。
-- Archive：doctor / admin、不依赖 Patient active / Visit editable、Visit locked 不阻断、success / alreadyArchived、conflict、historical fallback 与 archived read-only 一致。
-- 自动审计：lint / typecheck / build、diff-check、consumer diff、line count、API import direction、单锁、单 beforeunload、latest 与禁止范围检查。
-
-B14.1 静态验证不覆盖：
-
-- 真实 B11-B14 HTTP、Cookie / CORS、多操作者并发、浏览器 beforeunload、网络中断最终状态、窄屏与屏幕阅读器行为；均待开发者使用脱敏数据本地验证。
-- A25 / B15 correction、replacement 关系、版本列表、自动 retry / polling；本阶段均未实现。
-
-## 5. B1 手工验证建议
-
-前置条件：后端已启动，存在脱敏人工测试账号，前后端的 Cookie 与跨域配置适用于当前本地环境。
-
-### 5.1 登录页
-
-- 访问 `/login`，确认先显示认证状态检查，再显示账号密码表单或进入工作台。
-- 输入无效凭证，确认只显示“账号或密码错误，或账号不可用。”，不区分账号、密码或账号状态。
-- 模拟服务不可用，确认显示稳定连接错误，不出现后端堆栈、响应体、token 或 Cookie 细节。
-- 登录提交时确认按钮禁用并显示“正在登录...”。
-- 登录成功后确认进入 `/dashboard`。
-- 确认页面没有测试账号、注册、密码重置、短信验证码或 OAuth / SSO 入口。
-
-### 5.2 会话恢复与工作台入口
-
-- 登录成功后刷新 `/dashboard`，确认页面通过 `GET /auth/me` 恢复 authenticated 状态。
-- 确认页面只展示当前用户公开的 `displayName`、`accountName`、`roles` 与可选 `userType`。
-- 确认患者档案卡片标记“已接入”，其余能力卡片标记“后续建设”；Dashboard 自身不发起患者、评估或报告业务 API 请求。
-- 清除或使服务端会话失效后访问 `/dashboard`，确认显示会话失效提示并返回 `/login`。
-- 模拟认证服务异常，确认 `/dashboard` 展示 error 状态与重新检查入口。
-
-### 5.3 登出
-
-- 在 `/dashboard` 点击“退出登录”，确认调用 `POST /auth/logout`。
-- 确认前端清理本地公开认证状态并返回 `/login`。
-- 再访问 `/dashboard`，确认 `GET /auth/me` 返回未认证并再次回到 `/login`。
-
-### 5.4 首页与视觉
-
-- 访问 `/`，确认登录与工作台入口存在，首页本身不调用后端。
-- 确认登录页、工作台与 patients 页面符合浅色、低饱和蓝绿、清晰分区、大字号、少装饰、少动画的设计基线。
-- 确认页面不是营销页、娱乐化界面或 ReviewX 风格管理后台。
-
-## 6. B2 手工验证建议（待验证）
-
-前置条件：后端已启动，使用脱敏人工测试账号和测试数据；不得使用真实患者信息。以下场景本次未执行，均待开发者本地验证：
-
-1. 登录后进入 `/dashboard`，确认“患者档案”入口标记已接入且可进入 `/patients`。
-2. 确认患者列表正常加载，keyword、status、sourceType、pageSize、上一页 / 下一页和 URL 参数同步正常。
-3. 确认无患者记录与筛选无结果展示不同文案，列表窄屏可横向滚动。
-4. 创建患者成功后进入详情；重复患者编号显示稳定冲突提示；出生日期无时区偏移；标签能按中英文逗号 / 换行解析、去空和去重。
-5. 确认详情只展示公开患者字段，访视列表支持 status、visitType、dateFrom、dateTo、pageSize 和分页；截止日期包含用户选择的完整一天。
-6. active 患者可进入访视创建页；创建页先显示当前患者，成功后返回患者详情；重复访视编号显示稳定冲突提示。
-7. inactive / archived 患者不显示可提交访视表单；服务端返回 `PATIENT_NOT_ACTIVE` 时显示稳定提示。
-8. 确认访视请求不含 operatorSnapshot、clinicalContext、metadata 或状态字段；操作者由后端当前账号生成。
-9. 使会话失效后访问任意 `/patients/**`，确认返回 `/login`；刷新后确认仍由 HttpOnly Cookie 恢复会话。
-10. 使用无 A12 权限账号确认患者 API 403 显示无权限，而不是空列表。
-11. 模拟患者不存在、无效 patientId、服务不可用与访视列表单独失败，确认 not-found / invalid / error / retry 状态稳定，访视失败不抹掉患者详情。
-12. 使用浏览器网络面板确认五个业务请求指向 `frontendEnv.apiBaseUrl`，携带 credentials 语义且不自动重试 POST。
-
-## 7. B3 手工验证建议（待验证）
-
-前置条件：后端已启动，使用脱敏人工测试账号与测试患者 / 访视；不得使用真实患者信息。以下场景本次未执行，均待开发者本地验证：
-
-1. 登录并进入患者详情。
-2. 从访视列表点击“打开访视”。
-3. 确认访视详情正常加载并展示公开访视字段与状态时间。
-4. 确认 MMSE / MoCA 真实目录正常显示。
-5. 确认目录不显示完整题目、指导语、答案、评分规则、expectedValue 或 ObjectId，能力标识不宣称媒体 / 手写 / 计时已实现。
-6. 在 `draft` 或 `in_progress` 访视初始化 MMSE 成功。
-7. 确认成功后显示服务端返回实例与 ItemResponse 题目记录骨架创建数量，但不显示 ItemResponse 全量。
-8. 确认同一 MMSE 再次初始化按钮禁用；竞态返回 `SCALE_INSTANCE_ALREADY_EXISTS` 时显示稳定提示并刷新详情。
-9. 使用另一种已确认施测方式初始化 MoCA 成功。
-10. 刷新页面后确认 MMSE / MoCA 两个实例仍存在并按 scaleCode / instanceNo 排序。
-11. 确认 `completed` / `locked` / `voided` 访视禁用全部初始化操作并显示原因。
-12. 使会话失效后确认页面返回 `/login`，且不无限重试。
-13. 使用无 A13 权限账号确认显示 403，而不是空目录或空实例，并可返回工作台或退出登录。
-14. 模拟患者不存在、访视不存在或归属不符、无效 ID、目录单独失败、量表不可用、目录冲突和服务错误，确认使用稳定中文状态且不展示后端 message。
-15. 确认实例列表提供“打开量表 / 查看量表”入口；访视详情页自身不读取或保存题目，B10 报告能力位于独立区域且不触发题目、媒体、评分或认知域写操作。
-
-## 8. B4 手工验证建议（待验证）
-
-前置条件：后端已启动，使用脱敏人工测试账号和测试患者 / 访视 / MMSE / MoCA 实例；不得使用真实患者信息。以下场景本次未执行，均待开发者本地验证：
-
-1. 登录后打开患者、访视与 MMSE / MoCA 实例，确认 draft / in_progress 显示“打开量表”，completed / locked / voided 显示“查看量表”。
-2. 确认执行详情加载访视、量表版本、实例、实时进度、服务端分组和题目；分组 / 题目按 order / itemOrder 排序，无匹配 groupCode 的题目进入“其他项目”。
-3. 确认页面不显示完整评分规则、expectedValue、正确答案、score、isCorrect、scoreValue 或任意 JSON 编辑器。
-4. 分别保存 boolean、number、text 草稿；确认 boolean 文案是原始布尔记录，number 空值为 null 且非空必须为有限 number，text 不自动匹配或判分。
-5. 确认 single_choice / multi_choice 只显示原始回答转录 textarea，不出现前端虚构选项或评分结果。
-6. 在 MMSE / MoCA 连续减 7 等项目中保存分步实际回答和备注；确认页面不显示预期值、正确性或步骤分数。
-7. 在 MoCA 延迟回忆提示槽位中保存提示后表现；确认 promptText、提示类型和计分参与标识可见，不新增槽位或推断正确性。
-8. 开启缺失记录但不填原因，确认前端阻止保存；填写原因后可保存。确认开启时清空实际作答、step actualValue 和 prompt responseAfterPrompt，保留相关 note、timing 与 operatorNote；关闭时清空 missingReason。
-9. 确认非计时题不出现计时编辑；计时题可编辑开始 / 完成时间、秒口径用时与来源，完成时间早于开始时间时阻止保存，页面没有实时计时器操作。
-10. drawing / handwriting / photo_upload 的原始文字说明继续独立保存；含 photo / handwriting requirement 时另显示 B5 证据面板，媒体操作不触发 A14 PATCH。
-11. 保存草稿后刷新确认服务端草稿仍保留；保存成功不重新加载整页，当前题反馈稳定且 dirty 清除。
-12. 保存并标记本题完成后确认后端 progress 增加；只有 timing 或 operatorNote 时不能标记完成。
-13. answered 题继续编辑并保存后仍为 answered，不出现退回进行中操作，也不提交 status。
-14. scored / locked / voided 题只读；completed / locked / voided 访视或实例全页只读，历史安全草稿仍展示。
-15. 修改多个分组中的题目并切换分组，确认未保存输入不丢失、顶部未保存数量正确；刷新或关闭页面触发浏览器 beforeunload 基础提示。
-16. 使会话失效后确认 401 返回 `/login`；使用无 A14 权限账号确认 403 显示无权限，而不是空题目页。
-17. 模拟患者、访视、实例或题目不存在，确认使用稳定中文 not-found；跨患者 / 访视访问不泄露资源存在性。
-18. 模拟量表实例配置不可用、访视 / 实例 / 题目不可编辑、槽位变化、计时无效和保存失败，确认映射稳定中文错误且 PATCH 不自动重试。
-19. 使用浏览器网络面板确认 A14 GET 可取消，所有路径 ID 已编码，PATCH 只含当前题变化白名单且不包含 status、score、答案、evidenceRequirements、ID 或完整响应对象。
-20. 确认页面不存在整份最终提交、批量保存、自动保存、评分、报告、认知域或 AI 入口，也未把作答草稿、Cookie 或 token 写入 localStorage / sessionStorage。
-
-## 9. B5 手工验证建议（待验证）
-
-前置条件：后端已启动，使用脱敏人工测试账号和测试患者 / 访视 / 量表实例；不得使用真实患者图片或真实手写内容。以下场景本次未执行，均待开发者本地验证：
-
-1. 登录并进入含 photo / handwriting 要求的题目。
-2. 媒体列表正常按题加载，而不是页面初次加载批量请求全部题目。
-3. attached、locked、voided 状态显示正确且 voided 历史不隐藏。
-4. 选择已有 JPEG / PNG / WebP 源图后生成重新编码 JPEG。
-5. 页面不显示和不提交原始文件名。
-6. 手机浏览器 paper_scan 输入可提示摄像头；不支持时正常退化为文件选择，且不出现实时摄像头界面。
-7. 处理后的图片能使用本地 object URL 预览。
-8. 输出宽、高、JPEG MIME 和大小符合 2560 最长边与 10 MiB 限制。
-9. 图片无法解码、Canvas 输出失败或有界压缩仍超限时阻止上传，绝不回退上传原图。
-10. photo_upload 上传成功。
-11. paper_scan 上传成功并正确提交页码。
-12. 上传后对应 requirement 立即变为 attached。
-13. 上传不改变题目状态、作答 dirty 或 progress。
-14. 同类型存在 attached / locked 证据时上传按钮禁用并提示先作废。
-15. 后端返回 `MEDIA_EVIDENCE_ALREADY_ATTACHED` 后刷新列表，不自动重复上传。
-16. primary 临时地址仅在点击预览时获取。
-17. 图片内联预览和新窗口打开可用，且请求不依赖 next.config 永久域名。
-18. expiresAt 无效、已过期或距过期不足 30 秒时会重新获取地址。
-19. 作废必须填写 trim 后 3–1000 字符原因。
-20. 作废后记录显示 voided，且文案不称为删除。
-21. 作废后 requirement 恢复 pending / false。
-22. 作废后可重新上传同类型证据，旧历史仍保留。
-23. 平板触控笔、触屏手指和鼠标可在 1200 × 800 逻辑画布连续书写，窄屏缩放时坐标仍正确。
-24. pointer capture、`touch-action: none`、撤销上一笔和清空全部正常。
-25. 空白画布不能上传；撤销最后一笔或清空后未上传证据计数减少。
-26. 切换分组后未上传 strokes 与媒体元数据保留。
-27. handwriting 上传包含从当前 Canvas 生成的 PNG。
-28. 默认同时上传固定结构的 strokes JSON；关闭轨迹时同时省略 trajectory 与 trajectoryFormat。
-29. handwriting 有轨迹时可获取 trajectory 临时地址并在新窗口打开，但页面不渲染 JSON 内容。
-30. 轨迹超过 8000 点或 2 MiB 时前端阻止上传并显示明确提示。
-31. 页面刷新不保留未上传 JPEG Blob、strokes 或短期 URL。
-32. 未上传媒体内容时 beforeunload 生效，顶部独立显示未保存作答与未上传证据题目数。
-33. completed / locked / voided Visit 或实例只允许列表与 attached / locked 预览。
-34. scored / locked / voided ItemResponse 只允许列表与 attached / locked 预览。
-35. 401 返回登录页；403 显示无权限而不是空列表。
-36. 患者非 active 或 Storage 异常时显示稳定提示并保留本地待上传草稿。
-37. 上传与作废请求不自动重试；分组切换期间同题同类型写锁仍阻止第二个写请求。
-38. 页面与公开类型不显示内部对象定位、Storage bucket / credential、校验和、原始文件名、任意 metadata / qualityHints 或内部归属字段。
-39. 媒体子组件自身不调用提交、评分、OCR、报告或 AI 接口；正式提交只由 B6 主执行页交互触发。
-40. 全部验证使用脱敏人工测试图片与手写内容，不使用真实医疗数据。
-
-## 10. B6 手工验证建议（待验证）
-
-前置条件：后端已启动，使用脱敏人工测试账号和测试患者 / 访视 / MMSE / MoCA 实例；不得使用真实患者或医疗数据。以下场景本次未执行，均待开发者本地验证：
-
-1. 打开未完成 MMSE / MoCA 实例。
-2. readiness 在执行详情成功后独立自动加载。
-3. 初始阻断问题和九项统计与服务器数据一致。
-4. readiness 失败只影响提交面板，不影响题目、作答草稿与媒体历史展示。
-5. 问题列表不显示作答、正确答案、expectedValue 或评分。
-6. “定位题目”能切换分组、滚动并将键盘焦点移到题目容器。
-7. scale_instance scope 问题不显示错误的题目定位操作。
-8. 未保存作答存在时禁止进入有效确认和发送 POST。
-9. 未上传媒体草稿存在时禁止进入有效确认和发送 POST。
-10. 题目 PATCH 成功后 readiness 标记过期，纯本地输入不自动请求 readiness。
-11. 媒体上传或作废成功后 readiness 标记过期；列表 / 预览 GET 不标记过期。
-12. 重新检查取消旧 GET 并使用最新服务器状态；取消请求不显示错误。
-13. blocking issue 阻止提交，页面没有忽略或 force 操作。
-14. warning 不阻止提交，并可独立展开查看。
-15. readiness ready=true、canSubmitNow=true、无 blocking 且无本地阻断时出现确认区。
-16. 未勾选确认 checkbox 时“确认正式提交”不可用。
-17. submit 期间题目编辑 / 保存、图片采集、手写画布、上传和作废全部真实禁用。
-18. submit 成功后页面立即变为 completed 只读，不整页重载。
-19. submit 成功后历史题目作答和媒体证据仍可查看。
-20. submit 成功后不跳转评分、报告或 AI 页面，也不修改访视状态。
-21. 当前会话 submission 回执的 submittedAt、operatorName、operatorRole、durationSource 正确，submissionId 仅弱化展示。
-22. 并发已提交返回 alreadySubmitted=true 时作为成功处理并说明未重复写入。
-23. completed 实例刷新后不自动调用 submit POST。
-24. completed 实例无当前会话回执时不把施测 operatorSnapshot 冒充提交操作者。
-25. locked / voided 实例不显示可用提交按钮，仍可查看 readiness 与历史。
-26. patient_inactive / visit_not_editable 显示 canSubmitNow=false 且不能提交。
-27. `SCALE_INSTANCE_NOT_READY` 后自动刷新一次 readiness，但不自动再次 POST。
-28. `SCALE_INSTANCE_SUBMISSION_CONFLICT` 后刷新服务器状态，但不自动再次 POST。
-29. readiness 或 submit 的 401 返回登录页。
-30. readiness 或 submit 的 403 显示无权限，不伪装成空检查结果。
-31. readiness / submit 服务错误保留当前题目、作答草稿、媒体草稿和确认说明；POST 不自动重试。
-32. 页面没有 force submit、ignore issues、撤销、reopen 或 lock 入口。
-33. 页面不显示 score、isCorrect、scoreValue、scoringRule、expectedValue 或正确答案。
-34. 问题定位跨分组后其他分组的作答与媒体草稿没有丢失。
-35. B6 没有新增路由、修改 URL 或增加路由参数。
-36. 全部验证使用脱敏人工测试数据，不使用真实患者或医疗信息。
-
-## 11. B7 手工验证建议（待验证）
-
-前置条件：后端已启动，使用脱敏人工测试账号和测试患者 / 访视 / MMSE / MoCA 实例；不得使用真实患者或医疗数据。以下场景本次未执行，均待开发者本地验证：
+Fixture 前置：准备 draft / in_progress / completed / locked / voided 实例，completed 无结果、已有 provisional 结果、复核队列、warning、incomplete、voided、冲突、401/403 和网络失败状态；全部为脱敏 MMSE / MoCA 数据。
 
 1. draft / in_progress 实例不请求 latest。
 2. completed 实例自动查询 latest。
@@ -581,9 +130,9 @@ B14.1 静态验证不覆盖：
 39. 未使用真实患者或医疗数据。
 40. 页面没有新增路由。
 
-## 12. B8 手工验证建议（待验证）
+### 5.2 B8 人工评分与显式确认：60 项
 
-前置条件：后端已启动，使用脱敏人工测试账号与测试数据；不得使用真实患者或医疗数据。以下场景本次未执行：
+Fixture 前置：准备 needs_review、auto_scored、not_scored、manual_scored、最后一项待复核、warning、pending、confirmed、locked、审计上限、metadata 异常、双 Session stale、401/403 与网络失败状态。
 
 1. needs_review 项出现人工评分入口。
 2. auto_scored 项不允许人工评分。
@@ -646,9 +195,9 @@ B14.1 静态验证不覆盖：
 59. 页面没有新增路由，题目定位不修改 URL 且不丢失各类草稿。
 60. lint、typecheck、build 均通过。
 
-## 13. B9 手工验证建议（待验证）
+### 5.3 B9 认知域计算与安全展示：52 项
 
-前置条件：后端已启动，使用脱敏人工测试账号与测试数据；不得使用真实患者或医疗数据。以下场景本次未执行：
+Fixture 前置：准备无评分、needs_review / computed、confirmed / locked / voided ScoreResult，认知域无结果、computed / locked / voided、单域、多域、excluded、null、mapping 异常、冲突、401/403 与网络失败状态。
 
 1. 未生成评分结果时不请求认知域 latest。
 2. needs_review / computed 未确认评分不请求认知域 latest。
@@ -703,7 +252,9 @@ B14.1 静态验证不覆盖：
 51. 小屏幕认知域区域可正常使用。
 52. 不使用真实患者或医疗数据。
 
-## 14. B10 手工验证建议（待验证）
+### 5.4 B10 规则化临床报告草稿：95 项
+
+Fixture 前置：准备 Visit 无报告、合法 scope、不同实例状态、draft / confirmed / voided / incomplete 报告、scope/source 冲突、缺评分/认知域/媒体、历史 confirmation、401/403 与网络失败；报告内容和意见必须脱敏且无临床含义。
 
 1. 访视详情成功后自动查询 report latest。
 2. 量表目录失败不阻止 latest。
@@ -801,11 +352,13 @@ B14.1 静态验证不覆盖：
 94. `npm run typecheck` 通过。
 95. `npm run build` 通过。
 
-以上真实浏览器联调尚未执行，不得写成已通过。
+## 6. Batch D 当前待验合同：B11–B15（含 B14.1）
 
-## 15. B11 手工验证建议（待验证）
+Batch D 尚未启动。Fixture 必须支持 doctor、admin、nurse、research_assistant、system，真实双 Session 并发，报告各生命周期状态，Patient / Visit 历史状态，审计异常、网络不确定、401/403 和稳定错误。所有 note、opinion、reason、summary 均使用无临床含义的脱敏文本。
 
-前置条件：后端已启动，使用脱敏人工测试账号与测试报告；不得使用真实患者或临床意见。以下场景本次未执行：
+阶段所有权口径同第 5 节：B11–B15 的“不存在/不实现”验证目标是当前 Action 不越界、不自动串联、不伪造后续事实，不要求移除后来已经实现且在当前状态合法的 sibling 能力。B16 / WP-02 只证明 replacement V2+ 的特定闭环，不能替代 B11–B15 各自的完整角色、草稿、并发、错误、可访问性和隐私矩阵。
+
+### 6.1 B11 报告编辑、提交与确认：70 项
 
 1. system_draft draft 可打开编辑。
 2. 只显示 doctorOpinion / recommendationText 编辑字段。
@@ -878,11 +431,7 @@ B14.1 静态验证不覆盖：
 69. stale / alert / aria-live 文案与真实 disabled 状态正确。
 70. `npm run lint`、`npm run typecheck`、`npm run build` 通过。
 
-以上真实浏览器联调尚未执行，不得写成已通过。
-
-## 16. B12 手工验证建议（待验证）
-
-前置条件：后端已启动，使用脱敏人工测试账号与测试报告；不得使用真实患者或锁定说明。以下场景本次未执行：
+### 6.2 B12 报告不可逆锁定：88 项
 
 1. draft 报告不显示锁定入口。
 2. pending_confirmation 不显示锁定入口。
@@ -973,11 +522,7 @@ B14.1 静态验证不覆盖：
 87. typecheck 通过。
 88. build 通过。
 
-以上真实浏览器联调尚未执行，不得写成已通过。
-
-## 17. B13 手工验证建议（待验证）
-
-前置条件：后端已启动，使用脱敏人工测试账号、已确认并锁定的测试报告；不得使用真实患者或冻结说明。以下场景本次未执行：
+### 6.3 B13 报告来源冻结：116 项
 
 1. 未生成报告时无来源冻结区域写入口。
 2. draft 报告不允许冻结来源。
@@ -1096,11 +641,7 @@ B14.1 静态验证不覆盖：
 115. typecheck 通过。
 116. build 通过。
 
-以上真实浏览器联调尚未执行，不得写成已通过。
-
-## 18. B14 手工验证建议（待验证）
-
-前置条件：后端已启动，使用脱敏人工测试账号、已确认 / 锁定 / 来源冻结完成的测试报告；不得使用真实患者或归档说明。以下场景本次未执行：
+### 6.4 B14 报告归档：115 项
 
 1. 无报告时无归档入口。
 2. draft 不显示归档入口。
@@ -1218,9 +759,25 @@ B14.1 静态验证不覆盖：
 114. typecheck 通过。
 115. build 通过。
 
-以上真实浏览器联调尚未执行，不得写成已通过。
+### 6.5 B14.1 工作流结构治理：当前仍待验部分
 
-## 18.1 B15 手工验证建议（待验证）
+B14.1 的静态拆分合同已经验证：公开 options 9 个、result keys 99 个、七个 mode、组件消费、API Client 方向、单一 activeMode / writingAction / writingRef / mountedRef / beforeunload、唯一 latest 和报告更新入口均保持。当前待验的是拆分后的真实 Browser 行为等价性，不是重新执行静态行数审计。
+
+Fixture 与 Browser 必须覆盖：
+
+1. 公共 façade：七个 mode 仍互斥；路由报告身份变化会清理正确状态；一个 writingAction 期间不能打开或提交另一动作；成功报告只经统一入口应用。
+2. Edit：open / update / no-change / save / conflict / 403 / receipt / stale / beforeunload 与 B11 一致；网络或冲突后保留三个本地字段。
+3. Submit：readiness、submissionNote、checkbox、success / alreadySubmitted、conflict 与 pending read-only 一致；不自动重发。
+4. Confirm：doctor / admin、confirmationNote、checkbox、success / alreadyConfirmed、conflict 与 403 文案一致；不模拟 lock。
+5. Lock：doctor / admin、Visit draft / in_progress / completed、success / alreadyLocked、conflict、consistency warning 与 confirmed status 一致；lockNote 保留。
+6. Source-freeze：start / resume、服务端持久 note、显式放弃本地内容、in_progress / incomplete / failed、alreadyFrozen / resumedExisting 与 no polling 一致；不自动进入恢复。
+7. Archive：doctor / admin、不依赖 Patient active / Visit editable、Visit locked 不阻断、success / alreadyArchived、conflict、historical fallback 与 archived read-only 一致。
+8. Browser 公共边界：真实 B11–B14 HTTP、Cookie / CORS、多操作者并发、网络中断后的服务端最终状态、唯一 beforeunload、窄屏和屏幕阅读器 / live region 行为。
+9. 写请求最多各执行一次；latest 恢复最多一次；不得出现 Action 互相 import、组件直调 API、自动 retry、polling 或浏览器持久化草稿。
+
+B16 / WP-02 已完成不能替代这组 B14.1 行为等价回归；只有 Batch D 实际覆盖上述项目后才能关闭。
+
+### 6.6 B15 版本化更正：10 组
 
 - 使用脱敏 doctor / admin 账号验证 archived V1 首次更正：原因 3–2000、摘要 3–4000、checkbox、Body 白名单与成功原地切换 V2；确认没有刷新、跳转或额外 latest。
 - 使用脱敏 in_progress source 验证显式恢复：correctionId / No.、started actor / time、版本关系与 replacementReportId 可见；reason / summary 只读，必须重新勾选且不生成新 ID。
@@ -1228,361 +785,61 @@ B14.1 静态验证不覆盖：
 - 模拟 not correctable / not latest / conflict / incomplete / failed / not found / voided：最多 latest 一次，首次文本保留、checkbox 清除、stale，绝不重发 POST。latest 变 in_progress 时需明确放弃本地内容后恢复；变 corrected / replacement 时提示本地说明未写入。
 - 模拟 401 / 403 / audit unavailable / replacement conflict / 网络中断：401 返回登录页；403 保留报告与输入；审计 / 关系冲突不可绕过；网络不确定只提供手工 latest。
 - 分别以 doctor/admin 与 nurse/research_assistant 验证合法 V2：仅 doctor/admin 可 edit / submit / confirm；Patient inactive、Visit locked / voided 不阻断 A21；V1 既有角色与资格不放宽。
-- 确认 V2 confirmed 不显示 lock / freeze-sources / archive 入口且网络面板没有 A22–A24 请求；不自动完成编辑、确认、锁定、冻结或归档。
+- 确认 V2 confirmed 后 correction Action 不自动发起或串联 A22–A24；安全 replacement 可以按 B16 显示当前阶段合法入口，但用户未明确操作前 Network 中没有 A22–A24 写请求，也不自动完成编辑、确认、锁定、冻结或归档。
 - 验证 source / replacement 摘要没有虚假历史链接、metadata、原始 correctionRecords 或五类来源 ID；刷新后仅使用 replacementOf。
 - 验证小屏纵向布局、可见 label / 字符计数、alert / polite live region、键盘操作与 POST 期间全部报告写操作 disabled。
 - 验证 beforeunload 只有一个监听器：start 模式 reason / summary trim 后非空触发；resume 只读文本本身不触发；不得写 localStorage / sessionStorage / IndexedDB / URL / Cookie。
 
-以上 B15 浏览器自动化与手工联调尚未执行，全部场景待使用脱敏数据验证。
-
-## 18.2 B16 核心验证矩阵（待验证）
-
-前置条件：同时可用的本地前后端、脱敏 doctor / admin / nurse / research_assistant 账号，以及可构造 V1、V2、V3、sourceFreeze in_progress、并发 stale 与 lineage invalid 的隔离测试数据。
-
-- V1 回归：doctor/admin 按原顺序 lock → freeze → archive；确认 Visit 非 draft / in_progress / completed 时原 lock / 首次 freeze 限制未放宽，note、checkbox、receipt 与 B12–B14 一致。
-- V2 闭环：从 archived V1 更正并原地切换；不刷新时旧 V1 的 edit / submit / confirmation / lock / freeze / archive receipt 均消失，仅保留 correction receipt / sourceReport；完成 V2 A21 后逐步执行 A22–A24，每步显示当前 reportCode / V2 且不自动进入下一步。
-- V3 防写死：从 archived V2 创建 V3，完成 A21–A24；确认 UI、请求和文案均动态使用 V3，没有 V2 专用分支、页面、Hook 或 endpoint。
-- 历史状态：对安全 replacement 分别验证 Patient inactive、Visit locked、Visit voided 均不阻断当前报告 A22–A24；当前报告自身未确认、未锁定、freeze 未完成、已归档 / corrected / voided 时仍正确阻断。
-- 来源冻结：首次使用当前 updatedAt / 用户 note；in_progress 使用服务端 freezeId 与持久 note 且不可编辑；completed 不写入。检查 expected / completed / newly / previously 计数及“前序已冻结、当前兼容验证”说明，不显示内部来源集合 ID。
-- 幂等 / 并发：alreadyLocked / alreadyFrozen / alreadyArchived 展示原 receipt；lock / archive stale 保留 note、清 checkbox、latest 最多一次且不重发；freeze-before-lock 与 archive-before-freeze 保留各自错误语义。
-- lineage invalid：409 显示安全中文提示，最多 latest 一次，刷新后仍不可安全写入，禁止自动 POST / 跳转 / 修补 replacementOf，页面和日志不泄露 previousReportId、correctionId、来源 ID、堆栈或数据库异常。
-- 权限 / 协调：doctor/admin 可执行；nurse/research_assistant 无可操作按钮但可看安全摘要。快速双击仅一个请求，一个 writingAction 期间不能打开另一模式，beforeunload 生效，结束后释放，不存在 lock → freeze → archive 自动串联或轮询。
-- 网络面板：A22–A24 继续只发送 confirm、当前 note、当前 report.updatedAt；不得发送 reportVersion、previousReportId、replacementOf、correctionId、sourceIds、Patient / Visit 状态或来源范围。
-
-基线 `066ee87` 的前轮已执行上述完整浏览器矩阵；本轮未重复全部场景，只补齐两个确定性场景和指定冒烟。两轮证据可在产品代码无差异的前提下合并，但仍不得绕过本轮未完成的强制门禁而写成 B16 完成。
-
-### B16 浏览器矩阵的夹具前置
-
-- 执行上述矩阵前，后端执行者必须先在隔离 test database 运行 B16 fixture `prepare`，再运行只读 `verify`；两者均要求 `NODE_ENV=test` 和仅通过临时进程环境提供的 `B16_FIXTURE_PASSWORD`。密码值不写入本手册，也不得进入浏览器日志、截图或存储。
-- safe manifest 中 `roles` 提供 doctor、admin、nurse、research_assistant 四类脱敏账号的 `accountName` 登录标识；执行者使用同一临时密码登录。`route` 可直接打开对应脱敏 patient/visit 页面，但验收报告不得粘贴实际 ID。
-- 场景用途按 key 分组：`v1_doctor_ready_lock` / `v1_admin_ready_lock` / `v1_visit_ineligible` 验证 V1 回归与资格边界；`archived_v1_for_v2` / `archived_v2_for_v3` 分别作为真实 V2、V3 创建起点；`v2_patient_inactive_ready_lock` / `v2_visit_locked_ready_lock` / `v2_visit_voided_ready_lock` 验证 replacement 历史状态。
-- A23/A24 场景：`v2_ready_freeze`、`v2_freeze_in_progress`、`v2_ready_archive`；并发与幂等场景：`v2_ready_lock_concurrency`、`v2_ready_archive_concurrency`、`v2_already_locked`、`v2_already_frozen`、`v2_already_archived`；前置错误：`v2_freeze_before_lock`、`v2_archive_before_freeze`；内部 lineage 409：`v2_lineage_invalid_internal`。新增 `v2_correction_in_progress` 用于恢复同一 A25 correction，新增 `v2_replacement_summary_unsafe` 用于公开摘要前端写阻断。contract 共 22 个 `scenarioKey`（1 个 roles + 21 个业务场景），每个业务 key 都有独立 patient/visit/report 链，不应跨场景复用浏览器写操作。
-- safe manifest 的 purpose、当前版本、安全状态、建议角色、起始阶段和聚合来源计数是验收导航信息；它不会输出密码、Cookie、Session、连接串、报告正文、前序/替代报告内部 ID、correction/freeze/source ID。
-- 浏览器矩阵结束后执行后端 CLI `cleanup --namespace <name> --confirm-cleanup`，并核对残留为 0。夹具 prepare/verify 通过只说明账号与数据前置就绪，不等于 B16 真实浏览器业务验收通过。
-- 当前状态：前轮完整矩阵、Resume / unsafe 针对性 Chrome 结果与最终 `@Browser` Web Storage 审计均已记录；B16 / WP-02 已完成，WP-04 尚未实施。
-
-### B16 最终门禁补齐的本轮结果
-
-- fixture 使用 production correction plan/start builder 和 `ReportsService.startCorrectionIfUnmodified()` 确定性停在完整 `in_progress`，不再通过网络中断或随机时机碰撞状态；`prepare` / `verify` / `cleanup` 命令不变。固定 namespace 的 replace、verify 均成功，4 个角色、22 个 `scenarioKey`、21 个业务场景及 safe manifest 扫描均通过。fixture 准备成功不等于浏览器验收完成。
-- 真实 Chrome 的 `v2_correction_in_progress`：doctor 从 archived V2 看到只读持久原因/摘要和 Resume 入口；Tab / Enter / Space 完成键盘流程；A25 POST 恰好 1 次并返回 HTTP 200、`resumedExisting=true`；页面原地切到 V3，刷新不重发。后端 E2E 进一步确认只创建一个 V3、复用原 correction、没有 V4。页面、DOM、URL 和 Console 未发现 correction/lineage 内部 ID。
-- 真实 Chrome 的 `v2_replacement_summary_unsafe`：页面和公开报告映射正常，显示安全阻断说明；A22–A25 入口均不开放，写请求为 0，刷新后不修补、不跳转。页面、DOM、URL 和 Console 未发现内部 lineage 标识或被破坏关系的原始值。
-- 指定冒烟通过：安全 archived V2→V3 为 1 次 A25 POST / HTTP 200；internal lineage invalid 为 1 次 A22 POST / HTTP 409、错误码保持稳定、latest 1 次且自动重发 0；nurse 和 research_assistant 无 correction 入口；非 archived replacement 无 correction Start；Resume 键盘焦点可见。beforeunload、双会话并发、完整 V1/V2、历史 Patient/Visit、幂等和 freeze 矩阵沿用同一产品代码基线 `066ee87` 的前轮证据。
-- fixture 定向 E2E 1 suite / 3 tests、A25/A26 定向 E2E 1 suite / 7 tests、全量 unit 76 suites / 666 tests、全量 E2E 15 suites / 70 tests、build 均通过。完整 lint 因三个未修改 scoring 文件中的 51 个既有 Prettier 问题失败；受本任务范围约束未修复。
-- 上述 Chrome 补齐矩阵不承担 Web Storage 取证；完整 backend lint 的 51 个问题已确认严格为三个未修改 scoring 文件中的既有 Prettier 技术债，不是 WP-02 回归，也不再作为 WP-02 产品完成门禁。
-
-### B16 Codex 内置浏览器 Web Storage 最终审计
-
-- 使用 `@Browser`，不是 `@Chrome`；使用新的隔离浏览器标签页和完整 CDP，检查严格限制在 `http://localhost:3002`。未读取浏览器 profile、Chrome session store、历史、下载、其他 origin、Cookie 存储或密码管理器。
-- 五个时点的 localStorage key 数依次为 0、0、0、0、0；key 名称均为空，key / value 禁止模式命中数均为 0。unsafe replacement summary 复核仍为 0。value 只在页面执行环境内做布尔扫描并返回长度与 true / false，执行报告未记录任何 value。
-- 五个时点的 sessionStorage key 数依次为 1、1、2、3、4；unsafe replacement summary 复核为 5。全部 key 名称均符合 `__next_debug_channel:*`，判断为 Next.js dev 调试通道；key / value 禁止模式命中数均为 0，没有认证、患者、报告、草稿、correction / lineage 或来源集合持久化。未输出任何 value。
-- 五个时点与 unsafe 页面 IndexedDB 数据库数均为 0，数据库名称与 object store 名称均为空，名称禁止模式命中数为 0；未打开或读取任何 object store 记录。
-- doctor 登录成功，CORS 精确允许 frontend origin 且 credentials 正常。所有选定时点的 `document.cookie` 均为空，没有可由脚本读取的认证凭证；只记录布尔结果，不记录实际字符串或 Cookie 值。
-- 在可编辑 A22 表单输入未提交脱敏说明草稿后，localStorage / sessionStorage / IndexedDB 无相关业务记录，写请求为 0。内置浏览器首次刷新触发既有 beforeunload 且自动取消；确认事件后，仅通过 CDP 临时移除旧页面的两个 beforeunload listener 以完成真实刷新，导航后该临时处理不保留。真实刷新后草稿未恢复、页面仅恢复服务端事实，自动 POST / PATCH 为 0。
-- 报告页与 unsafe summary 的 Console 禁止模式命中为 0；URL query / hash 与 DOM 未发现密码、token、报告正文、correction / lineage 内部 ID 或来源集合 ID。unsafe 页面继续显示安全阻断说明，未开放不可逆写入口且写请求为 0。
-- fixture replace / verify 均退出 0，得到 4 个角色、22 个 `scenarioKey`、21 个业务场景，safe manifest 扫描通过；审计后 cleanup 连续执行两次，残留均为 0。frontend lint、typecheck、build 均通过，Web Storage 门禁通过。
-
-## 18.3 B17 WP-04 首轮核心验证矩阵（历史记录：部分已执行）
-
-静态门禁：对全部 B17 新增/修改 TS/TSX 执行定向 ESLint，再执行 `npm run lint`、`npm run typecheck`、`npm run build` 和仓库根目录 `git diff --check`。构建路由必须包含 `/patients/[patientId]/history`、`/patients/[patientId]/trends`、`/patients/[patientId]/visits/[visitId]/clinical-reports/[reportId]`；同时搜索直接组件 fetch、GET Body、缺失 credentials/no-store/AbortSignal、自动 retry/polling、localStorage/sessionStorage/IndexedDB、chart dependency、Canvas、`any`、前端 delta/percent 重算、非 available point 过滤、workflow Hook 和内部 lineage 字段渲染。
-
-浏览器前置：需要可访问的 frontend/backend、四个允许角色、无报告/单 V1/V1→V2/V1→V2→V3/长链和六种报告状态、多个 Visit 的完整 trend dataStatus/exact trace/domain mapping 数据。只允许脱敏隔离数据；不得在 B17 中新增 backend fixture 或手工直改数据库。无完整数据时逐项记“未执行”，不得以静态检查替代或关闭 WP-04。
-
-历史列表矩阵：四角色、未认证、403、Patient 404；默认与 20/50/100 分页、日期边界/倒置、visitType/status/scaleCode（含退役 code）、翻页保留筛选和浏览器前后退；empty/filtered empty；score available/not_final/voided/incomplete/null，domain available/incomplete/null 且不可用 domain 不抹总分；report none/available/incomplete、latest 与 latestArchivedVersion 区分、draft latest 不冒充归档；Visit/历史报告导航与内部字段扫描。
-
-报告版本/详情矩阵：无报告、单 V1、V1→V2、V1→V2→V3、分页、latest、previous/replacement code/version、corrected 归档事实、draft latest、voided；lineage invalid 必须安全报错且无部分链，同时 current workflow 保持；incomplete 单独提示。详情覆盖 draft/pending_confirmation/confirmed/archived/corrected/voided、inactive/archived Patient、locked/voided Visit、Patient/Visit/Report 三类 404 与 incomplete 409；不得出现写按钮或 A21–A25 POST/PATCH，latest 路由不得回归，DOM 不得显示内部 lineage ID。
-
-趋势矩阵：目录、未选 scale 不请求、不可用 scale、日期、maxPoints 2/50/100、range-too-large 409、无 Visit、全 Visit 无该 scale、同日 Visit 顺序、历史 Patient；逐一覆盖 available/source_missing/source_not_final/source_voided/source_incomplete/source_ambiguous，保证每个 Visit 保留且 null 不显示 0。总分比较覆盖 first_point/comparable 与 scale/CRF/scoring rule/field encoding/administration mode/score range/trace incomplete reasons，多 reason 原顺序、available→missing→available 不跨越、delta 直接采用后端。Domain 覆盖 available/source incomplete、mapping version/source/mode/domain set/domain range/domain missing、comparable/partially comparable/not comparable/unavailable，且不影响可用总分。
-
-图表/表格/可访问性矩阵：所有 Visit 有 X 位置；只有相邻 comparable 连接，not comparable/missing 不连且不跨 missing；isolated marker、总分/Domain 切换、0–100 轴、“不是疾病概率”、无改善/恶化颜色语义。验证 1280×720 与 390px、无 document 非预期横向溢出、窄屏表格局部滚动、筛选/指标/`details` 键盘、marker tabindex/aria、alert/aria-live、标题、焦点和非单一色彩表达。
-
-Network/隐私矩阵：四个 B17 GET 无 Body、不发送 reportVersion 或内部 lineage ID、无自动 retry/polling；Console 无完整 response；DOM/URL 无 previousReportId、patient name、报告正文或内部 lineage。不得脚本读取 HttpOnly Cookie。Web Storage/IndexedDB 只能在所用浏览器工具安全规则允许时检查；如工具禁止读取，必须写“未执行”，不能从代码搜索推导为浏览器审计通过。
-
-本次实际结果：生产构建 frontend `localhost:3002`、test backend `localhost:5002`、隔离 `cogmemory_ad_test` 与既有 B16 脱敏 fixture CLI 可用。四角色 history、未认证跳转、Patient 404、默认分页/status URL/浏览器返回、inactive Patient 入口、latest/最近正式归档区分；单 V1、V1→V2、latest/previous/replacement、lineage invalid 409 无部分链；指定历史详情 GET、Report 404、快照/正文、导航、无写入口；目录、未选 scale 0 趋势请求、不可用 scale 404、source_missing/source_incomplete、null、SVG marker、完整表与窄屏布局均通过。四个 API 为 GET 且无 Body，Console warn/error=0，DOM 未见内部 lineage 字段。
-
-本次未执行：403（四个现有账号均被允许）、无报告 Visit、V1→V2→V3、长链分页、六种详情状态全集、incomplete/range-too-large 409、完整 six dataStatus、available/comparable、多 Visit exact trace/domain mapping、相邻连线/断线/跨 missing、Domain 指标切换和完整键盘矩阵。原因是现有 fixture 每患者仅一个 Visit，报告链最长 V2，趋势仅提供 source_missing/source_incomplete；B17 没有新增数据 fixture。浏览器技能禁止读取 Cookie/localStorage/sessionStorage/IndexedDB，因此相应浏览器审计明确未执行。验收后 `b17-browser` namespace cleanup residualCount=0。结论：B17 实现与静态验收完成，浏览器核心矩阵未完整完成，WP-04 继续进行中。
-
-### B17 完整浏览器矩阵的 WP-04 fixture 前置（历史记录）
-
-- 开始矩阵前，先确认后端正式 namespace 为 `wp04-browser-final`，再运行只读 `verify`；账号角色为 doctor、admin、nurse、research_assistant、system，其中 system 用于 403 验证。密码只由执行者临时提供，不写入本文、浏览器日志、截图、URL 或存储。
-- 44 个 key 按用途分组：accounts 为 `roles`；history 为 `history_empty`、`history_pagination`、`history_filters`、`history_source_matrix`、`history_report_summary_matrix`；report versions 为 `report_versions_none`、`report_versions_v1`、`report_versions_v2`、`report_versions_v3`、`report_versions_long_chain`、`report_versions_lineage_invalid`、`report_versions_incomplete`；report detail 为 `report_detail_draft`、`report_detail_pending_confirmation`、`report_detail_confirmed`、`report_detail_archived`、`report_detail_corrected`、`report_detail_voided`、`report_detail_incomplete`。
-- trend basics 为 `trend_empty`、`trend_data_status_matrix`；total comparison 为 `trend_comparable`、`trend_scale_version_changed`、`trend_crf_version_changed`、`trend_scoring_rule_changed`、`trend_field_encoding_changed`、`trend_administration_mode_changed`、`trend_score_range_changed`、`trend_multiple_reasons`、`trend_missing_break`；Domain comparison 为 `trend_domain_comparable`、`trend_domain_mapping_version_changed`、`trend_domain_mapping_source_changed`、`trend_domain_mapping_mode_changed`、`trend_domain_set_changed`、`trend_domain_range_changed`、`trend_domain_partially_comparable`、`trend_domain_unavailable`；范围/患者状态为 `trend_range_exact_100`、`trend_range_too_large_101`、`trend_patient_inactive`、`trend_patient_archived`、`trend_scale_unavailable`。
-- source/mode 两个场景都应看到总分仍可比较，而 Domain 严格显示 unavailable、`reason=domain_source_incomplete`、空 items；当前页面不应期待出现 `domain_mapping_source_changed` 或 `domain_mapping_mode_changed`，两者只是底层 pure comparator 的防御性 reason。
-- manifest 中 route 仅用于浏览器导航，不得复制到执行报告；不得记录任何实际 route、内部 ID 或密码。推荐使用 Codex 内置 `@Browser` 与完整 CDP 执行矩阵，并遵守浏览器工具对 Cookie/Web Storage 的安全边界。
-- fixture 已准备并验证不等于 B17 已通过。完整浏览器矩阵结束后必须显式 cleanup `wp04-browser-final` 并确认残留为 0；在此之前 WP-04 保持进行中。
-
-### B17 纠偏后的定向复验口径（历史记录）
-
-上一次浏览器结果继续按历史事实记录为 39 个 scenarioKey pass、5 个暂定 fail，并存在工具限制或执行未完成项；该结果不能写成 B17 或 WP-04 完成。5 个暂定 fail 重新分类如下：
-
-- `history_pagination` 是已确认的 fixture 缺陷：原数据未形成完全相同的 `assessmentDate`。test-only fixture 已修复并通过真实 QueryService verify，但同日浏览器排序仍须在下一次复验实际执行。
-- `report_versions_none` 必须按请求发起方定向复验；同页 404 本身不是版本面板失败证据。
-- V2、V3、V21 中观察到的页面级写入口分别记为三个待纠偏项；必须先确认入口是否位于版本面板 DOM 子树，不能把 sibling 当前报告工作流的合法入口算作历史版本面板缺陷。
-- V21 刷新后本地分页回到第一页不属于当前契约阻断。报告版本分页是组件本地交互状态；当前契约不要求页码进入 URL，不要求刷新后恢复第二页，也不要求浏览器后退后恢复离开前的组件页码。页码 URL 化只是未来可选体验增强，本任务不得修改前端实现。
-
-#### 只读 DOM 边界
-
-- 历史版本区域是标题为“临床报告版本”的 `ClinicalReportVersionPanel`：只包含版本列表、本地分页、公开 lineage 摘要、版本卡片和“查看只读详情”导航。验收应通过稳定标题、section/card 语义、aria 或可重复确认的组件容器定位该区域，只扫描该 DOM 子树。子树内不得出现编辑、提交、确认、锁定、冻结、归档、修正/更正、生成报告等写入口。
-- 历史报告只读详情是指定历史报告的独立整页边界。整页不得出现上述写入口，不得发送 A21–A25 写请求；版本卡片导航必须进入指定历史详情，并验证返回/前进后的安全只读行为。
-- sibling 当前报告工作流是标题为“访视级临床报告”的 `ClinicalReportPanel` 或实际等价组件。它与版本面板可同时挂载，并可按当前报告状态显示合法写入口；该 DOM 子树不属于 B17 历史版本面板只读断言。验收需记录其入口但不计为 V2/V3/V21 失败。
-- 若工具无法可靠确定版本面板容器边界，该项标记 `not_executed`，不得以页面全局按钮文本主观判定通过或失败。不得为验收增加 `data-testid` 或修改前端 DOM。
-
-#### Network 请求边界与 `report_versions_none`
-
-每次复验按 Network request 类型、脱敏 URL 模式和 initiator/调用来源分类，只输出以下类别，不输出实际动态 URL 或 ID：
-
-- `version-list`：由版本面板发起的版本列表 GET。
-- `historical-detail`：版本卡片导航后由历史详情页发起的指定历史详情 GET。
-- `current-report-workflow`：由 sibling 当前报告面板/Hook 发起的 latest 探测及其独立工作流请求。
-- `patient/supporting-request`：患者、访视、认证或其他页面支撑请求。
-
-`report_versions_none` 的核心预期是 `version-list` 返回 HTTP 200，`items=[]`、`total=0` 并表达合法空版本链，版本面板显示稳定空状态；版本面板不得自动请求不存在的 `historical-detail`、伪造 V1、触发生成/修复或任何历史版本写操作。同页 sibling 可以独立探测当前报告；若该 `current-report-workflow` 请求因当前报告不存在返回 404，且 initiator 分类明确、版本面板与页面 UI 安全，则不自动判为版本面板失败。
-
-只有以下情况判定 `report_versions_none` 产品失败：`version-list` 不是合法 200 空集合；版本面板自己请求不存在的历史详情；空链使版本面板进入错误页；空链触发历史版本写操作；或空链导致内部 ID 泄露。
-
-#### V2 / V3 / V21 验收重点
-
-- 验证版本数量与倒序、latest、corrected/predecessor/replacement 的公开 code/version 关系、版本卡片导航、版本面板内部无写入口、指定历史详情整页无写入口、无 N+1 详情请求、无内部 lineage ID。
-- V21 验证当前契约下的 20+1 页内分页：第一页 20 条、第二页 1 条、翻页请求与内容正确。分页状态留在 `ClinicalReportVersionPanel` React 本地状态。
-- sibling 当前报告工作流的合法写入口、版本页码未写 URL、刷新后回第一页、后退后回组件默认页，均不是当前 WP-04 阻断项。
-
-#### 真实键盘门禁
-
-- DOM 中存在 `tabindex`、`aria-label` 或 button role 只能证明结构前置条件，不能替代真实键盘操作。
-- 键盘门禁必须由用户真实按键协助、能发出原生键盘输入的浏览器工具，或可靠浏览器自动化输入能力完成；不得新增 Playwright、Cypress、Selenium 或其他依赖。
-- 人工逐项步骤：使用 Tab 正向进入筛选、分页、版本卡片导航、`details/summary` 与图表 marker；使用 Shift+Tab 反向返回；用 Enter 激活链接、分页和适用控件；用 Space 激活 button/checkbox/summary 等适用控件；确认筛选值与分页实际变化、details 展开/收起、marker 获得焦点且可读取安全 aria 文案、焦点环始终可见，并能离开每个区域且无焦点陷阱。
-- 工具不能产生真实键盘事件时整项标记 `not_executed`，不得写成 pass；下一次最终复验改用用户协助的手工键盘检查。
-
-#### Storage 审计与 Runtime fallback
-
-- 优先使用 CDP Storage 只读能力。如果 Browser runtime 拒绝 `Storage.*`，允许在同源页面 Runtime 执行等价安全审计；CDP 拒绝应记录为工具限制，但 fallback 全部完成时可据结果判定 Storage 门禁，不自动把整个门禁标为未执行。
-- localStorage 与 sessionStorage：只返回 key 数量、key 名称、对 key/value 禁止模式扫描的 true/false 与命中数；不得输出任何 value。
-- IndexedDB：仅用同源 `indexedDB.databases()` 读取数据库名称；存在数据库时只核对 object store 名称，不读取 record 或导出内容。
-- Cookie：只判断 `document.cookie` 是否为空并返回布尔值；不读取 HttpOnly Cookie，不调用 Cookie export，不输出 Cookie/token。
-- 必须覆盖初始未认证、登录后、history、report versions、report detail、trends、system 403、logout 后八个时点。上轮缺失的初始未认证 IndexedDB 必须单独执行；Runtime fallback 必须覆盖完整时点矩阵。
-
-#### 登录取证安全
-
-- 密码框中仍有值时禁止获取或输出完整 DOM snapshot，也不得输出任何表单 input value。提交登录后先等待导航或响应完成，确认密码输入已清空或登录页已卸载，再进行 DOM、Console 或 Storage 取证。
-- 登录请求 body 不进入最终报告。固定测试密码扫描只返回 true/false 与命中数，不返回实际值；该规则只约束验收取证，不修改登录产品代码。
-
-#### 下一次仍需补验
-
-1. `history_pagination` 同日浏览器排序。
-2. `report_versions_none` 请求发起方分类与版本面板空状态。
-3. V2/V3/V21 版本面板 DOM 容器边界。
-4. V21 当前契约下的 20+1 页内分页。
-5. report detail 返回/前进。
-6. 初始未认证 IndexedDB。
-7. Runtime Storage 八时点完整矩阵。
-8. 真实键盘操作。
-9. 登录取证不输出密码值。
-10. 其余已通过的 39 个 scenarioKey 在最终收口任务中确认未被 fixture replace 破坏。
-
-正式 namespace `wp04-browser-final` 已按修复后夹具完成最终定向浏览器复验和正式 cleanup。下述最终收口结果覆盖并终结本节前述纠偏待办；前述“继续保留/尚未执行”仅是纠偏阶段的历史状态。
-
-### B17 / WP-04 最终定向浏览器复验
-
-- 验收基线为提交 `7dd6f52`；正式 fixture verify、同日排序增强验证与 safe manifest 扫描均通过。
-- 44 个 scenarioKey / 43 个业务场景全部由真实浏览器复验：44 通过、0 失败、0 未执行。历史、版本、历史详情、趋势、范围与 Patient 状态各组均无缺口。
-- `report_versions_none` 的版本列表返回成功空集合，不进入错误历史详情；同页 current workflow 的独立未找到结果单独归类。V2、V3 与 V21 只核对版本面板子树，未把 sibling current workflow 纳入版本断言，且全过程无写请求。
-- V21 验证 21 条版本按 20+1 分页，版本列表每页只有一次后端 GET，没有历史详情预取或 N+1；分页 URL 持久化不是当前契约。历史详情保持只读，浏览器返回/前进通过。
-- history 覆盖 105 条、20/50/100 分页、第二页 5 条、越界空页、同日相邻与 `_id desc`；列表、版本面板和历史详情均不显示内部标识或写入口。
-- trends 覆盖基本趋势、全部 dataStatus、总分和 Domain 可比性、缺失/不可比原因、相邻连接/断线以及 source/mode 纠偏口径；只展示后端公开事实，不生成诊断概率或临床结论。
-- doctor、admin、nurse、research_assistant 的允许访问与 system 403 通过；未认证保护路由和三个独立 404 通过。
-- 1280×720 与 390×844 下历史、版本、历史详情和趋势四类页面均无非预期横向溢出。真实键盘门禁由用户协助完成：Tab/Shift+Tab、Enter/Space、select、分页、链接、history 的 details/summary、图表 marker、焦点可见和无键盘陷阱均通过；历史详情不存在 details/summary，按不适用处理。
-- 代表页稳定观察期内只有预期 GET，均无请求 Body、B17 写请求、自动重试、轮询或 N+1。Console warn/error 为 0，业务 DOM、URL 与 Console 未发现敏感信息。
-- Runtime Storage 在初始未认证、doctor 登录后、history、versions、historical detail、trends、system 403、退出登录八个时点完成检查；localStorage、sessionStorage、IndexedDB、脚本可读 Cookie 与禁止模式命中均为 0。检查未读取 HttpOnly Cookie。
-- 退出登录后对正式 namespace 连续执行两次 cleanup，首次和幂等二次清理均成功、残留为 0，namespace 已删除。B17 与 WP-04 完成，下一工作包未启动。
-
-## 18.4 B1–B3 / Batch A 浏览器验收 fixture 前置
-
-- B1–B15 审计聚合基线保持为：883 个验证原子、197 已覆盖、37 Browser-ready、616 fixture-required、16 真实设备/辅助技术/人工、17 obsolete。
-- Batch A（B1–B3）基线保持为：67 个验证原子、6 已覆盖、2 个人工视觉、1 obsolete、58 待 Browser；58 项中 21 direct、37 fixture-required。
-- 固定 contract 恰好包含 27 个 `scenarioKey`：1 个不拥有 audit ID 的 `roles`，以及以下 26 个业务场景和 58 个唯一 primary owner：
-  - `auth_login_matrix`：B1-MV-001、B1-MV-002、B1-MV-004、B1-MV-006
-  - `auth_service_unavailable`：B1-MV-003
-  - `dashboard_session_matrix`：B1-MV-007、B1-MV-008、B1-MV-012
-  - `dashboard_request_boundary`：B1-MV-010
-  - `public_home`：B1-MV-016
-  - `patients_empty`：B2-MV-003
-  - `patients_list_matrix`：B2-MV-001、B2-MV-002、B2-MV-024、B2-MV-025
-  - `patient_create_matrix`：B2-MV-004、B2-MV-006、B2-MV-007
-  - `patient_duplicate_conflict`：B2-MV-005
-  - `patient_detail_active`：B2-MV-008、B2-MV-009、B2-MV-010
-  - `visit_create_matrix`：B2-MV-011、B2-MV-015、B2-MV-016
-  - `visit_duplicate_conflict`：B2-MV-012
-  - `patient_status_matrix`：B2-MV-013、B2-MV-014
-  - `patient_session_restore`：B2-MV-018
-  - `patient_error_matrix`：B2-MV-019、B2-MV-020、B2-MV-021、B2-MV-022
-  - `visit_list_failure_isolated`：B2-MV-023
-  - `visit_write_no_retry`：B2-MV-026
-  - `visit_detail_uninitialized`：B3-MV-001、B3-MV-002、B3-MV-003、B3-MV-004、B3-MV-005、B3-MV-022
-  - `scale_initialization_matrix`：B3-MV-006、B3-MV-007、B3-MV-010、B3-MV-011
-  - `scale_duplicate_conflict`：B3-MV-008、B3-MV-009
-  - `visit_read_only_status_matrix`：B3-MV-012
-  - `visit_authz_matrix`：B3-MV-013、B3-MV-014
-  - `visit_not_found_matrix`：B3-MV-015、B3-MV-016、B3-MV-017
-  - `catalog_error_matrix`：B3-MV-018、B3-MV-020、B3-MV-021
-  - `scale_unavailable`：B3-MV-019
-  - `visit_request_boundary`：B3-MV-023
-- 21 个 direct ID 与其余 37 个 fixture-required ID 已由 contract 自动做无重复、无遗漏、无额外 primary owner 的平衡检查；6 个 covered、B1-MV-017/B1-MV-018 两个人工视觉项和 B1-MV-009 obsolete 均不进入待验 contract。
-- 网络故障口径：登录 POST、Dashboard `/auth/me`、Patient GET、Visit 列表 GET、Visit POST、catalog GET 由后续 Browser 使用 CDP abort 或等价网络失败模拟；只中止目标 request category，写请求不得自动重试，不使用伪造业务响应替代真实 catalog conflict。
-- 受控 transition 仅用于页面加载后的真实状态变化：`dashboard_session_matrix` 撤销/恢复 namespace doctor Session，`catalog_error_matrix` 制造/恢复真实 MMSE materialized version 冲突，`scale_unavailable` 停用/恢复真实 MoCA definition。只允许 test database、固定白名单与 `arm|restore`；prepared verify 要求无遗留，cleanup 自动恢复。
-- `verify --phase prepared` 用于 Browser 前只读检查 fixture 和所有写入预留不存在；`verify --phase post-browser` 用于 Browser 后只读检查 Patient、Visit、MMSE/MoCA 真实写入及 duplicate/forbidden/network-failure 无副作用，不创建、不修复、不删除业务结果。
-- 正式 namespace 为 `b123-browser-final`，已完成 replace 与 prepared verify 并继续保留；safe manifest 只向 Browser 提供合成公开输入和 navigation route，密码不进入 manifest/testInput。
-- Batch A Browser 尚未执行；fixture 建设完成不能写成 B1–B3 Browser 验收完成，也不能改变当前业务工作包状态或 roadmap。
-- B1-MV-017 与 B1-MV-018 继续保留为人工视觉评审，不因 fixture 或后续自动 Browser 执行而取消。
-
-## 18.5 Batch A 首轮 Browser 纠偏与定向响应式复验
-
-- Batch A 首轮 Browser 仍未完成。本节只记录 `patients_list_matrix` 验收合同纠偏，以及患者列表/详情的中间视口产品缺陷修复与定向复验；不代表完整 Browser 矩阵、键盘矩阵或 B1 人工视觉项已经签收，也未启动 Batch B。
-- `patients_list_matrix` 先前要求标签筛选属于 fixture/验收合同错误，不是产品缺陷。正式 Patient list 只支持 `keyword`、`status`、`sourceType`、分页及既有稳定排序；列表场景还验证 total、URL 同步、`apiBaseUrl` 与 credentials，但不得增加标签控件、纯标签 keyword 语义或标签组合筛选。
-- 标签输入只归 `patient_create_matrix`：继续覆盖中文逗号、英文逗号、换行、trim 与去重。`B2-MV-007` 归属不变，患者夹具数据本身仍可携带 tags。
-- 修改前，Browser 实际 `innerWidth=762`、`documentElement.clientWidth=753`。患者列表页面级横向溢出 401px，首个撑宽点是页面根单列 Grid：1120px 表格的内在最小宽度经 `min-width:auto` 的 Card/Grid item 把自动轨道抬到约 1122px；患者详情同理，1280px Visit 表格把根轨道抬到约 1282px，产生 561px 页面级溢出。两页虽然已有局部 `overflow-x:auto`，但滚动容器先被父级撑宽，无法形成局部滚动。
-- 修复只调整患者列表、患者详情和患者分页组件：页面根使用可收缩的单列 Grid，相关 Card、Grid/Flex 子项和输入控件允许 `min-width:0`，标题/操作/筛选/分页允许换行，长患者编号、展示文本、标签与备注安全折行；表格保留 1120px/1280px 最小宽度并只在自身容器横向滚动。未修改全局 Shell、`html`/`body` overflow、公共首页、登录页或 Dashboard，也未用 JS 按窗口宽度决定布局。
-
-| 页面 | 视口 | 页面级 overflow | 表格容器 client/scroll | 筛选/信息布局 | Console warn/error |
-| -- | -- | --: | --: | -- | --: |
-| 患者列表 | 实际 762×706 | 0px | 687/1120 | 单列；操作区 wrap | 0/0 |
-| 患者详情 | 实际 762×706 | 0px | 687/1280 | 信息两列；操作区 wrap | 0/0 |
-| 患者列表 | 768×900 | 0px | 693/1120 | 筛选两列 | 0/0 |
-| 患者详情 | 768×900 | 0px | 693/1280 | 筛选/信息两列 | 0/0 |
-| 患者列表 | 1280×720 | 0px | 1189/1189 | 筛选五列 | 0/0 |
-| 患者详情 | 1280×720 | 0px | 1189/1280 | 筛选五列、信息四列 | 0/0 |
-| 患者列表 | 390×844 | 0px | 339/1120 | 单列；操作区 wrap | 0/0 |
-| 患者详情 | 390×844 | 0px | 339/1280 | 单列；操作区 wrap | 0/0 |
-
-- 代表页面响应式验收以后采用：Browser 当前正常桌面内容视口作为主业务矩阵，不长期强制 1280×720；1280×720 是桌面下限；768×900 或有记录的约 720–900px 实际可用内容视口是中间断点；390×844 是手机窄屏。
-- “真正大屏”必须满足网页 `window.innerWidth >= 1440`。本轮 Browser 外层窗口为 1536×824，但恢复默认覆盖后的实际内容视口只有 762×706，因此只记录工具限制，不把外层尺寸冒充大屏证据，也不宣称完成真正大屏验收；后续仍需轻量人工大屏抽查。
-- 密码输入框非空时采集完整 DOM snapshot 是验收执行失败，不是登录产品缺陷。提交登录后必须等待登录页卸载或确认密码值已清空，才能执行 DOM/Console/Storage 取证；最终报告不得包含密码或登录 request body。本轮登录后确认密码控件已卸载，logout 后确认密码值为空。
-- 下一次完整 Batch A Browser 必须重新执行 `auth_login_matrix`；真实键盘能力仍受工具限制，留待完整验收补做。其余 Browser 矩阵仍待执行，B1-MV-017/B1-MV-018 两个人工视觉项仍待签收，正式 namespace 继续保留。
-
-## 18.6 B1–B3 / Batch A 完整真实 Browser 复验与最终收口
-
-- 本节是对 18.4–18.5 历史“尚未执行/继续保留”状态的最终覆盖。验收基线为 `3a9c784c5fba290f29dc83864f55000622292df4`；本次未修改前端产品代码、fixture、测试、接口、配置或 roadmap，也未启动 Batch B。
-- 前端前置门禁全部通过：`npm run lint` 0 errors / 0 warnings，`npm run typecheck` 0 errors，`npm run build` 通过，B1–B3 目标页面均进入 production build。prepared verify 在隔离 test database、fake Storage、stub SMS/LLM 与非 production Session 配置下通过：5 roles / 27 scenarioKey / 26 business scenarios / 58 audit IDs / 21 direct / 37 fixture-required，Browser 写入预留不存在且 transition 无遗留。
-- 主业务矩阵使用 Codex 内置 Browser 的非设备模拟自然内容视口，实际记录为 `762×706`、DPR 1.25；使用多标签、CDP Network、DOM/Runtime、Console 与 Storage 完成取证，未读取个人 Browser profile。
-
-| 分组 | scenario 总数 | pass | fail | not_executed | audit ID |
-| -- | --: | --: | --: | --: | --: |
-| roles | 1 | 1 | 0 | 0 | 0 |
-| B1 | 5 | 5 | 0 | 0 | 10 |
-| B2 | 12 | 12 | 0 | 0 | 25 |
-| B3 | 9 | 9 | 0 | 0 | 23 |
-| 合计 | 27 | 27 | 0 | 0 | 58 |
-
-- B1 重新从头执行登录、无效凭证、pending、单次登录 POST 网络失败、五角色登录与 system 403、Dashboard 会话恢复/撤销/恢复、`/auth/me` 单次失败与手工恢复、稳定观察期请求边界以及公共首页。登录页密码尚未清空时没有采集完整 DOM，登录 request body 与密码未进入取证。
-- B2 完成空结果、列表入口、keyword/status/sourceType 单项与组合、total/默认 pageSize/第二页/稳定排序、URL/refresh/Back/Forward、apiBaseUrl 与 credentials。`patients_list_matrix` 严格不验证标签筛选；标签的中英文逗号、换行、trim 与去重仅在 `patient_create_matrix` 验证。真实创建 1 条 Patient 与 1 条 Visit，重复冲突均为单次 409；inactive/archived、Patient/Visit 独立错误、not-found/invalid/system 403 和 Visit 写入网络失败均无自动重试或副作用。
-- B3 验证未初始化 Visit 的公开字段、MMSE/MoCA 真实目录摘要与 11/16 项骨架。两标签先同时加载未初始化状态，随后真实创建 MMSE 和 MoCA 各1个实例，再由未刷新标签各发起一次真实 stale duplicate POST，均得到 409、稳定公开提示且自动重发为 0。completed/locked/voided、未登录/system、安全 not-found/跨 Patient 归属、catalog 失败、版本冲突、scale unavailable 与请求 Body 白名单均通过。
-- 六类单次 Network fault 分别仅命中登录 POST、`/auth/me` GET、Patient GET、Visit list GET、Visit POST 与 catalog GET，每类自动重试均为 0，手工恢复成功。Session、catalog conflict 和 scale unavailable 三个白名单 transition 均严格执行 arm 后 Browser 行为，并在继续其他场景前恢复成功。
-- post-browser verify 只读通过：Patient 和 Visit 各1条，出生日期无时区偏移，tags 归一正确，Visit operator 来自 doctor Session，MMSE/MoCA 实例各1个且骨架为 11/16；duplicate、禁止状态、网络失败、catalog conflict 与 unavailable 均无额外记录。27/26/58/21/37 计数保持不变。
-- 响应式代表页覆盖 login、Dashboard、Patient list/create/detail、Visit create/detail。自然 `762×706`、`1280×720`、`768×900` 与 `390×844` 的所有代表页页面级 overflow 均为 0；Patient 列表/Visit 列表在中间与窄屏只由自身容器产生预期的局部横向滚动，表单、筛选、操作和错误文案均可见。Console warn/error 全程为 0。
-- Storage/Cookie 在初始未认证、doctor 登录、Patient list、Patient 创建、Visit 创建、Visit 详情/量表初始化、system 403 和 logout 八个时点检查：localStorage/sessionStorage key、IndexedDB 与脚本可读 Cookie 均为空，禁止模式命中为 0；未读取 HttpOnly Cookie。代表 DOM、URL 与 Console 的敏感/禁止字段命中为 0。
-- 工具的原生键盘注入不能稳定移动焦点，因此按执行纪律转为用户真实键盘协助。用户已明确确认：登录/Dashboard、Patient list/create/detail、Visit create/detail/Scale 初始化三组均通过，Tab、Shift+Tab、Enter、Space 可用，焦点环可见且无焦点陷阱。人工过程只做登录与只读导航，未创建额外业务数据，由 post-browser verify 再次确认。
-- 用户在公共首页、登录页与 Dashboard 的自然桌面/中间内容视口及 390px 窄屏上完成人工视觉签收：B1-MV-017 和 B1-MV-018 均明确确认通过，未由 Codex 代签。
-- Batch A 最终处置闭合为：6 个 prior covered + 58 个本次 Browser pass + 2 个用户人工视觉 pass + 1 个 obsolete = 67。scenario fail=0、not_executed=0，audit fail=0、audit not_executed=0。Batch A Browser 验收已完成，B1–B3 的 67 个验证原子均已有明确处置。
-- 退出登录并关闭 Browser 后，对正式 namespace `b123-browser-final` 连续执行两次显式 cleanup；首次与幂等第二次均成功且 `residualCount=0`，namespace 已删除，transition 无遗留，全局 MMSE/MoCA seed 不在 cleanup 删除范围。未使用 dropDatabase 或无条件 deleteMany。
-- 内置 Browser 本次未提供 `window.innerWidth >= 1440` 的真正大屏证据，因此不宣称完成真正大屏验收；该工具限制不阻断 Batch A 功能收口，后续仍可在普通最大化浏览器做一次轻量人工大屏抽查。
-
-## 18.7 普通最大化 Chrome 真正大屏轻量抽查与后续验收口径
-
-- 在基线 `335c6201f1f4864b371150467f5da6658b068e45` 使用 Codex Chrome 扩展控制普通最大化 Google Chrome；浏览器缩放为 100%，扩展侧边栏及其他会压缩页面的面板已收起。抽查开始前 CSS 视口为 `1536×703`、DPR 1.25，屏幕为 `1536×864`，满足 `window.innerWidth >= 1440`。
-- 本次仅补充真正大屏的五个代表页面轻量抽查，不重跑或重新判定已完成的 Batch A。临时 fixture 完成 prepared verify；页面侧只执行登录、只读导航和退出登录，Patient、Visit、ScaleInstance 业务写请求为 0，五页 Console warn/error 均为 0。
-
-| 页面 | innerWidth | 页面级 overflow | 过度拉伸 | 留白/布局异常 | Console | 结果 |
-| -- | --: | --: | -- | -- | --: | -- |
-| 公共首页 | 1536 | 0px | 否 | 无 | 0 | 通过 |
-| 登录页 | 1536 | 0px | 否 | 无 | 0 | 通过 |
-| Dashboard | 1536 | 0px | 否 | 无 | 0 | 通过 |
-| Patient 列表 | 1536 | 0px | 否 | 无 | 0 | 通过 |
-| Patient 详情 | 1536 | 0px | 否 | 无 | 0 | 通过 |
-
-### 后续浏览器视口策略
-
-- 主业务矩阵使用 Codex 内置 Browser 的自然内容视口；`1280×720`、`768×900`、`390×844` 只用于代表页面的响应式抽查，不在每个视口重复完整业务矩阵。
-- 真正大屏必须使用普通最大化 Chrome，浏览器缩放 100%，关闭会压缩页面的侧边栏、DevTools 或其他面板，并以网页 `window.innerWidth >= 1440` 为门槛；外层窗口尺寸不能代替网页 CSS 视口。
-
-### 键盘风险抽样策略
-
-- 普通 Batch 默认自动检查原生 `button`、`a`、`input`、`select`、`label`、可访问名称和明显的 `tabindex` 问题，不再要求每个场景全面重复 Tab、Shift+Tab、Enter、Space；Codex 键盘注入失败不阻断普通原生控件流程。
-- 新增 Modal/Dialog、自定义菜单、下拉框或复合控件、交互图表、画布、富文本，修改全局导航或焦点管理，以及修复可访问性问题时，必须做真实键盘风险抽查。
-- 始终保留最低门禁：不得存在明显焦点陷阱；新增自定义交互必须有可访问名称；关键提交操作必须使用原生或等价语义控件。鼠标/触摸优先口径不等于取消基本可访问性。
-
-## 18.8 B4–B6 / Batch B 桌面 Browser fixture 前置
-
-- Batch B 桌面 Browser 范围固定为 135 个 audit ID：B4 44、B5 54、B6 37。B5-MV-008、B5-MV-028、B5-MV-029、B5-MV-058、B5-MV-059、B5-MV-060、B5-MV-061、B5-MV-062 共 8 个真实设备/人工项不属于本轮桌面 Browser，继续保留到 Batch E。
-- 135 个 audit ID 严格分为 15 个 Browser-direct 与 120 个 fixture-required；缺失、重复、额外 ID 均为 0，每个 ID 只有一个 primary scenario owner。
-- 固定 32-key 场景映射如下：
-  - 公共：`roles`。
-  - B4：`scale_execution_load`、`scale_execution_input_types`、`scale_execution_serial7`、`scale_execution_delayed_recall`、`scale_execution_missing_reason`、`scale_execution_timing`、`scale_execution_media_boundary`、`scale_execution_save_progress`、`scale_execution_navigation_dirty`、`scale_execution_error_matrix`、`scale_execution_request_boundary`。
-  - B5：`media_requirement_matrix`、`media_file_validation`、`media_upload_photo_scan`、`media_preview_url`、`media_void_reupload`、`handwriting_mouse_canvas`、`handwriting_trajectory`、`media_local_draft_navigation`、`media_read_only_matrix`、`media_error_matrix`、`media_concurrency_boundary`。
-  - B6：`submission_readiness_matrix`、`submission_dirty_upload_stale`、`submission_issue_navigation`、`submission_ready_confirm`、`submission_idempotency_concurrency`、`submission_post_submit_read_only`、`submission_authz_error_matrix`、`submission_cross_group_navigation`、`submission_network_final_state`。
-- Browser-direct 固定为 B5-MV-002、B5-MV-003、B5-MV-010、B5-MV-020、B5-MV-024、B5-MV-026、B5-MV-030、B5-MV-031、B5-MV-032、B5-MV-033、B5-MV-034、B5-MV-035、B5-MV-046、B5-MV-054、B5-MV-057；其余桌面范围 audit ID 均为 fixture-required。
-- fixture 已提供量表作答/草稿、媒体文件与手写轨迹、readiness/最终提交、授权/错误/并发/网络最终状态等确定性前置；Browser 专用数据库已接入，新的正式 `b456-browser-final` 已在专用库完成 prepared verify 并保留。临时上传文件只存在于操作系统临时目录，Browser 完成后的 cleanup 会一并删除。
-- 键盘继续采用 18.7 固化的风险抽样策略：普通原生控件不设置全面 Tab/Shift+Tab/Enter/Space 门禁；画布、自定义复合控件、Modal/Dialog、焦点管理或可访问性修复仍须做真实键盘风险抽查。
-- 本节只记录 fixture 前置。既有 135 项 Browser 功能证据继续有效，但 prepared verify 不等于最终工程收口，专用库上的 post-browser verify 尚未执行。
-
-## 18.9 Batch B 媒体文件验收合同纠偏与定向 Browser 冒烟
-
-- 首轮 B5 的 `media_file_validation` 阻断属于 test-only fixture / 验收合同问题：真实 UI 会先解码源文件、绘制到白色 Canvas、按现有尺寸与质量策略统一生成 JPEG，并且只上传处理后的 Blob；因此正常 UI 不应被要求触达服务端 `MEDIA_FILE_SIGNATURE_INVALID`。
-- 修订后该场景继续拥有 B5-MV-006、B5-MV-007、B5-MV-009～013，`expectedStatus` 与 `expectedBusinessCode` 均为 `null`；32 个 scenarioKey、31 个业务场景、135 个 audit ID、15 direct、120 fixture-required 保持不变，缺失、重复、额外 ID 均为 0。
-- 独立 `b456-media-smoke` namespace 完成 prepared verify 后，只进入 `media_file_validation` 对应场景根执行六类真实 UI 文件验证。该根有 3 个图片上传位；为让 5 个有效样本都获得真实成功上传，在同一根内通过 UI 作废 4 次已测证据后复用上传位，不访问或声明通过其他 B5 场景。
-
-| 样本 | 浏览器选择时类型 / 源大小 | 处理后结果 | 上传 POST / HTTP | 结果 |
-| --- | --- | --- | --- | --- |
-| JPEG | `image/jpeg` / 517 B | `image/jpeg`，1×1，757 B | 1 / 201 | 通过 |
-| PNG | `image/png` / 68 B | `image/jpeg`，1×1，759 B | 1 / 201 | 通过 |
-| WebP | `image/webp` / 42 B | `image/jpeg`，1×1，759 B | 1 / 201 | 通过 |
-| wrongMime | 声明 `text/plain`、实际为可解码 PNG / 68 B | `image/jpeg`，1×1，759 B | 1 / 201 | 通过 |
-| invalidImage | 声明 `image/png` / 12 B | 客户端显示安全解码错误，无上传草稿 | 0 / 无请求 | 通过 |
-| oversized | `image/bmp` / 12,600,054 B，3000×1400 | `image/jpeg`，2560×1195，18,758 B | 1 / 201 | 通过 |
-
-- 5 次有效上传的 multipart 文件段均为 JPEG，最大长边不超过 2560，处理后大小不超过 10 MiB；固定安全文件名替代源文件名，上传文件段均不等于源字节。`oversized` 证明限制按处理后 Blob 判断，而不是按源文件大小直接拒绝。
-- `invalidImage` 在客户端解码阶段阻断，上传 POST=0、服务端副作用=0。有效样本均为单次上传 POST，自动重试=0；4 次辅助作废写请求和全部上传均限定在选定场景根，无场景外写请求；Console warn/error=0。
-- `MEDIA_FILE_SIGNATURE_INVALID`、类型禁止和服务端文件过大继续由 backend `media-evidence` E2E 覆盖，不要求正常 UI 可达，也不把这次定向冒烟写成完整 B5 或 Batch B 验收。
-- 冒烟通过后已退出登录并关闭 Browser，`b456-media-smoke` 连续两次 cleanup 均为 `residualCount=0`；该共享普通测试库中的旧正式 namespace 只保留为历史事实，不再用于 Browser 最终工程认证。
-- Batch B 的 135 项既有功能证据继续有效，但仍未最终收口。Browser 专用数据库接入后，新的 `b456-browser-final` 已在专用库 prepared verify；下一步只需在专用库重新形成最终 Browser 写入终态并执行 post-browser verify，不重跑 135 项业务矩阵，也不得提前把 Batch B 写成完成。
-
-## 18.10 Batch B `durationMs` 补写、post-browser verify 与最终收口
-
-- 最终收口基线为 `f528efb7152b5770e9f873683fbd03c814108b81`。本次没有重跑完整 Batch B Browser 矩阵；既有 135 项证据继续有效，其中 Browser 133 项、automated boundary 2 项，fail=0、not_executed=0。
-- D-038 Browser 专用数据库 `cogmemory_ad_browser_test` 用于本次最终工程认证；Browser backend 通过 app/readWrite 数据库与角色门禁后监听，production frontend 连接该 backend，health 返回 200，`standard_test` 未参与。
-- `scale_execution_timing` 在真实 UI 中确认开始时间和完成时间已经持久化、“用时（秒）”为空且可编辑；只填写该字段并 blur 后页面进入 dirty 状态。保存只触发 1 次目标 PATCH，变化范围仅为 `timing.durationMs`，HTTP 200；计划外业务写请求与自动重试均为 0，页面采用服务端返回结果后清除 dirty，duration 不再为空。
-- db_admin/dbOwner 进程执行只读 post-browser verify 成功：5 roles、32 个 scenarioKey、31 个业务场景、135 个 audit ID，Browser-direct 15、fixture-required 120；完整 B4/B5/B6 终态合同通过。
-- 退出登录、关闭 Browser 并停止 frontend/backend 后，对正式 `b456-browser-final` 连续执行两次显式 cleanup；第一次实际清理与第二次幂等清理均为 `residualCount=0`。正式 namespace 和操作系统临时目录中的 fixture 文件均已删除，全局 MMSE/MoCA seed 不在 cleanup 删除范围。
-- Batch B 桌面范围验证已补齐并最终完成；B5-MV-008、B5-MV-028、B5-MV-029、B5-MV-058、B5-MV-059、B5-MV-060、B5-MV-061、B5-MV-062 共 8 个真实设备/人工项继续保留到 Batch E。本次未修改 roadmap，也未启动 Batch C。
-
-## 19. 认证与安全验证口径
-
-- 使用浏览器网络面板确认三个认证请求均携带 credentials 语义，并由浏览器处理 HttpOnly Cookie。
-- 前端代码与存储中不得出现 raw token、token hash、`passwordHash`、JWT 或其他认证凭证。
-- localStorage / sessionStorage 不得保存认证凭证或认证状态。
-- URL、console 与页面错误中不得出现密码、Cookie、后端堆栈或内部认证失败原因。
-- 当前 roles 只作公开摘要展示，不得误判为前端权限矩阵已实现。
-- 患者 / 访视 API 的 401 必须返回登录页，403 必须显示无权限；页面角色显示不替代后端 Guard。
-- 患者创建请求不得包含 status、externalRefs、metadata 或 timestamps；访视创建请求不得包含 operatorSnapshot、clinicalContext、metadata、状态或状态时间。
-- 页面、console、localStorage、sessionStorage 和 URL 不得泄露患者请求体、Cookie、token、token hash、JWT、passwordHash 或 Mixed 内部字段。
-- A13 GET 必须支持取消且取消不显示服务异常；初始化 POST 不自动重试，请求 body 仅包含 scaleCode、scaleVersion、administrationMode。
-- B3 页面不得在 console、存储或 URL 中记录访视详情、目录、实例或 ItemResponse；不得展示完整 seed、scoringRule、expectedValue 或后端内部错误。
-- B4 页面不得在 console、存储或 URL 中记录作答草稿、患者、访视、实例、请求体或响应体；PATCH body 必须是变化白名单，不能包含服务器控制字段。
-- B5 页面不得在 console、存储或 URL 中记录源 File、JPEG / PNG Blob、轨迹、短期 URL、请求体或响应体；multipart 只能由 API Client 逐字段构造，不能手工设置 multipart Content-Type。
-- B7 页面不得在 console、存储或 URL 中记录评分结果、reviewQueue、请求体或响应体；compute 只能由独立 API Client 构造 `{ confirm: true }`，不得提交任何分数、规则、状态或服务器字段。
-- B9 页面不得在 console、存储或 URL 中记录认知域结果、贡献、来源评分、请求体或响应体；compute 只能由独立 API Client 构造 `{ confirm: true }`，不得提交 domain、weight、mapping、分数、规则、状态或服务器字段。
-- B13 页面不得在 console、存储或 URL 中记录 freezeNote、sourceFreeze 计数、updatedAt、请求或响应；freeze-sources 只能由独立 API Client 构造 confirm、trim 后 freezeNote 与 expectedUpdatedAt。不得提交或显示内部来源 ID / scope / metadata，不得保存 sourceFreeze 草稿或 receipt 到浏览器持久化存储。
-- B14 页面不得在 console、存储或 URL 中记录 archiveNote、updatedAt、请求或响应；archive 只能由独立 API Client 构造 confirm、trim 后 archiveNote 与 expectedUpdatedAt。不得提交或显示 metadata、Schema 原始 archivedBy 或来源 ID，不得保存 archive 草稿或 receipt 到浏览器持久化存储。
-- B15 页面不得在 console、存储或 URL 中记录 correction reason / summary、source / replacement 响应或临床数据；corrections Body 只含 confirm、trim 后 reason / summary 与 expectedUpdatedAt。不得持久化草稿 / 回执，不得前端生成 correctionId、版本、code、时间或关系。
-- B16 页面不得在 console、存储或 URL 中记录完整 report、lineage 错误响应、冻结来源快照或内部来源 ID；A22–A24 Body 不得新增 reportVersion、previousReportId、replacementOf、correctionId、sourceIds 或 Patient / Visit 状态字段。
-
-## 20. 医疗与隐私展示红线
-
-- 不展示真实用户或患者敏感数据样本。
-- 测试截图不得包含真实姓名、邮箱、身份证号、手机号、病历号、住址、患者资料或真实文件名。
-- 不得在页面文案或测试截图中呈现未经确认的真实医疗诊断结论。
-- 核心认知评估必须保持医护或研究人员陪伴 / 监督的产品边界。
-
-## 21. 后续同步规则
-
-- 前端新增或调整测试脚本后，应同步更新自动验证命令。
-- 新增页面、路由、组件、API 对接或权限展示后，应同步补充对应验证口径。
-- 新增页面、组件、布局、样式或关键交互后，应同步补充与 `handoff-frontend-design-baseline.md` 一致的视觉 / 可用性人工验证口径。
-- 验证截图、测试数据和日志不得包含可识别个人信息。
+## 7. Batch E：8 个真实设备、辅助技术或人工项目
+
+以下 ID 必须逐项保留，不属于 Batch B 已完成的 135 项桌面范围，也不得被自然 viewport、响应式抽查、鼠标 Canvas、automated boundary 或普通原生控件抽样替代：
+
+| 验证 ID | 当前处置 | 执行边界 |
+|---|---|---|
+| `B5-MV-008` | Batch E 待验 | 原合同分类为真实设备/人工项；不并入桌面 `media_file_validation` 结论 |
+| `B5-MV-028` | Batch E 待验 | 原合同分类为真实设备/人工项；不由桌面 mouse-only handwriting 覆盖 |
+| `B5-MV-029` | Batch E 待验 | 原合同分类为真实设备/人工项；不由桌面 mouse-only handwriting 覆盖 |
+| `B5-MV-058` | Batch E 待验 | 原合同分类为真实设备、辅助技术或人工项；无桌面 fixture primary owner |
+| `B5-MV-059` | Batch E 待验 | 原合同分类为真实设备、辅助技术或人工项；无桌面 fixture primary owner |
+| `B5-MV-060` | Batch E 待验 | 原合同分类为真实设备、辅助技术或人工项；无桌面 fixture primary owner |
+| `B5-MV-061` | Batch E 待验 | 原合同分类为真实设备、辅助技术或人工项；无桌面 fixture primary owner |
+| `B5-MV-062` | Batch E 待验 | 原合同分类为真实设备、辅助技术或人工项；无桌面 fixture primary owner |
+
+现有仓库只把这 8 个 ID 固定分类为桌面 Batch B 排除项；本文不凭空补写未在 active contract 中存在的细分描述。执行 Batch E 时必须以这 8 个稳定 ID 建立明确步骤、真实设备/辅助技术条件、人工签收人和证据，不得更换 ID 或静默合并。
+
+## 8. 已完成批次证据索引
+
+| 范围 | 最终状态 | 最终构成与关键证据 | evidence commit | 是否需要重跑 |
+|---|---|---|---|---|
+| WP-02 / B16 | 已完成 | 基线 `9099f66…` 的 Resume/unsafe 补齐与既有 V1/V2/V3 矩阵，加最终 Web Storage 审计；fixture 双次 cleanup 为 0 | `95b778448603e5eb4f96eafb82136edc36d3ab0e` | 否 |
+| WP-04 / B17 | 已完成 | 验收基线 `7dd6f52…`；44/44 scenarioKey，0 fail / 0 未执行；角色、响应式、真实键盘、Network、Runtime Storage 八时点、双次 cleanup 均通过 | `db825a9df57ca1a131fee20159f9c6a38529f1ab` | 否 |
+| Batch A / B1–B3 | 已完成 | 67 = Browser 58 + prior covered/automated 6 + human 2 + obsolete 1；27 scenarioKey 全过；双次 cleanup 为 0 | `335c6201f1f4864b371150467f5da6658b068e45` | 否 |
+| Batch A 真正大屏抽查 | 已完成 | 普通最大化 Chrome，`window.innerWidth=1536`；5 个代表页通过 | `8b8a9281dd738c5a0694d0c2feea4bcefcae6c66` | 否；后续新代表页按策略抽查 |
+| D-038 数据库隔离 | 已实现并认证 | Browser 专用数据库、双向库名/角色门禁、sentinel 隔离和完整后端门禁通过 | `f528efb7152b5770e9f873683fbd03c814108b81` | 否；数据库治理变化时重跑 |
+| Batch B / B4–B6 | 桌面范围已完成 | 全合同 143 = Browser 133 + automated boundary 2 + Batch E human/device/AT 8 + obsolete 0；桌面 135 已闭环，post-browser verify 与双次 cleanup 为 0，产品缺陷 0 | `f59f3ac0c93d47e2c7fad4d29f1d7f2a61dc4021` | 桌面范围否；Batch E 8 项仍待验 |
+
+B1–B6 的原始逐项意图通过本轮减肥前基线追溯；active playbook 不再保留已完成范围的大段旧未决清单。表中的验收基线与 evidence commit 已按 Git 提交父子顺序、提交主题和文件范围交叉核对，两者不得混写。
+
+## 9. 认证、安全、医疗与隐私红线
+
+1. 主登录态由后端 Session + HttpOnly Cookie 维护；前端不得读取 HttpOnly Cookie，不保存 raw token、token hash、JWT、`passwordHash` 或其他认证凭证。
+2. 401 必须返回登录流程，403 必须显示无权限；入口可见性不替代后端 Guard，也不得把 403 伪装为空结果。
+3. GET 使用正确 credentials / no-store / AbortSignal；写请求只发送明确白名单，不自动 retry，不把服务端生成字段、完整对象或内部 ID 回传。
+4. React 内存草稿、note、reason、summary、媒体 Blob、strokes、短期 URL、updatedAt 和 receipt 不得写入 localStorage、sessionStorage、IndexedDB、URL、Cookie 或 Console。
+5. 页面、Network 摘要、Console、DOM、URL、截图和报告不得泄露患者请求体、原始作答、报告正文、内部 lineage/source ID、metadata、Storage 定位、凭据或后端堆栈。
+6. 只使用脱敏人工账号、患者、访视、作答、评分、报告、图片和手写数据；不得使用真实姓名、邮箱、身份证号、手机号、病历号、住址、真实文件名或其他可识别信息。
+7. 系统不得把量表分数、认知域比例、趋势、qualityStatus 或 warning 表述为疾病概率、正常/异常、改善/恶化、诊断、风险等级或治疗建议。
+8. MMSE / MoCA 核心评估保持医护或研究人员陪伴/监督边界；不得描述为患者居家自测。
+9. 认知域重叠归因不得跨域求和；null 不补 0；前端不重算 score、percent、delta、comparison、mapping 或报告结论。
+10. 媒体只展示安全公开字段和按需短期访问；不显示原始文件名、bucket/objectKey、checksum、轨迹内容、内部 media/item ID，不把逻辑作废称为物理删除。
+11. system_draft、source=mixed、quality passed、confirmed、locked、source frozen 和 archived 必须按各自真实语义展示，不能互相替代或扩展为 AI/诊断/签名/PDF 事实。
+12. 未实现的 unlock、unfreeze、unarchive、void/delete、签名、PDF/下载、AI、自动评分、自动确认或自动归档不得通过测试辅助入口伪造。
+
+## 10. 同步规则与历史追溯
+
+- 前端新增或调整测试脚本、页面、路由、组件、API Client、状态协调、权限展示、响应式或关键交互时，应更新当前门禁和对应未决合同；已完成证据只在结论确实变化时更新。
+- Fixture 设计必须以本文当前待验合同为输入；不得为了方便执行而删减验证项、放宽角色/状态、引入持久化草稿或改变 API 合同。
+- roadmap 业务工作包状态不因 testing playbook 压缩或 Batch 验收自动变化。
+- 本轮 testing playbook 减肥前的完整历史基线为 `3c0e373902985b9da09b359ed8f2a0334ef1e5d0`。
+- 已删除的 B1–B6、B16、B17 逐阶段命令、原始清单、Browser 操作、失败诊断、旧 namespace/端口和执行日志可通过 Git 历史查看。
+- active playbook 不另建 archive，也不复制一份 Validation catalog；已完成历史只保留最终摘要和 evidence commit 索引。

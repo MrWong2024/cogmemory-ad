@@ -2,651 +2,198 @@
 
 ## 1. 文档定位
 
-本文档用于记录 CogMemory AD 后端验证命令、测试分层口径、医疗与量表数据测试红线，供后续开发和交接使用。
+本文档是后端验证的 active playbook，只维护三类内容：当前执行规则、仍待执行的 Browser 验收所依赖的后端 fixture 合同，以及已完成范围的最终证据索引。逐阶段命令、失败重试、临时 namespace 和执行流水由 Git 历史承担，不在本文重复保存。
 
-## 2. 当前状态
+本文档不改变产品、接口、DTO、Schema、测试合同或 roadmap 工作包状态。当前唯一事实是：WP-02、WP-04、Batch A 已完成；Batch B 桌面范围已完成；Batch C、Batch D 尚未启动；Batch E 的 8 项真实设备、辅助技术或人工验收继续保留。
 
-- `backend\src` 公共底座已初始化。
-- 当前存在既有 health / Storage / scales / patients / assessments / media / scoring / cognitive-domains / reports / users / auth 单元测试；A14 新增执行 Controller、路径 / PATCH DTO、JSON 校验、detail / draft Service、安全 mapper spec，并扩展 AssessmentsService 实际进度测试。
-- 后端默认端口为 `5002`。
-- 本地前端默认 origin 为 `http://localhost:3002`。
-- 测试环境默认 `STORAGE_DRIVER=fake`。
-- 测试环境 `LLM_PROVIDER=stub`，不得依赖真实大模型调用。
-- 当前存在二十一个真实 HTTP / 数据库门禁 E2E；A27 的 `clinical-history.e2e-spec.ts`、A28 的 `follow-up-trends.e2e-spec.ts` 与 D-038 的 `database-purpose-gates.e2e-spec.ts` 均纳入固定 `--runInBand` 全量执行。
-- TypeScript `rootDir` 当前为 `.`，后端主入口预期 build 产物为 `dist/src/main.js`。
-- `tsBuildInfoFile` 保持 `./dist/tsconfig.build.tsbuildinfo`。
-- `dist` 与 `*.tsbuildinfo` 为生成物，不进入版本库。
+## 2. 当前验证状态
 
-## 2.1 项目级数据库用途映射与隔离状态
-
-本节是当前项目数据库治理口径；后文按阶段保留的旧 fixture 与验证记录只表示当时事实，如与本节的当前状态冲突，以本节为准。
-
-### 用途与具体数据库映射
-
-| 用途类别 | 本项目数据库 | 用途 |
+| 范围 | 当前状态 | 当前结论 |
 |---|---|---|
+| 后端代码门禁 | 已建立 | 最终代码态独立执行 lint、typecheck、build、unit、E2E 五项门禁 |
+| D-038 数据库隔离 | 已实现并认证 | `standard_test` 与 `browser_acceptance` 双向拒绝，建连前后库名门禁和数据库用户角色门禁有效 |
+| WP-02 / B16 | 已完成 | replacement V2+ 生命周期矩阵与 Web Storage 最终审计已关闭 |
+| WP-04 / B17 | 已完成 | 44 个 scenarioKey 全部通过，正式 fixture 已双次 cleanup，残留为 0 |
+| Batch A / B1–B3 | 已完成 | 67 个验证原子全部有明确处置，正式 fixture 已双次 cleanup，残留为 0 |
+| Batch B / B4–B6 | 桌面范围已完成 | Browser 133 项 + automated boundary 2 项 = 135 项；post-browser verify 通过；产品缺陷 0 |
+| Batch C / B7–B10 | 尚未启动 | 详细待验合同以 frontend testing playbook 为准 |
+| Batch D / B11–B15 | 尚未启动 | 包含 B14.1 的剩余 Browser 回归；详细待验合同以 frontend testing playbook 为准 |
+| Batch E | 保留 8 项 | 真实设备、辅助技术或人工验收，不被桌面 Browser 证据替代 |
+
+Batch B 的正式 namespace 已连续 cleanup 两次，两次均 `residualCount=0`；namespace-owned 数据和操作系统临时 fixture 文件已删除，全局 MMSE / MoCA seed 不在 cleanup 范围内。Batch C 未启动，后续不得复用已删除的 Batch B namespace 或把 prepared fixture 当作新的验收事实。
+
+## 3. 数据库用途、凭据来源与进程隔离
+
+### 3.1 五类用途与项目映射
+
+| 用途类别 | 当前项目映射 | 允许用途 |
+|---|---|---|
+| `none` | 不连接数据库 | 纯文档、lint、typecheck、build、静态审计 |
 | `development` | `cogmemory_ad_dev` | 日常开发和人工调试 |
-| `standard_test` | `cogmemory_ad_test` | unit、普通 E2E 及允许重建目录的自动化测试 |
-| `browser_acceptance` | `cogmemory_ad_browser_test` | Browser fixture、Browser / Chrome 验收和 post-browser verify |
+| `standard_test` | `cogmemory_ad_test` | unit、普通 E2E，以及允许重建测试数据的自动化测试 |
+| `browser_acceptance` | `cogmemory_ad_browser_test` | Browser fixture、Browser / Chrome 验收、post-browser verify |
+| `production_or_operations` | 项目命名基线为 `cogmemory_ad` | 仅在用户同时明确授权目标环境与允许操作后使用；本文不构成连接授权 |
 
-- `none` 不映射数据库，必须保持不连接数据库。
-- `production_or_operations` 不由本表推断具体数据库；只有用户明确授权目标环境和允许操作后，才可按任务输入解析。
+强制边界：
 
-### 使用与隔离规则
+1. 每个会连接数据库的进程必须先确定唯一用途，连接后再读取真实数据库名并逐字校验。
+2. `standard_test` 与 `browser_acceptance` 不得共用数据库；namespace 隔离不能替代数据库隔离。
+3. 普通 unit / E2E 禁止连接 `cogmemory_ad_browser_test`；Browser fixture 和 Browser backend 禁止连接 `cogmemory_ad_test` 或 `cogmemory_ad_dev`。
+4. 同一任务包含两种用途时必须启动独立进程，不得复用已经设置连接变量的 shell，也不得依赖 dotenv 顺序、旧变量或后加载覆盖来选择数据库。
+5. cleanup 只能按显式 namespace 和 ownership 精确执行；不得使用 `dropDatabase()`、清空 collection 或无条件 `deleteMany({})`。
+6. `none` 类任务不得启动应用、fixture、测试后端或其他会建立数据库连接的进程。
 
-1. 普通 unit / E2E 必须使用 `cogmemory_ad_test`。
-2. Browser fixture CLI 与 Browser 验收后端必须同时使用 `cogmemory_ad_browser_test`。
-3. 普通 E2E 禁止连接 `cogmemory_ad_browser_test`。
-4. Browser fixture 禁止连接 `cogmemory_ad_test` 或 `cogmemory_ad_dev`。
-5. 不得把 Browser 专用连接写入 `backend/.env.test`，避免普通 E2E 误连 Browser 验收库。
-6. 同一任务同时包含普通测试与 Browser 验收时，必须分别启动独立进程并分别注入进程级环境变量；禁止复用已经设置数据库连接的 shell 上下文。
-7. 每个实际连接建立后都必须读取真实数据库名，并与该进程声明的允许数据库逐字校验；不一致时立即停止，不得自动回退或改连其他数据库。
-8. namespace 继续隔离各批次业务数据，但不能替代数据库级隔离。
-9. Browser 验收库中的量表定义、版本和实例绑定必须从 fixture prepare 到 post-browser verify 全程保持稳定。
-10. cleanup 仍须按 namespace 精确执行；使用 Browser 专用库不构成 `dropDatabase()`、清空 collection 或无条件删除的授权。
+### 3.2 本地凭据来源与职责边界
 
-### 本地固定凭据来源与进程隔离
-
-| 数据库用途 | 本地凭据来源文件 | 文件职责 |
+| 用途 | 本地忽略文件 | 职责 |
 |---|---|---|
-| `standard_test` | `backend/.env.test` | 仅供 `standard_test`；普通 unit / E2E 进程只能加载该文件，不得加载 `backend/.env.browser-acceptance` |
-| `browser_acceptance` | `backend/.env.browser-acceptance` | 仅供 `browser_acceptance`；它是本地凭据来源文件，不由 Nest 默认与 `backend/.env.test` 叠加加载 |
-
-- `backend/.env.browser-acceptance` 当前使用 `COGMEMORY_DATABASE_PURPOSE`、`BROWSER_ACCEPTANCE_APP_MONGO_URI` 和 `BROWSER_ACCEPTANCE_ADMIN_MONGO_URI`；本手册只记录键名和映射，不记录实际值。
-- 两个 env 文件可以同时存在于磁盘，Codex 可以读取它们以获得各自测试用途的本地固定凭据；同一进程只能加载其中一个用途的配置。
-- 同一任务同时涉及 `standard_test` 与 `browser_acceptance` 时，必须启动两个独立进程：前者只加载 `backend/.env.test`，后者只加载 `backend/.env.browser-acceptance`。禁止依赖 dotenv 加载顺序、shell 旧变量或后加载覆盖行为选择数据库。
-- 本地隔离测试固定密码按普通测试凭据处理，Codex 可以从上述项目约定的本地忽略文件或任务明确给定值自动读取、使用并注入目标进程或测试数据构造流程，不要求剪贴板授权、一次性密码、Secret Manager、人工输入、人工交互或每次询问用户。该口径同样适用于 unit / E2E / fixture / Browser 验收过程中创建的测试应用用户固定密码及其他只能访问本地隔离测试数据的确定性凭据。
-- 固定测试凭据不得复制到 Git 跟踪文件、文档、日志、生成物、最终报告或提交记录。它们不要求仅为了保密而在每一步立即清空；切换数据库用途或复用 shell 前，必须优先启动独立进程，或清除或覆盖 `MONGO_URI`、`MONGO_ADMIN_URI`、`COGMEMORY_DATABASE_PURPOSE` 等用途相关变量。该清理是防止串库的数据库隔离要求，不是密码保密仪式。
-
-Browser backend 必须在只加载 `backend/.env.browser-acceptance` 的独立进程中显式映射 app 主连接和受控管理连接：
-
-```powershell
-$env:MONGO_URI = $env:BROWSER_ACCEPTANCE_APP_MONGO_URI
-$env:MONGO_ADMIN_URI = $env:BROWSER_ACCEPTANCE_ADMIN_MONGO_URI
-```
-
-Browser fixture CLI 必须在另一个只加载 `backend/.env.browser-acceptance` 的独立进程中显式把主连接与管理连接都映射为 db_admin：
-
-```powershell
-$env:MONGO_URI = $env:BROWSER_ACCEPTANCE_ADMIN_MONGO_URI
-$env:MONGO_ADMIN_URI = $env:BROWSER_ACCEPTANCE_ADMIN_MONGO_URI
-```
-
-- 不得让 Browser backend 使用 db_admin 作为 `MONGO_URI`，也不得让 Browser fixture CLI 使用 app 用户作为主连接。
-- D-038 的建连前用途 / 库名门禁、建连后实际数据库名校验和用户名 / 角色门禁继续有效；文件来源与变量映射不能替代任何门禁。
-
-### Browser 验收数据库用户
-
-| 用户 | 预期权限 | 用途 |
-|---|---|---|
-| `cogmemory_ad_browser_test_app` | `readWrite` | Browser test backend |
-| `cogmemory_ad_browser_test_db_admin` | `dbOwner` | fixture prepare、verify、cleanup |
-
-- `cogmemory_ad_browser_test` 已创建，以上两个用户也已创建。
-- app 用户的连接和 `readWrite` 角色已实际验证。
-- db_admin 用户的连接和 `dbOwner` 角色已实际验证。
-- 本手册不记录两个用户的密码或完整 MongoDB URI；连接信息只允许通过受控环境变量注入目标进程。
-
-### 当前实施与认证边界
-
-1. `COGMEMORY_DATABASE_PURPOSE` 已接入 `standard_test` 与 `browser_acceptance`；`NODE_ENV=test` 未显式指定时默认 `standard_test`，项目映射固定且不接受任意 expected database name 覆盖。
-2. AppModule 在连接前校验 URI 声明的数据库，并在 Mongoose 连接建立后按 `connection.name` 再次校验；普通 E2E 与 Browser fixture 形成双向拒绝。
-3. B123、B16、B456、WP04 真实 Browser fixture CLI 均要求显式 `browser_acceptance`，连接后只接受 Browser 专用库中的 db_admin + `dbOwner`；普通 fixture E2E 仍在 `standard_test` 中直接测试 manager。
-4. `npm run start:browser-test` 是 test-only Browser backend 启动入口；连接后只接受 Browser 专用库中的 app + `readWrite`，角色通过后才监听端口，继续复用既有 configureApp、CORS、Cookie、fake Storage 与 stub SMS / LLM。
-5. `b456-isolation-sentinel` 在完整 standard_test unit / E2E 前后均完成 prepared verify，5/32/31/135/15/120 计数与完整安全 manifest 哈希一致；两次精确 cleanup 均为 `residualCount=0`。
-6. 新 `b456-browser-final` 已在 `cogmemory_ad_browser_test` 完成 replace 与 prepared verify，5/32/31/135/15/120 全部通过并继续保留；未执行 Browser 页面矩阵或 post-browser verify。
-7. 旧共享普通测试库中的同名 namespace 仅保留为历史取证事实，不再用于 Browser 认证或最终工程认证。
-8. Batch B 的 135 项既有功能证据继续有效，但尚未最终工程收口；下一步只在 Browser 专用库重新形成最终写入终态并执行 post-browser verify，不改变 roadmap 或业务工作包状态。
-
-### D-038 命令模板与双向门禁
-
-普通 E2E 必须在只加载 `backend/.env.test` 的独立 `standard_test` 进程中执行，且不继承 Browser 连接变量：
-
-```powershell
-cd backend
-$env:NODE_ENV="test"
-$env:COGMEMORY_DATABASE_PURPOSE="standard_test"
-Remove-Item Env:MONGO_URI,Env:MONGO_ADMIN_URI -ErrorAction SilentlyContinue
-npm run test:e2e
-```
-
-Browser fixture CLI 在另一个独立进程中只加载 `backend/.env.browser-acceptance`，并按本节映射使用 db_admin 主连接；fixture 创建的应用用户固定密码可从项目约定的本地忽略凭据源或任务明确值自动注入。以下模板不含实际凭据：
-
-```powershell
-cd backend
-$env:NODE_ENV="test"
-$env:MONGO_URI = $env:BROWSER_ACCEPTANCE_ADMIN_MONGO_URI
-$env:MONGO_ADMIN_URI = $env:BROWSER_ACCEPTANCE_ADMIN_MONGO_URI
-node -r ts-node/register -r tsconfig-paths/register scripts/b456-browser-fixtures.ts verify --phase prepared --namespace <name>
-```
-
-Browser test backend 必须在另一个独立进程中只加载 `backend/.env.browser-acceptance`，使用 app 主连接；`MONGO_ADMIN_URI` 仍只作为受控管理连接输入，不得把 db_admin 放入 `MONGO_URI`：
-
-```powershell
-cd backend
-$env:NODE_ENV="test"
-$env:MONGO_URI = $env:BROWSER_ACCEPTANCE_APP_MONGO_URI
-$env:MONGO_ADMIN_URI = $env:BROWSER_ACCEPTANCE_ADMIN_MONGO_URI
-npm run start:browser-test
-```
-
-- Browser 凭据值保留在 `backend/.env.browser-acceptance` 或任务明确授权的进程级输入中，不得复制到 `backend/.env.test`、Git 跟踪文件、文档、日志、生成物、最终报告或提交记录。
-- Browser CLI 指向普通测试库或开发库时在 AppModule 导入前拒绝；普通 E2E 指向 Browser 库时在连接前拒绝。连接成功后仍按实际库名二次校验。
-- Browser fixture 使用 app 用户、Browser backend 使用 db_admin 用户时均拒绝；错误信息不输出 URI、密码或认证凭据。
-
-## 3. 当前 package.json 脚本
-
-- `build`
-- `typecheck`
-- `format`
-- `start`
-- `start:dev`
-- `start:debug`
-- `start:browser-test`
-- `start:prod`
-- `lint`
-- `lint:fix`
-- `lint:file`
-- `lint:file:fix`
-- `test`
-- `test:watch`
-- `test:cov`
-- `test:debug`
-- `test:e2e`
-
-## 4. 当前 TypeScript 检查结构
-
-- `backend/package.json` 中的 `typecheck` script 实际为 `tsc --project tsconfig.typecheck.json`。
-- `tsconfig.build.json` 服务于生产 build，其编译范围不包含 test 和 spec，不作为 spec / E2E 全量类型门禁。
-- `tsconfig.typecheck.json`：
-  - extends `tsconfig.json`；
-  - 设置 `noEmit: true`；
-  - 覆盖 `src/**/*.ts`、`test/**/*.ts`、`scripts/**/*.ts`；
-  - exclude 仅包含 `node_modules`、`dist`、`coverage`，不排除 spec / E2E；
-  - 通过 `npm run typecheck` 执行。
-- 全量 typecheck 用于覆盖生产源码、单元测试、E2E、fixture、mock、helper 与脚本的 TypeScript 类型检查；生产 build 的通过结果不能替代该门禁。
-
-## 5. 当前可执行性说明
-
-- 当前已验证命令：
-  - `npm install`
-  - `npm run lint`
-  - `npm run typecheck`
-  - `npm run build`
-  - `npm test -- --runInBand`
-  - `npm run test:e2e`
-  - `npm run start:prod`
-- 本次后端 A1 已验证命令：
-  - `npm run lint:file -- src/modules/scales src/app.module.ts`
-  - `npm run build`
-  - `npm test -- --runInBand`
-- 本次后端 A2 已验证命令：
-  - `npm run lint:file -- src/modules/patients src/modules/assessments src/app.module.ts`
-  - `npm run build`
-  - `npm test -- --runInBand`
-- 本次后端 A3 已验证命令：
-  - `npm run lint:file -- src/modules/assessments`
-  - `npm run build`
-  - `npm test -- --runInBand`
-- 本次后端 A4 已验证命令：
-  - `npm run lint:file -- src/modules/media src/app.module.ts`
-  - `npm run build`
-  - `npm test -- --runInBand`
-- 本次后端 A5 已验证命令：
-  - `npm run lint:file -- src/modules/scoring src/app.module.ts`
-  - `npm run build`
-  - `npm test -- --runInBand`
-- 本次后端 A6 已验证命令：
-  - `npm run lint:file -- src/modules/cognitive-domains src/app.module.ts`
-  - `npm run build`
-  - `npm test -- --runInBand`
-- 本次后端 A7 已验证命令：
-  - `npm run lint:file -- src/modules/reports src/app.module.ts`
-  - `npm run build`
-  - `npm test -- --runInBand`
-- 本次后端 A8 已验证命令：
-  - `npm run lint:file -- src/modules/scales`
-  - `npm run build`
-  - `npm test -- --runInBand`
-- 本次后端 A9 已验证命令：
-  - `npm run lint:file -- src/modules/assessments`
-  - `npm run build`
-  - `npm test -- --runInBand`
-- 本次后端 A10 已验证命令：
-  - `npm run lint:file -- src/modules/users src/modules/auth src/app.module.ts`
-  - `npm run build`
-  - `npm test -- --runInBand`
-- 本次后端 A11 已验证命令：
-  - `npm run lint:file -- src/modules/auth src/modules/users src/app.module.ts`
-  - `npm run build`
-  - `npm test -- --runInBand`
-- 本次后端 A12 已验证命令：
-  - `npm run lint:file -- src/modules/patients src/modules/assessments test`
-  - `npm run build`
-  - `npm test -- --runInBand`
-  - `npm run test:e2e`
-- 本次后端 A13 已验证命令：
-  - `npm run lint:file -- src/modules/scales src/modules/assessments test`
-  - `npm run build`
-  - `npm test -- --runInBand`
-  - `npm run test:e2e`
-- 本次后端 A14 已验证命令：
-  - `npm run lint:file -- src/modules/assessments test`
-  - `npm run build`
-  - `npm test -- --runInBand`
-  - `npm run test:e2e`
-- 本次后端 A15 已验证命令：
-  - `npm run lint:file -- src/modules/media src/modules/assessments/services/assessments.service.ts src/modules/assessments/services/assessments.service.spec.ts test/media-evidence.e2e-spec.ts`
-  - `npm run build`
-  - `npm test -- --runInBand`
-  - `npm run test:e2e`
-- 本次后端 A16 已验证命令：
-  - `npm run lint:file -- src/modules/assessments test/scale-instance-submission.e2e-spec.ts`
-  - `npm run build`
-  - `npm test -- --runInBand`
-  - `npm run test:e2e`
-- 本次后端 A17 已验证命令：
-  - `npm run lint:file -- src/modules/scoring test/provisional-scoring.e2e-spec.ts`
-  - `npm run build`
-  - `npm test -- --runInBand`
-  - `npm run test:e2e`
-- 本次后端 A18 已验证命令：
-  - `npm run lint:file -- src/modules/scoring test/manual-score-review.e2e-spec.ts`
-  - `npm run build`
-  - `npm test -- --runInBand`
-  - `npm run test:e2e`
-- 本次后端 A19 已验证命令：
-  - `npm run lint:file -- src/modules/cognitive-domains test/cognitive-domain-computation.e2e-spec.ts`
-  - `npm run build`
-  - `npm test -- --runInBand`
-  - `npm run test:e2e`
-- 本次后端 A20 已验证命令：
-  - `npm run lint:file -- src/modules/reports test/clinical-report-draft.e2e-spec.ts`
-  - `npm run build`
-  - `npm test -- --runInBand`
-  - `npm run test:e2e`
-- 当前路径对齐验证命令：
-  - `npm run build`
-  - 检查 `dist/src/main.js` 存在
-  - `npm run start:prod`
-- 当前验证结果（基于 `ea26edc` 已完成的第一步验证）：
-  - `npm install` 成功。
-  - `npm run lint`：0 errors / 0 warnings。
-  - `npm run typecheck`：0 errors。
-  - `npm run build` 成功。
-  - build 后 `dist/src/main.js` 已确认存在。
-  - `npm test -- --runInBand`：88 个测试套件、751 个测试，全部通过。
-  - `npm run test:e2e`：17 个测试套件、76 个测试，全部通过。
-  - 全量 E2E 使用 `NODE_ENV=test`、Jest `--runInBand`、隔离 `cogmemory_ad_test`、fake Storage、stub SMS / LLM 和脱敏人工数据，未调用真实外部服务。
-  - `ea26edc` 前的首次全量 TypeScript 检查发现 79 个类型错误，现已清理为 0。问题主要来自 fixture 完整性、E2E 初始化收窄、枚举 key 扩宽、timestamp 类型访问和运行时输入边界；无需在本手册逐个复制 31 个错误文件，治理结果是生产源码、测试源码与 scripts 已纳入独立全量类型门禁。
-  - 目标 Mongoose `new` deprecated warning 已清除。Node `sys`、WASI、SQLite 等范围外 runtime warning 仍按客观口径保留，不得把 ESLint 的 0 warnings 误写为所有运行时 warning 均已清零。
-  - 用户已补充验证 `npm run start:prod` 本地启动成功。
-  - `dist/src/main.js` 与 `start:prod` 指向的 `./dist/src/main.js` 路径匹配。
-- 当前 lint 口径：完整 `npm run lint` 为 0 errors / 0 warnings。历史阶段曾出现的 51 个 scoring Prettier errors 已清理，不再是当前状态；A27、A28、B16 等阶段记录中的数字仅保留其当时的历史语境。
-- 如果 `backend\node_modules` 存在，可执行 `npm run build` 验证 TypeScript 编译。
-- 当前 `start:prod` 验证仅为本地基础启动验证，不代表真实生产环境部署完成。
-- 如果 `backend\node_modules` 存在，可执行 `npm test -- --runInBand` 验证单元测试。
-- 如果 `backend\node_modules` 不存在，不应自动执行 `npm install`。
-- 当前任务不调用真实 OSS、阿里云 SMS、大模型或生产数据库。
-- `test:e2e` 脚本已通过 `test/jest-e2e.json` 执行 A12-A28 真实 HTTP 闭环；测试运行时确认 `NODE_ENV=test`、数据库名 `cogmemory_ad_test`、Storage=fake、LLM/SMS=stub，未打印数据库凭证。
-
-## 6. 后端完整最终门禁
-
-- 执行目录固定为 `backend`，最终代码态必须按以下顺序执行：
-
-  1. `npm run lint`
-  2. `npm run typecheck`
-  3. `npm run build`
-  4. `npm test -- --runInBand`
-  5. `npm run test:e2e`
-
-- 开发过程中可以执行定向 lint、定向 unit 或定向 E2E，用于快速反馈；定向检查不能替代最终代码态的完整门禁。
-- build 只验证生产编译范围，unit 与 E2E 只验证 Jest 实际运行路径；build、unit 和 E2E 均不能替代 typecheck，lint 也不能替代 typecheck。
-- `npm run typecheck` 未通过时不得宣称后端任务完成。
-- 五项结果必须分别报告。纯文档或任务明确不需要 E2E 的非代码任务，按任务范围执行文档与 Git 检查，不机械运行完整后端门禁。
-- 因环境原因无法执行完整门禁中的某项时，必须如实报告未执行项、原因和环境限制，不得把未执行写成通过，也不得宣称任务完成。
-
-## 7. 后端验证结果报告模板
-
-- lint：通过 / 失败；errors / warnings。
-- typecheck：通过 / 失败；TypeScript errors。
-- build：通过 / 失败。
-- unit：通过 / 失败；X suites / X tests。
-- E2E：通过 / 失败；X suites / X tests。
-- 未执行项及原因：无 / 具体命令与原因。
-- 环境限制：无 / 具体限制。
-- suppression / exclude：是否新增；如有必须说明位置与原因。
-
-结果使用上述摘要即可，不要求粘贴大段命令日志。
-
-## 8. 当前单元测试口径
-
-- `backend\src\app.controller.spec.ts`：验证 `GET /health` 的 controller 返回结构。
-- `backend\src\modules\storage\storage.service.spec.ts`：验证 fake storage 不依赖 OSS 配置，并验证 OSS driver 缺少配置时抛出明确异常。
-- `backend\src\common\utils\uploaded-filename.util.spec.ts`：验证上传文件名的编码修复、空值 fallback 与路径字符清理。
-- `backend\src\modules\scales\services\scales.service.spec.ts`：验证 `ScaleDefinition` / `ScaleVersion` schema 的 collection、索引、枚举 / ObjectId / Date / Mixed 显式类型，验证 `ScalesService` 的 code 规范化、查无返回 `null`、mapper 输出和 active definition 列表读取；不连接真实 MongoDB。
-- `backend\src\modules\scales\seeds\scale-seed-data.service.spec.ts`：验证 `ScaleSeedDataService` 对 MMSE / MoCA 初始配置 seed 的只读读取、trim + lowercase code 规范化、版本读取、definition / version 列表、内置 seed 校验、总分范围、MMSE 表达第 9 项与绘图第 10 项修正、MoCA 抽象项 `N1.2.12.1` / `N1.2.12.2` 修正、MoCA 即刻记忆不计分但保留原始记录、MoCA 延迟回忆保留分类提示和多选提示记录、MMSE / MoCA 连续减 7 分步独立计分、MoCA 连线 / 立方体 / 钟表图片与手写证据、连线计时要求、item code 唯一、groupCode 引用存在，以及重复 item code、无效 groupCode、无效 scoreRange 和错误 MoCA 抽象 CRF 编码的校验错误分支；不连接真实 MongoDB，不调用 Storage / OSS / SMS / LLM，测试数据为配置样例或脱敏人工样例。
-- `backend\src\modules\scales\services\scale-catalog.service.spec.ts`：验证 MMSE / MoCA 安全摘要、排序和 GET 不写库，验证 seed 非法安全错误、definition / version 创建与复用、不覆盖已有配置、inactive、追溯 / 数量冲突、currentVersionId 空值更新和 duplicate key 竞态后重读；Model 均为 mock，不连接真实 MongoDB。
-- `backend\src\modules\scales\controllers\scales.controller.spec.ts`：验证显式 Session / Roles Guard、四个允许角色和目录响应传递。
-- `backend\src\modules\patients\services\patients.service.spec.ts`：除既有 schema / 内部读取覆盖外，A12 新增 patientId 查无、分页、keyword 安全转义、status / sourceType 过滤、创建默认值、重复预检查、Mongo duplicate key、公开 mapper 排除 externalRefs / metadata；不连接真实 MongoDB。
-- `backend\src\modules\patients\controllers\patients.controller.spec.ts`：覆盖 Session / Roles Guard metadata、允许角色、列表 / 创建参数传递、详情 mapper 和 `PATIENT_NOT_FOUND`。
-- `backend\src\modules\patients\dto\patient-dto.spec.ts`：覆盖 page / pageSize 默认值与边界、keyword trim、枚举、patientId、CreatePatientDto 转换 / 校验，以及 status / externalRefs / metadata 等非白名单字段拒绝。
-- `backend\src\modules\assessments\services\assessments.service.spec.ts`：除既有 / A12 覆盖外，A13 新增 patientId + visitId 联合归属、访视详情、实例查重与排序、安全 ScaleInstance mapper、progress 非法值归零和内部 Mixed 字段排除；不连接真实 MongoDB。
-- `backend\src\modules\assessments\controllers\assessment-visits.controller.spec.ts`：覆盖 Session / Roles Guard metadata、列表 / 创建 / 详情 / 初始化参数、当前用户映射和 doctor > nurse > research_assistant > admin > unknown 角色优先级。
-- `backend\src\modules\assessments\dto\assessment-visit-dto.spec.ts`：覆盖 patientId、assessmentDate、visitType、status、分页、dateFrom / dateTo，以及 operatorSnapshot / 状态时间 / Mixed 字段等非白名单字段拒绝。
-- `backend\src\modules\assessments\services\assessment-execution.service.spec.ts`：在原覆盖基础上验证 insertMany 失败时只按本次 scaleInstanceId 清理 ItemResponse / ScaleInstance、补偿步骤继续尝试并重新抛出原始错误；不连接真实 MongoDB。
-- `backend\src\modules\assessments\services\assessment-scale-workflow.service.spec.ts`：验证患者 active、访视联合归属和状态、scale / version 安全错误、同访视同量表查重、服务端 instanceCode / instanceNo / operatorSnapshot、明确 ScaleInstance duplicate key 竞态和内部错误安全转换；不连接真实 MongoDB。
-- `backend\src\modules\assessments\dto\assessment-execution-dto.spec.ts`：验证 patientId / visitId、scaleCode lowercase、scaleVersion trim、三种施测模式、默认值，以及所有服务器所有字段通过 whitelist / forbidNonWhitelisted 拒绝。
-- `backend\src\modules\assessments\dto\item-response-draft-dto.spec.ts`：验证 A14 三 / 四段 MongoId 路径、嵌套 step / prompt / timing 转换与校验、nullable 字段，以及顶层和嵌套服务器控制字段的 whitelist 拒绝。
-- `backend\src\modules\assessments\controllers\assessment-execution.controller.spec.ts`：验证 A14 Controller 的 Session / Roles Guard metadata、四个允许角色和 GET / PATCH 参数传递。
-- `backend\src\modules\assessments\lib\item-response-draft-json.spec.ts`：验证 JSON 深拷贝、structured 普通对象约束、NaN / Infinity / 函数 / Symbol / BigInt、危险 key、原型、accessor、深度、数组 / key / 字符串和序列化字节限制；不记录原始值、不连接数据库。
-- `backend\src\modules\assessments\services\assessment-execution-detail.service.spec.ts`：验证历史只读、patient / visit / instance 归属、ScaleVersion 配置缺失 / 引用冲突、groups 排序和实际 progress 传递；依赖均为 mock。
-- `backend\src\modules\assessments\services\item-response-draft.service.spec.ts`：验证空 PATCH、完整归属链、可编辑状态、JSON 安全错误、not_started / answered、markAsAnswered、missing、step / prompt 精确合并、timing、原子更新与安全保存失败；Model / Service 均为 mock，不连接真实 MongoDB。
-- `backend\src\modules\assessments\services\item-response-execution.mapper.spec.ts`：验证安全 config、草稿克隆、scoreRange fallback、证据 attached 派生和完整敏感字段排除；不透传 Mixed 配置、expectedValue 或评分结果。
-- `backend\src\modules\media\services\media-evidence.service.spec.ts`：验证 `MediaEvidence` schema 的 collection、索引、枚举 / ObjectId / Date / Number / Boolean / Mixed 显式类型，验证媒体证据内嵌子文档 `_id: false`，验证 `MediaEvidenceService` 的 `evidenceCode` 规范化、查无返回 `null`、mapper 输出、按题目作答 / 量表实例 / 访视 / 患者读取和 attached / locked 过滤读取；不连接真实 MongoDB，不调用 Storage / OSS，测试数据为 `SUBJ-TEST-*`、`VISIT-TEST-*`、`INST-TEST-*`、`EVD-TEST-*`、`moca.visuospatial.trail_making`、`moca.visuospatial.clock`、`mmse.language.drawing` 等脱敏人工样例。
-- A15 新增 `media-file-validation.spec.ts`：覆盖 JPEG / PNG / WebP 魔数、MIME / 签名不一致、空文件、10 MiB、SVG / PDF / HEIC / HEIF、JPEG EXIF / XMP、PNG eXIf / text chunks、WebP EXIF / XMP、SHA-256 与安全 Buffer 复制。
-- A15 新增 `handwriting-trajectory-json.spec.ts`：覆盖 JSON 解析、规范化、SHA-256、application/json / 2 MiB、危险 key、非有限数、深度、数组、对象 key、总节点、字符串长度与非 JSON 输入。
-- A15 新增 DTO / Controller / public mapper spec：覆盖五类 DTO、multipart number / boolean 转换、服务器字段 whitelist、Guard / Roles / 参数转发、公开字段白名单、非有限数归一化，以及 objectKey / bucket / originalFilename / checksum / metadata / trajectoryObjectKey 排除。
-- A15 新增 `media-evidence-workflow.service.spec.ts`：依赖均为 mock，覆盖完整归属、历史只读、可编辑状态、evidence requirement、captureMode、photo / handwriting、operatorRole、隐私 objectKey、Storage 上传 / 签名、创建 / 绑定补偿、并发冲突、作废与恢复补偿；不连接真实 MongoDB，不调用真实外部服务。
-- `assessments.service.spec.ts` 新增 evidenceRef 条件原子绑定、清除与补偿恢复断言，确认完整 ownership filter、数组条件和不更新 ItemResponse status。
-- A16 新增 readiness 纯函数 spec：覆盖 item set（含 countsTowardTotal=false）、answered / scored、false / 0、空 JSON 值、missing、required step、prompt 非强制、timing、photo / handwriting one_of 与单类型、evidenceRef 不一致、operatorNote、startedAt / duration warning、state 与稳定排序；不连接 MongoDB。
-- A16 新增 DTO / Controller spec：覆盖 confirm boolean / 服务器字段 whitelist、显式 SessionAuthGuard / RolesGuard、四个角色与参数传递。
-- A16 新增 submission Service spec：依赖均为 mock，覆盖归属 / 配置、readiness 阻断、Patient / Visit / Instance 状态、二次读取、startedAt 派生、原子完成、操作者角色优先级、completed 幂等和安全审计；不连接真实 MongoDB。
-- `assessments.service.spec.ts` A16 新增完整 ownership 条件、最终 progress、metadata 点路径、原子 update miss 与受控 submission audit 读取；不更新 Visit / ItemResponse。
-- `backend\src\modules\scoring\services\scoring.service.spec.ts`：验证 `ScoreResult` schema 的 collection、索引、枚举 / ObjectId / Date / Number / Boolean / Mixed 显式类型，验证计分结果内嵌子文档 `_id: false`，验证 `ScoringService` 的 `scoreResultCode` 规范化、查无返回 `null`、mapper 输出、按量表实例最新读取、按量表实例 / 访视 / 患者读取，以及 `summarizeItemScores()` 对计入 / 不计入总分、缺失、未评分、需复核、非有限数字、逐步计分和 group score 汇总的处理；不连接真实 MongoDB，不调用 Storage / OSS / SMS / LLM，测试数据为 `SUBJ-TEST-*`、`VISIT-TEST-*`、`INST-TEST-*`、`SCR-TEST-*`、`moca.memory.immediate.trial_1.face`、`moca.recall.delayed.free.face`、`mmse.attention.serial_sevens.step_1` 等脱敏人工样例。
-- A17 新增 DTO / Controller spec：覆盖 confirm boolean、全部服务器字段 whitelist、显式 SessionAuthGuard / RolesGuard、四个允许角色与 compute / latest 参数转发。
-- A17 新增 pure engine spec：直接使用真实 MMSE / MoCA seed，覆盖连续减 7 求和 / aggregation、false / 0、数字字符串不转换、missing / duplicate step、非法 aggregation / scoreRange、全部人工模式 / unknown、raw_record_only 排除、missing / 既有题分复核，以及 provisional total / group / status / source / review / quality。
-- A17 扩展 ScoringService spec：覆盖实例 + runNo 读取、受控 create、runNo=1、null confirm / lock 字段、provisional 汇总排除过程项和不完整 percentage 抑制。
-- A17 新增 Workflow spec：依赖均为 mock，覆盖完整 ownership / 配置 / item set、Patient / Visit / completed Instance、既有 computed / needs_review / confirmed / locked 幂等、draft / voided、duplicate key 恢复、latest not found / voided 与不调用 Assessment 写入；不连接真实 MongoDB。
-- A17 新增 public mapper spec：覆盖 finite / null、阶段性 total / group、reviewQueue、受控未知 reason / warning fallback，以及作答、规则、正确性、metadata / qualityHints / reviewer 完整排除。
-- A18 新增 `score-review-dto.spec.ts`：覆盖四 / 五段 MongoId、finite number、0、字符串数字 / NaN / Infinity、note trim / 长度、strict ISO 和服务器字段 whitelist。
-- A18 新增 `manual-score-review.spec.ts`：覆盖 needs_review 更新、manual_scored 再次修订、auto / process 拒绝、0、range / step、reason 保留、metadata preserve / unsupported、事件追加 / previousScoreValue / 500 上限、scoringSource、pending / completed 状态、total / group / percentage、confirmation snapshot / warning / mismatch；纯测试不连接 MongoDB。
-- A18 扩展 Controller spec：覆盖两个新方法的 CurrentUser 与参数转发，并继续验证显式 Guard / Roles metadata。
-- A18 扩展 ScoringService spec：覆盖完整 ownership / runNo=1 / expected updatedAt 原子 filter、manual 单文档 `$set`、confirm 不更新 itemScores / scoringSource / lockedAt、runValidators 与 timestamps mapper；Model 为 mock。
-- A18 新增 `score-review-workflow.service.spec.ts`：覆盖完整上下文、actor 角色优先级、人工复核原子调用、updatedAt conflict、确认成功 / warning / pending、confirmed 幂等和 missing confirmedAt；依赖均为 mock，不连接 MongoDB。
-- A18 扩展 public mapper spec：覆盖 updatedAt、最新 manualReview、confirmation、legacy fallback 安全结构，以及非法 metadata 忽略、旧 reason / previousScoreValue / 历史事件不公开。
-- `backend\src\modules\cognitive-domains\services\cognitive-domains.service.spec.ts`：验证 `CognitiveDomainResult` schema 的 collection、索引、枚举 / ObjectId / Date / Number / Boolean / Mixed 显式类型，验证认知域结果内嵌子文档 `_id: false`，验证 `CognitiveDomainsService` 的 `domainResultCode` / `domainCode` 规范化、查无返回 `null`、mapper 输出、按量表实例最新读取、按量表实例 / 计分结果 / 访视 / 患者读取，以及 `summarizeDomainScores()` 对默认映射、多认知域映射、权重、不计入认知域、缺失、未评分、需复核和非有限数字 warning 的处理；不连接真实 MongoDB，不调用 Storage / OSS / SMS / LLM，测试数据为 `SUBJ-TEST-*`、`VISIT-TEST-*`、`INST-TEST-*`、`SCR-TEST-*`、`CDR-TEST-*`、`moca.visuospatial.clock`、`moca.memory.delayed.face`、`mmse.attention.serial_sevens.step_1` 等脱敏人工样例。
-- A19 扩展 CognitiveDomainsService spec：覆盖 runNo=1 精确读取 / create、timestamps、minScore、非零 min、完整 percentage、included 未评分、excluded 不进入 score / min / max，以及 domain / contribution stable sort；Model 为 mock，不连接真实 MongoDB。
-- A19 新增 DTO / Controller spec：覆盖 confirm boolean、服务器字段 whitelist、路径 DTO 复用、显式 SessionAuthGuard / RolesGuard、四个角色、CurrentUser 与 compute / latest 参数转发。
-- A19 新增 confirmed-score-domain-mapping pure spec：覆盖 item set、duplicate item / domain、countsTowardTotal、score range、domain code set、itemResponseId、finite score、单 / 多 domain 完整分值、weight=1、过程项 excluded、mapping unavailable、mappingSnapshot 与输入不可变；不读取数据库或原始作答。
-- A19 新增 Workflow spec：依赖均为 mock，覆盖 patient / visit / instance 归属、首次状态、source 缺失 / 非 final / invalid、confirmed / locked、既有结果状态、幂等不重读 source、duplicate key 恢复、latest voided 与源数据不修改；不连接 MongoDB。
-- A19 新增 public mapper spec：覆盖 finite / null、固定 mapping policy / interpretation、稳定排序，以及 subjectCode、metadata、qualityHints、computedBy、原始 mappingRules、内部 notes、作答 / 规则 /意见 /诊断字段排除。
-- `backend\src\modules\reports\services\reports.service.spec.ts`：验证 `ClinicalReport` schema 的 collection、索引、枚举 / ObjectId / Date / Number / Boolean / Mixed 显式类型，验证报告内嵌子文档 `_id: false`，验证 `ReportsService` 的 `reportCode` 规范化、查无返回 `null`、mapper 输出、按访视最新读取、按访视 / 患者 / 状态读取、按患者读取 confirmed / archived / corrected 报告列表，以及 `canTransitionReportStatus()` / `getAllowedReportStatusTransitions()` 对草稿、待确认、已确认、已归档、更正和作废状态的处理；不连接真实 MongoDB，不调用 Storage / OSS / SMS / LLM，测试数据为 `SUBJ-TEST-*`、`VISIT-TEST-*`、`INST-TEST-*`、`SCR-TEST-*`、`CDR-TEST-*`、`RPT-TEST-*`、`moca.visuospatial.clock` 等脱敏人工样例。
-- A20 新增 reports DTO / Controller spec：覆盖双 MongoId、confirm boolean、scope 1-10 / 规范化 / 重复、服务器字段 whitelist、显式 SessionAuthGuard / RolesGuard、四个角色、CurrentUser 与 generate / latest 参数转发。
-- A20 新增纯 builder spec：覆盖确定性非隐私 reportCode、稳定 scale / score / domain / evidence 排序、patient / visit 白名单、历史 scale trace、scoreDetails=null、domain 不编造 minScore、内部 objectKey、媒体 needs_review 派生质量、五段固定 narrative、不读取自由文本、aiDraft not_requested 与受控 generation metadata。
-- A20 扩展 ReportsService spec：覆盖 visit + type + version 查询、timestamps、单文档完整 create、ObjectId 转换和 duplicate key 识别；Model 为 mock，不连接真实 MongoDB。
-- A20 新增 public mapper spec：覆盖 patient / visit / scale / score / domain / evidence / narrative / generation / confirmation 白名单、finite / null、stable sort、isFinal、非法 metadata 安全 null，以及 source ID、scoreDetails、storageObjectKey、clinicalContext、metadata / qualityHints、AI draftText 与签名排除。
-- A20 新增 Workflow spec：依赖均为 mock，覆盖 confirm / scope、Patient / Visit / ScaleInstance 状态、配置绑定、ScoreResult 最终性、CognitiveDomainResult required / mapping、媒体过滤 / 存储 / needs_review、同 scope 幂等不重读来源、不同 scope、voided、duplicate key 恢复、latest 和单次 create；不连接 MongoDB，不修改来源。
-- `backend\src\modules\users\services\users.service.spec.ts`：验证 `User` schema 的 collection、索引、`passwordHash select: false`、枚举 / Date / Number / Mixed 显式类型，验证 `UsersService` 的 accountName / email / staffCode 规范化、按 ID / 账号查无返回 `null`、mapper 输出不含 `passwordHash`、凭证查询显式 select `+passwordHash` 且只返回认证必要字段、active 用户列表读取；不连接真实 MongoDB，测试数据为 `doctor-test-001`、`STAFF-TEST-001`、`doctor-test-001@example.test` 等脱敏人工样例。
-- `backend\src\modules\auth\services\auth.service.spec.ts`：验证 `Session` schema 的 collection、索引、`sessionTokenHash select: false`、`expiresAt` TTL 索引、ObjectId / Date / Mixed 显式类型，验证 `AuthService` 的密码 hash / verify、错误密码和损坏 hash、session token 随机性、token hash 稳定性、`authenticateWithPassword()` 正确账号密码创建 session 并返回 raw session token 仅供 Cookie 使用、账号不存在 / 密码错误 / 用户非 active 返回 `null`、session 创建写入 token hash 而非 raw token、session 不存在 / revoked / expired / 用户不存在 / 用户非 active 返回 `null`、正常返回 `AuthenticatedUserContext` 且不含 `passwordHash`、raw token、session token hash 或 token hash；不连接真实 MongoDB，不调用 OSS / Storage / SMS / LLM，测试数据为 `SESSION-TEST-*` 等脱敏人工样例。
-- `backend\src\modules\auth\auth.controller.spec.ts`：验证 `POST /auth/login` 成功调用 `AuthService.authenticateWithPassword()`、设置 `cogmemory_ad_session` HttpOnly Cookie、返回 authenticated true 和公开 user、不返回 raw token / token hash / passwordHash；验证登录失败抛 `UnauthorizedException` 且不设置 Cookie；验证 `POST /auth/logout` 有 Cookie 时调用 `revokeSessionByToken()`、无 Cookie 时仍清除 Cookie 并返回 `{ ok: true, authenticated: false }`；验证 `GET /auth/me` 返回当前用户公开信息且不含敏感字段；不连接真实 MongoDB，不调用外部服务。
-- `backend\src\modules\auth\utils\session-cookie.util.spec.ts`：验证从 cookie-parser cookies 和原始 `cookie` header 读取 `cogmemory_ad_session`，支持 URL 解码，缺失或 malformed cookie 返回 `null`，session / clear cookie options 使用 HttpOnly、SameSite Lax、Path `/` 和 production Secure 口径。
-- `backend\src\modules\auth\guards\session-auth.guard.spec.ts`：验证 `SessionAuthGuard` 对 `@Public()` 路由直通、缺少 Cookie 抛 `UnauthorizedException`、从 cookie-parser cookies 读取 `cogmemory_ad_session`、从原始 cookie header 解析 `cogmemory_ad_session`、校验成功挂载 `req.user`、校验失败抛 `UnauthorizedException`；不连接真实 MongoDB，不调用外部服务。
-- `backend\src\modules\auth\guards\roles.guard.spec.ts`：验证 `RolesGuard` 在没有 `@Roles()` 时直通、用户包含要求角色时通过、已认证但角色不足时抛 `ForbiddenException`、没有 `req.user` 时抛 `ForbiddenException`；不连接真实 MongoDB，不调用外部服务。
-
-## 9. E2E 测试口径
-
-- E2E 遵循 `docs\e2e-testing.md`，通过现有 `test:e2e` 脚本在 import AppModule 前设置 `NODE_ENV=test`。
-- `patients-assessment-visits.e2e-spec.ts` 使用真实 AppModule、`configureApp()`、全局 ValidationPipe / AllExceptionsFilter、Cookie、SessionAuthGuard、RolesGuard 和 MongoDB 模型。
-- E2E 启动后校验数据库名符合 `_test` 且不含 `_dev` / `_prod`，并校验 Storage=fake、LLM/SMS=stub；隔离数据库为 `cogmemory_ad_test`。
-- 测试使用 `AuthService.hashPassword()` 创建脱敏人工测试用户，通过 `POST /auth/login` 获取并由 Supertest agent 保留 HttpOnly Cookie；结束后仅清理 A12 账号和 `SUBJ-A12-TEST-*` / `VISIT-A12-TEST-*` 数据。
-- 覆盖 401、403、患者创建 / 重复 / 分页 / keyword / 详情 / 路径校验、访视创建 / 重复 / 分页过滤、operatorSnapshot、患者非 active、日期范围、DTO 白名单和敏感字段排除。
-- 本次实际结果：1 个 E2E 测试套件、7 个测试通过；未调用真实 OSS / Storage / SMS / LLM 或生产服务。
-- `assessment-execution-initialization.e2e-spec.ts` 使用真实 AppModule、Cookie、Session / Roles Guard、全局 DTO 校验和真实 test database，覆盖目录 401 / 403、安全 MMSE / MoCA 摘要与 GET 不写库、A12 创建患者 / 访视、初始详情、MMSE / MoCA 按需物化与实例 / ItemResponse 数量、重复 409、详情排序与敏感字段排除、患者 / 访视状态、联合归属、MongoId、scale / version 不存在和服务器字段伪造拒绝。
-- A13 E2E 实际结果：1 个测试套件、7 个测试通过；与 A12 合计 2 个套件、14 个测试通过。连接隔离 `cogmemory_ad_test`，使用 fake / stub 外部服务和脱敏人工数据，未调用真实 OSS / Storage / SMS / LLM 或生产服务。
-- `item-response-draft.e2e-spec.ts` 使用真实 AppModule、Cookie、Session / Roles Guard、全局 ValidationPipe、真实 test database 和 A12 / A13 公共创建链路，覆盖 A14 GET / PATCH 的 401 / 403、安全 MMSE 详情与题目数量、配置字段白名单、草稿 in_progress / answered / missing、A13 实际 progress、连续减 7 step、MoCA 延迟回忆 prompt、timing、跨归属、患者 / 访视 / 实例 / 题目不可编辑状态、空 PATCH、markAsAnswered 和服务器字段伪造拒绝。
-- A14 E2E 实际结果：新增 1 个测试套件、9 个测试通过；与 A12 / A13 合计 3 个套件、23 个测试通过。连接隔离 `cogmemory_ad_test`，使用 fake / stub 外部服务和脱敏人工数据，未调用真实 OSS / Storage / SMS / LLM 或生产服务。
-- `media-evidence.e2e-spec.ts` 使用真实 AppModule、Cookie、Session / Roles Guard、全局 ValidationPipe、Multer、MongoDB 与 fake Storage，通过 A12 / A13 API创建脱敏患者、访视和 MoCA 实例，再通过 A14 详情定位证据题目。
-- A15 E2E 覆盖 401 / 403、空列表、photo 上传、数据库 MediaEvidence、evidenceRef attached、A14 attached=true、安全响应、primary 签名、重复 409、reason、作废、pending 恢复、voided 历史列表 / 不可访问、作废后重传、handwriting 最终 PNG + 可选 JSON trajectory、trajectory 签名、captureMode / trajectory misuse、非法 JSON、SVG / PDF 伪装、图片元数据、服务器字段、413、非 requirement、历史只读、Patient / Visit / Instance / Item 状态矩阵与跨归属 404。
-- A15 E2E 实际结果：新增 1 个测试套件、6 个测试；与 A12 / A13 / A14 合计 4 个套件、29 个测试通过。运行时确认 `NODE_ENV=test`、数据库 `cogmemory_ad_test`、Storage=fake、LLM / SMS=stub；测试图片和轨迹为代码内固定脱敏人工 Buffer，未调用真实 OSS、SMS、LLM 或生产服务。
-- `scale-instance-submission.e2e-spec.ts` 通过真实 AppModule、Cookie / Guard、全局 DTO、MongoDB 与 fake Storage，使用 A12 / A13 建实例、A14 完成全部 MMSE 项、A15 为支持照片项上传固定 1×1 PNG；覆盖 readiness 401 / 403、安全字段、confirm、未完成阻断、ready / canSubmitNow、首次 200 提交、受控 metadata / progress、Visit / ItemResponse 不变、无评分 / 认知域 / 报告结果、提交后草稿 / 上传 / 作废冻结、历史 GET / 媒体列表、重复提交幂等与 Patient / Visit / Instance 状态边界。
-- A16 E2E 实际结果：新增 1 个测试套件、3 个测试；全量合计 5 个套件、32 个测试通过。连接隔离 `cogmemory_ad_test`，Storage=fake、LLM / SMS=stub；测试账号、编号、备注、图片均为脱敏人工数据，未调用真实 OSS、SMS、LLM 或生产服务。
-- `provisional-scoring.e2e-spec.ts` 使用真实 AppModule、Cookie / Guard、全局 DTO、MongoDB 与 fake Storage，经 A12 / A13 建 MMSE / MoCA 实例、A14 填写人工构造作答、A15 上传固定 1×1 PNG、A16 submit 后调用 A17。
-- A17 E2E 覆盖 GET / POST 401、system 403、confirm / 服务器字段、未 completed、inactive / archived Patient 首次计算、locked / voided Visit 首次计算、历史幂等读取、latest not found、跨 ownership、MMSE 严格步骤自动得分、manual reviewQueue、provisional total / null percentage / isFinal=false、ScoreResult runNo=1、latest、重复 compute 幂等、响应敏感字段排除、Visit / Instance / ItemResponse 不变、无 CognitiveDomainResult / ClinicalReport、MoCA aggregation 与 immediate-memory raw_record_only 排除。
-- A17 E2E 实际结果：新增 1 个测试套件、4 个测试；全量合计 6 个套件、36 个测试通过。连接隔离 `cogmemory_ad_test`，Storage=fake、LLM / SMS=stub；测试账号、编号、备注、作答和图片均为脱敏人工构造数据，未调用真实 OSS、SMS、LLM 或生产服务。
-- `manual-score-review.e2e-spec.ts` 使用真实 AppModule、Cookie / Guard、全局 DTO、MongoDB 与 fake Storage，经 A12-A17 创建 completed MoCA 实例和 needs_review ScoreResult；覆盖 manual-review / confirm 的 401、system 403、updatedAt、DTO whitelist、0 / range / step、auto / process 拒绝、manual revision、review conflict、队列逐项减少、total / group / percentage / scoringSource、pending confirm 阻断、confirmation conflict、confirm=true、confirmed / passed / isFinal、confirmation 摘要、重复确认幂等、confirmed 后不可复核、latest / compute 保持 confirmed，以及 metadata 安全边界。
-- A18 E2E 同时对比 review / confirm 前后的 Patient、Visit、ScaleInstance、全部 ItemResponse，确认未写 ItemResponse.score，未创建 CognitiveDomainResult / ClinicalReport；测试数据使用 `SUBJ-A18-TEST-*`、脱敏账号 / 意见、代码内固定 1×1 PNG，不调用真实外部服务。
-- A18 E2E 实际结果：新增 1 个测试套件、2 个测试；全量合计 7 个套件、38 个测试通过。运行时确认 `NODE_ENV=test`、隔离 `cogmemory_ad_test`、Storage=fake、LLM / SMS=stub；未打印 URI 或凭证。
-- `cognitive-domain-computation.e2e-spec.ts` 使用真实 AppModule、Cookie / Session / Roles Guard、全局 DTO、MongoDB 与 fake Storage，经 A12-A18 创建 confirmed MoCA ScoreResult 后调用 A19。
-- A19 E2E 覆盖 compute / latest 401、system 403、latest not found、confirm / whitelist、未 final source、Patient / Visit / Instance 首次状态、confirmed source 成功、runNo=1、computed / unchecked / isFinal=false、单 / 多 domain、同 item 同 domain 去重、过程项 excluded、min / max / percent、stable sort、固定 overlapping policy / 非总分拆分说明、安全字段排除、source / Patient / Visit / Instance / ItemResponse 不可变、无 ClinicalReport、重复 compute 幂等、历史状态幂等读取、latest 与 voided 结果。
-- A19 E2E 实际结果：新增 1 个测试套件、2 个测试；全量合计 8 个套件、40 个测试通过。运行时确认 `NODE_ENV=test`、隔离 `cogmemory_ad_test`、Storage=fake、LLM / SMS=stub；账号、编号、作答、意见和固定 1×1 PNG 均为脱敏人工数据，未调用真实 OSS、SMS、LLM 或生产服务。
-- `clinical-report-draft.e2e-spec.ts` 使用真实 AppModule、Cookie / Session / Roles Guard、全局 DTO、MongoDB 与 fake Storage，经 A12-A19 公开 API 创建脱敏 Patient、Visit、completed ScaleInstance、confirmed ScoreResult 与 computed CognitiveDomainResult 后调用 A20。
-- A20 E2E 覆盖 generate / latest 401、system 403、latest not found、confirm / scope / whitelist、跨访视实例、未 completed 实例、未 final score、domain result required、成功 version 1 system draft、确定性 reportCode、patient / visit / scale / score / domain / evidence 快照、内部 objectKey 与公开排除、五段规则化 narrative、AI not_requested、受控 generation metadata、同 scope 幂等不修改、不同 scope 冲突、历史 latest / 幂等、来源 Instance / ScoreResult / CognitiveDomainResult / MediaEvidence 不变和单报告记录。
-- A20 E2E 实际结果：新增 1 个测试套件、3 个测试；全量合计 9 个套件、43 个测试通过。运行时确认 `NODE_ENV=test`、隔离 `cogmemory_ad_test`、Storage=fake、LLM / SMS=stub；账号、编号、作答、意见和固定 1×1 PNG 均为脱敏人工数据，未调用真实 OSS、SMS、LLM 或生产服务。
-
-- A21 DTO / Controller：覆盖 reportId MongoId、文本 trim / min / max / 空 recommendation 清除、严格 expectedUpdatedAt、extra field 拒绝、类级 Session / Roles Guard、confirm 方法级 doctor / admin 覆盖、CurrentUser 与轻薄转发。
-- A21 纯函数：覆盖五段系统摘要保留、doctorOpinion / recommendation update / clear、source 派生、changedFields、no-change、输入不变、未知 metadata 保留、非法 metadata、事件追加、200 上限、submission / confirmation readiness、quality failed 与 audit reader。
-- A21 ReportsService：Model mock 验证完整 ownership + type + version + allowed status + updatedAt 原子 filter、`new / runValidators`、edit / submit / confirm 各自 `$set` 白名单；没有 snapshot / scope / reportCode / version / lockedAt 写入，单元测试不连接 MongoDB。
-- A21 Workflow：依赖为 mock，覆盖 ownership 上下文、inactive Patient、locked Visit、draft edit、pending / confirmed / voided edit、stale conflict、submit 首次 / 幂等、doctor / admin confirmation、历史 fallback 与不锁定；不注入或调用来源模块。
-- A21 public mapper：覆盖 clinician narrative、editorial / submission、confirmationId、历史 fallback、非法 metadata 安全忽略，以及 metadata / history / previous / next / signature 排除。
-- `clinical-report-review.e2e-spec.ts` 使用真实 AppModule、Cookie / Session / Roles Guard、全局 DTO、隔离 MongoDB 和 fake Storage，经 A12-A20 HTTP 链创建脱敏报告，再验证 401 / system 403、edit whitelist / conflict / no-change、source=mixed、A20 narrative / snapshots 不变、submit / confirm 幂等、nurse / research_assistant 403、doctor 与 admin 确认、isFinal / passed、公开隐私边界和来源数据不变。
-- A21 E2E 启动前验证 `NODE_ENV=test`、数据库名含 `_test` 且非 dev / prod、Storage=fake、LLM / SMS=stub；测试数据使用 `SUBJ-A21-TEST-*` 和脱敏人工短句，不调用真实 OSS、SMS、LLM 或生产服务。测试启动前只清理 A21 runtime 数据及 test MMSE / MoCA catalog 孤儿，结束后保留有效 test catalog，避免污染后续套件。
-- A21 实际结果：新增 3 个单元测试套件并扩展既有 reports specs；全量 unit 为 63 个套件 / 549 个测试。新增 1 个真实 HTTP E2E 套件 / 3 个测试；全量 E2E 为 10 个套件 / 46 个测试通过。
-
-- A22 DTO / Controller：覆盖 confirm 业务必需、boolean、lockNote trim / 3-2000、strict expectedUpdatedAt、extra field 拒绝、类级 Session / Roles Guard、lock 方法级 doctor / admin、CurrentUser 与轻薄转发。
-- A22 纯函数：覆盖 confirmed readiness、draft / pending / archived / corrected / voided、quality / confirmation / A20-A21 audit / 快照完整性、updatedAt conflict、a22Lock 构建、metadata namespace 保留、输入不变、完整审计、历史 fallback、字段残缺与不一致 audit unavailable。
-- A22 ReportsService：Model mock 验证 ownership + cognitive_assessment/version 1 + confirmed/mixed/passed + unlocked/unarchived/unvoided/无 correction + updatedAt 原子 filter；update 只有 lockedAt / lockedBy / metadata，`new=true`、`runValidators=true`，不连接真实 MongoDB。
-- A22 Workflow：依赖均为 mock，覆盖 doctor/admin actor、ownership、active Patient、Visit 状态、首次成功、旧 updatedAt conflict、已锁定旧 expectedUpdatedAt 幂等、audit unavailable、持久化失败；没有 Scoring / CognitiveDomains / Media / Storage / AI 依赖或来源读取。
-- A22 public mapper：覆盖 lock=null、完整 a22Lock summary、历史 fallback、非法 / 不一致 metadata 安全忽略、isFinal 规则不变，以及 metadata / Schema 原始 lockedBy 排除。
-- `clinical-report-lock.e2e-spec.ts` 使用真实 AppModule、Cookie / Session / Roles Guard、全局 DTO、隔离 MongoDB 和 fake Storage；运行时确认 NODE_ENV=test、数据库名含 `_test` 且非 dev/prod、Storage=fake、LLM/SMS=stub。覆盖 401、system/nurse/research 403、锁定前 latest、confirm / whitelist、首次 doctor 锁定、confirmed / passed / isFinal 不变、lock summary / receipt、旧 updatedAt 幂等、状态 / Patient / Visit / ownership / conflict、报告内容不变、metadata 不公开、原始 lockedBy 不公开和 admin 锁定；另通过 A12-A21 全部公开 HTTP 链创建 confirmed report 后执行 A22 lock。
-- A22 测试数据使用 `SUBJ-A22-TEST-*` / `VISIT-A22-TEST-*`、脱敏账号和无临床含义短句；只定向清理 A22 数据，不调用真实 OSS、SMS、LLM、Storage 或生产服务，不创建 PDF / AI / AuditLog。
-- A22 当前实际结果：新增 3 个单元测试套件并扩展既有 reports specs；全量 unit 为 66 个套件 / 582 个测试通过。新增 A22 真实 HTTP E2E 为 1 个套件 / 5 个测试通过；全量 E2E 为 11 个套件 / 51 个测试通过。
-
-- A23 DTO / Controller：覆盖 confirm、freezeNote trim/长度、strict expectedUpdatedAt、extra fields，以及类级 guards、doctor/admin、CurrentUser 和轻薄转发。
-- A23 纯函数 / Workflow：覆盖已锁报告 readiness、A20-A22 metadata、scope 去重稳定排序、counts、in_progress / completed audit、metadata preserve、invalid scope，以及显式确认和 completed 旧 expectedUpdatedAt 幂等。ReportsService mock 覆盖 start / complete 原子 filter。
-- 来源冻结与写保护：Assessments / Scoring / CognitiveDomains / Media Service 以精确 ownership + IDs 批量读取/更新；ScaleInstance、ItemResponse、ScoreResult、MediaEvidence 使用 locked 状态，computed CognitiveDomainResult 只补 lockedAt。A14/A15/A16/A18 相关写 filter 增加 lockedAt 防御，并由既有 service specs 验证关键 filter。
-- public mapper：A23 summary / receipt 只含 actor、时间、note 和 expected/completed/newly/previously counts；不含 scope IDs 或 metadata，非法 metadata 在 latest 安全忽略。
-- `clinical-report-source-freeze.e2e-spec.ts` 使用真实 AppModule、Cookie/Session/Roles Guard、全局 DTO、隔离 MongoDB 与 fake Storage；使用 `SUBJ-A23-TEST-*` / `VISIT-A23-TEST-*`、脱敏账号和无临床含义 note，定向清理 A23 数据。覆盖 401、system/nurse/research 403、confirmation/whitelist、doctor 首次精确冻结、domain status 保留、scope 外实例/Patient/Visit/报告锁不变、旧 expectedUpdatedAt 幂等、latest 安全摘要和 admin。
-- A23 执行前确认 `NODE_ENV=test`、数据库为 `cogmemory_ad_test` 且非 dev/prod、Storage=fake、LLM=stub，SMS 使用 test stub 默认值；未输出连接串或凭证，未调用真实 OSS/SMS/LLM。
-- A23 当前实际结果：build 通过；全量 unit 为 69 个套件 / 597 个测试通过；A23 定向 E2E 为 1 个套件 / 4 个测试，全量 E2E 为 12 个套件 / 55 个测试通过。定向 A23/reports lint 通过；按全模块范围执行 lint 时仍报告未由 A23 修改的既有 scoring 纯函数/测试格式问题，因此不写成全量 lint 通过。
-
-- A24 DTO / Controller：覆盖 confirm=true、缺失 / false / 字符串、archiveNote trim / 3-2000、strict expectedUpdatedAt、全部服务器字段 whitelist；类级 Session / Roles Guard、方法级 doctor / admin、CurrentUser 与轻薄转发。
-- A24 纯函数：覆盖 confirmed + locked + completed readiness、draft / pending / 未锁 / quality / confirmation / correction / void 边界、sourceFreeze missing / in_progress / completed、expectedUpdatedAt conflict、actor、UUID audit、metadata A20-A23 / future namespace 保留、sourceFreeze anchor、输入不变、完整既有归档、corrected historical fallback 与不一致 audit unavailable。
-- A24 ReportsService：Model mock 验证 ownership、type/version、confirmed/mixed/passed、lockedAt/by 非空、archivedAt/by 与 voidedAt/by 为空、空 correctionRecords、expectedUpdatedAt、A23 completed、A24 absent 的原子 filter；`$set` 只有 status / archivedAt / archivedBy / metadata，`new=true / runValidators=true`，不连接真实 MongoDB。
-- A24 Workflow：依赖均为 mock，覆盖 confirm、doctor/admin actor、ownership、Patient inactive / Visit locked 不阻断、首次成功、sourceFreeze anchor、旧 updatedAt conflict、archived / corrected 旧 expectedUpdatedAt 幂等、historical fallback、状态 / audit / persistence 错误；没有来源 Service / Storage / AI 依赖。
-- A24 public mapper：覆盖 unarchived archive=null、完整 a24Archive、安全 actor / note / anchor、历史 fallback、非法 A24 安全忽略、top-level archivedAt 保留、isFinal 不变，以及 metadata / Schema 原始 archivedBy / source IDs 排除。
-- `clinical-report-archive.e2e-spec.ts` 使用真实 AppModule、Cookie / Session / Roles Guard、全局 DTO、隔离 MongoDB 与 fake Storage；使用 `SUBJ-A24-TEST-*` / `VISIT-A24-TEST-*`、脱敏账号和无真实临床含义 note，定向清理 A24 数据。覆盖 401、system/nurse/research 403、confirmation / whitelist、draft / pending / unlocked / sourceFreeze missing / in_progress、doctor 首次归档、inactive Patient / locked Visit、status / isFinal / top-level archivedAt / archive summary / receipt、锁定 / confirmation / narrative / snapshots / scope / A20-A23 metadata 不变、latest、旧 expectedUpdatedAt 幂等且 updatedAt 不变、并发冲突、corrected historical fallback 和 admin。
-- A24 E2E 执行前确认 `NODE_ENV=test`、数据库为 `cogmemory_ad_test` 且非 dev / prod、Storage=fake、LLM/SMS=stub；未输出连接串或凭证，未调用真实 OSS / SMS / LLM，未使用真实患者、报告、医疗图像或临床结论。
-- A24 当前实际结果：scoped `src/modules/reports + clinical-report-archive.e2e-spec.ts` lint 通过；build 通过；全量 unit 为 72 个套件 / 625 个测试通过；A24 定向 E2E 为 1 个套件 / 6 个测试通过；全量 E2E 为 13 个套件 / 60 个测试通过。A24 完成后补充执行的最近两次全量 E2E 均在 `NODE_ENV=test`、Jest `--runInBand`、隔离 `cogmemory_ad_test`、fake Storage、stub SMS / LLM 和脱敏人工数据环境中完整通过，未调用真实外部服务。此前一次全量复跑曾出现既有跨套件 test catalog / 数据顺序污染现象；该现象在随后两次完整串行复跑中未再次出现。当前验证结论以最近连续两次全量通过为准，但尚不据此宣称潜在测试隔离风险已被永久消除。未运行全模块 lint，既有 scoring 格式技术债未修改。
-
-## 10. 医疗与量表数据测试红线
-
-### A25 correction 验证口径
-
-- DTO / Controller：strict confirm、reason / summary trim 与长度、strict expectedUpdatedAt、whitelist、Session / Roles Guard、doctor/admin 与 CurrentUser 轻薄转发。
-- 纯函数：完整 archived readiness、lock/freeze/archive anchors、latest、version+1 / correctionNo、确定性 code、start audit、replacement 深复制与生命周期重置、existing validation、record / completion、恢复解析、输入不变与 mismatch conflict。
-- ReportsService / Workflow：Model mock 验证 start / record / complete 原子 filter 与 version-aware A21；依赖 mock 覆盖 ownership、权限、completed 旧 expectedUpdatedAt 幂等、审计异常。单元测试不连接 MongoDB。
-- A20 / A21 regression：generate latest-first、不重复 V1；普通 V1 行为不变；合法 replacement 仅 doctor/admin，Patient inactive / Visit locked / voided 豁免，clinician fields-only 与 lineage metadata 保留。
-- mapper：无 A25、source in_progress/completed、replacementOf、invalid safe-null；不公开 metadata / 原始 correctionRecords / 五类来源 ID。
-- `clinical-report-correction.e2e-spec.ts` 使用真实 AppModule / Cookie / Guard / DTO 与隔离 test DB，fake Storage、stub SMS/LLM、`SUBJ-A25-TEST-*` 脱敏数据；A26 扩展后覆盖 401/403、whitelist、非 archived、V1 lock/freeze/archive 回归、V2/V3 A21-A24、source / 前序报告关键事实不变、共享五类来源不重写、latest、幂等、historical fallback、stale 并发与非法 lineage。
-- A24 校准后的历史事实继续保留为 13 suites / 60 tests；A25 当前定向结果为 1 suite / 4 tests。全量 lint/build/unit/E2E 数量以本阶段实际 Jest 输出更新，不用历史数量相加推算。
-- A25 最终实际结果：scoped lint 通过；build 通过；全量 unit 75 suites / 653 tests；A25 定向 E2E 1 suite / 4 tests；全量 E2E 14 suites / 64 tests。均在隔离 test DB、fake Storage、stub SMS/LLM 下执行；未使用真实医疗数据或真实外部服务，未处理既有 Mongoose `new` deprecated warning。
-
-### A26 定向验证
-
-- 定向 lint：对本阶段实际变更的 reports implementation/spec、`clinical-report-correction.e2e-spec.ts` 与恢复断言所在 `clinical-report-source-freeze.e2e-spec.ts` 执行 `npx eslint <files...>`；通过。全模块 lint 仍受既有 scoring 格式技术债影响，不据此声称全量 lint 通过。
-- build：`npm run build`；通过。
-- lineage / persistence / Workflow unit：`npm test -- --runInBand src/modules/reports/lib/clinical-report-replacement-lineage.spec.ts src/modules/reports/services/reports.service.spec.ts src/modules/reports/services/clinical-report-lock-workflow.service.spec.ts src/modules/reports/services/clinical-report-source-freeze-workflow.service.spec.ts src/modules/reports/services/clinical-report-archive-workflow.service.spec.ts`；5 suites / 57 tests 通过。
-- 全量 unit：`npm test -- --runInBand`；76 suites / 666 tests 通过。
-- A26 定向 E2E：`node -e "process.env.NODE_ENV='test'; require('jest').run(['--config','./test/jest-e2e.json','--runInBand','test/clinical-report-correction.e2e-spec.ts'])"`；1 suite / 7 tests 通过。
-- 全量 E2E：`npm run test:e2e`；14 suites / 67 tests 通过。定向与全量 E2E 都由测试启动断言隔离 `_test` 数据库、fake Storage、stub LLM/SMS，使用脱敏人工 fixture；未调用真实外部服务。
-- 核心 A26 断言：V1 原规则完整回归；inactive Patient + voided Visit 下合法 V2/V3 均完成 A21 edit/submit/confirm → A22 lock → A23 freeze → A24 archive；共享五类来源在 V2/V3 freeze 前后 status、lockedAt、updatedAt、metadata 不变；前序 corrected 报告 A22-A25 事实不变；重复 lock/freeze/archive 保留原 ID/time/note/updatedAt；corrected historical archive fallback、非法 lineage、nurse/research 403、freeze-before-lock、archive-before-freeze 与 lock/archive stale expectedUpdatedAt 均保持稳定语义。
-
-### A27 定向验证
-
-- 定向 unit：`npx jest --runInBand src/modules/clinical-history src/modules/reports/dto/clinical-report-history-dto.spec.ts src/modules/reports/lib/clinical-report-history-lineage.spec.ts src/modules/reports/lib/clinical-report-version.mapper.spec.ts src/modules/reports/services/clinical-report-history-query.service.spec.ts src/modules/reports/controllers/clinical-reports.controller.spec.ts`。
-- 定向 E2E：`node -e "process.env.NODE_ENV='test'; require('jest').run(['--config','./test/jest-e2e.json','--runInBand','test/clinical-history.e2e-spec.ts'])"`。package `test:e2e` 脚本本身固定运行全部 E2E，额外 CLI 参数不会缩小 Jest 参数数组。
-- fixture：只用 `SUBJ-A27-HISTORY-*` / `VISIT-A27-HISTORY-*` 与人工分数；Patient 可为 inactive，Visit 覆盖 locked/voided；直接构造 runNo=1 locked Score / Domain 与 V1 draft report。清理严格按账号和 Patient 前缀 ownership 删除，不 drop DB/collection。
-- invalid lineage：单元测试用 V1/V2/V3 完整 A21-A26 audit 构造合法链，再逐项破坏重复/缺口/code/ownership/latest；基础时间或 lifecycle namespace 破坏应映射 incomplete，关系/anchor 破坏映射 lineage invalid。不得通过删掉全部 metadata 把不同错误混为一类。
-- 响应安全：递归扫描 history / version list，禁止 patient/visit/source result internal ID、metadata、item/domain 明细、narrative、previous/replacement internal ID；历史详情单独复用既有 mapper 契约。调用前后比较 Patient/Visit/Instance/Score/Domain/Report updatedAt，证明三个 GET 不写入。
-- latest 回归：`latest` 静态路由必须在 `:reportId` 前，既有 controller unit 和全量 E2E 必须继续通过。
-- A27 实际结果：变更范围定向 ESLint 通过；build 通过；A27 定向 E2E 1 suite / 3 tests；全量 unit 84 suites / 707 tests；全量 E2E 16 suites / 73 tests。完整 lint 执行一次，仍为 51 errors / 0 warnings，且仅在未修改的 `manual-score-review.ts`、`manual-score-review.spec.ts`、`score-review-workflow.service.spec.ts` 三个既有 scoring 文件。
-
-### A28 定向验证
-
-- 定向 lint：`npm run lint:file -- src/modules/clinical-history src/modules/assessments/services/assessments.service.ts src/modules/assessments/services/assessments.service.spec.ts test/follow-up-trends.e2e-spec.ts`；通过。
-- build：`npm run build`；通过。
-- A27+A28 定向 unit：`npx jest --runInBand src/modules/clinical-history src/modules/assessments/services/assessments.service.spec.ts src/modules/reports/dto/clinical-report-history-dto.spec.ts src/modules/reports/lib/clinical-report-history-lineage.spec.ts src/modules/reports/lib/clinical-report-version.mapper.spec.ts src/modules/reports/services/clinical-report-history-query.service.spec.ts src/modules/reports/controllers/clinical-reports.controller.spec.ts`；14 suites / 126 tests 通过。更窄的 A28/Assessments 定向命令为 9 suites / 98 tests 通过。
-- A28 定向 E2E：`node -e "process.env.NODE_ENV='test'; require('jest').run(['--config','./test/jest-e2e.json','--runInBand','test/follow-up-trends.e2e-spec.ts'])"`；1 suite / 3 tests 通过。
-- A27 回归 E2E：同一 Jest 入口定向 `test/clinical-history.e2e-spec.ts`；1 suite / 3 tests 通过。A28 E2E 另回归调用 assessment-history 与 report version list；全量 E2E 继续覆盖静态 `latest` 路由。
-- fixture：只用 `SUBJ-A28-TREND-*` / `VISIT-A28-TREND-*`、隔离账号和人工分数；覆盖四个读角色、401/403、DTO/date/catalog/Patient 错误、inactive/archived Patient、locked/voided Visit、日期边界、稳定升序、空范围、maxPoints 409、missing/ambiguous/non-final/voided/incomplete/available source、Domain 缺失独立性、exact trace/admin/range、domain mapping/set/range/weighted/null 变化、reason 顺序和相邻不可跨越语义。按账号与 Patient ownership 定向清理，不 drop DB/collection。
-- 安全 / 只读：递归扫描 response，禁止 Patient identity、ownership/source 内部 ID、metadata、raw answer、reviewer/opinion、report/narrative、media/storage、AI 与诊断字段；调用前后比较 Patient/Visit/Instance/Score/Domain `updatedAt`，证明 GET 不写入。单元测试断言 Visit max+1 与三类 batch lean/projection，不读取 ItemResponse/ClinicalReport，不产生 N+1。
-- 全量结果：`npm test -- --runInBand` 为 88 suites / 751 tests；`npm run test:e2e` 为 17 suites / 76 tests。完整 `npm run lint` 未通过，仍严格为 51 errors / 0 warnings，仅位于未修改的 `manual-score-review.ts`、`manual-score-review.spec.ts`、`score-review-workflow.service.spec.ts`，均为 Prettier 格式技术债；不得写成完整 lint 通过。
-
-### B16 浏览器验收夹具 CLI
-
-- 用途：只为 B16 真实浏览器矩阵显式准备隔离账号和确定性数据；当前 contract 共 22 个 `scenarioKey`（1 个 `roles` + 21 个业务场景）。它不是生产 seed、不随启动或测试自动执行，也不代表 B16 浏览器验收已经通过。
-- 运行前必须确认 `NODE_ENV=test`、连接的是项目隔离 test database，且 Storage 为 fake、LLM/SMS 为 stub、Session 为非 production 配置。CLI 在装配 `AppModule` 前先检查 `NODE_ENV`，连接后再按真实 databaseName 二次门禁；任一门禁失败均不写库并返回非 0。
-- 固定测试密码通过独立目标进程的 `B16_FIXTURE_PASSWORD` 提供，可以从项目约定的本地忽略凭据源或任务明确值自动注入，不要求人工输入；不得写入仓库、文档、参数、manifest 或日志。namespace 仅允许 3–32 位小写字母、数字和单连字符分隔。
-
-```powershell
-cd backend
-$env:NODE_ENV="test"
-node -r ts-node/register -r tsconfig-paths/register scripts/b16-browser-fixtures.ts prepare --namespace b16-browser
-node -r ts-node/register -r tsconfig-paths/register scripts/b16-browser-fixtures.ts verify --namespace b16-browser
-node -r ts-node/register -r tsconfig-paths/register scripts/b16-browser-fixtures.ts cleanup --namespace b16-browser --confirm-cleanup
-```
-
-- 同 namespace 的重复 `prepare` 默认拒绝；需要替换时必须显式执行 `replace --namespace <name> --confirm-replace`。`cleanup` 先做 namespace 根记录与 ownership 预检，按 Session → report/lifecycle → domain/score/media/item/instance → visit → patient → user 删除，禁止 dropDatabase、清 collection 或无条件 `deleteMany({})`。
-- `prepare` / `verify` 输出 safe manifest：角色条目只提供脱敏登录导航；业务场景仅提供 scenarioKey、purpose、route、reportCode/version、安全状态、建议角色和起始阶段。`v2_correction_in_progress` 额外只公开 `correctionState=in_progress` 与计划替代版本，`v2_replacement_summary_unsafe` 额外只公开 `expectedUiDisposition=write_prohibited`。严禁密码/hash、Cookie/Session、Mongo URI、前序/替代报告内部 ID、correction/freeze/source ID、报告正文或堆栈。
-- 新增 `v2_correction_in_progress`（`a25_resume`）和 `v2_replacement_summary_unsafe`（`a25_blocked`）。前者先通过真实 A22→A25 形成合法 V2，再完成 V2 的 A21→A24，使用 production correction plan/start builder 和 `ReportsService.startCorrectionIfUnmodified()` 原子写入完整 A25 start metadata，随后立即停止，因此无需中断网络、sleep 或碰撞瞬时状态；后者在另一条合法 V1→V2 链上只做一处 test-only 公开 replacement 关系破坏，public mapper 仍可安全返回，由前端在请求前阻断不可逆写入。
-- 本轮实际验证：变更文件定向 ESLint 通过；`npm run build` 通过；fixture 定向 E2E 1 suite / 3 tests 通过；A25/A26 correction 定向 E2E 1 suite / 7 tests 通过；全量 unit 76 suites / 666 tests、全量 E2E 15 suites / 70 tests 通过。完整 `npm run lint` 未通过，共报告 51 个既有 Prettier 问题，均位于未修改的 scoring 文件；本任务受范围约束未修改这些文件，因此不得声称完整 lint 门禁通过。
-- 固定 namespace 的 `replace` / 只读 `verify` 实际演练均退出 0，得到 4 个角色、22 个 `scenarioKey`、21 个业务场景，safe manifest 禁止字段扫描通过。浏览器验证结束后连续执行两次 cleanup，残留均为 0；namespace 外 sentinel 和双 namespace 隔离由 fixture E2E 覆盖。CLI 仍只有 prepare / verify / cleanup / replace，命令与密码传递方式未变化。
-- B16 最终关闭审计基于 `9099f66` 再次验证 fixture 三个变更文件的定向 ESLint、backend build 和 fixture 定向 E2E，结果分别为通过、通过、1 suite / 3 tests 通过。完整 backend lint 仅执行一次，仍严格为 51 个 error、0 warning，且全部是既有 Prettier 格式问题，只位于 `manual-score-review.ts`、`manual-score-review.spec.ts`、`score-review-workflow.service.spec.ts`；数量、文件和类型均未增加。这 51 项早于 WP-02，三个文件均未被 WP-02 修改，作为独立非阻断格式技术债处理，不得写成完整 lint 通过，也不再阻止 WP-02 产品关闭。
-
-### WP-04 / B17 浏览器验收夹具 CLI
-
-- 用途：为 B17 完整浏览器矩阵显式准备隔离、脱敏、确定性数据；contract 共 44 个 `scenarioKey`（1 个 `roles` + 43 个业务场景），覆盖 history、report versions、report detail、trend data status、total comparison、Domain comparison、范围和 Patient 状态。夹具不是 production seed，不随应用或测试自动执行；准备成功不等于 B17 浏览器验收完成。
-- CLI 支持 `prepare`、只读 `verify`、`cleanup --confirm-cleanup` 和 `replace --confirm-replace`。`NODE_ENV=test` 在加载 `AppModule` 前检查，连接后还会校验隔离 test database、`APP_ENV=test`、fake Storage、stub SMS/LLM 和非 production Session 配置。
-- 固定测试密码通过独立目标进程的 `WP04_FIXTURE_PASSWORD` 提供，可以从项目约定的本地忽略凭据源或任务明确值自动注入，不要求人工输入；不接受命令行 password，不进入 Git 跟踪配置、文档、manifest 或日志。五个账号角色固定为 doctor、admin、nurse、research_assistant、system。namespace 仅允许 3–32 位小写字母、数字与单连字符分隔。
-
-```powershell
-cd backend
-$env:NODE_ENV="test"
-node -r ts-node/register -r tsconfig-paths/register scripts/wp04-browser-fixtures.ts prepare --namespace <name>
-node -r ts-node/register -r tsconfig-paths/register scripts/wp04-browser-fixtures.ts verify --namespace <name>
-node -r ts-node/register -r tsconfig-paths/register scripts/wp04-browser-fixtures.ts cleanup --namespace <name> --confirm-cleanup
-node -r ts-node/register -r tsconfig-paths/register scripts/wp04-browser-fixtures.ts replace --namespace <name> --confirm-replace
-```
-
-- Domain mapping source/mode 是公开 Domain 数据可用性的前置资格。两个专用场景的总分仍为 `comparable`，但公开 `domainDeltas` 必须严格为 `status=unavailable`、`reasons=[domain_source_incomplete]`、`items=[]`；pure comparator 中的 `domain_mapping_source_changed` / `domain_mapping_mode_changed` 是防御性或未来兼容 reason，不属于当前 API 可达矩阵。
-- safe manifest 只输出账号登录标识、显示名、scenario contract、导航 route 和预期公开结果；route 是唯一可含导航 ID 的白名单字段。递归扫描禁止 password/hash、Cookie/Session/token、Mongo URI、独立业务内部 ID、metadata、完整 narrative、来源 ID 与原始作答；不得直接输出 Mongoose document 或完整 Service response。
-- 实际演练：`wp04-cli-smoke` 的 prepare、verify、cleanup、二次 cleanup 均退出 0，5 roles、44 keys / 43 business scenarios 验证通过且最终残留为 0；正式 namespace `wp04-browser-final` 的 replace 与 verify 均退出 0，已保留给 B17 浏览器验收。
-- fixture 定向 E2E 为 1 suite / 3 tests，通过 prepare、verify、只读/不修复、双 namespace、sentinel、cleanup/二次 cleanup、replace、安全门禁、safe manifest 和 source/mode 修订口径；A28 comparator/source 定向 unit 为 2 suites / 14 tests，受影响回归为 6 suites / 24 tests。当前最终门禁依次为 lint 0 errors / 0 warnings、typecheck 0 errors、build 通过、full unit 88 suites / 751 tests、full E2E 18 suites / 79 tests。
-- 浏览器矩阵完成后必须对 `wp04-browser-final` 执行显式 cleanup 并核对残留为 0；在此之前不得把 WP-04 或 B17 标记为完成。
-
-### WP-04 `history_pagination` 同日排序夹具纠偏
-
-- 原夹具把前两条 Visit 的 day-of-month 都设为 1，但 month 仍随数组下标变化，实际时间戳分别落在不同月份，因此没有形成可验证的同日 tie-break。修复后两个公开 fixture 标识不同的 Visit 使用完全相同的固定 UTC timestamp；该时间晚于同场景其余 103 条 Visit，因此两条都稳定落在历史列表第一页。其余 103 条日期分布、状态/类型分布和总数 105 保持不变，其他 scenarioKey 未改变。
-- `verify --namespace` 对 `history_pagination` 继续严格验证 total=105、20/50/100 分页和 pageSize=100 的第二页 5 条，并新增：精确定位两个公开 fixture 标识、时间戳严格相同、`_id` 不同、同一 Patient ownership、公开标识不同；再通过真实 `ClinicalHistoryQueryService` 请求 page=1/pageSize=20，确认 pair 都在第一页、彼此相邻，并按生产规则 `assessmentDate desc, _id desc` 返回。验证只读，不修改 timestamp，不创建 Session，也不修复损坏数据。
-- 同日 pair 缺失、ownership/标识/时间戳不符合预期时使用安全错误码 `WP04_HISTORY_SAME_DAY_FIXTURE_MISSING`；QueryService 第一页相邻性或 `_id desc` 不符合时使用 `WP04_HISTORY_SAME_DAY_ORDER_INVALID`。两类错误都只附 `scenarioKey=history_pagination` 和安全说明，不输出 Patient/Visit/ObjectId。
-- fixture 定向 E2E 最终为 1 suite / 4 tests，65.25 s；新增真实数据库 + QueryService 断言覆盖完全相同 timestamp、不同 `_id`、第一页相邻、`_id desc`、total=105、20/50/100 和第二页 5 条。破坏性用例使用独立 namespace，把其中一条日期最小改动 1 ms，确认只读 verify 以预期安全错误失败、数据未被修复，随后 cleanup 与第二次 cleanup 均残留 0。`clinical-history.e2e-spec.ts` 回归为 1 suite / 3 tests，8.171 s。
-- 最终代码态门禁结果：定向 ESLint 最终 0 errors / 0 warnings；完整 `npm run lint` 为 0 errors / 0 warnings；`npm run typecheck` 为 0 errors；`npm run build` 通过；full unit 为 88 suites / 751 tests，39.314 s；full E2E 为 18 suites / 80 tests，138.443 s。定向 ESLint 首轮发现 10 个本次格式问题，修正后完整重跑通过；五项完整后端门禁均在最终代码态一次通过。Node `sys`、WASI、SQLite 运行时 warning 仍按既有非目标保留。
-- smoke namespace `wp04-fix-smoke` 的 prepare / verify / cleanup / 第二次 cleanup 均成功：5 roles、44 keys / 43 business scenarios，同日 pair 增强验证通过，首次与二次 cleanup 的 residualCount 均为 0。正式 namespace `wp04-browser-final` 已按修复后夹具执行 replace + verify：5/44/43 与同日 pair 增强验证均通过，namespace 继续保留给下一次 B17 定向复验，不执行正式 cleanup。
-- 本次仅修改 WP-04 test-only fixture、verify、E2E 与 testing playbook；未修改 `backend/src/**` 产品代码、接口、DTO/response、Schema、collection、index、角色或业务契约。fixture 修复和 CLI verify 不等于 B17 最终浏览器验收完成；WP-04 继续进行中。
-
-### WP-04 / B17 最终浏览器验收后的 fixture 生命周期收口
-
-- 最终验收沿用正式 namespace `wp04-browser-final`；最终 verify、5 roles、44 keys / 43 business scenarios、同日 pair 增强验证与 safe manifest 扫描均通过。
-- 浏览器退出登录后执行第一次正式 cleanup，命令成功且 residualCount=0；随后对同一 namespace 执行第二次幂等 cleanup，命令再次成功且 residualCount=0。
-- 正式 namespace 已删除，未影响其他 namespace；清理继续遵守显式 namespace 与确认参数边界，没有使用 dropDatabase 或无条件 deleteMany。
-- 本次最终收口未修改 `backend/src/**` 产品代码，因此不重跑或改写后端产品代码门禁；前述 fixture 定向 E2E、full unit、full E2E 与完整后端门禁保留其各自历史阶段结果。
-
-- 测试不得使用真实患者数据、真实身份证号、真实手机号、真实病历号或其他可识别个人信息。
-- 量表测试数据应使用脱敏样本或人工构造样本。
-- 不得调用真实短信、真实阿里云 SMS、支付、医保、医院 HIS/LIS/PACS、对象存储生产环境或真实大模型服务，除非未来单独定义受控集成测试。
-- 不得在测试断言中生成真实医疗诊断结论。
-
-### B1–B3 / Batch A 浏览器验收 fixture CLI
-
-- 用途：为 B1–B3 Batch A 后续真实 Browser 验收提供独立、确定性且可回收的 test-only 数据；fixture 完成不等于 Browser 验收完成，不改变 roadmap 或工作包状态。
-- 入口：`backend/scripts/b123-browser-fixtures.ts`；固定 contract 为 27 个 `scenarioKey`，其中 1 个 `roles` 账号场景和 26 个业务场景，共有 58 个唯一 primary audit ID，分类为 21 个 Browser direct 与 37 个 fixture-required。
-- 环境变量只在本地进程临时设置：`NODE_ENV=test` 与 `B123_FIXTURE_PASSWORD=<固定测试密码已设置>`；密码不接受 CLI 参数，不写入仓库、配置或 manifest。
-- 基础命令：
-  - `node -r ts-node/register -r tsconfig-paths/register scripts/b123-browser-fixtures.ts prepare --namespace <namespace>`
-  - `node -r ts-node/register -r tsconfig-paths/register scripts/b123-browser-fixtures.ts verify --namespace <namespace> --phase prepared`
-  - `node -r ts-node/register -r tsconfig-paths/register scripts/b123-browser-fixtures.ts verify --namespace <namespace> --phase post-browser`
-  - `node -r ts-node/register -r tsconfig-paths/register scripts/b123-browser-fixtures.ts cleanup --namespace <namespace> --confirm-cleanup`
-  - `node -r ts-node/register -r tsconfig-paths/register scripts/b123-browser-fixtures.ts replace --namespace <namespace> --confirm-replace`
-- 受控 transition 仅允许 `dashboard_session_matrix`、`catalog_error_matrix`、`scale_unavailable` 三个白名单场景，并使用 `transition --namespace <namespace> --scenario <scenarioKey> --action arm|restore --confirm-transition`。它们分别撤销/恢复 namespace doctor Session、制造/恢复真实 MMSE materialized version trace 冲突、停用/恢复真实 MoCA definition。目录 transition 仅允许在隔离 test database 中使用；`verify --phase prepared` 拒绝遗留 transition，cleanup 会先恢复。
-- 网络故障不写入 fixture：登录、`/auth/me`、Patient GET、Visit 列表 GET、Visit POST 与 catalog GET 由后续 Browser 使用 CDP abort 或等价真实网络失败模拟；写请求不得自动重试。
-- `prepared` verify 只读检查账号、Patient/Visit 状态矩阵、真实 MMSE/MoCA catalog、初始化矩阵、duplicate/forbidden/not-found 前置、Browser 写入预留不存在、transition 已恢复、ID/`updatedAt`/Session 数不变。`post-browser` verify 只读检查 Browser 创建 Patient、Visit、MMSE/MoCA 实例与无副作用断言，不修复数据。
-- safe manifest 顶层只包含 `namespace`、`databaseName`、`roles`、`scenarios`、`summary`；仅 `route` 可携带本地导航所需内部 ID，`testInput` 只包含合成公开表单输入。scanner 拒绝密码、hash、Cookie、Session、token、Mongo URI、内部 ID 字段、metadata、operatorSnapshot、完整 request/response 等字段。
-- cleanup 按 Session、Report/Domain/Score/Media/Item、ScaleInstance、AssessmentVisit、Patient、User 顺序精确删除 namespace 数据，包含后续 Browser 创建数据；不删除全局 scale seed，不使用 `dropDatabase()` 或无条件 `deleteMany({})`，支持双 namespace 隔离和二次幂等 cleanup。
-- fixture E2E：`test/b123-browser-fixtures.e2e-spec.ts` 实际通过，1 suite / 5 tests；覆盖 contract 计数、环境/CLI/safe manifest 门禁、真实账号 hash 验证、分页与状态、真实 MMSE/MoCA 骨架、双 namespace、三类 transition/restore、Browser 写入模拟、post-browser verify、cleanup/replace 与只读损坏检测。
-- 定向回归：A12/A13 为 2 suites / 14 tests，B16 fixture 为 1 suite / 3 tests，WP-04 fixture 为 1 suite / 4 tests，全部通过；未修改 B16/WP-04 fixture 行为。
-- 最终完整后端门禁：定向 ESLint 0 errors / 0 warnings；`npm run lint` 0 errors / 0 warnings；`npm run typecheck` 0 errors；`npm run build` 通过；`npm test -- --runInBand` 为 88 suites / 751 tests；`npm run test:e2e` 为 19 suites / 85 tests。
-- smoke 生命周期 `b123-cli-smoke` 已完成 prepare、prepared verify、cleanup、第二次 cleanup，最终 `residualCount=0`；正式 namespace `b123-browser-final` 已完成 replace 与 prepared verify，并继续保留给 Batch A Browser 使用。
-- 本轮未执行 Browser，未把任何 B1–B3 待验项提前标记为已验证。
-
-### Batch A 首轮 Browser 合同纠偏与响应式修复门禁
-
-- `patients_list_matrix` 已纠偏为只提供 Patient pagination、keyword、status、source type 与 stable ordering 的 fixture 证据；safe manifest 不再提供标签筛选输入。该场景的 B2-MV-001、B2-MV-002、B2-MV-024、B2-MV-025 四个 primary owner 不变。
-- Patient list 正式查询 DTO、Service 与产品 API 未修改，仍只有 page/pageSize、keyword、status、sourceType 和既有排序。患者数据可继续包含 tags，但标签输入、中文/英文逗号、换行、trim 与去重验证只属于 `patient_create_matrix`，B2-MV-007 归属不变。
-- contract 自动平衡继续为 27 个 scenarioKey、26 个业务场景、58 个唯一 audit ID、21 direct、37 fixture-required；无新增/删除 key，无缺失、重复或额外 primary owner。
-- test-only 修改仅涉及 contract、safe manifest 与 fixture E2E；`scenario-builders.ts` 不需要修改，Patient 创建 tags 数据和 post-browser 精确归一断言完整保留。未修改 `backend/src/**`、Controller、DTO、Service、Schema、endpoint、状态码、错误码、Session 或 MMSE/MoCA seed。
-- 定向 ESLint 首轮发现新增 matcher 的 2 个 `no-unsafe-assignment`，改为强类型的精确 tags 输入/归一结果断言后重跑为 0 errors / 0 warnings。fixture 定向 E2E 为 1 suite / 5 tests；A12/A13 回归为 2 suites / 14 tests。
-- 最终五项后端门禁按顺序串行通过：`npm run lint` 0 errors / 0 warnings；`npm run typecheck` 0 errors；`npm run build` 通过；full unit 88 suites / 751 tests；full E2E 19 suites / 85 tests。没有并发运行 Jest。
-- smoke namespace `b123-fix-smoke` 的 prepare、prepared verify、cleanup 与第二次 cleanup 均成功，计数为 5 roles / 27 keys / 26 business scenarios / 58 audit IDs / 21 direct / 37 fixture-required，首次与幂等二次 cleanup 的 `residualCount` 均为 0。
-- 正式 namespace `b123-browser-final` 已按纠偏后 contract 执行 replace 与 prepared verify，计数同为 5/27/26/58/21/37，并继续保留；本轮没有执行正式 cleanup，也没有执行 post-browser verify。
-- 本轮只做患者列表和详情的只读定向响应式 Browser 复验，没有执行完整 Batch A Browser 矩阵，没有创建 Patient、Visit 或 ScaleInstance，没有执行 transition。`auth_login_matrix`、真实键盘与其余矩阵仍待后续完整重跑，fixture 准备成功不得写成 Batch A 完成。
-- `B123_FIXTURE_PASSWORD=<固定测试密码已设置>` 只存在于各 CLI 当前进程，未进入参数、配置、仓库或 manifest；命令结束后已清除。
-
-### B1–B3 / Batch A 完整 Browser 验收后的 fixture 生命周期收口
-
-- 最终验收基线为 `3a9c784c5fba290f29dc83864f55000622292df4`，沿用正式 namespace `b123-browser-final`，未执行 replace。浏览器前的只读 prepared verify 通过：5 roles / 27 scenarioKey / 26 business scenarios / 58 audit IDs / 21 direct / 37 fixture-required，Browser Patient/Visit/Scale 写入预留均不存在，所有 transition 已恢复。
-- 真实 Browser 创建 Patient 和 Visit 各1条，以及 MMSE/MoCA 实例各1个；Visit operator 由 doctor Session 生成，客户端未控制状态、operatorSnapshot 或 metadata。MMSE 和 MoCA 的生产初始化 Body 只有 `scaleCode`、`scaleVersion`、`administrationMode`，骨架数分别为 11 与 16。
-- Patient/Visit duplicate 各为单次 409，MMSE/MoCA 由两标签未刷新页各产生一次真实 stale 409，所有写请求自动重试为 0。inactive/archived/completed/locked/voided、system 403、not-found/归属不匹配、专用失败 Visit、catalog conflict 和 scale unavailable 均无副作用。
-- Dashboard Session、MMSE catalog conflict 和 MoCA unavailable 三个受控 transition 均执行 `arm -> Browser 行为 -> restore`；每次 restore 成功后才继续其他场景，post-browser verify 与 cleanup 前无 transition 遗留。登录 POST、`/auth/me` GET、Patient GET、Visit list GET、Visit POST 和 catalog GET 六类故障均仅由 Browser 中止一次，未伪造 HTTP 业务响应。
-- 技术矩阵与用户真实键盘验收完成后，`verify --phase post-browser` 只读通过：Patient/Visit 数量、日期/tags、Session operator、MMSE/MoCA 单实例与 11/16 骨架、duplicate 无额外记录、禁止状态无实例、网络失败 Visit 不存在、catalog conflict/unavailable 无实例全部符合。该 verify 没有修复或新增数据，27/26/58/21/37 计数保持不变。
-- 用户明确签收 B1-MV-017 与 B1-MV-018 均通过后，Browser 已 logout 并关闭。紧随执行第一次正式 cleanup，命令成功且 `residualCount=0`；随后对同一 namespace 执行第二次幂等 cleanup，命令再次成功且 `residualCount=0`。正式 namespace 已删除，transition 无遗留，全局 MMSE/MoCA seed 不在 cleanup 删除范围，没有使用 dropDatabase 或无条件 deleteMany。
-- 本次只执行前端静态门禁、fixture verify/transition/cleanup 和真实 Browser 验收；未修改 `backend/src/**`、backend scripts/test、API/DTO/response、Schema/index 或任何后端产品代码，因此未重跑或改写既有后端代码门禁结果。上一代码阶段记录的 fixture E2E 1 suite / 5 tests、A12/A13 2 suites / 14 tests、full unit 88 suites / 751 tests 与 full E2E 19 suites / 85 tests 保持为该代码基线的历史门禁证据，本次不冒充为重跑。
-- Batch A 的 58 个本次 Browser audit ID 均通过，结合 6 个既有 Browser 证据、2 个用户人工视觉签收和 1 个 obsolete，67 个验证原子已全部有明确处置。Batch A Browser 验收与 fixture 生命周期收口完成，roadmap 不变，未启动 Batch B。
-
-### B4–B6 / Batch B 浏览器验收 fixture CLI
-
-- 用途：为 B4 量表作答、B5 媒体证据和 B6 最终提交的桌面 Browser 验收提供独立、确定性且可回收的 test-only 数据；本节只记录 fixture 基础设施，Browser 尚未执行，不改变 roadmap，也不启动 Batch C 或其他业务工作包。
-- 入口：`backend/scripts/b456-browser-fixtures.ts`；固定 contract 为 32 个 `scenarioKey`，其中 1 个 `roles` 与 31 个业务场景，共 135 个唯一 primary audit ID；B4/B5/B6 分别为 44/54/37，严格分类为 15 个 Browser-direct 与 120 个 fixture-required，缺失、重复、额外 ID 均为 0。
-- 环境变量只在本地进程临时设置：`NODE_ENV=test` 与 `B456_FIXTURE_PASSWORD=<固定测试密码已设置>`；密码不接受 CLI 参数，不写入仓库、配置、manifest 或报告。基础命令为：
-  - `npx ts-node scripts/b456-browser-fixtures.ts prepare --namespace <namespace>`
-  - `npx ts-node scripts/b456-browser-fixtures.ts verify --phase prepared --namespace <namespace>`
-  - `npx ts-node scripts/b456-browser-fixtures.ts verify --phase post-browser --namespace <namespace>`
-  - `npx ts-node scripts/b456-browser-fixtures.ts cleanup --confirm-cleanup --namespace <namespace>`
-  - `npx ts-node scripts/b456-browser-fixtures.ts replace --confirm-replace --namespace <namespace>`
-- transition 审计结论为当前 31 个业务场景均不需要页面加载后的持久服务端切换：固定前置状态由 prepare 建立，单次网络故障由后续 Browser 在客户端中止请求，并发由真实双会话触发。因此 CLI 不提供 transition 子命令，所有场景 `transitionMode=none`；prepared/post-browser verify 与 cleanup 均拒绝或检查 transition 遗留，cleanup 按恢复优先顺序执行该空白名单。
-- prepare 使用真实认证服务建立 doctor、admin、nurse、research_assistant、system 五个脱敏账号，并准备真实 MMSE/MoCA 工作流数据。B4 覆盖输入类型、serial7、delayed recall、missing reason、timing、媒体题型、逐题草稿、progress/dirty、状态矩阵、ownership、stale/not-found、401/403 与 Browser 写入预留；B5 覆盖媒体要求、文件校验、上传/预览、作废重传、手写轨迹、只读/错误/并发；B6 覆盖 readiness、dirty/未上传/stale、issue 定位、确认提交、幂等/并发、提交后只读、授权错误与单次网络故障最终状态。
-- Browser 上传文件仅在操作系统临时目录生成，包含 JPEG、PNG、WebP、超尺寸、MIME 不符、无效图片、handwriting PNG 及合法/超限 trajectory JSON；safe manifest 仅通过专用 `fileInputs` 暴露后续 Browser 所需定位，不写入仓库。cleanup 删除这些临时文件。
-- safe manifest 只使用合同白名单字段；除 `route` 与临时 `fileInputs` 外不输出内部定位，也不输出密码、Cookie、Session、连接信息、metadata、完整请求/响应、答案或评分规则。namespace 只接受小写字母、数字和单连字符；AppModule 导入前强制 `NODE_ENV=test`，连接后验证隔离 test database、fake Storage、stub SMS/LLM 与非 production Session。
-- `verify --phase prepared` 是只读门禁，检查 5/32/31/135/15/120 计数、账号 hash/verify、状态/ownership/目录、Browser 写入预留、临时文件签名与大小、无 transition 遗留，并确认 verify 前后记录标识、`updatedAt` 与会话数量不变。`verify --phase post-browser` 只读检查实际草稿、timing/missing/prompt/serial7、progress/dirty、媒体上传/作废/重传/trajectory、失败或禁止写入无副作用、最终提交恰好一次、幂等/并发不重复、提交后只读及网络故障最终服务端状态；verify 自身不修复数据。
-- cleanup 先处理 transition 恢复门禁，再按 namespace 精确删除后续 Browser 可能创建的会话和全部下游业务数据，最后删除账号、根数据与临时文件；保留全局 MMSE/MoCA seed，不使用 `dropDatabase()` 或无条件 `deleteMany({})`，支持双 namespace 隔离与二次幂等 cleanup。
-- fixture E2E `test/b456-browser-fixtures.e2e-spec.ts` 已通过，1 suite / 5 tests；A14–A16 回归 3 suites / 18 tests，B123/B16/WP04 fixture 回归 3 suites / 12 tests，均通过。定向 ESLint 与完整 `npm run lint` 均为 0 errors / 0 warnings；`npm run typecheck` 0 errors；`npm run build` 通过；full unit 88 suites / 751 tests；full E2E 20 suites / 90 tests。所有 Jest 与 fixture CLI 均串行执行。
-- smoke namespace `b456-cli-smoke` 已完成 prepare、prepared verify、cleanup 与第二次 cleanup，两次 cleanup 的 `residualCount` 均为 0。正式 namespace `b456-browser-final` 已完成 replace 与 prepared verify，5/32/31/135/15/120 计数全部通过并继续保留。
-- 本轮未执行 Browser，未执行 post-browser verify；B5 的 8 个真实设备/人工项继续保留到 Batch E。
-
-### Batch B 媒体文件验收合同纠偏与定向 Browser 冒烟
-
-- `media_file_validation` 已从不可达的服务端 signature 400 预期修正为真实 UI 合同：安全解码、Canvas JPEG 重编码、处理后尺寸 / 大小限制和客户端失败阻断；`expectedStatus=null`、`expectedBusinessCode=null`，不再要求正常 UI 返回 `MEDIA_FILE_SIGNATURE_INVALID`。
-- audit ID 归属未变：该场景继续拥有 B5-MV-006、B5-MV-007、B5-MV-009～013。合同仍为 32 个 scenarioKey、31 个业务场景、135 个唯一 audit ID、15 direct、120 fixture-required，缺失、重复、额外 ID 均为 0。
-- test-only 临时文件口径已修正：JPEG、PNG、WebP 均为可解码图片；wrongMime 为声明 `text/plain`、实际 PNG 的可解码字节；invalidImage 保持不可解码；oversized 改为确定性 3000×1400、12,600,054 B 的可解码 BMP，源大小超过 10 MiB 且可由现有前端策略稳定缩放 / 压缩。
-- fixture manager 与 E2E 现会检查 JPEG/PNG/WebP/BMP 的结构、正尺寸和可解码数据边界，确认 wrongMime 声明与实际编码不一致、invalidImage 不可解码、oversized 源大小及长边均超产品源侧观察值；Browser 再证明实际浏览器解码与 Canvas 输出。
-- 定向 ESLint 0 errors / 0 warnings；B456 fixture E2E 1 suite / 5 tests；A15 媒体 E2E 与 B123/B16/WP04 fixture 回归合计 4 suites / 18 tests。后端最终五项门禁按顺序通过：`npm run lint`、`npm run typecheck`、`npm run build`、full unit 88 suites / 751 tests、full E2E 20 suites / 90 tests。
-- `media-evidence` E2E 继续证明服务端 `MEDIA_FILE_SIGNATURE_INVALID`、类型禁止和文件过大防御；本次没有修改任何 `backend/src/**` 产品代码、API、DTO、Schema、依赖或配置。
-- `b456-media-smoke` 完成 prepare 与 prepared verify 后，真实 UI 的 JPEG、PNG、WebP、wrongMime、oversized 均重编码为 `image/jpeg` 并单次 201 上传；invalidImage 在客户端阻断且上传 POST=0。oversized 从 12,600,054 B、3000×1400 处理为 18,758 B、2560×1195；5 次有效上传均未携带源文件名或源字节，自动重试=0，Console warn/error=0，无选定场景根之外的写请求。
-- 冒烟完成后已 logout、关闭 Browser 并停止两端服务；`b456-media-smoke` 第一次 cleanup 为 `residualCount=0; matched=true`，第二次幂等 cleanup 为 `residualCount=0; matched=false`。
-- 正式 `b456-browser-final` 仅在定向冒烟通过后执行 replace 与 prepared verify，5/32/31/135/15/120 全部通过并继续保留；未执行正式 cleanup，也未执行 post-browser verify。
-- 两份 testing playbook 已同步，roadmap 未修改。Batch B 仍未完成，下一步必须从头完整重跑 B4–B6 / Batch B，不得把本次定向冒烟写成 Batch B 完成。
-
-### Batch B Browser 专用库最终工程认证与 fixture 生命周期收口
-
-- 最终收口基线为 `f528efb7152b5770e9f873683fbd03c814108b81`。Fixture CLI 使用 `cogmemory_ad_browser_test_db_admin` / `dbOwner`；Browser backend 使用 `cogmemory_ad_browser_test_app` / `readWrite`，并在实际数据库名与角色门禁通过后才监听。frontend 使用既有 production build；backend health 返回 200。
-- prepared 终态、`scale_execution_timing` 的真实 UI 单字段 `timing.durationMs` 补写以及 post-browser verify 全部位于 Browser 专用数据库 `cogmemory_ad_browser_test`。目标 UI 保存为单次 PATCH / HTTP 200，计划外业务写请求与自动重试均为 0；`standard_test` 数据库和 standard_test unit/E2E 进程均未参与。
-- db_admin/dbOwner 进程执行 `verify --phase post-browser` 成功，退出码为 0；verify 只读且前后快照一致，5 roles、32 个 scenarioKey、31 个业务场景、135 个 audit ID、15 个 Browser-direct、120 个 fixture-required 全部通过。
-- post-browser verify 通过后，对正式 `b456-browser-final` 连续执行两次精确 cleanup。第一次实际命中、第二次幂等确认，两次均为 `residualCount=0`；正式 namespace、namespace-owned 记录和操作系统临时目录中的 fixture 文件均已删除，全局 MMSE/MoCA seed 保持在 cleanup 范围之外。
-- 本次没有修改 `backend/src/**` 产品代码、backend fixture、script、测试、API/DTO/Schema、配置或 seed，也没有重跑 backend unit/E2E 或完整代码门禁；既有代码基线门禁证据保持历史事实。本次只同步两份 testing playbook，roadmap 未修改，Batch C 未启动。
-- Batch B 桌面范围最终证据为 Browser 133 项 + automated boundary 2 项 = 135 项，fail=0、not_executed=0；桌面范围已经完成，Batch E 的 8 个真实设备/人工项目继续保留。
-
-## 11. 后续同步规则
-
-- 后端新增或调整测试脚本后，应同步更新自动验证命令。
-- 新增 Service、Controller、DTO、权限或 E2E 用例后，应同步补充对应验证口径。
-- 测试数据、截图和日志不得包含可识别个人信息。
+| `standard_test` | `backend/.env.test` | 只供普通 unit / E2E 进程，不加载 Browser 配置 |
+| `browser_acceptance` | `backend/.env.browser-acceptance` | 只供 Browser backend 与 fixture CLI，不与 `.env.test` 叠加 |
+
+`backend/.env.browser-acceptance` 当前提供数据库用途、Browser app 主连接和 Browser 管理连接的本地凭据来源。本手册只记录变量职责，不记录实际密码或完整 URI。
+
+独立进程的显式变量映射为：
+
+- Browser backend：`COGMEMORY_DATABASE_PURPOSE=browser_acceptance`，`MONGO_URI` 映射 `BROWSER_ACCEPTANCE_APP_MONGO_URI`，`MONGO_ADMIN_URI` 映射 `BROWSER_ACCEPTANCE_ADMIN_MONGO_URI`。
+- Browser fixture CLI：`COGMEMORY_DATABASE_PURPOSE=browser_acceptance`，`MONGO_URI` 与 `MONGO_ADMIN_URI` 都映射 `BROWSER_ACCEPTANCE_ADMIN_MONGO_URI`。
+- 普通 E2E：`COGMEMORY_DATABASE_PURPOSE=standard_test`，只加载 `.env.test`，不得继承 Browser app/admin 连接变量。
+
+本地隔离测试专用固定凭据默认自动使用：Codex 可以从上述 Git 忽略文件读取并注入对应独立进程，也可以使用任务明确给定的固定测试密码。不得机械要求剪贴板、一次性密码、Secret Manager 或每次人工输入；同时不得把密码、完整连接串、Cookie、Session token 或 hash 写入 Git 跟踪文件、文档、日志、manifest、生成物、最终报告或提交记录。
+
+切换用途或复用 shell 前，应优先新建独立进程；确需复用时，必须清除或覆盖数据库主连接、管理连接、数据库用途及其他用途相关变量。该动作是防串库门禁，不是密码保密仪式。
+
+### 3.3 Browser 进程与数据库用户
+
+| 独立进程 | 主连接用户 / 角色 | 管理连接 | 允许数据库 |
+|---|---|---|---|
+| Browser test backend | `cogmemory_ad_browser_test_app` / `readWrite` | 受控 db_admin 连接 | `cogmemory_ad_browser_test` |
+| Browser fixture CLI | `cogmemory_ad_browser_test_db_admin` / `dbOwner` | 同一 db_admin 连接 | `cogmemory_ad_browser_test` |
+| 普通 E2E | `.env.test` 中的 standard_test 用户 | 按测试配置 | `cogmemory_ad_test` |
+
+app 用户的连接和 `readWrite` 角色、db_admin 用户的连接和 `dbOwner` 角色均已实际验证。不得让 Browser backend 以 db_admin 作为主连接，也不得让 fixture CLI 以 app 用户作为主连接。
+
+`npm run start:browser-test` 是 test-only Browser backend 入口；只有用途、URI 声明库名、实际连接库名、用户名和角色全部通过后才监听端口。Browser backend 继续使用既有应用装配、CORS、Cookie、fake Storage 与 stub SMS / LLM。
+
+### 3.4 D-038 双向门禁
+
+D-038 的门禁顺序必须完整保留：
+
+1. AppModule 导入前校验数据库用途。
+2. 建连前校验 URI 声明的数据库名与用途固定映射一致。
+3. Mongoose 建连后校验 `connection.name` 与允许数据库逐字一致。
+4. Browser backend 校验 app 用户及 `readWrite`；fixture CLI 校验 db_admin 用户及 `dbOwner`。
+5. 任一用途、库名、用户名或角色不一致立即失败，不自动回退、不改连、不输出凭据。
+6. 普通 E2E 指向 Browser 库、Browser CLI 指向普通测试库或开发库、app/db_admin 角色互换时均必须拒绝。
+
+D-038 认证时，Browser sentinel 在 standard_test 完整回归前后 prepared verify 与安全 manifest 哈希一致；两次 sentinel cleanup 均 `residualCount=0`。该事实证明进程和数据库隔离，不授权未来任务跳过自己的连接门禁。
+
+## 4. 标准命令与最终门禁
+
+### 4.1 后端最终五项门禁
+
+在 `backend` 目录、最终代码态按固定顺序执行：
+
+1. `npm run lint`
+2. `npm run typecheck`
+3. `npm run build`
+4. `npm test -- --runInBand`
+5. `npm run test:e2e`
+
+不可替代性：
+
+- lint 只检查规则与格式，不能替代 TypeScript 全量检查。
+- `typecheck` 使用 `tsconfig.typecheck.json`，覆盖 `src/**/*.ts`、`test/**/*.ts`、`scripts/**/*.ts` 且 `noEmit`；production build 不覆盖全部 spec、E2E、fixture、mock、helper 和 script。
+- build 只证明生产编译范围可构建，不能替代 typecheck、unit 或 E2E。
+- unit 主要验证纯函数、DTO、Controller、Service、mapper、状态和边界，不能替代真实 HTTP、Guard、全局 Pipe、模块装配和数据库链路。
+- E2E 的 Jest 执行通过不能替代未被实际运行源码的全量 typecheck。
+
+开发中可以运行定向 lint、unit 或 E2E 获取反馈，但最终代码任务必须重新执行五项完整门禁。`npm run typecheck` 未通过时不得宣称后端代码任务完成。纯文档任务按文档与 Git 检查验收，不机械运行代码门禁。
+
+### 4.2 报告规则
+
+五项结果必须分别报告退出状态和关键统计；未执行项必须说明原因，不得把未执行写成通过。不得通过新增 suppression、放宽 TypeScript、扩大 exclude、跳过测试或吞掉退出码制造通过。
+
+当前最终代码态的 D-038 门禁证据为：lint 0 errors / 0 warnings，typecheck 0 errors，build 通过，full unit 89 suites / 761 tests，full E2E 21 suites / 94 tests；E2E 实际连接 `cogmemory_ad_test`。这些是已完成代码基线的证据，不代表后续代码修改可以免于重跑。
+
+## 5. 当前测试资产与覆盖范围
+
+### 5.1 主要自动测试资产
+
+| 资产层 | 当前覆盖重点 |
+|---|---|
+| unit / pure specs | 配置与数据库用途、Schema/索引、DTO whitelist、Controller Guard、Service ownership/状态/并发、mapper 白名单、量表 seed、作答、媒体、提交、评分、认知域、报告生命周期、历史与趋势 |
+| HTTP / database E2E | 认证 Cookie、401/403、全局 ValidationPipe、真实 AppModule、MongoDB 写读、fake Storage、A12–A28 临床链路及 D-038 数据库门禁 |
+| Browser fixture E2E | contract 计数、namespace 隔离、safe manifest、prepare/verify/post-browser verify、损坏检测、双 namespace、cleanup/二次 cleanup |
+| Browser acceptance | production frontend + 真实 test backend + `browser_acceptance` 专用数据库；Network、Console、Storage、Cookie、CORS、角色、并发、幂等与页面行为 |
+
+E2E 固定使用 `NODE_ENV=test`、`--runInBand`、隔离数据库、fake Storage、stub SMS / LLM 和脱敏人工数据；真实服务禁令统一见第 8 节。
+
+### 5.2 Fixture CLI 简表
+
+| 范围 | 入口 | 合同摘要 | 当前状态 |
+|---|---|---|---|
+| WP-02 / B16 | `scripts/b16-browser-fixtures.ts` | 4 角色；22 scenarioKey / 21 业务场景 | 已完成并清理 |
+| WP-04 / B17 | `scripts/wp04-browser-fixtures.ts` | 5 角色；44 scenarioKey / 43 业务场景 | 已完成并清理 |
+| Batch A / B1–B3 | `scripts/b123-browser-fixtures.ts` | 5 角色；27 scenarioKey / 26 业务场景 / 58 audit ID | 已完成并清理 |
+| Batch B / B4–B6 | `scripts/b456-browser-fixtures.ts` | 5 角色；32 scenarioKey / 31 业务场景 / 135 audit ID；15 direct / 120 fixture-required | 桌面范围已完成并清理 |
+
+这些 CLI 是 test-only 资产，不是 production seed，不随应用启动，不向 Browser 输出密码、连接串、Cookie、Session、metadata、完整请求/响应、原始作答、评分规则、报告正文或内部 lineage/source ID。
+
+Batch C / D fixture 的验证意图、前置状态和关键边界必须从 frontend testing playbook 的 B7–B15（含 B14.1）待验合同设计；不得从已完成 Batch A / B 的旧 namespace、操作流水或中间失败状态反推。
+
+## 6. Browser fixture 通用生命周期
+
+每个新 Browser 批次统一执行以下生命周期：
+
+1. 选择独立、合规的 namespace；重复 prepare 默认拒绝，替换必须显式确认。
+2. 在 db_admin / `dbOwner` 的 fixture CLI 独立进程执行 `prepare` 或受控 `replace`。
+3. 执行只读 `verify --phase prepared`，核对角色、scenario、前置状态、写入预留、临时文件、安全 manifest 和 transition 无遗留；verify 不得修复数据。
+4. 启动 app / `readWrite` 的 Browser backend，并连接 production frontend；两端健康、CORS 和 Cookie 边界通过后才开始页面验收。
+5. Browser 只使用脱敏固定账号和 fixture 明确提供的导航/输入；Network fault 用单次真实中止或合同指定方式，不伪造业务成功。
+6. 多角色、双 Session、并发和幂等场景必须使用真实独立会话；写请求不得自动重试，网络结果不确定时先读回服务端事实。
+7. Browser 完成后执行只读 `verify --phase post-browser`；它必须核对实际终态、无副作用、请求次数和合同计数，且前后快照一致。
+8. 退出登录、关闭 Browser、停止进程后按 namespace 精确 cleanup；再执行第二次幂等 cleanup，两次都要求 `residualCount=0`。
+9. cleanup 后确认 namespace-owned 记录和临时文件已删除，非 namespace 数据、全局 seed 与其他 namespace 未受影响。
+
+固定测试凭据可由目标进程自动读取，但不得进入 CLI 参数、manifest、截图、日志或报告。prepare / prepared verify 只证明前置就绪，不等于 Browser 通过；Browser 场景通过但缺 post-browser verify 或 cleanup，也不得宣布工程收口。
+
+## 7. 已完成批次证据索引
+
+| 范围 | 最终状态 | 关键证据 | evidence commit | 是否需要重跑 |
+|---|---|---|---|---|
+| WP-02 / B16 | 已完成 | 基线 `9099f66…` 的确定性 Resume/unsafe fixture 与既有 V1/V2/V3 矩阵，加最终 Web Storage 审计；fixture 双次 cleanup 为 0 | `95b778448603e5eb4f96eafb82136edc36d3ab0e` | 否；相关产品代码变化时另行评估 |
+| WP-04 / B17 | 已完成 | 验收基线 `7dd6f52…`；44/44 scenarioKey 通过，0 fail，0 未执行；Storage 八时点与双次 cleanup 为 0 | `db825a9df57ca1a131fee20159f9c6a38529f1ab` | 否 |
+| Batch A / B1–B3 | 已完成 | 验收基线 `3a9c784…`；6 prior covered + 58 Browser + 2 用户人工视觉 + 1 obsolete = 67；双次 cleanup 为 0 | `335c6201f1f4864b371150467f5da6658b068e45` | 否 |
+| Batch A 真正大屏抽查 | 已完成 | 普通最大化 Chrome，`innerWidth=1536`；5 个代表页均通过 | `8b8a9281dd738c5a0694d0c2feea4bcefcae6c66` | 否；后续新代表页按当前策略抽查 |
+| D-038 数据库隔离 | 已实现并认证 | 五项门禁通过；89 unit suites / 761 tests，21 E2E suites / 94 tests；双向库名/角色门禁和 sentinel 隔离通过 | `f528efb7152b5770e9f873683fbd03c814108b81` | 否；数据库治理代码变化时重跑 |
+| Batch B / B4–B6 | 桌面范围已完成 | 基于 D-038 代码基线；Browser 133 + automated boundary 2 = 135，0 fail / 0 未执行；post-browser verify 通过；双次 cleanup 为 0；产品缺陷 0 | `f59f3ac0c93d47e2c7fad4d29f1d7f2a61dc4021` | 否；Batch E 8 项仍需执行 |
+
+表中的 evidence commit 已由当前文档与 Git 提交顺序、提交主题和文件范围交叉核对；“验收基线”是执行所基于的代码/fixture 状态，“evidence commit”是写入最终结果的提交，两者不得混写。
+
+## 8. 医疗、量表、数据与安全红线
+
+1. 只使用脱敏或人工构造的账号、患者、访视、作答、图片、轨迹、评分、报告和意见；不得使用真实姓名、身份证号、手机号、病历号、住址或其他可识别信息。
+2. 测试不得生成或断言真实医疗诊断结论、疾病概率、治疗建议或未经确认的临床判断。
+3. MMSE / MoCA 题项、CRF、指导语、评分规则和 seed 相关验证必须遵循权威资料与已确认修正，不得凭模型记忆或页面表现重新解释量表。
+4. 原始作答、分步结果、提示后表现、图片、手写轨迹和报告来源是证据；测试不得用前端推断、自动评分或诊断文案覆盖服务端事实。
+5. 媒体测试只使用人工 Buffer/文件；不得暴露源文件名、Storage bucket/objectKey、校验和、短期 URL、轨迹内容或内部关联 ID。
+6. 除非未来单独定义并授权受控集成测试，不调用真实 OSS、阿里云 SMS、LLM、支付、医保、HIS/LIS/PACS、生产数据库或真实对象存储。
+7. 不记录密码、完整 URI、Cookie、Session/token/hash、请求/响应全文、metadata、内部堆栈或浏览器持久化 value。
+8. 401 必须表现为未认证，403 必须表现为无权限；前端角色展示不能替代后端 Guard，fixture 角色不能扩张产品权限。
+9. cleanup 不物理删除非 namespace 数据，不以测试便利破坏审计、版本关系、全局 seed 或生产语义。
+10. 测试截图、Console、Network 摘要、DOM、URL、Storage 审计和最终报告均适用同一隐私边界。
+
+## 9. 当前未决事项和同步规则
+
+- Batch C / B7–B10 尚未启动；必须按 frontend playbook 的逐项合同设计 fixture 与 Browser 矩阵。
+- Batch D / B11–B15 尚未启动；B14.1 的行为等价 Browser 回归仍属于待验合同，不因 B16 / WP-02 已完成而自动覆盖。
+- Batch E 的 8 项真实设备、辅助技术或人工验收继续保留：`B5-MV-008`、`B5-MV-028`、`B5-MV-029`、`B5-MV-058`、`B5-MV-059`、`B5-MV-060`、`B5-MV-061`、`B5-MV-062`；桌面 Browser、automated boundary 或大屏抽查均不能替代。
+- roadmap 业务工作包状态不因 testing playbook 压缩、历史证据索引或未来 Batch 验收自动变化。
+- 后端新增或调整测试脚本、fixture、数据库门禁、Service、Controller、DTO、权限或 E2E 时，应更新当前资产、门禁和证据索引；不得追加逐轮执行流水。
+- 每次报告必须区分代码门禁、Browser 前置、Browser 结果、post-browser verify、cleanup 和人工签收，不能用其中一类替代另一类。
+
+## 10. 历史追溯
+
+- 本轮 testing playbook 减肥前的完整历史基线为 `3c0e373902985b9da09b359ed8f2a0334ef1e5d0`。
+- 已删除的 A1–A28 逐阶段命令、旧 suite/test 数量、fixture 重试、临时诊断、旧 namespace 和逐轮 Browser 日志可通过 Git 历史查看。
+- active playbook 不另建 archive，也不复制一份 Validation catalog；已完成历史只保留本文件的最终摘要与 evidence commit 索引。
