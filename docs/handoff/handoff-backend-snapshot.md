@@ -27,7 +27,7 @@
 - `npm run start:browser-test` 是 Browser test backend 专用入口：仅接受 Browser app 用户及目标库 `readWrite` 角色，通过实际库名与角色门禁后才监听；B123/B16/B456/WP04 CLI 则仅接受 Browser db_admin 用户及目标库 `dbOwner` 角色。
 - 当前报告接口为十一个，另有患者历史评估与基础随访趋势两个接口；A12-A28 临床接口显式使用 `SessionAuthGuard` + `RolesGuard`。WP-04 四个只读接口允许四个患者工作流角色且不读取 CurrentUser。
 - A27 已实现患者历史评估、完整报告版本链与指定历史详情；A28 已实现 Visit 保留式基础随访趋势、稳定 source/dataStatus 与相邻 exact trace/domain mapping 可比性。
-- D-038 已完成分库、用途门禁、建连前声明库名门禁、建连后实际库名门禁和 Browser 进程角色门禁认证。Browser sentinel 隔离验证已通过；Batch B 已在 Browser 专用库完成最终认证、post-browser verify 和连续两次零残留 cleanup。
+- D-038 已实施：`standard_test` 与 `browser_acceptance` 双库、Browser app / db_admin 双角色及独立进程隔离结构均已存在，建连前后库名与角色门禁生效。
 - 当前 lint、typecheck、build、unit、E2E、数据库隔离和 Browser 批次的最终结果与数量统一以 `handoff-backend-testing-playbook.md` 为准；本文不重复保存逐阶段测试流水。
 - 后端 TypeScript 编译根目录为 `.`，`outDir` 保持 `./dist`，因此 `src/main.ts` 编译后的主入口产物为 `dist/src/main.js`。
 - `package.json` 中 `start:prod` 保持指向 `./dist/src/main.js`，当前 build 产物路径已与该启动路径对齐。
@@ -211,7 +211,7 @@
 - 三个写接口均要求严格 ISO `expectedUpdatedAt`，原子 filter 包含 report / patient / visit ownership、type、version、允许状态和 updatedAt；单次 `findOneAndUpdate({ new: true, runValidators: true })` 完成。没有自动覆盖、自动重试、transaction、分布式锁或 AuditLog 写入。
 - confirmed 与 locked 明确分离：A21 不设置 lockedAt / signatureText，不修改 Patient、Visit、ScaleInstance、ItemResponse、ScoreResult、CognitiveDomainResult、MediaEvidence，不调用来源 Service、Storage、LLM 或 PDF。
 - A22 新增唯一公开接口 `POST /patients/:patientId/visits/:visitId/clinical-reports/:reportId/lock`。Body 仅允许 `confirm=true`、trim 3-2000 `lockNote` 与 strict ISO `expectedUpdatedAt`；Controller 复用 `ClinicalReportResourceParamDto`、`SessionAuthGuard`、`RolesGuard`、`@CurrentUser()`，方法级 `@Roles('doctor', 'admin')`。
-- 首次锁定要求 active Patient、draft / in_progress / completed Visit，以及完整 confirmed / mixed / passed version 1 cognitive assessment report。报告自身必须具有完整 confirmation、A20 generation、A21 submission / confirmation、patient / visit / scale / score / domain 快照、五段 narrative 与合法 doctorOpinion，且未锁定、未归档、未作废、无 correctionRecords；不重读或验证来源当前状态。
+- 首次锁定中，V1 是要求 active Patient、draft / in_progress / completed Visit 的基础路径；合法线性 replacement V2+ 必须先通过 A26 完整双向 lineage 与 ownership 校验，历史 Patient inactive、Visit locked / voided 不阻断。两类报告都必须为完整 confirmed / mixed / passed cognitive_assessment，并具有完整 confirmation、A20 generation、A21 submission / confirmation、patient / visit / scale / score / domain 快照、五段 narrative 与合法 doctorOpinion，且未锁定、未归档、未作废、无 correctionRecords；写入使用报告真实 `reportVersion`，不重读或验证来源当前状态。
 - `ReportsService.lockReportIfUnmodified()` 的单次 `findOneAndUpdate({ new: true, runValidators: true })` filter 包含完整 ownership、type/version、confirmed/mixed/passed、锁定 / 归档 / 作废空值、空 correctionRecords 与 expectedUpdatedAt；update 只写 lockedAt、lockedBy、metadata。没有 transaction、自动重试或来源写入。
 - `metadata.a22Lock` version 固定 1，保存服务端 randomUUID lockId、服务端 lockedAt、认证 actor ID / name / doctor-or-admin role 与 trim lockNote；写入时创建新 metadata 根对象，保留 a20Generation、a21Edits / Submission / Confirmation 和未知顶层 namespace，不修改原引用。
 - public response 保留 top-level lockedAt，并新增 `lock` 安全摘要；lock response 为 `{ report, lockReceipt }`，receipt 含 lockId、lockedAt、安全 actor、可选 lockNote、alreadyLocked。绝不返回 metadata 或 Schema 原始 lockedBy。
@@ -232,7 +232,7 @@
 - `Session.sessionTokenHash` 设置 `select: false`；AuthService 入库前对 raw session token 做 SHA-256 hash，不保存明文 session token。
 - `Session` 当前索引为 `{ sessionTokenHash: 1 }` unique、`{ userId: 1, status: 1 }`、`{ expiresAt: 1 }` TTL（`expireAfterSeconds: 0`）、`{ status: 1, updatedAt: -1 }`、`{ userId: 1, createdAt: -1 }`。
 - `AuthService` 当前提供内部认证底座能力：`hashPassword()`、`verifyPassword()`、`generateSessionToken()`、`hashSessionToken()`、`authenticateWithPassword()`、`createSessionForUser()`、`validateSessionToken()`、`revokeSessionByToken()`、`buildPublicAuthUser()` 和 `toAuthUserResponse()`；使用 Node.js 内置 `crypto`，不使用 JWT 作为主登录态。
-- `AuthenticatedUserContext` 当前位于 `backend\src\modules\auth\types\auth-user-context.type.ts`，用于后续 Guard 或 Controller 挂载 `req.user`。
+- `AuthenticatedUserContext` 当前位于 `backend\src\modules\auth\types\auth-user-context.type.ts`；`SessionAuthGuard` 校验会话后将其挂载到 `req.user`，`RolesGuard`、`@CurrentUser()` 与 Controller 认证上下文链已直接使用。
 - 当前已新增 `@Public()`、`@Roles()`、`@CurrentUser()`、`SessionAuthGuard` 与 `RolesGuard`；`SessionAuthGuard` 可从 cookie-parser cookies 或原始 `cookie` header 读取 `cogmemory_ad_session` 并调用 `AuthService.validateSessionToken()`，成功后挂载 `req.user`；`RolesGuard` 基于 `@Roles()` 和 `req.user.roles` 做角色底座校验。
 - `SessionAuthGuard` 与 `RolesGuard` 当前未注册为全局 Guard，不影响 `GET /health`。
 - `UsersModule` 与 `AuthModule` 已注册到 `AppModule`；`AuthModule` 声明 `AuthController`，`UsersModule` 不声明 Controller。
@@ -242,7 +242,7 @@
 ## 11. A23 已锁报告来源链冻结
 
 - 唯一新增公开接口为 `POST /patients/:patientId/visits/:visitId/clinical-reports/:reportId/freeze-sources`；DTO 只接收显式 `confirm=true`、trim 3-2000 `freezeNote` 与 strict ISO `expectedUpdatedAt`，仅 doctor / admin 可执行。
-- 首次发起要求 report 为已锁定且完整 confirmed / mixed / passed version 1 报告，并验证 A20 generation、A21 submission / confirmation 与 A22 lock 审计。scope 只来自报告的 primaryScaleInstanceIds、scoreResultIds、cognitiveDomainResultIds、mediaEvidenceIds；实例下全部 ItemResponse ID 在首次审计中固化。
+- 首次发起中，V1 是要求 active Patient、draft / in_progress / completed Visit 的基础路径；合法线性 replacement V2+ 必须先通过 A26 完整双向 lineage 与 ownership 校验，历史 Patient inactive、Visit locked / voided 不阻断。两类目标都必须是已锁定且完整 confirmed / mixed / passed 报告，并验证 A20 generation、A21 submission / confirmation 与 A22 lock 审计；写入使用报告真实 `reportVersion`。scope 只来自报告的 primaryScaleInstanceIds、scoreResultIds、cognitiveDomainResultIds、mediaEvidenceIds；实例下全部 ItemResponse ID 在首次审计中固化。
 - A23 冻结 ScaleInstance completed→locked、ItemResponse answered/scored→locked、ScoreResult confirmed→locked、MediaEvidence attached→locked；CognitiveDomainResult computed/confirmed 只设置 lockedAt，保留原 status。已有合法锁与 lockedAt 均保留。
 - `metadata.a23SourceFreeze` version=1 使用 `in_progress / completed`，保存 freezeId、原始 actor/note/time、sourceLockedAt、内部 scope 和计数。跨五类集合不使用 transaction；部分失败不回滚、不解冻，重复 POST 按固化 scope 恢复；仅在重新读取全部精确来源并验证后写 completed。completed 重复请求即使 expectedUpdatedAt 已旧也只读幂等返回。
 - latest 与写响应只返回安全 `sourceFreeze` 摘要和 receipt；不返回 metadata、scope IDs 或来源关联 ID。A14 ItemResponse 草稿、A15 上传/作废、A16 submit、A18 review/confirm 等写路径增加 lockedAt 防御。
@@ -251,8 +251,8 @@
 ## 12. A24 已冻结报告归档
 
 - 唯一新增公开接口为 `POST /patients/:patientId/visits/:visitId/clinical-reports/:reportId/archive`；复用 `ClinicalReportResourceParamDto`、类级 Session / Roles Guard、方法级 doctor / admin 与 `@CurrentUser()`。`ArchiveClinicalReportDto` 只允许显式 `confirm=true`、trim 3-2000 的 `archiveNote` 和 strict ISO `expectedUpdatedAt`。
-- Patient 与 Visit 只用于存在性、联合归属和跨患者 / 跨访视防护；Patient inactive 不阻断，Visit locked 不阻断，A24 不修改二者。
-- 首次 readiness 要求 version 1 cognitive_assessment 报告为 confirmed / mixed / passed、confirmation 完整、isFinal 可由 status 派生为 true、A22 lockedAt / lockedBy 与受控 a22Lock 一致、A23 sourceFreeze 为完整 completed 审计、归档 / 作废字段为空且无 correctionRecords。A24 不重新读取五类来源或 Storage。
+- Patient 与 Visit 只用于存在性、联合归属和跨患者 / 跨访视防护；V1 与合法线性 replacement V2+ 都不因 Patient inactive、Visit locked / voided 被阻断，A24 不修改二者。V2+ 还必须通过 A26 完整双向 lineage 校验。
+- 首次 readiness 要求正安全整数真实版本的 cognitive_assessment 报告为 confirmed / mixed / passed、confirmation 完整、isFinal 可由 status 派生为 true、A22 lockedAt / lockedBy 与受控 a22Lock 一致、A23 sourceFreeze 为完整 completed 审计、归档 / 作废字段为空且无 correctionRecords；原子写入精确匹配该真实 `reportVersion`。A24 不重新读取五类来源或 Storage。
 - 归档复用既有 `confirmed -> archived` 状态转换，没有新增状态或修改转换表。`ReportsService.archiveReportIfUnmodified()` 以完整 ownership、type/version、confirmed/mixed/passed、锁定非空、归档 / 作废空值、空 correctionRecords、updatedAt、A23 completed 和 A24 namespace 不存在为 filter，单次 `findOneAndUpdate({ new: true, runValidators: true })` 只 `$set` status、archivedAt、archivedBy、metadata。
 - `metadata.a24Archive` version=1，只写一次，保存服务端 UUID archiveId、服务端 archivedAt、认证 actor ID / name / doctor-or-admin role、trim archiveNote，以及 A23 freezeId / completedAt 来源锚点；构造新 metadata 根对象并保留 A20-A23 与未来未知合法 namespace。
 - 重复 archived / corrected 归档只读幂等，允许旧 expectedUpdatedAt，不生成新 ID，不改 archivedAt / archivedBy / note / updatedAt。历史完整 archivedAt + archivedBy 且无 a24Archive 时返回 archiveId / sourceFreeze anchor 为 null、actor role=unknown 的安全 fallback，不补写 metadata；字段或审计不一致返回 `CLINICAL_REPORT_ARCHIVE_AUDIT_UNAVAILABLE`。

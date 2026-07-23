@@ -356,7 +356,7 @@
 
 - 名称：`AuthenticatedUserContext`
 - 文件：`backend\src\modules\auth\types\auth-user-context.type.ts`
-- 用途：后续 Guard 或 Controller 挂载 `req.user` 的内部认证上下文 type，不是公开 API DTO。
+- 用途：当前由 `SessionAuthGuard` 校验会话后挂载到 `req.user`，并由 `RolesGuard`、`@CurrentUser()` 与 Controller 认证上下文链读取的内部 type；不是公开 API DTO。
 - 字段摘要：`id`、`accountName`、`displayName`、`roles`、`permissions`、可选 `sessionId` 和可选 `userType`；不包含 passwordHash、session token 或 token hash。
 
 - 名称：`RequestWithAuthenticatedUser`

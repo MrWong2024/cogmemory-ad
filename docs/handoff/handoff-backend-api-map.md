@@ -373,7 +373,7 @@
 
 - Guard / roles：`SessionAuthGuard` + `RolesGuard`；类级 `admin / doctor / nurse / research_assistant`；使用 `@CurrentUser()`，未认证 401、角色不足 403。
 - Params / body：`ClinicalReportResourceParamDto`；`UpdateClinicalReportDraftDto` 只接收必填 doctorOpinion（trim 3-4000）、可选 recommendationText（空串清除，非空 3-4000）、editNote（3-1000）和严格 ISO `expectedUpdatedAt`。
-- 状态 / 并发：只允许完整、未锁定 / 归档 / 作废 / 确认的 version 1 cognitive_assessment draft，source 为 system_draft / mixed；原子 filter 包含完整 ownership、type、version、draft 与 updatedAt。
+- 状态 / 并发：普通报告 V1 使用既有基础资格；合法 replacement V2+ 经服务端 A26 安全 lineage 校验，并满足当前线性链最新版本、doctor/admin 与既有 draft 状态限制后复用同一接口。两类目标都必须是完整、未锁定 / 归档 / 作废 / 确认的 cognitive_assessment draft，source 为 system_draft / mixed；原子 filter 使用服务端读取的真实 `reportVersion`，并包含完整 ownership、type、精确 version、draft 与 updatedAt。不存在 replacement 专用平行 API，也不表示任意 V2+ 均可写。
 - 响应 / audit：HTTP 200 `UpdateClinicalReportDraftResponse`，含安全完整 report 与 editReceipt。成功后 source=mixed，向 `metadata.a21Edits` 追加 UUID 事件；200 条上限。A20 五段 narrative、scope、快照和来源数据不修改。
 - 错误：`PATIENT_NOT_FOUND`、`PATIENT_NOT_ACTIVE`、`VISIT_NOT_FOUND`、`VISIT_NOT_EDITABLE`、`CLINICAL_REPORT_NOT_FOUND / NOT_EDITABLE / INCOMPLETE / VOIDED / METADATA_UNSUPPORTED / EDIT_NO_CHANGES / EDIT_AUDIT_LIMIT_REACHED / EDIT_CONFLICT / EDIT_FAILED`。
 - 隐私：不返回 metadata、edit history、previousValues / nextValues、editNote 历史、signatureText；不记录正文或意见。
@@ -382,7 +382,7 @@
 
 - Guard / roles：同类级四个患者工作流角色；使用 `@CurrentUser()`。
 - Params / body：`ClinicalReportResourceParamDto`；`SubmitClinicalReportForConfirmationDto` 只接收 `confirm=true`、trim 3-2000 submissionNote 与严格 ISO `expectedUpdatedAt`。
-- 状态 / readiness：完整 version 1 mixed draft，doctorOpinion 合法、A20 五段 narrative / snapshots / source ID 数组 / generation metadata 完整、qualityStatus 非 failed；只校验报告自身历史快照，不重读评分、认知域或媒体。
+- 状态 / readiness：普通报告 V1 使用既有基础资格；合法 replacement V2+ 经服务端 A26 安全 lineage 校验，并满足当前线性链最新版本、doctor/admin 与既有 draft 状态限制后复用同一接口。目标必须是完整 mixed draft，doctorOpinion 合法、A20 五段 narrative / snapshots / source ID 数组 / generation metadata 完整、qualityStatus 非 failed；原子写入使用服务端读取的真实 `reportVersion`，只校验报告自身历史快照，不重读评分、认知域或媒体。不存在 replacement 专用平行 API，也不放宽任意 V2+。
 - 响应 / audit / 幂等：HTTP 200 `SubmitClinicalReportForConfirmationResponse`；首次进入 pending_confirmation 并写 `a21Submission` UUID 回执。pending 重复请求返回 `alreadySubmitted=true` 且不重写 ID / 时间 / actor / note；confirmed / archived / corrected 在 confirmation 可读时安全幂等；不自动确认。
 - 错误：`CLINICAL_REPORT_SUBMISSION_CONFIRMATION_REQUIRED / NOT_READY_FOR_SUBMISSION / SUBMISSION_CONFLICT / SUBMISSION_AUDIT_UNAVAILABLE / SUBMISSION_FAILED`，以及通用 ownership、patient / visit、voided、metadata 错误。
 - 边界：不修改 narrative、scope、快照、qualityStatus、confirmation 或 lockedAt；不返回 metadata。

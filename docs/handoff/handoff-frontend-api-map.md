@@ -440,7 +440,7 @@ B14.1 / B15 / B16 调用归属更新：
 ### 4.35 `listPatientAssessmentHistory()` -> `GET /patients/:patientId/assessment-history`
 
 - 位于 `patients/api/clinical-history-api.ts`；query 仅允许 `page`、`pageSize`、`status`、`visitType`、`dateFrom`、`dateTo`、`scaleCode`，使用 `URLSearchParams`。日期由页面把本地日边界转为 ISO 字符串；scaleCode trim/lowercase 后发送，历史退役 code 不依赖当前目录。
-- 响应严格建模 `items`、`pagination`、Visit / Scale / Score / Domain availability 和 `reportSummary`；列表保持后端顺序，前端不重排、不补分、不从 archived pointer 冒充 latest。
+- 响应严格建模顶层 `items`、`page`、`pageSize`、`total`，以及 Visit / Scale / Score / Domain availability 和 `reportSummary`；nullable 时间、分值、Score/Domain 摘要与报告 pointer 继续按当前 frontend/backend 类型语义保留。列表保持后端顺序，前端不重排、不补分、不从 archived pointer 冒充 latest。
 
 ### 4.36 `listClinicalReportVersions()` -> `GET /patients/:patientId/visits/:visitId/clinical-reports`
 
@@ -450,7 +450,7 @@ B14.1 / B15 / B16 调用归属更新：
 ### 4.37 `getHistoricalClinicalReport()` -> `GET /patients/:patientId/visits/:visitId/clinical-reports/:reportId`
 
 - 路径三个 ID 均在发请求前执行 MongoId 形状校验并 `encodeURIComponent()`；请求不带 query 或 Body。
-- 响应复用 `ClinicalReportResponse` 安全公开 mapper/type；历史页只挂载只读展示组件，不调用 latest、workflow Hook 或 A21–A25 Action。404 与 `CLINICAL_REPORT_RESPONSE_INCOMPLETE` 409 分开映射。
+- 响应复用 `ClinicalReportResponse` 安全公开 mapper/type；历史页只挂载只读展示组件，不调用 latest、workflow Hook 或 A21–A25 Action。404 与真实的 `CLINICAL_REPORT_INCOMPLETE` 409 分开映射，后者继续稳定映射为 `clinical_report_incomplete`。
 
 ### 4.38 `getPatientFollowUpTrend()` -> `GET /patients/:patientId/follow-up-trends`
 

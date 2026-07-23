@@ -96,8 +96,8 @@ A21–A25 写请求从当前服务端 `report.updatedAt` 取得 `expectedUpdated
 ### 5.2 页面状态
 
 - 认证、页面数据、工作流草稿、媒体 Blob/strokes、短期 URL、updatedAt 基线和当前会话 receipt 保存在 React 内存。
-- history/trends 的筛选保存在 URL 查询参数；浏览器前进/后退恢复 URL 状态。
-- 页面不把业务状态写入 localStorage、sessionStorage、IndexedDB、Cookie 或 URL。
+- B17 history/trends 可把非敏感筛选、分页与查询上限写入 URL query；浏览器前进/后退恢复这类可分享状态。
+- 页面不把临床写工作流草稿、客户端可读凭据、敏感业务对象或不可逆操作的待提交状态写入 URL、localStorage、sessionStorage 或 IndexedDB；这些状态只保存在 React 内存。主登录态仍由服务端 Session + HttpOnly Cookie 维护，前端不读取 Cookie。
 - 后端 Session + HttpOnly Cookie 是主登录态；前端不读取 Cookie，不使用 JWT。
 - 401 返回登录流程，403 保留可安全读取的页面事实并显示权限状态；后端 Guard 始终是最终权限边界。
 
@@ -119,17 +119,10 @@ A21–A25 写请求从当前服务端 `report.updatedAt` 取得 `expectedUpdated
 - 历史报告详情是只读路由，不调用 latest 或 A21–A25；current report 与 historical report 只共用安全只读内容组件。
 - WP-04 的前端 B17 与后端 A27/A28 均已实施并验收。
 
-## 7. 已完成验证摘要
+## 7. 当前实现结论与验证入口
 
-- WP-02 / B16：已完成。
-- WP-04 / B17：已完成。
-- Batch A / B1–B3：已完成。
-- Batch B / B4–B6：桌面范围已完成。
-- Batch C / B7–B10：尚未启动。
-- Batch D / B11–B15 差距补验：尚未启动。
-- Batch E：保留 8 个真实设备、辅助技术或人工验收项目。
-
-当前验证矩阵、统计、权限/错误、响应式、键盘、Network、Runtime Storage、post-browser verify、cleanup 和 evidence commit 统一见 `handoff-frontend-testing-playbook.md`。本 snapshot 不复制这些数字或过程，也不把 B16/B17、Batch A/B 的证据外推为 Batch C/D 已完成。
+- B16 replacement V2+ 生命周期与 B17 history、versions、detail、trends 产品实现均已完成。
+- 当前静态门禁、Batch 状态、Browser/automated 数量、权限/错误、响应式、键盘、Network、Runtime Storage、evidence commit、verify 与 cleanup 统一见 `handoff-frontend-testing-playbook.md`；本 snapshot 不维护测试终态。
 
 ## 8. 当前未实现边界
 
@@ -154,6 +147,5 @@ A21–A25 写请求从当前服务端 `report.updatedAt` 取得 `expectedUpdated
 ## 10. 历史追溯
 
 - B16 replacement 生命周期实现可从 `eabb9b3` 及缺陷修复 `066ee87` 追溯。
-- B17 产品实现可从 `4ba9106` 追溯；WP-04 最终收口可从 `db825a9` 及 frontend testing playbook 的 evidence 索引追溯。
-- Batch A/B 最终证据与 testing playbook 减肥前历史基线由 frontend testing playbook 统一索引。
+- B17 产品实现可从 `4ba9106` 追溯；WP-04 与其他前端验证证据统一由 frontend testing playbook 索引。
 - 本轮治理基线为 `ac92107fb586ff732465dec392228c89a3cc862b`。旧逐阶段命令、首轮 Browser 缺口、fixture/端口/账号过程和完整源码清单通过 Git 历史追溯，不再保留在 active snapshot。

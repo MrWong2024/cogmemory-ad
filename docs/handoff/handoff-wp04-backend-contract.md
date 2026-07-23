@@ -655,9 +655,9 @@ Visit voided 必须保留 point 且不得 available。Patient inactive/archived 
 
 ## 13. 模块与 Service 边界
 
-### 13.1 锁定方案
+### 13.1 实施前锁定方案（历史；现已落地）
 
-- 后续新增无 Schema 的 `ClinicalHistoryModule`，由 AppModule 独立引入。
+- 已新增无 Schema 的 `ClinicalHistoryModule`，并由 AppModule 独立引入。
 - `ClinicalHistoryController` 只承载 assessment-history 与 follow-up-trends；`ClinicalHistoryQueryService` 只做跨模块只读编排。
 - history mapper、trend mapper、trend source evaluator、comparability evaluator 为无 IO 纯函数/显式 provider。
 - 报告列表与历史详情留在 `ClinicalReportsController` / `ReportsModule`；ReportsModule 不依赖 ClinicalHistoryModule。
@@ -665,9 +665,9 @@ Visit voided 必须保留 point 且不得 available。Patient inactive/archived 
 
 ### 13.2 exports/imports 与循环依赖
 
-现有 `PatientsModule`、`AssessmentsModule`、`ScalesModule`、`ScoringModule`、`CognitiveDomainsModule`、`ReportsModule` 已分别 export 所需 service/catalog；ReportsModule 已单向依赖前五者。ClinicalHistoryModule 可单向 imports 这些模块，ReportsModule 不反向 import，故不形成循环。
+现有 `PatientsModule`、`AssessmentsModule`、`ScalesModule`、`ScoringModule`、`CognitiveDomainsModule`、`ReportsModule` 已分别 export 所需 service/catalog；ReportsModule 已单向依赖前五者。`ClinicalHistoryModule` 已单向 imports 这些模块，ReportsModule 不反向 import，未形成循环。
 
-后续实现只在确有需要时给既有 Service 增加最小、内部、read-only、ownership-scoped、lean/projection 批量方法；不 export Model，不复制 Schema，不将跨域编排塞入底层 Service。
+实施时只在确有需要处给既有 Service 增加了最小、内部、read-only、ownership-scoped、lean/projection 批量方法；未 export Model、未复制 Schema，也未将跨域编排塞入底层 Service。
 
 ## 14. 实施拆分（已完成）
 

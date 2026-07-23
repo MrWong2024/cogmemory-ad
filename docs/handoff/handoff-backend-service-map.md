@@ -54,7 +54,7 @@
 - 文件路径：`backend\src\modules\scales\services\scales.service.ts`
 - 职责边界：提供量表定义与量表版本配置的内部读取底座；规范化 scale code；按 mapper 输出 `ScaleDefinitionSummary` / `ScaleVersionSummary`，不直接返回完整 Mongoose document。
 - 当前方法：`normalizeScaleCode(code)`、`findDefinitionByCode(code)`、`findVersionByScaleCodeAndVersion(scaleCode, version)`、`listActiveDefinitions()`。
-- 上游调用方：当前暂无公开 Controller；预期供后续评估、计分或配置读取模块内部调用。
+- 上游调用方：当前由 `AssessmentExecutionDetailService`、`ScaleInstanceSubmissionService`、`ProvisionalScoringWorkflowService`、`ScoreReviewWorkflowService`、`CognitiveDomainComputationWorkflowService` 与 `ClinicalReportGenerationWorkflowService` 直接调用；没有直接公开 Controller。
 - 下游依赖：`ScaleDefinition` 与 `ScaleVersion` Mongoose Model。
 - 边界：不创建、更新、删除量表配置；不导入种子数据；不实现评估执行、作答、计分、报告、AI、认证或权限。
 - 测试覆盖口径：`backend\src\modules\scales\services\scales.service.spec.ts`，覆盖 code 规范化、查无返回 `null`、mapper 输出、schema collection、索引和关键字段显式类型；不连接真实 MongoDB。
@@ -63,7 +63,7 @@
 - 文件路径：`backend\src\modules\scales\seeds\scale-seed-data.service.ts`
 - 职责边界：提供 MMSE / MoCA 初始配置 seed 的内部只读读取能力，并提供 `validateScaleSeeds()` 种子数据校验纯函数；返回 seed 克隆，避免调用方误改全局常量。
 - 当前方法：`normalizeScaleCode(code)`、`getAllScaleSeeds()`、`getScaleSeedByCode(scaleCode)`、`getScaleVersionSeed(scaleCode, version)`、`listSeedScaleDefinitions()`、`listSeedScaleVersions()`、`validateScaleSeeds(seeds?)`。
-- 上游调用方：当前暂无公开 Controller；预期供后续导入脚本、初始化任务或后端业务模块内部读取 MMSE / MoCA 初始配置。
+- 上游调用方：当前由 `ScaleCatalogService` 与 `AssessmentExecutionService` 直接调用；没有直接公开 Controller。尚未实现的全量导入脚本或 seed runner 属于未来边界。
 - 下游依赖：MMSE / MoCA seed 常量；不依赖 Mongoose Model，不依赖 `ScalesService`，不依赖数据库、Storage、SMS 或 LLM。
 - 边界：不创建、更新、删除数据库记录；不提供 import / upsert / seed runner；不执行写库；不暴露公开 MMSE / MoCA 配置查询 API；不实现评估执行、作答提交、媒体上传、自动计分触发、报告、AI、认证或权限。
 - 测试覆盖口径：`backend\src\modules\scales\seeds\scale-seed-data.service.spec.ts`，覆盖 MMSE / MoCA seed 读取、code 规范化、版本读取、definition / version 列表、内置 seed 校验、总分范围、PDF / CRF 编号修正规则、MoCA 即刻记忆和延迟回忆记录规则、连续减 7 分步规则、图片 / 手写 / 用时证据要求、item code 唯一、groupCode 引用和校验错误分支；不连接真实 MongoDB，不调用 Storage / OSS / SMS / LLM，测试数据为配置样例或脱敏人工样例。
@@ -108,7 +108,7 @@
 - 文件路径：`backend\src\modules\assessments\services\assessment-execution.service.ts`
 - 职责边界：提供评估执行初始化内部编排底座；基于 MMSE / MoCA seed 构建不写库执行计划，并可内部创建 `ScaleInstance` 与初始 `ItemResponse` 骨架；按 mapper 输出创建摘要，不直接返回完整 Mongoose document。
 - 当前方法：`normalizeSubjectCode(subjectCode)`、`normalizeInstanceCode(instanceCode)`、`normalizeScaleCode(scaleCode)`、`buildScaleExecutionPlan(input)`、`createScaleExecutionFromPlan(plan)`、`createScaleExecutionFromSeed(input)`。
-- 上游调用方：当前暂无公开 Controller；预期供后续后端评估执行工作流内部调用。
+- 上游调用方：当前由 `AssessmentScaleWorkflowService` 直接调用，并经 `AssessmentVisitsController` 的量表实例初始化入口间接使用；没有 Controller 直接调用本 Service。
 - 下游依赖：`ScaleInstance` 与 `ItemResponse` Mongoose Model、`ScaleSeedDataService`。`AssessmentsModule` 为此最小导入 `ScalesModule`。
 - 边界：不注入 Patients / Media / Scoring / CognitiveDomains / Reports / Storage Service；不创建 Patient 或 AssessmentVisit；不创建 MediaEvidence、ScoreResult、CognitiveDomainResult 或 ClinicalReport；不提供公开 API；不实现作答提交、媒体上传、自动计分触发、认知域计算触发、报告生成、AI、认证或权限。
 - 写库策略：`createScaleExecutionFromPlan()` 先创建 `ScaleInstance`，再批量创建初始 `ItemResponse`；insertMany 失败时按本次 scaleInstanceId 尝试删除可能已创建的题目和实例，然后重新抛出原始错误。当前不使用 Mongo session / transaction；这是补偿式一致性，不是严格事务原子性。
@@ -162,7 +162,7 @@
 - 文件路径：`backend\src\modules\scoring\services\scoring.service.ts`
 - 职责边界：提供计分结果快照的内部读取底座；规范化 `scoreResultCode`；按 mapper 输出 `ScoreResultSummary`，不直接返回完整 Mongoose document；提供 `summarizeItemScores()` 通用计分汇总纯函数。
 - 当前方法：`normalizeScoreResultCode(scoreResultCode)`、`findScoreResultByCode(scoreResultCode)`、`findLatestScoreResultByScaleInstanceId(scaleInstanceId)`、`listScoreResultsByScaleInstanceId(scaleInstanceId)`、`listScoreResultsByVisitId(assessmentVisitId)`、`listScoreResultsByPatientId(patientId)`、`summarizeItemScores(items)`。
-- 上游调用方：当前暂无公开 Controller；预期供后续评估、计分任务、报告或科研导出等后端业务模块内部读取计分结果摘要或复用通用汇总。
+- 上游调用方：当前由 `ProvisionalScoringWorkflowService`、`ScoreReviewWorkflowService`、`CognitiveDomainComputationWorkflowService`、`ClinicalReportGenerationWorkflowService`、`ClinicalReportSourceFreezeWorkflowService` 与 `ClinicalHistoryQueryService` 直接调用；没有 Controller 直接调用本 Service。科研导出尚未实现，属于未来边界。
 - 下游依赖：`ScoreResult` Mongoose Model；`summarizeItemScores()` 不依赖数据库。
 - A17 扩展：新增按实例 + runNo 查询和明确输入的 ScoreResult create；`summarizeItemScores(items, { provisional: true })` 只统计计分项并在不完整时抑制 percentage。
 - A18 扩展：新增完整 ownership + runNo=1 读取、`reviewScoreItemIfUnmodified()` 与 `confirmScoreResultIfUnmodified()`；两个更新都用 expected updatedAt 条件和单次 `findOneAndUpdate`，runValidators=true。人工复核原子写 item / group / total / status / source / review / quality / metadata；确认原子写确认状态 / 时间、实时 total / groups、review / quality / metadata，不写 itemScores / scoringSource / lockedAt。仍无 lock / void / delete，不修改 ItemResponse。
@@ -180,13 +180,13 @@
 
 - Service 名称：`ReportsService`
 - 文件路径：`backend\src\modules\reports\services\reports.service.ts`
-- 职责边界：提供临床报告摘要的内部读取底座；规范化 `reportCode`；按 mapper 输出 `ClinicalReportSummary`，不直接返回完整 Mongoose document；提供报告状态转换校验纯函数。
-- 当前方法：保留全部规范化、code / latest / visit / patient / status / confirmed 列表读取和状态转换方法；A20 新增 `findReportByVisitTypeVersion()`、`createClinicalReport()` / `createVersionOneCognitiveAssessmentReport()` 与 `isDuplicateKeyError()`。
-- 上游调用方：`ClinicalReportGenerationWorkflowService`；既有内部调用方可继续读取报告摘要或复用状态校验口径。
+- 职责边界：负责 ClinicalReport 的持久化读取、批量读取与带完整条件的单文档写入；规范化 `reportCode`，按 mapper 输出 `ClinicalReportSummary`，不直接返回完整 Mongoose document，并提供报告状态转换校验纯函数。
+- 当前方法：除 draft create 外，已承担 edit、submit、confirm、lock、source-freeze start/complete、archive、correction/replacement 编排所需的条件更新，以及 latest、ownership、history/version 等单条或批量读取；所有生命周期写入都使用服务端真实 `reportVersion` 与状态、审计、ownership、expectedUpdatedAt 等精确条件。
+- 上游调用方：`ClinicalReportGenerationWorkflowService`、`ClinicalReportReviewWorkflowService`、`ClinicalReportLockWorkflowService`、`ClinicalReportSourceFreezeWorkflowService`、`ClinicalReportArchiveWorkflowService`、`ClinicalReportCorrectionWorkflowService`、`ClinicalReportHistoryQueryService` 与 `ClinicalHistoryQueryService`。
 - 下游依赖：`ClinicalReport` Mongoose Model；状态转换校验纯函数不依赖数据库。
-- A20 写入边界：ObjectId 转换由 Service 完成，一次 `create()` 写入完整 version 1 draft；不创建临时记录、不更新报告、不写状态流转、不跨集合写入。返回显式 `ClinicalReportSummary`（含安全 timestamps），不返回 Mongoose document；duplicate key 判断不泄露 Mongo 细节。
-- 边界：除 A20 首次 draft create 外，不更新或删除报告；不实现医生确认、锁定、归档、更正、作废、重生成、version 2、PDF / Word / 打印、AI、AuditLog 或 AiAnalysisResult；不修改任何来源数据。
-- 测试覆盖口径：既有 schema / 读取 / 状态转换覆盖之外，A20 增加 visit + type + version 查询、单文档 create、ObjectId 转换、timestamps 与 duplicate key；Model 为 mock，不连接真实 MongoDB。
+- 持久化边界：Service 负责 ObjectId 转换、精确 filter、`create()` / `findOneAndUpdate()` 和结果 mapper；跨集合来源冻结由 workflow 编排并调用各来源 Service。Service 不独立决定完整临床生命周期资格、lineage、幂等恢复或业务步骤顺序，这些由对应 workflow 与纯规则函数负责。
+- 非目标边界：不物理删除报告，不实现作废、重生成、PDF / Word / 打印、AI、AuditLog 或 AiAnalysisResult；不凭自身读取后自动修改任何来源数据。
+- 测试覆盖口径：以当前 `ReportsService` spec 与各 lifecycle workflow spec 为准；本 map 不重复枚举测试终态。Service spec 使用 Model mock，不连接真实 MongoDB。
 
 - Service 名称：`UsersService`
 - 文件路径：`backend\src\modules\users\services\users.service.ts`
@@ -232,7 +232,7 @@
 - Guard 名称：`SessionAuthGuard`
 - 文件路径：`backend\src\modules\auth\guards\session-auth.guard.ts`
 - 职责边界：支持 `@Public()` 路由直通；从 cookie-parser cookies 或原始 `cookie` header 读取 `cogmemory_ad_session`；调用 `AuthService.validateSessionToken()`；校验成功后挂载 `req.user`，失败抛 `UnauthorizedException`。
-- 上游调用方：`AuthController.getMe()`、`PatientsController`、`AssessmentVisitsController` 显式启用；未注册为全局 Guard。
+- 上游调用方：`AuthController.getMe()`，以及 `ScalesController`、`PatientsController`、`AssessmentVisitsController`、`AssessmentExecutionController`、`ScaleInstanceSubmissionController`、`MediaEvidenceController`、`ScoringController`、`CognitiveDomainResultsController`、`ClinicalReportsController`、`ClinicalHistoryController` 显式启用；未注册为全局 Guard。
 - 下游依赖：`Reflector`、`AuthService`。
 - 边界：不下发 Cookie，不清除 Cookie，不改变 `GET /health` 权限。
 - 测试覆盖口径：`backend\src\modules\auth\guards\session-auth.guard.spec.ts`，覆盖 public 路由直通、缺少 Cookie 抛 `UnauthorizedException`、`cogmemory_ad_session` cookie-parser cookies 读取、原始 cookie header 解析、校验成功挂载 `req.user`、校验失败抛 `UnauthorizedException`。
@@ -240,7 +240,7 @@
 - Guard 名称：`RolesGuard`
 - 文件路径：`backend\src\modules\auth\guards\roles.guard.ts`
 - 职责边界：读取 `@Roles()` 元数据；无角色要求时直通；有角色要求时基于 `req.user.roles` 校验，角色不足或缺少 `req.user` 时抛 `ForbiddenException`。
-- 上游调用方：`PatientsController`、`AssessmentVisitsController` 与 `@Roles()` 配合显式启用；未注册为全局 Guard。
+- 上游调用方：`ScalesController`、`PatientsController`、`AssessmentVisitsController`、`AssessmentExecutionController`、`ScaleInstanceSubmissionController`、`MediaEvidenceController`、`ScoringController`、`CognitiveDomainResultsController`、`ClinicalReportsController`、`ClinicalHistoryController` 与 `@Roles()` 配合显式启用；未注册为全局 Guard。
 - 下游依赖：`Reflector`。
 - 边界：不实现完整权限矩阵，不实现权限管理接口，不改变 `GET /health` 权限。
 - 测试覆盖口径：`backend\src\modules\auth\guards\roles.guard.spec.ts`，覆盖无角色要求直通、包含要求角色通过、角色不足抛 `ForbiddenException`、没有 `req.user` 抛 `ForbiddenException`。

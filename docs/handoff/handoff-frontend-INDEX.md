@@ -24,7 +24,7 @@
 - 所有前端 API Client 使用 `frontendEnv.apiBaseUrl` 与 `credentials: 'include'`；适用 GET 使用 `cache: 'no-store'`。当前只读取 `NEXT_PUBLIC_API_BASE_URL`，没有 BFF、JWT 主登录态或本地 token 存储。
 - 主登录态由后端 Session + HttpOnly Cookie 维护；页面内草稿与当前会话回执只保存在 React 内存。
 - `/dashboard` 仍是轻量入口，不是完整医生工作台。`AuthDashboard` 与公共首页仍渲染部分早期“后续建设/尚未实现”占位文案，其中 MMSE/MoCA、历史结果与报告确认描述已落后于 B4–B17 代码；这些是产品文案问题，不是能力未实现的事实。
-- Batch A（B1–B3）已完成；Batch B（B4–B6）桌面范围已完成；Batch C（B7–B10）与 Batch D（B11–B15 差距补验）尚未启动；Batch E 保留 8 项真实设备、辅助技术或人工验收。验证矩阵、数字、cleanup 和 evidence commit 只见 frontend testing playbook。
+- 当前验证状态、Batch 状态、Browser/automated 数量、evidence commit、verify 与 cleanup 只见 `handoff-frontend-testing-playbook.md` 的当前状态表；本 INDEX 不重复维护。
 - 当前仍未实现：患者编辑/删除/归档/合并；访视编辑/删除和完整状态流转；批量或自动保存；评分独立锁定；认知域人工修改/确认/锁定/作废/重算；报告 reject/reopen/withdraw、签名、unlock/unfreeze/unarchive、作废、重生成、PDF/打印/下载；AI 临床解释；用户管理、角色管理和权限菜单。
 
 ## 4. 必读基础文档
