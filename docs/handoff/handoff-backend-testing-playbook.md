@@ -52,13 +52,19 @@ Batch B 的正式 namespace 已连续 cleanup 两次，两次均 `residualCount=
 
 `backend/.env.browser-acceptance` 当前提供数据库用途、Browser app 主连接和 Browser 管理连接的本地凭据来源。本手册只记录变量职责，不记录实际密码或完整 URI。
 
+Browser fixture 测试应用账号的批次专用密码由各批次约定的 `*_FIXTURE_PASSWORD` 环境变量承担职责，并从稳定的本地隔离测试固定凭据来源解析；本文只记录变量名称模式和职责，不记录任何具体密码。
+
 独立进程的显式变量映射为：
 
 - Browser backend：`COGMEMORY_DATABASE_PURPOSE=browser_acceptance`，`MONGO_URI` 映射 `BROWSER_ACCEPTANCE_APP_MONGO_URI`，`MONGO_ADMIN_URI` 映射 `BROWSER_ACCEPTANCE_ADMIN_MONGO_URI`。
 - Browser fixture CLI：`COGMEMORY_DATABASE_PURPOSE=browser_acceptance`，`MONGO_URI` 与 `MONGO_ADMIN_URI` 都映射 `BROWSER_ACCEPTANCE_ADMIN_MONGO_URI`。
 - 普通 E2E：`COGMEMORY_DATABASE_PURPOSE=standard_test`，只加载 `.env.test`，不得继承 Browser app/admin 连接变量。
 
-本地隔离测试专用固定凭据默认自动使用：Codex 可以从上述 Git 忽略文件读取并注入对应独立进程，也可以使用任务明确给定的固定测试密码。不得机械要求剪贴板、一次性密码、Secret Manager 或每次人工输入；同时不得把密码、完整连接串、Cookie、Session token 或 hash 写入 Git 跟踪文件、文档、日志、manifest、生成物、最终报告或提交记录。
+数据库连接凭据与 fixture 测试应用账号凭据是两类不同职责，不得使用同一变量表示，不得混为一体或相互派生。尤其不得从 `BROWSER_ACCEPTANCE_APP_MONGO_URI`、`BROWSER_ACCEPTANCE_ADMIN_MONGO_URI` 或其中的数据库用户密码派生 fixture 测试应用账号密码。
+
+同一个 namespace 从 prepare 或受控 replace 开始，到 prepared verify、Browser 登录与角色 Session、post-browser verify 为止，所有实际创建、认证或校验测试账号密码的进程都必须使用同一个稳定凭据来源和同一个密码值。不得使用每条命令临时产生的值，也不得因父进程缺少批次密码变量而临时构造另一个值；批次变量必须从上述 Git 忽略文件解析，或由同一隔离父进程稳定注入各目标进程。固定测试凭据不得通过 CLI 参数传递。
+
+本地隔离测试专用固定凭据默认自动使用：Codex 可以从上述 Git 忽略文件读取并注入对应独立进程。不得机械要求剪贴板、一次性密码、Secret Manager、每次人工输入或每次重新生成；同时不得把密码、完整连接串、Cookie、Session token 或 hash 写入 Git 跟踪文件、文档、日志、manifest、截图、生成物、最终报告或提交记录。
 
 切换用途或复用 shell 前，应优先新建独立进程；确需复用时，必须清除或覆盖数据库主连接、管理连接、数据库用途及其他用途相关变量。该动作是防串库门禁，不是密码保密仪式。
 
@@ -154,6 +160,10 @@ Batch C / D fixture 的验证意图、前置状态和关键边界必须从 front
 7. Browser 完成后执行只读 `verify --phase post-browser`；它必须核对实际终态、无副作用、请求次数和合同计数，且前后快照一致。
 8. 退出登录、关闭 Browser、停止进程后按 namespace 精确 cleanup；再执行第二次幂等 cleanup，两次都要求 `residualCount=0`。
 9. cleanup 后确认 namespace-owned 记录和临时文件已删除，非 namespace 数据、全局 seed 与其他 namespace 未受影响。
+
+prepare / replace 与后续账号密码校验必须处于相同的稳定 fixture 密码语义下。如果 `verify --phase prepared` 报告账号密码不匹配，必须先检查各进程的凭据来源是否一致；如确认 namespace 是由其他密码创建，应继续遵守显式确认、namespace ownership 和数据库隔离规则，使用正确的固定凭据显式执行受控 replace，并在完全相同的稳定凭据环境中立即重新执行只读 `verify --phase prepared`。只有 prepared verify 通过后才允许启动 Browser。
+
+不得以手工补插或修改数据库账号、降低账号有效性或密码校验标准、只反复执行 verify，或把 verify 未执行、未通过或密码校验失败记为 prepared gate 通过来绕过不一致。prepared verify 始终是只读门禁，不能修复账号或重设密码。
 
 固定测试凭据可由目标进程自动读取，但不得进入 CLI 参数、manifest、截图、日志或报告。prepare / prepared verify 只证明前置就绪，不等于 Browser 通过；Browser 场景通过但缺 post-browser verify 或 cleanup，也不得宣布工程收口。
 
