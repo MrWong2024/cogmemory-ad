@@ -1,68 +1,35 @@
 # CogMemory AD / 智忆评 后端 Handoff 入口
 
-## 1. 项目名称
+## 1. 文档定位与权威来源
 
-- 中文名：智忆评
-- 英文名：CogMemory AD
-- 项目方向：阿尔茨海默病认知评估与辅助诊断系统
+- 本 INDEX 只负责后端 handoff 的文档入口与职责导航，不维护阶段日志或实现明细。
+- [Roadmap](./handoff-roadmap.md) 维护产品范围、工作包状态和当前主线；本 INDEX 不复制这些事实。
+- Backend snapshot 维护当前工程结构、能力和真实未实现边界；各 map、matrix、decisions 与 testing playbook 按下文分工维护专项事实。
 
-## 2. 本文档用途
+## 2. 当前实现摘要
 
-本文档是 CogMemory AD 后端 handoff 文档入口，用于索引后端事实快照、API、DTO、Service、配置、决策和验证手册。
+- 后端采用 NestJS、Mongoose 与 HttpOnly Session Cookie 认证底座。
+- 后端业务能力已实施至 A28，覆盖患者、访视与量表执行、媒体证据、评分、认知域、临床报告生命周期、历史读取和基础随访趋势。
+- A26 让任意合法线性 replacement V2+ 复用 A21–A24 的既有生命周期。
+- 详细后端门禁与跨端 Browser 验收状态分别见 backend / frontend testing playbook。
 
-项目整体进度、当前业务阶段、一期剩余工作包与二期候选能力统一由 `handoff-roadmap.md` 作为项目控制面板维护；本入口不承担阶段时间线。
+## 3. Handoff 文档导航与职责
 
-当前内容记录后端公共底座、量表与运行时模型，以及 A12-A28 从患者/访视、评估执行到报告生命周期、历史读取和基础随访趋势的完整已实施范围。当前后端产品能力已实施至 A28；前端 B17 也已完成实施和验收，WP-04 已完成。
+- [Backend snapshot](./handoff-backend-snapshot.md)：当前后端工程结构、能力范围与真实未实现边界。
+- [Backend API map](./handoff-backend-api-map.md)：endpoint、请求、响应、权限与错误。
+- [Backend DTO cheatsheet](./handoff-backend-dto-cheatsheet.md)：DTO、response、字段形状与校验摘要。
+- [Backend Service map](./handoff-backend-service-map.md)：Service、调用关系、职责边界与一致性要求。
+- [Backend config matrix](./handoff-backend-config-matrix.md)：环境、配置来源、用途与部署事实。
+- [Backend decisions](./handoff-backend-decisions.md)：稳定架构决策、理由与影响范围。
+- [Backend testing playbook](./handoff-backend-testing-playbook.md)：后端门禁、fixture、数据库隔离、证据、verify 与 cleanup。
 
-## 3. 当前状态
+- 跨端 Browser 验收参考：[Frontend testing playbook](./handoff-frontend-testing-playbook.md)。
 
-- 后端工程已初始化，当前仓库存在 `backend\package.json`，技术栈版本以该文件、锁文件和实际代码为准。
-- `backend\src` 已具备 NestJS 公共底座、配置加载与校验、MongoDB 连接底座、全局异常处理、健康检查和 Storage 公共模块。
-- `ScalesModule` 当前包含 `ScaleDefinition` / `ScaleVersion` Schema、`ScalesService`、只读 `ScaleSeedDataService`、公开只读 `ScalesController` 和 `ScaleCatalogService`；目录读取不写数据库，初始化时才按需幂等物化对应 seed 版本。
-- `PatientsModule` 当前包含 `Patient` Schema、既有内部读取能力，以及 `PatientsController` 的患者列表、创建、详情公开 API。
-- `AssessmentsModule` 当前包含 `AssessmentVisit` / `ScaleInstance` / `ItemResponse` Schema、既有内部读取能力、`AssessmentExecutionService`、`AssessmentScaleWorkflowService`、`AssessmentExecutionDetailService`、`ItemResponseDraftService`，以及 `AssessmentVisitsController` 与 `AssessmentExecutionController`；A14 新增单实例安全执行详情和单题草稿保存能力。
-- `AssessmentsModule` A16 新增 `ScaleInstanceSubmissionController`、`ScaleInstanceSubmissionService` 与纯 readiness evaluator，公开 submission-readiness GET 和 submit POST；不依赖 `MediaModule`，不执行评分。
-- 当前新增 `assessments` 题目作答数据模型底座，包含 `ItemResponse` Schema 与 `AssessmentsService` 按量表实例 / 访视读取题目作答的内部能力。
-- `MediaModule` 当前包含既有 `MediaEvidence` Schema / Service，以及 A15 `MediaEvidenceController`、`MediaEvidenceWorkflowService`、安全 public mapper、图片魔数 / 隐私元数据纯校验与手写轨迹 JSON 纯校验；依赖 Auth、Patients、Assessments 与 Storage，不重复注册 ItemResponse Schema。
-- `ScoringModule` 在既有 `ScoreResult` Schema、`ScoringService` 与 `summarizeItemScores()` 基础上，提供 `ScoringController`、A17 `ProvisionalScoringWorkflowService`、A18 `ScoreReviewWorkflowService`、纯评分 / 复核函数和显式 public mapper；公开 compute、latest、单题 manual-review 与 ScoreResult confirm 四个最小 API。
-- `CognitiveDomainsModule` 当前在既有 `CognitiveDomainResult` Schema、`CognitiveDomainsService` 与 `summarizeDomainScores()` 基础上，新增 `CognitiveDomainResultsController`、`CognitiveDomainComputationWorkflowService`、确认评分纯映射 / 校验和安全 public mapper；公开 runNo=1 compute / latest 两个最小 API。
-- `ReportsModule` 当前在既有 generation / review / lock / source-freeze / archive / correction 与 A26 单跳校验上，新增 A27 `ClinicalReportHistoryQueryService`、完整轻量版本链 evaluator、版本安全 mapper，以及版本列表和指定历史详情两个只读 API；`latest` 语义未变化。
-- 无 Schema 的 `ClinicalHistoryModule` 只导入 Patients / Assessments / Scoring / CognitiveDomains / Reports / Scales 领域模块，编排 `assessment-history` 与 `follow-up-trends`；Controller 不接触 Model，不使用 `forwardRef`，未形成循环依赖。A28 使用共享 source evaluator、趋势 source/comparability 纯函数和显式安全 mapper，不重算评分或认知域。
-- 当前新增 `scales` 内部 MMSE / MoCA 初始配置种子数据底座，包含 MMSE / MoCA seed 常量、`ScaleSeedDataService` 只读读取能力和 `validateScaleSeeds()` 种子数据校验纯函数。
-- `AssessmentExecutionService` 可基于 MMSE / MoCA seed 创建 `ScaleInstance` 与初始 `ItemResponse` 骨架；A13 由 `AssessmentScaleWorkflowService` 受控调用。题目批量创建失败时按本次实例 ID 尝试清理已创建题目和实例，当前为补偿式一致性，不是 Mongo transaction。
-- 当前新增 `users` 内部模块，包含 `User` Schema 与 `UsersService` 内部账号读取、账号编码规范化和安全 mapper 输出能力。
-- 当前新增 `auth` 模块，包含 `Session` Schema、`AuthService` 密码哈希 / 校验、session token 生成 / hash、session 创建 / 校验 / 撤销、账号密码认证编排能力，以及 `@Public()`、`@Roles()`、`@CurrentUser()`、`SessionAuthGuard`、`RolesGuard` 和 `AuthController`；不注册全局 Guard。
-- 当前报告公开 API 共十一个：既有九个写入/最新读取接口，加 A27 版本列表与指定历史详情；另有 `ClinicalHistoryController` 的患者历史评估与基础随访趋势两个接口。
-- A12-A28 临床接口均显式绑定 `SessionAuthGuard` 与 `RolesGuard`；WP-04 四个只读接口允许 doctor / nurse / research_assistant / admin 且不读取 CurrentUser；未注册全局 Guard。
-- 当前媒体边界仅为 photo / handwriting；手写轨迹为可选 JSON / strokes，签名 URL 为短期地址，作废不物理删除。仍无批量上传、分片上传、客户端直传、永久 URL、公开 Storage 管理、物理删除、原子替换、OCR 或 AI。
-- D-038 已完整实施并认证：`standard_test` 与 `browser_acceptance` 分库，Browser backend 使用 app / `readWrite`，fixture CLI 使用 db_admin / `dbOwner`，建连前、建连后、库名和角色门禁均已验证。
-- 当前后端测试门禁、数量、数据库隔离与 Browser 批次最终证据统一以 `handoff-backend-testing-playbook.md` 为准；本入口不再重复维护逐阶段测试流水。
-- 当前后端闭环为 A17 → A18 → A19 → A20 generate / latest → A21 edit / submit / confirm → A22 lock → A23 freeze-sources → A24 archive → A25 corrections，由 A26 让任意合法线性 replacement 重复 A21-A24，A27 提供稳定只读历史访问，A28 提供按 Visit 保留缺失点且仅相邻 exact-trace 可比的基础随访趋势。前端 B17 已完成历史、版本、历史详情和基础趋势展示；correction cancel / branch、PDF 与 AI 仍未实现。
+## 4. 同步规则
 
-## 4. 必读基础文档
-
-- `docs\backend-architecture.md`
-- `docs\auth-baseline.md`
-- `docs\database-conventions.md`
-- `docs\e2e-testing.md`
-- `docs\codex-rules.md`
-- `docs\codex-instruction-spec.md`
-
-## 5. 当前后端 handoff 文档列表
-
-- `docs\handoff\handoff-backend-snapshot.md`
-- `docs\handoff\handoff-backend-api-map.md`
-- `docs\handoff\handoff-backend-dto-cheatsheet.md`
-- `docs\handoff\handoff-backend-service-map.md`
-- `docs\handoff\handoff-backend-config-matrix.md`
-- `docs\handoff\handoff-backend-decisions.md`
-- `docs\handoff\handoff-backend-testing-playbook.md`
-- `docs\handoff\handoff-frontend-testing-playbook.md`
-
-WP-04 当前事实入口：接口、权限、响应及错误见 backend API map，DTO/response 字段见 DTO cheatsheet，查询、lineage、趋势及模块职责见 Service map，工程能力边界见 backend snapshot；后端门禁及前端 Browser、evidence、verify 与 cleanup 分别见两份 testing playbook。
-
-## 6. 后续同步规则
-
-- 后端新增或调整接口、DTO、Service、配置、测试脚本或关键决策时，应同步更新对应 handoff 文档。
-- 未在业务文档和实际代码中确认的内容，只能标记为“待确认”或“待后续业务文档确定”。
-- 不得在 handoff 中提前写入未实现的后端能力。
+- 产品范围、工作包状态或当前主线变化时，更新 roadmap。
+- 后端工程结构、能力范围或真实未实现边界变化时，更新 backend snapshot。
+- endpoint、请求、响应、权限或错误变化时更新 API map；DTO、response 或字段形状变化时更新 DTO cheatsheet。
+- Service 职责或调用关系、环境配置、稳定架构决策变化时，分别更新 Service map、config matrix、decisions。
+- 门禁、批次、Browser、evidence、verify 或 cleanup 变化时，更新对应 testing playbook。
+- 仅当导航入口或文档职责变化时更新本 INDEX，不在此累积实现流水、测试事实或工作包状态。
