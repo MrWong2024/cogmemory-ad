@@ -39,7 +39,7 @@
 
 `frontend/app/patients/layout.tsx` 统一挂载 `PatientsWorkspaceShell`；该 Shell 使用 `useAuth()` 处理认证状态，并通过轻量 Context 向后代复用已取得的公开用户，不产生第二次 `/auth/me`。
 
-公共首页、`AuthDashboard`、患者详情尾注、量表执行页提示和 `not-found` 中仍有部分早期“后续建设/尚未实现”产品文案。MMSE/MoCA 执行、历史结果、报告确认等相关文案已落后于 B4–B17 代码；这些是产品文案问题，不是当前能力事实，本任务不修改产品代码。
+公共首页、`AuthDashboard`、患者详情尾注、量表执行页提示和 `not-found` 的产品文案已与 B4–B17 当前能力同步。Dashboard 仍是轻量入口，公共首页仍是静态无 API 页面，量表执行页不提供报告操作；科研脱敏导出、认知域人工确认和 AI 临床解释仍未实现。
 
 ## 4. 当前 feature 与主要组件
 

@@ -13,19 +13,20 @@ import {
 const workflowItems = [
   {
     title: '评估',
-    description: '后续承载认知评估发起、任务流转与临床记录入口。',
+    description:
+      '支持医护或研究人员陪伴或监督完成 MMSE / MoCA 施测与规范记录。',
   },
   {
-    title: '记录',
-    description: '后续承载评估过程、随访信息与可追溯操作记录。',
+    title: '原始证据',
+    description: '支持逐题原始作答、图片和平板手写证据的可追溯记录。',
   },
   {
-    title: '报告',
-    description: '后续承载报告生成、医生审核与结果查看流程。',
+    title: '评分与认知域',
+    description: '支持阶段性评分、人工复核、评分确认和认知域结果查看。',
   },
   {
-    title: '医生工作流',
-    description: '后续围绕医生查看、评估、记录和报告协同展开。',
+    title: '报告与随访',
+    description: '支持临床报告工作流、历史报告版本和单量表随访趋势。',
   },
 ] as const;
 
@@ -37,9 +38,9 @@ export default function HomePage() {
           <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl">
               <div className="mb-4 flex flex-wrap gap-2">
-                <Badge tone="info">认证接入底座</Badge>
-                <Badge tone="neutral">静态首页</Badge>
-                <Badge tone="success">无 API 调用</Badge>
+                <Badge tone="info">临床评估</Badge>
+                <Badge tone="neutral">规范记录</Badge>
+                <Badge tone="success">过程可追溯</Badge>
               </div>
               <p className="text-base font-semibold text-[var(--cma-primary)]">
                 CogMemory AD
@@ -51,8 +52,9 @@ export default function HomePage() {
                 阿尔茨海默病认知评估与辅助诊断系统
               </p>
               <p className="mt-5 max-w-3xl text-lg leading-8 text-[var(--cma-text)]">
-                面向临床认知评估的低干扰工作台。当前处于 MVP
-                认证接入底座阶段，业务能力将在后续任务中按边界逐步实现。
+                面向临床与科研场景的认知评估工作空间，支持患者档案、评估访视、MMSE
+                / MoCA
+                施测、原始证据记录、评分复核、临床报告与历史随访。
               </p>
               <div className="mt-7 flex flex-wrap gap-3">
                 <Link
@@ -74,13 +76,13 @@ export default function HomePage() {
                 当前范围
               </p>
               <p className="mt-3 text-base leading-7 text-[var(--cma-muted)]">
-                登录页、认证状态和工作台占位已就位；患者、评估、记录、报告与患者作答流程尚未实现。
+                核心认知量表由医护或研究人员陪伴或监督完成；系统提供过程记录、评分复核和临床报告工作流，不用于患者居家自测，也不自动形成诊断结论。
               </p>
             </div>
           </div>
         </section>
 
-        <section aria-label="后续工作流入口" className="grid gap-4 sm:grid-cols-2">
+        <section aria-label="当前能力概览" className="grid gap-4 sm:grid-cols-2">
           {workflowItems.map((item) => (
             <Card key={item.title}>
               <CardHeader>
@@ -89,7 +91,7 @@ export default function HomePage() {
               </CardHeader>
               <CardContent>
                 <span className="text-sm font-medium text-[var(--cma-primary)]">
-                  待业务阶段实现
+                  当前已接入
                 </span>
               </CardContent>
             </Card>

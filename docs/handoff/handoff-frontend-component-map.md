@@ -55,11 +55,11 @@
 ### 4.2 `AuthDashboard`
 
 - 路径：`frontend\src\features\auth\components\AuthDashboard.tsx`
-- 职责：承载 `/dashboard` 的客户端会话校验、公开用户信息展示、患者档案真实入口、登出和静态后续能力占位
+- 职责：承载 `/dashboard` 的客户端会话校验、公开用户信息展示、患者档案真实入口、登出和临床能力概览
 - 输入：无 props
 - 输出：loading / authenticated / unauthenticated / error 对应界面
 - 使用页面：`/dashboard`
-- 边界：不是完整医生业务工作台；Dashboard 自身不调用患者 API，不实现权限菜单。当前组件仍把 MMSE/MoCA、历史结果与报告确认显示为“后续建设”，这些产品文案已落后于 B4–B17 代码，不能作为实现状态依据
+- 边界：不是完整医生业务工作台；Dashboard 自身不调用患者 API，不实现权限菜单。能力卡以“已接入”展示 MMSE / MoCA 施测与证据、评分复核与认知域、报告工作流与历史趋势，以“规划中”明确科研脱敏导出尚未实现
 
 ### 4.3 `useAuth`
 

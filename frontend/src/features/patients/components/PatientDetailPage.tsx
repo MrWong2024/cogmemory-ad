@@ -954,8 +954,8 @@ export function PatientDetailPage({ patientId }: { patientId: string }) {
             total={visits.total}
           />
           <p className="border-t border-[var(--cma-line)] px-5 py-4 text-sm leading-6 text-[var(--cma-muted)]">
-            打开访视可查看已初始化量表并新增 MMSE / MoCA
-            实例；题目作答将在后续阶段接入。
+            打开访视可查看或初始化 MMSE / MoCA
+            量表，并进入量表执行页完成逐题记录、媒体证据、提交、评分与认知域查看；临床报告和版本工作流位于访视详情。
           </p>
         </Card>
       ) : null}

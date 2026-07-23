@@ -17,13 +17,13 @@
 
 ### 3.1 `/`
 
-- 页面名称：公共首页占位
-- 页面职责：展示 CogMemory AD / 智忆评认证接入底座状态，并提供 `/login` 与 `/dashboard` 入口
+- 页面名称：公共首页
+- 页面职责：展示 CogMemory AD / 智忆评当前临床评估能力与安全边界，并提供 `/login` 与 `/dashboard` 入口
 - 访问边界：公开
 - 数据来源：静态内容，无 API 调用
 - 加载态 / 错误态：不适用
 - 关联组件：`Badge`、`Card`、Next `Link`
-- 备注：仍非完整产品门户或业务工作台；页面当前仍显示“认证接入底座”“患者、评估、记录、报告尚未实现”等早期占位文案，这些文案已落后于现有业务路由和 B2–B17 实现
+- 备注：仍是静态无 API 的公共入口，不是完整产品门户或业务工作台；能力概览覆盖 MMSE / MoCA 施测、原始证据、评分与认知域、临床报告和随访，并明确核心量表须由医护或研究人员陪伴或监督完成，不用于患者居家自测或自动诊断
 
 ### 3.2 `/login`
 
@@ -48,7 +48,7 @@
 - 错误态：显示稳定认证服务错误，提供重新检查与返回登录页入口
 - 已认证态：显示 `displayName`、`accountName`、`roles`、可选 `userType`
 - 关联组件：`Badge`、`Button`、`Card`、`AuthDashboard`、`useAuth`
-- 备注：Dashboard 自身不调用患者 API；患者档案卡片链接到 `/patients`。`AuthDashboard` 当前仍把 MMSE / MoCA、历史结果深化、报告确认和科研导出全部标注为“后续建设”；前三项与 B4–B17 当前能力冲突，属于产品文案问题，不代表相应功能未实现，科研导出仍是真实未实现边界
+- 备注：Dashboard 自身不调用患者 API；患者档案卡片链接到 `/patients`。`AuthDashboard` 以“已接入”概括 MMSE / MoCA 施测与证据、评分复核与认知域、报告工作流与历史趋势，并以“规划中”保留科研脱敏导出的真实未实现边界
 
 ### 3.4 `/patients`
 
@@ -176,7 +176,7 @@
 - 评分隔离：compute / latest 只允许同步服务端 scaleInstance 摘要，不覆盖 Visit、ItemResponse、作答 / 媒体草稿或 submission readiness，不触发 A14 / A15 写操作
 - 只读：completed / locked / voided 实例仍可查看 readiness、作答和历史证据；submit 期间题目保存、图片 / 手写采集、上传与作废临时真实禁用
 - 报告入口：单量表页面不生成访视级报告；完成评分确认与认知域计算后返回访视详情页，在独立报告区域选择多实例 scope。
-- 产品文案：页面顶部当前仍写“报告与 AI 尚未实现”；报告能力实际位于访视详情并已完成 A20–A25/B16/B17 接入，只有“本路由不提供报告操作”和 AI 尚未实现是准确边界
+- 产品文案：页面顶部概括当前页的施测记录、媒体证据、正式提交、评分复核与认知域结果，并说明临床报告工作流位于访视详情；认知域人工确认和 AI 临床解释仍未实现
 - 当前非目标：不提供批量评分、评分 lock / void / 撤销确认 / reopen / rerun / runNo=2 / 完整历史；不提供认知域人工修改 / 确认 / 锁定 / 作废 / 重算 / weighted mapping 编辑；不在单量表页提供报告生成、诊断、OCR 或 AI。
 - 关联组件：既有执行与评分组件，以及 `useCognitiveDomainResult`、`CognitiveDomainResultPanel`、`CognitiveDomainScoreList`、`CognitiveDomainContributionList`、`CognitiveDomainMappingSummary`。
 
@@ -188,7 +188,7 @@
 - 数据来源：静态内容
 - 错误态：页面自身即为兜底展示
 - 关联组件：`Badge`、`Card`
-- 备注：不调用后端；当前兜底文案仍写“真实业务页面将在后续阶段逐步实现”，已落后于现有 `/patients/**` 业务路由
+- 备注：不调用后端；使用稳定产品级提示说明地址不存在、已失效或暂时无法通过该地址访问，不把 404 解释为权限不足
 
 ### 3.11 `/patients/[patientId]/history`
 

@@ -16,22 +16,31 @@ import {
 } from '@/src/components/ui/Card';
 import { useAuth } from '@/src/features/auth/hooks/use-auth';
 
-const futureCapabilities = [
+const clinicalCapabilities = [
   {
-    title: 'MMSE / MoCA 评估执行',
-    description: '后续接入 MMSE / MoCA 评估执行流程。',
+    title: 'MMSE / MoCA 施测与原始证据',
+    description: '支持逐题施测记录，以及图片、平板手写和原始作答证据。',
+    status: '已接入',
+    tone: 'success',
   },
   {
-    title: '历史评估结果深化',
-    description: '后续深化量表结果、认知域与随访趋势。',
+    title: '评分复核与认知域结果',
+    description: '支持阶段性评分、人工复核、评分确认和认知域结果查看。',
+    status: '已接入',
+    tone: 'success',
   },
   {
-    title: '报告确认',
-    description: '后续接入临床报告复核与确认。',
+    title: '报告工作流与历史趋势',
+    description:
+      '支持临床报告生成、编辑、提交确认、锁定、来源冻结、归档，以及历史版本和单量表随访趋势。',
+    status: '已接入',
+    tone: 'success',
   },
   {
     title: '科研导出',
-    description: '后续接入符合隐私边界的脱敏导出。',
+    description: '科研脱敏导出尚未实现，仍处于规划中。',
+    status: '规划中',
+    tone: 'neutral',
   },
 ] as const;
 
@@ -113,7 +122,8 @@ export function AuthDashboard() {
             <Badge tone="success">认证状态已连接</Badge>
             <CardTitle>{user.displayName}</CardTitle>
             <CardDescription>
-              当前工作台已接入患者档案与评估访视；其他临床能力仍在后续建设。
+              当前工作台提供患者档案入口；MMSE / MoCA
+              施测、评分复核、临床报告与历史趋势已接入患者与访视工作流。
             </CardDescription>
           </div>
           <Button
@@ -200,23 +210,23 @@ export function AuthDashboard() {
         </Card>
       </section>
 
-      <section aria-labelledby="future-capabilities-title">
+      <section aria-labelledby="clinical-capabilities-title">
         <div className="mb-4">
           <h2
             className="text-2xl font-semibold text-[var(--cma-text-strong)]"
-            id="future-capabilities-title"
+            id="clinical-capabilities-title"
           >
-            后续能力占位
+            临床能力概览
           </h2>
           <p className="mt-2 text-base leading-7 text-[var(--cma-muted)]">
-            以下能力尚未实现，当前入口仅作范围提示。
+            以下能力已通过患者档案与访视流程接入；科研导出仍处于规划中。
           </p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
-          {futureCapabilities.map((capability) => (
+          {clinicalCapabilities.map((capability) => (
             <Card key={capability.title}>
               <CardHeader>
-                <Badge tone="neutral">后续建设</Badge>
+                <Badge tone={capability.tone}>{capability.status}</Badge>
                 <CardTitle className="text-xl">{capability.title}</CardTitle>
                 <CardDescription>{capability.description}</CardDescription>
               </CardHeader>

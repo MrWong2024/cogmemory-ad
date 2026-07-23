@@ -18,7 +18,7 @@ export default function NotFoundPage() {
           <Badge tone="warning">404</Badge>
           <CardTitle>页面未找到</CardTitle>
           <CardDescription>
-            当前地址不存在或尚未开放。请返回公共首页，真实业务页面将在后续阶段逐步实现。
+            当前地址不存在、已失效，或暂时无法通过该地址访问对应页面。请返回首页后，从工作台或患者档案重新选择。
           </CardDescription>
         </CardHeader>
         <CardContent>

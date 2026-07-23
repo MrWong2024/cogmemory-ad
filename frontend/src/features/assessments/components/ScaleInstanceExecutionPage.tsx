@@ -1944,7 +1944,8 @@ export function ScaleInstanceExecutionPage({
       </header>
 
       <p className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-info-soft)] px-5 py-4 text-base leading-7 text-[var(--cma-info)]">
-        核心认知量表应由医护或研究人员陪伴或监督完成。当前已支持认知域结果计算与安全展示；认知域人工确认、报告与 AI 尚未实现。
+        核心认知量表应由医护或研究人员陪伴或监督完成。当前页支持施测记录、图片与手写等媒体证据、正式提交、评分复核和认知域结果；临床报告工作流位于访视详情。认知域人工确认和
+        AI 临床解释尚未实现。
       </p>
 
       {readOnlyReason ? (
