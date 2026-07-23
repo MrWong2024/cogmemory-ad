@@ -12,82 +12,51 @@
 
 项目整体进度、当前业务阶段、一期剩余工作包与二期候选能力统一由 `handoff-roadmap.md` 作为项目控制面板维护；本入口不承担阶段时间线。
 
-当前内容记录前端公共底座、B1-B14 既有闭环、B14.1 报告工作流结构治理、B15 版本化更正、B16 replacement V2+ 不可逆生命周期，以及 B17 的患者评估历史、报告版本导航、历史报告只读详情与基础随访趋势实现。当前仍未实现患者完整管理、评分锁定、认知域人工确认、报告退回 / 签名 / unlock / unfreeze / unarchive / 作废 / PDF、AI、用户管理或权限菜单。
+实现细节分别由 snapshot、route map、API map 和 component map 维护；当前静态门禁、Browser 验收策略、批次状态、验证数字和 evidence commit 统一以 `handoff-frontend-testing-playbook.md` 为准，不在本入口重复维护。
 
 ## 3. 当前状态
 
-- `frontend\` 根目录公共骨架配置与 `frontend\app` / `frontend\src` 公共底座已初始化。
-- 前端 B16 已完成：在 B15 更正及 replacement A21 基础上，合法线性 V2+ 复用既有 A22 lock、A23 freeze-sources、A24 archive 完成当前报告不可逆生命周期；前轮完整浏览器矩阵、Resume / unsafe 补齐矩阵与本轮 Web Storage 审计共同构成 WP-02 最终验收证据。
-- 前端 B17 实现、静态门禁与完整真实浏览器验收已完成：新增患者历史、随访趋势和指定历史报告只读详情三个路由，并在访视详情接入独立报告版本面板；只使用 A27/A28 四个只读 GET，不新增 Provider/store、依赖、BFF、middleware 或浏览器持久化。
-- B17 的 44 个 scenarioKey、角色/错误、双 viewport、用户协助真实键盘、网络、Runtime Storage 八时点与双次 fixture cleanup 均通过，WP-04 已完成；当前未启动下一工作包。详细证据见事实快照与验证手册。
-- 当前路由包含 `/login`、`/dashboard`、`/patients`、`/patients/new`、`/patients/[patientId]`、`/patients/[patientId]/history`、`/patients/[patientId]/trends`、`/patients/[patientId]/visits/new`、`/patients/[patientId]/visits/[visitId]`、`/patients/[patientId]/visits/[visitId]/clinical-reports/[reportId]` 与 `/patients/[patientId]/visits/[visitId]/scale-instances/[scaleInstanceId]`。
-- 当前已新增 Auth 类型、Auth API Client、`useAuth()` 认证状态 Hook、`LoginForm` 和 `AuthDashboard`。
-- 当前已新增 patients feature：患者 / 访视公开类型、Patients API Client、展示与日期纯函数、认证工作区、患者列表 / 创建 / 详情及访视列表 / 创建组件。
-- 当前 assessments feature 已包含 A13-A25 安全公开类型、评估 / 媒体 / 评分 / 认知域 / 报告 API Client、展示纯函数与独立状态 Hook，以及逐题记录、媒体证据、正式提交、评分确认、认知域展示和访视级报告工作流组件。
-- 当前前端在既有访视详情页接入 A20 latest / generate；scope 由用户从同访视 completed / locked 实例中选择 1-10 项并二次确认，候选状态不替代后端评分、认知域与媒体校验。页面不自动生成、不重试 POST、不修改来源数据。
-- Auth、Patients 与 Assessment Execution API Client 均使用 `frontendEnv.apiBaseUrl`、`credentials: 'include'` 和 `cache: 'no-store'`。
-- 主登录态由后端 Session + HttpOnly Cookie 维护；前端不读取 Cookie，不保存 raw token、token hash 或 `passwordHash`，也不使用 localStorage / sessionStorage 保存认证凭证。
-- `/dashboard` 已提供真实患者档案入口，但仍是轻量工作区入口，不是完整医生工作台。
-- `/patients/**` 使用现有 `useAuth()` 处理认证 loading、会话失效与认证服务错误；患者 API 的 401 返回登录页，403 显示无权限，最终权限边界仍由后端 Guard 提供。
-- 患者详情访视列表已提供“打开访视”入口；访视详情页可展示安全访视与量表实例摘要，并为 `draft` / `in_progress` 访视初始化尚未存在的 MMSE / MoCA 实例。
-- 每个量表实例都有“打开量表”或“查看量表”入口；B4 执行页按服务端分组和题目顺序展示安全配置，支持普通、分步、提示后、缺失、计时与备注草稿的逐题手工保存。
-- B5 在同一执行页按题懒加载媒体历史，支持 photo 文件选择 / 移动端 capture 提示、Canvas JPEG 重编码、1200 × 800 手写画布、最终 PNG / 默认 strokes JSON、临时预览、作废与重传；媒体草稿与短期 URL 只存在于当前 React 内存。
-- 可用量表目录只展示名称、版本、总分范围、题目 / 分组数量和配置能力摘要，不展示完整题目、评分规则、expectedValue 或内部 ObjectId；进入实例后，只有真实 photo / handwriting requirement 才开放 B5 采集，计时标识仍不代表实时计时器已实现。
-- 当前不包含 Next middleware、完整前端权限矩阵、角色权限管理页面或权限菜单。
-- 当前首页仍为公共占位，只增加 `/login` 与 `/dashboard` 入口，不调用后端。
-- 页面继续遵循医疗系统 / 临床评估 / 低干扰 / 高可读性 / 冷静可信设计基线，不继承 ReviewX 视觉风格。
-- B5-B10 未新增测试代码、测试框架或第三方依赖；lint、typecheck 与 build 结果记录在事实快照和验证手册，真实浏览器联调仍待执行。
-- B6 在既有执行页接入 A16 两个接口，支持独立 readiness 错误 / 重试、统计、阻断问题、警告、题目定位、readiness stale、本地 dirty / 写请求阻断、内联二次确认、提交写锁、completed 只读和当前会话幂等回执；形成“逐题记录 → 媒体证据 → 完整性检查 → 实例提交”闭环。
-- B7 在同一执行页接入 A17 两个接口，形成“逐题记录 → 媒体证据 → readiness → 实例提交 → 阶段性评分 → 待人工复核展示”闭环；completed 无结果时由用户明确确认后计算，页面不自动 compute、不重算，分数和 reviewQueue 均直接使用服务端事实，并支持复核项目定位原题。
-- B8 在同一执行页接入 A18 两个接口，形成“逐题记录 → 媒体证据 → readiness → 实例提交 → 阶段性评分 → 人工评分 → 显式评分确认”闭环；冲突刷新 latest 且不自动重试，confirmed 后评分区域只读。
-- B9 在同一执行页接入 A19 latest / compute；评分确认后自动查询一次已有认知域结果，无结果时必须由用户明确确认才首次计算。页面展示 domainScores、itemContributions、mapping / computation，支持贡献定位原题，并固定说明重叠归因、跨域不可求和和非诊断边界。
-- B10 在访视详情页安全展示 report patient / visit / scale / score / domain / evidence 快照、五段规则化 narrative、generation 与历史 confirmation；system_draft 不等于 AI 或医生结论，draft 尚未经医生确认。
-- B11 在同一访视详情页接入 A21 三个写接口，只编辑 doctorOpinion / recommendationText；editNote、submissionNote、confirmationNote 均由用户明确填写。三个请求使用服务端 updatedAt 乐观并发；冲突保留内存输入、刷新 latest、标记 stale 且不自动重发。PatientsWorkspaceContext 复用 Shell 已取得用户，不产生第二次认证请求。
-- pending_confirmation 完全只读等待，doctor / admin 才显示确认入口；nurse / research_assistant 只读。confirmed 使用服务端 isFinal 并只读，qualityStatus=passed 只表示确认流程质量标记通过，confirmed 不等于 locked。source=mixed 表示系统规则与临床人员补充并存，不表示 AI。
-- B12 在同一路由接入 A22 lock API：仅 doctor / admin 显示可用入口，请求只发送 confirm、lockNote、expectedUpdatedAt；冲突保留说明、刷新 latest 一次且不自动重发。status 继续为 confirmed，顶层 lockedAt 是主锁定事实，lock 是安全摘要，alreadyLocked 按正常成功处理；锁定只作用于 ClinicalReport。
-- B13 在同一路由接入 A23 freeze-sources：仅 doctor / admin 显示可用首次冻结 / 恢复入口，请求只发送 confirm、freezeNote、expectedUpdatedAt；sourceFreeze 支持 null / in_progress / completed。in_progress 明确可能已有部分来源被冻结，恢复沿用服务端原 freezeId、freezeNote 与 scope；completed 展示五类安全计数并按 alreadyFrozen 幂等处理。页面不公开来源 ID，不自动轮询、重试或恢复，不冻结 Patient / Visit / Storage，也不提供 unfreeze。
-- B14 在同一路由接入 A24 archive：仅 doctor / admin 对 confirmed、已安全锁定且 sourceFreeze completed 的报告显示可用入口；请求只发送 confirm、archiveNote、expectedUpdatedAt。Patient active、Visit editable 与 Visit locked 不参与前端资格。冲突 / failed 保留说明、latest 最多一次且不自动 POST；成功完整采用服务端 archived report，alreadyArchived 按幂等成功处理。页面分开显示 status、archivedAt、archive 安全摘要和当前会话 receipt，校验 sourceFreeze 锚点并支持不猜测缺失信息的历史 fallback；归档后完全只读。
-- B15 沿用 `hooks/useClinicalReportWorkflow.ts` 唯一公开 façade；central state/reducer 增加 correction slice，第七类 Correction Action 独占 A25 API。唯一 activeMode、writingAction、writingRef、mountedRef、latest、onReportUpdated 与 beforeunload 入口保持；所有报告组件继续只依赖 façade。
-- B15 支持首次更正、`in_progress` 显式恢复、`completed` 幂等结果；成功直接采用 `replacementReport` 为 latest，并在当前页面内存保留 `sourceReport` 与回执。合法 V2 仅 doctor/admin 可执行 A21 edit / submit / confirm，Patient inactive、Visit locked / voided 不阻断；V1 条件不放宽。
-- B16 新增统一 `clinical-report-lifecycle-target.ts`：V1 保持既有资格；replacement 使用任意安全整数 V2+ 与完整公开 replacementOf 摘要作结构性 UI 门槛，不以 `isSafeCorrectionReplacement` 的编辑阶段空值要求阻断已锁定 / 已冻结版本，完整 lineage 仍由 A26 后端裁决。
-- B16 对安全 replacement 复用同一套 Lock / SourceFreeze / Archive Action 与 Panel。V2+ 不因 Patient inactive、Visit locked / voided 被前端阻断；V1 原 Visit 资格不放宽。三个请求 DTO、endpoint、response 不变，不发送 reportVersion、previousReportId、correctionId 或 sourceIds。
-- B16 在 `COMPLETE_CORRECTION` 切换 replacement 时清除旧版本 edit / submit / confirm / lock / freeze / archive 草稿、错误、回执和写禁止状态，只保留本次 correction receipt 与 sourceReport；`CLINICAL_REPORT_REPLACEMENT_LINEAGE_INVALID` 会显示安全中文提示、最多 latest 一次、禁止后续写入且不自动重放 POST。
-- B16 最终验收已通过：Codex 内置浏览器在 `http://localhost:3002` 单 origin 完成登录前、登录后、报告页、未提交草稿后与刷新后的审计；localStorage、sessionStorage、IndexedDB 均未发现敏感业务持久化，未提交草稿刷新后未恢复且没有自动写请求，HttpOnly 会话 Cookie 不对页面脚本开放。WP-02 replacement 生命周期闭环完成；接口、DTO 与 response 均无变化。
-- B17 patients 侧新增独立 history/trend API Client、精确公开类型、URL 查询状态、历史筛选/分页、保留全部 Visit 的 SVG 趋势图与完整明细表；所有百分比、delta、comparison、reason 与 domain 直接使用后端事实，不重排、不补算、不跨缺失点连线。
-- B17 assessments 侧在既有访视页增加独立版本列表面板，并复用安全报告快照/正文组件形成历史详情；版本面板失败不阻断 current report workflow，历史详情不挂载 workflow Hook 且没有 A21–A25 写入口。页面不渲染内部 lineage ID，不输出诊断、风险、概率、改善、恶化、进展或治疗结论。
-- 当前仍未实现患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、批量或自动保存、评分锁定、认知域人工修改 / 确认 / 锁定 / 作废 / 重算、报告退回 / reject / reopen / withdraw / 签名 / unlock / unfreeze / unarchive / 作废 / 重生成 / PDF、AI、用户管理或权限菜单。
+- `frontend/` 使用 Next.js App Router、React、TypeScript 与 Tailwind CSS；公共 UI、Auth、Patients、Assessments 三个业务 feature 已落地。
+- B1–B17 当前代码闭环已存在。B16 已让安全线性 replacement V2+ 复用既有 A21–A24；B17 已接入患者评估历史、报告版本、指定历史报告详情与基础随访趋势。WP-02、WP-04 均已完成。
+- 当前路由为 `/`、`/login`、`/dashboard`、`/patients`、`/patients/new`、`/patients/[patientId]`、`/patients/[patientId]/history`、`/patients/[patientId]/trends`、`/patients/[patientId]/visits/new`、`/patients/[patientId]/visits/[visitId]`、`/patients/[patientId]/visits/[visitId]/clinical-reports/[reportId]` 与 `/patients/[patientId]/visits/[visitId]/scale-instances/[scaleInstanceId]`，另有 `not-found` 兜底。
+- Patients / Assessments 已覆盖患者与访视创建/读取、量表初始化与逐题草稿、媒体证据、提交、评分复核与确认、认知域、报告生成与 A21–A25 工作流；A26 不新增平行接口，B16 复用 A22–A24。
+- B17 使用 A27/A28 四个只读 GET；历史报告详情不挂载 current report workflow，访视详情中的版本面板与当前报告工作流相互独立。
+- 所有前端 API Client 使用 `frontendEnv.apiBaseUrl` 与 `credentials: 'include'`；适用 GET 使用 `cache: 'no-store'`。当前只读取 `NEXT_PUBLIC_API_BASE_URL`，没有 BFF、JWT 主登录态或本地 token 存储。
+- 主登录态由后端 Session + HttpOnly Cookie 维护；页面内草稿与当前会话回执只保存在 React 内存。
+- `/dashboard` 仍是轻量入口，不是完整医生工作台。`AuthDashboard` 与公共首页仍渲染部分早期“后续建设/尚未实现”占位文案，其中 MMSE/MoCA、历史结果与报告确认描述已落后于 B4–B17 代码；这些是产品文案问题，不是能力未实现的事实。
+- Batch A（B1–B3）已完成；Batch B（B4–B6）桌面范围已完成；Batch C（B7–B10）与 Batch D（B11–B15 差距补验）尚未启动；Batch E 保留 8 项真实设备、辅助技术或人工验收。验证矩阵、数字、cleanup 和 evidence commit 只见 frontend testing playbook。
+- 当前仍未实现：患者编辑/删除/归档/合并；访视编辑/删除和完整状态流转；批量或自动保存；评分独立锁定；认知域人工修改/确认/锁定/作废/重算；报告 reject/reopen/withdraw、签名、unlock/unfreeze/unarchive、作废、重生成、PDF/打印/下载；AI 临床解释；用户管理、角色管理和权限菜单。
 
 ## 4. 必读基础文档
 
-- `docs\frontend-architecture.md`
-- `docs\auth-baseline.md`
-- `docs\codex-rules.md`
-- `docs\codex-instruction-spec.md`
-- `docs\handoff\handoff-frontend-design-baseline.md`
-- `docs\handoff\handoff-backend-api-map.md`
-- `docs\handoff\handoff-backend-dto-cheatsheet.md`
+- `docs/frontend-architecture.md`
+- `docs/auth-baseline.md`
+- `docs/codex-rules.md`
+- `docs/codex-instruction-spec.md`
+- `docs/handoff/handoff-roadmap.md`
+- `docs/handoff/handoff-frontend-design-baseline.md`
+- `docs/handoff/handoff-backend-api-map.md`
+- `docs/handoff/handoff-backend-dto-cheatsheet.md`
 
 ## 5. 当前前端 handoff 文档列表
 
-- `docs\handoff\handoff-frontend-snapshot.md`
-- `docs\handoff\handoff-frontend-design-baseline.md`
-- `docs\handoff\handoff-frontend-route-map.md`
-- `docs\handoff\handoff-frontend-api-map.md`
-- `docs\handoff\handoff-frontend-component-map.md`
-- `docs\handoff\handoff-frontend-testing-playbook.md`
+- `docs/handoff/handoff-frontend-snapshot.md`
+- `docs/handoff/handoff-frontend-design-baseline.md`
+- `docs/handoff/handoff-frontend-route-map.md`
+- `docs/handoff/handoff-frontend-api-map.md`
+- `docs/handoff/handoff-frontend-component-map.md`
+- `docs/handoff/handoff-frontend-testing-playbook.md`
 
 ## 6. 设计基线使用规则
 
 - `handoff-frontend-design-baseline.md` 是后续前端 `app` / `src`、页面、组件和样式迁移前必须阅读的基线文档。
 - 登录、工作台与 patients 页面继续使用浅色背景、低饱和蓝绿、清晰分区、大字号和少装饰的医疗系统视觉。
 - 后续迁移前端结构时，只继承 ReviewX 的工程结构、配置经验和组件治理方法，不继承其视觉风格、颜色体系、页面布局、业务文案或管理后台气质。
-- 当前设计基线已用于公共底座、认证接入和 patients 页面，但不代表完整设计系统或完整业务 MVP 已实现。
+- 当前设计基线已用于公共底座与现有业务页面，但不代表完整设计系统或完整医生工作台已实现。
 
 ## 7. 后续同步规则
 
-- 后续调整前端 `src` / `app` 时，应同步更新事实快照、路由地图、组件地图、API 对接地图和验证手册。
-- 新增或调整页面、路由、API 对接、复用组件、测试脚本或关键交互时，应同步更新对应 handoff 文档。
+- 后续调整前端 `src` / `app` 时，应按职责同步 snapshot、route map、component map、API map 或 testing playbook，不在 INDEX 累积逐阶段流水。
 - 新增或调整页面、组件、布局、样式和关键交互时，应同步检查 `handoff-frontend-design-baseline.md`。
-- 后续业务页面应以当前认证和 patients feature 边界为基线，不得把认证状态 Hook 扩写成未经确认的完整权限系统。
-- 未在业务文档和实际代码中确认的内容，只能标记为“待确认”或“待后续业务文档确定”。
+- 当前实现判断以代码、roadmap 与对应 handoff 为准；验证事实以 frontend testing playbook 为准。
 - 不得在 handoff 中提前写入未实现的前端能力。

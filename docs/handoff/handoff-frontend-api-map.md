@@ -6,16 +6,16 @@
 
 ## 2. 当前状态与边界
 
+- 当前前端 API Client 覆盖 Auth、A12–A25 既有临床闭环，以及 A27/A28 四个只读历史与趋势接口；A26 不新增 endpoint，而是让合法 V2+ replacement 复用 A21–A24。
 - B16 不新增接口：合法 V1 与公开摘要结构安全的 replacement V2+ 共用既有 A22 lock、A23 freeze-sources、A24 archive；A25 corrections 与 A20 / A21 调用保持。
 - B17 对接 A27/A28 四个只读 GET：patient assessment history、clinical report versions、specified historical report、patient follow-up trends；不修改既有接口、DTO/response 或写请求。
 - A21–A25 写请求均只使用当前服务端 `report.updatedAt` 作为 `expectedUpdatedAt`，逐字段重建 Body 白名单且不自动重试；受控冲突最多自动 latest 一次，不重发原请求或自动恢复。
-- B9 新增独立 `frontend\src\features\assessments\api\cognitive-domain-api.ts`，在既有量表实例页接入 A19 latest / compute。
 - 认知域仍只调用 A19 latest / compute；报告调用 A20 latest / generate、A21 edit / submit / confirm、A22 lock、A23 freeze-sources、A24 archive 与 A25 corrections，不调用 replacement 专用平行 API 或 AI API。
 - API Client 使用 `frontendEnv.apiBaseUrl` 作为后端基础地址。
 - 所有请求统一使用 `credentials: 'include'`，由浏览器携带或接收 HttpOnly Cookie。
-- 所有认证、患者和访视请求使用 `cache: 'no-store'`。
+- 当前 fetch helper 统一设置 `cache: 'no-store'`；所有 GET 都不依赖浏览器缓存，支持的 GET 接收 `AbortSignal`。
 - 前端不读取 Cookie，不保存 token，不使用 JWT，也不记录密码或认证响应体。
-- 当前没有 BFF 代理；B1-B11 按明确任务口径由浏览器直接请求既有公开 API base URL。
+- 当前没有 BFF 代理、Next Route Handler 代理或本地 token 层；浏览器直接请求既有公开 API base URL。
 
 ## 3. 环境变量读取
 
@@ -23,7 +23,7 @@
 - 读取项：既有 `NEXT_PUBLIC_API_BASE_URL`
 - 安全默认值：`http://localhost:5002`
 - 导出对象：`frontendEnv.apiBaseUrl`
-- B1-B8 未新增、删除或修改环境变量与环境变量文件。
+- 当前前端业务请求只读取这一项公开环境变量；没有并行的后端地址变量或服务端私有 API base 配置。
 
 ## 4. 当前 API 对接清单
 
@@ -121,7 +121,7 @@
 - loading：目录区域独立显示加载状态；目录失败不移除已成功加载的访视详情与既有实例；支持单独重试。
 - 错误：401 返回 `/login`；403 显示量表目录无权限；500 + `SCALE_CATALOG_INVALID` 映射“量表目录暂时不可用”；网络错误映射评估服务暂不可用；其他错误使用稳定目录加载失败文案。
 - 安全字段边界：只读取 code、name、shortName、description、category、version 追溯、totalScoreRange、groupCount、itemCount、capabilities；前端类型不定义完整 groups / items、prompt / instruction、答案、scoringRule、expectedValue、researchExportMappings 或 ObjectId。
-- UI 口径：图片、手写、计时等 capabilities 只写成“量表配置包含此类项目”，不表示当前前端已实现对应采集能力。
+- UI 口径：capabilities 只表示量表配置包含相应项目，不由目录摘要单独证明采集完成；实际实例执行页已对真实 photo / handwriting requirement 提供 B5 采集链路，计时标识仍不表示实时计时器。
 
 ### 4.10 `getAssessmentVisitExecutionDetail()` -> `GET /patients/:patientId/visits/:visitId`
 
@@ -347,7 +347,7 @@
 
 ### 4.28 `updateClinicalReportDraft()` -> `PATCH /patients/:patientId/visits/:visitId/clinical-reports/:reportId/draft`
 
-- Client / 调用方：`clinical-report-api.ts` / `useClinicalReportWorkflow`；仅完整、未锁定 / 归档 / 作废 / 确认的 cognitive_assessment version 1 draft 且 source 为 system_draft / mixed 时开放。
+- Client / 调用方：`clinical-report-api.ts` / `useClinicalReportWorkflow`；普通 V1 的 system_draft / mixed draft 与结构安全、由 doctor/admin 操作的 replacement V2+ draft 可进入 A21 编辑。两类目标均须完整且未锁定、未归档、未作废、未确认；完整 lineage 与最终权限仍由后端裁决。
 - Path：patientId、visitId、reportId 均 `encodeURIComponent()`；reportId 先 trim + lowercase 并校验 24 位 MongoId，路径 ID 不进入 Body。
 - Body 白名单：只构造 `{ doctorOpinion: input.doctorOpinion.trim(), recommendationText?: input.recommendationText.trim(), editNote: input.editNote.trim(), expectedUpdatedAt }`。只有属性未提供时才省略 recommendationText；空字符串保留用于清除建议。
 - 禁止字段：不发送 A20 五段 narrative、status、source、qualityStatus、版本 / 编号、scope、快照、generation、editorial、submission、confirmation、actor、eventId、metadata 或 force。
@@ -387,7 +387,7 @@
 - 错误映射：严格新增 `CLINICAL_REPORT_LOCK_CONFIRMATION_REQUIRED`、`CLINICAL_REPORT_NOT_LOCKABLE`、`CLINICAL_REPORT_LOCK_CONFLICT`、`CLINICAL_REPORT_LOCK_AUDIT_UNAVAILABLE`、`CLINICAL_REPORT_LOCK_FAILED`；继续复用 validation、401 / 403、patient / visit / ownership、incomplete、voided、metadata unsupported、service unavailable。
 - 冲突恢复：LOCK_CONFLICT 保留 lockNote、清 checkbox、标记 stale、自动 latest 一次；不自动覆盖或重发。NOT_LOCKABLE 同样最多刷新一次；若 latest 已锁定，进入只读展示并保留本地说明到用户明确关闭；若仍可锁，用户需明确“基于最新报告继续”并重新勾选。
 - 401 / 403：401 复用现有 onUnauthorized 返回登录；action 403 保留已加载报告和 lockNote，显示需 doctor / admin 权限，不将整个报告区域变成 forbidden。
-- 隐私 / 非目标：公开类型仅建模安全 lock actor，不公开 metadata、a22Lock、Schema 原始 lockedBy、Session / currentUser 或事件。不锁定 Patient、Visit、ScaleInstance、ScoreResult、CognitiveDomainResult、MediaEvidence 或 Storage；没有 unlock、签名、归档、更正、作废、PDF / 下载或 AI。
+- 隐私 / Action 边界：公开类型仅建模安全 lock actor，不公开 metadata、a22Lock、Schema 原始 lockedBy、Session / currentUser 或事件。该请求只锁定当前 ClinicalReport，不锁定 Patient、Visit、ScaleInstance、ScoreResult、CognitiveDomainResult、MediaEvidence 或 Storage，也不执行来源冻结、归档、更正、unlock、签名、作废、PDF / 下载或 AI；后续合法阶段由各自既有 Action 显式发起。
 
 ### 4.32 `freezeClinicalReportSources()` -> `POST /patients/:patientId/visits/:visitId/clinical-reports/:reportId/freeze-sources`
 
@@ -403,7 +403,7 @@
 - 错误映射：严格新增 `CLINICAL_REPORT_SOURCE_FREEZE_CONFIRMATION_REQUIRED`、`CLINICAL_REPORT_NOT_SOURCE_FREEZABLE`、`CLINICAL_REPORT_SOURCE_FREEZE_SCOPE_INVALID`、`CLINICAL_REPORT_SOURCE_FREEZE_INPUT_INVALID`、`CLINICAL_REPORT_SOURCE_FREEZE_CONFLICT`、`CLINICAL_REPORT_SOURCE_FREEZE_AUDIT_UNAVAILABLE`、`CLINICAL_REPORT_SOURCE_FREEZE_INCOMPLETE`、`CLINICAL_REPORT_SOURCE_FREEZE_FAILED`；继续复用 validation、401 / 403、patient / visit / report ownership、incomplete、voided、metadata unsupported、service unavailable。
 - 错误恢复：not source freezable / conflict / incomplete / failed / voided / not found 最多自动 latest 一次，保留首次本地 note、清 checkbox、标记 stale；不自动重发 POST 或进入恢复。latest 若得到 in_progress，必须由用户明确放弃本地说明后才能进入使用服务端 note 的恢复；若得到 completed，本地说明保留到用户明确关闭。scope / input invalid 不展示内部差异或来源 ID；audit unavailable 不猜测 freezeId、actor、时间或状态；metadata unsupported 不展示 metadata。
 - 网络不确定结果：保留本地说明，不自动 latest 或 POST，只提供手工“重新加载最新报告”核对；action 403 保留已加载报告和本地说明，401 复用现有 onUnauthorized 返回登录页。
-- 隐私与事务边界：公开类型不定义或展示内部来源 ID、scope、metadata 或原始状态明细；前端不调用 A14–A19 查询来源状态，不重新统计计数或计算百分比。A23 不使用 Mongo transaction，completed 前可能部分冻结且无自动回滚；不冻结 Patient、Visit、Storage，不提供 unfreeze，不生成 PDF / 下载，不调用 AI。
+- 隐私与事务边界：公开类型不定义或展示内部来源 ID、scope、metadata 或原始状态明细；前端不调用 A14–A19 查询来源状态，不重新统计计数或计算百分比。该请求不使用 Mongo transaction，completed 前可能部分冻结且无自动回滚；不冻结 Patient、Visit、Storage，不执行归档或更正，不提供 unfreeze，不生成 PDF / 下载，不调用 AI。
 
 ### 4.33 `archiveClinicalReport()` -> `POST /patients/:patientId/visits/:visitId/clinical-reports/:reportId/archive`
 
@@ -418,7 +418,7 @@
 - 错误映射：严格新增 `CLINICAL_REPORT_ARCHIVE_CONFIRMATION_REQUIRED`、`CLINICAL_REPORT_NOT_ARCHIVABLE`、`CLINICAL_REPORT_ARCHIVE_CONFLICT`、`CLINICAL_REPORT_ARCHIVE_AUDIT_UNAVAILABLE`、`CLINICAL_REPORT_ARCHIVE_FAILED`；继续复用 validation、401 / 403、patient / visit / report not found、incomplete、voided、metadata unsupported、service unavailable。
 - 恢复：not archivable / conflict / failed / voided / not found 最多自动 latest 一次，保留 archiveNote、清 checkbox、标记 stale，绝不自动重发 POST。latest 仍可归档时必须由用户明确基于最新报告继续；latest 已 archived 时进入只读，说明保留到用户明确关闭且提示未写入。网络结果不确定时仅提供手工 latest。
 - 安全摘要 / fallback：完整 A24 archive 校验顶层 archivedAt、UUID、actor、note 与当前 completed sourceFreeze freezeId / completedAt；历史 archived / corrected 可安全显示 archiveId / 锚点为空、actor unknown / 缺姓名的 fallback，不猜测或补写缺失信息且不开放再次归档。archivedAt / archive / status 或锚点不一致时警告并禁止写入。
-- 边界：归档不读取或修改来源，不修改 Patient / Visit、lockedAt / lock、sourceFreeze、confirmation、narrative / snapshots / scope。没有 unarchive / restore confirmed / correction / void / delete / unlock / unfreeze / PDF / Word / 下载或 AI。
+- 边界：归档不读取或修改来源，不修改 Patient / Visit、lockedAt / lock、sourceFreeze、confirmation、narrative / snapshots / scope。该请求本身不执行版本化更正、unarchive / restore confirmed / void / delete / unlock / unfreeze / PDF / Word / 下载或 AI；A25 更正仍须由独立 correction Action 明确发起。
 
 B14.1 / B15 / B16 调用归属更新：
 
@@ -494,11 +494,12 @@ B17 四个 GET 的共同边界：全部使用 `frontendEnv.apiBaseUrl`、`creden
 - `ClinicalReportApiError.kind` 严格新增 A24 五个归档业务 code；UI 使用稳定中文，不直接展示后端英文 message。
 - B15 `clinical-report.ts` 新增 correction state / summary、replacement lineage、request / receipt / response；Date JSON 继续为 string / null，不定义 metadata、原始 correctionRecords、内部审计对象、五类来源 ID、AuditLog ID 或分支 / 合并类型。
 - `ClinicalReportApiError.kind` 新增 A25 九个安全 kind，并继续复用认证、资源、完整性、作废、metadata、服务不可用与 unknown 映射。
+- B17 `clinical-history.ts` 与 `clinical-report-history.ts` 分别建模 assessment history / follow-up trend 与报告版本公开关系；响应不包含 Patient identity、内部 lineage ID、metadata、原始作答、报告正文以外的内部来源或诊断字段。
 
 ## 7. 当前未对接 API
 
-- 当前没有 A12 / A13 / A14 已接接口之外的患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转调用。
-- 当前除 A16–A25 已接调用外，没有撤销提交、reopen、评分 lock / void / rerun / 历史、认知域修改 / 确认 / 作废 / 重算、报告退回 / reject / reopen / withdraw / 签名 / unlock / unfreeze / unarchive / 作废 / 重生成 / PDF、AI、用户管理、角色权限管理或科研导出 API 调用；A22–A24 没有 replacement 专用平行接口。
+- 当前已对接 Auth、A12–A25 与 A27/A28；A26 只改变 A22–A24 对合法 replacement 的服务端适用范围，不存在 replacement 专用平行接口。
+- 患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 完整状态流转、撤销提交 / reopen、评分 lock / void / rerun / 独立历史、认知域修改 / 确认 / 锁定 / 作废 / 重算、报告退回 / reject / reopen / withdraw / 签名 / unlock / unfreeze / unarchive / 作废 / 重生成 / PDF / 打印 / 下载、AI、用户管理、角色权限管理或科研导出 API 当前均未对接。
 - 不得在后端 API 未确认并进入明确任务范围前编造前端对接事实。
 
 ## 8. 后续同步规则

@@ -10,6 +10,7 @@
 - `frontend\src\features\auth` 提供 B1 最小认证接入能力。
 - `frontend\src\features\patients` 提供患者档案、评估访视与 B17 患者历史/基础趋势。
 - `frontend\src\features\assessments` 已推进至 B17；在既有报告 workflow 外新增独立版本面板、历史报告只读详情与共享安全只读内容。
+- B16 / WP-02 与 B17 / WP-04 均已完成；当前验证矩阵、统计、cleanup 和 evidence commit 统一引用 `handoff-frontend-testing-playbook.md`，本组件地图不保存阶段性 Browser 过程。
 - 当前组件遵循医疗系统 / 临床评估 / 低干扰 / 高可读性 / 冷静可信视觉基线。
 - B2-B17 未新增公共 Input 组件、第三方 UI 库、状态管理库、数据请求库或权限菜单组件。
 
@@ -58,7 +59,7 @@
 - 输入：无 props
 - 输出：loading / authenticated / unauthenticated / error 对应界面
 - 使用页面：`/dashboard`
-- 边界：不是完整医生业务工作台；Dashboard 自身不调用患者 API，不实现权限菜单
+- 边界：不是完整医生业务工作台；Dashboard 自身不调用患者 API，不实现权限菜单。当前组件仍把 MMSE/MoCA、历史结果与报告确认显示为“后续建设”，这些产品文案已落后于 B4–B17 代码，不能作为实现状态依据
 
 ### 4.3 `useAuth`
 
@@ -116,7 +117,7 @@
 ### 5.4 `PatientDetailPage`
 
 - 路径：`frontend\src\features\patients\components\PatientDetailPage.tsx`
-- 职责：独立加载患者详情与访视列表，管理访视 URL 筛选、整日日期转换、分页、空态与分区错误；访视行提供“打开访视”链接
+- 职责：独立加载患者详情与访视列表，管理访视 URL 筛选、整日日期转换、分页、空态与分区错误；访视行提供“打开访视”链接，并提供患者评估历史与随访趋势入口
 - 边界：访视加载失败保留患者详情；不展示 Mixed 内部字段，不在列表页初始化量表或提供“开始评估”入口
 
 ### 5.5 `AssessmentVisitCreateForm`
@@ -172,7 +173,7 @@
 - 职责：展示真实 MMSE / MoCA 安全目录、每张卡片的施测方式选择、已初始化 / 访视状态禁用、提交中与 success / conflict / error 状态
 - 输入：目录 loading / error / retry、既有 scaleCode、当前初始化 code、反馈、访视状态与初始化回调
 - 可访问性：select 有可见 label；错误使用 alert，成功使用 polite live region；按钮禁用时保留明确文字
-- 边界：用户不能输入 scaleCode / version；只提供三种确认施测方式；能力摘要明确当前可进入 B4 记录文字说明与计时草稿，但不表示媒体上传、手写轨迹或实时计时器已实现
+- 边界：用户不能输入 scaleCode / version；只提供三种确认施测方式；能力摘要不替代实例执行页的真实能力判断。当前 photo / handwriting requirement 已由 B5 支持媒体采集，实时计时器仍未实现
 
 ### 6.4 Assessment Execution API Client
 
@@ -484,11 +485,11 @@
 ### 6.49 `useClinicalReportWorkflow`
 
 - 路径：`frontend\src\features\assessments\hooks\useClinicalReportWorkflow.ts`
-- 职责：管理 activeMode idle / edit / submit / confirm、单一 writingAction、三类 React 内存草稿、dirty / stale、action error、三类当前会话 receipt、liveMessage、角色 gate 与 open / cancel / update / save 方法。
+- 职责：作为唯一公开 façade 组合 edit、submit、confirm、lock、source_freeze、archive、correction 七类 Action；统一暴露八种 activeMode（含 idle）、单一 writingAction、各类 React 内存草稿、dirty / stale、error / receipt、liveMessage、角色 gate 与 open / cancel / update / save 方法。
 - 并发：表单打开时冻结 reportId / updatedAt；报告版本变化或受控 conflict 保留输入、清除提交 / 确认 checkbox、标记 stale、自动 latest 一次且不重发。用户明确基于最新报告继续后才更新 baseUpdatedAt。
-- 生命周期：edit 变化或任一 note 非空时注册 beforeunload；路由 patientId / visitId 改变时清理内存草稿与回执。刷新页面后未保存内容消失是预期行为。
-- 权限：roles 精确包含 doctor / admin 才开放确认入口；unknown、nurse、research_assistant 不开放。403 保留报告与本地草稿，后端 Guard 仍是最终边界。
-- 边界：不渲染 JSX，不读取 Cookie，不持久化状态，不自动保存 / 提交 / 确认，不自动重试写请求，不分析或生成临床文本。
+- 生命周期：所有报告工作流 dirty 条件汇总到唯一 `useClinicalReportBeforeUnload`；路由 patientId / visitId 改变时清理内存草稿与回执。刷新页面后未保存内容消失是预期行为。
+- 权限：replacement 的 A21–A25 写操作与 A22–A24 不可逆阶段仅向 doctor / admin 开放；nurse / research_assistant 只读。403 保留报告与本地草稿，后端 Guard 仍是最终边界。
+- 边界：不渲染 JSX，不读取 Cookie，不持久化状态，不自动保存、串联或重试写请求，不分析或生成临床文本。
 
 ### 6.50 ClinicalReport workflow draft 纯函数
 
@@ -519,7 +520,7 @@
 ### 6.54 `ClinicalReportWorkflowSummary`
 
 - 路径：`frontend\src\features\assessments\components\ClinicalReportWorkflowSummary.tsx`
-- 职责：展示 editorial 最新编辑摘要、submission、confirmationId / 确认摘要，以及当前会话 edit / submission / confirmation receipts。
+- 职责：展示 editorial 最新编辑摘要、submission、confirmation、当前报告 lock / sourceFreeze / archive / correction 事实，以及当前会话各阶段 receipt；replacement 显示当前 reportCode / Vn。
 - 安全边界：operatorId 不作为主业务字段；不显示完整事件、历史 editNote、previous / next、metadata 或 signatureText；技术追溯号弱化显示。
 
 ### 6.55 B11 `ClinicalReportPanel` / `AssessmentVisitExecutionPage`
@@ -605,7 +606,7 @@
 - 管理 archiveDraft / error / receipt、roleCanArchive、canArchive、dirty / stale / version、consistency warning、block reason、基于 latest 继续、手工不确定结果核对与 confirmArchive。archiveNote 非空纳入 beforeunload；路由变化或成功后清除草稿，receipt 仅保存在当前 React 页面内存。
 - 首次资格要求统一 lifecycle target、confirmed / mixed / passed / isFinal、完整 doctor / admin confirmation、安全非 fallback lock、completed 且一致的当前报告 sourceFreeze、archivedAt / archive / voidedAt 为空、服务端 updatedAt、doctor / admin、无其他草稿 / 写入 / 一致性警告。V1 原口径不变；安全 replacement V2+ 不因 Patient inactive 或 Visit locked / voided 阻断。
 - conflict / not archivable / failed / voided / not found 保留 archiveNote、清 checkbox、标记 stale、最多 latest 一次且不重发 POST。latest 仍可归档时需明确基于最新继续；latest 已 archived 时保留本地说明到明确关闭。audit unavailable / metadata unsupported 禁止继续安全写入；网络错误只提供手工 latest。
-- 成功完整应用 response.report、保存 archiveReceipt、清草稿并回 idle；alreadyArchived false / true 均是成功。Hook 由 B13 的 1375 行增至 1651 行；未做大规模重构，归档规则与一致性算法已最小提取到独立纯函数，统一公开 API 与单写锁不变。
+- 成功完整应用 response.report、保存 archiveReceipt、清草稿并回 idle；alreadyArchived false / true 均是成功。归档规则与一致性算法位于独立纯函数，统一公开 façade 与单写锁不变。
 
 ### 6.66 `ClinicalReportArchivePanel`
 
@@ -626,13 +627,13 @@
 
 ### 6.68 B14.1 ClinicalReport 工作流内部结构
 
-- 公开 façade：`hooks/useClinicalReportWorkflow.ts` 只组合 coordinator、六类 Action 和单一 beforeunload，继续导出原公开 Hook、mode / writing action、显式 options / result 与兼容的 `UseClinicalReportWorkflowValue`。组件只允许 import 此 façade。
-- 公共契约：`hooks/clinical-report-workflow/clinical-report-workflow.types.ts` 显式定义 9 字段 options、99 字段 result、七个 mode、中央 state/action 与 coordinator typed contract；不使用 any、index signature 或双重断言。
-- 中央状态：`clinical-report-workflow.state.ts` 是纯 reducer，统一管理 activeMode、writingAction、六类 draft / error / receipt、liveMessage、writeProhibited、OPEN / CANCEL / RESET / COMPLETE、clearActionErrors 与 clearAllDrafts。
+- 公开 façade：`hooks/useClinicalReportWorkflow.ts` 只组合 coordinator、七类 Action 和单一 beforeunload，继续导出公开 Hook、mode / writing action、显式 options / result 与兼容的 `UseClinicalReportWorkflowValue`。组件只允许 import 此 façade。
+- 公共契约：`hooks/clinical-report-workflow/clinical-report-workflow.types.ts` 显式定义 options / result、八种 mode（idle 加七类 Action）、中央 state/action 与 coordinator typed contract；不使用 any、index signature 或双重断言。本地图不维护易过期的字段数量。
+- 中央状态：`clinical-report-workflow.state.ts` 是纯 reducer，统一管理 activeMode、writingAction、七类 draft / error / receipt、liveMessage、writeProhibited、OPEN / CANCEL / RESET / COMPLETE、clearActionErrors 与 clearAllDrafts。
 - 协调器：`useClinicalReportWorkflowCoordinator.ts` 唯一持有 mountedRef / writingRef 和 reducer dispatch，统一 begin / finish write、路由报告身份重置、activate / cancel、401、onReportUpdated、latest 恢复与每次只允许一个写请求。
 - 公共恢复 / unload：`clinical-report-workflow-recovery.ts` 固定原 latest error 集合、写阻断分类与最多一次 refresh helper；`useClinicalReportBeforeUnload.ts` 是报告工作流唯一 beforeunload 注册点。
-- 六类 Action：`useClinicalReportEditAction.ts`、`useClinicalReportSubmissionAction.ts`、`useClinicalReportConfirmationAction.ts`、`useClinicalReportLockAction.ts`、`useClinicalReportSourceFreezeAction.ts`、`useClinicalReportArchiveAction.ts` 分别独占各自资格、草稿、校验、dirty / stale、block reason、API、错误、成功消息和回执，不互相 import 或修改对方 slice。
-- 消费边界：全部 ClinicalReport 组件继续只接收 façade 的扁平结果；内部模块不得被组件直接 import。B15 在此结构上新增第七类 Action，没有把 API 堆回 façade。
+- 七类 Action：`useClinicalReportEditAction.ts`、`useClinicalReportSubmissionAction.ts`、`useClinicalReportConfirmationAction.ts`、`useClinicalReportLockAction.ts`、`useClinicalReportSourceFreezeAction.ts`、`useClinicalReportArchiveAction.ts`、`useClinicalReportCorrectionAction.ts` 分别独占各自资格、草稿、校验、dirty / stale、block reason、API、错误、成功消息和回执，不互相 import 或修改对方 slice。
+- 消费边界：全部 ClinicalReport 组件继续只接收 façade 的扁平结果；内部模块不得被组件直接 import，API 调用不堆回 façade。
 
 ### 6.69 B15 correction 类型、纯函数与 Action
 
@@ -657,7 +658,7 @@
 
 - `lib/clinical-report-lifecycle-target.ts` 集中识别普通 cognitive_assessment V1 与任意安全整数 V2+ replacement。replacement 必须具有完整公开 lineage、相邻版本、当前 reportCode / reportVersion 反向一致及安全 actor / 时间 / 锚点；NaN、Infinity、小数、负数、字符串版本、缺字段或不连续摘要均失败。该守卫只形成 UI 结构门槛，完整双向 lineage 由 A26 后端判定。
 - `ClinicalReportPanel` 对安全 V1 / replacement 复用同一套 LockPanel、SourceFreezePanel / Summary、ArchivePanel / Summary；不创建 replacement 专用页面、路由、Hook 或组件。结构不安全时隐藏三类操作控件并显示安全提示；报告正文、质量摘要和 correction summary 保持。
-- 三个 Panel 动态显示当前 reportCode / Vn；`ClinicalReportWorkflowSummary` 显示当前 replacement 版本及 A21–A24 服务端事实，不再声称后续生命周期关闭。doctor / admin 可操作，nurse / research_assistant 只读，后端 RolesGuard 仍是最终边界。
+- 三个 Panel 动态显示当前 reportCode / Vn；`ClinicalReportWorkflowSummary` 显示当前 replacement 版本及 A21–A24 服务端事实。doctor / admin 可操作，nurse / research_assistant 只读，后端 RolesGuard 仍是最终边界。
 - `clinical-report-workflow.state.ts` 的 `COMPLETE_CORRECTION` 在采用 replacement 后清空旧版本 edit / submit / confirmation / lock / sourceFreeze / archive draft、error、receipt 与 writeProhibited，保留本次 correction receipt / sourceReport；因此 V1 的 A21–A24 会话回执不会显示在新 Vn 下。
 - `clinical-report-workflow-recovery.ts` 将 replacement lineage 409 独立归类为最多 latest 一次和 writeProhibited；各 Action 不自动重放 POST。单一 activeMode、writingAction、writingRef、mountedRef、beforeunload、latest 与 report 更新入口保持。
 - B16 浏览器验收确认安全 archived Vn 可继续形成 V(n+1)，A25 Resume、unsafe replacement summary 写门禁与 lineage 隐私边界均已通过；报告工作流草稿只保留在当前 React 内存，不持久化到 localStorage、sessionStorage 或 IndexedDB。
@@ -680,7 +681,7 @@
 ### 6.75 B17 加载、错误与验证事实
 
 - history、trend、version list、historical detail 各自维护 loading/error/AbortController；只有可重试服务错误显示手工重载，没有自动 retry 或 polling。
-- 实际浏览器已覆盖四角色 history、URL 筛选回退、单 V1、V1→V2、lineage invalid 409、只读详情、source_missing/source_incomplete marker、1280×720 与 390px 布局。多 Visit/V3/完整 trend comparison 与 domain mapping 矩阵因夹具缺失未执行，WP-04 仍进行中。
+- B17 / WP-04 已完成最终真实浏览器验收；当前矩阵、统计、角色/错误、响应式、键盘、Network、Runtime Storage、cleanup 与 evidence commit 统一见 `handoff-frontend-testing-playbook.md`，本地图不保留首轮 fixture 缺口或 Browser 操作流水。
 
 ## 7. 后续同步规则
 
