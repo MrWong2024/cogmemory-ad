@@ -12,7 +12,7 @@
 
 项目整体进度、当前业务阶段、一期剩余工作包与二期候选能力统一由 `handoff-roadmap.md` 作为项目控制面板维护；本入口不承担阶段时间线。
 
-当前内容记录后端公共底座、量表与运行时模型、A12-A20 评估至报告 draft 闭环、A21 ClinicalReport 受控编辑 / 提交待确认 / 医生确认、A22-A24 不可逆报告生命周期、A25 线性更正、A26 replacement 生命周期泛化、A27 患者历史评估 / 报告版本与指定历史详情，以及 A28 基础随访趋势。当前后端产品实现完成至 A28；WP-04 后端范围已完成，但前端尚未实施，WP-04 仍进行中。
+当前内容记录后端公共底座、量表与运行时模型，以及 A12-A28 从患者/访视、评估执行到报告生命周期、历史读取和基础随访趋势的完整已实施范围。当前后端产品能力已实施至 A28；前端 B17 也已完成实施和验收，WP-04 已完成。
 
 ## 3. 当前状态
 
@@ -35,13 +35,9 @@
 - 当前报告公开 API 共十一个：既有九个写入/最新读取接口，加 A27 版本列表与指定历史详情；另有 `ClinicalHistoryController` 的患者历史评估与基础随访趋势两个接口。
 - A12-A28 临床接口均显式绑定 `SessionAuthGuard` 与 `RolesGuard`；WP-04 四个只读接口允许 doctor / nurse / research_assistant / admin 且不读取 CurrentUser；未注册全局 Guard。
 - 当前媒体边界仅为 photo / handwriting；手写轨迹为可选 JSON / strokes，签名 URL 为短期地址，作废不物理删除。仍无批量上传、分片上传、客户端直传、永久 URL、公开 Storage 管理、物理删除、原子替换、OCR 或 AI。
-- A24 最终验证记录为 scoped lint 通过、build 通过、72 个单元测试套件 / 625 个测试通过、A24 定向真实 HTTP E2E 1 个套件 / 6 个测试通过、全量 E2E 13 个套件 / 60 个测试通过。A24 完成后补充执行的最近两次全量 E2E 均完整通过；未运行全模块 lint，既有 scoring 格式技术债未修改。
-- A25 实际验证为 scoped reports + A25 E2E lint 通过、build 通过、75 个单元测试套件 / 653 个测试通过、A25 定向 E2E 1 个套件 / 4 个测试通过、全量 E2E 14 个套件 / 64 个测试通过；运行环境为隔离 test DB、fake Storage、stub SMS / LLM。上述数量来自本阶段实际 Jest 执行；A24 的 13 / 60 历史事实保留。
-- A26 实际验证为变更文件定向 lint、build、5 个定向 unit suites / 57 tests、全量 unit 76 suites / 666 tests、A26 定向 E2E 1 suite / 7 tests、全量 E2E 14 suites / 67 tests 全部通过；V1、V2、V3、共享来源不重写、非法 lineage、权限、幂等、恢复与并发均有回归证据。
-- A27 实际验证为变更范围定向 lint 通过、build 通过、全量 unit 84 suites / 707 tests、全量 E2E 16 suites / 73 tests 全部通过；完整 backend lint 仍为既有 scoring 三文件 51 个 Prettier error、0 warning，A27 未新增 lint 债务。
-- A28 实际验证为变更范围定向 lint、build、A27+A28 定向 unit 14 suites / 126 tests、A28 定向 E2E 1 suite / 3 tests、A27 定向 E2E 1 suite / 3 tests、全量 unit 88 suites / 751 tests、全量 E2E 17 suites / 76 tests 全部通过；完整 backend lint 仍仅为相同 scoring 三文件 51 个 Prettier errors、0 warnings，A28 未新增 lint 债务。
-- 两次最新全量 E2E 均使用 `NODE_ENV=test`、Jest `--runInBand`、隔离 `cogmemory_ad_test`、fake Storage、stub SMS / LLM 与脱敏人工数据，未调用真实外部服务。此前一次全量复跑曾出现既有跨套件 test catalog / 数据顺序污染现象；该现象在随后两次完整串行复跑中未再次出现。当前验证结论以最近连续两次全量通过为准，但尚不据此宣称潜在测试隔离风险已被永久消除。
-- 当前后端闭环为 A17 → A18 → A19 → A20 generate / latest → A21 edit / submit / confirm → A22 lock → A23 freeze-sources → A24 archive → A25 corrections，由 A26 让任意合法线性 replacement 重复 A21-A24，A27 提供稳定只读历史访问，A28 提供按 Visit 保留缺失点且仅相邻 exact-trace 可比的基础随访趋势。前端趋势展示、cancel / branch、PDF 与 AI 仍未实现。
+- D-038 已完整实施并认证：`standard_test` 与 `browser_acceptance` 分库，Browser backend 使用 app / `readWrite`，fixture CLI 使用 db_admin / `dbOwner`，建连前、建连后、库名和角色门禁均已验证。
+- 当前后端测试门禁、数量、数据库隔离与 Browser 批次最终证据统一以 `handoff-backend-testing-playbook.md` 为准；本入口不再重复维护逐阶段测试流水。
+- 当前后端闭环为 A17 → A18 → A19 → A20 generate / latest → A21 edit / submit / confirm → A22 lock → A23 freeze-sources → A24 archive → A25 corrections，由 A26 让任意合法线性 replacement 重复 A21-A24，A27 提供稳定只读历史访问，A28 提供按 Visit 保留缺失点且仅相邻 exact-trace 可比的基础随访趋势。前端 B17 已完成历史、版本、历史详情和基础趋势展示；correction cancel / branch、PDF 与 AI 仍未实现。
 
 ## 4. 必读基础文档
 
@@ -61,7 +57,7 @@
 - `docs\handoff\handoff-backend-config-matrix.md`
 - `docs\handoff\handoff-backend-decisions.md`
 - `docs\handoff\handoff-backend-testing-playbook.md`
-- `docs\handoff\handoff-wp04-backend-contract.md`（WP-04 已锁定契约；A27/A28 后端范围已实施，前端仍未实施）
+- `docs\handoff\handoff-wp04-backend-contract.md`（WP-04 已锁定并实施的契约；A27/A28 后端与 B17 前端均已完成）
 
 ## 6. 后续同步规则
 

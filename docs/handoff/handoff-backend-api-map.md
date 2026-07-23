@@ -11,7 +11,7 @@
 - AuthModule 内部 session cookie 名称已统一为 `cogmemory_ad_session`，登录成功下发 HttpOnly Cookie，`SameSite=Lax`，`Path=/`，production 环境启用 `Secure`。
 - 当前没有 users controller，没有公开用户管理 API，没有注册、密码重置、角色权限管理、短信验证码、OAuth / SSO 或 JWT 登录 API。
 - A12 已新增 `PatientsController` 与 `AssessmentVisitsController`，形成第一组受保护临床业务 API；所有五个接口均显式绑定 `SessionAuthGuard`、`RolesGuard` 和 `@Roles('admin', 'doctor', 'nurse', 'research_assistant')`。
-- 当前已有实例 submission、评分、认知域与报告 generate / latest / edit / submit / confirm / lock / freeze-sources / archive 最小闭环；仍没有认知域人工修改 / 确认 / 锁定 / 重算、报告退回 / 签名 / unlock / unfreeze / unarchive / 更正 / 作废 / PDF、SMS 或 AI / LLM 公开接口。
+- 当前已有实例 submission、评分、认知域，以及报告 generate / latest / edit / submit / confirm / lock / freeze-sources / archive / corrections 闭环；A26 允许合法 V2+ replacement 复用 A21-A24，A27/A28 提供四个只读历史与趋势接口。仍没有认知域人工修改 / 确认 / 锁定 / 重算、报告退回 / 签名 / unlock / unfreeze / unarchive / correction cancel / branch / 作废 / PDF、SMS 或 AI / LLM 公开接口。
 - 当前 API 事实以实际 Controller、DTO、response type 和对应单元 / E2E 测试为准。
 
 ## 3. 当前 API 清单
@@ -358,8 +358,8 @@
 - `backend\src\modules\media` 当前仅通过 `MediaEvidenceController` 暴露上述四个题目级媒体接口；没有全患者 / 访视 / 实例媒体列表、直接对象 key 下载、永久 URL、物理删除、替换、批量、分片、客户端直传、OCR 或 AI 接口。
 - `backend\src\modules\scoring` 当前通过同一 `ScoringController` 暴露 A17 compute / latest 与 A18 manual-review / confirm；没有 lock、void、撤销确认、reopen、重跑、列表、患者级或访视级评分 API。
 - `backend\src\modules\cognitive-domains` 当前通过 `CognitiveDomainResultsController` 暴露 A19 compute / latest；没有人工修改、确认、锁定、作废、重算、历史列表、患者 / 访视级列表或报告 API。
-- `backend\src\modules\reports` 当前通过 `ClinicalReportsController` 暴露 A20-A25 的 generate / latest / edit / submit / confirm / lock / freeze-sources / archive / corrections；没有更正列表、cancel、branch、replacement archive、PDF 或 AI API。
-- 当前已定义 A12-A20 对应公开 DTO 和响应类型；仍不定义评分 lock / void / 重跑、认知域人工修改 / 确认 / 锁定 / 重算、报告编辑 / 确认 / PDF、SMS、AI / LLM 或批量 / 分片 / 客户端直传契约；A20 未更新 frontend handoff。
+- `backend\src\modules\reports` 当前通过 `ClinicalReportsController` 暴露 A20-A25 的 generate / latest / edit / submit / confirm / lock / freeze-sources / archive / corrections，以及 A27 的版本列表和指定历史详情；A26 不新增专用 endpoint，而是把同一 A22-A24 lock / freeze-sources / archive 接口安全泛化到合法 V2+ replacement。当前尚未暴露 correction 列表、cancel、branch、replacement 专用接口、PDF 或 AI API。
+- 当前已定义 A12-A28 所需的公开 DTO 和响应类型；A26 复用既有 A22-A24 DTO / response。仍不定义评分 lock / void / 重跑、认知域人工修改 / 确认 / 锁定 / 重算、报告退回 / 签名 / unlock / unfreeze / unarchive / correction cancel / branch / PDF、SMS、AI / LLM 或批量 / 分片 / 客户端直传契约。
 
 ## 5. 后续同步规则
 

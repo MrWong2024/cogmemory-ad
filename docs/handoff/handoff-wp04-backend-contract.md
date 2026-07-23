@@ -3,7 +3,7 @@
 ## 0. 文档状态
 
 - 契约状态：**已锁定**。
-- 产品状态：**进行中**；后端 A27 历史读取与 A28 基础随访趋势均已实施，四个只读接口已存在；前端尚未实施，因此 WP-04 尚未完成。
+- 实施状态：**已完成并验收**；后端 A27 历史读取与 A28 基础随访趋势、前端 B17 历史/版本/详情/趋势均已实施，WP-04 已完成。
 - A28 实施基线：`dd79d20fbd3a9dc97d2240978b350d07751dbe57`。
 - 范围：四个只读 GET；无 Body、无写入、无 `expectedUpdatedAt`、无 `confirm`、无 AuditLog、无缓存、无导出、无 PDF、无 AI、无诊断。
 - 兼容边界：不改变现有 `latest`、Patient / Visit list 或 A17–A26 API；不改变 `ClinicalReportPublicMapper`。
@@ -669,9 +669,9 @@ Visit voided 必须保留 point 且不得 available。Patient inactive/archived 
 
 后续实现只在确有需要时给既有 Service 增加最小、内部、read-only、ownership-scoped、lean/projection 批量方法；不 export Model，不复制 Schema，不将跨域编排塞入底层 Service。
 
-## 14. 后续实施拆分
+## 14. 实施拆分（已完成）
 
-### 后端实施阶段一
+### 后端实施阶段一（A27，已完成）
 
 - 患者历史评估列表；
 - 报告版本列表、全链 evaluator 和安全关系 mapper；
@@ -679,7 +679,7 @@ Visit voided 必须保留 point 且不得 available。Patient inactive/archived 
 - 相应 unit 与真实 HTTP E2E；
 - 不实现趋势。
 
-### 后端实施阶段二
+### 后端实施阶段二（A28，已完成）
 
 - 单量表基础随访趋势；
 - source/dataStatus evaluator；
@@ -687,9 +687,9 @@ Visit voided 必须保留 point 且不得 available。Patient inactive/archived 
 - 缺失、作废、ambiguous 与相邻比较；
 - 相应 unit 与真实 HTTP E2E。
 
-### 前端阶段
+### 前端阶段（B17，已完成）
 
-待两个后端阶段响应稳定后再实现患者历史入口、Visit 历史、报告版本/详情、总分/domain 趋势及缺失/不可比提示；不实施诊断解释。阶段编号由后续审核决定，本文不分配。
+已基于稳定的四个只读接口实现患者历史入口、Visit 历史、报告版本/详情、总分/domain 趋势及缺失/不可比提示；没有扩展为诊断解释。
 
 ## 15. Unit、E2E 与前端验收矩阵
 
@@ -729,5 +729,5 @@ A28 不实现前端、图表、report diff、narrative 比较、跨量表换算/
 - 接口路径、Controller 归属、Param/Query 字段、默认值、上限、排序、分页、角色、ownership、错误码、nullable、dataStatus、comparison status/reason、数值来源、exact trace、domain mapping、查询编排、索引和模块方向均已锁定。
 - 未决产品/技术项：**0**。
 - 后端已按本文完成 A27 与 A28：`assessment-history`、`clinical-reports` 版本列表、`clinical-reports/:reportId` 与 `follow-up-trends` 均已实施。
-- A28 实测为变更范围定向 lint、build、88 suites / 751 unit tests 与 17 suites / 76 E2E tests 通过；完整 lint 仍仅有既存 scoring 三文件的 51 个 Prettier errors、0 warnings。
-- WP-04 后端范围已完成；前端趋势图/表、版本导航与产品验收尚未实施，所以工作包继续进行中，下一阶段不在本文预分配编号。
+- 前端 B17 已按本文实现患者历史、报告版本导航、指定历史详情和基础随访趋势；WP-04 已完成并验收。
+- 当前后端测试门禁和数量统一以 `handoff-backend-testing-playbook.md` 为准；本文不重复维护阶段性测试统计。
