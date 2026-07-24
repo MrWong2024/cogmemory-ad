@@ -159,7 +159,7 @@ export function ItemResponseEditor({
 
   return (
     <article
-      className="grid gap-5 rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface)] p-5 shadow-[var(--cma-shadow-soft)]"
+      className="grid min-w-0 gap-5 rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface)] p-5 shadow-[var(--cma-shadow-soft)]"
       id={`item-${item.id}`}
     >
       <header className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--cma-line)] pb-4">

@@ -14,11 +14,11 @@
 | WP-04 / B17 | 已完成 | 44 个 scenarioKey 全部通过，正式 fixture 双次 cleanup，残留为 0 |
 | Batch A / B1–B3 | 已完成 | 67 个验证原子全部有明确处置，正式 fixture 双次 cleanup，残留为 0 |
 | Batch B / B4–B6 | 桌面范围已完成 | Browser 133 + automated boundary 2 = 135；post-browser verify 通过；双次 cleanup `residualCount=0`；产品缺陷 0 |
-| Batch C / B7–B10 | B7 未完成；B8–B10 尚未启动 | B7 已完成独立 Browser 验收与 fixture 收口；B7-38 小屏幕横向溢出失败，其余 39 项通过 |
+| Batch C / B7–B10 | B7 未完成；B8–B10 尚未启动 | 历史 39 项通过；B7-38 修复后定向 Browser 布局通过，但本次全量 post-browser verify 未通过 |
 | Batch D / B11–B15 | 尚未启动 | 包含 B14.1 当前仍待验的 Browser 行为等价回归；本文第 6 节是当前待验合同 |
 | Batch E | 保留 8 项 | 真实设备、辅助技术或人工验收；不被桌面 Browser、大屏抽查或 automated boundary 替代 |
 
-Batch B 的正式 namespace 和临时文件已经删除，不存在“尚待 post-browser verify”或“下一步重建 Batch B 终态”的当前任务。B7 已使用独立 fixture 执行 Browser 验收并完成 post-browser verify 与双次 cleanup，但因 B7-38 失败仍未完成；B8–B15 尚未执行，不得把 B16 / B17、Batch A / B 或 B7 的证据外推为后续阶段已通过。
+Batch B 的正式 namespace 和临时文件已经删除，不存在“尚待 post-browser verify”或“下一步重建 Batch B 终态”的当前任务。B7 历史独立验收的 39 项、post-browser verify 与双次 cleanup 事实继续保留；B7-38 修复后的定向 Browser 布局回归已通过，但本次只读 namespace 无法满足全量 post-browser verifier 对 `first_compute_idempotency` 写终态的要求，因此 B7 仍未完成。B8–B15 尚未执行，不得把 B16 / B17、Batch A / B 或 B7 的证据外推为后续阶段已通过。
 
 ## 3. 标准静态门禁
 
@@ -130,7 +130,7 @@ Fixture 前置：准备 draft / in_progress / completed / locked / voided 实例
 39. 未使用真实患者或医疗数据。
 40. 页面没有新增路由。
 
-B7 当前未完成。稳定阻断为 B7-38：在 390×844 viewport 下，阶段性评分卡片宽度超出可视区域并产生横向溢出；1280×720 与 768×900 代表页未复现。其余 39 项通过，post-browser verify 通过，两次 cleanup 均为 `residualCount=0`。该结论不表示 B8–B10 已启动。
+B7 当前未完成。原独立 Browser 验收的其余 39 项通过事实保持不变；B7-38 修复后已在 390×844、768×900、1280×720 完成定向回归，三个 viewport 的 document/main 与阶段性评分卡片均无横向溢出，展开题目分值、技术信息和人工评分表单后操作仍可用，每次页面加载均为 latest GET 1 次、compute POST 0 次。本次全新 namespace 的 prepared verify 与两次 cleanup 通过，但全量 post-browser verify 因 `first_compute_idempotency` 仍处于 prepared 只读状态而失败；本任务禁止重跑其余 B7 写场景，不能构造该终态。该结论不表示 B8–B10 已启动。
 
 ### 5.2 B8 人工评分与显式确认：60 项
 

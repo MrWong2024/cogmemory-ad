@@ -31,7 +31,7 @@ export function ProvisionalScoreItemList({
   onReviewItem: (itemResponseId: string) => void;
 }) {
   return (
-    <details className="rounded-md border border-[var(--cma-line)] p-4">
+    <details className="min-w-0 rounded-md border border-[var(--cma-line)] p-4">
       <summary className="cursor-pointer text-lg font-semibold text-[var(--cma-text-strong)]">
         {isFinal ? '确认项目分值' : '题目级阶段性分值'}（{items.length}）
       </summary>
@@ -47,7 +47,7 @@ export function ProvisionalScoreItemList({
         <ul className="mt-4 grid gap-3">
           {sortItems(items).map((item) => (
             <li
-              className="grid gap-3 rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] p-4"
+              className="grid min-w-0 gap-3 rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] p-4"
               key={`${item.itemCode}:${item.itemOrder}`}
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -58,7 +58,7 @@ export function ProvisionalScoreItemList({
                   <h4 className="mt-1 font-semibold text-[var(--cma-text-strong)]">
                     {item.itemTitle || item.itemCode}
                   </h4>
-                  <p className="mt-1 break-words text-sm text-[var(--cma-muted)]">
+                  <p className="mt-1 text-sm text-[var(--cma-muted)] [overflow-wrap:anywhere]">
                     题目编码：{item.itemCode}
                     {item.crfCode ? ` · CRF：${item.crfCode}` : ''}
                     {item.groupCode ? ` · 分组：${item.groupCode}` : ''}
@@ -125,7 +125,7 @@ export function ProvisionalScoreItemList({
               </dl>
 
               {item.reviewRequired ? (
-                <div className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] p-3 text-sm leading-6 text-[var(--cma-warning)]">
+                <div className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] p-3 text-sm leading-6 text-[var(--cma-warning)] [overflow-wrap:anywhere]">
                   {isScoreReviewReasonCode(item.reviewReasonCode) ? (
                     <p>复核原因编码：{item.reviewReasonCode}</p>
                   ) : null}

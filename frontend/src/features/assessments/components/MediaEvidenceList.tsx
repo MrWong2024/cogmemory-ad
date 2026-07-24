@@ -154,7 +154,7 @@ export function MediaEvidenceList({
           >
             <header className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h6 className="font-semibold text-[var(--cma-text-strong)]">
+                <h6 className="font-semibold text-[var(--cma-text-strong)] [overflow-wrap:anywhere]">
                   {mediaEvidenceTypeLabels[evidence.evidenceType]} ·{' '}
                   {evidence.evidenceCode}
                 </h6>
