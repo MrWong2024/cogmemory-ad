@@ -16,11 +16,11 @@
 | WP-04 / B17 | 已完成 | 44 个 scenarioKey 全部通过，正式 fixture 已双次 cleanup，残留为 0 |
 | Batch A / B1–B3 | 已完成 | 67 个验证原子全部有明确处置，正式 fixture 已双次 cleanup，残留为 0 |
 | Batch B / B4–B6 | 桌面范围已完成 | Browser 133 项 + automated boundary 2 项 = 135 项；post-browser verify 通过；产品缺陷 0 |
-| Batch C / B7–B10 | 尚未启动 | 详细待验合同以 frontend testing playbook 为准 |
+| Batch C / B7–B10 | B7 未完成；B8–B10 尚未启动 | B7 fixture 与 Browser 生命周期已收口；39 pass / 1 fail，稳定阻断为 B7-38 小屏幕横向溢出 |
 | Batch D / B11–B15 | 尚未启动 | 包含 B14.1 的剩余 Browser 回归；详细待验合同以 frontend testing playbook 为准 |
 | Batch E | 保留 8 项 | 真实设备、辅助技术或人工验收，不被桌面 Browser 证据替代 |
 
-Batch B 的正式 namespace 已连续 cleanup 两次，两次均 `residualCount=0`；namespace-owned 数据和操作系统临时 fixture 文件已删除，全局 MMSE / MoCA seed 不在 cleanup 范围内。Batch C 未启动，后续不得复用已删除的 Batch B namespace 或把 prepared fixture 当作新的验收事实。
+Batch B 的正式 namespace 已连续 cleanup 两次，两次均 `residualCount=0`；namespace-owned 数据和操作系统临时 fixture 文件已删除，全局 MMSE / MoCA seed 不在 cleanup 范围内。B7 已使用独立 namespace 完成 post-browser verify 与双次 cleanup，但因前端 B7-38 失败仍未完成；B8–B10 尚未启动。后续不得复用已删除 namespace 或把 prepared fixture 当作新的验收事实。
 
 ## 3. 数据库用途、凭据来源与进程隔离
 
@@ -142,10 +142,11 @@ E2E 固定使用 `NODE_ENV=test`、`--runInBand`、隔离数据库、fake Storag
 | WP-04 / B17 | `scripts/wp04-browser-fixtures.ts` | 5 角色；44 scenarioKey / 43 业务场景 | 已完成并清理 |
 | Batch A / B1–B3 | `scripts/b123-browser-fixtures.ts` | 5 角色；27 scenarioKey / 26 业务场景 / 58 audit ID | 已完成并清理 |
 | Batch B / B4–B6 | `scripts/b456-browser-fixtures.ts` | 5 角色；32 scenarioKey / 31 业务场景 / 135 audit ID；15 direct / 120 fixture-required | 桌面范围已完成并清理 |
+| Batch C / B7 | `scripts/b7-browser-fixtures.ts` | 5 角色；14 scenarioKey / 13 业务场景 / 40 audit ID | fixture 生命周期已收口；Browser 39 pass / 1 fail，B7 未完成 |
 
 这些 CLI 是 test-only 资产，不是 production seed，不随应用启动，不向 Browser 输出密码、连接串、Cookie、Session、metadata、完整请求/响应、原始作答、评分规则、报告正文或内部 lineage/source ID。
 
-Batch C / D fixture 的验证意图、前置状态和关键边界必须从 frontend testing playbook 的 B7–B15（含 B14.1）待验合同设计；不得从已完成 Batch A / B 的旧 namespace、操作流水或中间失败状态反推。
+Batch C / D fixture 的验证意图、前置状态和关键边界必须从 frontend testing playbook 的 B7–B15（含 B14.1）待验合同设计；B7 现有资产不覆盖 B8–B15，不得从已完成 Batch A / B、B7 的旧 namespace、操作流水或中间失败状态反推。
 
 ## 6. Browser fixture 通用生命周期
 
@@ -195,7 +196,7 @@ prepare / replace 与后续账号密码校验必须处于相同的稳定 fixture
 
 ## 9. 当前未决事项和同步规则
 
-- Batch C / B7–B10 尚未启动；必须按 frontend playbook 的逐项合同设计 fixture 与 Browser 矩阵。
+- Batch C / B7 已完成独立 fixture 生命周期与 Browser 验收收口，但 B7-38 小屏幕横向溢出失败，因此 B7 未完成；B8–B10 尚未启动。
 - Batch D / B11–B15 尚未启动；B14.1 的行为等价 Browser 回归仍属于待验合同，不因 B16 / WP-02 已完成而自动覆盖。
 - Batch E 的 8 项真实设备、辅助技术或人工验收继续保留：`B5-MV-008`、`B5-MV-028`、`B5-MV-029`、`B5-MV-058`、`B5-MV-059`、`B5-MV-060`、`B5-MV-061`、`B5-MV-062`；桌面 Browser、automated boundary 或大屏抽查均不能替代。
 - roadmap 业务工作包状态不因 testing playbook 压缩、历史证据索引或未来 Batch 验收自动变化。
