@@ -4,7 +4,7 @@
 
 本文档是后端验证的 active playbook，只维护三类内容：当前执行规则、仍待执行的 Browser 验收所依赖的后端 fixture 合同，以及已完成范围的最终证据索引。逐阶段命令、失败重试、临时 namespace 和执行流水由 Git 历史承担，不在本文重复保存。
 
-本文档不改变产品、接口、DTO、Schema、测试合同或 roadmap 工作包状态。当前唯一事实是：WP-02、WP-04、Batch A 已完成；Batch B 桌面范围已完成；Batch C 的 B7 与 B8 `core-workflow` 已完成，B8 `resilience-security` 本轮历史结果仍为 19 pass / 2 fail；B8-56、B8-59 fixture 前置合同已修复并通过 E2E、prepared verify 和双次 cleanup，但尚未重新进行 Browser 验收，B8 整体仍未完成，B9–B10 尚未启动；Batch D 尚未启动；Batch E 的 8 项真实设备、辅助技术或人工验收继续保留。
+本文档不改变产品、接口、DTO、Schema、测试合同或 roadmap 工作包状态。当前唯一事实是：WP-02、WP-04、Batch A 已完成；Batch B 桌面范围已完成；Batch C 的 B7 与 B8 已完成，B8 的 `core-workflow` 39 项与 `resilience-security` 21 项共 60 项全部闭环；B9–B10 尚未启动，下一阶段为 B9；Batch D 尚未启动；Batch E 的 8 项真实设备、辅助技术或人工验收继续保留。
 
 ## 2. 当前验证状态
 
@@ -16,11 +16,11 @@
 | WP-04 / B17 | 已完成 | 44 个 scenarioKey 全部通过，正式 fixture 已双次 cleanup，残留为 0 |
 | Batch A / B1–B3 | 已完成 | 67 个验证原子全部有明确处置，正式 fixture 已双次 cleanup，残留为 0 |
 | Batch B / B4–B6 | 桌面范围已完成 | Browser 133 项 + automated boundary 2 项 = 135 项；post-browser verify 通过；产品缺陷 0 |
-| Batch C / B7–B10 | B7 已完成；B8 `core-workflow` 39 项已完成；B8 `resilience-security` 历史结果 19 pass / 2 fail；B8 整体仍未完成；B9–B10 尚未启动 | B8-56、B8-59 fixture 前置合同已修复并通过 E2E、prepared verify 和双次 cleanup，尚待以全新 namespace 重跑完整 `resilience-security` Browser 验收 |
+| Batch C / B7–B10 | B7 已完成；B8 的 `core-workflow` 39 项与 `resilience-security` 21 项均已完成，B8 共 60 项全部闭环；B9–B10 尚未启动 | `resilience-security` 完整 Browser 验收 21 项全部通过，post-browser verify 通过，双次 cleanup 均为 `residualCount=0`；下一阶段为 B9 |
 | Batch D / B11–B15 | 尚未启动 | 包含 B14.1 的剩余 Browser 回归；详细待验合同以 frontend testing playbook 为准 |
 | Batch E | 保留 8 项 | 真实设备、辅助技术或人工验收，不被桌面 Browser 证据替代 |
 
-Batch B 的正式 namespace 已连续 cleanup 两次，两次均 `residualCount=0`；namespace-owned 数据和操作系统临时 fixture 文件已删除，全局 MMSE / MoCA seed 不在 cleanup 范围内。B7 采用组合证据完成：原完整 Browser 验收的 39 项、完整 post-browser verify 与双次 cleanup 事实继续有效；B7-38 修复后的三个 viewport 定向回归、Browser 前后 prepared verify 与双次 cleanup 也均通过。本次只读回归没有执行 compute，namespace 按合同保持 prepared 状态；要求 `first_compute_idempotency` 已产生写终态的 post-browser verify 不适用于该 namespace，其 phase 不匹配失败不构成当前阻断，也不是产品或 fixture 缺陷。B8 `core-workflow` 的 39 项真实 Browser 验收已完成。`resilience-security` 的历史结果保持 19 pass / 2 fail；B8-56、B8-59 fixture 前置合同已修复并通过 E2E、prepared verify 和双次 cleanup，但尚未重新进行 Browser 验收。B8 整体仍未完成，下一阶段必须使用全新 namespace 重跑完整 `resilience-security`；B9–B10 尚未启动。后续不得复用已删除 namespace 或把已完成的 core profile、本轮 19 项 resilience 证据外推为 B8 整体完成。
+Batch B 的正式 namespace 已连续 cleanup 两次，两次均 `residualCount=0`；namespace-owned 数据和操作系统临时 fixture 文件已删除，全局 MMSE / MoCA seed 不在 cleanup 范围内。B7 采用组合证据完成：原完整 Browser 验收的 39 项、完整 post-browser verify 与双次 cleanup 事实继续有效；B7-38 修复后的三个 viewport 定向回归、Browser 前后 prepared verify 与双次 cleanup 也均通过。本次只读回归没有执行 compute，namespace 按合同保持 prepared 状态；要求 `first_compute_idempotency` 已产生写终态的 post-browser verify 不适用于该 namespace，其 phase 不匹配失败不构成当前阻断，也不是产品或 fixture 缺陷。B8 `core-workflow` 的 39 项与 `resilience-security` 的 21 项真实 Browser 验收均已完成；`resilience-security` post-browser verify 通过，双次 cleanup 均为 `residualCount=0`。B8 共 60 项全部闭环，B8 已完成；B9–B10 尚未启动，下一阶段为 B9。后续不得复用已删除 namespace 或把 B8 完成事实外推为后续阶段已通过。
 
 ## 3. 数据库用途、凭据来源与进程隔离
 
@@ -143,7 +143,7 @@ E2E 固定使用 `NODE_ENV=test`、`--runInBand`、隔离数据库、fake Storag
 | Batch A / B1–B3 | `scripts/b123-browser-fixtures.ts` | 5 角色；27 scenarioKey / 26 业务场景 / 58 audit ID | 已完成并清理 |
 | Batch B / B4–B6 | `scripts/b456-browser-fixtures.ts` | 5 角色；32 scenarioKey / 31 业务场景 / 135 audit ID；15 direct / 120 fixture-required | 桌面范围已完成并清理 |
 | Batch C / B7 | `scripts/b7-browser-fixtures.ts` | 5 角色；14 scenarioKey / 13 业务场景 / 40 audit ID | 组合证据覆盖 40 项，B7 已完成并清理 |
-| Batch C / B8 | `scripts/b8-browser-fixtures.ts` | 两个独立 profile；每个 5 角色 / 9 scenarioKey；`core-workflow` 39 audit ID，`resilience-security` 21 audit ID | `core-workflow` 39 项已完成并清理；`resilience-security` 历史结果 19 pass / 2 fail；B8-56、B8-59 前置合同修复已通过 E2E、prepared verify 和双次 cleanup，Browser 尚待复验 |
+| Batch C / B8 | `scripts/b8-browser-fixtures.ts` | 两个独立 profile；每个 5 角色 / 9 scenarioKey；`core-workflow` 39 audit ID，`resilience-security` 21 audit ID | 两个 profile 共 60 项均已完成；各自 post-browser verify 通过并完成双次 `residualCount=0` cleanup，B8 已完成 |
 
 这些 CLI 是 test-only 资产，不是 production seed，不随应用启动，不向 Browser 输出密码、连接串、Cookie、Session、metadata、完整请求/响应、原始作答、评分规则、报告正文或内部 lineage/source ID。
 
@@ -197,7 +197,7 @@ prepare / replace 与后续账号密码校验必须处于相同的稳定 fixture
 
 ## 9. 当前未决事项和同步规则
 
-- Batch C / B7 已通过组合证据完成。B8 `core-workflow` 的 39 项已完成。`resilience-security` 本轮历史结果仍为 19 pass / 2 fail；B8-56 `network_failure` 与 B8-59 `responsive_route_draft` 的 fixture 前置合同已修复并通过 E2E、prepared verify 和双次 `residualCount=0` cleanup，但两项尚未重新进行 Browser 验收，不填写 evidence commit。B8 整体仍未完成；下一阶段必须以全新 namespace 重跑完整 `resilience-security`，B9–B10 尚未启动。
+- Batch C / B7 已通过组合证据完成。B8 `core-workflow` 的 39 项与 `resilience-security` 的 21 项均已完成；后者的完整 Browser 验收 21 项全部通过，post-browser verify 通过，双次 cleanup 均为 `residualCount=0`，不填写尚不存在的 evidence commit。B8 共 60 项全部闭环，B8 已完成；B9–B10 尚未启动，下一阶段为 B9。
 - Batch D / B11–B15 尚未启动；B14.1 的行为等价 Browser 回归仍属于待验合同，不因 B16 / WP-02 已完成而自动覆盖。
 - Batch E 的 8 项真实设备、辅助技术或人工验收继续保留：`B5-MV-008`、`B5-MV-028`、`B5-MV-029`、`B5-MV-058`、`B5-MV-059`、`B5-MV-060`、`B5-MV-061`、`B5-MV-062`；桌面 Browser、automated boundary 或大屏抽查均不能替代。
 - roadmap 业务工作包状态不因 testing playbook 压缩、历史证据索引或未来 Batch 验收自动变化。

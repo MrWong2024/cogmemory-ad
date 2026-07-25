@@ -14,11 +14,11 @@
 | WP-04 / B17 | 已完成 | 44 个 scenarioKey 全部通过，正式 fixture 双次 cleanup，残留为 0 |
 | Batch A / B1–B3 | 已完成 | 67 个验证原子全部有明确处置，正式 fixture 双次 cleanup，残留为 0 |
 | Batch B / B4–B6 | 桌面范围已完成 | Browser 133 + automated boundary 2 = 135；post-browser verify 通过；双次 cleanup `residualCount=0`；产品缺陷 0 |
-| Batch C / B7–B10 | B7 已完成；B8 `core-workflow` 39 项已完成；B8 `resilience-security` 历史结果 19 pass / 2 fail；B8 整体仍未完成；B9–B10 尚未启动 | B8-56、B8-59 fixture 前置合同已修复并通过 E2E、prepared verify 和双次 cleanup，尚待以全新 namespace 重跑完整 `resilience-security` Browser 验收 |
+| Batch C / B7–B10 | B7 已完成；B8 的 `core-workflow` 39 项与 `resilience-security` 21 项均已完成，B8 共 60 项全部闭环；B9–B10 尚未启动 | `resilience-security` 完整 Browser 验收 21 项全部通过，post-browser verify 通过，双次 cleanup 均为 `residualCount=0`；下一阶段为 B9 |
 | Batch D / B11–B15 | 尚未启动 | 包含 B14.1 当前仍待验的 Browser 行为等价回归；本文第 6 节是当前待验合同 |
 | Batch E | 保留 8 项 | 真实设备、辅助技术或人工验收；不被桌面 Browser、大屏抽查或 automated boundary 替代 |
 
-Batch B 的正式 namespace 和临时文件已经删除，不存在“尚待 post-browser verify”或“下一步重建 Batch B 终态”的当前任务。B7 采用组合证据完成：原完整 Browser 验收中 B7-01–B7-37、B7-39、B7-40 通过，完整 post-browser verify 通过且双次 cleanup 均为 `residualCount=0`；B7-38 修复后的三个 viewport 定向回归、Browser 前后 prepared verify 和双次 cleanup 也均通过。本次定向回归没有执行 compute，namespace 按合同保持 prepared 状态，因此对它执行要求写终态的 post-browser verify 不适用，不构成当前阻断。B8 `core-workflow` 的 39 项真实 Browser 验收已完成。`resilience-security` 的历史结果保持 19 pass / 2 fail；B8-56、B8-59 fixture 前置合同已修复并通过 E2E、prepared verify 和双次 cleanup，但尚未重新进行 Browser 验收。B8 整体仍未完成，下一阶段必须使用全新 namespace 重跑完整 `resilience-security`；B9–B15 尚未执行。不得把已完成的 core profile 或本轮 19 项 resilience 证据外推为 B8 整体或后续阶段已通过。
+Batch B 的正式 namespace 和临时文件已经删除，不存在“尚待 post-browser verify”或“下一步重建 Batch B 终态”的当前任务。B7 采用组合证据完成：原完整 Browser 验收中 B7-01–B7-37、B7-39、B7-40 通过，完整 post-browser verify 通过且双次 cleanup 均为 `residualCount=0`；B7-38 修复后的三个 viewport 定向回归、Browser 前后 prepared verify 和双次 cleanup 也均通过。本次定向回归没有执行 compute，namespace 按合同保持 prepared 状态，因此对它执行要求写终态的 post-browser verify 不适用，不构成当前阻断。B8 `core-workflow` 的 39 项真实 Browser 验收与 `resilience-security` 的 21 项真实 Browser 验收均已完成；后者的 post-browser verify 通过，双次 cleanup 均为 `residualCount=0`。B8 共 60 项全部闭环，B8 已完成；B9–B15 尚未执行，下一阶段为 B9。不得把 B8 完成事实外推为后续阶段已通过。
 
 ## 3. 标准静态门禁
 
@@ -79,9 +79,9 @@ prepare / prepared verify 只说明账号和前置数据就绪，不等于 Brows
 
 每个验证项只能是 pass、fail、not_executed 或明确 obsolete；fixture-ready、静态通过、工具限制和人工待签收不得写成 pass。报告必须区分静态门禁、Browser 场景、automated boundary、人工验收、post-browser verify、cleanup 与产品缺陷。
 
-## 5. Batch C 当前状态与待验合同：B7 与 B8 core-workflow 已完成
+## 5. Batch C 当前状态与待验合同：B7 与 B8 已完成
 
-B7 的 40 项已通过组合证据全部闭环；B8 `core-workflow` 的 39 项已完成，`resilience-security` 本轮 21 项为 19 pass / 2 fail，B8 整体仍未完成；B9–B10 尚未启动。以下序号与减肥前基线完全一致；fixture 设计必须覆盖列出的前置状态、角色、错误、无副作用、Network 和隐私边界。
+B7 的 40 项已通过组合证据全部闭环；B8 `core-workflow` 的 39 项与 `resilience-security` 的 21 项均已完成，B8 共 60 项全部闭环；B9–B10 尚未启动，下一阶段为 B9。以下序号与减肥前基线完全一致；fixture 设计必须覆盖列出的前置状态、角色、错误、无副作用、Network 和隐私边界。
 
 阶段所有权口径：条目中的“页面不存在后续能力/入口”用于证明本阶段组件或动作不创建、不自动触发、不越权接管后续能力；后来已实现的 B8–B16 sibling 区域可以按当前状态合法共存。执行时应限定目标组件 DOM、请求 initiator 和动作前置状态，不得用页面全局文本误判，也不得为了满足旧阶段字面值隐藏当前合法能力。
 
@@ -130,13 +130,13 @@ Fixture 前置：准备 draft / in_progress / completed / locked / voided 实例
 39. 未使用真实患者或医疗数据。
 40. 页面没有新增路由。
 
-B7 已完成，40 项全部闭环。组合证据为：原完整 Browser 验收中 B7-01–B7-37、B7-39、B7-40 通过，完整 post-browser verify 通过，双次 cleanup 均为 `residualCount=0`；B7-38 修复后在 390×844、768×900、1280×720 的定向回归通过，三个 viewport 的 document/main 与阶段性评分卡片均无横向溢出，展开题目分值、技术信息和人工评分表单后操作仍可用，每次页面加载均为 latest GET 1 次、compute POST 0 次，Browser 前后 prepared verify 通过，双次 cleanup 均为 `residualCount=0`。定向回归未执行 compute，其 namespace 正确保持 prepared 状态；要求 `first_compute_idempotency` 已产生写终态的 post-browser verify 不适用于该只读回归，其 phase 不匹配失败不推翻原完整验收的 post-browser 证据，也不构成产品或 fixture 缺陷。B8 `core-workflow` 已完成，B8 整体仍未完成；B9–B10 尚未启动。
+B7 已完成，40 项全部闭环。组合证据为：原完整 Browser 验收中 B7-01–B7-37、B7-39、B7-40 通过，完整 post-browser verify 通过，双次 cleanup 均为 `residualCount=0`；B7-38 修复后在 390×844、768×900、1280×720 的定向回归通过，三个 viewport 的 document/main 与阶段性评分卡片均无横向溢出，展开题目分值、技术信息和人工评分表单后操作仍可用，每次页面加载均为 latest GET 1 次、compute POST 0 次，Browser 前后 prepared verify 通过，双次 cleanup 均为 `residualCount=0`。定向回归未执行 compute，其 namespace 正确保持 prepared 状态；要求 `first_compute_idempotency` 已产生写终态的 post-browser verify 不适用于该只读回归，其 phase 不匹配失败不推翻原完整验收的 post-browser 证据，也不构成产品或 fixture 缺陷。B8 已完成，60 项全部闭环；B9–B10 尚未启动，下一阶段为 B9。
 
 ### 5.2 B8 人工评分与显式确认：60 项
 
 Fixture 前置：准备 needs_review、auto_scored、not_scored、manual_scored、最后一项待复核、warning、pending、confirmed、locked、审计上限、metadata 异常、双 Session stale、401/403 与网络失败状态。
 
-B8 fixture 已按互不依赖的两个 profile 准备完成：`core-workflow` 覆盖人工评分、输入校验、服务端汇总、复核队列、显式确认与只读状态；`resilience-security` 覆盖并发/stale、401/403、网络失败、草稿保护、安全审计、隐私与响应式。每个 B8 编号只属于一个 profile；两者使用独立 namespace、manifest、prepared / post-browser verifier 与 cleanup 范围。`core-workflow` 的 39 项已完成。`resilience-security` 历史结果仍为 19 pass / 2 fail；B8-56、B8-59 fixture 前置合同已修复并通过 E2E、prepared verify 和双次 cleanup，但两项尚未重新进行 Browser 验收。B8 整体仍未完成。
+B8 fixture 按互不依赖的两个 profile 执行：`core-workflow` 覆盖人工评分、输入校验、服务端汇总、复核队列、显式确认与只读状态；`resilience-security` 覆盖并发/stale、401/403、网络失败、草稿保护、安全审计、隐私与响应式。每个 B8 编号只属于一个 profile；两者使用独立 namespace、manifest、prepared / post-browser verifier 与 cleanup 范围。`core-workflow` 的 39 项与 `resilience-security` 的 21 项均已完成；`resilience-security` post-browser verify 通过，双次 cleanup 均为 `residualCount=0`。B8 共 60 项全部闭环，B8 已完成。
 
 1. needs_review 项出现人工评分入口。
 2. auto_scored 项不允许人工评分。
@@ -199,7 +199,7 @@ B8 fixture 已按互不依赖的两个 profile 准备完成：`core-workflow` �
 59. 页面没有新增路由，题目定位不修改 URL 且不丢失各类草稿。
 60. lint、typecheck、build 均通过。
 
-`core-workflow` 的 B8-01–B8-19、B8-29–B8-44、B8-47–B8-49、B8-60 共 39 项已全部闭环；core post-browser verify 通过，双次 cleanup 均为 `residualCount=0`。`resilience-security` 的历史结果仍为 19 pass / 2 fail。B8-56 `network_failure` 与 B8-59 `responsive_route_draft` 的 fixture 前置合同已修复并通过 E2E、prepared verify 和双次 `residualCount=0` cleanup，但两项尚未重新进行 Browser 验收，不填写 evidence commit。B8 整体仍未完成；下一阶段必须以全新 namespace 重跑完整 `resilience-security`，B9–B10 尚未启动。
+`core-workflow` 的 B8-01–B8-19、B8-29–B8-44、B8-47–B8-49、B8-60 共 39 项已全部闭环；core post-browser verify 通过，双次 cleanup 均为 `residualCount=0`。`resilience-security` 的 B8-20–B8-28、B8-45–B8-46、B8-50–B8-59 共 21 项已全部闭环；完整 Browser 验收 21 项全部通过，post-browser verify 通过，双次 cleanup 均为 `residualCount=0`，不填写尚不存在的 evidence commit。B8 共 60 项全部闭环，B8 已完成；B9–B10 尚未启动，下一阶段为 B9。
 
 ### 5.3 B9 认知域计算与安全展示：52 项
 
