@@ -71,6 +71,7 @@ import {
   type B8BusinessScenarioKey,
   type B8Profile,
   type B8Role,
+  type B8RoutePreparedContract,
   type B8SafeCleanupSummary,
   type B8SafeManifest,
   type B8SafeRoleManifest,
@@ -174,9 +175,9 @@ function expectedCounts(profile: B8Profile): {
       }
     : {
         patients: 9,
-        visits: 11,
-        instances: 11,
-        scoreResults: 11,
+        visits: 14,
+        instances: 14,
+        scoreResults: 13,
         auditIds: 21,
       };
 }
@@ -725,6 +726,7 @@ export class B8BrowserFixtureManager {
     } else {
       await this.verifyResilienceFacts(namespace, phase);
     }
+    await this.verifyContractedRouteFacts(profile, namespace);
     const subjectCodes = this.subjectCodes(profile, namespace);
     const patientIds = await this.models.patients.distinct('_id', {
       subjectCode: { $in: subjectCodes },
@@ -894,8 +896,6 @@ export class B8BrowserFixtureManager {
       'draft_switch_unload',
       'auth_401',
       'auth_403',
-      'network_failure',
-      'responsive_route_draft',
     ] as const) {
       await this.assertScoreState(
         profile,
@@ -986,6 +986,131 @@ export class B8BrowserFixtureManager {
     }
   }
 
+  private async verifyContractedRouteFacts(
+    profile: B8Profile,
+    namespace: string,
+  ): Promise<void> {
+    for (const definition of scenarioDefinitionsFor(profile)) {
+      for (const contract of definition.routeContracts ?? []) {
+        const root = await this.requireRoot(
+          profile,
+          namespace,
+          definition.scenarioKey,
+          this.routeSuffix(definition.scenarioKey, contract.key),
+        );
+        const score = await this.models.scoreResults
+          .findOne({ scaleInstanceId: root.instance._id })
+          .exec();
+        if (
+          root.visit.status !== contract.visitStatus ||
+          root.instance.status !== contract.scaleInstanceStatus
+        ) {
+          throw this.scenarioInvalid(profile, definition.scenarioKey);
+        }
+        if (contract.scoreResult.presence === 'absent') {
+          if (score) {
+            throw this.scenarioInvalid(profile, definition.scenarioKey);
+          }
+        } else {
+          if (
+            !score ||
+            score.status !== contract.scoreResult.status ||
+            !this.scoreMatchesRouteContract(score, contract)
+          ) {
+            throw this.scenarioInvalid(profile, definition.scenarioKey);
+          }
+        }
+        await this.verifyRouteEditability(
+          profile,
+          definition.scenarioKey,
+          root,
+          contract,
+        );
+      }
+    }
+  }
+
+  private scoreMatchesRouteContract(
+    score: ScoreResultDocument,
+    contract: B8RoutePreparedContract,
+  ): boolean {
+    const reviewQueueCount = this.reviewQueueCount(score);
+    const warningCount = score.computation?.warningCount ?? 0;
+    const hasWarning =
+      warningCount > 0 ||
+      (score.computation?.notes?.includes('warning_codes=') ?? false);
+    const reviewQueueMatches =
+      contract.scoreResult.reviewQueue === 'at-least-one'
+        ? reviewQueueCount >= 1
+        : contract.scoreResult.reviewQueue === 'empty'
+          ? reviewQueueCount === 0
+          : true;
+    const warningMatches =
+      contract.scoreResult.warning === 'none' ? !hasWarning : true;
+    const confirmationReady =
+      score.status === 'computed' &&
+      reviewQueueCount === 0 &&
+      !hasWarning &&
+      score.totalScore !== null &&
+      score.totalScore !== undefined &&
+      score.totalScore.unscoredItemCount === 0 &&
+      score.totalScore.needsReviewItemCount === 0 &&
+      score.confirmedAt === null &&
+      score.lockedAt === null &&
+      this.confirmationAudit(score) === null;
+    const confirmationMatches =
+      contract.scoreResult.confirmationReadiness === 'ready'
+        ? confirmationReady
+        : contract.scoreResult.confirmationReadiness === 'blocked'
+          ? !confirmationReady
+          : true;
+    return reviewQueueMatches && warningMatches && confirmationMatches;
+  }
+
+  private async verifyRouteEditability(
+    profile: B8Profile,
+    scenarioKey: B8BusinessScenarioKey,
+    root: Root,
+    contract: B8RoutePreparedContract,
+  ): Promise<void> {
+    const items = await this.models.itemResponses
+      .find({ scaleInstanceId: root.instance._id })
+      .exec();
+    const editableItems = items.filter(
+      (item) =>
+        ['not_started', 'in_progress', 'answered'].includes(item.status) &&
+        !(item.lockedAt instanceof Date),
+    );
+    const routeIsEditable =
+      ['draft', 'in_progress'].includes(root.visit.status) &&
+      ['draft', 'in_progress'].includes(root.instance.status) &&
+      !(root.instance.lockedAt instanceof Date) &&
+      editableItems.length > 0;
+    if (
+      (contract.itemResponseEditability === 'editable' && !routeIsEditable) ||
+      (contract.itemResponseEditability === 'read-only' && routeIsEditable)
+    ) {
+      throw this.scenarioInvalid(profile, scenarioKey);
+    }
+    if (contract.mediaDraftTarget === 'local-draft-supported') {
+      const supportsLocalMediaDraft = editableItems.some((item) => {
+        const config = item.itemConfigSnapshot;
+        return (
+          config !== null &&
+          typeof config === 'object' &&
+          (config.supportsPhotoUpload === true ||
+            config.supportsHandwriting === true)
+        );
+      });
+      const mediaCount = await this.models.mediaEvidence.countDocuments({
+        scaleInstanceId: root.instance._id,
+      });
+      if (!routeIsEditable || !supportsLocalMediaDraft || mediaCount !== 0) {
+        throw this.scenarioInvalid(profile, scenarioKey);
+      }
+    }
+  }
+
   private async assertScoreState(
     profile: B8Profile,
     namespace: string,
@@ -1071,7 +1196,21 @@ export class B8BrowserFixtureManager {
           definition.scenarioKey,
           this.routeSuffix(definition.scenarioKey, routeKey),
         );
-        const score = await this.requireScore(root);
+        const routeContract = definition.routeContracts?.find(
+          ({ key }) => key === routeKey,
+        );
+        const score = await this.models.scoreResults
+          .findOne({ scaleInstanceId: root.instance._id })
+          .exec();
+        if (routeContract?.scoreResult.presence === 'absent') {
+          if (score) {
+            throw this.scenarioInvalid(profile, definition.scenarioKey);
+          }
+          continue;
+        }
+        if (!score) {
+          throw this.scenarioInvalid(profile, definition.scenarioKey);
+        }
         scoreBaselines.push(this.toScoreBaseline(routeKey, score));
       }
       const metadata: FixtureMetadata = {
@@ -1136,6 +1275,27 @@ export class B8BrowserFixtureManager {
         throw new B8FixtureError(
           'B8_FIXTURE_SOURCE_HASH_INVALID',
           'A namespace-owned source fact changed outside the B8 side-effect contract',
+          profile,
+          definition.scenarioKey,
+        );
+      }
+      const expectedScoreRouteKeys = definition.routeKeys.filter(
+        (routeKey) =>
+          definition.routeContracts?.find(({ key }) => key === routeKey)
+            ?.scoreResult.presence !== 'absent',
+      );
+      const baselineRouteKeys = fixture.scoreBaselines.map(
+        ({ routeKey }) => routeKey,
+      );
+      if (
+        expectedScoreRouteKeys.length !== baselineRouteKeys.length ||
+        expectedScoreRouteKeys.some(
+          (routeKey) => !baselineRouteKeys.includes(routeKey),
+        )
+      ) {
+        throw new B8FixtureError(
+          'B8_FIXTURE_BASELINE_METADATA_INVALID',
+          'Namespace route baseline coverage is missing or invalid',
           profile,
           definition.scenarioKey,
         );
@@ -1376,9 +1536,26 @@ export class B8BrowserFixtureManager {
           definition.scenarioKey,
           this.routeSuffix(definition.scenarioKey, key),
         );
+        const routeContract = definition.routeContracts?.find(
+          (candidate) => candidate.key === key,
+        );
         routes.push({
           key,
           path: `/patients/${root.patient._id.toString()}/visits/${root.visit._id.toString()}/scale-instances/${root.instance._id.toString()}`,
+          ...(routeContract
+            ? {
+                preparedState: routeContract.preparedState,
+                visitStatus: routeContract.visitStatus,
+                scaleInstanceStatus: routeContract.scaleInstanceStatus,
+                scoreResult: routeContract.scoreResult,
+                itemResponseEditability: routeContract.itemResponseEditability,
+                mediaDraftTarget: routeContract.mediaDraftTarget,
+                expectedRequest: routeContract.expectedRequest,
+                expectedHttpStatus: routeContract.expectedHttpStatus,
+                automaticRetry: routeContract.automaticRetry,
+                postBrowserSideEffect: routeContract.postBrowserSideEffect,
+              }
+            : {}),
         });
       }
       result.push({
@@ -1396,7 +1573,12 @@ export class B8BrowserFixtureManager {
     scenarioKey: B8BusinessScenarioKey,
     routeKey: string,
   ): string {
-    if (routeKey === 'base') {
+    if (
+      routeKey === 'base' ||
+      (routeKey === 'manual' &&
+        (scenarioKey === 'network_failure' ||
+          scenarioKey === 'responsive_route_draft'))
+    ) {
       return 'BASE';
     }
     const suffixes: Partial<
@@ -1413,6 +1595,11 @@ export class B8BrowserFixtureManager {
       },
       metadata_audit_blocks: { auditLimit: 'AUDITLIMIT' },
       confirmation_conflict_warning: { warning: 'WARNING' },
+      network_failure: { confirmation: 'CONFIRMATION' },
+      responsive_route_draft: {
+        confirmation: 'CONFIRMATION',
+        execution: 'EXECUTION',
+      },
     };
     const suffix = suffixes[scenarioKey]?.[routeKey];
     if (!suffix) {
@@ -1433,11 +1620,16 @@ export class B8BrowserFixtureManager {
       'LOCKED',
       'MISSING',
       'AUDITLIMIT',
+      'CONFIRMATION',
+      'EXECUTION',
     ].includes(suffix)
       ? suffix
       : 'BASE';
     if (definition === 'BASE') {
-      return 'base';
+      return scenarioKey === 'network_failure' ||
+        scenarioKey === 'responsive_route_draft'
+        ? 'manual'
+        : 'base';
     }
     const entries: Record<string, string> = {
       NULLTARGET: 'nullTarget',
@@ -1446,6 +1638,8 @@ export class B8BrowserFixtureManager {
       LOCKED: 'locked',
       MISSING: 'missing',
       AUDITLIMIT: 'auditLimit',
+      CONFIRMATION: 'confirmation',
+      EXECUTION: 'execution',
     };
     const routeKey = entries[definition];
     if (!routeKey) {

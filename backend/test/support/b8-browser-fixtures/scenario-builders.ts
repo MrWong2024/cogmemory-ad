@@ -201,10 +201,32 @@ export class B8ScenarioBuilder {
       case 'draft_switch_unload':
       case 'auth_401':
       case 'auth_403':
-      case 'network_failure':
-      case 'responsive_route_draft':
         await this.requireReviewTargets(root, 1);
         return;
+      case 'network_failure': {
+        await this.requireReviewTargets(root, 1);
+        const confirmation = await this.createCompanion(
+          root,
+          actor,
+          'CONFIRMATION',
+        );
+        await this.completeSubmitAndCompute(confirmation, actor);
+        await this.resolveManualReviews(confirmation, actor, 0);
+        return;
+      }
+      case 'responsive_route_draft': {
+        await this.requireReviewTargets(root, 1);
+        const confirmation = await this.createCompanion(
+          root,
+          actor,
+          'CONFIRMATION',
+        );
+        await this.completeSubmitAndCompute(confirmation, actor);
+        await this.resolveManualReviews(confirmation, actor, 0);
+        const execution = await this.createCompanion(root, actor, 'EXECUTION');
+        await this.requireEditableExecutionTargets(execution);
+        return;
+      }
       case 'manual_revision':
       case 'static_gate':
         await this.resolveManualReviews(root, actor, 0);
@@ -478,6 +500,53 @@ export class B8ScenarioBuilder {
         this.profile,
         root.scenarioKey,
         'The generated score result does not satisfy the review-target contract',
+      );
+    }
+  }
+
+  private async requireEditableExecutionTargets(
+    root: B8ScenarioRoot,
+  ): Promise<void> {
+    const [visit, instance, items, scoreCount, mediaCount] = await Promise.all([
+      this.models.visits.findById(root.visitId).exec(),
+      this.models.scaleInstances.findById(root.scaleInstanceId).exec(),
+      this.models.itemResponses
+        .find({ scaleInstanceId: root.scaleInstanceId })
+        .sort({ itemOrder: 1 })
+        .exec(),
+      this.models.scoreResults.countDocuments({
+        scaleInstanceId: root.scaleInstanceId,
+      }),
+      this.models.mediaEvidence.countDocuments({
+        scaleInstanceId: root.scaleInstanceId,
+      }),
+    ]);
+    const editableItems = items.filter(
+      (item) =>
+        ['not_started', 'in_progress', 'answered'].includes(item.status) &&
+        !(item.lockedAt instanceof Date),
+    );
+    const hasMediaDraftTarget = editableItems.some((item) => {
+      const config = item.itemConfigSnapshot;
+      return (
+        config !== null &&
+        typeof config === 'object' &&
+        (config.supportsPhotoUpload === true ||
+          config.supportsHandwriting === true)
+      );
+    });
+    if (
+      visit?.status !== 'in_progress' ||
+      instance?.status !== 'draft' ||
+      editableItems.length === 0 ||
+      !hasMediaDraftTarget ||
+      scoreCount !== 0 ||
+      mediaCount !== 0
+    ) {
+      throw fixtureFailure(
+        this.profile,
+        root.scenarioKey,
+        'The execution variant does not provide legal item and local media draft targets',
       );
     }
   }

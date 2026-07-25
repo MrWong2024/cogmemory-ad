@@ -60,6 +60,40 @@ export type B8ExpectedRequest = {
     | 'confirm,reviewNote,expectedUpdatedAt';
 };
 
+export type B8ExpectedRequestBranch = {
+  routeKey: string;
+  request: B8ExpectedRequest;
+  expectedHttpStatus: string;
+  automaticRetry: false;
+  postBrowserSideEffect: 'none';
+};
+
+export type B8ExpectedRequestContract =
+  | B8ExpectedRequest
+  | {
+      branches: readonly B8ExpectedRequestBranch[];
+    };
+
+export type B8RoutePreparedContract = {
+  key: string;
+  preparedState: string;
+  visitStatus: 'draft' | 'in_progress' | 'completed';
+  scaleInstanceStatus: 'draft' | 'in_progress' | 'completed';
+  scoreResult: {
+    presence: 'required' | 'absent';
+    status: 'needs_review' | 'computed' | 'absent';
+    reviewQueue: 'at-least-one' | 'empty' | 'not-applicable';
+    warning: 'none' | 'not-applicable';
+    confirmationReadiness: 'ready' | 'blocked' | 'not-applicable';
+  };
+  itemResponseEditability: 'editable' | 'read-only';
+  mediaDraftTarget: 'local-draft-supported' | 'not-applicable';
+  expectedRequest: B8ExpectedRequest;
+  expectedHttpStatus: string;
+  automaticRetry: false;
+  postBrowserSideEffect: 'none';
+};
+
 export type B8VerificationFlag =
   | 'network'
   | 'permission'
@@ -72,7 +106,7 @@ export type B8AuditContractEntry = {
   scenarioKey: B8BusinessScenarioKey;
   primaryRole: B8Role;
   preparedState: string;
-  expectedRequest: B8ExpectedRequest;
+  expectedRequest: B8ExpectedRequestContract;
   expectedHttpStatus: string;
   postBrowserSideEffect: string;
   requiresIndependentSession: boolean;
@@ -88,6 +122,7 @@ export type B8ScenarioDefinition = {
   auditIds: readonly B8AuditId[];
   routeKeys: readonly string[];
   preparedState: string;
+  routeContracts?: readonly B8RoutePreparedContract[];
 };
 
 function request(
@@ -105,7 +140,7 @@ function entry(
   scenarioKey: B8BusinessScenarioKey,
   primaryRole: B8Role,
   preparedState: string,
-  expectedRequest: B8ExpectedRequest,
+  expectedRequest: B8ExpectedRequestContract,
   expectedHttpStatus: string,
   postBrowserSideEffect: string,
   requiresIndependentSession = false,
@@ -139,6 +174,27 @@ const confirmOnce = request(
   '1',
   'confirm,reviewNote,expectedUpdatedAt',
 );
+
+function networkFailureBranches(): B8ExpectedRequestContract {
+  return {
+    branches: [
+      {
+        routeKey: 'manual',
+        request: manualOnce,
+        expectedHttpStatus: 'network-error',
+        automaticRetry: false,
+        postBrowserSideEffect: 'none',
+      },
+      {
+        routeKey: 'confirmation',
+        request: confirmOnce,
+        expectedHttpStatus: 'network-error',
+        automaticRetry: false,
+        postBrowserSideEffect: 'none',
+      },
+    ],
+  };
+}
 
 export const B8_AUDIT_MATRIX = [
   entry(
@@ -437,8 +493,8 @@ export const B8_AUDIT_MATRIX = [
     'resilience-security',
     'network_failure',
     'nurse',
-    'needs_review with local manual and confirmation drafts',
-    manualOnce,
+    'independent manual-review and confirmation-ready network-failure routes',
+    networkFailureBranches(),
     'network-error',
     'no retry and no business write',
     true,
@@ -473,7 +529,7 @@ export const B8_AUDIT_MATRIX = [
     'resilience-security',
     'responsive_route_draft',
     'doctor',
-    'needs_review with item-location and multiple local draft states',
+    'independent manual, confirmation, and editable execution draft routes',
     latestOnce,
     '200',
     'no route mutation and no business write',
@@ -669,8 +725,51 @@ export const B8_SCENARIOS = [
     scaleCode: 'moca',
     primaryOwnerAuditId: 'B8-56',
     auditIds: ['B8-56'],
-    routeKeys: ['base'],
-    preparedState: 'needs_review request-abort target',
+    routeKeys: ['manual', 'confirmation'],
+    preparedState:
+      'independent needs_review manual and computed confirmation-ready routes',
+    routeContracts: [
+      {
+        key: 'manual',
+        preparedState:
+          'completed instance with needs_review manual-review target',
+        visitStatus: 'in_progress',
+        scaleInstanceStatus: 'completed',
+        scoreResult: {
+          presence: 'required',
+          status: 'needs_review',
+          reviewQueue: 'at-least-one',
+          warning: 'none',
+          confirmationReadiness: 'blocked',
+        },
+        itemResponseEditability: 'read-only',
+        mediaDraftTarget: 'not-applicable',
+        expectedRequest: manualOnce,
+        expectedHttpStatus: 'network-error',
+        automaticRetry: false,
+        postBrowserSideEffect: 'none',
+      },
+      {
+        key: 'confirmation',
+        preparedState:
+          'completed instance with computed warning-free confirmation target',
+        visitStatus: 'in_progress',
+        scaleInstanceStatus: 'completed',
+        scoreResult: {
+          presence: 'required',
+          status: 'computed',
+          reviewQueue: 'empty',
+          warning: 'none',
+          confirmationReadiness: 'ready',
+        },
+        itemResponseEditability: 'read-only',
+        mediaDraftTarget: 'not-applicable',
+        expectedRequest: confirmOnce,
+        expectedHttpStatus: 'network-error',
+        automaticRetry: false,
+        postBrowserSideEffect: 'none',
+      },
+    ],
   },
   {
     scenarioKey: 'responsive_route_draft',
@@ -679,8 +778,71 @@ export const B8_SCENARIOS = [
     scaleCode: 'moca',
     primaryOwnerAuditId: 'B8-59',
     auditIds: ['B8-59'],
-    routeKeys: ['base'],
-    preparedState: 'needs_review responsive and route anchor',
+    routeKeys: ['manual', 'confirmation', 'execution'],
+    preparedState:
+      'independent manual, confirmation, and editable execution draft routes',
+    routeContracts: [
+      {
+        key: 'manual',
+        preparedState:
+          'completed instance with needs_review local manual draft target',
+        visitStatus: 'in_progress',
+        scaleInstanceStatus: 'completed',
+        scoreResult: {
+          presence: 'required',
+          status: 'needs_review',
+          reviewQueue: 'at-least-one',
+          warning: 'none',
+          confirmationReadiness: 'blocked',
+        },
+        itemResponseEditability: 'read-only',
+        mediaDraftTarget: 'not-applicable',
+        expectedRequest: latestOnce,
+        expectedHttpStatus: '200',
+        automaticRetry: false,
+        postBrowserSideEffect: 'none',
+      },
+      {
+        key: 'confirmation',
+        preparedState:
+          'completed instance with computed warning-free local confirmation draft target',
+        visitStatus: 'in_progress',
+        scaleInstanceStatus: 'completed',
+        scoreResult: {
+          presence: 'required',
+          status: 'computed',
+          reviewQueue: 'empty',
+          warning: 'none',
+          confirmationReadiness: 'ready',
+        },
+        itemResponseEditability: 'read-only',
+        mediaDraftTarget: 'not-applicable',
+        expectedRequest: latestOnce,
+        expectedHttpStatus: '200',
+        automaticRetry: false,
+        postBrowserSideEffect: 'none',
+      },
+      {
+        key: 'execution',
+        preparedState:
+          'in-progress visit with draft editable item and local media draft target',
+        visitStatus: 'in_progress',
+        scaleInstanceStatus: 'draft',
+        scoreResult: {
+          presence: 'absent',
+          status: 'absent',
+          reviewQueue: 'not-applicable',
+          warning: 'not-applicable',
+          confirmationReadiness: 'not-applicable',
+        },
+        itemResponseEditability: 'editable',
+        mediaDraftTarget: 'local-draft-supported',
+        expectedRequest: noRequest,
+        expectedHttpStatus: 'none',
+        automaticRetry: false,
+        postBrowserSideEffect: 'none',
+      },
+    ],
   },
 ] as const satisfies readonly B8ScenarioDefinition[];
 
@@ -693,6 +855,16 @@ export type B8SafeRoleManifest = {
 export type B8SafeRoute = {
   key: string;
   path: string;
+  preparedState?: string;
+  visitStatus?: B8RoutePreparedContract['visitStatus'];
+  scaleInstanceStatus?: B8RoutePreparedContract['scaleInstanceStatus'];
+  scoreResult?: B8RoutePreparedContract['scoreResult'];
+  itemResponseEditability?: B8RoutePreparedContract['itemResponseEditability'];
+  mediaDraftTarget?: B8RoutePreparedContract['mediaDraftTarget'];
+  expectedRequest?: B8ExpectedRequest;
+  expectedHttpStatus?: string;
+  automaticRetry?: false;
+  postBrowserSideEffect?: 'none';
 };
 
 export type B8SafeScenarioManifest = {
@@ -921,14 +1093,15 @@ export function scenarioVisitCodeFor(
 }
 
 export function assertB8Contract(): void {
+  const scenarios: readonly B8ScenarioDefinition[] = B8_SCENARIOS;
   const matrixIds = B8_AUDIT_MATRIX.map(({ auditId }) => auditId);
-  const scenarioIds = B8_SCENARIOS.flatMap(({ auditIds }) => auditIds);
-  const scenarioKeys = B8_SCENARIOS.map(({ scenarioKey }) => scenarioKey);
+  const scenarioIds = scenarios.flatMap(({ auditIds }) => auditIds);
+  const scenarioKeys = scenarios.map(({ scenarioKey }) => scenarioKey);
   const expectedIds = new Set<string>(B8_AUDIT_IDS);
   const matrixIdSet = new Set<string>(matrixIds);
   const coreCount = auditMatrixFor('core-workflow').length;
   const resilienceCount = auditMatrixFor('resilience-security').length;
-  const ownersValid = B8_SCENARIOS.every((scenario) => {
+  const ownersValid = scenarios.every((scenario) => {
     const owner = B8_AUDIT_MATRIX.find(
       ({ auditId }) => auditId === scenario.primaryOwnerAuditId,
     );
@@ -939,7 +1112,7 @@ export function assertB8Contract(): void {
     );
   });
   const entriesMatchScenarios = B8_AUDIT_MATRIX.every((audit) => {
-    const scenario = B8_SCENARIOS.find(
+    const scenario = scenarios.find(
       ({ scenarioKey }) => scenarioKey === audit.scenarioKey,
     );
     return (
@@ -947,6 +1120,58 @@ export function assertB8Contract(): void {
       new Set<string>(scenario.auditIds).has(audit.auditId)
     );
   });
+  const routeContractsValid = scenarios.every((scenario) => {
+    if (!scenario.routeContracts) {
+      return true;
+    }
+    const routeKeys = [...scenario.routeKeys];
+    const contractedKeys = scenario.routeContracts.map(({ key }) => key);
+    return (
+      contractedKeys.length === routeKeys.length &&
+      new Set(contractedKeys).size === contractedKeys.length &&
+      routeKeys.every((key) => contractedKeys.includes(key)) &&
+      scenario.routeContracts.every(
+        (route) =>
+          route.automaticRetry === false &&
+          route.postBrowserSideEffect === 'none',
+      )
+    );
+  });
+  const networkAudit = B8_AUDIT_MATRIX.find(
+    ({ auditId }) => auditId === 'B8-56',
+  );
+  const networkScenario = scenarios.find(
+    ({ scenarioKey }) => scenarioKey === 'network_failure',
+  );
+  const responsiveScenario = scenarios.find(
+    ({ scenarioKey }) => scenarioKey === 'responsive_route_draft',
+  );
+  const networkBranches =
+    networkAudit && 'branches' in networkAudit.expectedRequest
+      ? networkAudit.expectedRequest.branches
+      : [];
+  const targetContractsValid =
+    networkScenario?.routeContracts?.map(({ key }) => key).join(',') ===
+      'manual,confirmation' &&
+    responsiveScenario?.routeContracts?.map(({ key }) => key).join(',') ===
+      'manual,confirmation,execution' &&
+    networkBranches.length === 2 &&
+    networkBranches.some(
+      ({ routeKey, request: expected, automaticRetry }) =>
+        routeKey === 'manual' &&
+        expected.method === 'PATCH' &&
+        expected.resource === 'manual-review' &&
+        expected.count === '1' &&
+        automaticRetry === false,
+    ) &&
+    networkBranches.some(
+      ({ routeKey, request: expected, automaticRetry }) =>
+        routeKey === 'confirmation' &&
+        expected.method === 'POST' &&
+        expected.resource === 'confirm' &&
+        expected.count === '1' &&
+        automaticRetry === false,
+    );
   if (
     B8_AUDIT_MATRIX.length !== 60 ||
     matrixIds.length !== new Set(matrixIds).size ||
@@ -957,6 +1182,8 @@ export function assertB8Contract(): void {
     scenarioKeys.length !== new Set(scenarioKeys).size ||
     !ownersValid ||
     !entriesMatchScenarios ||
+    !routeContractsValid ||
+    !targetContractsValid ||
     coreCount !== 39 ||
     resilienceCount !== 21 ||
     B8_DEFAULT_NAMESPACES['core-workflow'] ===
@@ -990,12 +1217,26 @@ const ALLOWED_MANIFEST_KEYS = new Set([
   'auditId',
   'primaryRole',
   'expectedRequest',
+  'branches',
+  'routeKey',
+  'request',
   'method',
   'resource',
   'count',
   'bodyWhitelist',
   'expectedHttpStatus',
+  'automaticRetry',
   'postBrowserSideEffect',
+  'visitStatus',
+  'scaleInstanceStatus',
+  'scoreResult',
+  'presence',
+  'status',
+  'reviewQueue',
+  'warning',
+  'confirmationReadiness',
+  'itemResponseEditability',
+  'mediaDraftTarget',
   'requiresIndependentSession',
   'verificationFlags',
   'residualCount',

@@ -5,7 +5,23 @@ import { NestFactory } from '@nestjs/core';
 import { spawnSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
 import type { Connection, Model } from 'mongoose';
+import {
+  AssessmentVisit,
+  type AssessmentVisitDocument,
+} from '../src/modules/assessments/schemas/assessment-visit.schema';
+import {
+  ItemResponse,
+  type ItemResponseDocument,
+} from '../src/modules/assessments/schemas/item-response.schema';
+import {
+  ScaleInstance,
+  type ScaleInstanceDocument,
+} from '../src/modules/assessments/schemas/scale-instance.schema';
 import { AppModule } from '../src/app.module';
+import {
+  MediaEvidence,
+  type MediaEvidenceDocument,
+} from '../src/modules/media/schemas/media-evidence.schema';
 import {
   Patient,
   type PatientDocument,
@@ -37,6 +53,7 @@ import {
   requireB8FixturePassword,
   scenarioDefinitionsFor,
   scenarioSubjectCodeFor,
+  scenarioVisitCodeFor,
   toB8SafeErrorPayload,
   validateB8Namespace,
   validateB8Profile,
@@ -105,6 +122,10 @@ describe('B8 profile-scoped browser fixture support (e2e)', () => {
   let connection: Connection;
   let manager: B8BrowserFixtureManager;
   let patientModel: Model<PatientDocument>;
+  let visitModel: Model<AssessmentVisitDocument>;
+  let instanceModel: Model<ScaleInstanceDocument>;
+  let itemModel: Model<ItemResponseDocument>;
+  let mediaModel: Model<MediaEvidenceDocument>;
   let scoreModel: Model<ScoreResultDocument>;
   let definitionModel: Model<ScaleDefinitionDocument>;
   let versionModel: Model<ScaleVersionDocument>;
@@ -156,6 +177,106 @@ describe('B8 profile-scoped browser fixture support (e2e)', () => {
     return score;
   }
 
+  function targetRouteSuffix(
+    routeKey: 'manual' | 'confirmation' | 'execution',
+  ): 'BASE' | 'CONFIRMATION' | 'EXECUTION' {
+    return routeKey === 'manual'
+      ? 'BASE'
+      : routeKey === 'confirmation'
+        ? 'CONFIRMATION'
+        : 'EXECUTION';
+  }
+
+  async function targetRoute(
+    scenarioKey: 'network_failure' | 'responsive_route_draft',
+    routeKey: 'manual' | 'confirmation' | 'execution',
+  ): Promise<{
+    patient: PatientDocument;
+    visit: AssessmentVisitDocument;
+    instance: ScaleInstanceDocument;
+    score: ScoreResultDocument | null;
+    items: ItemResponseDocument[];
+  }> {
+    const definition = scenarioDefinitionsFor('resilience-security').find(
+      (candidate) => candidate.scenarioKey === scenarioKey,
+    );
+    if (!definition) {
+      throw new Error(`Missing target scenario ${scenarioKey}`);
+    }
+    const patient = await patientModel
+      .findOne({
+        subjectCode: scenarioSubjectCodeFor(
+          'resilience-security',
+          RESILIENCE_NAMESPACE,
+          definition.ordinal,
+        ),
+      })
+      .exec();
+    const visit = patient
+      ? await visitModel
+          .findOne({
+            patientId: patient._id,
+            visitCode: scenarioVisitCodeFor(
+              'resilience-security',
+              RESILIENCE_NAMESPACE,
+              definition.ordinal,
+              targetRouteSuffix(routeKey),
+            ),
+          })
+          .exec()
+      : null;
+    const instance = visit
+      ? await instanceModel.findOne({ assessmentVisitId: visit._id }).exec()
+      : null;
+    if (!patient || !visit || !instance) {
+      throw new Error(`Missing target route ${scenarioKey}/${routeKey}`);
+    }
+    const [score, items] = await Promise.all([
+      scoreModel.findOne({ scaleInstanceId: instance._id }).exec(),
+      itemModel
+        .find({ scaleInstanceId: instance._id })
+        .sort({ itemOrder: 1 })
+        .exec(),
+    ]);
+    return { patient, visit, instance, score, items };
+  }
+
+  async function resilienceBusinessHash(): Promise<string> {
+    const subjectCodes = scenarioDefinitionsFor('resilience-security').map(
+      ({ ordinal }) =>
+        scenarioSubjectCodeFor(
+          'resilience-security',
+          RESILIENCE_NAMESPACE,
+          ordinal,
+        ),
+    );
+    const patients = await patientModel
+      .find({ subjectCode: { $in: subjectCodes } })
+      .sort({ _id: 1 })
+      .lean()
+      .exec();
+    const patientIds = patients.map(({ _id }) => _id);
+    const visits = await visitModel
+      .find({ patientId: { $in: patientIds } })
+      .sort({ _id: 1 })
+      .lean()
+      .exec();
+    const visitIds = visits.map(({ _id }) => _id);
+    const ownership = {
+      $or: [
+        { patientId: { $in: patientIds } },
+        { assessmentVisitId: { $in: visitIds } },
+      ],
+    };
+    const [instances, items, media, scores] = await Promise.all([
+      instanceModel.find(ownership).sort({ _id: 1 }).lean().exec(),
+      itemModel.find(ownership).sort({ _id: 1 }).lean().exec(),
+      mediaModel.find(ownership).sort({ _id: 1 }).lean().exec(),
+      scoreModel.find(ownership).sort({ _id: 1 }).lean().exec(),
+    ]);
+    return stableHash({ patients, visits, instances, items, media, scores });
+  }
+
   beforeAll(async () => {
     if (
       process.env.NODE_ENV !== 'test' ||
@@ -181,6 +302,10 @@ describe('B8 profile-scoped browser fixture support (e2e)', () => {
     });
     manager = createB8BrowserFixtureManager(app);
     patientModel = app.get(getModelToken(Patient.name));
+    visitModel = app.get(getModelToken(AssessmentVisit.name));
+    instanceModel = app.get(getModelToken(ScaleInstance.name));
+    itemModel = app.get(getModelToken(ItemResponse.name));
+    mediaModel = app.get(getModelToken(MediaEvidence.name));
     scoreModel = app.get(getModelToken(ScoreResult.name));
     definitionModel = app.get(getModelToken(ScaleDefinition.name));
     versionModel = app.get(getModelToken(ScaleVersion.name));
@@ -241,6 +366,71 @@ describe('B8 profile-scoped browser fixture support (e2e)', () => {
         verificationFlags.includes('privacy'),
       ).length,
     ).toBeGreaterThan(0);
+    expect(
+      stableHash({
+        audits: auditMatrixFor('core-workflow'),
+        scenarios: scenarioDefinitionsFor('core-workflow'),
+      }),
+    ).toBe('daf68cf55e39fd62fe0f202d5809df5465917423ffe724da74f2ccfa8cdb0a43');
+    expect(
+      stableHash({
+        audits: auditMatrixFor('resilience-security').filter(
+          ({ auditId }) => auditId !== 'B8-56' && auditId !== 'B8-59',
+        ),
+        scenarios: scenarioDefinitionsFor('resilience-security').filter(
+          ({ scenarioKey }) =>
+            scenarioKey !== 'network_failure' &&
+            scenarioKey !== 'responsive_route_draft',
+        ),
+      }),
+    ).toBe('e77c0d9405331158e1b02a6cc6090b2bddce37da0d752a999295b79e97156788');
+    const networkScenario = scenarioDefinitionsFor('resilience-security').find(
+      ({ scenarioKey }) => scenarioKey === 'network_failure',
+    );
+    const responsiveScenario = scenarioDefinitionsFor(
+      'resilience-security',
+    ).find(({ scenarioKey }) => scenarioKey === 'responsive_route_draft');
+    expect(networkScenario?.routeKeys).toEqual(['manual', 'confirmation']);
+    expect(responsiveScenario?.routeKeys).toEqual([
+      'manual',
+      'confirmation',
+      'execution',
+    ]);
+    const networkAudit = B8_AUDIT_MATRIX.find(
+      ({ auditId }) => auditId === 'B8-56',
+    );
+    if (!networkAudit || !('branches' in networkAudit.expectedRequest)) {
+      throw new Error('Expected B8-56 route request branches');
+    }
+    expect(
+      networkAudit.expectedRequest.branches.map(
+        ({ routeKey, request, automaticRetry, postBrowserSideEffect }) => ({
+          routeKey,
+          method: request.method,
+          resource: request.resource,
+          count: request.count,
+          automaticRetry,
+          postBrowserSideEffect,
+        }),
+      ),
+    ).toEqual([
+      {
+        routeKey: 'manual',
+        method: 'PATCH',
+        resource: 'manual-review',
+        count: '1',
+        automaticRetry: false,
+        postBrowserSideEffect: 'none',
+      },
+      {
+        routeKey: 'confirmation',
+        method: 'POST',
+        resource: 'confirm',
+        count: '1',
+        automaticRetry: false,
+        postBrowserSideEffect: 'none',
+      },
+    ]);
     expect(() => assertB8PreImportEnvironment('test')).not.toThrow();
     expectFixtureCode(
       () => assertB8PreImportEnvironment('development'),
@@ -335,8 +525,94 @@ describe('B8 profile-scoped browser fixture support (e2e)', () => {
     expect(core.expectedSummary).toContain('scoreResults=14');
     expect(resilience.auditMatrix).toHaveLength(21);
     expect(resilience.scenarios).toHaveLength(9);
-    expect(resilience.expectedSummary).toContain('visits=11');
-    expect(resilience.expectedSummary).toContain('scoreResults=11');
+    expect(resilience.expectedSummary).toContain('visits=14');
+    expect(resilience.expectedSummary).toContain('scoreResults=13');
+    const networkRoutes = resilience.scenarios.find(
+      ({ scenarioKey }) => scenarioKey === 'network_failure',
+    )?.routes;
+    expect(
+      networkRoutes?.map((route) => ({
+        key: route.key,
+        visitStatus: route.visitStatus,
+        scaleInstanceStatus: route.scaleInstanceStatus,
+        scoreStatus: route.scoreResult?.status,
+        reviewQueue: route.scoreResult?.reviewQueue,
+        warning: route.scoreResult?.warning,
+        confirmationReadiness: route.scoreResult?.confirmationReadiness,
+        postBrowserSideEffect: route.postBrowserSideEffect,
+      })),
+    ).toEqual([
+      {
+        key: 'manual',
+        visitStatus: 'in_progress',
+        scaleInstanceStatus: 'completed',
+        scoreStatus: 'needs_review',
+        reviewQueue: 'at-least-one',
+        warning: 'none',
+        confirmationReadiness: 'blocked',
+        postBrowserSideEffect: 'none',
+      },
+      {
+        key: 'confirmation',
+        visitStatus: 'in_progress',
+        scaleInstanceStatus: 'completed',
+        scoreStatus: 'computed',
+        reviewQueue: 'empty',
+        warning: 'none',
+        confirmationReadiness: 'ready',
+        postBrowserSideEffect: 'none',
+      },
+    ]);
+    const responsiveRoutes = resilience.scenarios.find(
+      ({ scenarioKey }) => scenarioKey === 'responsive_route_draft',
+    )?.routes;
+    expect(
+      responsiveRoutes?.map((route) => ({
+        key: route.key,
+        visitStatus: route.visitStatus,
+        scaleInstanceStatus: route.scaleInstanceStatus,
+        scorePresence: route.scoreResult?.presence,
+        scoreStatus: route.scoreResult?.status,
+        confirmationReadiness: route.scoreResult?.confirmationReadiness,
+        itemResponseEditability: route.itemResponseEditability,
+        mediaDraftTarget: route.mediaDraftTarget,
+        postBrowserSideEffect: route.postBrowserSideEffect,
+      })),
+    ).toEqual([
+      {
+        key: 'manual',
+        visitStatus: 'in_progress',
+        scaleInstanceStatus: 'completed',
+        scorePresence: 'required',
+        scoreStatus: 'needs_review',
+        confirmationReadiness: 'blocked',
+        itemResponseEditability: 'read-only',
+        mediaDraftTarget: 'not-applicable',
+        postBrowserSideEffect: 'none',
+      },
+      {
+        key: 'confirmation',
+        visitStatus: 'in_progress',
+        scaleInstanceStatus: 'completed',
+        scorePresence: 'required',
+        scoreStatus: 'computed',
+        confirmationReadiness: 'ready',
+        itemResponseEditability: 'read-only',
+        mediaDraftTarget: 'not-applicable',
+        postBrowserSideEffect: 'none',
+      },
+      {
+        key: 'execution',
+        visitStatus: 'in_progress',
+        scaleInstanceStatus: 'draft',
+        scorePresence: 'absent',
+        scoreStatus: 'absent',
+        confirmationReadiness: 'not-applicable',
+        itemResponseEditability: 'editable',
+        mediaDraftTarget: 'local-draft-supported',
+        postBrowserSideEffect: 'none',
+      },
+    ]);
     for (const manifest of [core, resilience]) {
       expect(manifest.roles).toHaveLength(5);
       expect(() => assertB8SafeManifest(manifest)).not.toThrow();
@@ -368,12 +644,22 @@ describe('B8 profile-scoped browser fixture support (e2e)', () => {
         )
       ).toObject(),
     ).toEqual(scoreBefore);
-    await manager.verify(
+    const resilienceBeforeVerify = await resilienceBusinessHash();
+    const verifiedResilience = await manager.verify(
       'resilience-security',
       RESILIENCE_NAMESPACE,
       testPassword,
       'prepared',
     );
+    expect(
+      await manager.verify(
+        'resilience-security',
+        RESILIENCE_NAMESPACE,
+        testPassword,
+        'prepared',
+      ),
+    ).toEqual(verifiedResilience);
+    expect(await resilienceBusinessHash()).toBe(resilienceBeforeVerify);
     await expectAsyncFixtureCode(
       () => manager.prepare('core-workflow', CORE_NAMESPACE, testPassword),
       'B8_FIXTURE_NAMESPACE_EXISTS',
@@ -401,6 +687,195 @@ describe('B8 profile-scoped browser fixture support (e2e)', () => {
     preparedSeedHash = await seedHash();
   });
 
+  it('verifies legal route states and rejects missing routes, status drift, review-queue loss, and warnings without repair', async () => {
+    const networkManual = await targetRoute('network_failure', 'manual');
+    const networkConfirmation = await targetRoute(
+      'network_failure',
+      'confirmation',
+    );
+    const responsiveManual = await targetRoute(
+      'responsive_route_draft',
+      'manual',
+    );
+    const responsiveConfirmation = await targetRoute(
+      'responsive_route_draft',
+      'confirmation',
+    );
+    const responsiveExecution = await targetRoute(
+      'responsive_route_draft',
+      'execution',
+    );
+    for (const route of [networkManual, responsiveManual]) {
+      expect(route.visit.status).toBe('in_progress');
+      expect(route.instance.status).toBe('completed');
+      expect(route.score?.status).toBe('needs_review');
+      expect(
+        route.score?.itemScores.filter(
+          ({ scoreStatus }) => scoreStatus === 'needs_review',
+        ).length,
+      ).toBeGreaterThan(0);
+    }
+    for (const route of [networkConfirmation, responsiveConfirmation]) {
+      expect(route.visit.status).toBe('in_progress');
+      expect(route.instance.status).toBe('completed');
+      expect(route.score?.status).toBe('computed');
+      expect(
+        route.score?.itemScores.filter(
+          ({ scoreStatus }) => scoreStatus === 'needs_review',
+        ),
+      ).toHaveLength(0);
+      expect(route.score?.computation?.warningCount ?? 0).toBe(0);
+      expect(route.score?.confirmedAt).toBeNull();
+      expect(route.score?.lockedAt).toBeNull();
+    }
+    expect(responsiveExecution.visit.status).toBe('in_progress');
+    expect(responsiveExecution.instance.status).toBe('draft');
+    expect(responsiveExecution.score).toBeNull();
+    expect(
+      responsiveExecution.items.some(
+        (item) =>
+          ['not_started', 'in_progress', 'answered'].includes(item.status) &&
+          !(item.lockedAt instanceof Date),
+      ),
+    ).toBe(true);
+    expect(
+      responsiveExecution.items.some((item) => {
+        const config = item.itemConfigSnapshot;
+        return (
+          config !== null &&
+          typeof config === 'object' &&
+          (config.supportsPhotoUpload === true ||
+            config.supportsHandwriting === true)
+        );
+      }),
+    ).toBe(true);
+    expect(
+      await mediaModel.countDocuments({
+        scaleInstanceId: responsiveExecution.instance._id,
+      }),
+    ).toBe(0);
+
+    const originalVisitCode = networkConfirmation.visit.visitCode;
+    await visitModel.collection.updateOne(
+      { _id: networkConfirmation.visit._id },
+      { $set: { visitCode: `${originalVisitCode}-MISSING` } },
+    );
+    try {
+      await expectAsyncFixtureCode(
+        () =>
+          manager.verify(
+            'resilience-security',
+            RESILIENCE_NAMESPACE,
+            testPassword,
+            'prepared',
+          ),
+        'B8_FIXTURE_SCENARIO_INVALID',
+      );
+    } finally {
+      await visitModel.collection.updateOne(
+        { _id: networkConfirmation.visit._id },
+        { $set: { visitCode: originalVisitCode } },
+      );
+    }
+
+    await instanceModel.collection.updateOne(
+      { _id: responsiveExecution.instance._id },
+      { $set: { status: 'completed' } },
+    );
+    try {
+      await expectAsyncFixtureCode(
+        () =>
+          manager.verify(
+            'resilience-security',
+            RESILIENCE_NAMESPACE,
+            testPassword,
+            'prepared',
+          ),
+        'B8_FIXTURE_SCENARIO_INVALID',
+      );
+    } finally {
+      await instanceModel.collection.updateOne(
+        { _id: responsiveExecution.instance._id },
+        { $set: { status: 'draft' } },
+      );
+    }
+
+    if (!networkManual.score) {
+      throw new Error('Expected network manual score');
+    }
+    const originalItemScores = networkManual.score.toObject().itemScores;
+    await scoreModel.collection.updateOne(
+      { _id: networkManual.score._id },
+      {
+        $set: {
+          itemScores: originalItemScores.map((item) => ({
+            ...item,
+            scoreStatus:
+              item.scoreStatus === 'needs_review'
+                ? 'auto_scored'
+                : item.scoreStatus,
+          })),
+        },
+      },
+    );
+    try {
+      await expectAsyncFixtureCode(
+        () =>
+          manager.verify(
+            'resilience-security',
+            RESILIENCE_NAMESPACE,
+            testPassword,
+            'prepared',
+          ),
+        'B8_FIXTURE_SCENARIO_INVALID',
+      );
+    } finally {
+      await scoreModel.collection.updateOne(
+        { _id: networkManual.score._id },
+        { $set: { itemScores: originalItemScores } },
+      );
+    }
+
+    if (!networkConfirmation.score) {
+      throw new Error('Expected network confirmation score');
+    }
+    const originalComputation =
+      networkConfirmation.score.toObject().computation;
+    await scoreModel.collection.updateOne(
+      { _id: networkConfirmation.score._id },
+      {
+        $set: {
+          'computation.warningCount': 1,
+          'computation.notes': 'warning_codes=UNKNOWN_GROUP_CONFIGURATION',
+        },
+      },
+    );
+    try {
+      await expectAsyncFixtureCode(
+        () =>
+          manager.verify(
+            'resilience-security',
+            RESILIENCE_NAMESPACE,
+            testPassword,
+            'prepared',
+          ),
+        'B8_FIXTURE_SCENARIO_INVALID',
+      );
+    } finally {
+      await scoreModel.collection.updateOne(
+        { _id: networkConfirmation.score._id },
+        { $set: { computation: originalComputation } },
+      );
+    }
+
+    await manager.verify(
+      'resilience-security',
+      RESILIENCE_NAMESPACE,
+      testPassword,
+      'prepared',
+    );
+  });
+
   it('accepts only each profile legal post-browser terminal state and detects missing, multiple, wrong updatedAt, status drift, and cross-profile pollution without repair', async () => {
     await manager.simulatePostBrowserForE2e('core-workflow', CORE_NAMESPACE);
     await manager.simulatePostBrowserForE2e(
@@ -422,6 +897,102 @@ describe('B8 profile-scoped browser fixture support (e2e)', () => {
     expect(core.expectedSummary).toContain('phase=post-browser');
     expect(resilience.expectedSummary).toContain('phase=post-browser');
     expect(await seedHash()).toBe(preparedSeedHash);
+
+    const targetScoredRoutes = [
+      { scenarioKey: 'network_failure', routeKey: 'manual' },
+      { scenarioKey: 'network_failure', routeKey: 'confirmation' },
+      { scenarioKey: 'responsive_route_draft', routeKey: 'manual' },
+      { scenarioKey: 'responsive_route_draft', routeKey: 'confirmation' },
+    ] as const;
+    for (const { scenarioKey, routeKey } of targetScoredRoutes) {
+      const route = await targetRoute(scenarioKey, routeKey);
+      if (!route.score) {
+        throw new Error(`Expected score for ${scenarioKey}/${routeKey}`);
+      }
+      const originalOperatorNote = route.score.operatorNote;
+      await scoreModel.collection.updateOne(
+        { _id: route.score._id },
+        { $set: { operatorNote: 'B8 unexpected target-route write' } },
+      );
+      try {
+        await expectAsyncFixtureCode(
+          () =>
+            manager.verify(
+              'resilience-security',
+              RESILIENCE_NAMESPACE,
+              testPassword,
+              'post-browser',
+            ),
+          'B8_FIXTURE_SCENARIO_INVALID',
+        );
+      } finally {
+        await scoreModel.collection.updateOne(
+          { _id: route.score._id },
+          originalOperatorNote !== undefined
+            ? { $set: { operatorNote: originalOperatorNote } }
+            : { $unset: { operatorNote: '' } },
+        );
+      }
+    }
+
+    const execution = await targetRoute('responsive_route_draft', 'execution');
+    const executionItem = execution.items[0];
+    if (!executionItem) {
+      throw new Error('Expected responsive execution item');
+    }
+    const originalRawResponse: unknown = executionItem.rawResponse;
+    await itemModel.collection.updateOne(
+      { _id: executionItem._id },
+      { $set: { rawResponse: 'B8 unexpected answer write' } },
+    );
+    try {
+      await expectAsyncFixtureCode(
+        () =>
+          manager.verify(
+            'resilience-security',
+            RESILIENCE_NAMESPACE,
+            testPassword,
+            'post-browser',
+          ),
+        'B8_FIXTURE_SOURCE_HASH_INVALID',
+      );
+    } finally {
+      await itemModel.collection.updateOne(
+        { _id: executionItem._id },
+        originalRawResponse === undefined
+          ? { $unset: { rawResponse: '' } }
+          : { $set: { rawResponse: originalRawResponse } },
+      );
+    }
+
+    const insertedMedia = await mediaModel.collection.insertOne({
+      patientId: execution.patient._id,
+      assessmentVisitId: execution.visit._id,
+      scaleInstanceId: execution.instance._id,
+      itemResponseId: executionItem._id,
+      status: 'pending',
+      b8UnexpectedWrite: true,
+    });
+    try {
+      await expectAsyncFixtureCode(
+        () =>
+          manager.verify(
+            'resilience-security',
+            RESILIENCE_NAMESPACE,
+            testPassword,
+            'post-browser',
+          ),
+        'B8_FIXTURE_SCENARIO_INVALID',
+      );
+    } finally {
+      await mediaModel.collection.deleteOne({ _id: insertedMedia.insertedId });
+    }
+    await manager.verify(
+      'resilience-security',
+      RESILIENCE_NAMESPACE,
+      testPassword,
+      'post-browser',
+    );
 
     const multiWrite = await scoreFor(
       'core-workflow',
@@ -613,9 +1184,62 @@ describe('B8 profile-scoped browser fixture support (e2e)', () => {
     expect(await manager.cleanup('core-workflow', CORE_NAMESPACE)).toEqual(
       expect.objectContaining({ residualCount: 0, matched: false }),
     );
+    const targetRoutes = await Promise.all([
+      targetRoute('network_failure', 'manual'),
+      targetRoute('network_failure', 'confirmation'),
+      targetRoute('responsive_route_draft', 'manual'),
+      targetRoute('responsive_route_draft', 'confirmation'),
+      targetRoute('responsive_route_draft', 'execution'),
+    ]);
+    const targetPatientIds = [
+      ...new Map(
+        targetRoutes.map(({ patient }) => [
+          patient._id.toString(),
+          patient._id,
+        ]),
+      ).values(),
+    ];
+    const targetVisitIds = targetRoutes.map(({ visit }) => visit._id);
+    const targetInstanceIds = targetRoutes.map(({ instance }) => instance._id);
+    const targetScoreIds = targetRoutes.flatMap(({ score }) =>
+      score ? [score._id] : [],
+    );
+    const targetItemIds = targetRoutes.flatMap(({ items }) =>
+      items.map(({ _id }) => _id),
+    );
+    const targetMediaIds = await mediaModel.distinct('_id', {
+      scaleInstanceId: { $in: targetInstanceIds },
+    });
+    expect(targetPatientIds).toHaveLength(2);
+    expect(targetVisitIds).toHaveLength(5);
+    expect(targetInstanceIds).toHaveLength(5);
+    expect(targetScoreIds).toHaveLength(4);
+    expect(targetItemIds.length).toBeGreaterThan(0);
+    const firstResilience = await manager.cleanup(
+      'resilience-security',
+      RESILIENCE_NAMESPACE,
+    );
+    expect(firstResilience).toEqual(
+      expect.objectContaining({ residualCount: 0, matched: true }),
+    );
     expect(
-      await manager.cleanup('resilience-security', RESILIENCE_NAMESPACE),
-    ).toEqual(expect.objectContaining({ residualCount: 0, matched: true }));
+      await patientModel.countDocuments({ _id: { $in: targetPatientIds } }),
+    ).toBe(0);
+    expect(
+      await visitModel.countDocuments({ _id: { $in: targetVisitIds } }),
+    ).toBe(0);
+    expect(
+      await instanceModel.countDocuments({ _id: { $in: targetInstanceIds } }),
+    ).toBe(0);
+    expect(
+      await scoreModel.countDocuments({ _id: { $in: targetScoreIds } }),
+    ).toBe(0);
+    expect(
+      await itemModel.countDocuments({ _id: { $in: targetItemIds } }),
+    ).toBe(0);
+    expect(
+      await mediaModel.countDocuments({ _id: { $in: targetMediaIds } }),
+    ).toBe(0);
     expect(
       await manager.cleanup('resilience-security', RESILIENCE_NAMESPACE),
     ).toEqual(expect.objectContaining({ residualCount: 0, matched: false }));
