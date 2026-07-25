@@ -14,11 +14,11 @@
 | WP-04 / B17 | 已完成 | 44 个 scenarioKey 全部通过，正式 fixture 双次 cleanup，残留为 0 |
 | Batch A / B1–B3 | 已完成 | 67 个验证原子全部有明确处置，正式 fixture 双次 cleanup，残留为 0 |
 | Batch B / B4–B6 | 桌面范围已完成 | Browser 133 + automated boundary 2 = 135；post-browser verify 通过；双次 cleanup `residualCount=0`；产品缺陷 0 |
-| Batch C / B7–B10 | B7 已完成；B8–B10 尚未启动 | 组合证据覆盖 B7 全部 40 项：原完整验收 39 项与终态收口有效，B7-38 修复后定向回归通过 |
+| Batch C / B7–B10 | B7 已完成；B8 fixture-ready；B8 Browser 与 B9–B10 尚未启动 | B8 的 60 项已唯一映射到两个独立 profile；下一阶段为 `core-workflow` Browser 验收 |
 | Batch D / B11–B15 | 尚未启动 | 包含 B14.1 当前仍待验的 Browser 行为等价回归；本文第 6 节是当前待验合同 |
 | Batch E | 保留 8 项 | 真实设备、辅助技术或人工验收；不被桌面 Browser、大屏抽查或 automated boundary 替代 |
 
-Batch B 的正式 namespace 和临时文件已经删除，不存在“尚待 post-browser verify”或“下一步重建 Batch B 终态”的当前任务。B7 采用组合证据完成：原完整 Browser 验收中 B7-01–B7-37、B7-39、B7-40 通过，完整 post-browser verify 通过且双次 cleanup 均为 `residualCount=0`；B7-38 修复后的三个 viewport 定向回归、Browser 前后 prepared verify 和双次 cleanup 也均通过。本次定向回归没有执行 compute，namespace 按合同保持 prepared 状态，因此对它执行要求写终态的 post-browser verify 不适用，不构成当前阻断。B8–B15 尚未执行，不得把 B16 / B17、Batch A / B 或 B7 的证据外推为后续阶段已通过。
+Batch B 的正式 namespace 和临时文件已经删除，不存在“尚待 post-browser verify”或“下一步重建 Batch B 终态”的当前任务。B7 采用组合证据完成：原完整 Browser 验收中 B7-01–B7-37、B7-39、B7-40 通过，完整 post-browser verify 通过且双次 cleanup 均为 `residualCount=0`；B7-38 修复后的三个 viewport 定向回归、Browser 前后 prepared verify 和双次 cleanup 也均通过。本次定向回归没有执行 compute，namespace 按合同保持 prepared 状态，因此对它执行要求写终态的 post-browser verify 不适用，不构成当前阻断。B8 fixture 与两个独立验收 profile 已准备完成，但 B8 Browser 验收尚未开始，B8 仍未完成；下一阶段为 `core-workflow` Browser 验收，B9–B15 尚未执行。不得把 fixture-ready 或 B16 / B17、Batch A / B、B7 的证据外推为后续阶段已通过。
 
 ## 3. 标准静态门禁
 
@@ -135,6 +135,8 @@ B7 已完成，40 项全部闭环。组合证据为：原完整 Browser 验收�
 ### 5.2 B8 人工评分与显式确认：60 项
 
 Fixture 前置：准备 needs_review、auto_scored、not_scored、manual_scored、最后一项待复核、warning、pending、confirmed、locked、审计上限、metadata 异常、双 Session stale、401/403 与网络失败状态。
+
+B8 fixture 已按互不依赖的两个 profile 准备完成：`core-workflow` 覆盖人工评分、输入校验、服务端汇总、复核队列、显式确认与只读状态；`resilience-security` 覆盖并发/stale、401/403、网络失败、草稿保护、安全审计、隐私与响应式。每个 B8 编号只属于一个 profile；两者使用独立 namespace、manifest、prepared / post-browser verifier 与 cleanup 范围。当前尚未开始 B8 Browser 验收；下一阶段只执行 `core-workflow`，未执行的 profile 不适用其 post-browser verify。
 
 1. needs_review 项出现人工评分入口。
 2. auto_scored 项不允许人工评分。
