@@ -63,10 +63,22 @@ prepare / prepared verify 只说明账号和前置数据就绪，不等于 Brows
 
 ### 4.3 Viewport 与响应式口径
 
-- 主业务矩阵使用 Browser 的自然内容 viewport，不启用设备模拟，不长期强制固定为 1280×720。
-- 代表性响应式抽查尺寸固定为 `1280×720`、`768×900`、`390×844`；只抽查代表页，不按每个 viewport 重跑完整业务矩阵。
-- 页面不得产生非预期 document/main 横向溢出；宽表格可由明确的局部容器滚动，表单、提示、操作和焦点仍须可见。
-- 真正大屏只使用普通最大化 Chrome，缩放 100%，关闭会压缩页面的侧边栏、DevTools 或其他面板；必须实测 `window.innerWidth >= 1440`，外层窗口尺寸不能替代 CSS viewport。
+- 主业务流程矩阵使用 Browser 的自然内容 viewport；不按每个 viewport 重跑完整矩阵，而是选择内容完整、布局风险较高的代表页执行响应式矩阵。
+- 本节所有固定尺寸均指实际 CSS content viewport，即 `window.innerWidth × window.innerHeight`；不得以设备物理分辨率、Browser `outerWidth` / `outerHeight` 或截图尺寸代替。
+- 强制代表性响应式尺寸为：
+  - 手机竖屏：`390×844`。
+  - 大屏 Android 平板竖屏：`800×1280`。
+  - 大屏 Android 平板横屏：`1280×800`。
+  - 大屏 iPad 竖屏：`1024×1366`。
+  - 大屏 iPad 横屏：`1366×1024`。
+  - 紧凑桌面：`1280×720`。
+  - 桌面大屏：`1536×864`。
+- `768×900` 不再是强制代表尺寸，仅在验证 768px 附近响应式断点、复现既有缺陷或修改公共响应式布局时作为补充压力尺寸。
+- 固定 `1536×864` 是可重复的桌面大屏正式验收尺寸。另保留一次普通最大化 Chrome 的真实大屏补充抽查：页面缩放 100%，关闭 DevTools、浏览器侧边栏及其他会压缩页面的面板，实测 `window.innerWidth >= 1440`，并记录实际 `window.innerWidth` 和 `window.innerHeight`；该抽查不能替代固定 `1536×864`。
+- 包含长表单或宽表格，Dialog、Modal 或多栏摘要，Canvas、连线、绘图或平板手写，图片、手写媒体或证据区域，题目定位及复杂操作区的页面，必须覆盖大屏 Android 平板与大屏 iPad 的横屏和竖屏。
+- 每个固定 viewport 至少记录：实际 `window.innerWidth`、`window.innerHeight`；document 与 main 的 `clientWidth`、`scrollWidth`；是否存在非预期横向溢出；主要控件是否可见、可聚焦、可操作。
+- 页面不得产生非预期 document/main 横向溢出。宽表格允许由明确的局部容器横向滚动；不得通过 html、body、main 或页面根容器的全局 overflow 隐藏布局问题。
+- 本口径从 B9 及后续尚未执行的验收开始生效，不追溯重跑 B7、B8，也不改写其历史尺寸和通过证据。
 
 ### 4.4 键盘风险抽样
 
