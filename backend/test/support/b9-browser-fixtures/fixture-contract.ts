@@ -21,6 +21,7 @@ export const B9_ROLES = [
 
 export type B9Role = (typeof B9_ROLES)[number];
 export type B9AuditId = `B9-${string}`;
+export type B9AuditDisposition = 'active' | 'obsolete';
 
 export const B9_AUDIT_IDS = Array.from(
   { length: 52 },
@@ -134,7 +135,7 @@ export type B9VerificationFlag =
   | 'privacy'
   | 'viewport';
 
-export type B9AuditContractEntry = {
+type B9AuditContractEntryBase = {
   auditId: B9AuditId;
   profile: B9Profile;
   scenarioKey: B9BusinessScenarioKey;
@@ -150,6 +151,18 @@ export type B9AuditContractEntry = {
   requiresViewportVerification: boolean;
   verificationFlags: readonly B9VerificationFlag[];
 };
+
+export type B9AuditContractEntry = B9AuditContractEntryBase &
+  (
+    | {
+        disposition: 'active';
+        obsoleteReason?: never;
+      }
+    | {
+        disposition: 'obsolete';
+        obsoleteReason: string;
+      }
+  );
 
 export type B9ScenarioDefinition = {
   scenarioKey: B9BusinessScenarioKey;
@@ -223,6 +236,33 @@ function entry(
     requiresPrivacyVerification: verificationFlags.includes('privacy'),
     requiresViewportVerification: verificationFlags.includes('viewport'),
     verificationFlags,
+    disposition: 'active',
+  };
+}
+
+function obsoleteEntry(
+  auditId: B9AuditId,
+  profile: B9Profile,
+  scenarioKey: B9BusinessScenarioKey,
+  routeKey: string,
+  primaryRole: B9Role,
+  preparedState: string,
+  obsoleteReason: string,
+): B9AuditContractEntry {
+  return {
+    ...entry(
+      auditId,
+      profile,
+      scenarioKey,
+      routeKey,
+      primaryRole,
+      preparedState,
+      noRequest,
+      'not-applicable',
+      'none',
+    ),
+    disposition: 'obsolete',
+    obsoleteReason,
   };
 }
 
@@ -466,7 +506,6 @@ export const B9_AUDIT_MATRIX = [
       'B9-29',
       'B9-30',
       'B9-31',
-      'B9-32',
     ] as const
   ).map((auditId) =>
     entry(
@@ -480,6 +519,15 @@ export const B9_AUDIT_MATRIX = [
       '200',
       'none',
     ),
+  ),
+  obsoleteEntry(
+    'B9-32',
+    'core-workflow',
+    'contribution_mapping',
+    'base',
+    'doctor',
+    'confirmed source with a read-only scale page',
+    'A confirmed source makes the scale page read-only, so no other-group draft can legally coexist with contribution location.',
   ),
   ...(['B9-33', 'B9-34'] as const).map((auditId) =>
     entry(
@@ -1425,6 +1473,14 @@ export function auditMatrixFor(
   return B9_AUDIT_MATRIX.filter((entry) => entry.profile === profile);
 }
 
+export function activeAuditMatrixFor(
+  profile: B9Profile,
+): readonly B9AuditContractEntry[] {
+  return auditMatrixFor(profile).filter(
+    ({ disposition }) => disposition === 'active',
+  );
+}
+
 export function routeContractFor(
   profile: B9Profile,
   scenarioKey: B9BusinessScenarioKey,
@@ -1627,6 +1683,20 @@ export function assertB9Contract(): void {
       ? audit.profile === 'core-workflow'
       : audit.profile === 'resilience-security',
   );
+  const obsoleteAudits = B9_AUDIT_MATRIX.filter(
+    ({ disposition }) => disposition === 'obsolete',
+  );
+  const dispositionsValid = B9_AUDIT_MATRIX.every((audit) =>
+    audit.disposition === 'obsolete'
+      ? audit.auditId === 'B9-32' &&
+        audit.obsoleteReason.trim().length > 0 &&
+        'method' in audit.expectedRequest &&
+        audit.expectedRequest.method === 'none' &&
+        audit.expectedRequest.count === '0' &&
+        audit.postBrowserSideEffect === 'none' &&
+        audit.verificationFlags.length === 0
+      : audit.obsoleteReason === undefined,
+  );
   const network = B9_AUDIT_MATRIX.find(({ auditId }) => auditId === 'B9-46');
   const networkContract =
     network && 'branches' in network.expectedRequest
@@ -1642,6 +1712,10 @@ export function assertB9Contract(): void {
     scenarioKeys.length !== new Set(scenarioKeys).size ||
     auditMatrixFor('core-workflow').length !== 38 ||
     auditMatrixFor('resilience-security').length !== 14 ||
+    activeAuditMatrixFor('core-workflow').length !== 37 ||
+    activeAuditMatrixFor('resilience-security').length !== 14 ||
+    obsoleteAudits.length !== 1 ||
+    !dispositionsValid ||
     scenarioDefinitionsFor('core-workflow').length !== 10 ||
     scenarioDefinitionsFor('resilience-security').length !== 10 ||
     !ownersValid ||
@@ -1693,6 +1767,8 @@ const ALLOWED_MANIFEST_KEYS = new Set([
   'localPrerequisite',
   'auditMatrix',
   'auditId',
+  'disposition',
+  'obsoleteReason',
   'primaryRole',
   'requiresIndependentSession',
   'requiresNetworkFault',

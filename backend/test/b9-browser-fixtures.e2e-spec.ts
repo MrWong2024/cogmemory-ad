@@ -44,6 +44,7 @@ import {
   ScoreResult,
   type ScoreResultDocument,
 } from '../src/modules/scoring/schemas/score-result.schema';
+import { readConfirmationAudit } from '../src/modules/scoring/lib/manual-score-review';
 import {
   B9_AUDIT_IDS,
   B9_AUDIT_MATRIX,
@@ -55,6 +56,7 @@ import {
   assertB9PreImportEnvironment,
   assertB9RuntimeEnvironment,
   assertB9SafeManifest,
+  activeAuditMatrixFor,
   auditMatrixFor,
   conflictIndexNameFor,
   mappingUnavailableVersionFor,
@@ -70,6 +72,7 @@ import {
 } from './support/b9-browser-fixtures/fixture-contract';
 import {
   createB9BrowserFixtureManager,
+  isB9ProtectedCanonicalScaleVersion,
   type B9BrowserFixtureManager,
 } from './support/b9-browser-fixtures/b9-browser-fixtures';
 
@@ -77,8 +80,6 @@ jest.setTimeout(600000);
 
 const CORE_NAMESPACE = 'b9c-e2e-core';
 const RESILIENCE_NAMESPACE = 'b9r-e2e-resilience';
-const B9_MAPPING_VERSION_PATTERN =
-  /^b9-b9[cr]-[a-z0-9]+(?:-[a-z0-9]+)*-mapping-unavailable$/;
 
 type RouteRoot = {
   patient: PatientDocument;
@@ -153,22 +154,24 @@ describe('B9 profile-scoped browser fixture support (e2e)', () => {
   let firstReadySeedHash: string;
   let canonicalSeedHash: string;
 
+  async function protectedSeedVersions() {
+    const allVersions = await versionModel
+      .find({ scaleCode: { $in: ['mmse', 'moca'] } })
+      .sort({ scaleCode: 1, version: 1, _id: 1 })
+      .lean()
+      .exec();
+    return allVersions.filter(isB9ProtectedCanonicalScaleVersion);
+  }
+
   async function seedHash(): Promise<string> {
-    const [definitions, allVersions] = await Promise.all([
+    const [definitions, versions] = await Promise.all([
       definitionModel
         .find({ code: { $in: ['mmse', 'moca'] } })
         .sort({ code: 1, _id: 1 })
         .lean()
         .exec(),
-      versionModel
-        .find({ scaleCode: { $in: ['mmse', 'moca'] } })
-        .sort({ scaleCode: 1, version: 1, _id: 1 })
-        .lean()
-        .exec(),
+      protectedSeedVersions(),
     ]);
-    const versions = allVersions.filter(
-      ({ version }) => !B9_MAPPING_VERSION_PATTERN.test(version),
-    );
     return stableHash(withoutLifecycleTimestamps({ definitions, versions }));
   }
 
@@ -394,8 +397,48 @@ describe('B9 profile-scoped browser fixture support (e2e)', () => {
     expect(B9_PROFILES).toEqual(['core-workflow', 'resilience-security']);
     expect(auditMatrixFor('core-workflow')).toHaveLength(38);
     expect(auditMatrixFor('resilience-security')).toHaveLength(14);
+    expect(activeAuditMatrixFor('core-workflow')).toHaveLength(37);
+    expect(activeAuditMatrixFor('resilience-security')).toHaveLength(14);
+    const obsoleteAudits = B9_AUDIT_MATRIX.filter(
+      ({ disposition }) => disposition === 'obsolete',
+    );
+    expect(obsoleteAudits).toHaveLength(1);
+    expect(obsoleteAudits[0]).toMatchObject({
+      auditId: 'B9-32',
+      profile: 'core-workflow',
+      scenarioKey: 'contribution_mapping',
+      routeKey: 'base',
+      primaryRole: 'doctor',
+      disposition: 'obsolete',
+      postBrowserSideEffect: 'none',
+      verificationFlags: [],
+      expectedRequest: {
+        method: 'none',
+        resource: 'page',
+        count: '0',
+      },
+    });
+    expect(obsoleteAudits[0].obsoleteReason).toBe(
+      'A confirmed source makes the scale page read-only, so no other-group draft can legally coexist with contribution location.',
+    );
+    expect(
+      B9_AUDIT_MATRIX.filter(({ disposition }) => disposition === 'active'),
+    ).toHaveLength(51);
+    expect(
+      new Set(
+        B9_AUDIT_MATRIX.map(
+          ({ auditId, profile, scenarioKey, routeKey }) =>
+            `${auditId}|${profile}|${scenarioKey}|${routeKey}`,
+        ),
+      ).size,
+    ).toBe(52);
     expect(scenarioDefinitionsFor('core-workflow')).toHaveLength(10);
     expect(scenarioDefinitionsFor('resilience-security')).toHaveLength(10);
+    expect(
+      new Set(
+        B9_SCENARIOS.map(({ primaryOwnerAuditId }) => primaryOwnerAuditId),
+      ).size,
+    ).toBe(B9_SCENARIOS.length);
     expect(B9_ROLES).toHaveLength(5);
     expect(
       B9_SCENARIOS.every(
@@ -544,6 +587,15 @@ describe('B9 profile-scoped browser fixture support (e2e)', () => {
     );
     expect(core.phase).toBe('prepared');
     expect(core.auditMatrix).toHaveLength(38);
+    expect(
+      core.auditMatrix.find(({ auditId }) => auditId === 'B9-32'),
+    ).toMatchObject({
+      disposition: 'obsolete',
+      obsoleteReason:
+        'A confirmed source makes the scale page read-only, so no other-group draft can legally coexist with contribution location.',
+    });
+    expect(core.expectedSummary).toContain('activeAuditIds=37');
+    expect(core.expectedSummary).toContain('obsoleteAuditIds=1');
     expect(core.scenarios).toHaveLength(10);
     expect(JSON.stringify(core)).not.toMatch(/\b[a-f0-9]{24}\b/i);
     expect(() => assertB9SafeManifest(core)).not.toThrow();
@@ -564,6 +616,13 @@ describe('B9 profile-scoped browser fixture support (e2e)', () => {
     );
     expect(resilience.phase).toBe('prepared');
     expect(resilience.auditMatrix).toHaveLength(14);
+    expect(
+      resilience.auditMatrix.every(
+        ({ disposition }) => disposition === 'active',
+      ),
+    ).toBe(true);
+    expect(resilience.expectedSummary).toContain('activeAuditIds=14');
+    expect(resilience.expectedSummary).toContain('obsoleteAuditIds=0');
     expect(resilience.scenarios).toHaveLength(10);
     expect(JSON.stringify(resilience)).not.toMatch(/\b[a-f0-9]{24}\b/i);
     expect(() => assertB9SafeManifest(resilience)).not.toThrow();
@@ -761,43 +820,68 @@ describe('B9 profile-scoped browser fixture support (e2e)', () => {
       rawPatient,
     );
 
-    const globalVersion = await versionModel.findOne({
-      scaleCode: 'mmse',
-      version: { $not: B9_MAPPING_VERSION_PATTERN },
-    });
+    const protectedVersions = await protectedSeedVersions();
+    const globalVersion = protectedVersions[0];
     if (!globalVersion) {
-      throw new Error('Missing global seed version');
+      throw new Error('Missing protected canonical seed version');
     }
+    expect(
+      protectedVersions.some(
+        ({ _id }) => _id.toString() === globalVersion._id.toString(),
+      ),
+    ).toBe(true);
     const rawVersion = await versionModel.collection.findOne({
       _id: globalVersion._id,
     });
     if (!rawVersion) {
       throw new Error('Missing raw seed version');
     }
-    await versionModel.collection.updateOne(
-      { _id: globalVersion._id },
-      { $set: { displayVersion: 'unexpected B9 seed mutation' } },
-    );
-    expect(await seedHash()).not.toBe(canonicalSeedHash);
-    await expectAsyncFixtureCode(
-      () =>
-        manager.verify(
-          'core-workflow',
-          CORE_NAMESPACE,
-          testPassword,
-          'prepared',
-        ),
-      'B9_FIXTURE_BASELINE_INVALID',
-    );
-    await versionModel.collection.replaceOne(
-      { _id: globalVersion._id },
-      rawVersion,
-    );
+    const originalDisplayVersion: unknown = rawVersion.displayVersion;
+    const originalVersion: unknown = rawVersion.version;
+    const driftedDisplayVersion = `${String(
+      originalDisplayVersion ?? originalVersion,
+    )}-b9-drift`;
+    expect(driftedDisplayVersion).not.toEqual(originalDisplayVersion);
+    expect(await seedHash()).toBe(canonicalSeedHash);
+    try {
+      const mutation = await versionModel.collection.updateOne(
+        { _id: globalVersion._id },
+        { $set: { displayVersion: driftedDisplayVersion } },
+      );
+      expect(mutation.matchedCount).toBe(1);
+      expect(mutation.modifiedCount).toBe(1);
+      const changedVersion = await versionModel.collection.findOne({
+        _id: globalVersion._id,
+      });
+      expect(changedVersion?.displayVersion).toBe(driftedDisplayVersion);
+      expect(changedVersion?.displayVersion).not.toEqual(
+        originalDisplayVersion,
+      );
+      expect(await seedHash()).not.toBe(canonicalSeedHash);
+      await expectAsyncFixtureCode(
+        () =>
+          manager.verify(
+            'core-workflow',
+            CORE_NAMESPACE,
+            testPassword,
+            'prepared',
+          ),
+        'B9_FIXTURE_BASELINE_INVALID',
+      );
+    } finally {
+      await versionModel.collection.replaceOne(
+        { _id: globalVersion._id },
+        rawVersion,
+      );
+    }
 
+    expect(
+      await versionModel.collection.findOne({ _id: globalVersion._id }),
+    ).toEqual(rawVersion);
+    expect(await seedHash()).toBe(canonicalSeedHash);
     await expect(
       manager.verify('core-workflow', CORE_NAMESPACE, testPassword, 'prepared'),
     ).resolves.toMatchObject({ phase: 'prepared' });
-    expect(await seedHash()).toBe(canonicalSeedHash);
   });
 
   it('accepts legal profile-scoped post-browser terminal states and rejects cross-profile or idempotency drift', async () => {
@@ -873,6 +957,31 @@ describe('B9 profile-scoped browser fixture support (e2e)', () => {
     );
     expect(confirmed.score?.status).toBe('confirmed');
     expect(confirmed.domains).toHaveLength(0);
+    const confirmationAudit = readConfirmationAudit(
+      confirmed.score?.metadata ?? null,
+    );
+    expect(confirmed.score?.qualityStatus).toBe('passed');
+    expect(confirmed.score?.confirmedAt).toBeInstanceOf(Date);
+    expect(confirmed.score?.review?.reviewStatus).toBe('reviewed');
+    expect(confirmed.score?.review?.reviewedAt).toEqual(
+      confirmed.score?.confirmedAt,
+    );
+    expect(confirmed.score?.review?.reviewerId).toBeTruthy();
+    expect(confirmed.score?.review?.reviewerName).toBeTruthy();
+    expect(confirmed.score?.review?.reviewNote).toBeTruthy();
+    expect(confirmationAudit).not.toBeNull();
+    expect(confirmationAudit?.confirmedAt).toEqual(
+      confirmed.score?.confirmedAt,
+    );
+    expect(confirmationAudit?.confirmedBy).toBe(
+      confirmed.score?.review?.reviewerId?.toString(),
+    );
+    expect(confirmationAudit?.confirmedByName).toBe(
+      confirmed.score?.review?.reviewerName,
+    );
+    expect(confirmationAudit?.reviewNote).toBe(
+      confirmed.score?.review?.reviewNote,
+    );
     expect(firstCompute.domains).toHaveLength(1);
     expect(firstCompute.domains[0].runNo).toBe(1);
     expect(firstCompute.domains[0].status).toBe('computed');
@@ -913,6 +1022,141 @@ describe('B9 profile-scoped browser fixture support (e2e)', () => {
       { _id: idempotentDomain._id },
       rawIdempotentDomain,
     );
+    await expect(
+      manager.verify(
+        'core-workflow',
+        CORE_NAMESPACE,
+        testPassword,
+        'post-browser',
+      ),
+    ).resolves.toMatchObject({ phase: 'post-browser' });
+    expect(await seedHash()).toBe(canonicalSeedHash);
+  });
+
+  it('rejects score-confirmation drift in scoring, trace, operator, review, metadata, or domain facts', async () => {
+    const confirmed = await routeRoot(
+      'core-workflow',
+      CORE_NAMESPACE,
+      'confirm_triggers_latest',
+      'base',
+    );
+    if (!confirmed.score) {
+      throw new Error('Missing confirmed score fixture');
+    }
+    const rawConfirmedScore = await scoreModel.collection.findOne({
+      _id: confirmed.score._id,
+    });
+    if (!rawConfirmedScore) {
+      throw new Error('Missing raw confirmed score fixture');
+    }
+    const scoreDrifts: Array<{
+      label: string;
+      set: Record<string, unknown>;
+    }> = [
+      {
+        label: 'itemScores',
+        set: { 'itemScores.0.scoreValue': 9876.5 },
+      },
+      {
+        label: 'totalScore',
+        set: { 'totalScore.scoreValue': 9876.5 },
+      },
+      {
+        label: 'versionTrace',
+        set: {
+          'versionTrace.sourceDocument': 'unexpected B9 E2E source drift',
+        },
+      },
+      {
+        label: 'operatorNote',
+        set: { operatorNote: 'unexpected B9 E2E operator drift' },
+      },
+      {
+        label: 'review-audit-mismatch',
+        set: { 'review.reviewerName': 'Mismatched B9 E2E reviewer' },
+      },
+      {
+        label: 'extra-metadata',
+        set: { 'metadata.unexpectedB9E2e': true },
+      },
+    ];
+    for (const { label, set } of scoreDrifts) {
+      try {
+        const mutation = await scoreModel.collection.updateOne(
+          { _id: confirmed.score._id },
+          { $set: set },
+        );
+        if (mutation.matchedCount !== 1 || mutation.modifiedCount !== 1) {
+          throw new Error(`Failed to apply controlled ${label} drift`);
+        }
+        await expect(
+          manager.verify(
+            'core-workflow',
+            CORE_NAMESPACE,
+            testPassword,
+            'post-browser',
+          ),
+        ).rejects.toBeInstanceOf(B9FixtureError);
+      } finally {
+        await scoreModel.collection.replaceOne(
+          { _id: confirmed.score._id },
+          rawConfirmedScore,
+        );
+      }
+      await expect(
+        manager.verify(
+          'core-workflow',
+          CORE_NAMESPACE,
+          testPassword,
+          'post-browser',
+        ),
+      ).resolves.toMatchObject({ phase: 'post-browser' });
+    }
+
+    const computed = await routeRoot(
+      'core-workflow',
+      CORE_NAMESPACE,
+      'first_compute_success',
+      'base',
+    );
+    const sourceDomain = computed.domains[0];
+    if (!sourceDomain) {
+      throw new Error('Missing source domain fixture');
+    }
+    const rawSourceDomain = await domainModel.collection.findOne({
+      _id: sourceDomain._id,
+    });
+    if (!rawSourceDomain) {
+      throw new Error('Missing raw source domain fixture');
+    }
+    const unexpectedDomainId = new Types.ObjectId();
+    try {
+      await domainModel.collection.insertOne({
+        ...rawSourceDomain,
+        _id: unexpectedDomainId,
+        patientId: confirmed.patient._id,
+        assessmentVisitId: confirmed.visit._id,
+        scaleInstanceId: confirmed.instance._id,
+        scoreResultId: confirmed.score._id,
+        subjectCode: confirmed.patient.subjectCode,
+        scaleDefinitionId: confirmed.instance.scaleDefinitionId,
+        scaleVersionId: confirmed.instance.scaleVersionId,
+        scaleCode: confirmed.instance.scaleCode,
+        scaleVersion: confirmed.instance.scaleVersion,
+        instanceCode: confirmed.instance.instanceCode,
+        domainResultCode: `B9-C-${CORE_NAMESPACE}-UNEXPECTED-DOMAIN`,
+      });
+      await expect(
+        manager.verify(
+          'core-workflow',
+          CORE_NAMESPACE,
+          testPassword,
+          'post-browser',
+        ),
+      ).rejects.toBeInstanceOf(B9FixtureError);
+    } finally {
+      await domainModel.collection.deleteOne({ _id: unexpectedDomainId });
+    }
     await expect(
       manager.verify(
         'core-workflow',

@@ -62,6 +62,7 @@ import {
   B9_ROLES,
   B9FixtureError,
   accountNameFor,
+  activeAuditMatrixFor,
   assertB9Contract,
   assertB9RuntimeEnvironment,
   assertB9SafeManifest,
@@ -142,6 +143,17 @@ const PATH_TEMPLATE =
 const B9_MAPPING_VERSION_PATTERN =
   /^b9-b9[cr]-[a-z0-9]+(?:-[a-z0-9]+)*-mapping-unavailable$/;
 
+export function isB9ProtectedCanonicalScaleVersion(value: {
+  scaleCode?: unknown;
+  version?: unknown;
+}): boolean {
+  return (
+    (value.scaleCode === 'mmse' || value.scaleCode === 'moca') &&
+    typeof value.version === 'string' &&
+    !B9_MAPPING_VERSION_PATTERN.test(value.version)
+  );
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -185,6 +197,8 @@ function expectedCounts(
   scoreResults: number;
   domainResults: number;
   auditIds: number;
+  activeAuditIds: number;
+  obsoleteAuditIds: number;
 } {
   const scenarios = scenarioDefinitionsFor(profile);
   const routes = scenarios.flatMap(({ routeContracts }) => routeContracts);
@@ -207,6 +221,9 @@ function expectedCounts(
     ).length,
     domainResults: preparedDomainCount + firstComputeCount,
     auditIds: auditMatrixFor(profile).length,
+    activeAuditIds: activeAuditMatrixFor(profile).length,
+    obsoleteAuditIds:
+      auditMatrixFor(profile).length - activeAuditMatrixFor(profile).length,
   };
 }
 
@@ -497,7 +514,8 @@ export class B9BrowserFixtureManager {
       auditMatrix: auditMatrixFor(profile),
       expectedSummary:
         `profile=${profile}; phase=${phase}; roles=5; scenarioKeys=${scenarios.length}; ` +
-        `auditIds=${counts.auditIds}; patients=${counts.patients}; visits=${counts.visits}; ` +
+        `auditIds=${counts.auditIds}; activeAuditIds=${counts.activeAuditIds}; ` +
+        `obsoleteAuditIds=${counts.obsoleteAuditIds}; patients=${counts.patients}; visits=${counts.visits}; ` +
         `instances=${counts.instances}; scoreResults=${counts.scoreResults}; domainResults=${counts.domainResults}`,
     };
     await withB9VerifyStage(profile, 'safe_manifest', phase, () =>
@@ -1082,7 +1100,7 @@ export class B9BrowserFixtureManager {
       return;
     }
     const requiredRoles = new Set(
-      auditMatrixFor(profile)
+      activeAuditMatrixFor(profile)
         .filter(({ auditId }) => auditId !== 'B9-44')
         .map(({ primaryRole }) => primaryRole),
     );
@@ -1234,8 +1252,9 @@ export class B9BrowserFixtureManager {
             .sort({ runNo: 1, _id: 1 })
             .exec(),
         ]);
-        this.assertBaselineTransition(
+        await this.assertBaselineTransition(
           profile,
+          namespace,
           definition.scenarioKey,
           phase,
           baseline,
@@ -1246,14 +1265,15 @@ export class B9BrowserFixtureManager {
     }
   }
 
-  private assertBaselineTransition(
+  private async assertBaselineTransition(
     profile: B9Profile,
+    namespace: string,
     scenarioKey: B9BusinessScenarioKey,
     phase: B9VerifyPhase,
     baseline: RouteBaseline,
     score: ScoreResultDocument | null,
     domains: CognitiveDomainResultDocument[],
-  ): void {
+  ): Promise<void> {
     if (phase === 'prepared') {
       if (
         baseline.scoreResultId !== (score?._id.toString() ?? null) ||
@@ -1279,19 +1299,14 @@ export class B9BrowserFixtureManager {
       return;
     }
     if (baseline.postBrowserSideEffect === 'score-confirmation-only') {
-      if (
-        !score ||
-        baseline.scoreResultId !== score._id.toString() ||
-        baseline.scoreInvariantHash !== this.scoreInvariantHash(score) ||
-        score.status !== 'confirmed' ||
-        !(score.confirmedAt instanceof Date) ||
-        score.qualityStatus !== 'passed' ||
-        score.review?.reviewStatus !== 'reviewed' ||
-        readConfirmationAudit(score.metadata ?? null) === null ||
-        baseline.domainHash !== this.domainHash(domains)
-      ) {
-        throw this.scenarioInvalid(profile, scenarioKey);
-      }
+      await this.assertScoreConfirmationTransition(
+        profile,
+        namespace,
+        scenarioKey,
+        baseline,
+        score,
+        domains,
+      );
       return;
     }
     if (
@@ -1303,6 +1318,68 @@ export class B9BrowserFixtureManager {
       domains[0].status !== 'computed' ||
       domains[0].scoreResultId.toString() !== score._id.toString()
     ) {
+      throw this.scenarioInvalid(profile, scenarioKey);
+    }
+  }
+
+  private async assertScoreConfirmationTransition(
+    profile: B9Profile,
+    namespace: string,
+    scenarioKey: B9BusinessScenarioKey,
+    baseline: RouteBaseline,
+    score: ScoreResultDocument | null,
+    domains: CognitiveDomainResultDocument[],
+  ): Promise<void> {
+    const confirmation = score
+      ? readConfirmationAudit(score.metadata ?? null)
+      : null;
+    const reviewerId = score?.review?.reviewerId?.toString() ?? null;
+    const reviewerName = score?.review?.reviewerName;
+    const reviewNote = score?.review?.reviewNote;
+    const reviewedAt = score?.review?.reviewedAt;
+    const confirmedAt = score?.confirmedAt;
+    if (
+      !score ||
+      baseline.scoreResultId !== score._id.toString() ||
+      baseline.scoreInvariantHash !== this.scoreInvariantHash(score) ||
+      score.status !== 'confirmed' ||
+      !(confirmedAt instanceof Date) ||
+      score.qualityStatus !== 'passed' ||
+      score.review?.reviewStatus !== 'reviewed' ||
+      !(reviewedAt instanceof Date) ||
+      reviewedAt.getTime() !== confirmedAt.getTime() ||
+      !reviewerId ||
+      !reviewerName?.trim() ||
+      !reviewNote?.trim() ||
+      !confirmation ||
+      !confirmation.confirmationId.trim() ||
+      confirmation.confirmedAt.getTime() !== confirmedAt.getTime() ||
+      confirmation.confirmedBy !== reviewerId ||
+      confirmation.confirmedByName !== reviewerName ||
+      confirmation.reviewNote !== reviewNote ||
+      (confirmation.confirmedByRole !== 'doctor' &&
+        confirmation.confirmedByRole !== 'admin') ||
+      domains.length !== 0 ||
+      baseline.domainResultIds.length !== 0 ||
+      baseline.domainHash !== this.domainHash(domains)
+    ) {
+      throw this.scenarioInvalid(profile, scenarioKey);
+    }
+    const role = confirmation.confirmedByRole;
+    const operator = Types.ObjectId.isValid(confirmation.confirmedBy)
+      ? await this.models.users
+          .findOne({
+            _id: new Types.ObjectId(confirmation.confirmedBy),
+            accountName: accountNameFor(profile, namespace, role),
+            userType: role,
+            status: 'active',
+            roles: role,
+          })
+          .select({ displayName: 1 })
+          .lean<{ displayName: string }>()
+          .exec()
+      : null;
+    if (!operator || operator.displayName !== reviewerName) {
       throw this.scenarioInvalid(profile, scenarioKey);
     }
   }
@@ -1371,7 +1448,7 @@ export class B9BrowserFixtureManager {
     namespace: string,
   ): Promise<void> {
     const requiredRoles = new Set(
-      auditMatrixFor(profile)
+      activeAuditMatrixFor(profile)
         .filter(({ auditId }) => auditId !== 'B9-44')
         .map(({ primaryRole }) => primaryRole),
     );
@@ -1444,9 +1521,16 @@ export class B9BrowserFixtureManager {
           $set: {
             status: 'confirmed',
             confirmedAt,
+            totalScore: score.totalScore,
+            groupScores: score.groupScores,
             qualityStatus: 'passed',
-            'review.reviewStatus': 'reviewed',
-            'review.reviewedAt': confirmedAt,
+            review: {
+              reviewStatus: 'reviewed',
+              reviewedAt: confirmedAt,
+              reviewerId: doctor._id,
+              reviewerName: doctor.displayName,
+              reviewNote: POST_CONFIRMATION_NOTE,
+            },
             metadata,
           },
         },
@@ -1552,6 +1636,9 @@ export class B9BrowserFixtureManager {
     if (reviewRecord) {
       delete reviewRecord.reviewStatus;
       delete reviewRecord.reviewedAt;
+      delete reviewRecord.reviewerId;
+      delete reviewRecord.reviewerName;
+      delete reviewRecord.reviewNote;
     }
     const metadataRecord =
       raw.metadata && typeof raw.metadata === 'object'
@@ -1615,9 +1702,7 @@ export class B9BrowserFixtureManager {
         .lean()
         .exec(),
     ]);
-    const versions = allVersions.filter(
-      ({ version }) => !B9_MAPPING_VERSION_PATTERN.test(version),
-    );
+    const versions = allVersions.filter(isB9ProtectedCanonicalScaleVersion);
     return stableHash(withoutLifecycleTimestamps({ definitions, versions }));
   }
 
