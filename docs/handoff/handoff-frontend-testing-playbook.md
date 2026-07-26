@@ -14,11 +14,11 @@
 | WP-04 / B17 | 已完成 | 44 个 scenarioKey 全部通过，正式 fixture 双次 cleanup，残留为 0 |
 | Batch A / B1–B3 | 已完成 | 67 个验证原子全部有明确处置，正式 fixture 双次 cleanup，残留为 0 |
 | Batch B / B4–B6 | 桌面范围已完成 | Browser 133 + automated boundary 2 = 135；post-browser verify 通过；双次 cleanup `residualCount=0`；产品缺陷 0 |
-| Batch C / B7–B10 | B7、B8 已完成；B9-B4 fixture 阻断已修复，但 B9-B 仍未完成；B10 尚未启动 | B9 core 合同为 37 active + 1 obsolete（B9-32）；B9-B3 的 37 项 Browser pass 保留但不能直接判定 core 完成；定向/完整 E2E 与 core fixture 冒烟通过，`resilience-security` 尚未执行 |
+| Batch C / B7–B10 | B7、B8 与 B9-B `core-workflow` 已完成；B9 整体仍未完成；B10 尚未启动 | B9-B5 以全新 namespace 重跑 core：37 active pass + B9-32 obsolete，post-browser verify 通过且双次 cleanup `residualCount=0`；下一阶段为 `resilience-security` |
 | Batch D / B11–B15 | 尚未启动 | 包含 B14.1 当前仍待验的 Browser 行为等价回归；本文第 6 节是当前待验合同 |
 | Batch E | 保留 8 项 | 真实设备、辅助技术或人工验收；不被桌面 Browser、大屏抽查或 automated boundary 替代 |
 
-Batch B 的正式 namespace 和临时文件已经删除，不存在“尚待 post-browser verify”或“下一步重建 Batch B 终态”的当前任务。B7 采用组合证据完成：原完整 Browser 验收中 B7-01–B7-37、B7-39、B7-40 通过，完整 post-browser verify 通过且双次 cleanup 均为 `residualCount=0`；B7-38 修复后的三个 viewport 定向回归、Browser 前后 prepared verify 和双次 cleanup 也均通过。本次定向回归没有执行 compute，namespace 按合同保持 prepared 状态，因此对它执行要求写终态的 post-browser verify 不适用，不构成当前阻断。B8 `core-workflow` 的 39 项真实 Browser 验收与 `resilience-security` 的 21 项真实 Browser 验收均已完成；后者的 post-browser verify 通过，双次 cleanup 均为 `residualCount=0`。B8 共 60 项全部闭环，B8 已完成。B9-B1 已修复规范 seed 首次物化前误采基线的问题，并在 Git 忽略的本地 Browser 配置建立稳定 B9 fixture 密码来源；B9-B2 已完成五条 `local_write_gate` route、服务端数组顺序和内部 ID DOM 边界的定向修复。B9-B3 在指定基线上使用全新 namespace 重跑完整 `core-workflow` 的 37 项 Browser pass、产品缺陷 0、logout/停服和双次 `residualCount=0` cleanup 事实继续保留。B9-B4 已将无法在产品合法状态下成立的 B9-32 唯一处置为 `obsolete`，不得创建非法草稿 fixture 或写成 pass；core 合同现为 37 active + 1 obsolete。seed-drift 目标已改为实际受保护 canonical 集合，score-confirmation-only verifier 已与真实 A18 confirm 字段对齐；定向 E2E 1 suite / 7 tests、完整 E2E 24 suites / 110 tests 与全新 namespace core fixture prepare/verify/replace/verify/双 cleanup 冒烟均通过。本阶段未启动 Browser，历史 37 项 pass 不能直接据此判定修复后的 core 完成。B9-B 与 B9 仍未完成；下一阶段须使用全新 namespace 重跑完整 `core-workflow`，`resilience-security` 与 B10 尚未启动。
+Batch B 的正式 namespace 和临时文件已经删除，不存在“尚待 post-browser verify”或“下一步重建 Batch B 终态”的当前任务。B7 采用组合证据完成：原完整 Browser 验收中 B7-01–B7-37、B7-39、B7-40 通过，完整 post-browser verify 通过且双次 cleanup 均为 `residualCount=0`；B7-38 修复后的三个 viewport 定向回归、Browser 前后 prepared verify 和双次 cleanup 也均通过。本次定向回归没有执行 compute，namespace 按合同保持 prepared 状态，因此对它执行要求写终态的 post-browser verify 不适用，不构成当前阻断。B8 `core-workflow` 的 39 项真实 Browser 验收与 `resilience-security` 的 21 项真实 Browser 验收均已完成；后者的 post-browser verify 通过，双次 cleanup 均为 `residualCount=0`。B8 共 60 项全部闭环，B8 已完成。B9-B1 已修复规范 seed 首次物化前误采基线的问题，并在 Git 忽略的本地 Browser 配置建立稳定 B9 fixture 密码来源；B9-B2 已完成五条 `local_write_gate` route、服务端数组顺序和内部 ID DOM 边界的定向修复。B9-B3 在指定基线上使用全新 namespace 重跑完整 `core-workflow` 的 37 项 Browser pass、产品缺陷 0、logout/停服和双次 `residualCount=0` cleanup 事实继续保留。B9-B4 已将无法在产品合法状态下成立的 B9-32 唯一处置为 `obsolete`，不得创建非法草稿 fixture 或写成 pass；core 合同现为 37 active + 1 obsolete。seed-drift 目标已改为实际受保护 canonical 集合，score-confirmation-only verifier 已与真实 A18 confirm 字段对齐；定向 E2E 1 suite / 7 tests、完整 E2E 24 suites / 110 tests 与全新 namespace core fixture prepare/verify/replace/verify/双 cleanup 冒烟均通过。B9-B5 已在基线 `ed37e22dab3950e62bf434572f5a4bd4a983227a` 使用全新 namespace `b9c-b9b5-20260726-f3a7` 重跑 19 条 `core-workflow` route；B9-01–B9-31、B9-33–B9-38 共 37 个 active 项全部通过，B9-32 保持唯一 `obsolete`，post-browser verify 通过，logout、Browser/服务关闭及端口释放完成，两次 cleanup 均为 `residualCount=0`，第二次 `matched=false`。B9-B `core-workflow` 已完成；B9 整体仍未完成，下一阶段为 `resilience-security`，B10 尚未启动；不填写不存在的 evidence commit。
 
 ## 3. 标准静态门禁
 
@@ -91,9 +91,9 @@ prepare / prepared verify 只说明账号和前置数据就绪，不等于 Brows
 
 每个验证项只能是 pass、fail、not_executed 或明确 obsolete；fixture-ready、静态通过、工具限制和人工待签收不得写成 pass。报告必须区分静态门禁、Browser 场景、automated boundary、人工验收、post-browser verify、cleanup 与产品缺陷。
 
-## 5. Batch C 当前状态与待验合同：B7、B8 已完成，B9-B4 fixture 阻断已修复
+## 5. Batch C 当前状态与待验合同：B7、B8 与 B9-B core 已完成
 
-B7 的 40 项已通过组合证据全部闭环；B8 `core-workflow` 的 39 项与 `resilience-security` 的 21 项均已完成，B8 共 60 项全部闭环。B9-B4 已修复 B9-B3 暴露的 fixture 阻断：B9-32 因确认来源对应的整页只读状态下不存在可合法共存的其他分组草稿而标记为唯一 `obsolete`，core 口径为 37 active + 1 obsolete；seed-drift 和 score-confirmation-only verifier 均已通过定向、完整 E2E 与 core fixture 冒烟。B9-B3 的 37 项 Browser pass 事实保留，但本阶段未启动 Browser，不能直接据此判定修复后的 core 已完成。下一阶段须使用全新 namespace 重跑完整 `core-workflow`；`resilience-security` 仍是后续独立 Browser 阶段，B10 尚未启动。以下序号与减肥前基线完全一致；fixture 设计必须覆盖列出的前置状态、角色、错误、无副作用、Network 和隐私边界。
+B7 的 40 项已通过组合证据全部闭环；B8 `core-workflow` 的 39 项与 `resilience-security` 的 21 项均已完成，B8 共 60 项全部闭环。B9-B4 已修复 B9-B3 暴露的 fixture 阻断：B9-32 因确认来源对应的整页只读状态下不存在可合法共存的其他分组草稿而标记为唯一 `obsolete`，core 口径为 37 active + 1 obsolete；seed-drift 和 score-confirmation-only verifier 均已通过定向、完整 E2E 与 core fixture 冒烟。B9-B5 随后使用全新 namespace 重跑完整 `core-workflow`，37 个 active 项全部通过、B9-32 保持 `obsolete`，post-browser verify 和双次 `residualCount=0` cleanup 均通过。B9-B `core-workflow` 已完成；`resilience-security` 仍是后续独立 Browser 阶段，B9 整体仍未完成，B10 尚未启动。以下序号与减肥前基线完全一致；fixture 设计必须覆盖列出的前置状态、角色、错误、无副作用、Network 和隐私边界。
 
 阶段所有权口径：条目中的“页面不存在后续能力/入口”用于证明本阶段组件或动作不创建、不自动触发、不越权接管后续能力；后来已实现的 B8–B16 sibling 区域可以按当前状态合法共存。执行时应限定目标组件 DOM、请求 initiator 和动作前置状态，不得用页面全局文本误判，也不得为了满足旧阶段字面值隐藏当前合法能力。
 
@@ -142,7 +142,7 @@ Fixture 前置：准备 draft / in_progress / completed / locked / voided 实例
 39. 未使用真实患者或医疗数据。
 40. 页面没有新增路由。
 
-B7 已完成，40 项全部闭环。组合证据为：原完整 Browser 验收中 B7-01–B7-37、B7-39、B7-40 通过，完整 post-browser verify 通过，双次 cleanup 均为 `residualCount=0`；B7-38 修复后在 390×844、768×900、1280×720 的定向回归通过，三个 viewport 的 document/main 与阶段性评分卡片均无横向溢出，展开题目分值、技术信息和人工评分表单后操作仍可用，每次页面加载均为 latest GET 1 次、compute POST 0 次，Browser 前后 prepared verify 通过，双次 cleanup 均为 `residualCount=0`。定向回归未执行 compute，其 namespace 正确保持 prepared 状态；要求 `first_compute_idempotency` 已产生写终态的 post-browser verify 不适用于该只读回归，其 phase 不匹配失败不推翻原完整验收的 post-browser 证据，也不构成产品或 fixture 缺陷。B8 已完成，60 项全部闭环；B9-B1 fixture 前置与 B9-B2 定向修复已完成，但 B9-B 仍未完成，B10 尚未启动。
+B7 已完成，40 项全部闭环。组合证据为：原完整 Browser 验收中 B7-01–B7-37、B7-39、B7-40 通过，完整 post-browser verify 通过，双次 cleanup 均为 `residualCount=0`；B7-38 修复后在 390×844、768×900、1280×720 的定向回归通过，三个 viewport 的 document/main 与阶段性评分卡片均无横向溢出，展开题目分值、技术信息和人工评分表单后操作仍可用，每次页面加载均为 latest GET 1 次、compute POST 0 次，Browser 前后 prepared verify 通过，双次 cleanup 均为 `residualCount=0`。定向回归未执行 compute，其 namespace 正确保持 prepared 状态；要求 `first_compute_idempotency` 已产生写终态的 post-browser verify 不适用于该只读回归，其 phase 不匹配失败不推翻原完整验收的 post-browser 证据，也不构成当前阻断。B8 已完成，60 项全部闭环；B9-B `core-workflow` 也已完成，B9 整体仍待 `resilience-security`，B10 尚未启动。
 
 ### 5.2 B8 人工评分与显式确认：60 项
 
@@ -211,7 +211,7 @@ B8 fixture 按互不依赖的两个 profile 执行：`core-workflow` 覆盖人�
 59. 页面没有新增路由，题目定位不修改 URL 且不丢失各类草稿。
 60. lint、typecheck、build 均通过。
 
-`core-workflow` 的 B8-01–B8-19、B8-29–B8-44、B8-47–B8-49、B8-60 共 39 项已全部闭环；core post-browser verify 通过，双次 cleanup 均为 `residualCount=0`。`resilience-security` 的 B8-20–B8-28、B8-45–B8-46、B8-50–B8-59 共 21 项已全部闭环；完整 Browser 验收 21 项全部通过，post-browser verify 通过，双次 cleanup 均为 `residualCount=0`，不填写尚不存在的 evidence commit。B8 共 60 项全部闭环，B8 已完成；B9-B1 fixture 前置与 B9-B2 定向修复已完成，但 B9-B 仍未完成，B10 尚未启动。
+`core-workflow` 的 B8-01–B8-19、B8-29–B8-44、B8-47–B8-49、B8-60 共 39 项已全部闭环；core post-browser verify 通过，双次 cleanup 均为 `residualCount=0`。`resilience-security` 的 B8-20–B8-28、B8-45–B8-46、B8-50–B8-59 共 21 项已全部闭环；完整 Browser 验收 21 项全部通过，post-browser verify 通过，双次 cleanup 均为 `residualCount=0`，不填写尚不存在的 evidence commit。B8 共 60 项全部闭环，B8 已完成；B9-B `core-workflow` 已完成，B9 整体仍待 `resilience-security`，B10 尚未启动。
 
 ### 5.3 B9 认知域计算与安全展示：52 项
 
@@ -219,7 +219,7 @@ Fixture 前置：准备无评分、needs_review / computed、confirmed / locked 
 
 B9 fixture 按互不依赖的两个 profile 建成：`core-workflow` 覆盖 B9-01–B9-38（19 route），其中 37 active + 1 obsolete（仅 B9-32）；`resilience-security` 覆盖 B9-39–B9-52（11 route），14 项全部 active。每个编号只有一个 primary owner；两个 profile 使用独立 namespace、manifest、prepared / post-browser verifier 与 cleanup ownership，未执行某个 profile 时不得要求其 post-browser verify 通过。Audit disposition 只允许 `active` 或 `obsolete`；obsolete 项必须有稳定原因，且不参与 Browser 请求、Session evidence 或 post-browser 写终态要求。
 
-B9-B3 的 `core-workflow` Browser 重跑已执行全部 19 route；B9-01–B9-31、B9-33–B9-38 的 37 项 pass 事实继续保留。B9-B4 将 B9-32 处置为 `obsolete` 并修复测试资产阻断，但本阶段没有启动 Browser，因此这些事实不能直接合并为修复后 core 的完成证据。关键状态如下：
+B9-B5 已基于 `ed37e22dab3950e62bf434572f5a4bd4a983227a` 使用全新 namespace `b9c-b9b5-20260726-f3a7` 完整重跑 19 条 `core-workflow` route；B9-01–B9-31、B9-33–B9-38 的 37 个 active 项全部通过，B9-32 保持唯一 `obsolete`。关键状态如下：
 
 - `answer_dirty`、`media_dirty`、`manual_score_dirty`、`confirmation_dirty`、`score_writing` 均以对应本地 dirty / writing 提示作为认知域区域首要安全阻断；清除或结束本地状态后分别回退到原有实例、来源评分或本地确认草稿提示。五条 route 的 cognitive-domain compute POST 均为 0；`score_writing` 的最终有效轮次只产生一次评分确认 POST，并在到达服务端前受控中止。
 - `domainScores` 的 response 与 DOM 顺序均为 `attention`、`executive_function`、`language`、`memory`；`itemContributions` 的 response 与 DOM 顺序逐项一致，依次为 `mmse.orientation.time|memory`、`mmse.orientation.place|attention`、`mmse.orientation.place|executive_function`、`mmse.memory.immediate_recall|memory`、`mmse.memory.immediate_recall-unlocatable|language`。
@@ -229,9 +229,10 @@ B9-B3 的 `core-workflow` Browser 重跑已执行全部 19 route；B9-01–B9-31
 - Seed-drift E2E 现在从与 fixture canonical hash 完全相同的 MMSE/MoCA definition/ScaleVersion 受保护集合选择目标；底层 collection 确认 `displayVersion` 原始字段已变化后，hash 变化且 prepared verify 返回 `B9_FIXTURE_BASELINE_INVALID`，完整原始 BSON 在 `try/finally` 恢复，随后 hash 与 prepared verify 均恢复。
 - score-confirmation-only verifier 只允许真实 A18 confirm 的 status、confirmedAt、qualityStatus、updatedAt、五个 review 字段和 `metadata.a18Confirmation` 变化，并显式核对三方时间、review/audit 内容、namespace doctor/admin 操作者及 domain result=0；itemScores、total/group score、versionTrace、operatorNote、review/audit 不一致、额外 metadata 或意外 domain 结果均被负向 E2E 拒绝。
 - B9 定向 E2E 为 1 suite / 7 tests 全通过，完整 E2E 为 24 suites / 110 tests 全通过；全新 core namespace 的 prepare、prepared verify、显式 replace、再次 prepared verify 全通过，两次 cleanup 均为 `residualCount=0`。本阶段未启动 Browser、production frontend 或 Browser test backend，也未执行真实认知域 compute 或评分确认 HTTP 写入。
-- B9-B3 的 Browser 产品缺陷 0、logout、Browser/服务关闭、端口释放与双次 cleanup 事实保留；B9-B4 不填写不存在的 evidence commit。
+- post-browser verify 通过；logout、Browser/服务关闭和端口释放完成；两次 cleanup 均为 `residualCount=0`，第二次 `matched=false`，全局 seed、其他 namespace 与非 namespace 数据未受影响。
+- B9-B5 产品缺陷 0、fixture 缺陷 0、稳定环境限制 0；不填写不存在的 evidence commit。
 
-B9-B 与 B9 整体仍未完成；下一阶段使用全新 namespace 重跑完整 `core-workflow`；`resilience-security` 14 项 Browser 验收尚未执行，B10 尚未启动。
+B9-B `core-workflow` 已完成；B9 整体仍未完成，下一阶段为 `resilience-security`；B10 尚未启动。
 
 1. 未生成评分结果时不请求认知域 latest。
 2. needs_review / computed 未确认评分不请求认知域 latest。
