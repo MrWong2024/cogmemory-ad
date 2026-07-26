@@ -42,6 +42,8 @@ export type UseClinicalReportValue = {
   confirmationChecked: boolean;
   liveMessage: string | null;
   eligibleScaleInstances: ScaleInstanceListItem[];
+  canShowInitialGenerate: boolean;
+  initialGenerateReadOnlyMessage: string;
   canPrepareGenerate: boolean;
   generateBlockReason: string | null;
   toggleScaleInstance: (scaleInstanceId: string) => void;
@@ -131,6 +133,15 @@ export function useClinicalReport({
         .sort(compareClinicalReportScaleInstances),
     [scaleInstances],
   );
+
+  const canShowInitialGenerate =
+    visitStatus !== null && generatableVisitStatuses.has(visitStatus);
+  const initialGenerateReadOnlyMessage =
+    visitStatus === 'locked'
+      ? '当前访视已锁定，不允许首次生成临床报告草稿。可继续手工重新加载最新报告。'
+      : visitStatus === 'voided'
+        ? '当前访视已作废，不允许首次生成临床报告草稿。可继续手工重新加载最新报告。'
+        : '当前访视状态不允许首次生成临床报告草稿。可继续手工重新加载最新报告。';
 
   const eligibleIdKey = eligibleScaleInstances
     .map((instance) => normalizeId(instance.id))
@@ -253,6 +264,18 @@ export function useClinicalReport({
     eligibleScaleInstances,
     selectedScaleInstanceIds,
   ]);
+
+  useEffect(() => {
+    if (canShowInitialGenerate) {
+      return;
+    }
+
+    setSelectedScaleInstanceIds([]);
+    closeConfirmation();
+    setGenerateError(null);
+    setAlreadyGeneratedReceipt(null);
+    setGenerateProhibitedReason(null);
+  }, [canShowInitialGenerate, closeConfirmation]);
 
   const resetAfterScopeChange = useCallback(() => {
     closeConfirmation();
@@ -490,6 +513,8 @@ export function useClinicalReport({
     confirmationChecked,
     liveMessage,
     eligibleScaleInstances,
+    canShowInitialGenerate,
+    initialGenerateReadOnlyMessage,
     canPrepareGenerate,
     generateBlockReason,
     toggleScaleInstance,

@@ -166,7 +166,6 @@ export function ClinicalReportPanel({
             <Button
               disabled={
                 reportState.status === 'idle' ||
-                reportState.status === 'loading' ||
                 reportState.generating ||
                 workflow.writingAction !== null
               }
@@ -175,7 +174,7 @@ export function ClinicalReportPanel({
               variant="secondary"
             >
               {reportState.status === 'loading'
-                ? '正在加载...'
+                ? '取消旧请求并重新加载'
                 : '重新加载最新报告'}
             </Button>
           </div>
@@ -280,7 +279,8 @@ export function ClinicalReportPanel({
           </div>
         ) : null}
 
-        {reportState.status === 'not_found' ? (
+        {reportState.status === 'not_found' &&
+        reportState.canShowInitialGenerate ? (
           <div className="grid gap-5">
             <div className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] p-4">
               <h3 className="text-xl font-semibold text-[var(--cma-text-strong)]">
@@ -392,6 +392,18 @@ export function ClinicalReportPanel({
               </section>
             )}
           </div>
+        ) : null}
+
+        {reportState.status === 'not_found' &&
+        !reportState.canShowInitialGenerate ? (
+          <section className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-surface-muted)] p-4">
+            <h3 className="text-xl font-semibold text-[var(--cma-text-strong)]">
+              当前访视尚无临床报告草稿
+            </h3>
+            <p className="mt-2 text-base leading-7 text-[var(--cma-muted)]">
+              {reportState.initialGenerateReadOnlyMessage}
+            </p>
+          </section>
         ) : null}
 
         {report ? (

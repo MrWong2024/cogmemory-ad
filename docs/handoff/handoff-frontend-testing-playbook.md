@@ -14,7 +14,7 @@
 | WP-04 / B17 | 已完成 | 44 个 scenarioKey 全部通过，正式 fixture 双次 cleanup，残留为 0 |
 | Batch A / B1–B3 | 已完成 | 67 个验证原子全部有明确处置，正式 fixture 双次 cleanup，残留为 0 |
 | Batch B / B4–B6 | 桌面范围已完成 | Browser 133 + automated boundary 2 = 135；post-browser verify 通过；双次 cleanup `residualCount=0`；产品缺陷 0 |
-| Batch C / B7–B10 | B7、B8 与 B9 已完成；B10-A fixture 已完成，B10 Browser 尚未开始 | B10 分为 48 项 `generation-workflow` 与 47 项 `public-surface-security`；下一阶段为 generation-workflow Browser 验收 |
+| Batch C / B7–B10 | B7、B8 与 B9 已完成；B10-A fixture 已完成；B10-B 未完成 | `generation-workflow` 当前为 43 pass / 0 fail / 5 not_executed / 0 obsolete；`public-surface-security` 尚未启动 |
 | Batch D / B11–B15 | 尚未启动 | 包含 B14.1 当前仍待验的 Browser 行为等价回归；本文第 6 节是当前待验合同 |
 | Batch E | 保留 8 项 | 真实设备、辅助技术或人工验收；不被桌面 Browser、大屏抽查或 automated boundary 替代 |
 
@@ -93,9 +93,9 @@ prepare / prepared verify 只说明账号和前置数据就绪，不等于 Brows
 
 每个验证项只能是 pass、fail、not_executed 或明确 obsolete；fixture-ready、静态通过、工具限制和人工待签收不得写成 pass。报告必须区分静态门禁、Browser 场景、automated boundary、人工验收、post-browser verify、cleanup 与产品缺陷。
 
-## 5. Batch C 当前状态与待验合同：B7、B8 与 B9 已完成，B10-A fixture 已完成
+## 5. Batch C 当前状态与待验合同：B7、B8 与 B9 已完成，B10-B 未完成
 
-B7 的 40 项、B8 的 60 项与 B9 的 51 active pass + B9-32 obsolete 均已按既有证据闭环。B10-A fixture 与分批验收合同已完成；B10 Browser 验收尚未开始，下一阶段为 `generation-workflow` Browser 验收。以下序号与减肥前基线完全一致，当前 fixture 已覆盖列出的前置状态、角色、错误、无副作用、Network 和隐私边界，但 fixture-ready 与静态门禁通过不得写成任何 B10 Browser 项通过。
+B7 的 40 项、B8 的 60 项与 B9 的 51 active pass + B9-32 obsolete 均已按既有证据闭环。B10-A fixture 与分批验收合同已完成；B10-B `generation-workflow` 当前为 43 pass / 0 fail / 5 not_executed / 0 obsolete，B10-B 与 B10 整体仍未完成。下一阶段处理 B10-34、B10-36、B10-37、B10-39、B10-40 的稳定验收前置；`public-surface-security` 与 Batch D 尚未启动。以下序号与减肥前基线完全一致，fixture-ready 与静态门禁通过不得写成任何未执行的 B10 Browser 项通过。
 
 阶段所有权口径：条目中的“页面不存在后续能力/入口”用于证明本阶段组件或动作不创建、不自动触发、不越权接管后续能力；后来已实现的 B8–B16 sibling 区域可以按当前状态合法共存。执行时应限定目标组件 DOM、请求 initiator 和动作前置状态，不得用页面全局文本误判，也不得为了满足旧阶段字面值隐藏当前合法能力。
 
@@ -295,7 +295,7 @@ B10 fixture 固定拆分为两个互不依赖的 profile：`generation-workflow`
 
 B10 fixture 定向 E2E 1 suite / 7 tests、完整后端 E2E 25 suites / 117 tests、后端 lint / typecheck / build / 89 suites / 761 unit tests 以及前端 lint / typecheck / build 均通过。两个 profile 均在隔离 `browser_acceptance` / `cogmemory_ad_browser_test` / dbOwner 进程中完成 prepare、prepared verify、显式 replace、再次 prepared verify 与双次 cleanup 冒烟；canonical MMSE / MoCA seed hash 全程不变。稳定 `B10_FIXTURE_PASSWORD` 来源已在 Git 忽略配置建立并由独立进程一致读取，未进入 Git diff。
 
-`generation-workflow` 已在基线 `161bf16481af9d91d371b612bf6dff0286364882` 使用全新 namespace 执行真实 Browser 验收：48 项中 40 项 `pass`、3 项 `fail`、5 项 `not_executed`。稳定产品缺陷为：首次 latest 挂起期间手工重试按钮被禁用，无法触发新请求取消旧请求；locked 与 voided Visit 仍显示被禁用的首次生成入口。Browser 受控请求能力在构造 scope conflict、generation conflict 与 stale-client source 前置时重复失效，且相同 scope 幂等边界未取得合法合同响应，因此 B10-34、B10-36、B10-37、B10-39、B10-40 未闭环。已完成的首次生成只新增一份合法 V1 draft 报告，其余已执行 route 数据库零变化；post-browser verify 通过，资源计数为 ClinicalReports 7，canonical seed 未变化。Browser 会话、production frontend 与 Browser backend 已关闭，端口已释放；两次 cleanup 均为 `residualCount=0`，第二次 `matched=false`。B10-B `generation-workflow` 未完成，`public-surface-security` 尚未启动，B10 整体仍未完成，Batch D 尚未启动；不存在可填写的新 evidence commit。
+`generation-workflow` 原有 40 个 pass 事实继续有效。B10-B1 基于 `05d0ca98f17f111d1c8805f2a15df30f2df8d893` 完成 B10-05、B10-21、B10-22 产品修复与定向 Browser 复验：latest loading 时手工重试按钮保持可见、可聚焦、可点击，点击后旧请求为 cancelled / `net::ERR_ABORTED`，新 latest GET 恰好一次且 404 结果生效，无第三次请求、自动 retry、polling 或 generate；locked / voided Visit 的 scope、全选、清空、准备生成与生成确认控件 DOM 数量均为 0，各自 latest GET 404×1、generate POST=0，并显示稳定只读说明且保留手工重新加载。backend build、B10 fixture 定向 E2E 1 suite / 7 tests、frontend lint / typecheck / build 均通过；Browser 前与 logout 后 prepared verify 均通过，业务 baseline、ClinicalReports=6 与 canonical seed 未变化。Browser、production frontend 与 Browser backend 已关闭，端口已释放；两次 cleanup 均为 `residualCount=0`，第二次 `matched=false`。B10-B 当前为 43 pass / 0 fail / 5 not_executed / 0 obsolete，B10-B 与 B10 整体仍未完成；下一阶段处理 B10-34、B10-36、B10-37、B10-39、B10-40 的稳定验收前置，`public-surface-security` 与 Batch D 尚未启动；不存在可填写的新 evidence commit。
 
 Fixture 前置：准备 Visit 无报告、合法 scope、不同实例状态、draft / confirmed / voided / incomplete 报告、scope/source 冲突、缺评分/认知域/媒体、历史 confirmation、401/403 与网络失败；报告内容和意见必须脱敏且无临床含义。
 
