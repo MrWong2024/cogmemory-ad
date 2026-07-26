@@ -79,14 +79,15 @@ export type B10ExpectedRequest = {
   method: 'GET' | 'POST' | 'none';
   resource: B10RequestResource;
   count: string;
-  bodyWhitelist: 'none' | 'confirm,primaryScaleInstanceIds';
+  bodyWhitelist: 'none' | 'confirmation-and-public-scope';
   faultMode:
     | 'none'
     | 'abort'
     | 'catalog-failure'
     | 'http-500'
     | 'mutate-response'
-    | 'stale-source';
+    | 'stale-source'
+    | 'fixture-transition';
 };
 
 export type B10ExpectedRequestStep = {
@@ -102,6 +103,30 @@ export type B10ExpectedRequestContract =
   | { branches: readonly B10ExpectedRequestStep[] };
 
 export type B10PostBrowserSideEffect = 'none' | 'create-version-one-draft';
+
+export type B10FixtureTransition =
+  | 'none'
+  | 'stage-different-scope-draft'
+  | 'stage-source-scale-not-ready';
+
+export type B10BrowserActionPlan = {
+  scopeSource: 'none' | 'latest-public-traces' | 'eligible-visit-candidates';
+  fixtureTransitionRequired: boolean;
+  fixtureTransition: B10FixtureTransition;
+  transitionTiming: 'none' | 'after-latest-and-candidates-and-selection';
+  expectedGenerateStatus: string;
+  expectedLatestAfterGenerate:
+    | 'not-requested'
+    | 'unchanged-readable-report'
+    | 'staged-readable-report'
+    | 'not-found';
+  allowedFixtureOwnedChanges: readonly (
+    | 'none'
+    | 'one-staged-different-scope-draft'
+    | 'one-source-status-transition'
+  )[];
+  allowedProductBusinessChanges: readonly ('none' | 'one-version-one-draft')[];
+};
 
 export type B10VerificationFlag =
   | 'independent-session'
@@ -186,6 +211,7 @@ export type B10RoutePreparedContract = {
   expectedHttpStatus: string;
   automaticRetry: false;
   postBrowserSideEffect: B10PostBrowserSideEffect;
+  browserActionPlan: B10BrowserActionPlan;
 };
 
 export type B10ScenarioDefinition = {
@@ -227,7 +253,7 @@ const generateOnce = request(
   'POST',
   'generate',
   '1',
-  'confirm,primaryScaleInstanceIds',
+  'confirmation-and-public-scope',
 );
 const generateThenLatest = sequence([
   {
@@ -505,7 +531,7 @@ const B10_AUDIT_MATRIX_ENTRIES = [
     'base',
     'nurse',
     'generation-confirmation',
-    'readable draft with the same stable scope',
+    'readable draft whose stable scope is available from latest public traces',
     generateOnce,
     '200 alreadyGenerated=true',
   ),
@@ -516,7 +542,7 @@ const B10_AUDIT_MATRIX_ENTRIES = [
     'base',
     'doctor',
     'generation-confirmation',
-    'readable draft with a different scope and a second eligible candidate',
+    'latest not-found with two eligible candidates before a staged different-scope draft',
     generateThenLatest,
     '409 CLINICAL_REPORT_SCOPE_CONFLICT then 200',
   ),
@@ -551,13 +577,13 @@ const B10_AUDIT_MATRIX_ENTRIES = [
     'scale_not_ready',
     'doctor',
     'generation-confirmation',
-    'stale eligible client snapshot backed by a non-ready source',
+    'eligible client snapshot followed by a fixed server readiness transition',
     request(
       'POST',
       'generate',
       '1',
-      'confirm,primaryScaleInstanceIds',
-      'stale-source',
+      'confirmation-and-public-scope',
+      'fixture-transition',
     ),
     '409 CLINICAL_REPORT_SOURCE_SCALE_NOT_READY',
     'none',
@@ -855,7 +881,7 @@ const B10_AUDIT_MATRIX_ENTRIES = [
           'POST',
           'generate',
           '1',
-          'confirm,primaryScaleInstanceIds',
+          'confirmation-and-public-scope',
           'abort',
         ),
         expectedHttpStatus: 'network-error',
@@ -999,8 +1025,36 @@ function route(
   options: {
     patientStatus?: B10RoutePreparedContract['patientStatus'];
     visitStatus?: B10RoutePreparedContract['visitStatus'];
+    browserActionPlan?: B10BrowserActionPlan;
   } = {},
 ): B10RoutePreparedContract {
+  const requestSteps =
+    'sequence' in expectedRequest
+      ? expectedRequest.sequence
+      : 'branches' in expectedRequest
+        ? expectedRequest.branches
+        : [];
+  const includesGenerate =
+    ('resource' in expectedRequest &&
+      expectedRequest.resource === 'generate') ||
+    requestSteps.some(
+      ({ request: stepRequest }) => stepRequest.resource === 'generate',
+    );
+  const defaultActionPlan: B10BrowserActionPlan = {
+    scopeSource: includesGenerate ? 'eligible-visit-candidates' : 'none',
+    fixtureTransitionRequired: false,
+    fixtureTransition: 'none',
+    transitionTiming: 'none',
+    expectedGenerateStatus: includesGenerate
+      ? expectedHttpStatus
+      : 'not-requested',
+    expectedLatestAfterGenerate: 'not-requested',
+    allowedFixtureOwnedChanges: ['none'],
+    allowedProductBusinessChanges:
+      postBrowserSideEffect === 'create-version-one-draft'
+        ? ['one-version-one-draft']
+        : ['none'],
+  };
   return {
     key,
     auditIds,
@@ -1013,6 +1067,7 @@ function route(
     expectedHttpStatus,
     automaticRetry: false,
     postBrowserSideEffect,
+    browserActionPlan: options.browserActionPlan ?? defaultActionPlan,
   };
 }
 
@@ -1185,6 +1240,19 @@ const generationScenarios = [
         'same_scope_draft',
         generateOnce,
         '200 alreadyGenerated=true',
+        'none',
+        {
+          browserActionPlan: {
+            scopeSource: 'latest-public-traces',
+            fixtureTransitionRequired: false,
+            fixtureTransition: 'none',
+            transitionTiming: 'none',
+            expectedGenerateStatus: '200 alreadyGenerated=true',
+            expectedLatestAfterGenerate: 'unchanged-readable-report',
+            allowedFixtureOwnedChanges: ['none'],
+            allowedProductBusinessChanges: ['none'],
+          },
+        },
       ),
     ],
   },
@@ -1198,11 +1266,24 @@ const generationScenarios = [
       route(
         'base',
         ['B10-36', 'B10-37'],
-        'different-scope readable draft',
-        ['completed', 'completed'],
-        'different_scope_draft',
+        'latest not-found with two fully ready eligible candidates',
+        ['final', 'final'],
+        'none',
         generateThenLatest,
         '409 then 200',
+        'none',
+        {
+          browserActionPlan: {
+            scopeSource: 'eligible-visit-candidates',
+            fixtureTransitionRequired: true,
+            fixtureTransition: 'stage-different-scope-draft',
+            transitionTiming: 'after-latest-and-candidates-and-selection',
+            expectedGenerateStatus: '409 CLINICAL_REPORT_SCOPE_CONFLICT',
+            expectedLatestAfterGenerate: 'staged-readable-report',
+            allowedFixtureOwnedChanges: ['one-staged-different-scope-draft'],
+            allowedProductBusinessChanges: ['none'],
+          },
+        },
       ),
     ],
   },
@@ -1239,6 +1320,19 @@ const generationScenarios = [
         'generation_conflict_blocker',
         generateThenLatest,
         '409 then 404',
+        'none',
+        {
+          browserActionPlan: {
+            scopeSource: 'eligible-visit-candidates',
+            fixtureTransitionRequired: false,
+            fixtureTransition: 'none',
+            transitionTiming: 'none',
+            expectedGenerateStatus: '409 CLINICAL_REPORT_GENERATION_CONFLICT',
+            expectedLatestAfterGenerate: 'not-found',
+            allowedFixtureOwnedChanges: ['none'],
+            allowedProductBusinessChanges: ['none'],
+          },
+        },
       ),
     ],
   },
@@ -1252,17 +1346,31 @@ const generationScenarios = [
       route(
         'scale_not_ready',
         ['B10-40'],
-        'non-ready source with stale client companion',
-        ['in_progress'],
+        'fully ready eligible source before a staged server status change',
+        ['final'],
         'none',
         request(
           'POST',
           'generate',
           '1',
-          'confirm,primaryScaleInstanceIds',
-          'stale-source',
+          'confirmation-and-public-scope',
+          'fixture-transition',
         ),
         '409',
+        'none',
+        {
+          browserActionPlan: {
+            scopeSource: 'eligible-visit-candidates',
+            fixtureTransitionRequired: true,
+            fixtureTransition: 'stage-source-scale-not-ready',
+            transitionTiming: 'after-latest-and-candidates-and-selection',
+            expectedGenerateStatus:
+              '409 CLINICAL_REPORT_SOURCE_SCALE_NOT_READY',
+            expectedLatestAfterGenerate: 'not-requested',
+            allowedFixtureOwnedChanges: ['one-source-status-transition'],
+            allowedProductBusinessChanges: ['none'],
+          },
+        },
       ),
       route(
         'score_not_final',
@@ -1613,7 +1721,7 @@ const publicScenarios = [
               'POST',
               'generate',
               '1',
-              'confirm,primaryScaleInstanceIds',
+              'confirmation-and-public-scope',
               'abort',
             ),
             expectedHttpStatus: 'network-error',
@@ -1740,6 +1848,7 @@ export type B10SafeRoute = {
   expectedRequest: B10ExpectedRequestContract;
   expectedHttpStatus: string;
   postBrowserSideEffect: B10PostBrowserSideEffect;
+  browserActionPlan: B10BrowserActionPlan;
 };
 
 export type B10SafeScenarioManifest = {
@@ -1785,6 +1894,14 @@ export type B10SafeCleanupSummary = {
   matched: boolean;
   seedHashUnchanged: true;
   expectedSummary: string;
+};
+
+export type B10SafeStageSummary = {
+  scenarioKey: B10BusinessScenarioKey;
+  routeKey: string;
+  staged: true;
+  alreadyStaged: boolean;
+  seedHashUnchanged: true;
 };
 
 export type B10RuntimeEnvironment = {
@@ -1901,6 +2018,25 @@ export function validateB10Profile(value: string): B10Profile {
     );
   }
   return value;
+}
+
+export function assertB10StageTarget(
+  profile: B10Profile,
+  scenarioKey: string | undefined,
+  routeKey: string | undefined,
+): asserts scenarioKey is 'scope_conflict' | 'source_readiness_errors' {
+  const allowed =
+    profile === 'generation-workflow' &&
+    ((scenarioKey === 'scope_conflict' && routeKey === 'base') ||
+      (scenarioKey === 'source_readiness_errors' &&
+        routeKey === 'scale_not_ready'));
+  if (!allowed) {
+    throw new B10FixtureError(
+      'B10_FIXTURE_STAGE_TARGET_NOT_ALLOWED',
+      'Stage is supported only for the two fixed generation-workflow routes',
+      profile,
+    );
+  }
 }
 
 function namespacePrefixFor(profile: B10Profile): string {
@@ -2061,6 +2197,28 @@ export function assertB10Contract(): void {
         routeValue.automaticRetry === false,
     ),
   );
+  const stagedTargets = B10_SCENARIOS.flatMap((scenario) =>
+    scenario.routeContracts
+      .filter(
+        ({ browserActionPlan }) =>
+          browserActionPlan.fixtureTransition !== 'none',
+      )
+      .map(({ key }) => `${scenario.profile}/${scenario.scenarioKey}/${key}`),
+  );
+  const actionPlansValid = B10_SCENARIOS.every((scenario) =>
+    scenario.routeContracts.every(({ browserActionPlan }) => {
+      const requiresTransition = browserActionPlan.fixtureTransition !== 'none';
+      return (
+        browserActionPlan.fixtureTransitionRequired === requiresTransition &&
+        (requiresTransition
+          ? browserActionPlan.transitionTiming ===
+            'after-latest-and-candidates-and-selection'
+          : browserActionPlan.transitionTiming === 'none') &&
+        browserActionPlan.allowedFixtureOwnedChanges.length === 1 &&
+        browserActionPlan.allowedProductBusinessChanges.length === 1
+      );
+    }),
+  );
   if (
     B10_AUDIT_MATRIX.length !== 95 ||
     matrixIds.length !== new Set(matrixIds).size ||
@@ -2077,6 +2235,9 @@ export function assertB10Contract(): void {
     !ownersValid ||
     !entriesValid ||
     !routesValid ||
+    !actionPlansValid ||
+    stagedTargets.join('|') !==
+      'generation-workflow/scope_conflict/base|generation-workflow/source_readiness_errors/scale_not_ready' ||
     B10_DEFAULT_NAMESPACES['generation-workflow'] ===
       B10_DEFAULT_NAMESPACES['public-surface-security']
   ) {
@@ -2118,6 +2279,15 @@ const ALLOWED_MANIFEST_KEYS = new Set([
   'expectedHttpStatus',
   'automaticRetry',
   'postBrowserSideEffect',
+  'browserActionPlan',
+  'scopeSource',
+  'fixtureTransitionRequired',
+  'fixtureTransition',
+  'transitionTiming',
+  'expectedGenerateStatus',
+  'expectedLatestAfterGenerate',
+  'allowedFixtureOwnedChanges',
+  'allowedProductBusinessChanges',
   'auditMatrix',
   'auditId',
   'primaryRole',
@@ -2143,12 +2313,14 @@ const ALLOWED_MANIFEST_KEYS = new Set([
   'matched',
   'seedHashUnchanged',
   'expectedSummary',
+  'staged',
+  'alreadyStaged',
 ]);
 
 const FORBIDDEN_KEY_PATTERN =
   /(^id$|patientId|visitId|scaleInstanceId|scoreResultId|itemResponseId|domainResultId|sourceIds|metadata|rawResponse|reviewNote|objectKey|cookie|sessionToken|password|uri)/i;
 const FORBIDDEN_VALUE_PATTERN =
-  /(mongodb(?:\+srv)?:\/\/|cookie|session[_-]?token|password|objectid|objectkey|bucket|rawresponse|expectedvalue|scoringrule)/i;
+  /(mongodb(?:\+srv)?:\/\/|patientId|visitId|scaleInstanceId|reportId|primaryScaleInstanceIds|cookie|session[_-]?token|password|objectid|objectkey|bucket|rawresponse|expectedvalue|scoringrule)/i;
 
 function scanSafeManifest(value: unknown, path: string): void {
   if (typeof value === 'string') {

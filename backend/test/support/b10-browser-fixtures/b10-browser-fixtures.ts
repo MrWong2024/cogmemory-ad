@@ -53,6 +53,7 @@ import {
   assertB10Contract,
   assertB10RuntimeEnvironment,
   assertB10SafeManifest,
+  assertB10StageTarget,
   auditMatrixFor,
   conflictIndexNameFor,
   displayNameFor,
@@ -62,6 +63,7 @@ import {
   scenarioVisitCodeFor,
   validateB10Namespace,
   type B10BusinessScenarioKey,
+  type B10FixtureTransition,
   type B10InstanceState,
   type B10PostBrowserSideEffect,
   type B10Profile,
@@ -73,6 +75,7 @@ import {
   type B10SafeManifest,
   type B10SafeRoleManifest,
   type B10SafeScenarioManifest,
+  type B10SafeStageSummary,
   type B10VerifyPhase,
   type B10VerifyStage,
 } from './fixture-contract';
@@ -100,10 +103,13 @@ type RouteBaseline = {
   visitCode: string;
   instanceCount: number;
   sourceHash: string;
+  sourceHashWithoutFirstInstanceStatus: string;
   reportHash: string;
   reportCount: number;
   postBrowserSideEffect: B10PostBrowserSideEffect;
 };
+
+type RouteFixtureStageState = 'prepared' | 'staged';
 
 type FixtureMetadata = {
   version: 1;
@@ -123,7 +129,7 @@ type IndexDescription = {
 };
 
 const BASELINE_DATE = new Date('2026-07-26T02:00:00.000Z');
-const PATH_TEMPLATE = '/patients/:patientId/visits/:visitId';
+const PATH_TEMPLATE = '/patients/:patient/visits/:visit';
 
 export function isB10ProtectedCanonicalScaleVersion(value: {
   scaleCode?: unknown;
@@ -282,6 +288,91 @@ export class B10BrowserFixtureManager {
       requireB10FixturePassword(rawPassword),
       phase,
     );
+  }
+
+  async stage(
+    profile: B10Profile,
+    rawNamespace: string,
+    rawPassword: string | undefined,
+    rawScenarioKey: string | undefined,
+    rawRouteKey: string | undefined,
+  ): Promise<B10SafeStageSummary> {
+    const namespace = validateB10Namespace(profile, rawNamespace);
+    const password = requireB10FixturePassword(rawPassword);
+    assertB10StageTarget(profile, rawScenarioKey, rawRouteKey);
+    assertB10Contract();
+    await this.verifyStageBaseline(profile, namespace, password);
+    const seedHash = await this.globalSeedHash();
+    const definition = scenarioDefinitionsFor(profile).find(
+      ({ scenarioKey }) => scenarioKey === rawScenarioKey,
+    );
+    if (!definition || !rawRouteKey) {
+      throw this.scenarioInvalid(profile, rawScenarioKey);
+    }
+    const root = await this.requireRoot(
+      profile,
+      namespace,
+      rawScenarioKey,
+      rawRouteKey,
+    );
+    const doctor = await this.models.users
+      .findOne({
+        accountName: accountNameFor(profile, namespace, 'doctor'),
+      })
+      .exec();
+    if (!doctor) {
+      throw new B10FixtureError(
+        'B10_FIXTURE_ACCOUNT_INVALID',
+        'The fixed stage doctor account is missing',
+        profile,
+      );
+    }
+    const builderRoot: B10ScenarioRouteRoot = {
+      scenarioKey: rawScenarioKey,
+      routeKey: rawRouteKey,
+      ordinal: definition.ordinal,
+      patientId: root.patient._id,
+      visitId: root.visit._id,
+      subjectCode: root.patient.subjectCode,
+      visitCode: root.visit.visitCode,
+      scaleCode: definition.scaleCode,
+      scaleInstanceIds: root.instances.map(({ _id }) => _id),
+    };
+    const builder = new B10ScenarioBuilder(
+      profile,
+      namespace,
+      this.models,
+      this.workflows,
+    );
+    const alreadyStaged =
+      rawScenarioKey === 'scope_conflict'
+        ? await builder.stageScopeConflictReport(builderRoot, toActor(doctor))
+        : await builder.stageSourceScaleNotReady(builderRoot);
+    if ((await this.globalSeedHash()) !== seedHash) {
+      throw new B10FixtureError(
+        'B10_FIXTURE_SEED_MUTATED',
+        'Fixture stage changed the protected canonical seed',
+        profile,
+        rawScenarioKey,
+      );
+    }
+    const stagedStates = await this.verifyStageBaseline(
+      profile,
+      namespace,
+      password,
+    );
+    if (stagedStates.get(`${rawScenarioKey}/${rawRouteKey}`) !== 'staged') {
+      throw this.scenarioInvalid(profile, rawScenarioKey, rawRouteKey);
+    }
+    const result: B10SafeStageSummary = {
+      scenarioKey: rawScenarioKey,
+      routeKey: rawRouteKey,
+      staged: true,
+      alreadyStaged,
+      seedHashUnchanged: true,
+    };
+    assertB10SafeManifest(result);
+    return result;
   }
 
   async cleanup(
@@ -496,6 +587,209 @@ export class B10BrowserFixtureManager {
     return manifest;
   }
 
+  private async verifyStageBaseline(
+    profile: B10Profile,
+    namespace: string,
+    password: string,
+  ): Promise<Map<string, RouteFixtureStageState>> {
+    const before = await this.readOnlySnapshot(profile, namespace);
+    await this.verifyUsers(profile, namespace, password);
+    await this.verifyProfileIsolation(profile, namespace);
+    const seedHash = await this.globalSeedHash();
+    const definitions = scenarioDefinitionsFor(profile);
+    const states = new Map<string, RouteFixtureStageState>();
+    for (const definition of definitions) {
+      const patient = await this.models.patients
+        .findOne({
+          subjectCode: scenarioSubjectCodeFor(
+            profile,
+            namespace,
+            definition.ordinal,
+          ),
+        })
+        .exec();
+      const fixture = patient?.metadata?.b10Fixture as
+        | FixtureMetadata
+        | undefined;
+      if (
+        !patient ||
+        !fixture ||
+        fixture.version !== 1 ||
+        fixture.profile !== profile ||
+        fixture.namespace !== namespace ||
+        fixture.scenarioKey !== definition.scenarioKey ||
+        fixture.seedHash !== seedHash ||
+        fixture.patientInvariantHash !== this.patientInvariantHash(patient) ||
+        fixture.routeBaselines.length !== definition.routeContracts.length
+      ) {
+        throw new B10FixtureError(
+          'B10_FIXTURE_STAGE_BASELINE_INVALID',
+          'Stage requires an intact prepared namespace baseline',
+          profile,
+          definition.scenarioKey,
+        );
+      }
+      for (const contract of definition.routeContracts) {
+        const root = await this.requireRoot(
+          profile,
+          namespace,
+          definition.scenarioKey,
+          contract.key,
+        );
+        const baseline = fixture.routeBaselines.find(
+          ({ routeKey }) => routeKey === contract.key,
+        );
+        if (!baseline) {
+          throw this.scenarioInvalid(
+            profile,
+            definition.scenarioKey,
+            contract.key,
+          );
+        }
+        const state = await this.fixtureStageState(
+          profile,
+          namespace,
+          definition.scenarioKey,
+          root,
+          contract,
+        );
+        states.set(`${definition.scenarioKey}/${contract.key}`, state);
+        const transition =
+          state === 'staged'
+            ? contract.browserActionPlan.fixtureTransition
+            : 'none';
+        await this.verifyRouteFacts(
+          profile,
+          namespace,
+          definition.scenarioKey,
+          root,
+          contract,
+          'prepared',
+          transition,
+        );
+        const reports = await this.models.reports
+          .find({ assessmentVisitId: root.visit._id })
+          .sort({ _id: 1 })
+          .exec();
+        const sourceMatches =
+          transition === 'stage-source-scale-not-ready'
+            ? baseline.sourceHashWithoutFirstInstanceStatus ===
+              (await this.sourceHash(root, true))
+            : baseline.sourceHash === (await this.sourceHash(root));
+        const reportMatches =
+          transition === 'stage-different-scope-draft'
+            ? baseline.reportCount === 0 && reports.length === 1
+            : baseline.reportCount === reports.length &&
+              baseline.reportHash === this.reportHash(reports);
+        if (
+          baseline.visitCode !== root.visit.visitCode ||
+          baseline.instanceCount !== root.instances.length ||
+          baseline.postBrowserSideEffect !== contract.postBrowserSideEffect ||
+          !sourceMatches ||
+          !reportMatches
+        ) {
+          throw this.scenarioInvalid(
+            profile,
+            definition.scenarioKey,
+            contract.key,
+          );
+        }
+      }
+    }
+    const expectedVisits = definitions.flatMap(
+      ({ routeContracts }) => routeContracts,
+    ).length;
+    const expectedInstances = definitions.reduce(
+      (sum, definition) =>
+        sum +
+        definition.routeContracts.reduce(
+          (routeSum, contract) => routeSum + contract.instanceStates.length,
+          0,
+        ),
+      0,
+    );
+    const expectedPreparedReports = definitions.reduce(
+      (sum, definition) =>
+        sum +
+        definition.routeContracts.reduce(
+          (routeSum, contract) =>
+            routeSum + preparedReportCount(contract.reportVariant),
+          0,
+        ),
+      0,
+    );
+    const stagedReportCount =
+      states.get('scope_conflict/base') === 'staged' ? 1 : 0;
+    const counts = await this.resourceCounts(profile, namespace);
+    if (
+      counts.roles !== B10_ROLES.length ||
+      counts.patients !== definitions.length ||
+      counts.visits !== expectedVisits ||
+      counts.instances !== expectedInstances ||
+      counts.clinicalReports !== expectedPreparedReports + stagedReportCount
+    ) {
+      throw new B10FixtureError(
+        'B10_FIXTURE_STAGE_BASELINE_INVALID',
+        'Stage requires the exact prepared or allowlisted staged resource matrix',
+        profile,
+      );
+    }
+    const after = await this.readOnlySnapshot(profile, namespace);
+    if (after !== before) {
+      throw new B10FixtureError(
+        'B10_FIXTURE_VERIFY_MUTATED_DATA',
+        'Stage baseline verification must not mutate fixture data',
+        profile,
+      );
+    }
+    return states;
+  }
+
+  private async fixtureStageState(
+    profile: B10Profile,
+    namespace: string,
+    scenarioKey: B10BusinessScenarioKey,
+    root: RouteRoot,
+    contract: B10RoutePreparedContract,
+  ): Promise<RouteFixtureStageState> {
+    if (contract.browserActionPlan.fixtureTransition === 'none') {
+      return 'prepared';
+    }
+    if (
+      contract.browserActionPlan.fixtureTransition ===
+      'stage-different-scope-draft'
+    ) {
+      const reports = await this.models.reports
+        .find({ assessmentVisitId: root.visit._id })
+        .sort({ _id: 1 })
+        .exec();
+      if (reports.length === 0) {
+        return 'prepared';
+      }
+      if (reports.length === 1) {
+        this.assertFixedScopeConflictStage(
+          profile,
+          namespace,
+          scenarioKey,
+          reports[0],
+          root,
+        );
+        return 'staged';
+      }
+      throw this.scenarioInvalid(profile, scenarioKey, contract.key);
+    }
+    if (root.instances.length !== 1) {
+      throw this.scenarioInvalid(profile, scenarioKey, contract.key);
+    }
+    if (root.instances[0].status === 'completed') {
+      return 'prepared';
+    }
+    if (root.instances[0].status === 'in_progress') {
+      return 'staged';
+    }
+    throw this.scenarioInvalid(profile, scenarioKey, contract.key);
+  }
+
   private async createUsers(
     profile: B10Profile,
     namespace: string,
@@ -589,7 +883,7 @@ export class B10BrowserFixtureManager {
     );
     const expectedReports =
       expectedPreparedReports +
-      (phase === 'post-browser' && profile === 'generation-workflow' ? 1 : 0);
+      (phase === 'post-browser' && profile === 'generation-workflow' ? 2 : 0);
     const counts = await this.resourceCounts(profile, namespace);
     if (
       counts.roles !== B10_ROLES.length ||
@@ -687,6 +981,9 @@ export class B10BrowserFixtureManager {
     root: RouteRoot,
     contract: B10RoutePreparedContract,
     phase: B10VerifyPhase,
+    fixtureTransition: B10FixtureTransition = phase === 'post-browser'
+      ? contract.browserActionPlan.fixtureTransition
+      : 'none',
   ): Promise<void> {
     if (
       root.patient.status !== contract.patientStatus ||
@@ -695,7 +992,9 @@ export class B10BrowserFixtureManager {
       root.instances.some(
         (instance, index) =>
           instance.status !==
-          expectedInstanceStatus(contract.instanceStates[index]),
+          (fixtureTransition === 'stage-source-scale-not-ready' && index === 0
+            ? 'in_progress'
+            : expectedInstanceStatus(contract.instanceStates[index])),
       )
     ) {
       throw new B10FixtureError(
@@ -779,6 +1078,7 @@ export class B10BrowserFixtureManager {
       root,
       contract,
       phase,
+      fixtureTransition,
     );
   }
 
@@ -789,6 +1089,7 @@ export class B10BrowserFixtureManager {
     root: RouteRoot,
     contract: B10RoutePreparedContract,
     phase: B10VerifyPhase,
+    fixtureTransition: B10FixtureTransition,
   ): Promise<void> {
     const reports = await this.models.reports
       .find({ assessmentVisitId: root.visit._id })
@@ -797,8 +1098,12 @@ export class B10BrowserFixtureManager {
     const firstGenerated =
       phase === 'post-browser' &&
       contract.postBrowserSideEffect === 'create-version-one-draft';
+    const stagedScopeConflict =
+      fixtureTransition === 'stage-different-scope-draft';
     const expectedCount =
-      preparedReportCount(contract.reportVariant) + (firstGenerated ? 1 : 0);
+      preparedReportCount(contract.reportVariant) +
+      (firstGenerated ? 1 : 0) +
+      (stagedScopeConflict ? 1 : 0);
     if (reports.length !== expectedCount) {
       throw this.scenarioInvalid(profile, scenarioKey);
     }
@@ -814,6 +1119,19 @@ export class B10BrowserFixtureManager {
         throw this.scenarioInvalid(profile, scenarioKey);
       }
       this.assertLegalVersionOneDraft(profile, scenarioKey, reports[0], root);
+      return;
+    }
+    if (stagedScopeConflict) {
+      if (reports.length !== 1) {
+        throw this.scenarioInvalid(profile, scenarioKey);
+      }
+      this.assertFixedScopeConflictStage(
+        profile,
+        namespace,
+        scenarioKey,
+        reports[0],
+        root,
+      );
       return;
     }
     const report = reports[0];
@@ -902,6 +1220,31 @@ export class B10BrowserFixtureManager {
     ) {
       throw this.scenarioInvalid(profile, scenarioKey);
     }
+  }
+
+  private assertFixedScopeConflictStage(
+    profile: B10Profile,
+    namespace: string,
+    scenarioKey: B10BusinessScenarioKey,
+    report: ClinicalReportDocument,
+    root: RouteRoot,
+  ): void {
+    const marker = report.metadata?.b10FixtureStage as
+      | Record<string, unknown>
+      | undefined;
+    if (
+      scenarioKey !== 'scope_conflict' ||
+      root.instances.length !== 2 ||
+      marker?.version !== 1 ||
+      marker.profile !== profile ||
+      marker.namespace !== namespace ||
+      marker.scenarioKey !== scenarioKey ||
+      marker.routeKey !== 'base' ||
+      marker.transition !== 'stage-different-scope-draft'
+    ) {
+      throw this.scenarioInvalid(profile, scenarioKey, 'base');
+    }
+    this.assertLegalVersionOneDraft(profile, scenarioKey, report, root);
   }
 
   private async verifyPostBrowserEvidence(
@@ -996,6 +1339,10 @@ export class B10BrowserFixtureManager {
           visitCode: root.visit.visitCode,
           instanceCount: root.instances.length,
           sourceHash: await this.sourceHash(root),
+          sourceHashWithoutFirstInstanceStatus: await this.sourceHash(
+            root,
+            true,
+          ),
           reportHash: this.reportHash(reports),
           reportCount: reports.length,
           postBrowserSideEffect: contract.postBrowserSideEffect,
@@ -1070,16 +1417,39 @@ export class B10BrowserFixtureManager {
           .find({ assessmentVisitId: root.visit._id })
           .sort({ _id: 1 })
           .exec();
+        const stagedTransition =
+          phase === 'post-browser'
+            ? contract.browserActionPlan.fixtureTransition
+            : 'none';
+        const sourceHashMatches =
+          stagedTransition === 'stage-source-scale-not-ready'
+            ? baseline?.sourceHashWithoutFirstInstanceStatus ===
+              (await this.sourceHash(root, true))
+            : baseline?.sourceHash === (await this.sourceHash(root));
         if (
           !baseline ||
           baseline.visitCode !== root.visit.visitCode ||
           baseline.instanceCount !== root.instances.length ||
-          baseline.sourceHash !== (await this.sourceHash(root)) ||
+          !sourceHashMatches ||
           baseline.postBrowserSideEffect !== contract.postBrowserSideEffect
         ) {
           throw this.scenarioInvalid(profile, definition.scenarioKey);
         }
-        if (phase === 'prepared' || contract.postBrowserSideEffect === 'none') {
+        if (stagedTransition === 'stage-different-scope-draft') {
+          if (baseline.reportCount !== 0 || reports.length !== 1) {
+            throw this.scenarioInvalid(profile, definition.scenarioKey);
+          }
+          this.assertFixedScopeConflictStage(
+            profile,
+            namespace,
+            definition.scenarioKey,
+            reports[0],
+            root,
+          );
+        } else if (
+          phase === 'prepared' ||
+          contract.postBrowserSideEffect === 'none'
+        ) {
           if (
             baseline.reportCount !== reports.length ||
             baseline.reportHash !== this.reportHash(reports)
@@ -1152,6 +1522,7 @@ export class B10BrowserFixtureManager {
           expectedRequest: contract.expectedRequest,
           expectedHttpStatus: contract.expectedHttpStatus,
           postBrowserSideEffect: contract.postBrowserSideEffect,
+          browserActionPlan: contract.browserActionPlan,
         });
       }
       result.push({
@@ -1316,7 +1687,10 @@ export class B10BrowserFixtureManager {
     return { patient, visit, instances };
   }
 
-  private async sourceHash(root: RouteRoot): Promise<string> {
+  private async sourceHash(
+    root: RouteRoot,
+    omitFirstInstanceStatus = false,
+  ): Promise<string> {
     const instanceIds = root.instances.map(({ _id }) => _id);
     const [visit, instances, items, media, scores, domains] = await Promise.all(
       [
@@ -1348,7 +1722,22 @@ export class B10BrowserFixtureManager {
           .exec(),
       ],
     );
-    return stableHash({ visit, instances, items, media, scores, domains });
+    const firstInstanceId = root.instances[0]?._id.toString();
+    const normalizedInstances = omitFirstInstanceStatus
+      ? instances.map((instance) =>
+          instance._id.toString() === firstInstanceId
+            ? { ...instance, status: undefined }
+            : instance,
+        )
+      : instances;
+    return stableHash({
+      visit,
+      instances: normalizedInstances,
+      items,
+      media,
+      scores,
+      domains,
+    });
   }
 
   private reportHash(reports: ClinicalReportDocument[]): string {

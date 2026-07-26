@@ -1,12 +1,14 @@
-import type { INestApplicationContext } from '@nestjs/common';
+import type { INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { getConnectionToken, getModelToken } from '@nestjs/mongoose';
-import { NestFactory } from '@nestjs/core';
+import { Test } from '@nestjs/testing';
 import { spawnSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
 import type { Connection, Model } from 'mongoose';
 import { Types } from 'mongoose';
+import request, { type Response } from 'supertest';
 import { AppModule } from '../src/app.module';
+import { configureApp } from '../src/app.setup';
 import {
   AssessmentVisit,
   type AssessmentVisitDocument,
@@ -55,6 +57,7 @@ import {
   B10_ROLES,
   B10_SCENARIOS,
   B10FixtureError,
+  accountNameFor,
   assertB10Contract,
   assertB10PreImportEnvironment,
   assertB10RuntimeEnvironment,
@@ -75,6 +78,7 @@ import {
   isB10ProtectedCanonicalScaleVersion,
   type B10BrowserFixtureManager,
 } from './support/b10-browser-fixtures/b10-browser-fixtures';
+import { requireInitialized } from './support/e2e-initialization';
 
 jest.setTimeout(600000);
 
@@ -86,6 +90,63 @@ type RouteRoot = {
   visit: AssessmentVisitDocument;
   instances: ScaleInstanceDocument[];
 };
+
+type SupertestApp = NonNullable<Parameters<typeof request.agent>[0]>;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function body(response: Response): Record<string, unknown> {
+  if (!isRecord(response.body)) {
+    throw new Error('Expected response object');
+  }
+  return response.body;
+}
+
+function record(value: unknown, label: string): Record<string, unknown> {
+  if (!isRecord(value)) {
+    throw new Error(`Expected ${label} object`);
+  }
+  return value;
+}
+
+function objectArray(value: unknown, label: string): Record<string, unknown>[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`Expected ${label} object array`);
+  }
+  return value.map((item: unknown) => {
+    if (!isRecord(item)) {
+      throw new Error(`Expected ${label} object array`);
+    }
+    return item;
+  });
+}
+
+function canonicalMongoId(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const candidate = value.trim().toLowerCase();
+  if (!Types.ObjectId.isValid(candidate)) {
+    return null;
+  }
+  return new Types.ObjectId(candidate).toString() === candidate
+    ? candidate
+    : null;
+}
+
+function scopeFromLatestPublicTraces(response: Response): string[] {
+  const report = record(body(response).report, 'latest report');
+  const traces = objectArray(report.scaleTraces, 'latest report traces');
+  return [
+    ...new Set(
+      traces
+        .map((trace) => canonicalMongoId(trace.scaleInstanceId))
+        .filter((id): id is string => id !== null),
+    ),
+  ].sort((left, right) => left.localeCompare(right));
+}
 
 function stableHash(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -119,7 +180,8 @@ function expectFixtureCode(action: () => void, code: string): void {
 }
 
 describe('B10 profile-scoped browser fixture support (e2e)', () => {
-  let app: INestApplicationContext;
+  let app: INestApplication;
+  let server: SupertestApp;
   let connection: Connection;
   let manager: B10BrowserFixtureManager;
   let patientModel: Model<PatientDocument>;
@@ -258,6 +320,63 @@ describe('B10 profile-scoped browser fixture support (e2e)', () => {
     });
   }
 
+  async function routeBusinessHash(root: RouteRoot): Promise<string> {
+    const instanceIds = root.instances.map(({ _id }) => _id);
+    const [patient, visit, instances, items, media, scores, domains, reports] =
+      await Promise.all([
+        patientModel.findById(root.patient._id).lean().exec(),
+        visitModel.findById(root.visit._id).lean().exec(),
+        instanceModel
+          .find({ _id: { $in: instanceIds } })
+          .sort({ _id: 1 })
+          .lean()
+          .exec(),
+        itemModel
+          .find({ scaleInstanceId: { $in: instanceIds } })
+          .sort({ _id: 1 })
+          .lean()
+          .exec(),
+        mediaModel
+          .find({ scaleInstanceId: { $in: instanceIds } })
+          .sort({ _id: 1 })
+          .lean()
+          .exec(),
+        scoreModel
+          .find({ scaleInstanceId: { $in: instanceIds } })
+          .sort({ _id: 1 })
+          .lean()
+          .exec(),
+        domainModel
+          .find({ scaleInstanceId: { $in: instanceIds } })
+          .sort({ _id: 1 })
+          .lean()
+          .exec(),
+        reportModel
+          .find({ assessmentVisitId: root.visit._id })
+          .sort({ _id: 1 })
+          .lean()
+          .exec(),
+      ]);
+    return stableHash({
+      patient,
+      visit,
+      instances,
+      items,
+      media,
+      scores,
+      domains,
+      reports,
+    });
+  }
+
+  function visitPath(root: RouteRoot): string {
+    return `/patients/${root.patient._id.toString()}/visits/${root.visit._id.toString()}`;
+  }
+
+  function reportPath(root: RouteRoot): string {
+    return `${visitPath(root)}/clinical-reports`;
+  }
+
   async function expectPreparedFailure(
     profile: B10Profile,
     namespace: string,
@@ -293,9 +412,16 @@ describe('B10 profile-scoped browser fixture support (e2e)', () => {
       throw new Error('B10 fixture E2E requires standard_test isolation');
     }
     testPassword = `B10-${randomUUID()}-Aa1!`;
-    app = await NestFactory.createApplicationContext(AppModule, {
-      logger: false,
-    });
+    const moduleRef = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+    app = moduleRef.createNestApplication();
+    configureApp(app);
+    await app.init();
+    server = requireInitialized<SupertestApp>(
+      app.getHttpServer() as SupertestApp | undefined,
+      'HTTP server',
+    );
     connection = app.get<Connection>(getConnectionToken());
     const config = app.get(ConfigService);
     assertB10RuntimeEnvironment({
@@ -373,6 +499,33 @@ describe('B10 profile-scoped browser fixture support (e2e)', () => {
       'public-surface-security',
     ]);
     expect(B10_ROLES).toHaveLength(5);
+    const stagedRoutes = B10_SCENARIOS.flatMap((scenario) =>
+      scenario.routeContracts
+        .filter(
+          ({ browserActionPlan }) =>
+            browserActionPlan.fixtureTransitionRequired,
+        )
+        .map(({ key, browserActionPlan }) => ({
+          profile: scenario.profile,
+          scenarioKey: scenario.scenarioKey,
+          routeKey: key,
+          transition: browserActionPlan.fixtureTransition,
+        })),
+    );
+    expect(stagedRoutes).toEqual([
+      {
+        profile: 'generation-workflow',
+        scenarioKey: 'scope_conflict',
+        routeKey: 'base',
+        transition: 'stage-different-scope-draft',
+      },
+      {
+        profile: 'generation-workflow',
+        scenarioKey: 'source_readiness_errors',
+        routeKey: 'scale_not_ready',
+        transition: 'stage-source-scale-not-ready',
+      },
+    ]);
     expectFixtureCode(
       () => validateB10Profile('core-workflow'),
       'B10_FIXTURE_PROFILE_INVALID',
@@ -466,6 +619,88 @@ describe('B10 profile-scoped browser fixture support (e2e)', () => {
     expect(replaceWithoutConfirmation.status).toBe(1);
     expect(replaceWithoutConfirmation.stderr).toContain(
       'B10_FIXTURE_REPLACE_CONFIRMATION_REQUIRED',
+    );
+    const stageWithoutConfirmation = spawnSync(
+      process.execPath,
+      [
+        '-r',
+        'ts-node/register',
+        '-r',
+        'tsconfig-paths/register',
+        script,
+        'stage',
+        '--profile',
+        'generation-workflow',
+        '--scenario',
+        'scope_conflict',
+        '--route',
+        'base',
+      ],
+      {
+        cwd: process.cwd(),
+        env: { ...process.env, NODE_ENV: 'test' },
+        encoding: 'utf8',
+        timeout: 30000,
+      },
+    );
+    const stageWrongProfile = spawnSync(
+      process.execPath,
+      [
+        '-r',
+        'ts-node/register',
+        '-r',
+        'tsconfig-paths/register',
+        script,
+        'stage',
+        '--profile',
+        'public-surface-security',
+        '--scenario',
+        'scope_conflict',
+        '--route',
+        'base',
+        '--confirm-stage',
+      ],
+      {
+        cwd: process.cwd(),
+        env: { ...process.env, NODE_ENV: 'test' },
+        encoding: 'utf8',
+        timeout: 30000,
+      },
+    );
+    const stageArgsOnPrepare = spawnSync(
+      process.execPath,
+      [
+        '-r',
+        'ts-node/register',
+        '-r',
+        'tsconfig-paths/register',
+        script,
+        'prepare',
+        '--profile',
+        'generation-workflow',
+        '--scenario',
+        'scope_conflict',
+        '--route',
+        'base',
+      ],
+      {
+        cwd: process.cwd(),
+        env: { ...process.env, NODE_ENV: 'test' },
+        encoding: 'utf8',
+        timeout: 30000,
+      },
+    );
+    expect(stageWithoutConfirmation.status).toBe(1);
+    expect(stageWithoutConfirmation.stderr).toContain(
+      'B10_FIXTURE_STAGE_CONFIRMATION_REQUIRED',
+    );
+    expect(stageWrongProfile.status).toBe(1);
+    expect(stageWrongProfile.stderr).toContain(
+      'B10_FIXTURE_STAGE_TARGET_NOT_ALLOWED',
+    );
+    expect(stageArgsOnPrepare.status).toBe(1);
+    expect(stageArgsOnPrepare.stderr).toContain(
+      'B10_FIXTURE_STAGE_ARGUMENT_NOT_ALLOWED',
     );
   });
 
@@ -645,6 +880,351 @@ describe('B10 profile-scoped browser fixture support (e2e)', () => {
     );
   });
 
+  it('proves the five remaining routes through real latest/generate HTTP and fixed idempotent stages', async () => {
+    await expect(
+      manager.stage(
+        'public-surface-security',
+        PUBLIC_NAMESPACE,
+        testPassword,
+        'scope_conflict',
+        'base',
+      ),
+    ).rejects.toMatchObject({ code: 'B10_FIXTURE_STAGE_TARGET_NOT_ALLOWED' });
+    await expect(
+      manager.stage(
+        'generation-workflow',
+        GENERATION_NAMESPACE,
+        testPassword,
+        'idempotent_generate',
+        'base',
+      ),
+    ).rejects.toMatchObject({ code: 'B10_FIXTURE_STAGE_TARGET_NOT_ALLOWED' });
+    await expect(
+      manager.stage(
+        'generation-workflow',
+        GENERATION_NAMESPACE,
+        'short',
+        'scope_conflict',
+        'base',
+      ),
+    ).rejects.toMatchObject({ code: 'B10_FIXTURE_PASSWORD_REQUIRED' });
+
+    const doctorAgent = request.agent(server);
+    const nurseAgent = request.agent(server);
+    await doctorAgent
+      .post('/auth/login')
+      .send({
+        accountName: accountNameFor(
+          'generation-workflow',
+          GENERATION_NAMESPACE,
+          'doctor',
+        ),
+        password: testPassword,
+      })
+      .expect(201);
+    await nurseAgent
+      .post('/auth/login')
+      .send({
+        accountName: accountNameFor(
+          'generation-workflow',
+          GENERATION_NAMESPACE,
+          'nurse',
+        ),
+        password: testPassword,
+      })
+      .expect(201);
+
+    const idempotent = await routeRoot(
+      'generation-workflow',
+      GENERATION_NAMESPACE,
+      'idempotent_generate',
+      'base',
+    );
+    const idempotentLatest = await nurseAgent
+      .get(`${reportPath(idempotent)}/latest`)
+      .expect(200);
+    const idempotentScope = scopeFromLatestPublicTraces(idempotentLatest);
+    expect(idempotentScope).toHaveLength(1);
+    const idempotentBefore = await routeBusinessHash(idempotent);
+    const idempotentGenerate = await nurseAgent
+      .post(`${reportPath(idempotent)}/generate`)
+      .send({
+        confirm: true,
+        primaryScaleInstanceIds: idempotentScope,
+      })
+      .expect(200);
+    expect(body(idempotentGenerate).alreadyGenerated).toBe(true);
+    expect(await routeBusinessHash(idempotent)).toBe(idempotentBefore);
+
+    const scopeConflict = await routeRoot(
+      'generation-workflow',
+      GENERATION_NAMESPACE,
+      'scope_conflict',
+      'base',
+    );
+    const scopeMissing = await doctorAgent
+      .get(`${reportPath(scopeConflict)}/latest`)
+      .expect(404);
+    expect(body(scopeMissing).code).toBe('CLINICAL_REPORT_NOT_FOUND');
+    const scopeDetail = body(
+      await doctorAgent.get(visitPath(scopeConflict)).expect(200),
+    );
+    const scopeCandidates = objectArray(
+      scopeDetail.scaleInstances,
+      'scope-conflict candidates',
+    ).filter(
+      (candidate) =>
+        (candidate.status === 'completed' || candidate.status === 'locked') &&
+        canonicalMongoId(candidate.id) !== null,
+    );
+    expect(scopeCandidates).toHaveLength(2);
+    const selectedScope = canonicalMongoId(
+      [...scopeCandidates].sort(
+        (left, right) => Number(left.instanceNo) - Number(right.instanceNo),
+      )[1].id,
+    );
+    if (!selectedScope) {
+      throw new Error('Missing selected scope-conflict candidate');
+    }
+    const scopeStageOne = await manager.stage(
+      'generation-workflow',
+      GENERATION_NAMESPACE,
+      testPassword,
+      'scope_conflict',
+      'base',
+    );
+    const scopeStageTwo = await manager.stage(
+      'generation-workflow',
+      GENERATION_NAMESPACE,
+      testPassword,
+      'scope_conflict',
+      'base',
+    );
+    expect(scopeStageOne).toEqual({
+      scenarioKey: 'scope_conflict',
+      routeKey: 'base',
+      staged: true,
+      alreadyStaged: false,
+      seedHashUnchanged: true,
+    });
+    expect(scopeStageTwo).toEqual({
+      ...scopeStageOne,
+      alreadyStaged: true,
+    });
+    expect(JSON.stringify(scopeStageOne)).not.toMatch(/[a-f\d]{24}/i);
+    const stagedScopeReport = await reportModel.findOne({
+      assessmentVisitId: scopeConflict.visit._id,
+      reportType: 'cognitive_assessment',
+    });
+    if (!stagedScopeReport) {
+      throw new Error('Missing fixed staged scope-conflict report');
+    }
+    expect(stagedScopeReport.primaryScaleInstanceIds[0]?.toString()).not.toBe(
+      selectedScope,
+    );
+    const stagedScopeHash = stableHash(stagedScopeReport.toObject());
+    const scopeConflictResponse = await doctorAgent
+      .post(`${reportPath(scopeConflict)}/generate`)
+      .send({
+        confirm: true,
+        primaryScaleInstanceIds: [selectedScope],
+      })
+      .expect(409);
+    expect(body(scopeConflictResponse).code).toBe(
+      'CLINICAL_REPORT_SCOPE_CONFLICT',
+    );
+    const stagedLatest = await doctorAgent
+      .get(`${reportPath(scopeConflict)}/latest`)
+      .expect(200);
+    expect(scopeFromLatestPublicTraces(stagedLatest)).not.toContain(
+      selectedScope,
+    );
+    const scopeReportsAfter = await reportModel.find({
+      assessmentVisitId: scopeConflict.visit._id,
+    });
+    expect(scopeReportsAfter).toHaveLength(1);
+    expect(stableHash(scopeReportsAfter[0].toObject())).toBe(stagedScopeHash);
+
+    const generationConflict = await routeRoot(
+      'generation-workflow',
+      GENERATION_NAMESPACE,
+      'generation_conflict',
+      'base',
+    );
+    const generationInitialLatest = await doctorAgent
+      .get(`${reportPath(generationConflict)}/latest`)
+      .expect(404);
+    expect(body(generationInitialLatest).code).toBe(
+      'CLINICAL_REPORT_NOT_FOUND',
+    );
+    const generationDetail = body(
+      await doctorAgent.get(visitPath(generationConflict)).expect(200),
+    );
+    const generationCandidate = canonicalMongoId(
+      objectArray(
+        generationDetail.scaleInstances,
+        'generation-conflict candidates',
+      ).find(
+        (candidate) =>
+          candidate.status === 'completed' || candidate.status === 'locked',
+      )?.id,
+    );
+    if (!generationCandidate) {
+      throw new Error('Missing generation-conflict candidate');
+    }
+    const generationBefore = await routeBusinessHash(generationConflict);
+    const indexesBefore: unknown = await reportModel.collection
+      .listIndexes()
+      .toArray();
+    const conflictIndexBefore = objectArray(
+      indexesBefore,
+      'generation-conflict indexes before',
+    ).find(({ name }) => name === conflictIndexNameFor(GENERATION_NAMESPACE));
+    const generationResponse = await doctorAgent
+      .post(`${reportPath(generationConflict)}/generate`)
+      .send({
+        confirm: true,
+        primaryScaleInstanceIds: [generationCandidate],
+      })
+      .expect(409);
+    expect(body(generationResponse).code).toBe(
+      'CLINICAL_REPORT_GENERATION_CONFLICT',
+    );
+    const generationLatestAfter = await doctorAgent
+      .get(`${reportPath(generationConflict)}/latest`)
+      .expect(404);
+    expect(body(generationLatestAfter).code).toBe('CLINICAL_REPORT_NOT_FOUND');
+    expect(await routeBusinessHash(generationConflict)).toBe(generationBefore);
+    const indexesAfter: unknown = await reportModel.collection
+      .listIndexes()
+      .toArray();
+    const conflictIndexAfter = objectArray(
+      indexesAfter,
+      'generation-conflict indexes after',
+    ).find(({ name }) => name === conflictIndexNameFor(GENERATION_NAMESPACE));
+    expect(conflictIndexAfter).toEqual(conflictIndexBefore);
+
+    const scaleNotReady = await routeRoot(
+      'generation-workflow',
+      GENERATION_NAMESPACE,
+      'source_readiness_errors',
+      'scale_not_ready',
+    );
+    await doctorAgent.get(`${reportPath(scaleNotReady)}/latest`).expect(404);
+    const scaleDetail = body(
+      await doctorAgent.get(visitPath(scaleNotReady)).expect(200),
+    );
+    const scaleCandidate = objectArray(
+      scaleDetail.scaleInstances,
+      'scale-not-ready candidates',
+    ).find(
+      (candidate) =>
+        candidate.status === 'completed' || candidate.status === 'locked',
+    );
+    const cachedScaleId = canonicalMongoId(scaleCandidate?.id);
+    if (!cachedScaleId) {
+      throw new Error('Missing initially eligible scale-not-ready candidate');
+    }
+    const scaleInstanceBefore = await instanceModel
+      .findById(scaleNotReady.instances[0]._id)
+      .lean()
+      .exec();
+    if (!scaleInstanceBefore || scaleInstanceBefore.status !== 'completed') {
+      throw new Error('Scale-not-ready prepared source is not completed');
+    }
+    const companionFilter = {
+      scaleInstanceId: scaleNotReady.instances[0]._id,
+    };
+    const companionHashBefore = stableHash(
+      await Promise.all([
+        itemModel.find(companionFilter).sort({ _id: 1 }).lean().exec(),
+        mediaModel.find(companionFilter).sort({ _id: 1 }).lean().exec(),
+        scoreModel.find(companionFilter).sort({ _id: 1 }).lean().exec(),
+        domainModel.find(companionFilter).sort({ _id: 1 }).lean().exec(),
+      ]),
+    );
+    expect(await scoreModel.countDocuments(companionFilter)).toBe(1);
+    expect(await domainModel.countDocuments(companionFilter)).toBe(1);
+    const readinessStageOne = await manager.stage(
+      'generation-workflow',
+      GENERATION_NAMESPACE,
+      testPassword,
+      'source_readiness_errors',
+      'scale_not_ready',
+    );
+    const readinessStageTwo = await manager.stage(
+      'generation-workflow',
+      GENERATION_NAMESPACE,
+      testPassword,
+      'source_readiness_errors',
+      'scale_not_ready',
+    );
+    expect(readinessStageOne).toMatchObject({
+      scenarioKey: 'source_readiness_errors',
+      routeKey: 'scale_not_ready',
+      staged: true,
+      alreadyStaged: false,
+      seedHashUnchanged: true,
+    });
+    expect(readinessStageTwo).toEqual({
+      ...readinessStageOne,
+      alreadyStaged: true,
+    });
+    expect(JSON.stringify(readinessStageOne)).not.toMatch(/[a-f\d]{24}/i);
+    const scaleInstanceAfterStage = await instanceModel
+      .findById(scaleNotReady.instances[0]._id)
+      .lean()
+      .exec();
+    expect(scaleInstanceAfterStage).toEqual({
+      ...scaleInstanceBefore,
+      status: 'in_progress',
+    });
+    expect(
+      stableHash(
+        await Promise.all([
+          itemModel.find(companionFilter).sort({ _id: 1 }).lean().exec(),
+          mediaModel.find(companionFilter).sort({ _id: 1 }).lean().exec(),
+          scoreModel.find(companionFilter).sort({ _id: 1 }).lean().exec(),
+          domainModel.find(companionFilter).sort({ _id: 1 }).lean().exec(),
+        ]),
+      ),
+    ).toBe(companionHashBefore);
+    const scaleRouteAfterStage = await routeBusinessHash(
+      await routeRoot(
+        'generation-workflow',
+        GENERATION_NAMESPACE,
+        'source_readiness_errors',
+        'scale_not_ready',
+      ),
+    );
+    const scaleResponse = await doctorAgent
+      .post(`${reportPath(scaleNotReady)}/generate`)
+      .send({
+        confirm: true,
+        primaryScaleInstanceIds: [cachedScaleId],
+      })
+      .expect(409);
+    expect(body(scaleResponse).code).toBe(
+      'CLINICAL_REPORT_SOURCE_SCALE_NOT_READY',
+    );
+    expect(
+      await routeBusinessHash(
+        await routeRoot(
+          'generation-workflow',
+          GENERATION_NAMESPACE,
+          'source_readiness_errors',
+          'scale_not_ready',
+        ),
+      ),
+    ).toBe(scaleRouteAfterStage);
+    expect(
+      await reportModel.countDocuments({
+        assessmentVisitId: scaleNotReady.visit._id,
+      }),
+    ).toBe(0);
+    expect(await seedHash()).toBe(canonicalSeedHash);
+  });
+
   it('accepts the controlled first-generate terminal state and public zero-business-write state while preserving all other routes', async () => {
     const publicBefore = await profileBusinessHash(
       'public-surface-security',
@@ -818,6 +1398,34 @@ describe('B10 profile-scoped browser fixture support (e2e)', () => {
     );
     expect(replaced.phase).toBe('prepared');
     expect(replaced.auditMatrix).toHaveLength(48);
+    const restoredScopeConflict = await routeRoot(
+      'generation-workflow',
+      GENERATION_NAMESPACE,
+      'scope_conflict',
+      'base',
+    );
+    const restoredScaleNotReady = await routeRoot(
+      'generation-workflow',
+      GENERATION_NAMESPACE,
+      'source_readiness_errors',
+      'scale_not_ready',
+    );
+    expect(
+      await reportModel.countDocuments({
+        assessmentVisitId: restoredScopeConflict.visit._id,
+      }),
+    ).toBe(0);
+    expect(restoredScaleNotReady.instances[0]?.status).toBe('completed');
+    expect(
+      await scoreModel.countDocuments({
+        scaleInstanceId: restoredScaleNotReady.instances[0]._id,
+      }),
+    ).toBe(1);
+    expect(
+      await domainModel.countDocuments({
+        scaleInstanceId: restoredScaleNotReady.instances[0]._id,
+      }),
+    ).toBe(1);
     expect(
       await profileBusinessHash('public-surface-security', PUBLIC_NAMESPACE),
     ).toBe(publicBefore);

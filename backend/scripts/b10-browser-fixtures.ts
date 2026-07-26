@@ -11,6 +11,7 @@ import {
   B10_DEFAULT_NAMESPACES,
   B10FixtureError,
   assertB10PreImportEnvironment,
+  assertB10StageTarget,
   requireB10FixturePassword,
   toB10SafeErrorPayload,
   validateB10Namespace,
@@ -19,13 +20,15 @@ import {
   type B10VerifyPhase,
 } from '../test/support/b10-browser-fixtures/fixture-contract';
 
-type B10Command = 'prepare' | 'verify' | 'cleanup' | 'replace';
+type B10Command = 'prepare' | 'verify' | 'cleanup' | 'replace' | 'stage';
 
 type ParsedCommand = {
   command: B10Command;
   profile: B10Profile;
   namespace: string;
   phase: B10VerifyPhase;
+  scenarioKey?: string;
+  routeKey?: string;
 };
 
 type AppModuleExport = { AppModule: Type<unknown> };
@@ -52,11 +55,12 @@ function parseCommand(argv: string[]): ParsedCommand {
     command !== 'prepare' &&
     command !== 'verify' &&
     command !== 'cleanup' &&
-    command !== 'replace'
+    command !== 'replace' &&
+    command !== 'stage'
   ) {
     throw new B10FixtureError(
       'B10_FIXTURE_COMMAND_INVALID',
-      'Command must be prepare, verify, cleanup, or replace',
+      'Command must be prepare, verify, cleanup, replace, or stage',
     );
   }
   let rawProfile: string | undefined;
@@ -65,6 +69,9 @@ function parseCommand(argv: string[]): ParsedCommand {
   let phaseProvided = false;
   let confirmCleanup = false;
   let confirmReplace = false;
+  let rawScenarioKey: string | undefined;
+  let rawRouteKey: string | undefined;
+  let confirmStage = false;
   for (let index = 1; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === '--profile') {
@@ -90,12 +97,26 @@ function parseCommand(argv: string[]): ParsedCommand {
       index += 1;
       continue;
     }
+    if (argument === '--scenario') {
+      rawScenarioKey = requiredValue(argv, index, argument);
+      index += 1;
+      continue;
+    }
+    if (argument === '--route') {
+      rawRouteKey = requiredValue(argv, index, argument);
+      index += 1;
+      continue;
+    }
     if (argument === '--confirm-cleanup') {
       confirmCleanup = true;
       continue;
     }
     if (argument === '--confirm-replace') {
       confirmReplace = true;
+      continue;
+    }
+    if (argument === '--confirm-stage') {
+      confirmStage = true;
       continue;
     }
     throw new B10FixtureError(
@@ -138,6 +159,16 @@ function parseCommand(argv: string[]): ParsedCommand {
       profile,
     );
   }
+  if (
+    command === 'stage' &&
+    (!confirmStage || !rawScenarioKey || !rawRouteKey)
+  ) {
+    throw new B10FixtureError(
+      'B10_FIXTURE_STAGE_CONFIRMATION_REQUIRED',
+      'stage requires --scenario, --route, and --confirm-stage',
+      profile,
+    );
+  }
   if (command !== 'cleanup' && confirmCleanup) {
     throw new B10FixtureError(
       'B10_FIXTURE_CLEANUP_ARGUMENT_NOT_ALLOWED',
@@ -152,6 +183,16 @@ function parseCommand(argv: string[]): ParsedCommand {
       profile,
     );
   }
+  if (command !== 'stage' && (confirmStage || rawScenarioKey || rawRouteKey)) {
+    throw new B10FixtureError(
+      'B10_FIXTURE_STAGE_ARGUMENT_NOT_ALLOWED',
+      'Stage arguments are supported only by stage',
+      profile,
+    );
+  }
+  if (command === 'stage') {
+    assertB10StageTarget(profile, rawScenarioKey, rawRouteKey);
+  }
   return {
     command,
     profile,
@@ -160,6 +201,8 @@ function parseCommand(argv: string[]): ParsedCommand {
       rawNamespace ?? B10_DEFAULT_NAMESPACES[profile],
     ),
     phase,
+    scenarioKey: rawScenarioKey,
+    routeKey: rawRouteKey,
   };
 }
 
@@ -182,7 +225,8 @@ async function run(): Promise<void> {
     const password =
       parsed.command === 'prepare' ||
       parsed.command === 'verify' ||
-      parsed.command === 'replace'
+      parsed.command === 'replace' ||
+      parsed.command === 'stage'
         ? requireB10FixturePassword(process.env.B10_FIXTURE_PASSWORD)
         : undefined;
     assertBrowserAcceptancePreImportEnvironment({
@@ -219,7 +263,15 @@ async function run(): Promise<void> {
             )
           : parsed.command === 'replace'
             ? await manager.replace(parsed.profile, parsed.namespace, password)
-            : await manager.cleanup(parsed.profile, parsed.namespace);
+            : parsed.command === 'stage'
+              ? await manager.stage(
+                  parsed.profile,
+                  parsed.namespace,
+                  password,
+                  parsed.scenarioKey,
+                  parsed.routeKey,
+                )
+              : await manager.cleanup(parsed.profile, parsed.namespace);
     console.log(JSON.stringify(result, null, 2));
   } catch (error: unknown) {
     process.exitCode = 1;

@@ -162,6 +162,129 @@ export class B10ScenarioBuilder {
     );
   }
 
+  async stageScopeConflictReport(
+    root: B10ScenarioRouteRoot,
+    actor: AuthenticatedUserContext,
+  ): Promise<boolean> {
+    if (
+      root.scenarioKey !== 'scope_conflict' ||
+      root.routeKey !== 'base' ||
+      root.scaleInstanceIds.length !== 2
+    ) {
+      throw fixtureFailure(
+        this.profile,
+        root.scenarioKey,
+        'The fixed scope-conflict stage root is invalid',
+      );
+    }
+    const existing = await this.models.reports
+      .find({ assessmentVisitId: root.visitId })
+      .sort({ _id: 1 })
+      .exec();
+    if (existing.length > 0) {
+      if (
+        existing.length === 1 &&
+        this.isFixedScopeConflictStage(existing[0], root)
+      ) {
+        return true;
+      }
+      throw fixtureFailure(
+        this.profile,
+        root.scenarioKey,
+        'Scope-conflict stage requires either the prepared empty slot or its exact staged report',
+      );
+    }
+    const document = await this.reportDocument(
+      root,
+      'different_scope_draft',
+      actor,
+    );
+    const metadata = document.metadata as Record<string, unknown>;
+    document.metadata = {
+      ...metadata,
+      b10FixtureStage: {
+        version: 1,
+        profile: this.profile,
+        namespace: this.namespace,
+        scenarioKey: root.scenarioKey,
+        routeKey: root.routeKey,
+        transition: 'stage-different-scope-draft',
+      },
+    };
+    await this.models.reports.create(document);
+    return false;
+  }
+
+  async stageSourceScaleNotReady(root: B10ScenarioRouteRoot): Promise<boolean> {
+    if (
+      root.scenarioKey !== 'source_readiness_errors' ||
+      root.routeKey !== 'scale_not_ready' ||
+      root.scaleInstanceIds.length !== 1
+    ) {
+      throw fixtureFailure(
+        this.profile,
+        root.scenarioKey,
+        'The fixed source-readiness stage root is invalid',
+      );
+    }
+    const instance = await this.models.scaleInstances
+      .findById(root.scaleInstanceIds[0])
+      .exec();
+    if (!instance) {
+      throw fixtureFailure(
+        this.profile,
+        root.scenarioKey,
+        'The fixed source-readiness stage instance is missing',
+      );
+    }
+    if (instance.status === 'in_progress') {
+      return true;
+    }
+    if (instance.status !== 'completed') {
+      throw fixtureFailure(
+        this.profile,
+        root.scenarioKey,
+        'Source-readiness stage requires the prepared completed instance',
+      );
+    }
+    const result = await this.models.scaleInstances.collection.updateOne(
+      { _id: instance._id, status: 'completed' },
+      { $set: { status: 'in_progress' } },
+    );
+    if (result.matchedCount !== 1 || result.modifiedCount !== 1) {
+      throw fixtureFailure(
+        this.profile,
+        root.scenarioKey,
+        'Source-readiness stage did not change exactly one namespace-owned instance',
+      );
+    }
+    return false;
+  }
+
+  private isFixedScopeConflictStage(
+    report: ClinicalReportDocument,
+    root: B10ScenarioRouteRoot,
+  ): boolean {
+    const marker = report.metadata?.b10FixtureStage as
+      | Record<string, unknown>
+      | undefined;
+    return (
+      report.reportType === 'cognitive_assessment' &&
+      report.reportVersion === 1 &&
+      report.status === 'draft' &&
+      report.source === 'system_draft' &&
+      report.primaryScaleInstanceIds.length === 1 &&
+      report.primaryScaleInstanceIds[0]?.toString() ===
+        root.scaleInstanceIds[0]?.toString() &&
+      marker?.version === 1 &&
+      marker.profile === this.profile &&
+      marker.namespace === this.namespace &&
+      marker.scenarioKey === root.scenarioKey &&
+      marker.routeKey === root.routeKey &&
+      marker.transition === 'stage-different-scope-draft'
+    );
+  }
+
   private async buildScenario(
     definition: B10ScenarioDefinition,
     actor: AuthenticatedUserContext,
@@ -655,22 +778,24 @@ export class B10ScenarioBuilder {
       variant === 'different_scope_draft' && root.scaleInstanceIds.length > 1
         ? [root.scaleInstanceIds[0]]
         : root.scaleInstanceIds.slice(0, 1);
+    const longContent = variant === 'long_content';
+    const includedSourceIds = longContent ? root.scaleInstanceIds : primaryIds;
     const firstInstanceId = primaryIds[0] ?? new Types.ObjectId();
     const [scores, domains, evidence, items] = await Promise.all([
       this.models.scoreResults
-        .find({ scaleInstanceId: { $in: root.scaleInstanceIds } })
+        .find({ scaleInstanceId: { $in: includedSourceIds } })
         .sort({ _id: 1 })
         .exec(),
       this.models.cognitiveDomainResults
-        .find({ scaleInstanceId: { $in: root.scaleInstanceIds } })
+        .find({ scaleInstanceId: { $in: includedSourceIds } })
         .sort({ _id: 1 })
         .exec(),
       this.models.mediaEvidence
-        .find({ scaleInstanceId: { $in: root.scaleInstanceIds } })
+        .find({ scaleInstanceId: { $in: includedSourceIds } })
         .sort({ _id: 1 })
         .exec(),
       this.models.itemResponses
-        .find({ scaleInstanceId: { $in: root.scaleInstanceIds } })
+        .find({ scaleInstanceId: { $in: includedSourceIds } })
         .sort({ _id: 1 })
         .limit(1)
         .exec(),
@@ -689,7 +814,6 @@ export class B10ScenarioBuilder {
     const incomplete = variant === 'incomplete';
     const generationNull = variant === 'generation_null';
     const blocker = variant === 'generation_conflict_blocker';
-    const longContent = variant === 'long_content';
     const traces = (
       longContent ? root.scaleInstanceIds : [firstInstanceId]
     ).map((scaleInstanceId, index) => ({
