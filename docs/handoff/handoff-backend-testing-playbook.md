@@ -4,7 +4,7 @@
 
 本文档是后端验证的 active playbook，只维护三类内容：当前执行规则、仍待执行的 Browser 验收所依赖的后端 fixture 合同，以及已完成范围的最终证据索引。逐阶段命令、失败重试、临时 namespace 和执行流水由 Git 历史承担，不在本文重复保存。
 
-本文档不改变产品、接口、DTO、Schema、测试合同或 roadmap 工作包状态。当前唯一事实是：WP-02、WP-04、Batch A 已完成；Batch B 桌面范围已完成；Batch C 的 B7 与 B8 已完成，B8 的 `core-workflow` 39 项与 `resilience-security` 21 项共 60 项全部闭环；B9 `core-workflow` 验收发现 fixture seed 基线和 `local_write_gate` 合同缺陷，并受缺失稳定 B9 fixture 密码阻断，Browser 生命周期未开始，B9 仍未完成；B9 `resilience-security` 与 B10 尚未启动；Batch D 尚未启动；Batch E 的 8 项真实设备、辅助技术或人工验收继续保留。
+本文档不改变产品、接口、DTO、Schema、测试合同或 roadmap 工作包状态。当前唯一事实是：WP-02、WP-04、Batch A 已完成；Batch B 桌面范围已完成；Batch C 的 B7 与 B8 已完成，B8 的 `core-workflow` 39 项与 `resilience-security` 21 项共 60 项全部闭环；B9-B1 已修复 fixture seed 基线并建立稳定 B9 fixture 密码来源，但 Browser 生命周期未开始，`local_write_gate` 与三个认知域前端产品缺陷仍待下一阶段，B9-B 与 B9 仍未完成；B9 `resilience-security` Browser 验收与 B10 尚未启动；Batch D 尚未启动；Batch E 的 8 项真实设备、辅助技术或人工验收继续保留。
 
 ## 2. 当前验证状态
 
@@ -16,11 +16,11 @@
 | WP-04 / B17 | 已完成 | 44 个 scenarioKey 全部通过，正式 fixture 已双次 cleanup，残留为 0 |
 | Batch A / B1–B3 | 已完成 | 67 个验证原子全部有明确处置，正式 fixture 已双次 cleanup，残留为 0 |
 | Batch B / B4–B6 | 桌面范围已完成 | Browser 133 项 + automated boundary 2 项 = 135 项；post-browser verify 通过；产品缺陷 0 |
-| Batch C / B7–B10 | B7、B8 已完成；B9 `core-workflow` 验收受 fixture 合同缺陷和本地凭据缺失阻断，仍未完成；B10 尚未启动 | B9 定向 E2E 因 prepare 改变初始全局 seed hash 而失败；`local_write_gate` 五条 route 不能观察声明的 primary blocker；`resilience-security` 尚未执行 |
+| Batch C / B7–B10 | B7、B8 已完成；B9-B1 fixture 前置已完成，B9-B 仍未完成；B10 尚未启动 | seed readiness / baseline 与稳定 B9 密码来源已修复并验证；`local_write_gate` 五条 route 及三个认知域前端产品问题待下一阶段；`resilience-security` Browser 验收尚未执行 |
 | Batch D / B11–B15 | 尚未启动 | 包含 B14.1 的剩余 Browser 回归；详细待验合同以 frontend testing playbook 为准 |
 | Batch E | 保留 8 项 | 真实设备、辅助技术或人工验收，不被桌面 Browser 证据替代 |
 
-Batch B 的正式 namespace 已连续 cleanup 两次，两次均 `residualCount=0`；namespace-owned 数据和操作系统临时 fixture 文件已删除，全局 MMSE / MoCA seed 不在 cleanup 范围内。B7 采用组合证据完成：原完整 Browser 验收的 39 项、完整 post-browser verify 与双次 cleanup 事实继续有效；B7-38 修复后的三个 viewport 定向回归、Browser 前后 prepared verify 与双次 cleanup 也均通过。本次只读回归没有执行 compute，namespace 按合同保持 prepared 状态；要求 `first_compute_idempotency` 已产生写终态的 post-browser verify 不适用于该 namespace，其 phase 不匹配失败不构成当前阻断，也不是产品或 fixture 缺陷。B8 `core-workflow` 的 39 项与 `resilience-security` 的 21 项真实 Browser 验收均已完成；`resilience-security` post-browser verify 通过，双次 cleanup 均为 `residualCount=0`。B8 共 60 项全部闭环，B8 已完成。B9 定向 E2E 实际运行 1 suite / 5 tests，1 pass / 4 fail；四个失败均为 prepare 后全局量表 seed hash 与 suite 初始 hash 不一致。`local_write_gate` 五条 route 的 prepared 状态又都被更早依赖门禁截断，不能验证本地 dirty / writing 因果。Browser 配置没有稳定的 `B9_FIXTURE_PASSWORD` 来源，故未创建正式 fixture，也未执行 prepared verify、Browser、post-browser verify 或业务写入。B9 与 B9-B 均未完成，`resilience-security` 尚未执行，B10 尚未启动。
+Batch B 的正式 namespace 已连续 cleanup 两次，两次均 `residualCount=0`；namespace-owned 数据和操作系统临时 fixture 文件已删除，全局 MMSE / MoCA seed 不在 cleanup 范围内。B7 采用组合证据完成：原完整 Browser 验收的 39 项、完整 post-browser verify 与双次 cleanup 事实继续有效；B7-38 修复后的三个 viewport 定向回归、Browser 前后 prepared verify 与双次 cleanup 也均通过。本次只读回归没有执行 compute，namespace 按合同保持 prepared 状态；要求 `first_compute_idempotency` 已产生写终态的 post-browser verify 不适用于该 namespace，其 phase 不匹配失败不构成当前阻断，也不是产品或 fixture 缺陷。B8 `core-workflow` 的 39 项与 `resilience-security` 的 21 项真实 Browser 验收均已完成；`resilience-security` post-browser verify 通过，双次 cleanup 均为 `residualCount=0`。B8 共 60 项全部闭环，B8 已完成。B9-B1 已确认旧失败属于 suite 在规范 MMSE / MoCA seed 首次物化前采集了错误基线，并非 fixture 改写全局 seed；现改为先经既有 seed 能力幂等完成 canonical readiness，再采集受保护 hash 和 namespace baseline。B9 定向 E2E 为 1 suite / 6 tests 全部通过，完整 E2E 为 24 suites / 109 tests 全部通过；`core-workflow` 与 `resilience-security` fixture 冒烟的 prepare、prepared verify、replace、再次 prepared verify 均通过，两次 cleanup 均为 `residualCount=0`，且各阶段全局 seed 存在并保持 hash 不变。稳定 `B9_FIXTURE_PASSWORD` 已建立于 Git 忽略的本地 Browser 配置，并由两个独立 CLI 进程验证可复用。上述仅完成测试资产前置，未启动 Browser 或执行 B9 业务验收；`local_write_gate` 与三个认知域前端产品缺陷仍待下一阶段，B9-B 与 B9 仍未完成，`resilience-security` Browser 验收与 B10 尚未启动。
 
 ## 3. 数据库用途、凭据来源与进程隔离
 
@@ -50,7 +50,7 @@ Batch B 的正式 namespace 已连续 cleanup 两次，两次均 `residualCount=
 | `standard_test` | `backend/.env.test` | 只供普通 unit / E2E 进程，不加载 Browser 配置 |
 | `browser_acceptance` | `backend/.env.browser-acceptance` | 只供 Browser backend 与 fixture CLI，不与 `.env.test` 叠加 |
 
-`backend/.env.browser-acceptance` 当前提供数据库用途、Browser app 主连接和 Browser 管理连接的本地凭据来源。本手册只记录变量职责，不记录实际密码或完整 URI。
+`backend/.env.browser-acceptance` 当前提供数据库用途、Browser app 主连接、Browser 管理连接，以及批次专用 fixture 密码的稳定本地凭据来源；B9 的专用变量已建立且完成跨进程校验。本手册只记录变量职责，不记录实际密码或完整 URI。
 
 Browser fixture 测试应用账号的批次专用密码由各批次约定的 `*_FIXTURE_PASSWORD` 环境变量承担职责，并从稳定的本地隔离测试固定凭据来源解析；本文只记录变量名称模式和职责，不记录任何具体密码。
 
@@ -144,7 +144,7 @@ E2E 固定使用 `NODE_ENV=test`、`--runInBand`、隔离数据库、fake Storag
 | Batch B / B4–B6 | `scripts/b456-browser-fixtures.ts` | 5 角色；32 scenarioKey / 31 业务场景 / 135 audit ID；15 direct / 120 fixture-required | 桌面范围已完成并清理 |
 | Batch C / B7 | `scripts/b7-browser-fixtures.ts` | 5 角色；14 scenarioKey / 13 业务场景 / 40 audit ID | 组合证据覆盖 40 项，B7 已完成并清理 |
 | Batch C / B8 | `scripts/b8-browser-fixtures.ts` | 两个独立 profile；每个 5 角色 / 9 scenarioKey；`core-workflow` 39 audit ID，`resilience-security` 21 audit ID | 两个 profile 共 60 项均已完成；各自 post-browser verify 通过并完成双次 `residualCount=0` cleanup，B8 已完成 |
-| Batch C / B9 | `scripts/b9-browser-fixtures.ts` | 两个独立 profile；每个 5 角色 / 10 业务 scenarioKey；`core-workflow` 19 route / 38 audit ID，`resilience-security` 11 route / 14 audit ID | 合同代码已建立，但定向 E2E 存在 seed 基线失败，`local_write_gate` 五条 route 不能验证 primary blocker；B9 仍未完成 |
+| Batch C / B9 | `scripts/b9-browser-fixtures.ts` | 两个独立 profile；每个 5 角色 / 10 业务 scenarioKey；`core-workflow` 19 route / 38 audit ID，`resilience-security` 11 route / 14 audit ID | B9-B1 seed 基线与稳定密码来源已完成并通过两个 profile fixture 冒烟；`local_write_gate` 与三个前端产品问题待下一阶段，B9 仍未完成 |
 
 这些 CLI 是 test-only 资产，不是 production seed，不随应用启动，不向 Browser 输出密码、连接串、Cookie、Session、metadata、完整请求/响应、原始作答、评分规则、报告正文或内部 lineage/source ID。
 
@@ -199,7 +199,7 @@ prepare / replace 与后续账号密码校验必须处于相同的稳定 fixture
 ## 9. 当前未决事项和同步规则
 
 - Batch C / B7 已通过组合证据完成。B8 `core-workflow` 的 39 项与 `resilience-security` 的 21 项均已完成；后者的完整 Browser 验收 21 项全部通过，post-browser verify 通过，双次 cleanup 均为 `residualCount=0`，不填写尚不存在的 evidence commit。B8 共 60 项全部闭环，B8 已完成。
-- B9 `core-workflow` 未完成：定向 E2E 的 suite 初始 seed hash 在 prepare 自动物化量表 seed 后改变，导致 4 个稳定断言失败；`local_write_gate` 五条 route 均只能观察更早的实例 / 来源评分依赖门禁；本地 Browser 配置没有稳定的 `B9_FIXTURE_PASSWORD`。修复 fixture 与配置前不得把 prepared、Browser 或 post-browser 阶段写成通过；`resilience-security` 与 B10 均尚未启动。
+- B9-B1 已完成：canonical seed readiness 幂等，B9 定向 E2E 1 suite / 6 tests 与完整 E2E 24 suites / 109 tests 全部通过；两个 profile 的 prepare、prepared verify、replace、再次 prepared verify 与双次 `residualCount=0` cleanup 均通过，seed 全程存在且 hash 不变；稳定 `B9_FIXTURE_PASSWORD` 已由独立 CLI 进程验证。B9-B 仍未完成，下一阶段处理 `local_write_gate` 五条 route 以及 `CognitiveDomainScoreList`、`CognitiveDomainContributionList`、`CognitiveDomainMappingSummary` 三个前端产品缺陷；不得把本阶段写成 Browser 验收通过，B9 `resilience-security` Browser 验收与 B10 尚未启动。
 - Batch D / B11–B15 尚未启动；B14.1 的行为等价 Browser 回归仍属于待验合同，不因 B16 / WP-02 已完成而自动覆盖。
 - Batch E 的 8 项真实设备、辅助技术或人工验收继续保留：`B5-MV-008`、`B5-MV-028`、`B5-MV-029`、`B5-MV-058`、`B5-MV-059`、`B5-MV-060`、`B5-MV-061`、`B5-MV-062`；桌面 Browser、automated boundary 或大屏抽查均不能替代。
 - roadmap 业务工作包状态不因 testing playbook 压缩、历史证据索引或未来 Batch 验收自动变化。

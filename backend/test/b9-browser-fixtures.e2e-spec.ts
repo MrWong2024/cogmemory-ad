@@ -39,6 +39,7 @@ import {
   ScaleVersion,
   type ScaleVersionDocument,
 } from '../src/modules/scales/schemas/scale-version.schema';
+import { ScaleCatalogService } from '../src/modules/scales/services/scale-catalog.service';
 import {
   ScoreResult,
   type ScoreResultDocument,
@@ -147,8 +148,10 @@ describe('B9 profile-scoped browser fixture support (e2e)', () => {
   let domainModel: Model<CognitiveDomainResultDocument>;
   let definitionModel: Model<ScaleDefinitionDocument>;
   let versionModel: Model<ScaleVersionDocument>;
+  let scaleCatalogService: ScaleCatalogService;
   let testPassword: string;
-  let initialSeedHash: string;
+  let firstReadySeedHash: string;
+  let canonicalSeedHash: string;
 
   async function seedHash(): Promise<string> {
     const [definitions, allVersions] = await Promise.all([
@@ -167,6 +170,36 @@ describe('B9 profile-scoped browser fixture support (e2e)', () => {
       ({ version }) => !B9_MAPPING_VERSION_PATTERN.test(version),
     );
     return stableHash(withoutLifecycleTimestamps({ definitions, versions }));
+  }
+
+  async function ensureCanonicalSeedReadiness(): Promise<string> {
+    for (const scaleCode of ['mmse', 'moca'] as const) {
+      await scaleCatalogService.ensureSeedScaleVersionMaterialized(scaleCode);
+    }
+    return seedHash();
+  }
+
+  async function fixtureSeedBaselines(
+    profile: B9Profile,
+    namespace: string,
+  ): Promise<string[]> {
+    const subjectCodes = scenarioDefinitionsFor(profile).map(({ ordinal }) =>
+      scenarioSubjectCodeFor(profile, namespace, ordinal),
+    );
+    const patients = await patientModel
+      .find({ subjectCode: { $in: subjectCodes } })
+      .select({ 'metadata.b9Fixture.seedHash': 1 })
+      .lean()
+      .exec();
+    return patients.map((patient) => {
+      const fixture = patient.metadata?.b9Fixture as
+        | { seedHash?: unknown }
+        | undefined;
+      if (typeof fixture?.seedHash !== 'string') {
+        throw new Error('Missing B9 fixture seed baseline');
+      }
+      return fixture.seedHash;
+    });
   }
 
   async function routeRoot(
@@ -315,9 +348,11 @@ describe('B9 profile-scoped browser fixture support (e2e)', () => {
     domainModel = app.get(getModelToken(CognitiveDomainResult.name));
     definitionModel = app.get(getModelToken(ScaleDefinition.name));
     versionModel = app.get(getModelToken(ScaleVersion.name));
+    scaleCatalogService = app.get(ScaleCatalogService);
     await manager.cleanup('core-workflow', CORE_NAMESPACE);
     await manager.cleanup('resilience-security', RESILIENCE_NAMESPACE);
-    initialSeedHash = await seedHash();
+    firstReadySeedHash = await ensureCanonicalSeedReadiness();
+    canonicalSeedHash = await ensureCanonicalSeedReadiness();
   });
 
   afterAll(async () => {
@@ -331,6 +366,11 @@ describe('B9 profile-scoped browser fixture support (e2e)', () => {
     if (connection?.readyState) {
       await connection.close();
     }
+  });
+
+  it('materializes canonical MMSE/MoCA seed readiness idempotently before capturing the protected baseline', async () => {
+    expect(canonicalSeedHash).toBe(firstReadySeedHash);
+    expect(await ensureCanonicalSeedReadiness()).toBe(canonicalSeedHash);
   });
 
   it('enforces 52 ordered IDs, exclusive profiles, route semantics, primary owners, CLI gates, and safe manifests', () => {
@@ -507,10 +547,15 @@ describe('B9 profile-scoped browser fixture support (e2e)', () => {
     expect(core.scenarios).toHaveLength(10);
     expect(JSON.stringify(core)).not.toMatch(/\b[a-f0-9]{24}\b/i);
     expect(() => assertB9SafeManifest(core)).not.toThrow();
+    expect(await seedHash()).toBe(canonicalSeedHash);
+    expect(
+      new Set(await fixtureSeedBaselines('core-workflow', CORE_NAMESPACE)),
+    ).toEqual(new Set([canonicalSeedHash]));
     await expectAsyncFixtureCode(
       () => manager.prepare('core-workflow', CORE_NAMESPACE, testPassword),
       'B9_FIXTURE_NAMESPACE_EXISTS',
     );
+    expect(await seedHash()).toBe(canonicalSeedHash);
 
     const resilience = await manager.prepare(
       'resilience-security',
@@ -522,6 +567,12 @@ describe('B9 profile-scoped browser fixture support (e2e)', () => {
     expect(resilience.scenarios).toHaveLength(10);
     expect(JSON.stringify(resilience)).not.toMatch(/\b[a-f0-9]{24}\b/i);
     expect(() => assertB9SafeManifest(resilience)).not.toThrow();
+    expect(await seedHash()).toBe(canonicalSeedHash);
+    expect(
+      new Set(
+        await fixtureSeedBaselines('resilience-security', RESILIENCE_NAMESPACE),
+      ),
+    ).toEqual(new Set([canonicalSeedHash]));
 
     const coreBefore = await profileBusinessHash(
       'core-workflow',
@@ -545,6 +596,7 @@ describe('B9 profile-scoped browser fixture support (e2e)', () => {
     );
     expect(coreVerify.phase).toBe('prepared');
     expect(resilienceVerify.phase).toBe('prepared');
+    expect(await seedHash()).toBe(canonicalSeedHash);
     expect(await profileBusinessHash('core-workflow', CORE_NAMESPACE)).toBe(
       coreBefore,
     );
@@ -569,7 +621,7 @@ describe('B9 profile-scoped browser fixture support (e2e)', () => {
         ),
       'B9_FIXTURE_BROWSER_SESSION_EVIDENCE_MISSING',
     );
-    expect(await seedHash()).toBe(initialSeedHash);
+    expect(await seedHash()).toBe(canonicalSeedHash);
   });
 
   it('detects missing, multiple, wrong runNo/source/status/mapping, upstream mutation, cross-profile pollution, and seed drift without repair', async () => {
@@ -726,6 +778,7 @@ describe('B9 profile-scoped browser fixture support (e2e)', () => {
       { _id: globalVersion._id },
       { $set: { displayVersion: 'unexpected B9 seed mutation' } },
     );
+    expect(await seedHash()).not.toBe(canonicalSeedHash);
     await expectAsyncFixtureCode(
       () =>
         manager.verify(
@@ -744,7 +797,7 @@ describe('B9 profile-scoped browser fixture support (e2e)', () => {
     await expect(
       manager.verify('core-workflow', CORE_NAMESPACE, testPassword, 'prepared'),
     ).resolves.toMatchObject({ phase: 'prepared' });
-    expect(await seedHash()).toBe(initialSeedHash);
+    expect(await seedHash()).toBe(canonicalSeedHash);
   });
 
   it('accepts legal profile-scoped post-browser terminal states and rejects cross-profile or idempotency drift', async () => {
@@ -767,6 +820,7 @@ describe('B9 profile-scoped browser fixture support (e2e)', () => {
       'resilience-security',
       RESILIENCE_NAMESPACE,
     );
+    expect(await seedHash()).toBe(canonicalSeedHash);
 
     const coreBeforeVerify = await profileBusinessHash(
       'core-workflow',
@@ -791,6 +845,7 @@ describe('B9 profile-scoped browser fixture support (e2e)', () => {
     );
     expect(corePost.phase).toBe('post-browser');
     expect(resiliencePost.phase).toBe('post-browser');
+    expect(await seedHash()).toBe(canonicalSeedHash);
     expect(await profileBusinessHash('core-workflow', CORE_NAMESPACE)).toBe(
       coreBeforeVerify,
     );
@@ -866,7 +921,7 @@ describe('B9 profile-scoped browser fixture support (e2e)', () => {
         'post-browser',
       ),
     ).resolves.toMatchObject({ phase: 'post-browser' });
-    expect(await seedHash()).toBe(initialSeedHash);
+    expect(await seedHash()).toBe(canonicalSeedHash);
   });
 
   it('keeps replace explicit, cleanup profile-scoped, and second cleanup residualCount=0', async () => {
@@ -884,12 +939,17 @@ describe('B9 profile-scoped browser fixture support (e2e)', () => {
       testPassword,
     );
     expect(replaced.phase).toBe('prepared');
+    expect(await seedHash()).toBe(canonicalSeedHash);
+    expect(
+      new Set(await fixtureSeedBaselines('core-workflow', CORE_NAMESPACE)),
+    ).toEqual(new Set([canonicalSeedHash]));
     expect(
       await profileBusinessHash('resilience-security', RESILIENCE_NAMESPACE),
     ).toBe(resilienceBefore);
     await expect(
       manager.verify('core-workflow', CORE_NAMESPACE, testPassword, 'prepared'),
     ).resolves.toMatchObject({ phase: 'prepared' });
+    expect(await seedHash()).toBe(canonicalSeedHash);
 
     const coreCleanupOne = await manager.cleanup(
       'core-workflow',
@@ -900,7 +960,9 @@ describe('B9 profile-scoped browser fixture support (e2e)', () => {
       CORE_NAMESPACE,
     );
     expect(coreCleanupOne.residualCount).toBe(0);
+    expect(await seedHash()).toBe(canonicalSeedHash);
     expect(coreCleanupTwo.residualCount).toBe(0);
+    expect(await seedHash()).toBe(canonicalSeedHash);
 
     const resilienceCleanupOne = await manager.cleanup(
       'resilience-security',
@@ -911,7 +973,8 @@ describe('B9 profile-scoped browser fixture support (e2e)', () => {
       RESILIENCE_NAMESPACE,
     );
     expect(resilienceCleanupOne.residualCount).toBe(0);
+    expect(await seedHash()).toBe(canonicalSeedHash);
     expect(resilienceCleanupTwo.residualCount).toBe(0);
-    expect(await seedHash()).toBe(initialSeedHash);
+    expect(await seedHash()).toBe(canonicalSeedHash);
   });
 });
