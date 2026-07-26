@@ -25,7 +25,10 @@ export function CognitiveDomainMappingSummary({
   );
 
   return (
-    <section aria-labelledby="cognitive-domain-mapping-heading">
+    <section
+      aria-labelledby="cognitive-domain-mapping-heading"
+      className="min-w-0 max-w-full"
+    >
       <div className="mb-4">
         <h3
           className="text-2xl font-semibold text-[var(--cma-text-strong)]"
@@ -66,7 +69,7 @@ export function CognitiveDomainMappingSummary({
         </div>
       ) : null}
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid min-w-0 max-w-full gap-4 lg:grid-cols-2 [&>*]:min-w-0">
         <div className="rounded-md border border-[var(--cma-line)] p-4">
           <h4 className="text-lg font-semibold text-[var(--cma-text-strong)]">
             映射口径
@@ -161,11 +164,11 @@ export function CognitiveDomainMappingSummary({
         </div>
       </div>
 
-      <details className="mt-4 rounded-md border border-[var(--cma-line)] p-4">
+      <details className="mt-4 min-w-0 max-w-full rounded-md border border-[var(--cma-line)] p-4">
         <summary className="cursor-pointer font-semibold text-[var(--cma-text-strong)]">
           展开技术追溯信息
         </summary>
-        <div className="mt-4 grid gap-5 lg:grid-cols-2">
+        <div className="mt-4 grid min-w-0 max-w-full gap-5 lg:grid-cols-2 [&>*]:min-w-0">
           <div>
             <h4 className="font-semibold text-[var(--cma-text-strong)]">
               计算摘要

@@ -96,7 +96,7 @@ export function CognitiveDomainResultPanel({
         </div>
       </CardHeader>
 
-      <CardContent className="grid gap-5 pt-5">
+      <CardContent className="grid min-w-0 max-w-full gap-5 pt-5 [&>*]:min-w-0">
         <CognitiveDomainSafetyBoundary />
         <OverlappingAttributionNotice />
 
@@ -288,7 +288,7 @@ export function CognitiveDomainResultPanel({
         ) : null}
 
         {result && state.detail ? (
-          <div className="grid gap-6">
+          <div className="grid min-w-0 max-w-full gap-6 [&>*]:min-w-0">
             <section className="rounded-md border border-[var(--cma-line)] p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>

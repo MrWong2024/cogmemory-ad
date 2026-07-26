@@ -17,7 +17,10 @@ export function CognitiveDomainContributionList({
   onLocateItem: (itemResponseId: string) => void;
 }) {
   return (
-    <section aria-labelledby="cognitive-domain-contribution-heading">
+    <section
+      aria-labelledby="cognitive-domain-contribution-heading"
+      className="min-w-0 max-w-full"
+    >
       <div className="mb-4">
         <h3
           className="text-2xl font-semibold text-[var(--cma-text-strong)]"
@@ -31,7 +34,7 @@ export function CognitiveDomainContributionList({
       </div>
 
       {contributions.length > 0 ? (
-        <div className="overflow-x-auto rounded-md border border-[var(--cma-line)]">
+        <div className="min-w-0 max-w-full overflow-x-auto rounded-md border border-[var(--cma-line)]">
           <table className="min-w-[1180px] border-collapse text-left text-sm">
             <thead className="bg-[var(--cma-surface-muted)] text-[var(--cma-text-strong)]">
               <tr>

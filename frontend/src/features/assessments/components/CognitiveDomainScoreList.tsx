@@ -19,7 +19,10 @@ export function CognitiveDomainScoreList({
   scores: CognitiveDomainScore[];
 }) {
   return (
-    <section aria-labelledby="cognitive-domain-score-heading">
+    <section
+      aria-labelledby="cognitive-domain-score-heading"
+      className="min-w-0 max-w-full"
+    >
       <div className="mb-4">
         <h3
           className="text-2xl font-semibold text-[var(--cma-text-strong)]"
@@ -33,7 +36,7 @@ export function CognitiveDomainScoreList({
       </div>
 
       {scores.length > 0 ? (
-        <div className="grid gap-4 xl:grid-cols-2">
+        <div className="grid min-w-0 max-w-full gap-4 xl:grid-cols-2 [&>*]:min-w-0">
           {scores.map((score) => (
             <Card key={score.domainCode}>
               <CardHeader className="border-b border-[var(--cma-line)]">
