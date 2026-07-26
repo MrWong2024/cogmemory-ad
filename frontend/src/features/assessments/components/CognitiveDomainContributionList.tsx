@@ -16,13 +16,6 @@ export function CognitiveDomainContributionList({
   canLocateItem: (itemResponseId: string) => boolean;
   onLocateItem: (itemResponseId: string) => void;
 }) {
-  const sortedContributions = [...contributions].sort(
-    (left, right) =>
-      left.itemOrder - right.itemOrder ||
-      left.itemCode.localeCompare(right.itemCode) ||
-      left.domainCode.localeCompare(right.domainCode),
-  );
-
   return (
     <section aria-labelledby="cognitive-domain-contribution-heading">
       <div className="mb-4">
@@ -33,11 +26,11 @@ export function CognitiveDomainContributionList({
           题目贡献记录
         </h3>
         <p className="mt-2 text-base leading-7 text-[var(--cma-muted)]">
-          同一题目映射多个认知域时会保留多条合法记录；每条记录都明确显示目标认知域。
+          按服务端返回顺序展示；同一题目映射多个认知域时会保留多条合法记录，每条记录都明确显示目标认知域。
         </p>
       </div>
 
-      {sortedContributions.length > 0 ? (
+      {contributions.length > 0 ? (
         <div className="overflow-x-auto rounded-md border border-[var(--cma-line)]">
           <table className="min-w-[1180px] border-collapse text-left text-sm">
             <thead className="bg-[var(--cma-surface-muted)] text-[var(--cma-text-strong)]">
@@ -66,7 +59,7 @@ export function CognitiveDomainContributionList({
               </tr>
             </thead>
             <tbody>
-              {sortedContributions.map((contribution, index) => {
+              {contributions.map((contribution, index) => {
                 const itemResponseId = contribution.itemResponseId;
                 const canLocate =
                   itemResponseId !== null && canLocateItem(itemResponseId);

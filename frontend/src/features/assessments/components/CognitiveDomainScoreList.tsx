@@ -18,10 +18,6 @@ export function CognitiveDomainScoreList({
 }: {
   scores: CognitiveDomainScore[];
 }) {
-  const sortedScores = [...scores].sort((left, right) =>
-    left.domainCode.localeCompare(right.domainCode),
-  );
-
   return (
     <section aria-labelledby="cognitive-domain-score-heading">
       <div className="mb-4">
@@ -32,13 +28,13 @@ export function CognitiveDomainScoreList({
           认知域得分总览
         </h3>
         <p className="mt-2 text-base leading-7 text-[var(--cma-muted)]">
-          按认知域编码升序展示服务端结果，不按得分高低排名，也不生成跨域总分。
+          按服务端返回顺序展示认知域结果，不按得分高低排名，也不生成跨域总分。
         </p>
       </div>
 
-      {sortedScores.length > 0 ? (
+      {scores.length > 0 ? (
         <div className="grid gap-4 xl:grid-cols-2">
-          {sortedScores.map((score) => (
+          {scores.map((score) => (
             <Card key={score.domainCode}>
               <CardHeader className="border-b border-[var(--cma-line)]">
                 <div className="flex flex-wrap items-start justify-between gap-3">

@@ -59,6 +59,7 @@ export type UseCognitiveDomainResultValue = {
   liveMessage: string | null;
   canPrepareCompute: boolean;
   computeBlockReason: string | null;
+  localBlockReason: string | null;
   dependencyMessage: string;
   canRefreshSourceScore: boolean;
   refreshLatest: () => Promise<CognitiveDomainResultDetailResponse | null>;
@@ -281,7 +282,19 @@ export function useCognitiveDomainResult({
     visitId,
   ]);
 
+  useEffect(() => {
+    if (!localBlockReason) {
+      return;
+    }
+
+    setConfirmationOpen(false);
+    setConfirmationCheckedState(false);
+  }, [localBlockReason]);
+
   const computeBlockReason = useMemo(() => {
+    if (localBlockReason) {
+      return localBlockReason;
+    }
     if (!sourceScoreResult) {
       return dependencyMessage;
     }
@@ -306,9 +319,6 @@ export function useCognitiveDomainResult({
     }
     if (computeProhibitedReason) {
       return computeProhibitedReason;
-    }
-    if (localBlockReason) {
-      return localBlockReason;
     }
     return null;
   }, [
@@ -460,6 +470,7 @@ export function useCognitiveDomainResult({
     liveMessage,
     canPrepareCompute,
     computeBlockReason,
+    localBlockReason,
     dependencyMessage,
     canRefreshSourceScore,
     refreshLatest,

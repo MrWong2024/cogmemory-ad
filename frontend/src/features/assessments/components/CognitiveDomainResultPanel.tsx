@@ -44,6 +44,18 @@ function OverlappingAttributionNotice() {
   );
 }
 
+function CognitiveDomainLocalSafetyBlock({ reason }: { reason: string }) {
+  return (
+    <div
+      className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] p-4 text-base leading-7 text-[var(--cma-warning)]"
+      role="status"
+    >
+      <p className="font-semibold">本地安全阻断</p>
+      <p className="mt-1">{reason}</p>
+    </div>
+  );
+}
+
 export function CognitiveDomainResultPanel({
   state,
   canLocateItem,
@@ -54,6 +66,11 @@ export function CognitiveDomainResultPanel({
   onLocateItem: (itemResponseId: string) => void;
 }) {
   const result = state.detail?.cognitiveDomainResult ?? null;
+  const localSafetyBlockVisible =
+    state.localBlockReason !== null &&
+    (state.status === 'waiting_for_score' ||
+      state.status === 'loading' ||
+      state.status === 'not_found');
 
   return (
     <Card>
@@ -84,12 +101,16 @@ export function CognitiveDomainResultPanel({
         <OverlappingAttributionNotice />
 
         <div aria-live="polite">
+          {localSafetyBlockVisible && state.localBlockReason ? (
+            <CognitiveDomainLocalSafetyBlock reason={state.localBlockReason} />
+          ) : null}
           {state.status === 'idle' ? (
             <p className="text-base text-[var(--cma-muted)]">
               认知域状态尚未初始化。
             </p>
           ) : null}
-          {state.status === 'waiting_for_score' ? (
+          {state.status === 'waiting_for_score' &&
+          !localSafetyBlockVisible ? (
             <div>
               <p className="text-base leading-7 text-[var(--cma-muted)]">
                 {state.latestError
@@ -108,7 +129,7 @@ export function CognitiveDomainResultPanel({
               ) : null}
             </div>
           ) : null}
-          {state.status === 'loading' ? (
+          {state.status === 'loading' && !localSafetyBlockVisible ? (
             <p className="text-base text-[var(--cma-muted)]" role="status">
               正在加载认知域结果…
             </p>
@@ -201,11 +222,11 @@ export function CognitiveDomainResultPanel({
               >
                 准备计算认知域结果
               </Button>
-            ) : (
+            ) : !localSafetyBlockVisible ? (
               <p className="mt-3 text-base leading-7 text-[var(--cma-muted)]">
                 {state.computeBlockReason}
               </p>
-            )}
+            ) : null}
           </section>
         ) : null}
 

@@ -208,7 +208,6 @@ export function CognitiveDomainMappingSummary({
               <div><dt className="text-[var(--cma-muted)]">status</dt><dd>{displayOptional(sourceScoreResult.status)}</dd></div>
               <div><dt className="text-[var(--cma-muted)]">confirmedAt</dt><dd>{formatCognitiveDomainDate(sourceScoreResult.confirmedAt)}</dd></div>
               <div><dt className="text-[var(--cma-muted)]">updatedAt</dt><dd>{formatCognitiveDomainDate(sourceScoreResult.updatedAt)}</dd></div>
-              <div><dt className="text-[var(--cma-muted)]">来源结果内部 ID</dt><dd className="break-all">{sourceScoreResult.id}</dd></div>
             </dl>
           </div>
 
@@ -222,7 +221,6 @@ export function CognitiveDomainMappingSummary({
               <div><dt className="text-[var(--cma-muted)]">reviewStatus</dt><dd>{cognitiveDomainReviewStatusLabels[result.review.reviewStatus]}</dd></div>
               <div><dt className="text-[var(--cma-muted)]">createdAt</dt><dd>{formatCognitiveDomainDate(result.createdAt)}</dd></div>
               <div><dt className="text-[var(--cma-muted)]">updatedAt</dt><dd>{formatCognitiveDomainDate(result.updatedAt)}</dd></div>
-              <div><dt className="text-[var(--cma-muted)]">结果内部 ID</dt><dd className="break-all">{result.id}</dd></div>
             </dl>
           </div>
         </div>

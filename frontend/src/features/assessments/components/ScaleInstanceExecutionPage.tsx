@@ -777,42 +777,44 @@ export function ScaleInstanceExecutionPage({
     void loadLatestScoreResult();
   }, [loadLatestScoreResult]);
   const cognitiveDomainLocalBlockReason = useMemo(() => {
-    if (scoreQueryStatus === 'loading') {
-      return '正在加载最新评分结果，请等待评分事实稳定后再计算认知域结果。';
-    }
     if (isComputingScore) {
-      return '正在计算阶段性评分，请等待评分写请求完成。';
+      return '阶段性评分写请求正在进行，认知域计算保持本地安全阻断。';
     }
     if (scoreWriteState !== 'idle') {
       return scoreWriteState === 'reviewing'
-        ? '正在保存人工评分，请等待评分写请求完成。'
-        : '正在确认评分结果，请等待评分写请求完成。';
+        ? '人工评分写请求正在进行，认知域计算保持本地安全阻断。'
+        : '评分确认写请求正在进行，认知域计算保持本地安全阻断。';
     }
     if (isSubmitting) {
       return '正在正式提交量表实例，请等待提交完成。';
     }
-    if (savingItemIds.size > 0 || mediaWritingKeys.size > 0) {
-      return '当前仍有题目保存或媒体写请求，请等待完成后再计算认知域结果。';
+    if (savingItemIds.size > 0) {
+      return '题目作答写请求正在进行，认知域计算保持本地安全阻断。';
     }
-    if (unsavedAnswerItemCount > 0 || pendingMediaItemCount > 0) {
-      return '存在本地未保存作答或未上传媒体，系统不会静默清除这些内容。';
+    if (mediaWritingKeys.size > 0) {
+      return '图片或手写媒体写请求正在进行，认知域计算保持本地安全阻断。';
     }
-    if (manualReviewDraft !== null) {
+    if (unsavedAnswerItemCount > 0) {
+      return '存在本地未保存作答，系统不会静默清除这些内容。';
+    }
+    if (pendingMediaItemCount > 0) {
+      return '存在未上传的图片或手写媒体草稿，系统不会静默清除这些内容。';
+    }
+    if (manualReviewDraftDirty) {
       return '当前仍有人工评分草稿，请先保存或明确放弃。';
     }
-    if (confirmationDraft !== null) {
+    if (confirmationDraftDirty) {
       return '当前仍有评分确认意见草稿，请先完成或明确放弃。';
     }
     return null;
   }, [
-    confirmationDraft,
+    confirmationDraftDirty,
     isComputingScore,
     isSubmitting,
-    manualReviewDraft,
+    manualReviewDraftDirty,
     mediaWritingKeys.size,
     pendingMediaItemCount,
     savingItemIds.size,
-    scoreQueryStatus,
     scoreWriteState,
     unsavedAnswerItemCount,
   ]);
