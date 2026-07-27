@@ -14,7 +14,7 @@
 | WP-04 / B17 | 已完成 | 44 个 scenarioKey 全部通过，正式 fixture 双次 cleanup，残留为 0 |
 | Batch A / B1–B3 | 已完成 | 67 个验证原子全部有明确处置，正式 fixture 双次 cleanup，残留为 0 |
 | Batch B / B4–B6 | 桌面范围已完成 | Browser 133 + automated boundary 2 = 135；post-browser verify 通过；双次 cleanup `residualCount=0`；产品缺陷 0 |
-| Batch C / B7–B10 | B7、B8 与 B9 已完成；B10-A fixture 与 B10-B4 测试资产修复已完成；B10-B 未完成 | `generation-workflow` 当前为 44 pass / 0 fail / 4 not_executed / 0 obsolete；下一阶段使用全新 namespace 完整重跑；`public-surface-security` 尚未启动 |
+| Batch C / B7–B10 | B7、B8 与 B9 已完成；B10-A fixture、B10-B4 测试资产修复与 B10-B `generation-workflow` 已完成；B10 整体仍未完成 | `generation-workflow` 48 pass / 0 fail / 0 not_executed / 0 obsolete；下一阶段为 `public-surface-security`；Batch D 尚未启动 |
 | Batch D / B11–B15 | 尚未启动 | 包含 B14.1 当前仍待验的 Browser 行为等价回归；本文第 6 节是当前待验合同 |
 | Batch E | 保留 8 项 | 真实设备、辅助技术或人工验收；不被桌面 Browser、大屏抽查或 automated boundary 替代 |
 
@@ -95,9 +95,9 @@ prepare / prepared verify 只说明账号和前置数据就绪，不等于 Brows
 
 每个验证项只能是 pass、fail、not_executed 或明确 obsolete；fixture-ready、静态通过、工具限制和人工待签收不得写成 pass。报告必须区分静态门禁、Browser 场景、automated boundary、人工验收、post-browser verify、cleanup 与产品缺陷。
 
-## 5. Batch C 当前状态与待验合同：B7、B8 与 B9 已完成，B10-B 未完成
+## 5. Batch C 当前状态与待验合同：B7、B8、B9 与 B10-B 已完成，B10 下一阶段为 public-surface-security
 
-B7 的 40 项、B8 的 60 项与 B9 的 51 active pass + B9-32 obsolete 均已按既有证据闭环。B10-A fixture 与分批验收合同已完成；B10-B2 已为 B10-34、B10-36、B10-37、B10-39、B10-40 建立确定性前置。B10-B3 已完整触达 26 条 route 并执行 48 项矩阵中所有仍可安全执行的项目，当前结果为 44 pass / 0 fail / 4 not_executed / 0 obsolete；B10-B 与 B10 整体未完成。必须先修复 B10-B3 阻断并使用全新 namespace 重跑完整 `generation-workflow`；`public-surface-security` 与 Batch D 尚未启动。以下序号与减肥前基线完全一致，fixture-ready 与静态门禁通过不得写成任何未执行的 B10 Browser 项通过。
+B7 的 40 项、B8 的 60 项与 B9 的 51 active pass + B9-32 obsolete 均已按既有证据闭环。B10-A fixture 与分批验收合同已完成；B10-B4 已为 B10-04、B10-36、B10-37、B10-40 建立可正式执行的 Stage 与真实 HTTP 500 能力；B10-B5 已使用全新 namespace 完整重跑 `generation-workflow`，B10-01–B10-45、B10-93–B10-95 共 48 项全部通过，post-browser verify、logout/停服与双次 cleanup 均闭环，B10-B `generation-workflow` 已完成。B10 整体仍未完成；下一阶段为 `public-surface-security`，Batch D 尚未启动。以下序号与减肥前基线完全一致，fixture-ready 与静态门禁通过不得写成任何未执行的 B10 Browser 项通过。
 
 阶段所有权口径：条目中的“页面不存在后续能力/入口”用于证明本阶段组件或动作不创建、不自动触发、不越权接管后续能力；后来已实现的 B8–B16 sibling 区域可以按当前状态合法共存。执行时应限定目标组件 DOM、请求 initiator 和动作前置状态，不得用页面全局文本误判，也不得为了满足旧阶段字面值隐藏当前合法能力。
 
@@ -302,6 +302,8 @@ B10 fixture 当前最终代码态门禁为：后端 lint、typecheck、build、8
 B10-B3 在基线 `ab1a5941857a1da3b524b3c4ab2cfeba733878a1` 使用全新 namespace `b10g-b10b3-20260727-k4m2` 完整触达 `generation-workflow` 的 10 个 scenarioKey / 26 条 route。backend build、B10 fixture 定向 E2E 1 suite / 8 tests、frontend lint / typecheck / build、prepare 与 prepared verify 均通过；B10-05 的旧 latest cancelled、新 latest 404 唯一生效，B10-21/22 的首次生成入口 DOM 数量为 0，B10-34 返回 `alreadyGenerated=true`，B10-39 为真实 404 → 409 → 404；首次生成仅发出一次白名单 Body 的 POST，并直接采用响应。阻断一：当前 Browser 工具不支持受控真实 HTTP 500，且验收禁止 response mutation，因此 B10-04 为 `not_executed`。阻断二：两个 allowlist stage 都在对应 Browser 前置动作后各调用一次，但 `verifyStageBaseline` 因更早的 `first_generate_success` 合法新增 V1 draft 与 prepared baseline 不同而在变更前返回 `B10_FIXTURE_SCENARIO_INVALID`；没有 staged report 或 Instance transition，故为避免未授权产品写入，B10-36、B10-37、B10-40 均为 `not_executed`。post-browser verify 因缺少合同要求的第二份新增报告返回 `B10_FIXTURE_ROOT_MATRIX_INVALID`。production frontend、Browser backend 与 Browser 已关闭，端口已释放；两次 cleanup 均为 `residualCount=0`，第二次 `matched=false`，canonical seed hash 不变。当前为 44 pass / 0 fail / 4 not_executed / 0 obsolete，B10-B 与 B10 整体均未完成；必须先修复 fixture stage baseline 合同并提供真实 500 的受控执行能力，再以全新 namespace 完整重跑 `generation-workflow`；`public-surface-security` 与 Batch D 尚未启动；不存在可填写的新 evidence commit。
 
 B10-B4 已完成 B10-B3 所列两项测试资产阻断：Stage verifier 现按合法进度矩阵计算报告总数，并在 first generate 后接受两个 allowlist stage 的任一顺序；受控 500 固定为目标 GET 的第一次真实 500，第二次和其他 route/method 均回到真实产品链。配置缺失、错误 profile/scenario/route、非 browser_acceptance、错误数据库/密码以及任何 path/status/body 扩展均拒绝，未配置时 Browser backend 行为不变。该结论来自后端 E2E 与不启动 Browser/frontend 的 browser_acceptance HTTP 冒烟，不能记作四项正式 Browser pass；当前仍为 44 pass / 0 fail / 4 not_executed / 0 obsolete。下一阶段使用全新 namespace 完整重跑 `generation-workflow`；B10-B、B10 整体、`public-surface-security` 与 Batch D 均未完成或未启动，不存在可填写的新 evidence commit。
+
+B10-B5 基于 `8be7b50c97521e00dbf379d976e8364b85a93590`，使用全新 namespace `b10g-b10b5r-20260727-m8p2`、production frontend、Browser test backend 与真实 Browser 完整重跑 `generation-workflow` 的 10 个 scenarioKey / 26 条 route。backend build、B10 fixture 定向 E2E 1 suite / 11 tests、frontend lint / typecheck / build、prepare 与 prepared verify 均通过；standard_test 实际库为 `cogmemory_ad_test`，Browser backend 与 fixture CLI 实际库均为 `cogmemory_ad_browser_test`，角色分别为 app / `readWrite` 与 db_admin / `dbOwner`，配置未叠加 `.env.test`。B10-04 为真实 HTTP 500 → 手工重试 → 产品 404，B10-05 为旧 latest aborted、新 latest 404 唯一生效；B10-34 返回 `alreadyGenerated=true`，B10-36/37 为 404 → Stage → 409 → latest 200，B10-39 为 404 → 409 → 404，B10-40 为 ready snapshot → Stage → 409。逐 route 账本共记录 latest GET 27 次、generate POST 9 次；所有 generate Body 仅有 `confirm` 与 `primaryScaleInstanceIds`，无写请求 retry、polling 或 A17/A18/A19 扇出。`first_generate_success` 只新增一份合法产品 V1 draft；scope-conflict staged report 与 scale-not-ready 单一 Instance transition 均符合 fixture-owned 合同，其余产品 route 数据库零变化。post-browser verify 通过，ClinicalReports 从 prepared 5 变为 7；五类角色真实 Session 均已建立并 logout，Console、Storage、HttpOnly Cookie、CORS、DOM/URL 与基础隐私检查通过，Browser/服务关闭且端口释放。两次 cleanup 均为 `residualCount=0`，第二次 `matched=false`，canonical seed、其他 namespace 与非 namespace 数据未受影响。B10-01–B10-45、B10-93–B10-95 共 48 项全部通过，B10-B `generation-workflow` 已完成；B10 整体仍未完成，下一阶段为 `public-surface-security`；Batch D 尚未启动，B9 已完成事实保持不变，不填写不存在的 evidence commit。
 
 Fixture 前置：准备 Visit 无报告、合法 scope、不同实例状态、draft / confirmed / voided / incomplete 报告、scope/source 冲突、缺评分/认知域/媒体、历史 confirmation、401/403 与网络失败；报告内容和意见必须脱敏且无临床含义。
 
