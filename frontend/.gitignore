@@ -5,6 +5,11 @@ node_modules
 out
 build
 coverage
+/test-results/
+/playwright-report/
+/blob-report/
+/.browser-acceptance-auth/
+/.browser-acceptance-runtime/
 *.log
 *.tsbuildinfo
 .env

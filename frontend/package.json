@@ -9,7 +9,12 @@
     "lint": "eslint .",
     "lint:file": "eslint",
     "lint:file:fix": "eslint --fix",
-    "typecheck": "next typegen && tsc --noEmit"
+    "typecheck": "next typegen && tsc --noEmit",
+    "test:browser": "playwright test",
+    "test:browser:list": "playwright test --list",
+    "test:browser:infra": "playwright test test/browser-acceptance/infrastructure",
+    "test:browser:live": "playwright test test/browser-acceptance/live",
+    "test:browser:headed": "playwright test --headed"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.3.0",

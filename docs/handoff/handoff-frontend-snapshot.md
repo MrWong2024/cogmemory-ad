@@ -11,11 +11,12 @@
 
 ## 2. 当前前端技术栈和目录
 
-- `frontend/package.json` 当前使用 Next.js 16.2.9、React 19.2.7、TypeScript 5.9.3 与 Tailwind CSS 4.3.0。
+- `frontend/package.json` 当前使用 Next.js 16.2.9、React 19.2.7、TypeScript 5.9.3、Tailwind CSS 4.3.0、Playwright Test 1.62.0 与 `@axe-core/playwright` 4.12.1。
 - `frontend/app` 使用 App Router，负责页面、layout 和 `not-found`；动态路由参数按 Next 16 的 Promise 形式读取。
 - `frontend/src/components/ui` 提供 `Button`、`Card`、`Badge` 三个低业务语义公共组件。
 - `frontend/src/features/auth`、`patients`、`assessments` 分别承载认证、患者/访视/历史趋势、量表执行与报告工作流。
 - `frontend/src/lib/env.ts` 只读取 `NEXT_PUBLIC_API_BASE_URL` 并导出 `frontendEnv.apiBaseUrl`。
+- `frontend/test/browser-acceptance` 是通用 Browser acceptance 目录：`support` 提供环境、独立 Chromium BrowserContext、Network、真实键盘、viewport、Axe、ARIA/live region、runtime、beforeunload 与安全输出能力；`infrastructure` 使用进程内临时 localhost 页面验证跑道；`live` 只在显式 localhost origins 下验证 production frontend + Browser test backend 拓扑。
 - 当前没有 BFF、Next Route Handler 代理、middleware、全局业务 Provider、Redux/Zustand/SWR/React Query 或第三方图表库。
 - 页面继续采用医疗系统、临床评估、低干扰、高可读性和冷静可信的视觉基线。
 
@@ -122,6 +123,7 @@ A21–A25 写请求从当前服务端 `report.updatedAt` 取得 `expectedUpdated
 ## 7. 当前实现结论与验证入口
 
 - B16 replacement V2+ 生命周期与 B17 history、versions、detail、trends 产品实现均已完成。
+- Playwright、Chromium 与 Axe 通用 Browser acceptance 基础设施已完成，但当前只形成 synthetic infrastructure 与只读 live topology smoke，不代表 B10-89 或 Batch D 产品验收通过；B10-89 保持 `not_executed`，Batch D 尚未启动。
 - 当前静态门禁、Batch 状态、Browser/automated 数量、权限/错误、响应式、键盘、Network、Runtime Storage、evidence commit、verify 与 cleanup 统一见 `handoff-frontend-testing-playbook.md`；本 snapshot 不维护测试终态。
 
 ## 8. 当前未实现边界

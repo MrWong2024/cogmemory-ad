@@ -16,7 +16,7 @@
 | WP-04 / B17 | 已完成 | 44 个 scenarioKey 全部通过，正式 fixture 已双次 cleanup，残留为 0 |
 | Batch A / B1–B3 | 已完成 | 67 个验证原子全部有明确处置，正式 fixture 已双次 cleanup，残留为 0 |
 | Batch B / B4–B6 | 桌面范围已完成 | Browser 133 项 + automated boundary 2 项 = 135 项；post-browser verify 通过；产品缺陷 0 |
-| Batch C / B7–B10 | B7、B8 与 B9 已完成；B10-A fixture、B10-B4 测试资产修复与 B10-B `generation-workflow` 已完成；B10-C `public-surface-security` 为 46 pass / 0 fail / 1 not_executed，B10 整体仍未完成 | B10-85 产品修复与 B10-88 更新 fixture 定向复验已通过；B10-89 fixture 前置已修复，但 raw CDP `Input.dispatchKeyEvent` 不可用；Batch D 尚未启动 |
+| Batch C / B7–B10 | B7、B8 与 B9 已完成；B10-A fixture、B10-B4 测试资产修复与 B10-B `generation-workflow` 已完成；B10-C `public-surface-security` 为 46 pass / 0 fail / 1 not_executed，B10 整体仍未完成 | B10-85 产品修复与 B10-88 更新 fixture 定向复验已通过；Playwright 通用 Browser acceptance 基础设施已就位，但尚未定向复验 B10-89；Batch D 尚未启动 |
 | Batch D / B11–B15 | 尚未启动 | 包含 B14.1 的剩余 Browser 回归；详细待验合同以 frontend testing playbook 为准 |
 | Batch E | 保留 8 项 | 真实设备、辅助技术或人工验收，不被桌面 Browser 证据替代 |
 
@@ -36,13 +36,15 @@ B10-C 基于 `44ac1f3ddb5bb2352a4215b20fee8a628035016f`，使用全新 `b10p-` n
 
 B10-C1 基于 `7c594e811283425b819a85b33ab1a68adf1d85c5` 完成产品与 fixture 定向修复。`useClinicalReport.confirmGenerate()` 仅在 `service_unavailable` 保留已选 scope、确认区与已勾选 checkbox，其他错误继续沿用既有清理、latest 重读或冲突处理；成功路径、A20 路由及 Body 未改变。`long_report` 改用显式 `long_pending_confirmation`，prepared verifier 保护 `pending_confirmation`、医生确认资格、合法 submission、至少一个合法 trace、技术摘要、`mixed` 来源、医生文本、长 narrative、多 trace、`aiUsed=false`、`confirmation=null` 与 `isFinal=false`；manifest 增加 button / checkbox / link / details 键盘目标，资源数量、audit ID、profile、scenarioKey、routeKey、owner、零写入和 cleanup 合同不变。最终代码态 backend lint / typecheck / build、B10 fixture 定向 E2E 1 suite / 13 tests、frontend lint / typecheck / build 均通过；standard_test 为 `cogmemory_ad_test`，Browser backend 与 fixture CLI 为 `cogmemory_ad_browser_test`，角色分别为 app / `readWrite` 与 db_admin / `dbOwner`。B10-85 的 latest 与 generate 网络分支均定向通过，generate 失败后状态保留且 ClinicalReports 保持 0；B10-88 在八个固定尺寸与最大化 1536 宽、visual scale 1 上通过，无横向溢出或业务写请求。B10-89 在第一条正式 Tab 前调用同一已用于 Network / viewport 的 CDP 会话 `Input.dispatchKeyEvent` 时被控制层明确拒绝为 unsupported；按合同停止，未使用 CUA 或 DOM 模拟，两个 viewport 均为 `not_executed`。Browser 前后 prepared verify 通过，未执行不适用于三项定向证据的全量 post-browser verify；原完整 public-surface-security 的其余 45 项、post-browser verify 与双 cleanup 证据继续有效。logout、Browser / 服务关闭与端口释放完成；cleanup 1 为 `residualCount=0` / `matched=true`，cleanup 2 为 `residualCount=0` / `matched=false`，canonical seed 不变。当前 `public-surface-security` 为 46 pass / 0 fail / 1 not_executed；B10-C1、B10-C 与 B10 整体仍未完成，Batch D 尚未启动，不填写不存在的 evidence commit。
 
+Playwright Test、Chromium 与 Axe 通用 Browser acceptance 跑道现已建立。runner 与 production frontend 的数据库用途均为 `none`，不加载 MongoDB、fixture 密码或 Browser fault 配置；仅 Browser test backend 保持 `browser_acceptance` / `cogmemory_ad_browser_test` / app / `readWrite`。本阶段 live smoke 只访问 `/login`、`/health` 与精确 CORS，不登录、不创建 Session、fixture 或 namespace，也不产生业务写入；该证据不改变 B10-89 或任何 Batch 状态。
+
 ## 3. 数据库用途、凭据来源与进程隔离
 
 ### 3.1 五类用途与项目映射
 
 | 用途类别 | 当前项目映射 | 允许用途 |
 |---|---|---|
-| `none` | 不连接数据库 | 纯文档、lint、typecheck、build、静态审计 |
+| `none` | 不连接数据库 | 纯文档、lint、typecheck、build、静态审计、Playwright runner 与 production frontend |
 | `development` | `cogmemory_ad_dev` | 日常开发和人工调试 |
 | `standard_test` | `cogmemory_ad_test` | unit、普通 E2E，以及允许重建测试数据的自动化测试 |
 | `browser_acceptance` | `cogmemory_ad_browser_test` | Browser fixture、Browser / Chrome 验收、post-browser verify |
@@ -91,6 +93,8 @@ Browser fixture 测试应用账号的批次专用密码由各批次约定的 `*_
 | 普通 E2E | `.env.test` 中的 standard_test 用户 | 按测试配置 | `cogmemory_ad_test` |
 
 app 用户的连接和 `readWrite` 角色、db_admin 用户的连接和 `dbOwner` 角色均已实际验证。不得让 Browser backend 以 db_admin 作为主连接，也不得让 fixture CLI 以 app 用户作为主连接。
+
+Playwright runner 和 production frontend 不加载 `backend/.env.test` 或 `backend/.env.browser-acceptance`，不持有数据库角色，也不得直接连接 MongoDB。Browser test backend 继续只加载 `backend/.env.browser-acceptance`，保持 app / `readWrite` 与实际库名逐字门禁；不配置 Batch fault 时必须清除对应 fault 变量。本次通用 live smoke 不执行 fixture CLI，不创建 fixture 或 namespace，数据库业务计数应保持不变。
 
 `npm run start:browser-test` 是 test-only Browser backend 入口；只有用途、URI 声明库名、实际连接库名、用户名和角色全部通过后才监听端口。Browser backend 继续使用既有应用装配、CORS、Cookie、fake Storage 与 stub SMS / LLM。
 
@@ -146,7 +150,7 @@ D-038 认证时，Browser sentinel 在 standard_test 完整回归前后 prepared
 | unit / pure specs | 配置与数据库用途、Schema/索引、DTO whitelist、Controller Guard、Service ownership/状态/并发、mapper 白名单、量表 seed、作答、媒体、提交、评分、认知域、报告生命周期、历史与趋势 |
 | HTTP / database E2E | 认证 Cookie、401/403、全局 ValidationPipe、真实 AppModule、MongoDB 写读、fake Storage、A12–A28 临床链路及 D-038 数据库门禁 |
 | Browser fixture E2E | contract 计数、namespace 隔离、safe manifest、transition-aware Stage 顺序/漂移拒绝、one-shot 真实 HTTP 500、prepare/verify/post-browser verify、cleanup/二次 cleanup |
-| Browser acceptance | production frontend + 真实 test backend + `browser_acceptance` 专用数据库；Network、Console、Storage、Cookie、CORS、角色、并发、幂等与页面行为 |
+| Browser acceptance | Playwright Chromium + production frontend + 真实 test backend + `browser_acceptance` 专用数据库；Network、Console、Storage、Cookie、CORS、角色、并发、幂等与页面行为 |
 
 E2E 固定使用 `NODE_ENV=test`、`--runInBand`、隔离数据库、fake Storage、stub SMS / LLM 和脱敏人工数据；真实服务禁令统一见第 8 节。
 
@@ -170,6 +174,8 @@ Batch C / D fixture 的验证意图、前置状态和关键边界必须从 front
 ## 6. Browser fixture 通用生命周期
 
 每个新 Browser 批次统一执行以下生命周期：
+
+Playwright 只负责 Browser、独立 BrowserContext、Network、键盘、viewport、Axe、ARIA/live region、runtime 与 beforeunload 自动化。各 Batch 既有 fixture CLI 继续唯一负责 prepare / replace、prepared verify、post-browser verify、cleanup、namespace ownership、数据库门禁与稳定 fixture password；不得把这些数据库生命周期重新实现到 Playwright 测试中，Playwright 也不得直接连接 MongoDB。
 
 1. 选择独立、合规的 namespace；重复 prepare 默认拒绝，替换必须显式确认。
 2. 在 db_admin / `dbOwner` 的 fixture CLI 独立进程执行 `prepare` 或受控 `replace`。

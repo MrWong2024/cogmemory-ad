@@ -14,7 +14,7 @@
 | WP-04 / B17 | 已完成 | 44 个 scenarioKey 全部通过，正式 fixture 双次 cleanup，残留为 0 |
 | Batch A / B1–B3 | 已完成 | 67 个验证原子全部有明确处置，正式 fixture 双次 cleanup，残留为 0 |
 | Batch B / B4–B6 | 桌面范围已完成 | Browser 133 + automated boundary 2 = 135；post-browser verify 通过；双次 cleanup `residualCount=0`；产品缺陷 0 |
-| Batch C / B7–B10 | B7、B8 与 B9 已完成；B10-A fixture、B10-B4 测试资产修复与 B10-B `generation-workflow` 已完成；B10-C `public-surface-security` 为 46 pass / 0 fail / 1 not_executed，B10 整体仍未完成 | B10-85 产品修复与 B10-88 更新 fixture 定向复验已通过；B10-89 fixture 前置已修复，但当前控制层不暴露 raw CDP `Input.dispatchKeyEvent`，故保持 `not_executed`；Batch D 尚未启动 |
+| Batch C / B7–B10 | B7、B8 与 B9 已完成；B10-A fixture、B10-B4 测试资产修复与 B10-B `generation-workflow` 已完成；B10-C `public-surface-security` 为 46 pass / 0 fail / 1 not_executed，B10 整体仍未完成 | B10-85 产品修复与 B10-88 更新 fixture 定向复验已通过；Playwright 通用 Browser acceptance 基础设施已就位，但尚未定向复验 B10-89，故该项保持 `not_executed`；Batch D 尚未启动 |
 | Batch D / B11–B15 | 尚未启动 | 包含 B14.1 当前仍待验的 Browser 行为等价回归；本文第 6 节是当前待验合同 |
 | Batch E | 保留 8 项 | 真实设备、辅助技术或人工验收；不被桌面 Browser、大屏抽查或 automated boundary 替代 |
 
@@ -23,6 +23,8 @@ Batch B 的正式 namespace 和临时文件已经删除，不存在“尚待 pos
 B10-A 已建立 95 项完整唯一映射以及两个互不依赖的 profile；定向 E2E 1 suite / 7 tests、完整后端 E2E 25 suites / 117 tests、后端 lint / typecheck / build / unit、前端 lint / typecheck / build 均通过。两个 profile 的 prepare、prepared verify、显式 replace、再次 prepared verify 和双次 cleanup 冒烟均通过，第二次 cleanup 均为 `residualCount=0`、`matched=false`，canonical seed hash 全程不变。该阶段未启动 Browser、production frontend 或 Browser test backend，也未执行真实 A20 generate；B10 Browser 验收尚未开始，下一阶段为 generation-workflow Browser 验收；Batch D 尚未启动；不填写不存在的 evidence commit。
 
 B10-B4 已使 Stage baseline 支持合法 generation-workflow 进度：`first_generate_success` 产品 V1 draft 之后，scope-conflict 与 scale-not-ready 两个 allowlist stage 可按任一顺序执行，verifier 仍严格拒绝报告、scope/ownership/marker、stage 外 Instance、其他来源、seed、profile isolation 和资源总数漂移。Browser test backend 也已建立仅服务 B10-04 的 test-only、allowlist、进程内 one-shot 真实 HTTP 500，不依赖 Browser response mutation，不注册 production route；CORS 后置故障响应、安全 envelope、第二次真实产品请求、unrelated route 与业务数据零变化均由 E2E 和 browser_acceptance 冒烟证明。后端最终六项门禁为 lint、typecheck、build、89 suites / 761 unit tests、B10 定向 E2E 1 suite / 11 tests、full E2E 25 suites / 121 tests，另有 fixture replace/prepared verify、双 cleanup 与零残留证据。本阶段未启动 frontend 或 Browser，B10-04、B10-36、B10-37、B10-40 仍为 `not_executed`；当前 Browser 状态保持 44 pass / 0 fail / 4 not_executed / 0 obsolete，B10-B 与 B10 整体未完成，下一阶段使用全新 namespace 完整重跑 `generation-workflow`；`public-surface-security` 与 Batch D 尚未启动，不填写不存在的 evidence commit。
+
+通用 Browser acceptance 基础设施现已接入 Playwright Test 1.62.0、Playwright Chromium 与 `@axe-core/playwright` 4.12.1。`frontend/test/browser-acceptance` 提供 synthetic infrastructure suite、显式启用的真实拓扑 smoke，以及可复用的 Context、Network、键盘、viewport、Axe、ARIA/live region、runtime、beforeunload 和安全输出模块。该阶段只证明通用跑道能力，不是 B10-89 或 Batch D 产品验收；B10-89 保持 `not_executed`，B10 与 Batch C 仍未完成，Batch D 仍未启动，且不填写不存在的 evidence commit。
 
 ## 3. 标准静态门禁
 
@@ -44,6 +46,8 @@ B10-B4 已使 Stage baseline 支持合法 generation-workflow 进度：`first_ge
 
 Browser 验收必须使用 production frontend 和真实 test backend，不以 mock server、静态检查或伪造响应替代真实 HTTP。数据库用途固定为 `browser_acceptance`，后端和 fixture CLI 必须分别使用 app / `readWrite` 与 db_admin / `dbOwner` 独立进程；数据库门禁、凭据来源和 cleanup 规则见 backend testing playbook。
 
+Playwright Test 是 B10-89、Batch D / B11–B15 及后续 Browser acceptance 的默认执行层。配置固定 Chromium、`workers=1`、`fullyParallel=false`、`retries=0`、有界 timeout 和安全文本 reporter；config 不自动启动 mock server，不硬编码数据库、账号、密码或动态业务路径。多角色和双 Session 必须由 `browser.newContext()` 创建相互独立的 Chromium BrowserContext；不得通过清除同一 Context 的 Cookie 模拟角色或 Session 隔离，所有额外 Context 必须在 `finally` 关闭。
+
 每个 Batch 按同一生命周期执行：
 
 1. 根据本文待验项设计脱敏、确定性、可回收的 fixture contract，明确每个验证项的 primary owner、前置状态和预期副作用。
@@ -58,6 +62,7 @@ prepare / prepared verify 只说明账号和前置数据就绪，不等于 Brows
 ### 4.2 Network、Console、Storage、Cookie、CORS 与隐私
 
 - Network：按请求类别记录 method、状态、次数、initiator 和安全 URL 模式；写请求必须验证白名单 Body、无自动 retry / polling / N+1。不得在报告中粘贴密码、动态内部 ID、完整请求体或响应体。
+- Network 中止使用 Playwright `page.route()` / `route.abort()`，并保持一次性、可等待和有界；不得用 `route.fulfill()` 伪造真实后端 HTTP 状态。真实 500 继续由 Browser test backend 的 test-only fault 合同提供。Chromium initiator 诊断可使用 Playwright `browserContext.newCDPSession()`，不得自行建立 WebSocket CDP client。
 - Console：稳定观察窗内检查 warn/error；不得输出完整业务响应、堆栈、患者数据、报告正文、token、Cookie 或内部 lineage/source ID。
 - Storage：检查 localStorage、sessionStorage、IndexedDB 的 key / database / object-store 名称和禁止模式；value 只允许在同源 runtime 内做布尔扫描，不输出实际 value。
 - Cookie：只判断脚本可读 Cookie 是否为空或是否命中禁止模式，不读取 HttpOnly Cookie，不导出 Cookie 存储。
@@ -88,16 +93,29 @@ prepare / prepared verify 只说明账号和前置数据就绪，不等于 Brows
 
 - 普通原生 `button`、`a`、`input`、`select`、`label` 不在每个场景重复完整 Tab / Shift+Tab / Enter / Space 矩阵，但仍自动检查语义、可访问名称和明显 `tabindex` 问题。
 - 自定义复合控件、Modal / Dialog、菜单、下拉框、交互图表、Canvas、富文本、全局导航或焦点管理变更，以及无障碍修复，必须做真实键盘验证。
-- 真实键盘验证应覆盖正向/反向焦点、适用的 Enter/Space、焦点环、退出区域和状态变化；工具不能可靠产生原生事件时标记未执行，转人工协助，不得用 DOM 属性替代。
+- 正式键盘证据使用 `page.keyboard.press()`、`page.keyboard.down()` 或 `page.keyboard.up()`，并由页面只读监听器证明 `keydown` / `keyup` 的 `isTrusted=true`。应覆盖 Tab / Shift+Tab、适用的 Enter / Space、focus-visible、焦点进入与离开区域和状态变化。
+- raw CDP `Input.dispatchKeyEvent` 不再是唯一合法通道；只有 Chromium 协议级诊断才使用 Playwright `newCDPSession()`。不得以 `element.click()`、`node.click()`、合成 `KeyboardEvent`、修改 `checked/open`，或只检查 `tabindex` / role / DOM 属性替代真实键盘。
 - 明显焦点陷阱始终阻断；鼠标/触摸优先不等于取消基本可访问性。
 
-### 4.5 结果报告
+### 4.5 Axe、ARIA tree 与 live region automated boundary
+
+- WCAG A / AA 自动扫描使用 Axe；默认输出只保留 rule ID、impact 与 node count，不保留完整 HTML、患者内容或 selector 路径，也不建立未经说明的全局 violation ignore 清单。
+- ARIA tree 使用 Playwright ARIA snapshot；自动化可检查 role、accessible name、`aria-live`、`aria-busy` 与动态文本更新，但这些只属于 automated boundary。
+- Axe、ARIA snapshot 和 live-region 自动检查不能替代真实键盘、NVDA、VoiceOver、TalkBack、触摸、手写笔、软键盘或 Batch E 人工验收。
+
+### 4.6 重跑与测试产物
+
+- Playwright 自动 retry 固定为 0，失败必须保留原始失败状态，不得由 runner 自动重跑掩盖竞态。
+- trace、video 与自动 screenshot 默认关闭；失败上下文不得采集页面 ARIA/DOM 内容。确需截图时只能由测试显式调用安全截图 helper，且必须已离开登录密码状态、使用脱敏 fixture，并写入 Git ignored 的 `test-results`。
+- 默认 outputDir、HTML/blob report、Browser auth 与 runtime 临时目录均须 Git ignored；公共 helper 与报告只输出结构化安全摘要，不输出密码、Cookie / Session、完整 URI、动态内部 ID、原始作答、临床报告正文、metadata、objectKey、完整 DOM 或完整请求/响应。
+
+### 4.7 结果报告
 
 每个验证项只能是 pass、fail、not_executed 或明确 obsolete；fixture-ready、静态通过、工具限制和人工待签收不得写成 pass。报告必须区分静态门禁、Browser 场景、automated boundary、人工验收、post-browser verify、cleanup 与产品缺陷。
 
 ## 5. Batch C 当前状态与待验合同：B7、B8、B9 与 B10-B 已完成，B10-C 尚有 1 项 not_executed
 
-B7 的 40 项、B8 的 60 项与 B9 的 51 active pass + B9-32 obsolete 均已按既有证据闭环。B10-A fixture 与分批验收合同已完成；B10-B4 已为 B10-04、B10-36、B10-37、B10-40 建立可正式执行的 Stage 与真实 HTTP 500 能力；B10-B5 已使用全新 namespace 完整重跑 `generation-workflow`，B10-01–B10-45、B10-93–B10-95 共 48 项全部通过，post-browser verify、logout/停服与双次 cleanup 均闭环，B10-B `generation-workflow` 已完成。B10-C 原完整 Browser 证据中的其余 45 项、完整 post-browser verify 与双次 cleanup 继续有效；B10-C1 已修复并定向通过 B10-85，且在更新后的 `long_pending_confirmation` fixture 上再次通过 B10-88。B10-89 的 fixture 前置已修复，但当前控制层在同一已用于 Network 和 viewport 的 CDP 会话上明确拒绝 `Input.dispatchKeyEvent`，因此未执行任何替代键盘模拟，B10-89 为 `not_executed`。当前 `public-surface-security` 为 46 pass / 0 fail / 1 not_executed / 0 obsolete；B10-C 与 B10 整体仍未完成，Batch D 尚未启动。以下序号与减肥前基线完全一致，fixture-ready、静态门禁、DOM 模拟或 verify 通过不得替代真实 Browser 项。
+B7 的 40 项、B8 的 60 项与 B9 的 51 active pass + B9-32 obsolete 均已按既有证据闭环。B10-A fixture 与分批验收合同已完成；B10-B4 已为 B10-04、B10-36、B10-37、B10-40 建立可正式执行的 Stage 与真实 HTTP 500 能力；B10-B5 已使用全新 namespace 完整重跑 `generation-workflow`，B10-01–B10-45、B10-93–B10-95 共 48 项全部通过，post-browser verify、logout/停服与双次 cleanup 均闭环，B10-B `generation-workflow` 已完成。B10-C 原完整 Browser 证据中的其余 45 项、完整 post-browser verify 与双次 cleanup 继续有效；B10-C1 已修复并定向通过 B10-85，且在更新后的 `long_pending_confirmation` fixture 上再次通过 B10-88。B10-89 的 fixture 前置已修复，且 Playwright `page.keyboard` + `isTrusted` 通用跑道现已具备；但本基础设施阶段没有进入真实 `long_report` 页面执行 B10-89，因此该项仍为 `not_executed`。当前 `public-surface-security` 为 46 pass / 0 fail / 1 not_executed / 0 obsolete；B10-C 与 B10 整体仍未完成，Batch D 尚未启动。以下序号与减肥前基线完全一致，fixture-ready、静态门禁、synthetic infrastructure 或 automated boundary 不得替代真实 Browser 项。
 
 阶段所有权口径：条目中的“页面不存在后续能力/入口”用于证明本阶段组件或动作不创建、不自动触发、不越权接管后续能力；后来已实现的 B8–B16 sibling 区域可以按当前状态合法共存。执行时应限定目标组件 DOM、请求 initiator 和动作前置状态，不得用页面全局文本误判，也不得为了满足旧阶段字面值隐藏当前合法能力。
 
