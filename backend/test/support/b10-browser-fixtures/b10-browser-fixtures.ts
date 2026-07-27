@@ -109,7 +109,15 @@ type RouteBaseline = {
   postBrowserSideEffect: B10PostBrowserSideEffect;
 };
 
-type RouteFixtureStageState = 'prepared' | 'staged';
+type RouteFixtureStageState = 'prepared' | 'product-completed' | 'staged';
+
+export type B10BrowserHttpFaultTarget = {
+  profile: 'generation-workflow';
+  scenarioKey: 'latest_lifecycle';
+  routeKey: 'latest_failure';
+  method: 'GET';
+  path: string;
+};
 
 type FixtureMetadata = {
   version: 1;
@@ -375,6 +383,30 @@ export class B10BrowserFixtureManager {
     return result;
   }
 
+  async resolveBrowserHttpFaultTarget(
+    profile: 'generation-workflow',
+    rawNamespace: string,
+    rawPassword: string | undefined,
+  ): Promise<B10BrowserHttpFaultTarget> {
+    const namespace = validateB10Namespace(profile, rawNamespace);
+    const password = requireB10FixturePassword(rawPassword);
+    assertB10Contract();
+    await this.verifyStageBaseline(profile, namespace, password);
+    const root = await this.requireRoot(
+      profile,
+      namespace,
+      'latest_lifecycle',
+      'latest_failure',
+    );
+    return {
+      profile,
+      scenarioKey: 'latest_lifecycle',
+      routeKey: 'latest_failure',
+      method: 'GET',
+      path: `/patients/${root.patient._id.toString()}/visits/${root.visit._id.toString()}/clinical-reports/latest`,
+    };
+  }
+
   async cleanup(
     profile: B10Profile,
     rawNamespace: string,
@@ -503,12 +535,35 @@ export class B10BrowserFixtureManager {
       scaleCode: 'mmse',
       scaleInstanceIds: root.instances.map(({ _id }) => _id),
     };
-    await new B10ScenarioBuilder(
+    const reports = await this.models.reports
+      .find({ assessmentVisitId: root.visit._id })
+      .sort({ _id: 1 })
+      .exec();
+    if (reports.length === 0) {
+      await new B10ScenarioBuilder(
+        profile,
+        namespace,
+        this.models,
+        this.workflows,
+      ).createControlledFirstGeneratedReport(builderRoot, toActor(doctor));
+      return;
+    }
+    if (reports.length !== 1) {
+      throw this.scenarioInvalid(profile, 'first_generate_success', 'base');
+    }
+    const rawReport = await this.models.reports.collection.findOne(
+      { _id: reports[0]._id },
+      { projection: { isFinal: 1 } },
+    );
+    if (rawReport && Object.hasOwn(rawReport, 'isFinal')) {
+      throw this.scenarioInvalid(profile, 'first_generate_success', 'base');
+    }
+    this.assertLegalVersionOneDraft(
       profile,
-      namespace,
-      this.models,
-      this.workflows,
-    ).createControlledFirstGeneratedReport(builderRoot, toActor(doctor));
+      'first_generate_success',
+      reports[0],
+      root,
+    );
   }
 
   private async verifyInternal(
@@ -664,7 +719,7 @@ export class B10BrowserFixtureManager {
           definition.scenarioKey,
           root,
           contract,
-          'prepared',
+          state === 'product-completed' ? 'post-browser' : 'prepared',
           transition,
         );
         const reports = await this.models.reports
@@ -677,10 +732,12 @@ export class B10BrowserFixtureManager {
               (await this.sourceHash(root, true))
             : baseline.sourceHash === (await this.sourceHash(root));
         const reportMatches =
-          transition === 'stage-different-scope-draft'
+          state === 'product-completed'
             ? baseline.reportCount === 0 && reports.length === 1
-            : baseline.reportCount === reports.length &&
-              baseline.reportHash === this.reportHash(reports);
+            : transition === 'stage-different-scope-draft'
+              ? baseline.reportCount === 0 && reports.length === 1
+              : baseline.reportCount === reports.length &&
+                baseline.reportHash === this.reportHash(reports);
         if (
           baseline.visitCode !== root.visit.visitCode ||
           baseline.instanceCount !== root.instances.length ||
@@ -718,7 +775,9 @@ export class B10BrowserFixtureManager {
         ),
       0,
     );
-    const stagedReportCount =
+    const legalFirstGeneratedReportCount =
+      states.get('first_generate_success/base') === 'product-completed' ? 1 : 0;
+    const scopeConflictStagedReportCount =
       states.get('scope_conflict/base') === 'staged' ? 1 : 0;
     const counts = await this.resourceCounts(profile, namespace);
     if (
@@ -726,7 +785,12 @@ export class B10BrowserFixtureManager {
       counts.patients !== definitions.length ||
       counts.visits !== expectedVisits ||
       counts.instances !== expectedInstances ||
-      counts.clinicalReports !== expectedPreparedReports + stagedReportCount
+      legalFirstGeneratedReportCount > 1 ||
+      scopeConflictStagedReportCount > 1 ||
+      counts.clinicalReports !==
+        expectedPreparedReports +
+          legalFirstGeneratedReportCount +
+          scopeConflictStagedReportCount
     ) {
       throw new B10FixtureError(
         'B10_FIXTURE_STAGE_BASELINE_INVALID',
@@ -752,6 +816,27 @@ export class B10BrowserFixtureManager {
     root: RouteRoot,
     contract: B10RoutePreparedContract,
   ): Promise<RouteFixtureStageState> {
+    if (scenarioKey === 'first_generate_success' && contract.key === 'base') {
+      const reports = await this.models.reports
+        .find({ assessmentVisitId: root.visit._id })
+        .sort({ _id: 1 })
+        .exec();
+      if (reports.length === 0) {
+        return 'prepared';
+      }
+      if (reports.length !== 1) {
+        throw this.scenarioInvalid(profile, scenarioKey, contract.key);
+      }
+      const rawReport = await this.models.reports.collection.findOne(
+        { _id: reports[0]._id },
+        { projection: { isFinal: 1 } },
+      );
+      if (rawReport && Object.hasOwn(rawReport, 'isFinal')) {
+        throw this.scenarioInvalid(profile, scenarioKey, contract.key);
+      }
+      this.assertLegalVersionOneDraft(profile, scenarioKey, reports[0], root);
+      return 'product-completed';
+    }
     if (contract.browserActionPlan.fixtureTransition === 'none') {
       return 'prepared';
     }

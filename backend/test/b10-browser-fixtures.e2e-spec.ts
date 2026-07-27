@@ -78,6 +78,11 @@ import {
   isB10ProtectedCanonicalScaleVersion,
   type B10BrowserFixtureManager,
 } from './support/b10-browser-fixtures/b10-browser-fixtures';
+import {
+  createB10BrowserHttpFaultMiddleware,
+  hasB10BrowserHttpFaultEnvironment,
+  resolveB10BrowserHttpFaultConfig,
+} from './support/b10-browser-fixtures/browser-http-fault';
 import { requireInitialized } from './support/e2e-initialization';
 
 jest.setTimeout(600000);
@@ -384,6 +389,62 @@ describe('B10 profile-scoped browser fixture support (e2e)', () => {
     await expect(
       manager.verify(profile, namespace, testPassword, 'prepared'),
     ).rejects.toBeInstanceOf(B10FixtureError);
+  }
+
+  async function expectStageFailure(): Promise<void> {
+    await expect(
+      manager.stage(
+        'generation-workflow',
+        GENERATION_NAMESPACE,
+        testPassword,
+        'scope_conflict',
+        'base',
+      ),
+    ).rejects.toBeInstanceOf(B10FixtureError);
+  }
+
+  async function generateFirstReportThroughHttp(): Promise<RouteRoot> {
+    const agent = request.agent(server);
+    await agent
+      .post('/auth/login')
+      .send({
+        accountName: accountNameFor(
+          'generation-workflow',
+          GENERATION_NAMESPACE,
+          'doctor',
+        ),
+        password: testPassword,
+      })
+      .expect(201);
+    const root = await routeRoot(
+      'generation-workflow',
+      GENERATION_NAMESPACE,
+      'first_generate_success',
+      'base',
+    );
+    const response = await agent
+      .post(`${reportPath(root)}/generate`)
+      .send({
+        confirm: true,
+        primaryScaleInstanceIds: root.instances.map(({ _id }) =>
+          _id.toString(),
+        ),
+      })
+      .expect(200);
+    expect(body(response).alreadyGenerated).toBe(false);
+    return root;
+  }
+
+  async function stageTarget(
+    scenarioKey: 'scope_conflict' | 'source_readiness_errors',
+  ) {
+    return manager.stage(
+      'generation-workflow',
+      GENERATION_NAMESPACE,
+      testPassword,
+      scenarioKey,
+      scenarioKey === 'scope_conflict' ? 'base' : 'scale_not_ready',
+    );
   }
 
   async function mutateAndRestore(
@@ -878,6 +939,395 @@ describe('B10 profile-scoped browser fixture support (e2e)', () => {
       testPassword,
       'prepared',
     );
+  });
+
+  it('rejects every non-allowlisted Stage baseline drift and restores each mutation', async () => {
+    await manager.replace(
+      'generation-workflow',
+      GENERATION_NAMESPACE,
+      testPassword,
+    );
+    const first = await generateFirstReportThroughHttp();
+    const firstReport = await reportModel.findOne({
+      assessmentVisitId: first.visit._id,
+    });
+    if (!firstReport) {
+      throw new Error('Missing first-generated report');
+    }
+    await mutateAndRestore(
+      reportModel.collection,
+      { _id: firstReport._id },
+      { $set: { status: 'confirmed' } },
+      expectStageFailure,
+    );
+    const firstRaw = await reportModel.collection.findOne({
+      _id: firstReport._id,
+    });
+    if (!firstRaw) {
+      throw new Error('Missing raw first-generated report');
+    }
+    const duplicate = {
+      ...firstRaw,
+      _id: new Types.ObjectId(),
+      reportCode: `${String(firstRaw.reportCode)}-DUPLICATE`,
+    };
+    try {
+      await reportModel.collection.insertOne(duplicate);
+      await expectStageFailure();
+    } finally {
+      await reportModel.collection.deleteOne({ _id: duplicate._id });
+    }
+
+    await manager.replace(
+      'generation-workflow',
+      GENERATION_NAMESPACE,
+      testPassword,
+    );
+    const nonTarget = await routeRoot(
+      'generation-workflow',
+      GENERATION_NAMESPACE,
+      'latest_lifecycle',
+      'not_found',
+    );
+    const foreignReport = {
+      ...firstRaw,
+      _id: new Types.ObjectId(),
+      patientId: nonTarget.patient._id,
+      assessmentVisitId: nonTarget.visit._id,
+      primaryScaleInstanceIds: [nonTarget.instances[0]._id],
+      reportCode: `${String(firstRaw.reportCode)}-FOREIGN`,
+    };
+    try {
+      await reportModel.collection.insertOne(foreignReport);
+      await expectStageFailure();
+    } finally {
+      await reportModel.collection.deleteOne({ _id: foreignReport._id });
+    }
+
+    await stageTarget('scope_conflict');
+    const stagedScope = await routeRoot(
+      'generation-workflow',
+      GENERATION_NAMESPACE,
+      'scope_conflict',
+      'base',
+    );
+    const stagedReport = await reportModel.findOne({
+      assessmentVisitId: stagedScope.visit._id,
+    });
+    if (!stagedReport) {
+      throw new Error('Missing staged scope-conflict report');
+    }
+    await mutateAndRestore(
+      reportModel.collection,
+      { _id: stagedReport._id },
+      { $set: { 'metadata.b10FixtureStage.namespace': 'b10g-wrong' } },
+      expectStageFailure,
+    );
+
+    await manager.replace(
+      'generation-workflow',
+      GENERATION_NAMESPACE,
+      testPassword,
+    );
+    const scaleNotReady = await routeRoot(
+      'generation-workflow',
+      GENERATION_NAMESPACE,
+      'source_readiness_errors',
+      'scale_not_ready',
+    );
+    await stageTarget('source_readiness_errors');
+    await mutateAndRestore(
+      instanceModel.collection,
+      { _id: scaleNotReady.instances[0]._id },
+      { $set: { status: 'draft' } },
+      expectStageFailure,
+    );
+    const unrelatedInstance = (
+      await routeRoot(
+        'generation-workflow',
+        GENERATION_NAMESPACE,
+        'first_generate_success',
+        'base',
+      )
+    ).instances[0];
+    await mutateAndRestore(
+      instanceModel.collection,
+      { _id: unrelatedInstance._id },
+      { $set: { status: 'in_progress' } },
+      expectStageFailure,
+    );
+    const unrelatedItem = await itemModel.findOne({
+      scaleInstanceId: unrelatedInstance._id,
+    });
+    if (!unrelatedItem) {
+      throw new Error('Missing unrelated source item');
+    }
+    await mutateAndRestore(
+      itemModel.collection,
+      { _id: unrelatedItem._id },
+      { $set: { operatorNote: 'unexpected Stage drift' } },
+      expectStageFailure,
+    );
+
+    const protectedVersion = await versionModel.findOne({
+      status: 'active',
+      scaleCode: { $in: ['mmse', 'moca'] },
+    });
+    if (!protectedVersion) {
+      throw new Error('Missing protected seed version');
+    }
+    await mutateAndRestore(
+      versionModel.collection,
+      { _id: protectedVersion._id },
+      { $set: { displayVersion: 'unexpected Stage seed drift' } },
+      expectStageFailure,
+    );
+
+    await manager.replace(
+      'generation-workflow',
+      GENERATION_NAMESPACE,
+      testPassword,
+    );
+    const preparedReport = await reportModel.findOne({
+      reportType: 'cognitive_assessment',
+      subjectCode: {
+        $regex: `^B10G-${GENERATION_NAMESPACE.toUpperCase()}-`,
+      },
+    });
+    if (!preparedReport) {
+      throw new Error('Missing prepared report for resource-count drift');
+    }
+    const preparedRaw = await reportModel.collection.findOne({
+      _id: preparedReport._id,
+    });
+    if (!preparedRaw) {
+      throw new Error('Missing raw prepared report');
+    }
+    try {
+      await reportModel.collection.deleteOne({ _id: preparedReport._id });
+      await expectStageFailure();
+    } finally {
+      await reportModel.collection.insertOne(preparedRaw);
+    }
+
+    const ownedPatient = await patientModel.findOne({
+      'metadata.b10Fixture.namespace': GENERATION_NAMESPACE,
+    });
+    if (!ownedPatient) {
+      throw new Error('Missing owned patient for profile drift');
+    }
+    await mutateAndRestore(
+      patientModel.collection,
+      { _id: ownedPatient._id },
+      { $set: { 'metadata.b10Fixture.profile': 'public-surface-security' } },
+      expectStageFailure,
+    );
+    expect(await seedHash()).toBe(canonicalSeedHash);
+    await manager.verify(
+      'generation-workflow',
+      GENERATION_NAMESPACE,
+      testPassword,
+      'prepared',
+    );
+  });
+
+  it('accepts all six prepared/first-generate Stage orders and repeated idempotent calls', async () => {
+    const results: Array<{
+      firstGenerated: boolean;
+      order: Array<'scope_conflict' | 'source_readiness_errors'>;
+      reports: number;
+    }> = [];
+    const sequences: Array<{
+      firstGenerated: boolean;
+      order: Array<'scope_conflict' | 'source_readiness_errors'>;
+    }> = [
+      { firstGenerated: false, order: ['scope_conflict'] },
+      { firstGenerated: false, order: ['source_readiness_errors'] },
+      { firstGenerated: true, order: ['scope_conflict'] },
+      { firstGenerated: true, order: ['source_readiness_errors'] },
+      {
+        firstGenerated: true,
+        order: ['scope_conflict', 'source_readiness_errors'],
+      },
+      {
+        firstGenerated: true,
+        order: ['source_readiness_errors', 'scope_conflict'],
+      },
+    ];
+    for (const sequence of sequences) {
+      await manager.replace(
+        'generation-workflow',
+        GENERATION_NAMESPACE,
+        testPassword,
+      );
+      if (sequence.firstGenerated) {
+        await generateFirstReportThroughHttp();
+      }
+      for (const scenarioKey of sequence.order) {
+        const firstStage = await stageTarget(scenarioKey);
+        const repeatedStage = await stageTarget(scenarioKey);
+        expect(firstStage.alreadyStaged).toBe(false);
+        expect(repeatedStage).toEqual({
+          ...firstStage,
+          alreadyStaged: true,
+        });
+      }
+      results.push({
+        ...sequence,
+        reports: await reportModel.countDocuments({
+          subjectCode: {
+            $regex: `^B10G-${GENERATION_NAMESPACE.toUpperCase()}-`,
+          },
+        }),
+      });
+    }
+    expect(results).toHaveLength(6);
+    expect(results.map(({ reports }) => reports)).toEqual([6, 5, 7, 6, 7, 7]);
+    expect(await seedHash()).toBe(canonicalSeedHash);
+  });
+
+  it('enforces the fixed Browser HTTP fault config and proves one real 500 with zero business writes', async () => {
+    await manager.replace(
+      'generation-workflow',
+      GENERATION_NAMESPACE,
+      testPassword,
+    );
+    const faultEnvironment: NodeJS.ProcessEnv = {
+      B10_BROWSER_HTTP_FAULT_PROFILE: 'generation-workflow',
+      B10_BROWSER_HTTP_FAULT_NAMESPACE: GENERATION_NAMESPACE,
+      B10_BROWSER_HTTP_FAULT_SCENARIO: 'latest_lifecycle',
+      B10_BROWSER_HTTP_FAULT_ROUTE: 'latest_failure',
+      B10_BROWSER_HTTP_FAULT_ONCE: 'true',
+      B10_FIXTURE_PASSWORD: testPassword,
+    };
+    const browserRuntime = {
+      nodeEnv: 'test',
+      databasePurpose: 'browser_acceptance',
+      databaseName: 'cogmemory_ad_browser_test',
+    };
+    expect(hasB10BrowserHttpFaultEnvironment({})).toBe(false);
+    expect(resolveB10BrowserHttpFaultConfig({}, browserRuntime)).toBeNull();
+    expect(hasB10BrowserHttpFaultEnvironment(faultEnvironment)).toBe(true);
+    expect(
+      resolveB10BrowserHttpFaultConfig(faultEnvironment, browserRuntime),
+    ).toMatchObject({
+      profile: 'generation-workflow',
+      namespace: GENERATION_NAMESPACE,
+      scenarioKey: 'latest_lifecycle',
+      routeKey: 'latest_failure',
+    });
+    for (const environment of [
+      { B10_BROWSER_HTTP_FAULT_PROFILE: 'generation-workflow' },
+      { ...faultEnvironment, B10_BROWSER_HTTP_FAULT_PROFILE: 'wrong' },
+      { ...faultEnvironment, B10_BROWSER_HTTP_FAULT_SCENARIO: 'wrong' },
+      { ...faultEnvironment, B10_BROWSER_HTTP_FAULT_ROUTE: 'wrong' },
+      { ...faultEnvironment, B10_BROWSER_HTTP_FAULT_ONCE: 'false' },
+      { ...faultEnvironment, B10_BROWSER_HTTP_FAULT_PATH: '/custom' },
+      { ...faultEnvironment, B10_BROWSER_HTTP_FAULT_STATUS: '503' },
+      { ...faultEnvironment, B10_BROWSER_HTTP_FAULT_BODY: 'custom' },
+    ]) {
+      expect(() =>
+        resolveB10BrowserHttpFaultConfig(environment, browserRuntime),
+      ).toThrow(B10FixtureError);
+    }
+    for (const runtime of [
+      { ...browserRuntime, nodeEnv: 'development' },
+      { ...browserRuntime, databasePurpose: 'standard_test' },
+      { ...browserRuntime, databaseName: 'cogmemory_ad_test' },
+    ]) {
+      expect(() =>
+        resolveB10BrowserHttpFaultConfig(faultEnvironment, runtime),
+      ).toThrow(B10FixtureError);
+    }
+    await expect(
+      manager.resolveBrowserHttpFaultTarget(
+        'generation-workflow',
+        GENERATION_NAMESPACE,
+        'B10-wrong-password-Aa1!',
+      ),
+    ).rejects.toMatchObject({ code: 'B10_FIXTURE_ACCOUNT_INVALID' });
+
+    const target = await manager.resolveBrowserHttpFaultTarget(
+      'generation-workflow',
+      GENERATION_NAMESPACE,
+      testPassword,
+    );
+    const normalAgent = request.agent(server);
+    await normalAgent
+      .post('/auth/login')
+      .send({
+        accountName: accountNameFor(
+          'generation-workflow',
+          GENERATION_NAMESPACE,
+          'doctor',
+        ),
+        password: testPassword,
+      })
+      .expect(201);
+    await normalAgent.get(target.path).expect(404);
+
+    const before = await profileBusinessHash(
+      'generation-workflow',
+      GENERATION_NAMESPACE,
+    );
+    const faultModuleRef = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+    const faultApp = faultModuleRef.createNestApplication();
+    configureApp(faultApp);
+    faultApp.use(createB10BrowserHttpFaultMiddleware(target));
+    await faultApp.init();
+    try {
+      const faultServer = requireInitialized<SupertestApp>(
+        faultApp.getHttpServer() as SupertestApp | undefined,
+        'fault HTTP server',
+      );
+      const faultAgent = request.agent(faultServer);
+      await faultAgent
+        .post('/auth/login')
+        .send({
+          accountName: accountNameFor(
+            'generation-workflow',
+            GENERATION_NAMESPACE,
+            'doctor',
+          ),
+          password: testPassword,
+        })
+        .expect(201);
+      await faultAgent.post(target.path).expect(404);
+      const first = await faultAgent
+        .get(target.path)
+        .set('Origin', 'http://localhost:3002')
+        .expect(500);
+      expect(body(first)).toMatchObject({
+        statusCode: 500,
+        path: '/patients/:patientId/visits/:visitId/clinical-reports/latest',
+        message: 'Internal server error',
+      });
+      expect(typeof body(first).timestamp).toBe('string');
+      expect(JSON.stringify(body(first))).not.toMatch(/[a-f\d]{24}/i);
+      expect(first.headers['access-control-allow-origin']).toBe(
+        'http://localhost:3002',
+      );
+      expect(first.headers['access-control-allow-credentials']).toBe('true');
+      const second = await faultAgent.get(target.path).expect(404);
+      expect(body(second).code).toBe('CLINICAL_REPORT_NOT_FOUND');
+      const unrelated = await routeRoot(
+        'generation-workflow',
+        GENERATION_NAMESPACE,
+        'latest_lifecycle',
+        'not_found',
+      );
+      const unrelatedResponse = await faultAgent
+        .get(`${reportPath(unrelated)}/latest`)
+        .expect(404);
+      expect(body(unrelatedResponse).code).toBe('CLINICAL_REPORT_NOT_FOUND');
+    } finally {
+      await faultApp.close();
+    }
+    expect(
+      await profileBusinessHash('generation-workflow', GENERATION_NAMESPACE),
+    ).toBe(before);
   });
 
   it('proves the five remaining routes through real latest/generate HTTP and fixed idempotent stages', async () => {
