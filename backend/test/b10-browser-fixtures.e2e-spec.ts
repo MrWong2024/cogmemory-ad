@@ -4,9 +4,17 @@ import { getConnectionToken, getModelToken } from '@nestjs/mongoose';
 import { Test } from '@nestjs/testing';
 import { spawnSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
+import { access, lstat, mkdir, readFile, rm, symlink } from 'fs/promises';
 import type { Connection, Model } from 'mongoose';
 import { Types } from 'mongoose';
+import path from 'path';
 import request, { type Response } from 'supertest';
+import {
+  b10RuntimeWriteSummary,
+  parseCommand,
+  removeB10RuntimeDescriptor,
+  writeB10RuntimeDescriptor,
+} from '../scripts/b10-browser-fixtures';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import {
@@ -651,6 +659,41 @@ describe('B10 profile-scoped browser fixture support (e2e)', () => {
       () => assertB10SafeManifest({ metadata: 'forbidden' }),
       'B10_FIXTURE_MANIFEST_UNSAFE',
     );
+    expectFixtureCode(
+      () =>
+        parseCommand([
+          'runtime',
+          '--profile',
+          'generation-workflow',
+          '--confirm-runtime',
+          '--output-name',
+          'b10-89.json',
+        ]),
+      'B10_FIXTURE_RUNTIME_TARGET_NOT_ALLOWED',
+    );
+    expectFixtureCode(
+      () =>
+        parseCommand([
+          'runtime',
+          '--profile',
+          'public-surface-security',
+          '--output-name',
+          'b10-89.json',
+        ]),
+      'B10_FIXTURE_RUNTIME_CONFIRMATION_REQUIRED',
+    );
+    expectFixtureCode(
+      () =>
+        parseCommand([
+          'runtime',
+          '--profile',
+          'public-surface-security',
+          '--confirm-runtime',
+          '--output-name',
+          '../b10-89.json',
+        ]),
+      'B10_FIXTURE_RUNTIME_OUTPUT_NAME_INVALID',
+    );
 
     const script = 'scripts/b10-browser-fixtures.ts';
     const cleanupWithoutConfirmation = spawnSync(
@@ -917,6 +960,154 @@ describe('B10 profile-scoped browser fixture support (e2e)', () => {
       testPassword,
       'prepared',
     );
+  });
+
+  it('resolves and atomically manages only the fixed prepared B10-89 runtime descriptor', async () => {
+    const profileHashBefore = await profileBusinessHash(
+      'public-surface-security',
+      PUBLIC_NAMESPACE,
+    );
+    const descriptor = await manager.resolveKeyboardRuntimeDescriptor(
+      'public-surface-security',
+      PUBLIC_NAMESPACE,
+      testPassword,
+    );
+    expect(Object.keys(descriptor).sort()).toEqual([
+      'loginIdentifier',
+      'navigationPath',
+      'profile',
+      'role',
+      'routeKey',
+      'scenarioKey',
+      'version',
+    ]);
+    expect(descriptor).toMatchObject({
+      version: 1,
+      profile: 'public-surface-security',
+      scenarioKey: 'responsive_keyboard',
+      routeKey: 'long_report',
+      role: 'doctor',
+    });
+    expect(descriptor.navigationPath).toMatch(
+      /^\/patients\/[a-f\d]{24}\/visits\/[a-f\d]{24}$/i,
+    );
+    expect(JSON.stringify(descriptor)).not.toMatch(
+      /password|cookie|session|mongodb|metadata|objectKey|reportId|scaleInstanceId|narrative/i,
+    );
+    await expect(
+      manager.resolveKeyboardRuntimeDescriptor(
+        'generation-workflow',
+        GENERATION_NAMESPACE,
+        testPassword,
+      ),
+    ).rejects.toMatchObject({
+      code: 'B10_FIXTURE_RUNTIME_TARGET_NOT_ALLOWED',
+    });
+    await expect(
+      manager.resolveKeyboardRuntimeDescriptor(
+        'public-surface-security',
+        'b10g-wrong-profile',
+        testPassword,
+      ),
+    ).rejects.toMatchObject({ code: 'B10_FIXTURE_NAMESPACE_INVALID' });
+    await expect(
+      manager.resolveKeyboardRuntimeDescriptor(
+        'public-surface-security',
+        PUBLIC_NAMESPACE,
+        'wrong-password-value',
+      ),
+    ).rejects.toBeInstanceOf(B10FixtureError);
+
+    const testRoot = path.resolve(
+      process.cwd(),
+      'test-results',
+      `b10-runtime-${randomUUID()}`,
+    );
+    const runtimeRoot = path.join(testRoot, 'runtime');
+    const outsideRoot = path.join(testRoot, 'outside');
+    const outputName = 'b10-89-runtime.json';
+    try {
+      const target = await writeB10RuntimeDescriptor(
+        descriptor,
+        outputName,
+        runtimeRoot,
+      );
+      const stored = JSON.parse(await readFile(target, 'utf8')) as unknown;
+      expect(stored).toEqual(descriptor);
+      if (process.platform !== 'win32') {
+        expect((await lstat(target)).mode & 0o777).toBe(0o600);
+      }
+      await writeB10RuntimeDescriptor(descriptor, outputName, runtimeRoot);
+      expect(JSON.parse(await readFile(target, 'utf8'))).toEqual(descriptor);
+      await expect(
+        writeB10RuntimeDescriptor(descriptor, '../escape.json', runtimeRoot),
+      ).rejects.toMatchObject({
+        code: 'B10_FIXTURE_RUNTIME_OUTPUT_NAME_INVALID',
+      });
+
+      await mkdir(outsideRoot, { recursive: true });
+      await symlink(
+        outsideRoot,
+        path.join(runtimeRoot, 'escape.json'),
+        'junction',
+      );
+      await expect(
+        writeB10RuntimeDescriptor(descriptor, 'escape.json', runtimeRoot),
+      ).rejects.toMatchObject({ code: 'B10_FIXTURE_RUNTIME_TARGET_UNSAFE' });
+
+      expect(await removeB10RuntimeDescriptor(outputName, runtimeRoot)).toBe(
+        true,
+      );
+      await expect(access(target)).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(await removeB10RuntimeDescriptor(outputName, runtimeRoot)).toBe(
+        false,
+      );
+    } finally {
+      await rm(testRoot, { recursive: true, force: true });
+    }
+
+    const summary = b10RuntimeWriteSummary();
+    expect(summary).toEqual({
+      ok: true,
+      command: 'runtime',
+      profile: 'public-surface-security',
+      scenarioKey: 'responsive_keyboard',
+      routeKey: 'long_report',
+      role: 'doctor',
+      preparedVerified: true,
+      runtimeDescriptorWritten: true,
+    });
+    const stdout = JSON.stringify(summary);
+    expect(stdout).not.toContain(descriptor.loginIdentifier);
+    expect(stdout).not.toContain(descriptor.navigationPath);
+
+    const root = await routeRoot(
+      'public-surface-security',
+      PUBLIC_NAMESPACE,
+      'responsive_keyboard',
+      'long_report',
+    );
+    const report = await reportModel.findOne({
+      assessmentVisitId: root.visit._id,
+    });
+    if (!report) throw new Error('Missing runtime prepared report');
+    await mutateAndRestore(
+      reportModel.collection,
+      { _id: report._id },
+      { $set: { status: 'draft' } },
+      async () => {
+        await expect(
+          manager.resolveKeyboardRuntimeDescriptor(
+            'public-surface-security',
+            PUBLIC_NAMESPACE,
+            testPassword,
+          ),
+        ).rejects.toBeInstanceOf(B10FixtureError);
+      },
+    );
+    expect(
+      await profileBusinessHash('public-surface-security', PUBLIC_NAMESPACE),
+    ).toBe(profileHashBefore);
   });
 
   it('rejects long-report prepared drift in submission, status, and legal scale traces', async () => {

@@ -120,6 +120,16 @@ export type B10BrowserHttpFaultTarget = {
   path: string;
 };
 
+export type B10KeyboardRuntimeDescriptor = {
+  version: 1;
+  profile: 'public-surface-security';
+  scenarioKey: 'responsive_keyboard';
+  routeKey: 'long_report';
+  role: 'doctor';
+  loginIdentifier: string;
+  navigationPath: string;
+};
+
 type FixtureMetadata = {
   version: 1;
   profile: B10Profile;
@@ -409,6 +419,38 @@ export class B10BrowserFixtureManager {
       routeKey: 'latest_failure',
       method: 'GET',
       path: `/patients/${root.patient._id.toString()}/visits/${root.visit._id.toString()}/clinical-reports/latest`,
+    };
+  }
+
+  async resolveKeyboardRuntimeDescriptor(
+    profile: B10Profile,
+    rawNamespace: string,
+    rawPassword: string | undefined,
+  ): Promise<B10KeyboardRuntimeDescriptor> {
+    if (profile !== 'public-surface-security') {
+      throw new B10FixtureError(
+        'B10_FIXTURE_RUNTIME_TARGET_NOT_ALLOWED',
+        'Runtime resolution is limited to the fixed B10-89 public keyboard target',
+        profile,
+      );
+    }
+    const namespace = validateB10Namespace(profile, rawNamespace);
+    const password = requireB10FixturePassword(rawPassword);
+    await this.verifyInternal(profile, namespace, password, 'prepared');
+    const root = await this.requireRoot(
+      profile,
+      namespace,
+      'responsive_keyboard',
+      'long_report',
+    );
+    return {
+      version: 1,
+      profile,
+      scenarioKey: 'responsive_keyboard',
+      routeKey: 'long_report',
+      role: 'doctor',
+      loginIdentifier: accountNameFor(profile, namespace, 'doctor'),
+      navigationPath: `/patients/${root.patient._id.toString()}/visits/${root.visit._id.toString()}`,
     };
   }
 
