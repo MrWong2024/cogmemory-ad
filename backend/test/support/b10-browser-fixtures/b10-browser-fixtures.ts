@@ -34,6 +34,7 @@ import {
   ClinicalReport,
   type ClinicalReportDocument,
 } from '../../../src/modules/reports/schemas/clinical-report.schema';
+import { readClinicalReportSubmission } from '../../../src/modules/reports/lib/clinical-report-review';
 import { ScaleDefinition } from '../../../src/modules/scales/schemas/scale-definition.schema';
 import { ScaleVersion } from '../../../src/modules/scales/schemas/scale-version.schema';
 import { ScaleCatalogService } from '../../../src/modules/scales/services/scale-catalog.service';
@@ -138,6 +139,10 @@ type IndexDescription = {
 
 const BASELINE_DATE = new Date('2026-07-26T02:00:00.000Z');
 const PATH_TEMPLATE = '/patients/:patient/visits/:visit';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
 export function isB10ProtectedCanonicalScaleVersion(value: {
   scaleCode?: unknown;
@@ -1264,6 +1269,49 @@ export class B10BrowserFixtureManager {
     ) {
       throw this.scenarioInvalid(profile, scenarioKey);
     }
+    if (contract.reportVariant === 'long_pending_confirmation') {
+      const generation = report.metadata?.a20Generation;
+      const submission = report.metadata
+        ? readClinicalReportSubmission(report.metadata)
+        : null;
+      const rootInstanceIds = new Set(
+        root.instances.map(({ _id }) => _id.toString()),
+      );
+      const legalTraceIds = report.scaleTraces
+        .map(({ scaleInstanceId }) => scaleInstanceId?.toString() ?? '')
+        .filter(
+          (scaleInstanceId) =>
+            Types.ObjectId.isValid(scaleInstanceId) &&
+            rootInstanceIds.has(scaleInstanceId),
+        );
+      const doctor = await this.models.users
+        .findOne({
+          accountName: accountNameFor(profile, namespace, 'doctor'),
+        })
+        .exec();
+      if (
+        report.status !== 'pending_confirmation' ||
+        report.source !== 'mixed' ||
+        !submission ||
+        !report.narrative?.doctorOpinion?.trim() ||
+        !report.narrative?.recommendationText?.trim() ||
+        !report.narrative.chiefSummary?.trim() ||
+        report.scaleTraces.length < 3 ||
+        legalTraceIds.length < 1 ||
+        !isRecord(generation) ||
+        !Array.isArray(generation.primaryScaleInstanceIds) ||
+        !Array.isArray(generation.scoreResultIds) ||
+        !Array.isArray(generation.cognitiveDomainResultIds) ||
+        generation.aiUsed !== false ||
+        report.confirmation !== null ||
+        !doctor ||
+        doctor.status !== 'active' ||
+        doctor.userType !== 'doctor' ||
+        !doctor.roles.includes('doctor')
+      ) {
+        throw this.scenarioInvalid(profile, scenarioKey);
+      }
+    }
     if (
       contract.reportVariant === 'generation_null' &&
       report.metadata !== null
@@ -1608,6 +1656,7 @@ export class B10BrowserFixtureManager {
           expectedHttpStatus: contract.expectedHttpStatus,
           postBrowserSideEffect: contract.postBrowserSideEffect,
           browserActionPlan: contract.browserActionPlan,
+          keyboardTargets: contract.keyboardTargets,
         });
       }
       result.push({

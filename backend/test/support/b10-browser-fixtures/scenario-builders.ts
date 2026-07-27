@@ -745,7 +745,7 @@ export class B10ScenarioBuilder {
     await this.models.reports.create(
       await this.reportDocument(root, variant, actor),
     );
-    if (variant === 'rich_draft' || variant === 'long_content') {
+    if (variant === 'rich_draft' || variant === 'long_pending_confirmation') {
       const report = await this.models.reports
         .findOne({ assessmentVisitId: root.visitId })
         .exec();
@@ -778,7 +778,7 @@ export class B10ScenarioBuilder {
       variant === 'different_scope_draft' && root.scaleInstanceIds.length > 1
         ? [root.scaleInstanceIds[0]]
         : root.scaleInstanceIds.slice(0, 1);
-    const longContent = variant === 'long_content';
+    const longContent = variant === 'long_pending_confirmation';
     const includedSourceIds = longContent ? root.scaleInstanceIds : primaryIds;
     const firstInstanceId = primaryIds[0] ?? new Types.ObjectId();
     const [scores, domains, evidence, items] = await Promise.all([
@@ -809,7 +809,9 @@ export class B10ScenarioBuilder {
         root.routeKey.length * 1000,
     );
     const confirmed = variant === 'confirmed_history';
-    const pending = variant === 'pending_confirmation';
+    const pending =
+      variant === 'pending_confirmation' ||
+      variant === 'long_pending_confirmation';
     const voided = variant === 'voided';
     const incomplete = variant === 'incomplete';
     const generationNull = variant === 'generation_null';
@@ -857,6 +859,7 @@ export class B10ScenarioBuilder {
           ...(pending
             ? {
                 a21Submission: {
+                  ...(longContent ? { version: 1 } : {}),
                   submissionId: `b10-${this.namespace}-submission`,
                   submittedAt: confirmedAt,
                   submittedBy: actor.id,

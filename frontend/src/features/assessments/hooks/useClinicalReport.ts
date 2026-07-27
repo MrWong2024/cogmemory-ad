@@ -453,8 +453,14 @@ export function useClinicalReport({
       }
 
       setGenerateError(error);
-      setConfirmationCheckedState(false);
       setLiveMessage(null);
+
+      if (error.kind === 'service_unavailable') {
+        // Preserve the explicit scope and confirmation state so the user can
+        // retry manually after a transport failure.
+      } else {
+        setConfirmationCheckedState(false);
+      }
 
       if (error.kind === 'forbidden') {
         setStatus('forbidden');

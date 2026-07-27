@@ -587,6 +587,24 @@ describe('B10 profile-scoped browser fixture support (e2e)', () => {
         transition: 'stage-source-scale-not-ready',
       },
     ]);
+    const responsiveKeyboardRoute = scenarioDefinitionsFor(
+      'public-surface-security',
+    )
+      .find(({ scenarioKey }) => scenarioKey === 'responsive_keyboard')
+      ?.routeContracts.find(({ key }) => key === 'long_report');
+    expect(responsiveKeyboardRoute).toMatchObject({
+      reportVariant: 'long_pending_confirmation',
+      keyboardTargets: ['button', 'checkbox', 'link', 'details'],
+      postBrowserSideEffect: 'none',
+    });
+    expect(
+      scenarioDefinitionsFor('public-surface-security').every(
+        ({ routeContracts }) =>
+          routeContracts.every(
+            ({ postBrowserSideEffect }) => postBrowserSideEffect === 'none',
+          ),
+      ),
+    ).toBe(true);
     expectFixtureCode(
       () => validateB10Profile('core-workflow'),
       'B10_FIXTURE_PROFILE_INVALID',
@@ -820,6 +838,119 @@ describe('B10 profile-scoped browser fixture support (e2e)', () => {
         'post-browser',
       ),
     ).rejects.toBeInstanceOf(B10FixtureError);
+  });
+
+  it('prepares a legal long pending-confirmation report and exposes only its public keyboard prerequisites', async () => {
+    const root = await routeRoot(
+      'public-surface-security',
+      PUBLIC_NAMESPACE,
+      'responsive_keyboard',
+      'long_report',
+    );
+    const report = await reportModel.findOne({
+      assessmentVisitId: root.visit._id,
+    });
+    if (!report) {
+      throw new Error('Missing responsive keyboard report');
+    }
+    expect(report).toMatchObject({
+      status: 'pending_confirmation',
+      source: 'mixed',
+      confirmation: null,
+    });
+    expect(report.scaleTraces).toHaveLength(3);
+    expect(report.narrative?.doctorOpinion).toBeTruthy();
+    expect(report.narrative?.recommendationText).toBeTruthy();
+    expect(report.metadata?.a20Generation).toMatchObject({ aiUsed: false });
+    expect(report.metadata?.a21Submission).toMatchObject({ version: 1 });
+
+    const agent = request.agent(server);
+    await agent
+      .post('/auth/login')
+      .send({
+        accountName: accountNameFor(
+          'public-surface-security',
+          PUBLIC_NAMESPACE,
+          'doctor',
+        ),
+        password: testPassword,
+      })
+      .expect(201);
+    const latest = await agent.get(`${reportPath(root)}/latest`).expect(200);
+    const publicReport = record(body(latest).report, 'long public report');
+    const narrative = record(publicReport.narrative, 'long public narrative');
+    const generation = record(
+      publicReport.generation,
+      'long public generation',
+    );
+    expect(publicReport).toMatchObject({
+      status: 'pending_confirmation',
+      source: 'mixed',
+      confirmation: null,
+      isFinal: false,
+    });
+    expect(record(publicReport.submission, 'long public submission')).toEqual(
+      expect.objectContaining({
+        submissionNote: 'B10 synthetic workflow note',
+      }),
+    );
+    expect(narrative.doctorOpinion).toBeTruthy();
+    expect(narrative.recommendationText).toBeTruthy();
+    expect(String(narrative.chiefSummary).length).toBeGreaterThan(300);
+    expect(
+      objectArray(publicReport.scaleTraces, 'long public traces'),
+    ).toHaveLength(3);
+    expect(
+      objectArray(publicReport.scoreSnapshots, 'long score snapshots').length,
+    ).toBeGreaterThan(1);
+    expect(
+      objectArray(publicReport.domainSnapshots, 'long domain snapshots').length,
+    ).toBeGreaterThan(1);
+    expect(generation.aiUsed).toBe(false);
+    expect(JSON.stringify(publicReport)).not.toMatch(
+      /b10-private-|storageObjectKey|qualityHints|operatorNote/i,
+    );
+    await agent.post('/auth/logout').expect(201);
+    await manager.verify(
+      'public-surface-security',
+      PUBLIC_NAMESPACE,
+      testPassword,
+      'prepared',
+    );
+  });
+
+  it('rejects long-report prepared drift in submission, status, and legal scale traces', async () => {
+    const root = await routeRoot(
+      'public-surface-security',
+      PUBLIC_NAMESPACE,
+      'responsive_keyboard',
+      'long_report',
+    );
+    const report = await reportModel.findOne({
+      assessmentVisitId: root.visit._id,
+    });
+    if (!report) {
+      throw new Error('Missing responsive keyboard report');
+    }
+    for (const update of [
+      { $unset: { 'metadata.a21Submission': '' } },
+      { $set: { status: 'draft' } },
+      { $set: { scaleTraces: [] } },
+    ]) {
+      await mutateAndRestore(
+        reportModel.collection,
+        { _id: report._id },
+        update,
+        () =>
+          expectPreparedFailure('public-surface-security', PUBLIC_NAMESPACE),
+      );
+    }
+    await manager.verify(
+      'public-surface-security',
+      PUBLIC_NAMESPACE,
+      testPassword,
+      'prepared',
+    );
   });
 
   it('detects upstream source, report, conflict-resource, cross-profile, and canonical seed drift without repair', async () => {

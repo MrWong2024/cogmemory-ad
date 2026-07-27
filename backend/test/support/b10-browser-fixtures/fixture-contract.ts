@@ -135,6 +135,8 @@ export type B10VerificationFlag =
   | 'keyboard'
   | 'viewport';
 
+export type B10KeyboardTarget = 'button' | 'checkbox' | 'link' | 'details';
+
 export type B10TargetArea =
   | 'report-loading'
   | 'scope-selector'
@@ -196,7 +198,7 @@ export type B10ReportVariant =
   | 'generation_null'
   | 'confirmed_history'
   | 'pending_confirmation'
-  | 'long_content'
+  | 'long_pending_confirmation'
   | 'generation_conflict_blocker';
 
 export type B10RoutePreparedContract = {
@@ -212,6 +214,7 @@ export type B10RoutePreparedContract = {
   automaticRetry: false;
   postBrowserSideEffect: B10PostBrowserSideEffect;
   browserActionPlan: B10BrowserActionPlan;
+  keyboardTargets: readonly B10KeyboardTarget[];
 };
 
 export type B10ScenarioDefinition = {
@@ -1026,6 +1029,7 @@ function route(
     patientStatus?: B10RoutePreparedContract['patientStatus'];
     visitStatus?: B10RoutePreparedContract['visitStatus'];
     browserActionPlan?: B10BrowserActionPlan;
+    keyboardTargets?: readonly B10KeyboardTarget[];
   } = {},
 ): B10RoutePreparedContract {
   const requestSteps =
@@ -1068,6 +1072,7 @@ function route(
     automaticRetry: false,
     postBrowserSideEffect,
     browserActionPlan: options.browserActionPlan ?? defaultActionPlan,
+    keyboardTargets: options.keyboardTargets ?? [],
   };
 }
 
@@ -1762,9 +1767,13 @@ const publicScenarios = [
         ['B10-88', 'B10-89'],
         'long report with multiple traces',
         ['completed', 'completed', 'completed'],
-        'long_content',
+        'long_pending_confirmation',
         latestOnce,
         '200',
+        'none',
+        {
+          keyboardTargets: ['button', 'checkbox', 'link', 'details'],
+        },
       ),
     ],
   },
@@ -1849,6 +1858,7 @@ export type B10SafeRoute = {
   expectedHttpStatus: string;
   postBrowserSideEffect: B10PostBrowserSideEffect;
   browserActionPlan: B10BrowserActionPlan;
+  keyboardTargets: readonly B10KeyboardTarget[];
 };
 
 export type B10SafeScenarioManifest = {
@@ -2219,6 +2229,11 @@ export function assertB10Contract(): void {
       );
     }),
   );
+  const responsiveKeyboardRoute = B10_SCENARIOS.find(
+    ({ profile, scenarioKey }) =>
+      profile === 'public-surface-security' &&
+      scenarioKey === 'responsive_keyboard',
+  )?.routeContracts.find(({ key }) => key === 'long_report');
   if (
     B10_AUDIT_MATRIX.length !== 95 ||
     matrixIds.length !== new Set(matrixIds).size ||
@@ -2236,6 +2251,9 @@ export function assertB10Contract(): void {
     !entriesValid ||
     !routesValid ||
     !actionPlansValid ||
+    responsiveKeyboardRoute?.reportVariant !== 'long_pending_confirmation' ||
+    responsiveKeyboardRoute.keyboardTargets.join('|') !==
+      'button|checkbox|link|details' ||
     stagedTargets.join('|') !==
       'generation-workflow/scope_conflict/base|generation-workflow/source_readiness_errors/scale_not_ready' ||
     B10_DEFAULT_NAMESPACES['generation-workflow'] ===
@@ -2280,6 +2298,7 @@ const ALLOWED_MANIFEST_KEYS = new Set([
   'automaticRetry',
   'postBrowserSideEffect',
   'browserActionPlan',
+  'keyboardTargets',
   'scopeSource',
   'fixtureTransitionRequired',
   'fixtureTransition',
