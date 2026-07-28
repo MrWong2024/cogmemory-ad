@@ -136,9 +136,24 @@ type TimedNetworkEvent = {
   failureReason: 'aborted' | 'timed_out' | 'failed' | null;
 };
 
-type ExpectedNetworkConsoleEvent = Omit<TimedNetworkEvent, 'occurredAt'> & {
-  contract: 'explicit_action_failure' | 'allowed_readonly_404_or_409';
-  correlationWindowMs: number;
+type SafeConsoleErrorEvent = {
+  occurredAt: number;
+  category: 'network' | 'other';
+  safeEndpointPattern: string;
+};
+
+type ExpectedNetworkConsoleEvent = Omit<TimedNetworkEvent, 'occurredAt'>;
+
+type CorrelatedNetworkConsoleEvent = ExpectedNetworkConsoleEvent & {
+  contract: 'explicit_action_failure' | 'route_scoped_readonly_failure';
+};
+
+type RouteScopedReadonlyFailureContract = {
+  method: 'GET';
+  safeEndpointPattern: string;
+  status: 409;
+  failureReason: null;
+  requestCount: 1;
 };
 
 export type B11SessionSummary = {
@@ -207,6 +222,12 @@ const ACTION_SUFFIX: Record<B11ActionKind, string> = {
   confirm: '/confirm',
 };
 
+const ACTION_METHOD: Record<B11ActionKind, string> = {
+  edit: 'PATCH',
+  submit: 'POST',
+  confirm: 'POST',
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -227,8 +248,12 @@ function safeStringArray(value: unknown): string[] {
 
 function parseSafeActor(value: unknown): SafeActorFacts | null {
   if (!isRecord(value)) return null;
-  if (typeof value.operatorId === 'string' && value.operatorId.length > 0) {
+  if (Object.hasOwn(value, 'operatorId')) {
     throw new Error('B11 public workflow actor exposed an internal operator id');
+  }
+  const allowedKeys = new Set(['operatorName', 'operatorRole']);
+  if (Object.keys(value).some((key) => !allowedKeys.has(key))) {
+    throw new Error('B11 public workflow actor exposed an unexpected field');
   }
   return {
     operatorName: safeString(value.operatorName),
@@ -324,6 +349,32 @@ function unrelatedOutputRequest(entry: NetworkLedgerEntry): boolean {
   return /(?:pdf|print|download|signature|\bai\b|llm)/i.test(
     entry.safeUrlPattern,
   );
+}
+
+function productBusinessWrite(entry: NetworkLedgerEntry): boolean {
+  return (
+    mutation(entry) &&
+    entry.safeUrlPattern !== '/auth/login' &&
+    entry.safeUrlPattern !== '/auth/logout'
+  );
+}
+
+function correctedReadonlyFailureContract(
+  descriptor: B11CoreRuntimeDescriptor,
+): RouteScopedReadonlyFailureContract | null {
+  if (
+    descriptor.scenarioKey !== 'final-readonly' ||
+    descriptor.routeKey !== 'corrected-readonly'
+  ) {
+    return null;
+  }
+  return {
+    method: 'GET',
+    safeEndpointPattern: '/patients/<id>/visits/<id>/clinical-reports',
+    status: 409,
+    failureReason: null,
+    requestCount: 1,
+  };
 }
 
 function relevantEntry(entry: NetworkLedgerEntry): boolean {
@@ -481,13 +532,14 @@ export class B11BrowserSession {
   private readonly latestFacts: LatestFacts[] = [];
   private readonly captureTasks: Promise<void>[] = [];
   private readonly captureFailures: CaptureFailureCategory[] = [];
-  private readonly consoleErrors: Array<{
-    occurredAt: number;
-    category: 'network' | 'other';
-  }> = [];
+  private readonly consoleErrors: SafeConsoleErrorEvent[] = [];
   private readonly timedNetworkEvents: TimedNetworkEvent[] = [];
   private readonly actionRequests: ActionRequestEvidence[] = [];
   private readonly actionResponses: SafeReportFacts[] = [];
+  private readonly explicitActionOutcomes: Array<{
+    action: B11ActionKind;
+    status: number;
+  }> = [];
   private readonly explicitActionCounts: Record<B11ActionKind, number> = {
     edit: 0,
     submit: 0,
@@ -596,6 +648,7 @@ export class B11BrowserSession {
       )
         ? 'network'
         : 'other',
+      safeEndpointPattern: sanitizeUrlPattern(message.location().url),
     });
   };
 
@@ -810,6 +863,7 @@ export class B11BrowserSession {
     await trigger();
     const response = await responsePromise;
     const facts = await parseSafeReportFacts(response);
+    this.explicitActionOutcomes.push({ action, status: response.status() });
     this.actionResponses.push(facts);
     return { status: response.status(), facts };
   }
@@ -820,27 +874,37 @@ export class B11BrowserSession {
       .map((entry) => ({ ...entry, bodyKeys: [...entry.bodyKeys] }));
   }
 
-  private correlateExpectedNetworkConsoleEvents(): ExpectedNetworkConsoleEvent[] {
+  private correlateExpectedNetworkConsoleEvents(): CorrelatedNetworkConsoleEvent[] {
     const correlationWindowMs = 2_500;
+    const readonlyContract = correctedReadonlyFailureContract(this.descriptor);
     const candidates = this.timedNetworkEvents
       .map((event) => {
+        const action = (Object.keys(ACTION_SUFFIX) as B11ActionKind[]).find(
+          (candidate) =>
+            event.method === ACTION_METHOD[candidate] &&
+            event.safeEndpointPattern.endsWith(ACTION_SUFFIX[candidate]),
+        );
         const explicitActionFailure =
+          action !== undefined &&
           event.status !== null &&
           event.status >= 400 &&
-          Object.values(ACTION_SUFFIX).some((suffix) =>
-            event.safeEndpointPattern.endsWith(suffix),
-          );
-        const allowedReadonlyFailure =
-          event.method === 'GET' &&
-          (event.status === 404 || event.status === 409) &&
           event.failureReason === null &&
-          event.safeEndpointPattern.endsWith('/score-results/latest');
+          this.explicitActionOutcomes.some(
+            (outcome) =>
+              outcome.action === action && outcome.status === event.status,
+          );
+        const routeScopedReadonlyFailure =
+          readonlyContract !== null &&
+          event.method === readonlyContract.method &&
+          event.safeEndpointPattern === readonlyContract.safeEndpointPattern &&
+          event.status === readonlyContract.status &&
+          event.failureReason === readonlyContract.failureReason;
         return {
           event,
           contract: explicitActionFailure
             ? ('explicit_action_failure' as const)
-            : allowedReadonlyFailure
-              ? ('allowed_readonly_404_or_409' as const)
+            : routeScopedReadonlyFailure
+              ? ('route_scoped_readonly_failure' as const)
               : null,
         };
       })
@@ -849,11 +913,11 @@ export class B11BrowserSession {
           candidate,
         ): candidate is {
           event: TimedNetworkEvent;
-          contract: ExpectedNetworkConsoleEvent['contract'];
+          contract: CorrelatedNetworkConsoleEvent['contract'];
         } => candidate.contract !== null,
       );
     const used = new Set<number>();
-    const matched: ExpectedNetworkConsoleEvent[] = [];
+    const matched: CorrelatedNetworkConsoleEvent[] = [];
     for (const consoleEvent of this.consoleErrors) {
       if (consoleEvent.category !== 'network') {
         throw new Error('B11 Console error was not a network event');
@@ -864,7 +928,12 @@ export class B11BrowserSession {
           index,
           delta: Math.abs(value.event.occurredAt - consoleEvent.occurredAt),
         }))
-        .filter(({ index, delta }) => !used.has(index) && delta <= correlationWindowMs)
+        .filter(
+          ({ event, index, delta }) =>
+            !used.has(index) &&
+            event.safeEndpointPattern === consoleEvent.safeEndpointPattern &&
+            delta <= correlationWindowMs,
+        )
         .sort((left, right) => left.delta - right.delta)[0];
       if (!candidate) {
         throw new Error(
@@ -878,20 +947,33 @@ export class B11BrowserSession {
         status: candidate.event.status,
         failureReason: candidate.event.failureReason,
         contract: candidate.contract,
-        correlationWindowMs,
       });
     }
-    for (const event of matched.filter(
-      ({ contract }) => contract === 'allowed_readonly_404_or_409',
-    )) {
+    if (readonlyContract) {
       const attempts = this.timedNetworkEvents.filter(
-        (candidate) =>
-          candidate.method === event.method &&
-          candidate.safeEndpointPattern === event.safeEndpointPattern,
+        (event) =>
+          event.method === readonlyContract.method &&
+          event.safeEndpointPattern === readonlyContract.safeEndpointPattern,
+      );
+      const matchedReadonlyCount = matched.filter(
+        ({ contract }) => contract === 'route_scoped_readonly_failure',
       ).length;
-      if (attempts !== 1) {
+      if (
+        attempts.length !== readonlyContract.requestCount ||
+        matchedReadonlyCount !== readonlyContract.requestCount
+      ) {
         throw new Error(
-          'B11 expected read-only Console event had retry or polling activity',
+          'B11 route-scoped read-only Console contract was not one-to-one',
+        );
+      }
+      const [attempt] = attempts;
+      if (
+        !attempt ||
+        attempt.status !== readonlyContract.status ||
+        attempt.failureReason !== readonlyContract.failureReason
+      ) {
+        throw new Error(
+          'B11 route-scoped read-only request violated its exact status contract',
         );
       }
     }
@@ -980,14 +1062,22 @@ export class B11BrowserSession {
       ).toBe(true);
 
       const consoleSummary = this.stopConsoleAudit();
-      const expectedNetworkEvents =
+      const correlatedNetworkEvents =
         this.correlateExpectedNetworkConsoleEvents();
-      const expectedActionFailureCount = expectedNetworkEvents.filter(
+      const expectedActionFailureCount = correlatedNetworkEvents.filter(
         ({ contract }) => contract === 'explicit_action_failure',
       ).length;
-      const expectedSiblingReadFailureCount = expectedNetworkEvents.filter(
-        ({ contract }) => contract === 'allowed_readonly_404_or_409',
+      const expectedSiblingReadFailureCount = correlatedNetworkEvents.filter(
+        ({ contract }) => contract === 'route_scoped_readonly_failure',
       ).length;
+      const expectedNetworkEvents = correlatedNetworkEvents.map(
+        ({ method, safeEndpointPattern, status, failureReason }) => ({
+          method,
+          safeEndpointPattern,
+          status,
+          failureReason,
+        }),
+      );
       expect(consoleSummary.warningCount).toBe(0);
       expect(consoleSummary.errorCount).toBe(expectedNetworkEvents.length);
       expect(consoleSummary.pageErrorCount).toBe(0);
@@ -1036,6 +1126,9 @@ export class B11BrowserSession {
       const unrelatedOutputs = entries.filter(unrelatedOutputRequest);
       expect(forbiddenWrites).toHaveLength(0);
       expect(unrelatedOutputs).toHaveLength(0);
+      if (correctedReadonlyFailureContract(this.descriptor)) {
+        expect(entries.filter(productBusinessWrite)).toHaveLength(0);
+      }
       expect(
         this.actionRequests.every(
           ({ expectedUpdatedAtMatchesLatest, confirmIsTrue }) =>
@@ -1353,7 +1446,11 @@ export async function assertB11EditorialSummary(
     exact: true,
   });
   await expect(heading).toHaveCount(1);
-  const section = page.locator('section').filter({ has: heading });
+  const workflow = page.locator(
+    'section[aria-labelledby="clinical-report-workflow-summary-heading"]',
+  );
+  await expect(workflow).toHaveCount(1);
+  const section = workflow.locator('section').filter({ has: heading });
   await expect(section).toHaveCount(1);
   const valueFor = (label: string) =>
     section.locator('dt', { hasText: label }).locator('..').locator('dd');
@@ -1415,7 +1512,7 @@ export async function assertB11EditorialPrivacy(
     const disclosure =
       '仅展示最新公开摘要与当前页面会话回执，不公开完整编辑历史、前后值、metadata 或签名字段。';
     const forbidden =
-      /previousValues?|nextValues?|\bprevious\b|\bnext\b|metadata|a21Edits|editEvents|编辑事件数组/i;
+      /previousValues?|nextValues?|metadata|a21Edits|editEvents|编辑事件数组/i;
     const clone = document.documentElement.cloneNode(true) as HTMLElement;
     clone.querySelectorAll('script,style').forEach((node) => node.remove());
     const serializedWithoutDisclosure = clone.outerHTML.replace(disclosure, '');

@@ -285,7 +285,7 @@ test.describe('B11 core / edit-basics', () => {
             'editedBy',
             'eventId',
           ],
-          actorKeys: ['operatorId', 'operatorName', 'operatorRole'],
+          actorKeys: ['operatorName', 'operatorRole'],
           changedFields: ['doctorOpinion', 'recommendationText'],
           editedBy: {
             operatorRole: 'doctor',
