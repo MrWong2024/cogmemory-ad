@@ -54,6 +54,28 @@ CogMemory AD 更适合：
 - 不使用复杂装饰性布局。
 - 避免让视觉效果压过临床信息。
 
+## 5.1 响应式与设备兼容基线
+
+设计支持范围与代表性 CSS content viewport 如下；所有尺寸均指实际 `window.innerWidth × window.innerHeight`：
+
+| 设备范围 | 代表性 viewport |
+|---|---|
+| 手机竖屏 | `390×844` |
+| 大屏 Android 平板竖屏 | `800×1280` |
+| 大屏 Android 平板横屏 | `1280×800` |
+| 大屏 iPad 竖屏 | `1024×1366` |
+| 大屏 iPad 横屏 | `1366×1024` |
+| 紧凑桌面 | `1280×720` |
+| 桌面大屏 | `1536×864` |
+
+- 页面不得产生 document / main 全局横向溢出；Grid、Flex 和 Card 子项必须允许合理收缩。
+- 宽表格允许在明确的局部容器中横向滚动，但不得撑宽整个页面。
+- 多栏布局在窄屏下应自然收缩或切换为单列。
+- Dialog、表单、主要按钮和错误提示必须保持可见、可聚焦、可操作。
+- 图片、媒体证据、Canvas、连线、绘图和手写区域必须在大屏平板横竖屏下保持可用。
+- 横竖屏或 viewport 变化不得静默丢失仍在 React 内存中的合法未提交草稿。
+- 手机和平板不是桌面页面的简单缩小版；核心评估流程与医生操作流程必须完整可用。
+
 ## 6. 字号与可读性
 
 - 评估题目、患者信息、报告摘要、医生操作入口必须具备高可读性。
@@ -147,4 +169,6 @@ CogMemory AD 更适合：
 - 本次 app/src 公共底座页面已按本文档进行首次落地。
 - 如后续实际产品风格调整，应先更新本文档，再改页面和组件。
 - `handoff-frontend-component-map.md`、`handoff-frontend-route-map.md`、`handoff-frontend-testing-playbook.md` 应与本文档保持一致。
+- 七个正式 viewport 若调整，必须同步更新 `handoff-frontend-testing-playbook.md`。
+- 本设计基线定义“必须适配什么”，`handoff-frontend-testing-playbook.md` 定义“如何验证”；测试执行、结果判定和证据归档细节只在 testing playbook 维护。
 - Codex 后续执行前端页面或组件迁移任务时，必须把本文档作为视觉基线。
