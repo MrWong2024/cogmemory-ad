@@ -14,7 +14,6 @@
     "test:browser:list": "playwright test --list",
     "test:browser:infra": "playwright test test/browser-acceptance/infrastructure",
     "test:browser:live": "playwright test test/browser-acceptance/live",
-    "test:browser:b10-89": "playwright test test/browser-acceptance/b10/b10-89-keyboard.spec.ts",
     "test:browser:headed": "playwright test --headed"
   },
   "dependencies": {
