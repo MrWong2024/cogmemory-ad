@@ -183,12 +183,18 @@ test.describe('B11 core / final-readonly', () => {
             exact: true,
           }),
         ).toBeVisible();
-        await expect(
-          page.getByText(
-            '系统不自动生成、改写、审核或解释临床人员文本。',
-            { exact: true },
-          ),
-        ).toBeVisible();
+        const clinicianSection = page.locator(
+          'section[aria-labelledby="clinical-report-clinician-narrative-heading"]',
+        );
+        await expect(clinicianSection).toHaveCount(1);
+        const ownershipStatement = clinicianSection
+          .locator('p')
+          .filter({ hasText: '系统不自动生成' });
+        await expect(ownershipStatement).toHaveCount(1);
+        await expect(ownershipStatement).toContainText('系统不自动生成');
+        await expect(ownershipStatement).toContainText('改写');
+        await expect(ownershipStatement).toContainText('审核');
+        await expect(ownershipStatement).toContainText('解释');
         await expect(
           reportSystemAndSnapshotSections(page).locator(
             'textarea,input,select',

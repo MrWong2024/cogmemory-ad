@@ -75,12 +75,20 @@ test.describe('B11 core / submission', () => {
           name: '确认提交待医生确认',
           exact: true,
         });
-        await note.fill('aa');
+        await note.fill(' a ');
         await expect(submit).toBeDisabled();
         await expect(
           page.getByText('提交说明需为 3–2000 个字符。', { exact: true }),
         ).toBeVisible();
-        await note.fill(B11_NEUTRAL_TEXT.submissionNoteA);
+        expect(session.actionRequestEvidence('submit')).toEqual([]);
+        await expect(note).toHaveAttribute('maxlength', '2000');
+        const boundaryNote = 'x'.repeat(2000);
+        await note.fill(boundaryNote);
+        await note.press('End');
+        await note.press('x');
+        expect((await note.inputValue()).length).toBe(2000);
+        expect(await note.inputValue()).toBe(boundaryNote);
+        expect(session.actionRequestEvidence('submit')).toEqual([]);
         await expect(checkbox).not.toBeChecked();
         await expect(submit).toBeDisabled();
         await checkbox.check();

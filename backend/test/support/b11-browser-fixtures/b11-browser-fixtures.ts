@@ -49,6 +49,7 @@ import { assertB11SafeOutput, buildB11SafeManifest } from './fixture-manifest';
 import {
   assertB11PreparedReport,
   assertB11RouteAgainstBaseline,
+  assertB11RouteProgress,
   buildB11RouteBaseline,
   preparedHashForBaselines,
   readB11RouteBaseline,
@@ -239,8 +240,16 @@ export class B11BrowserFixtureManager {
       routeKey,
       transition,
     });
+    await this.verifyPreStageProgress({
+      profile: input.profile,
+      namespace,
+      password,
+      scenarioKey,
+      routeKey,
+      transition,
+      alreadyStaged,
+    });
     if (!alreadyStaged) {
-      await this.verifyInternal(input.profile, namespace, password, 'prepared');
       if (transition === 'confirmation-conflict-touch') {
         const root = await this.requireRoot(
           input.profile,
@@ -338,7 +347,7 @@ export class B11BrowserFixtureManager {
       role,
       staged: true,
       alreadyStaged,
-      preparedBaselineVerified: true,
+      preStageProgressVerified: true,
       canonicalSeedHashUnchanged: true,
     };
     assertB11SafeOutput(summary);
@@ -480,42 +489,60 @@ export class B11BrowserFixtureManager {
   ): Promise<void> {
     const namespace = validateB11Namespace(profile, rawNamespace);
     const password = requireB11FixturePassword(rawPassword);
-    const stageRoute = scenariosFor(profile)
-      .flatMap((scenario) =>
-        scenario.routes.map((routeValue) => ({
-          scenarioKey: scenario.scenarioKey,
-          routeValue,
-        })),
-      )
-      .find(
-        ({ routeValue }) =>
-          routeValue.expectedFixtureOwnedMutationClass !== 'none',
-      );
-    if (stageRoute) {
-      const transition = stageRoute.routeValue.allowedStages[0];
-      await this.stage({
-        profile,
-        namespace,
-        password,
-        scenarioKey: stageRoute.scenarioKey,
-        routeKey: stageRoute.routeValue.key,
-        transition,
-        role: 'doctor',
-      });
-    }
     for (const scenario of scenariosFor(profile)) {
       for (const routeValue of scenario.routes) {
-        if (routeValue.expectedProductMutationClass === 'none') continue;
-        await this.simulateProductMutation({
-          profile,
-          namespace,
-          scenarioKey: scenario.scenarioKey,
-          routeKey: routeValue.key,
-          mutation: routeValue.expectedProductMutationClass,
-          role: routeValue.primaryRole === 'admin' ? 'admin' : 'doctor',
-        });
+        if (routeValue.expectedProductMutationClass !== 'none') {
+          await this.simulateProductMutation({
+            profile,
+            namespace,
+            scenarioKey: scenario.scenarioKey,
+            routeKey: routeValue.key,
+            mutation: routeValue.expectedProductMutationClass,
+            role: routeValue.primaryRole === 'admin' ? 'admin' : 'doctor',
+          });
+        }
+        if (routeValue.expectedFixtureOwnedMutationClass !== 'none') {
+          await this.stage({
+            profile,
+            namespace,
+            password,
+            scenarioKey: scenario.scenarioKey,
+            routeKey: routeValue.key,
+            transition: routeValue.allowedStages[0],
+            role: 'doctor',
+          });
+        }
       }
     }
+  }
+
+  async simulateProductMutationForE2e(input: {
+    profile: B11Profile;
+    namespace: string;
+    password: string | undefined;
+    scenarioKey: string;
+    routeKey: string;
+  }): Promise<void> {
+    const namespace = validateB11Namespace(input.profile, input.namespace);
+    requireB11FixturePassword(input.password);
+    const contract = routeFor(input.profile, input.scenarioKey, input.routeKey);
+    if (contract.expectedProductMutationClass === 'none') {
+      throw new B11FixtureError(
+        'B11_FIXTURE_SIMULATION_TARGET_INVALID',
+        'Simulation target must have one fixed product mutation contract',
+        input.profile,
+        input.scenarioKey,
+        input.routeKey,
+      );
+    }
+    await this.simulateProductMutation({
+      profile: input.profile,
+      namespace,
+      scenarioKey: input.scenarioKey,
+      routeKey: input.routeKey,
+      mutation: contract.expectedProductMutationClass,
+      role: contract.primaryRole === 'admin' ? 'admin' : 'doctor',
+    });
   }
 
   private async simulateProductMutation(input: {
@@ -1349,6 +1376,96 @@ export class B11BrowserFixtureManager {
     );
   }
 
+  private async verifyPreStageProgress(input: {
+    profile: B11Profile;
+    namespace: string;
+    password: string;
+    scenarioKey: string;
+    routeKey: string;
+    transition: B11StageTransition;
+    alreadyStaged: boolean;
+  }): Promise<void> {
+    await this.verifyStageProgressIntegrity({
+      ...input,
+      targetStaged: input.alreadyStaged,
+    });
+  }
+
+  private async verifyStageProgressIntegrity(input: {
+    profile: B11Profile;
+    namespace: string;
+    password: string;
+    scenarioKey: string;
+    routeKey: string;
+    transition: B11StageTransition;
+    targetStaged: boolean;
+  }): Promise<void> {
+    assertB11Contract();
+    const before = await this.readOnlySnapshot(input.profile, input.namespace);
+    await this.verifyUsers(
+      input.profile,
+      input.namespace,
+      input.password,
+      input.targetStaged && input.transition === 'forbidden-confirm-role'
+        ? 'post-browser'
+        : 'prepared',
+    );
+    await this.verifyProfileIsolation(input.profile, input.namespace);
+    const canonicalSeedHash = await this.canonicalSeedHash();
+    const roots = await this.requireAllRoots(input.profile, input.namespace);
+    for (const root of roots) {
+      const baseline = readB11RouteBaseline(
+        root,
+        input.profile,
+        input.namespace,
+      );
+      if (baseline.canonicalSeedHash !== canonicalSeedHash) {
+        throw new B11FixtureError(
+          'B11_FIXTURE_CANONICAL_SEED_DRIFT',
+          'Canonical seed differs from the route baseline during Stage progress verification',
+          input.profile,
+          root.scenarioKey,
+          root.routeKey,
+        );
+      }
+      const target =
+        root.scenarioKey === input.scenarioKey &&
+        root.routeKey === input.routeKey;
+      const state = assertB11RouteProgress({
+        root,
+        baseline,
+        contract: routeFor(input.profile, root.scenarioKey, root.routeKey),
+        profile: input.profile,
+        namespace: input.namespace,
+        target,
+        targetStaged: target && input.targetStaged,
+      });
+      if (
+        target &&
+        state !== (input.targetStaged ? 'target-staged' : 'prepared')
+      ) {
+        throw new B11FixtureError(
+          'B11_FIXTURE_STAGE_PRECONDITION_INVALID',
+          'Stage target differs from its exact required progress state',
+          input.profile,
+          input.scenarioKey,
+          input.routeKey,
+        );
+      }
+    }
+    await this.verifyRootCounts(input.profile, input.namespace, roots);
+    const after = await this.readOnlySnapshot(input.profile, input.namespace);
+    if (after !== before) {
+      throw new B11FixtureError(
+        'B11_FIXTURE_VERIFY_MUTATED_DATA',
+        'Stage progress verification must remain read-only',
+        input.profile,
+        input.scenarioKey,
+        input.routeKey,
+      );
+    }
+  }
+
   private async verifySingleStageIntegrity(input: {
     profile: B11Profile;
     namespace: string;
@@ -1357,52 +1474,10 @@ export class B11BrowserFixtureManager {
     routeKey: string;
     transition: B11StageTransition;
   }): Promise<void> {
-    const roots = await this.requireAllRoots(input.profile, input.namespace);
-    for (const root of roots) {
-      const baseline = readB11RouteBaseline(
-        root,
-        input.profile,
-        input.namespace,
-      );
-      const target =
-        root.scenarioKey === input.scenarioKey &&
-        root.routeKey === input.routeKey;
-      const baseContract = routeFor(
-        input.profile,
-        root.scenarioKey,
-        root.routeKey,
-      );
-      assertB11RouteAgainstBaseline({
-        root,
-        baseline,
-        contract: {
-          ...baseContract,
-          expectedProductMutationClass: 'none',
-          expectedFixtureOwnedMutationClass:
-            target && input.transition === 'confirmation-conflict-touch'
-              ? 'fixture_confirmation_conflict_touch_only'
-              : 'none',
-        },
-        profile: input.profile,
-        namespace: input.namespace,
-        phase: 'post-browser',
-      });
-    }
-    if (input.transition === 'forbidden-confirm-role') {
-      await this.verifyUsers(
-        input.profile,
-        input.namespace,
-        input.password,
-        'post-browser',
-      );
-    } else {
-      await this.verifyUsers(
-        input.profile,
-        input.namespace,
-        input.password,
-        'prepared',
-      );
-    }
+    await this.verifyStageProgressIntegrity({
+      ...input,
+      targetStaged: true,
+    });
   }
 }
 

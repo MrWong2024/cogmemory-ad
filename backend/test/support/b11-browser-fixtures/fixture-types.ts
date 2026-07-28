@@ -163,7 +163,7 @@ export type B11SafeStageSummary = {
   role: B11Role;
   staged: true;
   alreadyStaged: boolean;
-  preparedBaselineVerified: boolean;
+  preStageProgressVerified: boolean;
   canonicalSeedHashUnchanged: true;
 };
 

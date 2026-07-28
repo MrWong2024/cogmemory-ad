@@ -435,6 +435,10 @@ Batch D 已执行 B11-B `core-workflow` Browser 但尚未完成。B11 fixture �
 
 B11-B 已使用 production frontend、Browser test backend、Playwright Chromium 和全新 core namespace 启动 5 个 scenarioKey / 20 条 route。`confirmation-conflict` 页面按合同先加载并冻结版本，但随后唯一一次 `confirmation-conflict-touch` Stage 在写入前对整个 profile 重做 `prepared` 校验，因此前合法完成的 `edit-success` 已变为 mixed 而返回 `B11_FIXTURE_REPORT_STATE_INVALID`；Stage 实际写入为 0，Browser confirm 因此未执行。post-browser verify 随后精确拒绝 `confirmation/confirmation-conflict`。服务、Browser、runtime 与测试产物均已收口；两次 cleanup 均为 `residualCount=0`，第二次 `matched=false`，canonical seed 不变。B11-B、B11 与 Batch D 均保持未完成，不进入 B11-C；B11-56–B11-59、B11-63–B11-69 与 B11-70 仍未关闭。不填写不存在的 evidence commit。
 
+B11-B1 已修复上述测试资产阻断，但没有重跑正式 Browser。Stage 现在逐 route 验证 prepared 或精确合法 product-completed，目标只允许精确 prepared / target-staged，重复 Stage 幂等；Stage 后对非目标 route 仍执行 prepared / 原产品合同二选一，完整 post-browser verifier 没有放宽。B11-15 增加 latest editorial 与最新服务端安全事实逐项一致；B11-16 在独立新 BrowserContext / 登录 Session 中证明 editorial 持久而当前会话 receipt 不持久且没有第二次 edit；B11-17 明确验证一份 summary、receipt 数量、无历史集合 UI，并扫描 DOM / HTML / aria / title / data 属性的内部历史字段边界；B11-29 覆盖 trim 后少于 3、`maxLength=2000`、2000 合法与第 2001 个真实按键受原生约束，非法分支 POST=0、合法分支 POST=1且日志不含正文；B11-62 改为 clinician content 语义分区内验证“不自动生成、不改写、不审核、不解释”，不再要求独立文本节点。
+
+B11 support 的 capture / collect 状态机现为 open、collecting、collected、failed / closing：先冻结并移除监听器，再等待已登记的 `allHeaders()`、latest parse 等任务；仅完整审核成功后 collected，capture rejection 只输出安全类别并仍执行真实 logout、Context close、runtime 和 test-results 精确清理。corrected route Console error 不使用全局 allowlist，只允许在确定时间窗口内一一对应单次合法只读 GET、safe endpoint pattern 与 404 / 409；无法对应、出现 pageerror 或额外 retry / polling 均失败。前端 `test:browser:list` 通过并保持 20 条 B11 core route，synthetic infrastructure 12 tests、lint、typecheck、build 全部通过；该 infrastructure 只启动并关闭隔离 synthetic Chromium，不启动产品前端或 Browser test backend，也不执行 B11 Browser Action。Browser 状态仍为 51 pass / 7 not_executed，B11-B、B11 与 Batch D 均未完成；下一阶段必须使用全新 namespace 从 prepare 开始完整重跑 B11-B `core-workflow`，不得进入 B11-C，B11-70 尚未最终关闭。不填写不存在的 evidence commit。
+
 阶段所有权口径同第 5 节：B11–B15 的“不存在/不实现”验证目标是当前 Action 不越界、不自动串联、不伪造后续事实，不要求移除后来已经实现且在当前状态合法的 sibling 能力。B16 / WP-02 只证明 replacement V2+ 的特定闭环，不能替代 B11–B15 各自的完整角色、草稿、并发、错误、可访问性和隐私矩阵。
 
 ### 6.1 B11 报告编辑、提交与确认：70 项
@@ -510,7 +514,7 @@ B11-B 已使用 production frontend、Browser test backend、Playwright Chromium
 69. stale / 错误提示文案与真实 disabled 状态一致。
 70. `npm run lint`、`npm run typecheck`、`npm run build` 通过。
 
-当前处置：B11-B `core-workflow` 未完成。稳定 fixture 阻断是 Stage 在完整 Browser 顺序中错误要求全 profile 仍保持 prepared；修复该 Stage baseline 合同后，必须使用全新 namespace 从 prepare 开始完整重跑，不能复用本轮部分 Browser 证据，也不能提前进入 B11-C 或关闭 B11-70。
+当前处置：B11-B1 已修复 Stage 进度基线和 Playwright 验收资产，但未重跑正式 Browser，B11-B `core-workflow` 仍为 51 pass / 7 not_executed 且未完成。下一阶段必须使用全新 namespace 从 prepare 开始完整重跑，不能复用本轮部分 Browser 证据，也不能提前进入 B11-C 或关闭 B11-70。
 
 ### 6.2 B12 报告不可逆锁定：88 项
 

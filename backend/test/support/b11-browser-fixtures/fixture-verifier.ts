@@ -38,6 +38,11 @@ export type B11RouteBaseline = {
   canonicalSeedHash: string;
 };
 
+export type B11RouteProgressState =
+  | 'prepared'
+  | 'product-completed'
+  | 'target-staged';
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -562,6 +567,54 @@ export function assertB11RouteAgainstBaseline(input: {
     scenarioKey: input.root.scenarioKey,
     routeKey: input.root.routeKey,
   });
+}
+
+export function assertB11RouteProgress(input: {
+  root: B11RouteRoot;
+  baseline: B11RouteBaseline;
+  contract: B11RouteDefinition;
+  profile: B11Profile;
+  namespace: string;
+  target: boolean;
+  targetStaged: boolean;
+}): B11RouteProgressState {
+  const assertRoute = (
+    expectedProductMutationClass: B11ProductMutationClass,
+    expectedFixtureOwnedMutationClass: B11FixtureMutationClass,
+  ): void =>
+    assertB11RouteAgainstBaseline({
+      root: input.root,
+      baseline: input.baseline,
+      contract: {
+        ...input.contract,
+        expectedProductMutationClass,
+        expectedFixtureOwnedMutationClass,
+      },
+      profile: input.profile,
+      namespace: input.namespace,
+      phase: 'post-browser',
+    });
+
+  if (input.target) {
+    if (input.targetStaged) {
+      assertRoute('none', input.contract.expectedFixtureOwnedMutationClass);
+      return 'target-staged';
+    }
+    assertRoute('none', 'none');
+    return 'prepared';
+  }
+
+  try {
+    assertRoute('none', 'none');
+    return 'prepared';
+  } catch (preparedError: unknown) {
+    if (input.contract.expectedProductMutationClass === 'none') {
+      throw preparedError;
+    }
+  }
+
+  assertRoute(input.contract.expectedProductMutationClass, 'none');
+  return 'product-completed';
 }
 
 export function preparedHashForBaselines(

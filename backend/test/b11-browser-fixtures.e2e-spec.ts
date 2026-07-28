@@ -40,6 +40,10 @@ import {
 } from '../src/modules/scales/schemas/scale-version.schema';
 import { ScaleCatalogService } from '../src/modules/scales/services/scale-catalog.service';
 import {
+  User,
+  type UserDocument,
+} from '../src/modules/users/schemas/user.schema';
+import {
   B11_AUDIT_IDS,
   B11_AUDIT_MATRIX,
   accountNameFor,
@@ -111,6 +115,7 @@ describe('B11 profile-scoped browser fixture support (e2e)', () => {
   let instanceModel: Model<ScaleInstanceDocument>;
   let reportModel: Model<ClinicalReportDocument>;
   let sessionModel: Model<SessionDocument>;
+  let userModel: Model<UserDocument>;
   let definitionModel: Model<ScaleDefinitionDocument>;
   let versionModel: Model<ScaleVersionDocument>;
   let scaleCatalog: ScaleCatalogService;
@@ -156,6 +161,86 @@ describe('B11 profile-scoped browser fixture support (e2e)', () => {
     return report;
   }
 
+  async function stageCore() {
+    return manager.stage({
+      profile: 'core-workflow',
+      namespace: CORE_NAMESPACE,
+      password: testPassword,
+      scenarioKey: 'confirmation',
+      routeKey: 'confirmation-conflict',
+      transition: 'confirmation-conflict-touch',
+      role: 'doctor',
+    });
+  }
+
+  async function stageResilience() {
+    return manager.stage({
+      profile: 'resilience-security',
+      namespace: RESILIENCE_NAMESPACE,
+      password: testPassword,
+      scenarioKey: 'authorization',
+      routeKey: 'forbidden-confirm',
+      transition: 'forbidden-confirm-role',
+      role: 'doctor',
+    });
+  }
+
+  async function simulateProduct(
+    scenarioKey: string,
+    routeKey: string,
+  ): Promise<void> {
+    await manager.simulateProductMutationForE2e({
+      profile: 'core-workflow',
+      namespace: CORE_NAMESPACE,
+      password: testPassword,
+      scenarioKey,
+      routeKey,
+    });
+  }
+
+  async function expectCoreStageFailure(): Promise<void> {
+    await expect(stageCore()).rejects.toBeInstanceOf(B11FixtureError);
+  }
+
+  async function mutateReportForStageFailure(
+    report: ClinicalReportDocument,
+    update: Record<string, unknown>,
+  ): Promise<void> {
+    const original = await reportModel.collection.findOne({ _id: report._id });
+    if (!original) throw new Error('Missing raw Stage drift report');
+    try {
+      const result = await reportModel.collection.updateOne(
+        { _id: report._id },
+        update,
+      );
+      expect(result.matchedCount).toBe(1);
+      await expectCoreStageFailure();
+    } finally {
+      await reportModel.collection.replaceOne({ _id: report._id }, original);
+    }
+  }
+
+  async function mutateReportForPostBrowserFailure(
+    report: ClinicalReportDocument,
+    update: Record<string, unknown>,
+  ): Promise<void> {
+    const original = await reportModel.collection.findOne({ _id: report._id });
+    if (!original) throw new Error('Missing raw post-browser drift report');
+    try {
+      await reportModel.collection.updateOne({ _id: report._id }, update);
+      await expect(
+        manager.verify(
+          'core-workflow',
+          CORE_NAMESPACE,
+          testPassword,
+          'post-browser',
+        ),
+      ).rejects.toBeInstanceOf(B11FixtureError);
+    } finally {
+      await reportModel.collection.replaceOne({ _id: report._id }, original);
+    }
+  }
+
   beforeAll(async () => {
     if (
       process.env.NODE_ENV !== 'test' ||
@@ -181,6 +266,7 @@ describe('B11 profile-scoped browser fixture support (e2e)', () => {
     instanceModel = app.get(getModelToken(ScaleInstance.name));
     reportModel = app.get(getModelToken(ClinicalReport.name));
     sessionModel = app.get(getModelToken(Session.name));
+    userModel = app.get(getModelToken(User.name));
     definitionModel = app.get(getModelToken(ScaleDefinition.name));
     versionModel = app.get(getModelToken(ScaleVersion.name));
     scaleCatalog = app.get(ScaleCatalogService);
@@ -476,51 +562,51 @@ describe('B11 profile-scoped browser fixture support (e2e)', () => {
   });
 
   it('allows only the two exact idempotent Stages and makes prepared verification reject Stage drift', async () => {
-    const coreFirst = await manager.stage({
-      profile: 'core-workflow',
-      namespace: CORE_NAMESPACE,
-      password: testPassword,
-      scenarioKey: 'confirmation',
-      routeKey: 'confirmation-conflict',
-      transition: 'confirmation-conflict-touch',
-      role: 'doctor',
+    const coreFirst = await stageCore();
+    const stagedCoreReport = await reportFor(
+      'core-workflow',
+      CORE_NAMESPACE,
+      'confirmation',
+      'confirmation-conflict',
+    );
+    const coreAfterFirst = await reportModel.collection.findOne({
+      _id: stagedCoreReport._id,
     });
-    const coreSecond = await manager.stage({
-      profile: 'core-workflow',
-      namespace: CORE_NAMESPACE,
-      password: testPassword,
-      scenarioKey: 'confirmation',
-      routeKey: 'confirmation-conflict',
-      transition: 'confirmation-conflict-touch',
-      role: 'doctor',
-    });
+    const coreSecond = await stageCore();
     expect(coreFirst.alreadyStaged).toBe(false);
+    expect(coreFirst.preStageProgressVerified).toBe(true);
     expect(coreSecond.alreadyStaged).toBe(true);
+    expect(coreSecond.preStageProgressVerified).toBe(true);
+    expect(
+      await reportModel.collection.findOne({ _id: stagedCoreReport._id }),
+    ).toEqual(coreAfterFirst);
     await expect(
       manager.verify('core-workflow', CORE_NAMESPACE, testPassword, 'prepared'),
     ).rejects.toBeInstanceOf(B11FixtureError);
     await manager.replace('core-workflow', CORE_NAMESPACE, testPassword);
 
-    const resilienceFirst = await manager.stage({
-      profile: 'resilience-security',
-      namespace: RESILIENCE_NAMESPACE,
-      password: testPassword,
-      scenarioKey: 'authorization',
-      routeKey: 'forbidden-confirm',
-      transition: 'forbidden-confirm-role',
-      role: 'doctor',
+    const resilienceFirst = await stageResilience();
+    const stagedDoctor = await userModel.collection.findOne({
+      accountName: accountNameFor(
+        'resilience-security',
+        RESILIENCE_NAMESPACE,
+        'doctor',
+      ),
     });
-    const resilienceSecond = await manager.stage({
-      profile: 'resilience-security',
-      namespace: RESILIENCE_NAMESPACE,
-      password: testPassword,
-      scenarioKey: 'authorization',
-      routeKey: 'forbidden-confirm',
-      transition: 'forbidden-confirm-role',
-      role: 'doctor',
-    });
+    const resilienceSecond = await stageResilience();
     expect(resilienceFirst.alreadyStaged).toBe(false);
+    expect(resilienceFirst.preStageProgressVerified).toBe(true);
     expect(resilienceSecond.alreadyStaged).toBe(true);
+    expect(resilienceSecond.preStageProgressVerified).toBe(true);
+    expect(
+      await userModel.collection.findOne({
+        accountName: accountNameFor(
+          'resilience-security',
+          RESILIENCE_NAMESPACE,
+          'doctor',
+        ),
+      }),
+    ).toEqual(stagedDoctor);
     await expect(
       manager.verify(
         'resilience-security',
@@ -529,6 +615,339 @@ describe('B11 profile-scoped browser fixture support (e2e)', () => {
         'prepared',
       ),
     ).rejects.toBeInstanceOf(B11FixtureError);
+    await manager.replace(
+      'resilience-security',
+      RESILIENCE_NAMESPACE,
+      testPassword,
+    );
+  });
+
+  it('accepts exact prior edit, mixed edit-submit-confirm, and complete core product progress before confirmation Stage', async () => {
+    await simulateProduct('edit-basics', 'edit-success');
+    await expect(stageCore()).resolves.toMatchObject({
+      alreadyStaged: false,
+      preStageProgressVerified: true,
+    });
+    await manager.replace('core-workflow', CORE_NAMESPACE, testPassword);
+
+    for (const [scenarioKey, routeKey] of [
+      ['edit-basics', 'edit-success'],
+      ['submission', 'submission-success'],
+      ['confirmation', 'confirmation-doctor-success'],
+    ] as const) {
+      await simulateProduct(scenarioKey, routeKey);
+    }
+    await expect(stageCore()).resolves.toMatchObject({
+      alreadyStaged: false,
+      preStageProgressVerified: true,
+    });
+    await manager.replace('core-workflow', CORE_NAMESPACE, testPassword);
+
+    for (const scenario of scenariosFor('core-workflow')) {
+      for (const routeValue of scenario.routes) {
+        if (routeValue.expectedProductMutationClass === 'none') continue;
+        await simulateProduct(scenario.scenarioKey, routeValue.key);
+      }
+    }
+    const first = await stageCore();
+    const target = await reportFor(
+      'core-workflow',
+      CORE_NAMESPACE,
+      'confirmation',
+      'confirmation-conflict',
+    );
+    const afterFirst = await reportModel.collection.findOne({
+      _id: target._id,
+    });
+    const second = await stageCore();
+    expect(first).toMatchObject({
+      alreadyStaged: false,
+      preStageProgressVerified: true,
+    });
+    expect(second).toMatchObject({
+      alreadyStaged: true,
+      preStageProgressVerified: true,
+    });
+    expect(await reportModel.collection.findOne({ _id: target._id })).toEqual(
+      afterFirst,
+    );
+    await expect(
+      manager.verify(
+        'core-workflow',
+        CORE_NAMESPACE,
+        testPassword,
+        'post-browser',
+      ),
+    ).resolves.toMatchObject({ phase: 'post-browser' });
+    await manager.replace('core-workflow', CORE_NAMESPACE, testPassword);
+  });
+
+  it('rejects partial product progress, audit drift, Stage drift, role drift, source-root drift, seed drift, and cross-profile pollution before Stage', async () => {
+    const editSuccess = await reportFor(
+      'core-workflow',
+      CORE_NAMESPACE,
+      'edit-basics',
+      'edit-success',
+    );
+    const submissionSuccess = await reportFor(
+      'core-workflow',
+      CORE_NAMESPACE,
+      'submission',
+      'submission-success',
+    );
+    const confirmationVisibility = await reportFor(
+      'core-workflow',
+      CORE_NAMESPACE,
+      'confirmation',
+      'confirmation-role-visibility',
+    );
+    const confirmationConflict = await reportFor(
+      'core-workflow',
+      CORE_NAMESPACE,
+      'confirmation',
+      'confirmation-conflict',
+    );
+    const confirmedBaseline = await reportFor(
+      'core-workflow',
+      CORE_NAMESPACE,
+      'final-readonly',
+      'confirmed-readonly',
+    );
+    const confirmationMetadata = confirmedBaseline.metadata?.a21Confirmation;
+    if (!confirmationMetadata || !confirmedBaseline.confirmation) {
+      throw new Error('Missing fixed confirmed Stage drift source');
+    }
+
+    await mutateReportForStageFailure(editSuccess, {
+      $set: {
+        'narrative.doctorOpinion': 'B11 partial edit drift with no meaning.',
+      },
+    });
+
+    const editEvents = [1, 2].map((ordinal) => ({
+      eventId: `b11-extra-edit-${ordinal}`,
+      editedAt: new Date(`2026-07-28T03:00:0${ordinal}.000Z`),
+      editedBy: confirmedBaseline._id.toString(),
+      editedByName: 'B11 synthetic doctor',
+      editedByRole: 'doctor',
+      changedFields: ['doctorOpinion'],
+      previousValues: { doctorOpinion: `before-${ordinal}` },
+      nextValues: { doctorOpinion: `after-${ordinal}` },
+      editNote: `B11 synthetic extra edit ${ordinal}`,
+    }));
+    await mutateReportForStageFailure(editSuccess, {
+      $set: {
+        'metadata.a21Edits': {
+          version: 1,
+          events: editEvents,
+          lastEditedAt: editEvents[1]?.editedAt,
+          lastEditedBy: confirmedBaseline._id.toString(),
+        },
+        'narrative.doctorOpinion': 'B11 extra edit drift with no meaning.',
+        source: 'mixed',
+      },
+    });
+
+    await mutateReportForStageFailure(submissionSuccess, {
+      $set: { status: 'pending_confirmation' },
+      $unset: { 'metadata.a21Submission': '' },
+    });
+
+    await mutateReportForStageFailure(confirmationVisibility, {
+      $set: {
+        status: 'confirmed',
+        confirmation: confirmedBaseline.confirmation,
+        'metadata.a21Confirmation': confirmationMetadata,
+      },
+    });
+
+    await mutateReportForStageFailure(confirmationConflict, {
+      $set: {
+        status: 'confirmed',
+        confirmation: confirmedBaseline.confirmation,
+        'metadata.a21Confirmation': confirmationMetadata,
+      },
+    });
+    await mutateReportForStageFailure(confirmationConflict, {
+      $set: { status: 'draft' },
+    });
+    await mutateReportForStageFailure(confirmationConflict, {
+      $set: {
+        'metadata.b11FixtureStage': {
+          version: 1,
+          profile: 'core-workflow',
+          namespace: CORE_NAMESPACE,
+          scenarioKey: 'confirmation',
+          routeKey: 'confirmation-conflict',
+          transition: 'wrong-transition',
+        },
+      },
+    });
+    await mutateReportForStageFailure(editSuccess, {
+      $set: {
+        'metadata.b11FixtureStage': {
+          version: 1,
+          profile: 'core-workflow',
+          namespace: CORE_NAMESPACE,
+          scenarioKey: 'edit-basics',
+          routeKey: 'edit-success',
+          transition: 'confirmation-conflict-touch',
+        },
+      },
+    });
+
+    const nurse = await userModel.collection.findOne({
+      accountName: accountNameFor('core-workflow', CORE_NAMESPACE, 'nurse'),
+    });
+    if (!nurse) throw new Error('Missing nurse Stage drift target');
+    try {
+      await userModel.collection.updateOne(
+        { _id: nurse._id },
+        { $set: { roles: ['admin'], userType: 'admin' } },
+      );
+      await expectCoreStageFailure();
+    } finally {
+      await userModel.collection.replaceOne({ _id: nurse._id }, nurse);
+    }
+
+    const patient = await patientModel.findById(editSuccess.patientId).exec();
+    const visit = await visitModel
+      .findById(editSuccess.assessmentVisitId)
+      .exec();
+    const instance = await instanceModel
+      .findById(editSuccess.primaryScaleInstanceIds[0])
+      .exec();
+    if (!patient || !visit || !instance) {
+      throw new Error('Missing Stage source-root drift target');
+    }
+    const rawPatient = await patientModel.collection.findOne({
+      _id: patient._id,
+    });
+    const rawVisit = await visitModel.collection.findOne({ _id: visit._id });
+    const rawInstance = await instanceModel.collection.findOne({
+      _id: instance._id,
+    });
+    if (!rawPatient || !rawVisit || !rawInstance) {
+      throw new Error('Missing raw Stage source-root drift target');
+    }
+    try {
+      await patientModel.collection.updateOne(
+        { _id: patient._id },
+        { $set: { displayName: 'B11 unexpected patient drift' } },
+      );
+      await expectCoreStageFailure();
+    } finally {
+      await patientModel.collection.replaceOne(
+        { _id: patient._id },
+        rawPatient,
+      );
+    }
+    try {
+      await visitModel.collection.updateOne(
+        { _id: visit._id },
+        { $set: { visitCode: `${visit.visitCode}-DRIFT` } },
+      );
+      await expectCoreStageFailure();
+    } finally {
+      await visitModel.collection.replaceOne({ _id: visit._id }, rawVisit);
+    }
+    try {
+      await instanceModel.collection.updateOne(
+        { _id: instance._id },
+        { $set: { status: 'in_progress' } },
+      );
+      await expectCoreStageFailure();
+    } finally {
+      await instanceModel.collection.replaceOne(
+        { _id: instance._id },
+        rawInstance,
+      );
+    }
+
+    await mutateReportForStageFailure(editSuccess, {
+      $set: {
+        'narrative.chiefSummary': 'B11 unexpected system narrative drift',
+      },
+    });
+    await mutateReportForStageFailure(editSuccess, {
+      $set: {
+        'patientSnapshot.displayName': 'B11 unexpected snapshot drift',
+      },
+    });
+
+    const protectedVersion = await versionModel.collection.findOne({
+      status: 'active',
+      scaleCode: { $in: ['mmse', 'moca'] },
+    });
+    if (!protectedVersion) throw new Error('Missing protected seed version');
+    try {
+      await versionModel.collection.updateOne(
+        { _id: protectedVersion._id },
+        { $set: { displayVersion: 'B11 unexpected Stage seed drift' } },
+      );
+      await expectCoreStageFailure();
+    } finally {
+      await versionModel.collection.replaceOne(
+        { _id: protectedVersion._id },
+        protectedVersion,
+      );
+    }
+
+    for (const update of [
+      { $set: { 'metadata.b11Fixture.profile': 'resilience-security' } },
+      { $set: { 'metadata.b11Fixture.namespace': 'b11r-cross-stage' } },
+    ]) {
+      try {
+        await patientModel.collection.updateOne({ _id: patient._id }, update);
+        await expectCoreStageFailure();
+      } finally {
+        await patientModel.collection.replaceOne(
+          { _id: patient._id },
+          rawPatient,
+        );
+      }
+    }
+
+    await expect(
+      manager.verify('core-workflow', CORE_NAMESPACE, testPassword, 'prepared'),
+    ).resolves.toMatchObject({ phase: 'prepared' });
+  });
+
+  it('rejects forbidden-role Stage marker and target-role drift while non-target resilience routes remain prepared', async () => {
+    const doctor = await userModel.collection.findOne({
+      accountName: accountNameFor(
+        'resilience-security',
+        RESILIENCE_NAMESPACE,
+        'doctor',
+      ),
+    });
+    if (!doctor) throw new Error('Missing resilience doctor drift target');
+    try {
+      await userModel.collection.updateOne(
+        { _id: doctor._id },
+        {
+          $set: {
+            roles: ['nurse'],
+            userType: 'nurse',
+            'metadata.b11FixtureStage': {
+              version: 1,
+              profile: 'resilience-security',
+              namespace: RESILIENCE_NAMESPACE,
+              scenarioKey: 'authorization',
+              routeKey: 'forbidden-confirm',
+              transition: 'wrong-transition',
+            },
+          },
+        },
+      );
+      await expect(stageResilience()).rejects.toBeInstanceOf(B11FixtureError);
+    } finally {
+      await userModel.collection.replaceOne({ _id: doctor._id }, doctor);
+    }
+    await expect(stageResilience()).resolves.toMatchObject({
+      alreadyStaged: false,
+      preStageProgressVerified: true,
+    });
     await manager.replace(
       'resilience-security',
       RESILIENCE_NAMESPACE,
@@ -661,6 +1080,53 @@ describe('B11 profile-scoped browser fixture support (e2e)', () => {
         );
       }
     }
+
+    const submission = await reportFor(
+      'core-workflow',
+      CORE_NAMESPACE,
+      'submission',
+      'submission-success',
+    );
+    await mutateReportForPostBrowserFailure(submission, {
+      $unset: { 'metadata.a21Submission': '' },
+    });
+
+    const confirmation = await reportFor(
+      'core-workflow',
+      CORE_NAMESPACE,
+      'confirmation',
+      'confirmation-doctor-success',
+    );
+    await mutateReportForPostBrowserFailure(confirmation, {
+      $set: { source: 'system_draft' },
+    });
+
+    await mutateReportForPostBrowserFailure(targets[0], {
+      $unset: { 'metadata.a21Edits': '' },
+    });
+
+    const zeroMutationConfirmation = await reportFor(
+      'core-workflow',
+      CORE_NAMESPACE,
+      'confirmation',
+      'confirmation-role-visibility',
+    );
+    await mutateReportForPostBrowserFailure(zeroMutationConfirmation, {
+      $set: {
+        status: 'confirmed',
+        confirmation: confirmation.confirmation,
+        'metadata.a21Confirmation': confirmation.metadata?.a21Confirmation,
+      },
+    });
+
+    await expect(
+      manager.verify(
+        'core-workflow',
+        CORE_NAMESPACE,
+        testPassword,
+        'post-browser',
+      ),
+    ).resolves.toMatchObject({ phase: 'post-browser' });
   });
 
   it('removes linked Sessions, all namespace roots and descriptors, preserves canonical seed, and makes cleanup idempotent', async () => {

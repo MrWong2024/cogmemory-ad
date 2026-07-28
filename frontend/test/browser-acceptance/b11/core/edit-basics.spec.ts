@@ -1,6 +1,8 @@
 import { resolveB11BrowserEnvironment } from '../b11-env';
 import {
   B11_NEUTRAL_TEXT,
+  assertB11EditorialPrivacy,
+  assertB11EditorialSummary,
   exerciseBeforeUnload,
   reportSystemAndSnapshotSections,
   runB11CoreRoute,
@@ -275,6 +277,28 @@ test.describe('B11 core / edit-basics', () => {
           source: 'mixed',
           editReceiptPresent: true,
         });
+        expect(result.facts.editReceipt).toMatchObject({
+          keys: [
+            'changedFields',
+            'editNote',
+            'editedAt',
+            'editedBy',
+            'eventId',
+          ],
+          actorKeys: ['operatorId', 'operatorName', 'operatorRole'],
+          changedFields: ['doctorOpinion', 'recommendationText'],
+          editedBy: {
+            operatorRole: 'doctor',
+            internalOperatorIdPresent: false,
+          },
+        });
+        expect(result.facts.editorial).toEqual({
+          lastEditedAt: result.facts.editReceipt?.editedAt ?? null,
+          lastEditedBy: result.facts.editReceipt?.editedBy ?? null,
+          editCount: 1,
+          lastChangedFields:
+            result.facts.editReceipt?.changedFields ?? [],
+        });
         expect(session.actionRequestEvidence('edit')).toEqual([
           {
             action: 'edit',
@@ -294,9 +318,27 @@ test.describe('B11 core / edit-basics', () => {
           }).first(),
         ).toBeVisible();
         await expect(page.getByText(/本次编辑回执：/).first()).toBeVisible();
+        await assertB11EditorialSummary(page, result.facts.editorial);
+        await assertB11EditorialPrivacy(page, 1);
         expect(
           await reportSystemAndSnapshotSections(page).allInnerTexts(),
         ).toEqual(protectedTextBefore);
+
+        const originalContext = page.context();
+        const reopened = await run.reopenPrimaryInFreshContext();
+        expect(reopened.page.context()).not.toBe(originalContext);
+        expect(reopened.actionRequestEvidence('edit')).toEqual([]);
+        expect(reopened.latestEditorialFacts()).toEqual(
+          result.facts.editorial,
+        );
+        await assertB11EditorialSummary(
+          reopened.page,
+          reopened.latestEditorialFacts(),
+        );
+        await assertB11EditorialPrivacy(reopened.page, 0);
+        await expect(
+          reopened.page.locator('p').filter({ hasText: /^本次编辑回执：/ }),
+        ).toHaveCount(0);
       },
     );
   });

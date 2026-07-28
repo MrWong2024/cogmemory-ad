@@ -1,13 +1,17 @@
 import {
   access,
   open,
+  rm,
   unlink,
 } from 'node:fs/promises';
+import path from 'node:path';
 import type {
+  ConsoleMessage,
   Page,
   Request,
   Response,
 } from '@playwright/test';
+import { test as playwrightTest } from '@playwright/test';
 
 import type { B11BrowserEnvironment } from './b11-env';
 import {
@@ -29,6 +33,7 @@ import {
 import {
   safeJsonStringify,
   sanitizeBodyKeys,
+  sanitizeUrlPattern,
 } from '../support/safe-output';
 import type {
   AcceptanceRole,
@@ -54,6 +59,29 @@ type SafeReportFacts = {
   alreadySubmitted: boolean | null;
   alreadyConfirmed: boolean | null;
   confirmationIdPresent: boolean | null;
+  editorial: SafeEditorialFacts | null;
+  editReceipt: SafeEditReceiptFacts | null;
+};
+
+type SafeActorFacts = {
+  operatorName: string | null;
+  operatorRole: string | null;
+  internalOperatorIdPresent: false;
+};
+
+type SafeEditorialFacts = {
+  lastEditedAt: string | null;
+  lastEditedBy: SafeActorFacts | null;
+  editCount: number | null;
+  lastChangedFields: string[];
+};
+
+type SafeEditReceiptFacts = {
+  keys: string[];
+  actorKeys: string[];
+  editedAt: string | null;
+  editedBy: SafeActorFacts | null;
+  changedFields: string[];
 };
 
 type LatestFacts = {
@@ -62,6 +90,7 @@ type LatestFacts = {
   source: string | null;
   qualityStatus: string | null;
   isFinal: boolean | null;
+  editorial: SafeEditorialFacts | null;
 };
 
 type ActionRequestEvidence = {
@@ -88,13 +117,39 @@ type DomPrivacySummary = {
   sensitiveAttributeDetected: false;
 };
 
+type B11CollectState =
+  | 'open'
+  | 'collecting'
+  | 'collected'
+  | 'failed'
+  | 'closing';
+
+type B11LogoutResult = 'succeeded' | 'failed' | 'not_authenticated';
+
+type CaptureFailureCategory = 'response_headers' | 'latest_parse';
+
+type TimedNetworkEvent = {
+  occurredAt: number;
+  method: string;
+  safeEndpointPattern: string;
+  status: number | null;
+  failureReason: 'aborted' | 'timed_out' | 'failed' | null;
+};
+
+type ExpectedNetworkConsoleEvent = Omit<TimedNetworkEvent, 'occurredAt'> & {
+  contract: 'explicit_action_failure' | 'allowed_readonly_404_or_409';
+  correlationWindowMs: number;
+};
+
 export type B11SessionSummary = {
   label: string;
   role: AcceptanceRole;
   login: 'passed';
-  logout: 'passed';
+  logout: 'succeeded';
   workflowAuthMeRequestCount: 1;
-  latestFacts: Array<Omit<LatestFacts, 'updatedAt'>>;
+  latestFacts: Array<
+    Pick<LatestFacts, 'status' | 'source' | 'qualityStatus' | 'isFinal'>
+  >;
   actionResponses: SafeReportFacts[];
   actionRequests: ActionRequestEvidence[];
   network: {
@@ -117,6 +172,7 @@ export type B11SessionSummary = {
     expectedActionFailureCount: number;
     expectedSiblingReadFailureCount: number;
     unexpectedErrorCount: 0;
+    expectedNetworkEvents: ExpectedNetworkConsoleEvent[];
   };
   storage: 'clear';
   cookie: 'http_only_session_then_cleared';
@@ -161,6 +217,53 @@ function safeString(value: unknown): string | null {
 
 function safeBoolean(value: unknown): boolean | null {
   return typeof value === 'boolean' ? value : null;
+}
+
+function safeStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === 'string')
+    : [];
+}
+
+function parseSafeActor(value: unknown): SafeActorFacts | null {
+  if (!isRecord(value)) return null;
+  if (typeof value.operatorId === 'string' && value.operatorId.length > 0) {
+    throw new Error('B11 public workflow actor exposed an internal operator id');
+  }
+  return {
+    operatorName: safeString(value.operatorName),
+    operatorRole: safeString(value.operatorRole),
+    internalOperatorIdPresent: false,
+  };
+}
+
+function parseSafeEditorial(report: Record<string, unknown>): SafeEditorialFacts | null {
+  if (!isRecord(report.editorial)) return null;
+  return {
+    lastEditedAt: safeString(report.editorial.lastEditedAt),
+    lastEditedBy: parseSafeActor(report.editorial.lastEditedBy),
+    editCount:
+      typeof report.editorial.editCount === 'number'
+        ? report.editorial.editCount
+        : null,
+    lastChangedFields: safeStringArray(report.editorial.lastChangedFields),
+  };
+}
+
+function parseSafeEditReceipt(
+  envelope: Record<string, unknown>,
+): SafeEditReceiptFacts | null {
+  if (!isRecord(envelope.editReceipt)) return null;
+  const actor = isRecord(envelope.editReceipt.editedBy)
+    ? envelope.editReceipt.editedBy
+    : null;
+  return {
+    keys: Object.keys(envelope.editReceipt).sort(),
+    actorKeys: actor ? Object.keys(actor).sort() : [],
+    editedAt: safeString(envelope.editReceipt.editedAt),
+    editedBy: parseSafeActor(actor),
+    changedFields: safeStringArray(envelope.editReceipt.changedFields),
+  };
 }
 
 function requestAction(request: Request): B11ActionKind | null {
@@ -272,6 +375,7 @@ async function parseLatestFacts(response: Response): Promise<LatestFacts> {
     source: safeString(report.source),
     qualityStatus: safeString(report.qualityStatus),
     isFinal: safeBoolean(report.isFinal),
+    editorial: parseSafeEditorial(report),
   };
 }
 
@@ -290,6 +394,8 @@ async function parseSafeReportFacts(
       alreadySubmitted: null,
       alreadyConfirmed: null,
       confirmationIdPresent: null,
+      editorial: null,
+      editReceipt: null,
     };
   }
   const body = (await response.json()) as unknown;
@@ -319,6 +425,8 @@ async function parseSafeReportFacts(
       ? typeof confirmationReceipt.confirmationId === 'string' &&
         confirmationReceipt.confirmationId.length > 0
       : null,
+    editorial: parseSafeEditorial(report),
+    editReceipt: parseSafeEditReceipt(envelope),
   };
 }
 
@@ -369,12 +477,17 @@ export class B11BrowserSession {
   readonly page: Page;
   private readonly ledger = new NetworkLedger();
   private readonly consoleAudit: ConsoleAudit;
-  private readonly corsChecks: Promise<boolean>[] = [];
+  private readonly corsChecks: boolean[] = [];
   private readonly latestFacts: LatestFacts[] = [];
   private readonly captureTasks: Promise<void>[] = [];
+  private readonly captureFailures: CaptureFailureCategory[] = [];
+  private readonly consoleErrors: Array<{
+    occurredAt: number;
+    category: 'network' | 'other';
+  }> = [];
+  private readonly timedNetworkEvents: TimedNetworkEvent[] = [];
   private readonly actionRequests: ActionRequestEvidence[] = [];
   private readonly actionResponses: SafeReportFacts[] = [];
-  private readonly actionResponseStatuses: number[] = [];
   private readonly explicitActionCounts: Record<B11ActionKind, number> = {
     edit: 0,
     submit: 0,
@@ -382,9 +495,27 @@ export class B11BrowserSession {
   };
   private authMeBeforeWorkflow = 0;
   private authMeAfterWorkflow = 0;
-  private collected = false;
+  private collectState: B11CollectState = 'open';
+  private collectedSummary: B11SessionSummary | null = null;
+  private logoutResult: B11LogoutResult | null = null;
+  private acceptingCaptures = true;
+  private consoleListening = false;
+  private ledgerDetached = false;
+  private contextClosed = false;
+
+  private registerCapture(
+    category: CaptureFailureCategory,
+    task: Promise<void>,
+  ): void {
+    this.captureTasks.push(
+      task.catch(() => {
+        this.captureFailures.push(category);
+      }),
+    );
+  }
 
   private readonly onRequest = (request: Request): void => {
+    if (!this.acceptingCaptures) return;
     const action = requestAction(request);
     if (!action) return;
     let body: Record<string, unknown> = {};
@@ -407,25 +538,65 @@ export class B11BrowserSession {
   };
 
   private readonly onResponse = (response: Response): void => {
+    if (!this.acceptingCaptures) return;
+    const request = response.request();
+    this.timedNetworkEvents.push({
+      occurredAt: Date.now(),
+      method: request.method().toUpperCase(),
+      safeEndpointPattern: sanitizeUrlPattern(response.url()),
+      status: response.status(),
+      failureReason: null,
+    });
     if (response.url().startsWith(`${this.environment.backendOrigin}/`)) {
-      this.corsChecks.push(
+      this.registerCapture(
+        'response_headers',
         response
           .allHeaders()
-          .then(
-            (headers) =>
+          .then((headers) => {
+            this.corsChecks.push(
               headers['access-control-allow-origin'] ===
                 this.environment.frontendOrigin &&
-              headers['access-control-allow-credentials'] === 'true',
-          ),
+                headers['access-control-allow-credentials'] === 'true',
+            );
+          }),
       );
     }
     if (latestResponse(response) && response.status() === 200) {
-      this.captureTasks.push(
+      this.registerCapture(
+        'latest_parse',
         parseLatestFacts(response).then((facts) => {
           this.latestFacts.push(facts);
         }),
       );
     }
+  };
+
+  private readonly onRequestFailed = (request: Request): void => {
+    if (!this.acceptingCaptures) return;
+    const errorText = request.failure()?.errorText ?? '';
+    this.timedNetworkEvents.push({
+      occurredAt: Date.now(),
+      method: request.method().toUpperCase(),
+      safeEndpointPattern: sanitizeUrlPattern(request.url()),
+      status: null,
+      failureReason: /aborted|blocked_by_client/i.test(errorText)
+        ? 'aborted'
+        : /timed?out/i.test(errorText)
+          ? 'timed_out'
+          : 'failed',
+    });
+  };
+
+  private readonly onConsole = (message: ConsoleMessage): void => {
+    if (message.type() !== 'error') return;
+    this.consoleErrors.push({
+      occurredAt: Date.now(),
+      category: /fetch|network|failed to load|http|status of/i.test(
+        message.text(),
+      )
+        ? 'network'
+        : 'other',
+    });
   };
 
   private constructor(
@@ -437,6 +608,7 @@ export class B11BrowserSession {
     private readonly contextCookies: () => Promise<
       Array<{ httpOnly: boolean }>
     >,
+    private readonly closeBrowserContext: () => Promise<void>,
     page: Page,
   ) {
     this.page = page;
@@ -463,10 +635,17 @@ export class B11BrowserSession {
       input.descriptor,
       input.environment,
       () => roleContext.context.cookies(),
+      () => roleContext.context.close(),
       roleContext.page,
     );
-    await session.open();
-    return session;
+    try {
+      await session.open();
+      return session;
+    } catch (error: unknown) {
+      await session.bestEffortLogout().catch(() => 'failed');
+      await session.closeContext().catch(() => undefined);
+      throw error;
+    }
   }
 
   private async flushCaptures(): Promise<void> {
@@ -476,10 +655,32 @@ export class B11BrowserSession {
     }
   }
 
+  private freezeCaptureListeners(): void {
+    if (!this.acceptingCaptures) return;
+    this.acceptingCaptures = false;
+    this.page.off('request', this.onRequest);
+    this.page.off('response', this.onResponse);
+    this.page.off('requestfailed', this.onRequestFailed);
+  }
+
+  private stopConsoleAudit() {
+    if (!this.consoleListening) return this.consoleAudit.summary();
+    this.consoleListening = false;
+    this.page.off('console', this.onConsole);
+    return this.consoleAudit.stop();
+  }
+
+  private throwCaptureFailures(): void {
+    if (this.captureFailures.length === 0) return;
+    const categories = [...new Set(this.captureFailures)].sort().join(',');
+    throw new Error(`B11 capture task failed safely: ${categories}`);
+  }
+
   private async open(): Promise<void> {
     await this.ledger.attach(this.page);
     this.page.on('request', this.onRequest);
     this.page.on('response', this.onResponse);
+    this.page.on('requestfailed', this.onRequestFailed);
 
     await this.page.goto(`${this.environment.frontendOrigin}/login`, {
       waitUntil: 'domcontentloaded',
@@ -512,6 +713,8 @@ export class B11BrowserSession {
       safeUrlPattern: '/auth/me',
     });
     this.consoleAudit.start();
+    this.page.on('console', this.onConsole);
+    this.consoleListening = true;
     const latestResponsePromise = this.page.waitForResponse(
       (response) => latestResponse(response) && response.status() === 200,
     );
@@ -521,6 +724,7 @@ export class B11BrowserSession {
     );
     await latestResponsePromise;
     await this.flushCaptures();
+    this.throwCaptureFailures();
     await expect(
       this.page.getByRole('heading', {
         name: '访视级临床报告',
@@ -558,7 +762,10 @@ export class B11BrowserSession {
     return value;
   }
 
-  latestSafeFacts(): Omit<LatestFacts, 'updatedAt'> {
+  latestSafeFacts(): Pick<
+    LatestFacts,
+    'status' | 'source' | 'qualityStatus' | 'isFinal'
+  > {
     const facts = this.latestFacts.at(-1);
     if (!facts) throw new Error('B11 session has no latest report facts');
     return {
@@ -569,10 +776,24 @@ export class B11BrowserSession {
     };
   }
 
+  latestEditorialFacts(): SafeEditorialFacts | null {
+    const editorial = this.latestFacts.at(-1)?.editorial;
+    return editorial
+      ? {
+          ...editorial,
+          lastChangedFields: [...editorial.lastChangedFields],
+          lastEditedBy: editorial.lastEditedBy
+            ? { ...editorial.lastEditedBy }
+            : null,
+        }
+      : null;
+  }
+
   async waitForLatestCount(count: number): Promise<void> {
     await expect
       .poll(async () => {
         await this.flushCaptures();
+        this.throwCaptureFailures();
         return this.latestFacts.length;
       })
       .toBe(count);
@@ -589,7 +810,6 @@ export class B11BrowserSession {
     await trigger();
     const response = await responsePromise;
     const facts = await parseSafeReportFacts(response);
-    this.actionResponseStatuses.push(response.status());
     this.actionResponses.push(facts);
     return { status: response.status(), facts };
   }
@@ -600,180 +820,308 @@ export class B11BrowserSession {
       .map((entry) => ({ ...entry, bodyKeys: [...entry.bodyKeys] }));
   }
 
-  async collect(): Promise<B11SessionSummary> {
-    if (this.collected) throw new Error('B11 session was collected twice');
-    this.collected = true;
-    await this.flushCaptures();
-    const storage = await auditRuntimeStorage(this.page);
-    expect(storage.localStorageKeys).toEqual([]);
-    expect(storage.sessionStorageKeys).toEqual([]);
-    expect(storage.indexedDbNames).toEqual([]);
-    expect(storage.forbiddenValueDetected).toBe(false);
-    expect(storage.documentCookieEmpty).toBe(true);
-    expect(storage.documentCookieForbiddenPatternDetected).toBe(false);
-    expect(storage.urlHasSensitiveQueryOrHash).toBe(false);
-    const currentUrl = new URL(this.page.url());
-    expect(currentUrl.search).toBe('');
-    expect(currentUrl.hash).toBe('');
-    const domPrivacy = await auditDomPrivacy(this.page);
-    expect((await this.contextCookies()).some(({ httpOnly }) => httpOnly)).toBe(
-      true,
-    );
-
-    const consoleSummary = this.consoleAudit.stop();
-    const expectedActionFailureCount = this.actionResponseStatuses.filter(
-      (status) => status >= 400,
-    ).length;
-    const expectedSiblingReadFailureCount = this.ledger
-      .entries()
+  private correlateExpectedNetworkConsoleEvents(): ExpectedNetworkConsoleEvent[] {
+    const correlationWindowMs = 2_500;
+    const candidates = this.timedNetworkEvents
+      .map((event) => {
+        const explicitActionFailure =
+          event.status !== null &&
+          event.status >= 400 &&
+          Object.values(ACTION_SUFFIX).some((suffix) =>
+            event.safeEndpointPattern.endsWith(suffix),
+          );
+        const allowedReadonlyFailure =
+          event.method === 'GET' &&
+          (event.status === 404 || event.status === 409) &&
+          event.failureReason === null &&
+          event.safeEndpointPattern.endsWith('/score-results/latest');
+        return {
+          event,
+          contract: explicitActionFailure
+            ? ('explicit_action_failure' as const)
+            : allowedReadonlyFailure
+              ? ('allowed_readonly_404_or_409' as const)
+              : null,
+        };
+      })
       .filter(
-        ({ method, status, failureReason, safeUrlPattern }) =>
-          method === 'GET' &&
-          status === 404 &&
-          failureReason === null &&
-          safeUrlPattern.endsWith('/score-results/latest'),
+        (
+          candidate,
+        ): candidate is {
+          event: TimedNetworkEvent;
+          contract: ExpectedNetworkConsoleEvent['contract'];
+        } => candidate.contract !== null,
+      );
+    const used = new Set<number>();
+    const matched: ExpectedNetworkConsoleEvent[] = [];
+    for (const consoleEvent of this.consoleErrors) {
+      if (consoleEvent.category !== 'network') {
+        throw new Error('B11 Console error was not a network event');
+      }
+      const candidate = candidates
+        .map((value, index) => ({
+          ...value,
+          index,
+          delta: Math.abs(value.event.occurredAt - consoleEvent.occurredAt),
+        }))
+        .filter(({ index, delta }) => !used.has(index) && delta <= correlationWindowMs)
+        .sort((left, right) => left.delta - right.delta)[0];
+      if (!candidate) {
+        throw new Error(
+          'B11 Console error could not be matched to one allowed network event',
+        );
+      }
+      used.add(candidate.index);
+      matched.push({
+        method: candidate.event.method,
+        safeEndpointPattern: candidate.event.safeEndpointPattern,
+        status: candidate.event.status,
+        failureReason: candidate.event.failureReason,
+        contract: candidate.contract,
+        correlationWindowMs,
+      });
+    }
+    for (const event of matched.filter(
+      ({ contract }) => contract === 'allowed_readonly_404_or_409',
+    )) {
+      const attempts = this.timedNetworkEvents.filter(
+        (candidate) =>
+          candidate.method === event.method &&
+          candidate.safeEndpointPattern === event.safeEndpointPattern,
       ).length;
-    const expectedNetworkConsoleErrorCount =
-      expectedActionFailureCount + expectedSiblingReadFailureCount;
-    expect(consoleSummary.warningCount).toBe(0);
-    expect(consoleSummary.errorCount).toBe(expectedNetworkConsoleErrorCount);
-    expect(consoleSummary.pageErrorCount).toBe(0);
-    expect(consoleSummary.categories).toEqual(
-      expectedNetworkConsoleErrorCount === 0
-        ? []
-        : [{ category: 'network', count: expectedNetworkConsoleErrorCount }],
-    );
-
-    const logoutResponsePromise = this.page.waitForResponse(
-      (response) =>
-        response.request().method() === 'POST' &&
-        new URL(response.url()).pathname === '/auth/logout',
-    );
-    await this.page
-      .getByRole('button', { name: '退出登录', exact: true })
-      .click();
-    const logoutResponse = await logoutResponsePromise;
-    expect(logoutResponse.status()).toBeGreaterThanOrEqual(200);
-    expect(logoutResponse.status()).toBeLessThan(300);
-    await this.page.waitForURL(`${this.environment.frontendOrigin}/login`);
-    expect((await this.contextCookies()).some(({ httpOnly }) => httpOnly)).toBe(
-      false,
-    );
-    await this.page.waitForLoadState('networkidle', { timeout: 10_000 });
-    const corsChecks = await Promise.all(this.corsChecks);
-    expect(corsChecks.length).toBeGreaterThan(0);
-    expect(corsChecks.every(Boolean)).toBe(true);
-
-    this.page.off('request', this.onRequest);
-    this.page.off('response', this.onResponse);
-    const network = await this.ledger.detach();
-    const entries = network.entries;
-    const latestReads = entries.filter(
-      (entry) =>
-        entry.method === 'GET' &&
-        entry.safeUrlPattern.endsWith('/clinical-reports/latest'),
-    );
-    const actionCounts = {
-      edit: entries.filter(
-        (entry) =>
-          entry.method === 'PATCH' &&
-          entry.safeUrlPattern.endsWith(ACTION_SUFFIX.edit),
-      ).length,
-      submit: entries.filter(
-        (entry) =>
-          entry.method === 'POST' &&
-          entry.safeUrlPattern.endsWith(ACTION_SUFFIX.submit),
-      ).length,
-      confirm: entries.filter(
-        (entry) =>
-          entry.method === 'POST' &&
-          entry.safeUrlPattern.endsWith(ACTION_SUFFIX.confirm),
-      ).length,
-    };
-    expect(actionCounts).toEqual(this.explicitActionCounts);
-    expect(latestReads.length).toBeGreaterThanOrEqual(1);
-    expect(latestReads.length).toBeLessThanOrEqual(2);
-    const forbiddenWrites = entries.filter(a22ToA25Write);
-    const unrelatedOutputs = entries.filter(unrelatedOutputRequest);
-    expect(forbiddenWrites).toHaveLength(0);
-    expect(unrelatedOutputs).toHaveLength(0);
-    expect(
-      this.actionRequests.every(
-        ({ expectedUpdatedAtMatchesLatest, confirmIsTrue }) =>
-          expectedUpdatedAtMatchesLatest && confirmIsTrue !== false,
-      ),
-    ).toBe(true);
-
-    return {
-      label: this.label,
-      role: this.role,
-      login: 'passed',
-      logout: 'passed',
-      workflowAuthMeRequestCount: 1,
-      latestFacts: this.latestFacts.map(
-        ({ status, source, qualityStatus, isFinal }) => ({
-          status,
-          source,
-          qualityStatus,
-          isFinal,
-        }),
-      ),
-      actionResponses: this.actionResponses,
-      actionRequests: this.actionRequests,
-      network: {
-        latestReadCount: latestReads.length,
-        editRequestCount: actionCounts.edit,
-        submitRequestCount: actionCounts.submit,
-        confirmRequestCount: actionCounts.confirm,
-        authMeRequestCount: entries.filter(
-          (entry) =>
-            entry.method === 'GET' && entry.safeUrlPattern === '/auth/me',
-        ).length,
-        a22ToA25WriteRequestCount: 0,
-        unrelatedOutputRequestCount: 0,
-        abortedRequestCount: entries.filter(
-          ({ failureReason }) => failureReason !== null,
-        ).length,
-        automaticRetryDetected: false,
-        pollingDetected: false,
-        entries: groupNetworkEntries(entries),
-      },
-      console: {
-        warningCount: 0,
-        errorCount: expectedNetworkConsoleErrorCount,
-        pageErrorCount: 0,
-        expectedActionFailureCount,
-        expectedSiblingReadFailureCount,
-        unexpectedErrorCount: 0,
-      },
-      storage: 'clear',
-      cookie: 'http_only_session_then_cleared',
-      cors: 'passed',
-      url: 'safe_path_without_query_or_hash',
-      domPrivacy,
-    };
+      if (attempts !== 1) {
+        throw new Error(
+          'B11 expected read-only Console event had retry or polling activity',
+        );
+      }
+    }
+    return matched;
   }
 
-  async bestEffortLogout(): Promise<void> {
-    if (this.collected || this.page.isClosed()) return;
+  private async attemptLogout(): Promise<B11LogoutResult> {
+    if (this.logoutResult) return this.logoutResult;
+    if (this.page.isClosed()) {
+      this.logoutResult = 'failed';
+      return this.logoutResult;
+    }
+    if (
+      new URL(this.page.url()).pathname === '/login' ||
+      (await this.page
+        .getByRole('button', { name: '登录系统', exact: true })
+        .isVisible()
+        .catch(() => false))
+    ) {
+      this.logoutResult = 'not_authenticated';
+      return this.logoutResult;
+    }
     const logout = this.page.getByRole('button', {
       name: '退出登录',
       exact: true,
     });
-    if (await logout.isVisible().catch(() => false)) {
-      await logout.click().catch(() => undefined);
-      await this.page
-        .waitForURL(`${this.environment.frontendOrigin}/login`, {
-          timeout: 5_000,
-        })
-        .catch(() => undefined);
+    if (!(await logout.isVisible().catch(() => false))) {
+      this.logoutResult = 'failed';
+      return this.logoutResult;
     }
+    try {
+      const responsePromise = this.page.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          new URL(response.url()).pathname === '/auth/logout',
+        { timeout: 5_000 },
+      );
+      await logout.click();
+      const response = await responsePromise;
+      await this.page.waitForURL(`${this.environment.frontendOrigin}/login`, {
+        timeout: 5_000,
+      });
+      this.logoutResult =
+        response.status() >= 200 && response.status() < 300
+          ? 'succeeded'
+          : 'failed';
+    } catch {
+      this.logoutResult = 'failed';
+    }
+    return this.logoutResult;
+  }
+
+  private async detachLedger(): Promise<Awaited<ReturnType<NetworkLedger['detach']>>> {
+    if (this.ledgerDetached) return this.ledger.summary();
+    const summary = await this.ledger.detach();
+    this.ledgerDetached = true;
+    return summary;
+  }
+
+  async collect(): Promise<B11SessionSummary> {
+    if (this.collectState === 'collected' && this.collectedSummary) {
+      return this.collectedSummary;
+    }
+    if (this.collectState !== 'open') {
+      throw new Error(`B11 session cannot collect from ${this.collectState}`);
+    }
+    this.collectState = 'collecting';
+    try {
+      this.freezeCaptureListeners();
+      await this.flushCaptures();
+      this.throwCaptureFailures();
+      const storage = await auditRuntimeStorage(this.page);
+      expect(storage.localStorageKeys).toEqual([]);
+      expect(storage.sessionStorageKeys).toEqual([]);
+      expect(storage.indexedDbNames).toEqual([]);
+      expect(storage.forbiddenValueDetected).toBe(false);
+      expect(storage.documentCookieEmpty).toBe(true);
+      expect(storage.documentCookieForbiddenPatternDetected).toBe(false);
+      expect(storage.urlHasSensitiveQueryOrHash).toBe(false);
+      const currentUrl = new URL(this.page.url());
+      expect(currentUrl.search).toBe('');
+      expect(currentUrl.hash).toBe('');
+      const domPrivacy = await auditDomPrivacy(this.page);
+      expect(
+        (await this.contextCookies()).some(({ httpOnly }) => httpOnly),
+      ).toBe(true);
+
+      const consoleSummary = this.stopConsoleAudit();
+      const expectedNetworkEvents =
+        this.correlateExpectedNetworkConsoleEvents();
+      const expectedActionFailureCount = expectedNetworkEvents.filter(
+        ({ contract }) => contract === 'explicit_action_failure',
+      ).length;
+      const expectedSiblingReadFailureCount = expectedNetworkEvents.filter(
+        ({ contract }) => contract === 'allowed_readonly_404_or_409',
+      ).length;
+      expect(consoleSummary.warningCount).toBe(0);
+      expect(consoleSummary.errorCount).toBe(expectedNetworkEvents.length);
+      expect(consoleSummary.pageErrorCount).toBe(0);
+      expect(consoleSummary.categories).toEqual(
+        expectedNetworkEvents.length === 0
+          ? []
+          : [{ category: 'network', count: expectedNetworkEvents.length }],
+      );
+
+      expect(await this.attemptLogout()).toBe('succeeded');
+      expect(
+        (await this.contextCookies()).some(({ httpOnly }) => httpOnly),
+      ).toBe(false);
+      await this.page.waitForLoadState('networkidle', { timeout: 10_000 });
+      expect(this.corsChecks.length).toBeGreaterThan(0);
+      expect(this.corsChecks.every(Boolean)).toBe(true);
+
+      const network = await this.detachLedger();
+      const entries = network.entries;
+      const latestReads = entries.filter(
+        (entry) =>
+          entry.method === 'GET' &&
+          entry.safeUrlPattern.endsWith('/clinical-reports/latest'),
+      );
+      const actionCounts = {
+        edit: entries.filter(
+          (entry) =>
+            entry.method === 'PATCH' &&
+            entry.safeUrlPattern.endsWith(ACTION_SUFFIX.edit),
+        ).length,
+        submit: entries.filter(
+          (entry) =>
+            entry.method === 'POST' &&
+            entry.safeUrlPattern.endsWith(ACTION_SUFFIX.submit),
+        ).length,
+        confirm: entries.filter(
+          (entry) =>
+            entry.method === 'POST' &&
+            entry.safeUrlPattern.endsWith(ACTION_SUFFIX.confirm),
+        ).length,
+      };
+      expect(actionCounts).toEqual(this.explicitActionCounts);
+      expect(latestReads.length).toBeGreaterThanOrEqual(1);
+      expect(latestReads.length).toBeLessThanOrEqual(2);
+      const forbiddenWrites = entries.filter(a22ToA25Write);
+      const unrelatedOutputs = entries.filter(unrelatedOutputRequest);
+      expect(forbiddenWrites).toHaveLength(0);
+      expect(unrelatedOutputs).toHaveLength(0);
+      expect(
+        this.actionRequests.every(
+          ({ expectedUpdatedAtMatchesLatest, confirmIsTrue }) =>
+            expectedUpdatedAtMatchesLatest && confirmIsTrue !== false,
+        ),
+      ).toBe(true);
+
+      const summary: B11SessionSummary = {
+        label: this.label,
+        role: this.role,
+        login: 'passed',
+        logout: 'succeeded',
+        workflowAuthMeRequestCount: 1,
+        latestFacts: this.latestFacts.map(
+          ({ status, source, qualityStatus, isFinal }) => ({
+            status,
+            source,
+            qualityStatus,
+            isFinal,
+          }),
+        ),
+        actionResponses: this.actionResponses,
+        actionRequests: this.actionRequests,
+        network: {
+          latestReadCount: latestReads.length,
+          editRequestCount: actionCounts.edit,
+          submitRequestCount: actionCounts.submit,
+          confirmRequestCount: actionCounts.confirm,
+          authMeRequestCount: entries.filter(
+            (entry) =>
+              entry.method === 'GET' && entry.safeUrlPattern === '/auth/me',
+          ).length,
+          a22ToA25WriteRequestCount: 0,
+          unrelatedOutputRequestCount: 0,
+          abortedRequestCount: entries.filter(
+            ({ failureReason }) => failureReason !== null,
+          ).length,
+          automaticRetryDetected: false,
+          pollingDetected: false,
+          entries: groupNetworkEntries(entries),
+        },
+        console: {
+          warningCount: 0,
+          errorCount: expectedNetworkEvents.length,
+          pageErrorCount: 0,
+          expectedActionFailureCount,
+          expectedSiblingReadFailureCount,
+          unexpectedErrorCount: 0,
+          expectedNetworkEvents,
+        },
+        storage: 'clear',
+        cookie: 'http_only_session_then_cleared',
+        cors: 'passed',
+        url: 'safe_path_without_query_or_hash',
+        domPrivacy,
+      };
+      this.collectedSummary = summary;
+      this.collectState = 'collected';
+      return summary;
+    } catch (error: unknown) {
+      this.collectState = 'failed';
+      throw error;
+    }
+  }
+
+  async bestEffortLogout(): Promise<B11LogoutResult> {
+    if (this.collectState !== 'collected') this.collectState = 'closing';
+    this.freezeCaptureListeners();
+    await this.flushCaptures();
+    this.stopConsoleAudit();
+    const result = await this.attemptLogout();
+    await this.detachLedger().catch(() => undefined);
+    return result;
+  }
+
+  async closeContext(): Promise<void> {
+    if (this.contextClosed) return;
+    await this.closeBrowserContext();
+    this.contextClosed = true;
   }
 }
 
 export class B11RouteRun {
   private primarySession: B11BrowserSession | null = null;
   private secondarySession: B11BrowserSession | null = null;
+  private readonly reopenedSessions: B11BrowserSession[] = [];
 
   constructor(
     readonly target: B11CoreRouteTarget,
@@ -816,24 +1164,66 @@ export class B11RouteRun {
     return this.secondarySession;
   }
 
+  async reopenPrimaryInFreshContext(): Promise<B11BrowserSession> {
+    const current = await this.primary();
+    await current.collect();
+    await current.closeContext();
+    const reopened = await B11BrowserSession.create({
+      label: `primary-reopened-${this.reopenedSessions.length + 1}`,
+      role: this.descriptor.primaryRole,
+      loginIdentifier: this.descriptor.loginIdentifier,
+      descriptor: this.descriptor,
+      environment: this.environment,
+      roleContexts: this.roleContexts,
+    });
+    this.reopenedSessions.push(reopened);
+    return reopened;
+  }
+
+  private sessions(): B11BrowserSession[] {
+    return [
+      this.primarySession,
+      this.secondarySession,
+      ...this.reopenedSessions,
+    ].filter((session): session is B11BrowserSession => session !== null);
+  }
+
   async collect(): Promise<B11SessionSummary[]> {
-    const sessions = [this.primarySession, this.secondarySession].filter(
-      (session): session is B11BrowserSession => session !== null,
-    );
     const summaries: B11SessionSummary[] = [];
-    for (const session of sessions) summaries.push(await session.collect());
+    for (const session of this.sessions()) {
+      summaries.push(await session.collect());
+    }
     return summaries;
   }
 
-  async cleanupAfterFailure(): Promise<void> {
-    await Promise.allSettled(
-      [this.primarySession, this.secondarySession]
-        .filter(
-          (session): session is B11BrowserSession => session !== null,
-        )
-        .map((session) => session.bestEffortLogout()),
+  async cleanupAfterFailure(): Promise<
+    Array<{ label: string; logout: B11LogoutResult }>
+  > {
+    return Promise.all(
+      this.sessions().map(async (session) => {
+        const logout = await session.bestEffortLogout().catch(
+          () => 'failed' as const,
+        );
+        await session.closeContext().catch(() => undefined);
+        return { label: session.label, logout };
+      }),
     );
   }
+}
+
+async function removeCurrentB11TestOutput(): Promise<boolean> {
+  const outputRoot = path.resolve(
+    process.cwd(),
+    'test-results',
+    'browser-acceptance',
+  );
+  const currentOutput = path.resolve(playwrightTest.info().outputDir);
+  const relative = path.relative(outputRoot, currentOutput);
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error('B11 test output directory is outside the configured root');
+  }
+  await rm(currentOutput, { recursive: true, force: true });
+  return true;
 }
 
 export async function runB11CoreRoute(
@@ -890,9 +1280,27 @@ export async function runB11CoreRoute(
     );
   } finally {
     if (!completed) {
-      await run.cleanupAfterFailure();
-      await input.roleContexts.closeAll().catch(() => undefined);
-      await deleteB11CoreRuntimeDescriptor(input.target).catch(() => false);
+      const logout = await run.cleanupAfterFailure();
+      const contextsClosed = await input.roleContexts
+        .closeAll()
+        .then(({ activeContextCount }) => activeContextCount === 0)
+        .catch(() => false);
+      const runtimeDescriptorDeleted = await deleteB11CoreRuntimeDescriptor(
+        input.target,
+      ).catch(() => false);
+      const failureArtifactsRemoved = await removeCurrentB11TestOutput().catch(
+        () => false,
+      );
+      console.log(
+        `B11_CORE_FAILURE_CLEANUP ${safeJsonStringify({
+          logout,
+          contextsClosed,
+          runtimeDescriptorDeleted,
+          failureArtifactsRemoved,
+        })}`,
+      );
+    } else {
+      await removeCurrentB11TestOutput().catch(() => false);
     }
   }
 }
@@ -905,6 +1313,137 @@ export function reportSystemAndSnapshotSections(page: Page) {
       'section[aria-labelledby="clinical-report-narrative-heading"] > div',
     ].join(','),
   );
+}
+
+const B11_OPERATOR_ROLE_LABELS: Record<string, string> = {
+  doctor: '医生',
+  nurse: '护士',
+  research_assistant: '研究助理',
+  admin: '管理员',
+  unknown: '未知角色',
+};
+
+function formatB11PublicDate(value: string | null): string {
+  if (!value) return '—';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? '时间暂不可用'
+    : new Intl.DateTimeFormat('zh-CN', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }).format(date);
+}
+
+function actorLabel(actor: SafeActorFacts | null): string {
+  if (!actor) return '—';
+  const name = actor.operatorName?.trim() || '未提供姓名';
+  const role = actor.operatorRole
+    ? (B11_OPERATOR_ROLE_LABELS[actor.operatorRole] ?? '未提供角色')
+    : '未提供角色';
+  return `${name}（${role}）`;
+}
+
+export async function assertB11EditorialSummary(
+  page: Page,
+  editorial: SafeEditorialFacts | null,
+): Promise<void> {
+  if (!editorial) throw new Error('B11 response omitted its editorial summary');
+  const heading = page.getByRole('heading', {
+    name: '最新编辑摘要',
+    exact: true,
+  });
+  await expect(heading).toHaveCount(1);
+  const section = page.locator('section').filter({ has: heading });
+  await expect(section).toHaveCount(1);
+  const valueFor = (label: string) =>
+    section.locator('dt', { hasText: label }).locator('..').locator('dd');
+  await expect(valueFor('时间')).toHaveText(
+    formatB11PublicDate(editorial.lastEditedAt),
+  );
+  await expect(valueFor('编辑人')).toHaveText(
+    actorLabel(editorial.lastEditedBy),
+  );
+  await expect(valueFor('编辑次数')).toHaveText(
+    String(editorial.editCount),
+  );
+  const changedFieldLabels: Record<string, string> = {
+    doctorOpinion: '医生意见',
+    recommendationText: '临床人员补充建议',
+  };
+  await expect(valueFor('最近变化字段')).toHaveText(
+    editorial.lastChangedFields
+      .map((field) => changedFieldLabels[field] ?? field)
+      .join('、') || '—',
+  );
+  expect(editorial.lastEditedBy?.internalOperatorIdPresent ?? false).toBe(
+    false,
+  );
+}
+
+export async function assertB11EditorialPrivacy(
+  page: Page,
+  expectedReceiptCount: number,
+): Promise<void> {
+  const workflow = page.locator(
+    'section[aria-labelledby="clinical-report-workflow-summary-heading"]',
+  );
+  await expect(workflow).toHaveCount(1);
+  await expect(
+    workflow.getByText(
+      '仅展示最新公开摘要与当前页面会话回执，不公开完整编辑历史、前后值、metadata 或签名字段。',
+      { exact: false },
+    ),
+  ).toBeVisible();
+  await expect(
+    workflow.getByRole('heading', { name: '最新编辑摘要', exact: true }),
+  ).toHaveCount(1);
+  await expect(
+    workflow.locator('p').filter({ hasText: /^本次编辑回执：/ }),
+  ).toHaveCount(expectedReceiptCount);
+  await expect(
+    workflow.getByRole('heading', {
+      name: /完整编辑历史|审计历史|历史编辑事件/,
+    }),
+  ).toHaveCount(0);
+  await expect(
+    workflow
+      .locator('table,[role="table"],[role="grid"],ol,ul')
+      .filter({ hasText: /previousValue|nextValue|编辑事件数组/ }),
+  ).toHaveCount(0);
+
+  const privacy = await page.evaluate(() => {
+    const disclosure =
+      '仅展示最新公开摘要与当前页面会话回执，不公开完整编辑历史、前后值、metadata 或签名字段。';
+    const forbidden =
+      /previousValues?|nextValues?|\bprevious\b|\bnext\b|metadata|a21Edits|editEvents|编辑事件数组/i;
+    const clone = document.documentElement.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll('script,style').forEach((node) => node.remove());
+    const serializedWithoutDisclosure = clone.outerHTML.replace(disclosure, '');
+    const textWithoutDisclosure = document.body.innerText.replace(
+      disclosure,
+      '',
+    );
+    const sensitiveAttributeDetected = [...document.querySelectorAll('*')].some(
+      (node) =>
+        [...node.attributes].some(
+          (attribute) =>
+            (attribute.name === 'title' ||
+              attribute.name.startsWith('aria-') ||
+              attribute.name.startsWith('data-')) &&
+            forbidden.test(attribute.value),
+        ),
+    );
+    return {
+      forbiddenTextDetected: forbidden.test(textWithoutDisclosure),
+      forbiddenHtmlDetected: forbidden.test(serializedWithoutDisclosure),
+      sensitiveAttributeDetected,
+    };
+  });
+  expect(privacy).toEqual({
+    forbiddenTextDetected: false,
+    forbiddenHtmlDetected: false,
+    sensitiveAttributeDetected: false,
+  });
 }
 
 export async function assertNoB11WorkflowWriteControls(page: Page) {
