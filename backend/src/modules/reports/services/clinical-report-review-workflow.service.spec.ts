@@ -142,6 +142,17 @@ function user(roles: string[] = ['doctor']): AuthenticatedUserContext {
   };
 }
 
+function expectSafeReviewActor(
+  actor: { operatorName?: string; operatorRole?: string } | null,
+  operatorRole: string,
+): void {
+  expect(actor).toEqual({
+    operatorName: 'A21 Test Doctor',
+    operatorRole,
+  });
+  expect(Object.hasOwn(actor ?? {}, 'operatorId')).toBe(false);
+}
+
 function mocksFixture() {
   return {
     patients: {
@@ -223,7 +234,11 @@ describe('ClinicalReportReviewWorkflowService', () => {
       },
     );
     expect(response.report.source).toBe('mixed');
-    expect(response.editReceipt.editedBy.operatorRole).toBe('nurse');
+    expectSafeReviewActor(response.editReceipt.editedBy, 'nurse');
+    expectSafeReviewActor(
+      response.report.editorial?.lastEditedBy ?? null,
+      'nurse',
+    );
 
     mocks.reports.updateDraftNarrativeIfUnmodified.mockResolvedValue(null);
     mocks.reports.findReportByOwnership
@@ -287,6 +302,11 @@ describe('ClinicalReportReviewWorkflowService', () => {
         expectedUpdatedAt: now.toISOString(),
       },
     );
+    expectSafeReviewActor(first.submissionReceipt.submittedBy, 'doctor');
+    expectSafeReviewActor(
+      first.report.submission?.submittedBy ?? null,
+      'doctor',
+    );
     report = persisted;
     const repeated = await service.submitForConfirmation(
       ids.patient,
@@ -303,10 +323,65 @@ describe('ClinicalReportReviewWorkflowService', () => {
     expect(repeated.submissionReceipt.submissionId).toBe(
       first.submissionReceipt.submissionId,
     );
+    expectSafeReviewActor(repeated.submissionReceipt.submittedBy, 'doctor');
+    expectSafeReviewActor(
+      repeated.report.submission?.submittedBy ?? null,
+      'doctor',
+    );
     expect(
       mocks.reports.submitForConfirmationIfUnmodified,
     ).toHaveBeenCalledTimes(1);
   });
+
+  it.each(['confirmed', 'archived', 'corrected'] as const)(
+    'returns the safe existing submission actor for %s reports',
+    async (status) => {
+      report = reportFixture({
+        status,
+        confirmation: {
+          confirmedAt: now,
+          confirmedBy: ids.actor,
+          confirmedByName: 'A21 Test Doctor',
+          confirmedByRole: 'doctor',
+          confirmationNote: '脱敏确认说明',
+        },
+        metadata: {
+          ...reportFixture().metadata,
+          a21Submission: {
+            version: 1,
+            submissionId: 'submission-a21-workflow',
+            submittedAt: now,
+            submittedBy: ids.actor,
+            submittedByName: 'A21 Test Doctor',
+            submittedByRole: 'doctor',
+            submissionNote: '脱敏提交说明',
+          },
+        },
+      });
+
+      const response = await service.submitForConfirmation(
+        ids.patient,
+        ids.visit,
+        ids.report,
+        user(),
+        {
+          confirm: true,
+          submissionNote: '不会覆盖原说明',
+          expectedUpdatedAt: now.toISOString(),
+        },
+      );
+
+      expect(response.submissionReceipt.alreadySubmitted).toBe(true);
+      expectSafeReviewActor(response.submissionReceipt.submittedBy, 'doctor');
+      expectSafeReviewActor(
+        response.report.submission?.submittedBy ?? null,
+        'doctor',
+      );
+      expect(
+        mocks.reports.submitForConfirmationIfUnmodified,
+      ).not.toHaveBeenCalled();
+    },
+  );
 
   it('requires doctor/admin and confirms without locking', async () => {
     await expect(
@@ -379,6 +454,11 @@ describe('ClinicalReportReviewWorkflowService', () => {
     );
     expect(first.report.qualityStatus).toBe('passed');
     expect(first.report.lockedAt).toBeNull();
+    expectSafeReviewActor(first.confirmationReceipt.confirmedBy, 'doctor');
+    expectSafeReviewActor(
+      first.report.submission?.submittedBy ?? null,
+      'doctor',
+    );
     report = persisted;
     const repeated = await service.confirmReport(
       ids.patient,
@@ -395,6 +475,44 @@ describe('ClinicalReportReviewWorkflowService', () => {
     expect(repeated.confirmationReceipt.confirmationId).toBe(
       first.confirmationReceipt.confirmationId,
     );
+    expectSafeReviewActor(repeated.confirmationReceipt.confirmedBy, 'doctor');
+    expectSafeReviewActor(
+      repeated.report.submission?.submittedBy ?? null,
+      'doctor',
+    );
+  });
+
+  it('returns a safe actor for the historical confirmation fallback', async () => {
+    report = reportFixture({
+      status: 'confirmed',
+      confirmation: {
+        confirmedAt: now,
+        confirmedBy: ids.actor,
+        confirmedByName: 'A21 Test Doctor',
+        confirmedByRole: 'doctor',
+        confirmationNote: '脱敏历史确认说明',
+      },
+    });
+
+    const response = await service.confirmReport(
+      ids.patient,
+      ids.visit,
+      ids.report,
+      user(['admin']),
+      {
+        confirm: true,
+        confirmationNote: '不会覆盖历史说明',
+        expectedUpdatedAt: now.toISOString(),
+      },
+    );
+
+    expect(response.confirmationReceipt).toMatchObject({
+      confirmationId: null,
+      alreadyConfirmed: true,
+      confirmationNote: '脱敏历史确认说明',
+    });
+    expectSafeReviewActor(response.confirmationReceipt.confirmedBy, 'doctor');
+    expect(mocks.reports.confirmReportIfUnmodified).not.toHaveBeenCalled();
   });
 
   it('rejects inactive patients and locked visits', async () => {

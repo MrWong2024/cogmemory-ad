@@ -34,6 +34,7 @@ import type { ReportOperatorRole } from '../schemas/clinical-report.schema';
 import type {
   ConfirmClinicalReportResponse,
   ConfirmClinicalReportReceiptResponse,
+  ClinicalReportReviewActorResponse,
   SubmitClinicalReportForConfirmationResponse,
   SubmitClinicalReportReceiptResponse,
   UpdateClinicalReportDraftResponse,
@@ -503,11 +504,10 @@ export class ClinicalReportReviewWorkflowService {
       return this.buildAlreadySubmittedResponse(report, {
         submissionId: submission.submissionId,
         submittedAt: submission.submittedAt,
-        submittedBy: {
-          operatorId: submission.submittedBy,
+        submittedBy: this.toPublicActor({
           operatorName: submission.submittedByName,
           operatorRole: submission.submittedByRole,
-        },
+        }),
         submissionNote: submission.submissionNote,
         alreadySubmitted: true,
       });
@@ -526,11 +526,10 @@ export class ClinicalReportReviewWorkflowService {
           ? {
               submissionId: submission.submissionId,
               submittedAt: submission.submittedAt,
-              submittedBy: {
-                operatorId: submission.submittedBy,
+              submittedBy: this.toPublicActor({
                 operatorName: submission.submittedByName,
                 operatorRole: submission.submittedByRole,
-              },
+              }),
               submissionNote: submission.submissionNote,
               alreadySubmitted: true,
             }
@@ -581,24 +580,20 @@ export class ClinicalReportReviewWorkflowService {
       ? {
           confirmationId: audit.confirmationId,
           confirmedAt: audit.confirmedAt,
-          confirmedBy: {
-            operatorId: audit.confirmedBy,
+          confirmedBy: this.toPublicActor({
             operatorName: audit.confirmedByName,
             operatorRole: audit.confirmedByRole,
-          },
+          }),
           confirmationNote: audit.confirmationNote,
           alreadyConfirmed: true,
         }
       : {
           confirmationId: null,
           confirmedAt: report.confirmation.confirmedAt,
-          confirmedBy: {
-            operatorId: report.confirmation.confirmedBy,
-            ...(report.confirmation.confirmedByName
-              ? { operatorName: report.confirmation.confirmedByName }
-              : {}),
+          confirmedBy: this.toPublicActor({
+            operatorName: report.confirmation.confirmedByName,
             operatorRole: report.confirmation.confirmedByRole ?? 'unknown',
-          },
+          }),
           ...(report.confirmation.confirmationNote
             ? { confirmationNote: report.confirmation.confirmationNote }
             : {}),
@@ -711,9 +706,11 @@ export class ClinicalReportReviewWorkflowService {
     );
   }
 
-  private toPublicActor(actor: ClinicalReportWorkflowActor) {
+  private toPublicActor(actor: {
+    operatorName?: string;
+    operatorRole?: ReportOperatorRole;
+  }): ClinicalReportReviewActorResponse {
     return {
-      operatorId: actor.operatorId,
       operatorName: actor.operatorName,
       operatorRole: actor.operatorRole,
     };

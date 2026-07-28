@@ -330,7 +330,7 @@
 
 - Client / 调用方：独立 `clinical-report-api.ts`，由 `useClinicalReport` 在访视详情成功后自动查询一次；不依赖量表目录，不轮询、不自动重试，支持报告区域手工重新加载。
 - Path / 请求：patientId、visitId 均 `encodeURIComponent()`；无 Query / Body。使用 `frontendEnv.apiBaseUrl`、`credentials: 'include'`、`cache: 'no-store'` 与独立 AbortSignal；新请求取消旧请求、卸载取消、Abort 不显示错误。
-- 响应：`ClinicalReportDetailResponse { report }`。前端类型覆盖真实 report type / status / source / quality、patient / visit snapshot、scaleTrace、score / domain / evidence snapshot、A20 五段 narrative、A21 doctorOpinion / recommendationText、generation、editorial、submission、confirmationId / confirmation 与 Date JSON string / null；不定义内部来源 ID 数组、对象键、scoreDetails、clinicalContext、metadata、AI draft 或 signature。
+- 响应：`ClinicalReportDetailResponse { report }`。前端类型覆盖真实 report type / status / source / quality、patient / visit snapshot、scaleTrace、score / domain / evidence snapshot、A20 五段 narrative、A21 doctorOpinion / recommendationText、generation、editorial、submission、confirmationId / confirmation 与 Date JSON string / null；A21 editorial / submission 使用只含可选 operatorName / operatorRole 的 `ClinicalReportReviewActor`，不声明 operatorId。内部来源 ID 数组、对象键、scoreDetails、clinicalContext、metadata、AI draft 或 signature 均不定义。
 - 状态：idle / loading / not_found / loaded / forbidden / error 独立于访视详情和目录。`CLINICAL_REPORT_NOT_FOUND` 是正常 not_found；403 独立显示无权限；其他失败不清除访视详情或实例列表。
 - 错误：401 返回 `/login`；400 validation；404 `PATIENT_NOT_FOUND` / `VISIT_NOT_FOUND` / `CLINICAL_REPORT_NOT_FOUND`；409 `CLINICAL_REPORT_INCOMPLETE`；500 / 网络映射稳定 service error。后端英文 message 不进入 UI。
 
@@ -352,7 +352,7 @@
 - Body 白名单：只构造 `{ doctorOpinion: input.doctorOpinion.trim(), recommendationText?: input.recommendationText.trim(), editNote: input.editNote.trim(), expectedUpdatedAt }`。只有属性未提供时才省略 recommendationText；空字符串保留用于清除建议。
 - 禁止字段：不发送 A20 五段 narrative、status、source、qualityStatus、版本 / 编号、scope、快照、generation、editorial、submission、confirmation、actor、eventId、metadata 或 force。
 - 凭证 / 缓存 / 重试：`frontendEnv.apiBaseUrl`、`credentials: 'include'`、`cache: 'no-store'`、JSON PATCH；不自动保存、不自动重试、不在冲突后覆盖或重发。
-- 响应：`UpdateClinicalReportDraftResponse { report, editReceipt }`；成功用完整 report 统一替换当前报告，editReceipt 仅保存在当前页面内存。source=mixed 使用服务端事实；不调用 latest，不修改系统摘要、scope 或快照。
+- 响应：`UpdateClinicalReportDraftResponse { report, editReceipt }`；成功用完整 report 统一替换当前报告，editReceipt 仅保存在当前页面内存，editedBy 与 report editorial / submission actor 统一为只含 name / role 的 A21 安全 actor，不含 operatorId。source=mixed 使用服务端事实；不调用 latest，不修改系统摘要、scope 或快照。
 - 错误：映射 metadata unsupported、not editable、no changes、audit limit、edit conflict / failed，以及通用 401 / 403 / ownership / patient / visit / incomplete / voided。UI 使用稳定中文，不展示后端 message。
 - 冲突行为：edit conflict、not editable、voided、not found 自动 latest 一次；保留 doctorOpinion、recommendationText、editNote，标记 stale，禁止保存。用户明确“基于最新报告继续”后只更新服务端基线，原本地输入不变。
 
@@ -361,7 +361,7 @@
 - Client / 调用方：`clinical-report-api.ts` / `useClinicalReportWorkflow`；四个患者工作流角色以后端 Guard 为最终边界。前端要求 mixed draft、合法 doctorOpinion、quality 非 failed、无本地编辑草稿 / 写请求 / stale。
 - Path / Body：三个路径 ID 编码且不进入 Body；严格只构造 `{ confirm: true, submissionNote: input.submissionNote.trim(), expectedUpdatedAt }`。
 - 禁止字段：不发送 doctorOpinion、recommendationText、status、submittedAt / submittedBy / submissionId、metadata、force 或 skipReview。
-- 响应：`SubmitClinicalReportForConfirmationResponse { report, submissionReceipt }`；完整替换 report，首次服务端进入 pending_confirmation。`alreadySubmitted=true` 作为成功处理，不再次 POST、不改写既有提交记录。
+- 响应：`SubmitClinicalReportForConfirmationResponse { report, submissionReceipt }`；完整替换 report，submissionReceipt.submittedBy 与 report editorial / submission actor 只含 name / role，不含 operatorId；首次与 `alreadySubmitted=true` 分支形状一致。幂等成功不再次 POST、不改写既有提交记录。
 - 并发 / 错误：submission conflict 与 not ready 自动 latest 一次，不重发 POST；保留 submissionNote、清除 checkbox、标记 stale。audit unavailable 不猜测提交人 / 时间。401 返回登录；action 403 保留已加载报告和草稿。
 - 边界：提交不等于确认，不修改 narrative / scope / 快照 / quality / confirmation / lockedAt，不提供退回 draft，也不生成 PDF 或调用 AI。
 
@@ -370,7 +370,7 @@
 - Client / 调用方：`clinical-report-api.ts` / `useClinicalReportWorkflow`；前端仅 roles 包含 doctor / admin 时显示可用入口，后端方法级 RolesGuard 是最终权限边界。nurse / research_assistant 只读等待。
 - Path / Body：三个路径 ID 编码且不进入 Body；严格只构造 `{ confirm: true, confirmationNote: input.confirmationNote.trim(), expectedUpdatedAt }`。
 - 禁止字段：不发送 status、confirmedAt / confirmedBy / confirmedByName / confirmedByRole / confirmationId、signatureText、qualityStatus、narrative、metadata、lockAfterConfirm 或 force。
-- 响应：`ConfirmClinicalReportResponse { report, confirmationReceipt }`；完整替换 report，status / qualityStatus / isFinal 全部使用服务端事实。`alreadyConfirmed=true` 作为成功处理，不再次 POST、不修改既有 confirmationId / 时间 / 意见。
+- 响应：`ConfirmClinicalReportResponse { report, confirmationReceipt }`；完整替换 report，confirmationReceipt.confirmedBy 与 report 中的 A21 editorial / submission actor 只含 name / role，不含 operatorId；首次、`alreadyConfirmed=true` 与历史 fallback 形状一致。status / qualityStatus / isFinal 全部使用服务端事实；幂等成功不再次 POST、不修改既有 confirmationId / 时间 / 意见。
 - 并发 / 错误：confirmation conflict / not ready 自动 latest 一次，保留 confirmationNote、清除 checkbox、标记 stale 且不重发。audit unavailable 不猜测确认人、时间或 ID；confirm 403 明确当前账号不具备 doctor / admin 权限并保留报告。
 - 边界：confirmed 后前端只读，但 confirmed 不等于 locked；不生成签名，不设置前端模拟 locked，不锁定 Visit、评分、认知域或媒体，不生成 PDF，不调用 AI。
 

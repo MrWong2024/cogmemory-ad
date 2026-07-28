@@ -111,9 +111,14 @@ export type ClinicalReportWorkflowActorResponse = {
   operatorRole?: ReportOperatorRole;
 };
 
+export type ClinicalReportReviewActorResponse = {
+  operatorName?: string;
+  operatorRole?: ReportOperatorRole;
+};
+
 export type ClinicalReportEditorialSummaryResponse = {
   lastEditedAt: Date | null;
-  lastEditedBy: ClinicalReportWorkflowActorResponse | null;
+  lastEditedBy: ClinicalReportReviewActorResponse | null;
   editCount: number;
   lastChangedFields: Array<'doctorOpinion' | 'recommendationText'>;
 };
@@ -121,7 +126,7 @@ export type ClinicalReportEditorialSummaryResponse = {
 export type ClinicalReportSubmissionSummaryResponse = {
   submissionId: string | null;
   submittedAt: Date | null;
-  submittedBy: ClinicalReportWorkflowActorResponse | null;
+  submittedBy: ClinicalReportReviewActorResponse | null;
   submissionNote?: string;
 };
 
@@ -263,7 +268,7 @@ export type GenerateClinicalReportResponse = {
 export type ClinicalReportEditReceiptResponse = {
   eventId: string;
   editedAt: Date;
-  editedBy: ClinicalReportWorkflowActorResponse;
+  editedBy: ClinicalReportReviewActorResponse;
   changedFields: Array<'doctorOpinion' | 'recommendationText'>;
   editNote: string;
 };
@@ -276,7 +281,7 @@ export type UpdateClinicalReportDraftResponse = {
 export type SubmitClinicalReportReceiptResponse = {
   submissionId: string | null;
   submittedAt: Date | null;
-  submittedBy: ClinicalReportWorkflowActorResponse | null;
+  submittedBy: ClinicalReportReviewActorResponse | null;
   submissionNote?: string;
   alreadySubmitted: boolean;
 };
@@ -289,7 +294,7 @@ export type SubmitClinicalReportForConfirmationResponse = {
 export type ConfirmClinicalReportReceiptResponse = {
   confirmationId: string | null;
   confirmedAt: Date;
-  confirmedBy: ClinicalReportWorkflowActorResponse;
+  confirmedBy: ClinicalReportReviewActorResponse;
   confirmationNote?: string;
   alreadyConfirmed: boolean;
 };

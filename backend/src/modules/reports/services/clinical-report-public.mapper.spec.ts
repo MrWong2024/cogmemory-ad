@@ -204,15 +204,30 @@ describe('ClinicalReportPublicMapper', () => {
         doctorOpinion: 'private opinion',
       }),
     );
-    expect(response.editorial).toEqual(
-      expect.objectContaining({
-        editCount: 1,
-        lastChangedFields: ['doctorOpinion', 'recommendationText'],
-      }),
-    );
-    expect(response.submission).toEqual(
-      expect.objectContaining({ submissionId: 'submission-a21-test' }),
-    );
+    expect(response.editorial).toEqual({
+      lastEditedAt: now,
+      lastEditedBy: {
+        operatorName: '脱敏医生',
+        operatorRole: 'doctor',
+      },
+      editCount: 1,
+      lastChangedFields: ['doctorOpinion', 'recommendationText'],
+    });
+    expect(
+      Object.hasOwn(response.editorial?.lastEditedBy ?? {}, 'operatorId'),
+    ).toBe(false);
+    expect(response.submission).toEqual({
+      submissionId: 'submission-a21-test',
+      submittedAt: now,
+      submittedBy: {
+        operatorName: '脱敏医生',
+        operatorRole: 'doctor',
+      },
+      submissionNote: '脱敏提交说明',
+    });
+    expect(
+      Object.hasOwn(response.submission?.submittedBy ?? {}, 'operatorId'),
+    ).toBe(false);
     const serialized = JSON.stringify(response);
     expect(serialized).not.toContain('private/object-key');
     expect(serialized).not.toContain('private-ai-text');

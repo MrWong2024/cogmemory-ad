@@ -543,9 +543,10 @@
 - `ConfirmClinicalReportDto`：同样要求显式 `confirm=true`，必填 trim 3-2000 `confirmationNote` 与严格 ISO `expectedUpdatedAt`；不含 signatureText。
 - 全局 whitelist + forbidNonWhitelisted 拒绝 status、source、qualityStatus、actor、客户端时间 / audit ID、metadata、confirmation、snapshot、force、lock / archive / PDF 等额外字段。
 - `ClinicalReportNarrativeResponse` 新增可选 doctorOpinion / recommendationText；`ClinicalReportResponse` 新增 `editorial` 与 `submission`，confirmation 新增 nullable confirmationId，既有 A20 字段保持兼容。
-- `ClinicalReportEditorialSummaryResponse` 只含 lastEditedAt、lastEditedBy、editCount、lastChangedFields；不含历史、previous / next 或 editNote 历史。
-- `ClinicalReportSubmissionSummaryResponse` 含 nullable submissionId / submittedAt / submittedBy 与可选 submissionNote；`ClinicalReportConfirmationResponse` 不含 confirmedBy ObjectId 或 signatureText。
-- 三种写响应分别为 `UpdateClinicalReportDraftResponse`（report + editReceipt）、`SubmitClinicalReportForConfirmationResponse`（report + submissionReceipt）、`ConfirmClinicalReportResponse`（report + confirmationReceipt）。receipt 暴露当前操作或既有幂等回执，不暴露 metadata。
+- `ClinicalReportReviewActorResponse` 是 A21 专用公开 actor，只含可选 `operatorName` / `operatorRole`；不声明或返回内部 `operatorId`。A20 generation 与 A22–A25 lifecycle actor 不在本次契约收缩范围。
+- `ClinicalReportEditorialSummaryResponse` 只含 lastEditedAt、使用 A21 安全 actor 的 lastEditedBy、editCount、lastChangedFields；不含历史、previous / next 或 editNote 历史。
+- `ClinicalReportSubmissionSummaryResponse` 含 nullable submissionId / submittedAt、使用 A21 安全 actor 的 submittedBy 与可选 submissionNote；`ClinicalReportConfirmationResponse` 不含 confirmedBy ObjectId 或 signatureText。
+- 三种写响应分别为 `UpdateClinicalReportDraftResponse`（report + editReceipt）、`SubmitClinicalReportForConfirmationResponse`（report + submissionReceipt）、`ConfirmClinicalReportResponse`（report + confirmationReceipt）。三类 receipt actor 均只返回 name / role，首次与幂等 / 历史 fallback 一致，不暴露 `operatorId` 或 metadata；数据库中的 editedBy / submittedBy / confirmedBy 审计 ID 继续保留。
 
 ## A22 ClinicalReport lock DTO / response
 

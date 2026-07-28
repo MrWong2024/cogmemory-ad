@@ -2,7 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { getConnectionToken, getModelToken } from '@nestjs/mongoose';
 import { Test } from '@nestjs/testing';
-import { Connection, Model } from 'mongoose';
+import { Connection, Model, Types } from 'mongoose';
 import request, { type Response } from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
@@ -99,6 +99,22 @@ function numberValue(value: unknown, label: string): number {
 function arrayValue(value: unknown, label: string): unknown[] {
   if (!Array.isArray(value)) throw new Error(`Expected ${label} array`);
   return value;
+}
+
+function expectSafeReviewActor(
+  value: unknown,
+  label: string,
+  operatorName: string,
+  operatorRole: string,
+): void {
+  const actor = record(value, label);
+  expect(actor).toEqual({ operatorName, operatorRole });
+  expect(Object.hasOwn(actor, 'operatorId')).toBe(false);
+}
+
+function objectIdMatches(value: unknown, expected: string): boolean {
+  if (typeof value === 'string') return value === expected;
+  return value instanceof Types.ObjectId && value.toHexString() === expected;
 }
 
 function collectKeys(value: unknown, keys = new Set<string>()): Set<string> {
@@ -424,11 +440,7 @@ describe('clinical report review APIs (e2e)', () => {
     await app.init();
     connection = app.get<Connection>(getConnectionToken());
     const databaseName = connection.name.toLowerCase();
-    if (
-      !databaseName.includes('_test') ||
-      databaseName.includes('_dev') ||
-      databaseName.includes('_prod')
-    ) {
+    if (databaseName !== 'cogmemory_ad_test') {
       throw new Error('E2E database isolation is not active');
     }
     const config = app.get(ConfigService);
@@ -666,6 +678,19 @@ describe('clinical report review APIs (e2e)', () => {
       'doctorOpinion',
       'recommendationText',
     ]);
+    expectSafeReviewActor(
+      editReceipt.editedBy,
+      'edit receipt actor',
+      'A21 Doctor Test Operator',
+      'doctor',
+    );
+    expectSafeReviewActor(
+      record(edited.editorial, 'edited editorial').lastEditedBy,
+      'edited report actor',
+      'A21 Doctor Test Operator',
+      'doctor',
+    );
+    expect(edited.submission).toBeNull();
     const editedUpdatedAt = stringValue(edited.updatedAt, 'edited updatedAt');
 
     const editConflict = body(
@@ -716,26 +741,61 @@ describe('clinical report review APIs (e2e)', () => {
     );
     expect(submitted.status).toBe('pending_confirmation');
     expect(submissionReceipt.alreadySubmitted).toBe(false);
+    expectSafeReviewActor(
+      submissionReceipt.submittedBy,
+      'submission receipt actor',
+      'A21 Doctor Test Operator',
+      'doctor',
+    );
+    expectSafeReviewActor(
+      record(submitted.editorial, 'submitted editorial').lastEditedBy,
+      'submitted editorial actor',
+      'A21 Doctor Test Operator',
+      'doctor',
+    );
+    expectSafeReviewActor(
+      record(submitted.submission, 'submitted summary').submittedBy,
+      'submitted report actor',
+      'A21 Doctor Test Operator',
+      'doctor',
+    );
     const submittedUpdatedAt = stringValue(
       submitted.updatedAt,
       'submitted updatedAt',
     );
+    const repeatedSubmissionBody = body(
+      await doctorAgent
+        .post(submitPath)
+        .send({
+          confirm: true,
+          submissionNote: '不会覆盖原提交说明',
+          expectedUpdatedAt: editedUpdatedAt,
+        })
+        .expect(200),
+    );
     const repeatedSubmission = record(
-      body(
-        await doctorAgent
-          .post(submitPath)
-          .send({
-            confirm: true,
-            submissionNote: '不会覆盖原提交说明',
-            expectedUpdatedAt: editedUpdatedAt,
-          })
-          .expect(200),
-      ).submissionReceipt,
+      repeatedSubmissionBody.submissionReceipt,
       'repeated submission receipt',
     );
     expect(repeatedSubmission.alreadySubmitted).toBe(true);
     expect(repeatedSubmission.submissionId).toBe(
       submissionReceipt.submissionId,
+    );
+    expectSafeReviewActor(
+      repeatedSubmission.submittedBy,
+      'repeated submission actor',
+      'A21 Doctor Test Operator',
+      'doctor',
+    );
+    expectSafeReviewActor(
+      record(
+        record(repeatedSubmissionBody.report, 'repeated submission report')
+          .submission,
+        'repeated submission summary',
+      ).submittedBy,
+      'repeated submission report actor',
+      'A21 Doctor Test Operator',
+      'doctor',
     );
     await doctorAgent
       .patch(draftPath)
@@ -805,26 +865,130 @@ describe('clinical report review APIs (e2e)', () => {
       'doctor',
     );
     expect(confirmationReceipt.alreadyConfirmed).toBe(false);
+    expectSafeReviewActor(
+      confirmationReceipt.confirmedBy,
+      'confirmation receipt actor',
+      'A21 Doctor Test Operator',
+      'doctor',
+    );
+    expectSafeReviewActor(
+      record(confirmed.editorial, 'confirmed editorial').lastEditedBy,
+      'confirmed editorial actor',
+      'A21 Doctor Test Operator',
+      'doctor',
+    );
+    expectSafeReviewActor(
+      record(confirmed.submission, 'confirmed submission').submittedBy,
+      'confirmed submission actor',
+      'A21 Doctor Test Operator',
+      'doctor',
+    );
+    const repeatedConfirmationBody = body(
+      await doctorAgent
+        .post(confirmPath)
+        .send({
+          confirm: true,
+          confirmationNote: '不会覆盖原确认说明',
+          expectedUpdatedAt: submittedUpdatedAt,
+        })
+        .expect(200),
+    );
     const repeatedConfirmation = record(
-      body(
-        await doctorAgent
-          .post(confirmPath)
-          .send({
-            confirm: true,
-            confirmationNote: '不会覆盖原确认说明',
-            expectedUpdatedAt: submittedUpdatedAt,
-          })
-          .expect(200),
-      ).confirmationReceipt,
+      repeatedConfirmationBody.confirmationReceipt,
       'repeated confirmation receipt',
     );
     expect(repeatedConfirmation.alreadyConfirmed).toBe(true);
     expect(repeatedConfirmation.confirmationId).toBe(
       confirmationReceipt.confirmationId,
     );
+    expectSafeReviewActor(
+      repeatedConfirmation.confirmedBy,
+      'repeated confirmation actor',
+      'A21 Doctor Test Operator',
+      'doctor',
+    );
+    const repeatedConfirmedReport = record(
+      repeatedConfirmationBody.report,
+      'repeated confirmation report',
+    );
+    expectSafeReviewActor(
+      record(repeatedConfirmedReport.editorial, 'repeated confirmed editorial')
+        .lastEditedBy,
+      'repeated confirmed editorial actor',
+      'A21 Doctor Test Operator',
+      'doctor',
+    );
+    expectSafeReviewActor(
+      record(
+        repeatedConfirmedReport.submission,
+        'repeated confirmed submission',
+      ).submittedBy,
+      'repeated confirmed submission actor',
+      'A21 Doctor Test Operator',
+      'doctor',
+    );
+    const confirmedSubmissionBody = body(
+      await doctorAgent
+        .post(submitPath)
+        .send({
+          confirm: true,
+          submissionNote: '不会覆盖已确认提交说明',
+          expectedUpdatedAt: submittedUpdatedAt,
+        })
+        .expect(200),
+    );
+    const confirmedSubmissionReceipt = record(
+      confirmedSubmissionBody.submissionReceipt,
+      'confirmed repeated submission receipt',
+    );
+    expect(confirmedSubmissionReceipt.alreadySubmitted).toBe(true);
+    expectSafeReviewActor(
+      confirmedSubmissionReceipt.submittedBy,
+      'confirmed repeated submission actor',
+      'A21 Doctor Test Operator',
+      'doctor',
+    );
+    expectSafeReviewActor(
+      record(
+        record(confirmedSubmissionBody.report, 'confirmed submission report')
+          .submission,
+        'confirmed submission summary',
+      ).submittedBy,
+      'confirmed submission report actor',
+      'A21 Doctor Test Operator',
+      'doctor',
+    );
     const latest = record(
       body(await doctorAgent.get(`${basePath}/latest`).expect(200)).report,
       'latest report',
+    );
+    expectSafeReviewActor(
+      record(latest.editorial, 'latest editorial').lastEditedBy,
+      'latest editorial actor',
+      'A21 Doctor Test Operator',
+      'doctor',
+    );
+    expectSafeReviewActor(
+      record(latest.submission, 'latest submission').submittedBy,
+      'latest submission actor',
+      'A21 Doctor Test Operator',
+      'doctor',
+    );
+    const historical = record(
+      body(await doctorAgent.get(`${basePath}/${reportId}`).expect(200)).report,
+      'historical report',
+    );
+    expectSafeReviewActor(
+      record(historical.editorial, 'historical editorial').lastEditedBy,
+      'historical editorial actor',
+      'A21 Doctor Test Operator',
+      'doctor',
+    );
+    expectSafeReviewActor(
+      record(historical.submission, 'historical submission').submittedBy,
+      'historical submission actor',
+      'A21 Doctor Test Operator',
+      'doctor',
     );
     const publicKeys = collectKeys(latest);
     expect(publicKeys.has('metadata')).toBe(false);
@@ -833,6 +997,36 @@ describe('clinical report review APIs (e2e)', () => {
     expect(publicKeys.has('signatureText')).toBe(false);
 
     const stored = await reportModel.findById(reportId);
+    const storedDoctor = await userModel
+      .findOne({ accountName: DOCTOR_ACCOUNT })
+      .select({ _id: 1 })
+      .exec();
+    if (!storedDoctor) throw new Error('Expected stored A21 doctor');
+    const storedDoctorId = storedDoctor._id.toString();
+    expect(
+      objectIdMatches(
+        documentValue(stored, 'metadata.a21Edits.events.0.editedBy'),
+        storedDoctorId,
+      ),
+    ).toBe(true);
+    expect(
+      objectIdMatches(
+        documentValue(stored, 'metadata.a21Submission.submittedBy'),
+        storedDoctorId,
+      ),
+    ).toBe(true);
+    expect(
+      objectIdMatches(
+        documentValue(stored, 'confirmation.confirmedBy'),
+        storedDoctorId,
+      ),
+    ).toBe(true);
+    expect(
+      objectIdMatches(
+        documentValue(stored, 'metadata.a21Confirmation.confirmedBy'),
+        storedDoctorId,
+      ),
+    ).toBe(true);
     expect(documentValue(stored, 'lockedAt')).toBeNull();
     expect(documentValue(stored, 'primaryScaleInstanceIds')).toEqual(
       expect.arrayContaining([expect.objectContaining({})]),

@@ -15,7 +15,10 @@ import {
   resolveClinicalReportReplacementLineage,
   resolveExistingClinicalReportCorrection,
 } from '../lib/clinical-report-correction';
-import type { ClinicalReportResponse } from '../types/clinical-report-response.types';
+import type {
+  ClinicalReportResponse,
+  ClinicalReportReviewActorResponse,
+} from '../types/clinical-report-response.types';
 import type {
   ClinicalReportSummary,
   ReportDomainSnapshotSummary,
@@ -285,11 +288,10 @@ export class ClinicalReportPublicMapper {
     const last = events[events.length - 1];
     return {
       lastEditedAt: safeDate(last.editedAt),
-      lastEditedBy: {
-        operatorId: last.editedBy,
-        operatorName: last.editedByName,
-        operatorRole: this.safeOperatorRole(last.editedByRole),
-      },
+      lastEditedBy: this.toPublicReviewActor(
+        last.editedByName,
+        last.editedByRole,
+      ),
       editCount: events.length,
       lastChangedFields: [...last.changedFields],
     };
@@ -303,11 +305,10 @@ export class ClinicalReportPublicMapper {
     return {
       submissionId: submission.submissionId,
       submittedAt: safeDate(submission.submittedAt),
-      submittedBy: {
-        operatorId: submission.submittedBy,
-        operatorName: submission.submittedByName,
-        operatorRole: this.safeOperatorRole(submission.submittedByRole),
-      },
+      submittedBy: this.toPublicReviewActor(
+        submission.submittedByName,
+        submission.submittedByRole,
+      ),
       submissionNote: submission.submissionNote,
     };
   }
@@ -491,6 +492,16 @@ export class ClinicalReportPublicMapper {
       OPERATOR_ROLES.has(value as ReportOperatorRole)
       ? (value as ReportOperatorRole)
       : undefined;
+  }
+
+  private toPublicReviewActor(
+    operatorName: string | undefined,
+    operatorRole: unknown,
+  ): ClinicalReportReviewActorResponse {
+    return {
+      operatorName,
+      operatorRole: this.safeOperatorRole(operatorRole),
+    };
   }
 
   private safeConfirmationRole(

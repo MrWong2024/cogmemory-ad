@@ -10,7 +10,7 @@ import { getClinicalReportLifecycleTarget } from '@/src/features/assessments/lib
 import type {
   ClinicalReport,
   ClinicalReportChangedField,
-  ClinicalReportWorkflowActor,
+  ClinicalReportReviewActor,
 } from '@/src/features/assessments/types/clinical-report';
 
 const changedFieldLabels: Record<ClinicalReportChangedField, string> = {
@@ -18,7 +18,7 @@ const changedFieldLabels: Record<ClinicalReportChangedField, string> = {
   recommendationText: '临床人员补充建议',
 };
 
-function actorLabel(actor: ClinicalReportWorkflowActor | null): string {
+function actorLabel(actor: ClinicalReportReviewActor | null): string {
   if (!actor) return '—';
   const name = actor.operatorName?.trim() || '未提供姓名';
   const role = actor.operatorRole
