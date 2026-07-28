@@ -15,7 +15,7 @@
 | Batch A / B1–B3 | 已完成 | 67 个验证原子全部有明确处置，正式 fixture 双次 cleanup，残留为 0 |
 | Batch B / B4–B6 | 桌面范围已完成 | Browser 133 + automated boundary 2 = 135；post-browser verify 通过；双次 cleanup `residualCount=0`；产品缺陷 0 |
 | Batch C / B7–B10 | 已完成 | B10 最终为 `generation-workflow` 48 pass + `public-surface-security` 47 pass，共 95 项 |
-| Batch D / B11–B15 | 已进入 B11-A fixture 阶段，尚未完成 | B11 fixture ready；70 项均未最终关闭，下一阶段为 B11-B `core-workflow` Browser；B14.1 仍待验 |
+| Batch D / B11–B15 | B11-B `core-workflow` 受阻，尚未完成 | 20 条 core route 均已启动，但 `confirmation-conflict-touch` Stage 被全 profile prepared 校验拒绝；post-browser verify 未通过，不进入 B11-C；B11-70 与 B14.1 仍待验 |
 | Batch E | 尚未执行，保留 8 项 | 真实设备或人工验收；不被桌面 Browser、大屏抽查或 automated boundary 替代 |
 
 Batch B 的正式 namespace 和临时文件已经删除，不存在“尚待 post-browser verify”或“下一步重建 Batch B 终态”的当前任务。B7 采用组合证据完成：原完整 Browser 验收中 B7-01–B7-37、B7-39、B7-40 通过，完整 post-browser verify 通过且双次 cleanup 均为 `residualCount=0`；B7-38 修复后的三个 viewport 定向回归、Browser 前后 prepared verify 和双次 cleanup 也均通过。本次定向回归没有执行 compute，namespace 按合同保持 prepared 状态，因此对它执行要求写终态的 post-browser verify 不适用，不构成当前阻断。B8 `core-workflow` 的 39 项真实 Browser 验收与 `resilience-security` 的 21 项真实 Browser 验收均已完成；后者的 post-browser verify 通过，双次 cleanup 均为 `residualCount=0`。B8 共 60 项全部闭环，B8 已完成。B9-B1 已修复规范 seed 首次物化前误采基线的问题，并在 Git 忽略的本地 Browser 配置建立稳定 B9 fixture 密码来源；B9-B2 已完成五条 `local_write_gate` route、服务端数组顺序和内部 ID DOM 边界的定向修复。B9-B3 在指定基线上使用全新 namespace 重跑完整 `core-workflow` 的 37 项 Browser pass、产品缺陷 0、logout/停服和双次 `residualCount=0` cleanup 事实继续保留。B9-B4 已将无法在产品合法状态下成立的 B9-32 唯一处置为 `obsolete`，不得创建非法草稿 fixture 或写成 pass；core 合同现为 37 active + 1 obsolete。seed-drift 目标已改为实际受保护 canonical 集合，score-confirmation-only verifier 已与真实 A18 confirm 字段对齐；定向 E2E 1 suite / 7 tests、完整 E2E 24 suites / 110 tests 与全新 namespace core fixture prepare/verify/replace/verify/双 cleanup 冒烟均通过。B9-B5 已在基线 `ed37e22dab3950e62bf434572f5a4bd4a983227a` 使用全新 namespace `b9c-b9b5-20260726-f3a7` 重跑 19 条 `core-workflow` route；B9-01–B9-31、B9-33–B9-38 共 37 个 active 项全部通过，B9-32 保持唯一 `obsolete`，post-browser verify 通过，logout、Browser/服务关闭及端口释放完成，两次 cleanup 均为 `residualCount=0`，第二次 `matched=false`。B9-C 原完整 `resilience-security` 的 B9-39–B9-50 与 B9-52 共 13 项、post-browser verify 和双次 `residualCount=0` cleanup 证据继续有效；B9-C1 已在基线 `ff3b55ba1d4422234a93c923d1a107c2bfd4c16e` 修复并定向重验 B9-51，七个固定 viewport、768×900 压力尺寸和最大化 Chrome 均通过，Browser 前后 prepared verify 与双次 cleanup 均通过。该只读 namespace 未执行全量 post-browser verify，符合本次定向合同且不构成缺陷。B9 最终为 51 active pass + B9-32 obsolete，B9 已完成。B10-A 当时只完成 fixture，Browser 验收尚未开始；该历史状态后续已由 B10-B5、B10-C 和 B10-C2 关闭，当前 B10 已完成。不填写不存在的 evidence commit。
@@ -117,7 +117,7 @@ prepare / prepared verify 只说明账号和前置数据就绪，不等于 Brows
 
 ## 5. Batch C 当前状态与合同：B7–B10 已完成
 
-B7 的 40 项、B8 的 60 项与 B9 的 51 active pass + B9-32 obsolete 均已按既有证据闭环。B10-B5 已使用全新 namespace 完整重跑 `generation-workflow`，48 项全部通过，post-browser verify、logout/停服与双次 cleanup 均闭环。B10-C 原完整 Browser 证据与 B10-C1 定向证据组合使其余 46 项、完整 post-browser verify 与双次 cleanup 继续有效；B10-C2 已在真实 `long_report` 上用 Playwright Chromium 定向通过 B10-89，Browser 前后 prepared verify、logout/停服、临时 runtime 删除与双次 cleanup 均闭环，产品业务写入为 0。B10 最终为 `generation-workflow` 48 pass + `public-surface-security` 47 pass，共 95 项完成；Batch C / B7–B10 已完成。Batch D 已进入 B11-A fixture 阶段，下一阶段为 B11-B `core-workflow` Browser。以下序号与减肥前基线完全一致，fixture-ready、静态门禁、synthetic infrastructure 或 automated boundary 不得替代真实 Browser 项。
+B7 的 40 项、B8 的 60 项与 B9 的 51 active pass + B9-32 obsolete 均已按既有证据闭环。B10-B5 已使用全新 namespace 完整重跑 `generation-workflow`，48 项全部通过，post-browser verify、logout/停服与双次 cleanup 均闭环。B10-C 原完整 Browser 证据与 B10-C1 定向证据组合使其余 46 项、完整 post-browser verify 与双次 cleanup 继续有效；B10-C2 已在真实 `long_report` 上用 Playwright Chromium 定向通过 B10-89，Browser 前后 prepared verify、logout/停服、临时 runtime 删除与双次 cleanup 均闭环，产品业务写入为 0。B10 最终为 `generation-workflow` 48 pass + `public-surface-security` 47 pass，共 95 项完成；Batch C / B7–B10 已完成。Batch D 已执行 B11-B `core-workflow` Browser，但因 fixture Stage 前置校验阻断而保持未完成；不得进入 B11-C。以下序号与减肥前基线完全一致，fixture-ready、静态门禁、synthetic infrastructure 或 automated boundary 不得替代真实 Browser 项。
 
 阶段所有权口径：条目中的“页面不存在后续能力/入口”用于证明本阶段组件或动作不创建、不自动触发、不越权接管后续能力；后来已实现的 B8–B16 sibling 区域可以按当前状态合法共存。执行时应限定目标组件 DOM、请求 initiator 和动作前置状态，不得用页面全局文本误判，也不得为了满足旧阶段字面值隐藏当前合法能力。
 
@@ -431,9 +431,9 @@ Fixture 前置：准备 Visit 无报告、合法 scope、不同实例状态、dr
 
 ## 6. Batch D 当前待验合同：B11–B15（含 B14.1）
 
-Batch D 已进入 B11-A fixture 阶段但尚未完成。B11 fixture 已建立两个互斥 profile：`core-workflow` 覆盖 58 个 Browser 项，`resilience-security` 覆盖 11 个 Browser 项；B11-70 是单独的 `static-gate`。共 70 个稳定 ID、69 个 Browser 项和 1 个静态项，每个 ID 只有一个 primary owner。Fixture 支持 doctor、admin、nurse、research_assistant、system 五个精确角色、双 Session 并发、合法报告状态矩阵、严格 allowlist Stage、临时 runtime descriptor、prepared / post-browser verifier 与双次 cleanup。所有 note、opinion、reason、summary 均为无临床含义的脱敏文本。
+Batch D 已执行 B11-B `core-workflow` Browser 但尚未完成。B11 fixture 已建立两个互斥 profile：`core-workflow` 覆盖 58 个 Browser 项，`resilience-security` 覆盖 11 个 Browser 项；B11-70 是单独的 `static-gate`。共 70 个稳定 ID、69 个 Browser 项和 1 个静态项，每个 ID 只有一个 primary owner。Fixture 支持 doctor、admin、nurse、research_assistant、system 五个精确角色、双 Session 并发、合法报告状态矩阵、严格 allowlist Stage、临时 runtime descriptor、prepared / post-browser verifier 与双次 cleanup。所有 note、opinion、reason、summary 均为无临床含义的脱敏文本。
 
-B11-A 本阶段未启动 production frontend、Browser test backend、Playwright、Chromium 或任何 B11 Browser Action；fixture-ready、定向 E2E 与后端静态/回归门禁均不计作 Browser pass。B11 的 70 项尚未最终关闭，B11-70 也必须在最终 Browser 产品代码态重新执行 frontend lint、typecheck、build 后才可关闭；下一阶段为 B11-B `core-workflow` Browser 验收。不填写不存在的 evidence commit。
+B11-B 已使用 production frontend、Browser test backend、Playwright Chromium 和全新 core namespace 启动 5 个 scenarioKey / 20 条 route。`confirmation-conflict` 页面按合同先加载并冻结版本，但随后唯一一次 `confirmation-conflict-touch` Stage 在写入前对整个 profile 重做 `prepared` 校验，因此前合法完成的 `edit-success` 已变为 mixed 而返回 `B11_FIXTURE_REPORT_STATE_INVALID`；Stage 实际写入为 0，Browser confirm 因此未执行。post-browser verify 随后精确拒绝 `confirmation/confirmation-conflict`。服务、Browser、runtime 与测试产物均已收口；两次 cleanup 均为 `residualCount=0`，第二次 `matched=false`，canonical seed 不变。B11-B、B11 与 Batch D 均保持未完成，不进入 B11-C；B11-56–B11-59、B11-63–B11-69 与 B11-70 仍未关闭。不填写不存在的 evidence commit。
 
 阶段所有权口径同第 5 节：B11–B15 的“不存在/不实现”验证目标是当前 Action 不越界、不自动串联、不伪造后续事实，不要求移除后来已经实现且在当前状态合法的 sibling 能力。B16 / WP-02 只证明 replacement V2+ 的特定闭环，不能替代 B11–B15 各自的完整角色、草稿、并发、错误、可访问性和隐私矩阵。
 
@@ -509,6 +509,8 @@ B11-A 本阶段未启动 production frontend、Browser test backend、Playwright
 68. 小屏幕表单纵向可用，textarea / checkbox 均有可见 label。
 69. stale / 错误提示文案与真实 disabled 状态一致。
 70. `npm run lint`、`npm run typecheck`、`npm run build` 通过。
+
+当前处置：B11-B `core-workflow` 未完成。稳定 fixture 阻断是 Stage 在完整 Browser 顺序中错误要求全 profile 仍保持 prepared；修复该 Stage baseline 合同后，必须使用全新 namespace 从 prepare 开始完整重跑，不能复用本轮部分 Browser 证据，也不能提前进入 B11-C 或关闭 B11-70。
 
 ### 6.2 B12 报告不可逆锁定：88 项
 
