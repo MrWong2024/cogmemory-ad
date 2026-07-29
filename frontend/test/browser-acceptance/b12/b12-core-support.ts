@@ -153,6 +153,15 @@ export type B12DomPrivacySummary = {
   internalActorIdDetected: false;
 };
 
+export type B12AuthLifecyclePartition = {
+  authenticatedEntries: NetworkLedgerEntry[];
+  logoutAndPostLogoutEntries: NetworkLedgerEntry[];
+  authenticatedAuthMeEntries: NetworkLedgerEntry[];
+  logoutEntries: NetworkLedgerEntry[];
+  postLogoutAuthMeEntries: NetworkLedgerEntry[];
+  postLogoutBusinessEntries: NetworkLedgerEntry[];
+};
+
 export type B12SessionSummary = {
   label: string;
   role: AcceptanceRole;
@@ -178,6 +187,8 @@ export type B12SessionSummary = {
     a25CorrectionRequestCount: 0;
     loginRequestCount: 1;
     authMeRequestCount: number;
+    authenticatedAuthMeRequestCount: number;
+    postLogoutUnauthenticatedAuthMeRequestCount: 1;
     logoutRequestCount: 1;
     unrelatedOutputRequestCount: 0;
     abortedRequestCount: number;
@@ -439,6 +450,152 @@ function relevantEntry(entry: NetworkLedgerEntry): boolean {
   );
 }
 
+function cloneNetworkLedgerEntry(
+  entry: NetworkLedgerEntry,
+): NetworkLedgerEntry {
+  return {
+    ...entry,
+    bodyKeys: [...entry.bodyKeys],
+  };
+}
+
+function successfulResponse(entry: NetworkLedgerEntry): boolean {
+  return (
+    entry.status !== null &&
+    entry.status >= 200 &&
+    entry.status < 300 &&
+    entry.failureReason === null
+  );
+}
+
+function expectedLoginPageRequest(entry: NetworkLedgerEntry): boolean {
+  if (entry.method !== "GET") return false;
+  if (entry.safeUrlPattern === "/login") return true;
+  if (entry.safeUrlPattern.startsWith("/_next/")) return true;
+  return (
+    (entry.safeUrlPattern === "/favicon.ico" ||
+      entry.safeUrlPattern === "/manifest.webmanifest") &&
+    (entry.resourceType === "image" || entry.resourceType === "other")
+  );
+}
+
+export function setB12LogoutBoundaryEntryIndex(
+  currentBoundaryEntryIndex: number | null,
+  entryCount: number,
+): number {
+  if (currentBoundaryEntryIndex !== null) {
+    throw new Error("B12 logout boundary entry index is already set");
+  }
+  if (!Number.isInteger(entryCount) || entryCount < 0) {
+    throw new Error("B12 logout boundary entry count is invalid");
+  }
+  return entryCount;
+}
+
+export function partitionB12AuthLifecycleEntries(
+  entries: readonly NetworkLedgerEntry[],
+  logoutBoundaryEntryIndex: number,
+): B12AuthLifecyclePartition {
+  if (
+    !Number.isInteger(logoutBoundaryEntryIndex) ||
+    logoutBoundaryEntryIndex < 0 ||
+    logoutBoundaryEntryIndex > entries.length
+  ) {
+    throw new Error("B12 logout boundary entry index is out of range");
+  }
+
+  const authenticatedEntries = entries.slice(0, logoutBoundaryEntryIndex);
+  const logoutAndPostLogoutEntries = entries.slice(
+    logoutBoundaryEntryIndex,
+  );
+  const authenticatedAuthMeEntries = authenticatedEntries.filter(
+    ({ method, safeUrlPattern }) =>
+      method === "GET" && safeUrlPattern === "/auth/me",
+  );
+  const logoutEntries = logoutAndPostLogoutEntries.filter(
+    ({ method, safeUrlPattern }) =>
+      method === "POST" && safeUrlPattern === "/auth/logout",
+  );
+  const postLogoutAuthMeEntries = logoutAndPostLogoutEntries.filter(
+    ({ method, safeUrlPattern }) =>
+      method === "GET" && safeUrlPattern === "/auth/me",
+  );
+  const postLogoutBusinessEntries = logoutAndPostLogoutEntries.filter(
+    (entry) =>
+      !(
+        (entry.method === "POST" &&
+          entry.safeUrlPattern === "/auth/logout") ||
+        (entry.method === "GET" && entry.safeUrlPattern === "/auth/me") ||
+        expectedLoginPageRequest(entry)
+      ),
+  );
+
+  if (
+    authenticatedEntries.some(
+      ({ method, safeUrlPattern }) =>
+        method === "POST" && safeUrlPattern === "/auth/logout",
+    )
+  ) {
+    throw new Error("B12 logout request occurred before the logout boundary");
+  }
+  if (authenticatedAuthMeEntries.length === 0) {
+    throw new Error("B12 authenticated phase omitted /auth/me");
+  }
+  if (!authenticatedAuthMeEntries.every(successfulResponse)) {
+    throw new Error("B12 authenticated /auth/me response was not successful");
+  }
+  if (logoutEntries.length !== 1) {
+    throw new Error("B12 logout transition requires exactly one logout request");
+  }
+  const logoutEntry = logoutEntries[0];
+  if (!logoutEntry || !successfulResponse(logoutEntry)) {
+    throw new Error("B12 logout request was not successful");
+  }
+  if (logoutEntry.initiator !== "script") {
+    throw new Error("B12 logout request was not initiated by page script");
+  }
+  if (postLogoutAuthMeEntries.length !== 1) {
+    throw new Error(
+      "B12 post-logout phase requires exactly one unauthenticated /auth/me",
+    );
+  }
+  const postLogoutAuthMeEntry = postLogoutAuthMeEntries[0];
+  if (
+    !postLogoutAuthMeEntry ||
+    postLogoutAuthMeEntry.status !== 401 ||
+    postLogoutAuthMeEntry.failureReason !== null
+  ) {
+    throw new Error("B12 post-logout /auth/me response was not a clean 401");
+  }
+  const logoutOffset = logoutAndPostLogoutEntries.indexOf(logoutEntry);
+  const postLogoutAuthMeOffset = logoutAndPostLogoutEntries.indexOf(
+    postLogoutAuthMeEntry,
+  );
+  if (postLogoutAuthMeOffset <= logoutOffset) {
+    throw new Error("B12 post-logout /auth/me preceded the logout request");
+  }
+  if (postLogoutBusinessEntries.length > 0) {
+    throw new Error("B12 protected business request occurred after logout");
+  }
+
+  return {
+    authenticatedEntries: authenticatedEntries.map(cloneNetworkLedgerEntry),
+    logoutAndPostLogoutEntries: logoutAndPostLogoutEntries.map(
+      cloneNetworkLedgerEntry,
+    ),
+    authenticatedAuthMeEntries: authenticatedAuthMeEntries.map(
+      cloneNetworkLedgerEntry,
+    ),
+    logoutEntries: logoutEntries.map(cloneNetworkLedgerEntry),
+    postLogoutAuthMeEntries: postLogoutAuthMeEntries.map(
+      cloneNetworkLedgerEntry,
+    ),
+    postLogoutBusinessEntries: postLogoutBusinessEntries.map(
+      cloneNetworkLedgerEntry,
+    ),
+  };
+}
+
 function safeErrorCategory(entry: NetworkLedgerEntry): B12SafeErrorCategory {
   if (
     entry.method === "GET" &&
@@ -645,6 +802,7 @@ export class B12BrowserSession {
     null;
   private authMeBeforeWorkflow = 0;
   private authMeAfterWorkflow = 0;
+  private logoutBoundaryEntryIndex: number | null = null;
   private collectState: B12CollectState = "open";
   private collectedSummary: B12SessionSummary | null = null;
   private logoutResult: B12LogoutResult | null = null;
@@ -1306,6 +1464,13 @@ export class B12BrowserSession {
     return this.consoleAudit.stop();
   }
 
+  private recordLogoutBoundary(): void {
+    this.logoutBoundaryEntryIndex = setB12LogoutBoundaryEntryIndex(
+      this.logoutBoundaryEntryIndex,
+      this.ledger.entries().length,
+    );
+  }
+
   private async attemptLogout(): Promise<B12LogoutResult> {
     if (this.logoutResult) return this.logoutResult;
     if (this.page.isClosed()) {
@@ -1331,6 +1496,9 @@ export class B12BrowserSession {
       return this.logoutResult;
     }
     try {
+      if (this.logoutBoundaryEntryIndex === null) {
+        this.recordLogoutBoundary();
+      }
       const responsePromise = this.page.waitForResponse(
         (response) =>
           response.request().method() === "POST" &&
@@ -1412,6 +1580,8 @@ export class B12BrowserSession {
         ),
       ).toBe(true);
 
+      await this.page.waitForLoadState("networkidle", { timeout: 10_000 });
+      this.recordLogoutBoundary();
       expect(await this.attemptLogout()).toBe("succeeded");
       expect(
         (await this.contextCookies()).some(({ httpOnly }) => httpOnly),
@@ -1422,6 +1592,13 @@ export class B12BrowserSession {
 
       const network = await this.detachLedger();
       const entries = network.entries;
+      if (this.logoutBoundaryEntryIndex === null) {
+        throw new Error("B12 logout boundary entry index is missing");
+      }
+      const authLifecycle = partitionB12AuthLifecycleEntries(
+        entries,
+        this.logoutBoundaryEntryIndex,
+      );
       const count = (method: string, pattern: RegExp | string) =>
         entries.filter(
           (entry) =>
@@ -1434,10 +1611,6 @@ export class B12BrowserSession {
       const loginEntries = entries.filter(
         ({ method, safeUrlPattern }) =>
           method === "POST" && safeUrlPattern === "/auth/login",
-      );
-      const authMeEntries = entries.filter(
-        ({ method, safeUrlPattern }) =>
-          method === "GET" && safeUrlPattern === "/auth/me",
       );
       const a21EditRequestCount = count(
         "PATCH",
@@ -1478,12 +1651,12 @@ export class B12BrowserSession {
           ({ status }) => status !== null && status >= 200 && status < 300,
         ),
       ).toBe(true);
-      expect(authMeEntries.length).toBeGreaterThan(0);
-      expect(
-        authMeEntries.every(
-          ({ status }) => status !== null && status >= 200 && status < 300,
-        ),
-      ).toBe(true);
+      expect(authLifecycle.authenticatedAuthMeEntries.length).toBeGreaterThan(
+        0,
+      );
+      expect(authLifecycle.logoutEntries).toHaveLength(1);
+      expect(authLifecycle.postLogoutAuthMeEntries).toHaveLength(1);
+      expect(authLifecycle.postLogoutBusinessEntries).toHaveLength(0);
       expect(a22LockRequestCount).toBe(
         expectedLockCount(this.target, this.label),
       );
@@ -1517,7 +1690,7 @@ export class B12BrowserSession {
             !request.forbiddenBodyKeyDetected,
         ),
       ).toBe(true);
-      const logoutRequestCount = count("POST", "/auth/logout");
+      const logoutRequestCount = authLifecycle.logoutEntries.length;
       expect(logoutRequestCount).toBe(1);
       const abortedRequestCount = entries.filter(
         ({ failureReason, safeUrlPattern }) =>
@@ -1566,6 +1739,9 @@ export class B12BrowserSession {
           a25CorrectionRequestCount: 0,
           loginRequestCount: 1,
           authMeRequestCount: count("GET", "/auth/me"),
+          authenticatedAuthMeRequestCount:
+            authLifecycle.authenticatedAuthMeEntries.length,
+          postLogoutUnauthenticatedAuthMeRequestCount: 1,
           logoutRequestCount: 1,
           unrelatedOutputRequestCount: 0,
           abortedRequestCount,
