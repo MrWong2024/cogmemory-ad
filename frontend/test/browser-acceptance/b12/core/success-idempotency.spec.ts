@@ -5,6 +5,7 @@ import {
   B12_NEUTRAL_TEXT,
   assertNoA21WriteControls,
   assertNoAvailableLockEntry,
+  assertReportNarrativeSectionsExcludeText,
   reportNarrativeSections,
   runB12CoreRoute,
   type B12BrowserSession,
@@ -95,7 +96,7 @@ async function assertFirstLockSuccess(
   await expect(
     session.page.getByText(note, { exact: true }).first(),
   ).toBeVisible();
-  await expect(reportNarrativeSections(session.page)).not.toContainText(note);
+  await assertReportNarrativeSectionsExcludeText(session.page, note);
   await assertNoAvailableLockEntry(session.page);
 
   const lockSummary = session.page

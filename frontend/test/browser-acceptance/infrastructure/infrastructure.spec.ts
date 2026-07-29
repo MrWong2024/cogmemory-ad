@@ -2,8 +2,12 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import type { AddressInfo } from 'node:net';
 import { chromium } from '@playwright/test';
 import {
+  assertReportNarrativeSectionsExcludeText,
+  attemptB12BrowserLogout,
   partitionB12AuthLifecycleEntries,
+  resolveB12LogoutDisposition,
   resolveB12SessionOpenMode,
+  setB12LoginBoundaryEntryIndex,
   setB12LogoutBoundaryEntryIndex,
 } from '../b12/b12-core-support';
 import { runAccessibilityAudit } from '../support/accessibility-audit';
@@ -66,6 +70,7 @@ const evidence = {
 
 let origin = '';
 let server: ReturnType<typeof createServer>;
+let scriptedLogoutRequestCount = 0;
 
 function pageDocument(body: string, title = 'Acceptance fixture'): string {
   return `<!doctype html>
@@ -113,6 +118,17 @@ function b12LifecycleEntry(
 function validB12AuthLifecycleEntries(): NetworkLedgerEntry[] {
   return [
     b12LifecycleEntry({
+      resourceType: 'document',
+      initiator: 'navigation',
+      safeUrlPattern: '/login',
+    }),
+    b12LifecycleEntry({ status: 401 }),
+    b12LifecycleEntry({
+      resourceType: 'script',
+      initiator: 'parser',
+      safeUrlPattern: '/_next/static/chunks/login.js',
+    }),
+    b12LifecycleEntry({
       method: 'POST',
       safeUrlPattern: '/auth/login',
       bodyKeys: ['accountName', '<blocked-key>'],
@@ -143,6 +159,66 @@ function validB12AuthLifecycleEntries(): NetworkLedgerEntry[] {
 
 function handleRequest(request: IncomingMessage, response: ServerResponse): void {
   const requestUrl = new URL(request.url ?? '/', 'http://127.0.0.1');
+
+  if (requestUrl.pathname === '/logout-fixture') {
+    respond(
+      response,
+      200,
+      pageDocument('<main><h1>Forbidden boundary</h1></main>'),
+      {
+        ...HTML_HEADERS,
+        'set-cookie': 'b12_session=synthetic; HttpOnly; SameSite=Lax; Path=/',
+      },
+    );
+    return;
+  }
+
+  if (requestUrl.pathname === '/auth/logout' && request.method === 'POST') {
+    scriptedLogoutRequestCount += 1;
+    respond(response, 200, JSON.stringify({ ok: true, authenticated: false }), {
+      'cache-control': 'no-store',
+      'content-type': 'application/json; charset=utf-8',
+      'set-cookie':
+        'b12_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0',
+    });
+    return;
+  }
+
+  if (requestUrl.pathname === '/auth/me') {
+    respond(response, 401, JSON.stringify({ message: 'unauthenticated' }), {
+      'cache-control': 'no-store',
+      'content-type': 'application/json; charset=utf-8',
+    });
+    return;
+  }
+
+  if (requestUrl.pathname === '/login') {
+    respond(
+      response,
+      200,
+      pageDocument(`
+        <main><h1>Login boundary</h1></main>
+        <script>
+          fetch('/auth/me', { credentials: 'include' });
+        </script>
+      `),
+    );
+    return;
+  }
+
+  if (requestUrl.pathname.startsWith('/narrative')) {
+    const first =
+      requestUrl.pathname === '/narrative-leak'
+        ? 'Synthetic excluded marker'
+        : 'System narrative';
+    const sections =
+      requestUrl.pathname === '/narrative-empty'
+        ? ''
+        : `<section aria-labelledby="clinical-report-narrative-heading">${first}</section>
+           <section aria-labelledby="clinical-report-clinician-narrative-heading">Clinician narrative</section>`;
+    respond(response, 200, pageDocument(`<main>${sections}</main>`));
+    return;
+  }
 
   if (requestUrl.pathname === '/keyboard') {
     respond(
@@ -315,16 +391,26 @@ test('keeps B12 readable, forbidden, and incomplete-report open modes route-scop
   ).toThrow('B12 incomplete-report open is allowed only for B12-14 doctor');
 });
 
-test('partitions the valid B12 authentication lifecycle at the logout boundary', () => {
+test('partitions the valid B12 authentication lifecycle into five stages', () => {
   const partition = partitionB12AuthLifecycleEntries(
     validB12AuthLifecycleEntries(),
     3,
+    6,
   );
 
-  expect(partition.authenticatedEntries).toHaveLength(3);
+  expect(partition.preAuthenticationEntries).toHaveLength(3);
+  expect(partition.preLoginAuthMeEntries).toHaveLength(1);
+  expect(partition.preLoginAuthMeEntries[0]?.status).toBe(401);
+  expect(partition.loginAndAuthenticatedEntries).toHaveLength(3);
+  expect(partition.loginEntries).toHaveLength(1);
+  expect(partition.loginEntries[0]?.status).toBe(200);
+  expect(partition.authenticatedEntries).toHaveLength(2);
   expect(partition.logoutAndPostLogoutEntries).toHaveLength(4);
   expect(partition.authenticatedAuthMeEntries).toHaveLength(1);
   expect(partition.authenticatedAuthMeEntries[0]?.status).toBe(200);
+  expect(
+    partition.authenticatedEntries.some(({ status }) => status === 401),
+  ).toBe(false);
   expect(partition.logoutEntries).toHaveLength(1);
   expect(partition.logoutEntries[0]?.status).toBe(204);
   expect(partition.postLogoutAuthMeEntries).toHaveLength(1);
@@ -332,35 +418,184 @@ test('partitions the valid B12 authentication lifecycle at the logout boundary',
   expect(partition.postLogoutBusinessEntries).toHaveLength(0);
 });
 
-test('rejects a non-2xx authenticated B12 auth probe', () => {
-  const entries = validB12AuthLifecycleEntries();
-  entries[1] = b12LifecycleEntry({ status: 401 });
+test('rejects missing or repeated pre-login B12 auth probes', () => {
+  const missing = validB12AuthLifecycleEntries();
+  missing[1] = b12LifecycleEntry({
+    resourceType: 'script',
+    initiator: 'parser',
+    safeUrlPattern: '/_next/static/chunks/other.js',
+  });
+  expect(() => partitionB12AuthLifecycleEntries(missing, 3, 6)).toThrow(
+    'B12 pre-authentication phase requires exactly one unauthenticated /auth/me',
+  );
 
-  expect(() => partitionB12AuthLifecycleEntries(entries, 3)).toThrow(
+  const repeated = validB12AuthLifecycleEntries();
+  repeated[2] = b12LifecycleEntry({ status: 401 });
+  expect(() => partitionB12AuthLifecycleEntries(repeated, 3, 6)).toThrow(
+    'B12 pre-authentication phase requires exactly one unauthenticated /auth/me',
+  );
+});
+
+test('rejects invalid pre-login B12 auth probe statuses and failures', () => {
+  for (const status of [200, 403, 409, 500]) {
+    const entries = validB12AuthLifecycleEntries();
+    entries[1] = b12LifecycleEntry({ status });
+    expect(() => partitionB12AuthLifecycleEntries(entries, 3, 6)).toThrow(
+      'B12 pre-authentication /auth/me response was not a clean 401',
+    );
+  }
+
+  const failed = validB12AuthLifecycleEntries();
+  failed[1] = b12LifecycleEntry({ status: null, failureReason: 'failed' });
+  expect(() => partitionB12AuthLifecycleEntries(failed, 3, 6)).toThrow(
+    'B12 pre-authentication /auth/me response was not a clean 401',
+  );
+
+  const protectedRequest = validB12AuthLifecycleEntries();
+  protectedRequest[2] = b12LifecycleEntry({
+    safeUrlPattern: '/patients/<id>',
+  });
+  expect(() =>
+    partitionB12AuthLifecycleEntries(protectedRequest, 3, 6),
+  ).toThrow('B12 protected business request occurred before authentication');
+});
+
+test('rejects missing or repeated B12 login requests', () => {
+  const missing = validB12AuthLifecycleEntries();
+  missing[3] = b12LifecycleEntry({
+    resourceType: 'script',
+    initiator: 'parser',
+    safeUrlPattern: '/_next/static/chunks/dashboard.js',
+  });
+  expect(() => partitionB12AuthLifecycleEntries(missing, 3, 6)).toThrow(
+    'B12 login transition requires exactly one login request',
+  );
+
+  const repeated = validB12AuthLifecycleEntries();
+  repeated[5] = b12LifecycleEntry({
+    method: 'POST',
+    safeUrlPattern: '/auth/login',
+  });
+  expect(() => partitionB12AuthLifecycleEntries(repeated, 3, 6)).toThrow(
+    'B12 login transition requires exactly one login request',
+  );
+});
+
+test('rejects failed, non-2xx, or non-script B12 login requests', () => {
+  const non2xx = validB12AuthLifecycleEntries();
+  non2xx[3] = b12LifecycleEntry({
+    method: 'POST',
+    status: 401,
+    safeUrlPattern: '/auth/login',
+  });
+  expect(() => partitionB12AuthLifecycleEntries(non2xx, 3, 6)).toThrow(
+    'B12 login request was not successful',
+  );
+
+  const failed = validB12AuthLifecycleEntries();
+  failed[3] = b12LifecycleEntry({
+    method: 'POST',
+    status: null,
+    failureReason: 'failed',
+    safeUrlPattern: '/auth/login',
+  });
+  expect(() => partitionB12AuthLifecycleEntries(failed, 3, 6)).toThrow(
+    'B12 login request was not successful',
+  );
+
+  const nonScript = validB12AuthLifecycleEntries();
+  nonScript[3] = b12LifecycleEntry({
+    method: 'POST',
+    initiator: 'other',
+    safeUrlPattern: '/auth/login',
+  });
+  expect(() => partitionB12AuthLifecycleEntries(nonScript, 3, 6)).toThrow(
+    'B12 login request was not initiated by page script',
+  );
+});
+
+test('rejects a B12 login request after the logout boundary', () => {
+  const entries = validB12AuthLifecycleEntries();
+  entries[3] = b12LifecycleEntry({
+    resourceType: 'script',
+    initiator: 'parser',
+    safeUrlPattern: '/_next/static/chunks/dashboard.js',
+  });
+  entries[9] = b12LifecycleEntry({
+    method: 'POST',
+    safeUrlPattern: '/auth/login',
+  });
+  expect(() => partitionB12AuthLifecycleEntries(entries, 3, 6)).toThrow(
+    'B12 login request occurred after the logout boundary',
+  );
+});
+
+test('rejects an authenticated B12 auth probe before the login request', () => {
+  const entries = validB12AuthLifecycleEntries();
+  entries[3] = b12LifecycleEntry();
+  entries[4] = b12LifecycleEntry({
+    resourceType: 'script',
+    initiator: 'parser',
+    safeUrlPattern: '/_next/static/chunks/dashboard.js',
+  });
+  entries[5] = b12LifecycleEntry({
+    method: 'POST',
+    safeUrlPattern: '/auth/login',
+  });
+  expect(() => partitionB12AuthLifecycleEntries(entries, 3, 6)).toThrow(
+    'B12 authenticated /auth/me preceded the login request',
+  );
+});
+
+test('rejects missing or non-2xx authenticated B12 auth probes', () => {
+  const missing = validB12AuthLifecycleEntries();
+  missing[4] = b12LifecycleEntry({
+    resourceType: 'script',
+    initiator: 'parser',
+    safeUrlPattern: '/_next/static/chunks/dashboard.js',
+  });
+  expect(() => partitionB12AuthLifecycleEntries(missing, 3, 6)).toThrow(
+    'B12 authenticated phase omitted /auth/me',
+  );
+
+  const non2xx = validB12AuthLifecycleEntries();
+  non2xx[4] = b12LifecycleEntry({ status: 401 });
+  expect(() => partitionB12AuthLifecycleEntries(non2xx, 3, 6)).toThrow(
     'B12 authenticated /auth/me response was not successful',
   );
 });
 
-test('rejects a post-logout B12 auth probe that remains authenticated', () => {
-  const entries = validB12AuthLifecycleEntries();
-  entries[5] = b12LifecycleEntry({ status: 200 });
+test('rejects invalid post-logout B12 auth probe statuses and failures', () => {
+  for (const status of [200, 403, 409, 500]) {
+    const entries = validB12AuthLifecycleEntries();
+    entries[8] = b12LifecycleEntry({ status });
+    expect(() => partitionB12AuthLifecycleEntries(entries, 3, 6)).toThrow(
+      'B12 post-logout /auth/me response was not a clean 401',
+    );
+  }
 
-  expect(() => partitionB12AuthLifecycleEntries(entries, 3)).toThrow(
+  const failed = validB12AuthLifecycleEntries();
+  failed[8] = b12LifecycleEntry({ status: null, failureReason: 'failed' });
+  expect(() => partitionB12AuthLifecycleEntries(failed, 3, 6)).toThrow(
     'B12 post-logout /auth/me response was not a clean 401',
   );
 });
 
 test('rejects missing or repeated post-logout B12 auth probes', () => {
   const missing = validB12AuthLifecycleEntries();
-  missing.splice(5, 1);
+  missing[8] = b12LifecycleEntry({
+    resourceType: 'script',
+    initiator: 'parser',
+    safeUrlPattern: '/_next/static/chunks/other.js',
+  });
 
-  expect(() => partitionB12AuthLifecycleEntries(missing, 3)).toThrow(
+  expect(() => partitionB12AuthLifecycleEntries(missing, 3, 6)).toThrow(
     'B12 post-logout phase requires exactly one unauthenticated /auth/me',
   );
 
   const repeated = validB12AuthLifecycleEntries();
-  repeated.splice(6, 0, b12LifecycleEntry({ status: 401 }));
-  expect(() => partitionB12AuthLifecycleEntries(repeated, 3)).toThrow(
+  repeated[9] = b12LifecycleEntry({ status: 401 });
+  expect(() => partitionB12AuthLifecycleEntries(repeated, 3, 6)).toThrow(
     'B12 post-logout phase requires exactly one unauthenticated /auth/me',
   );
 });
@@ -371,9 +606,9 @@ test('rejects Patient and ClinicalReport requests after B12 logout', () => {
     '/patients/<id>/visits/<id>/clinical-reports/latest',
   ]) {
     const entries = validB12AuthLifecycleEntries();
-    entries.splice(5, 0, b12LifecycleEntry({ safeUrlPattern }));
+    entries[9] = b12LifecycleEntry({ safeUrlPattern });
 
-    expect(() => partitionB12AuthLifecycleEntries(entries, 3)).toThrow(
+    expect(() => partitionB12AuthLifecycleEntries(entries, 3, 6)).toThrow(
       'B12 protected business request occurred after logout',
     );
   }
@@ -381,61 +616,94 @@ test('rejects Patient and ClinicalReport requests after B12 logout', () => {
 
 test('rejects missing, repeated, failed, or non-script B12 logout requests', () => {
   const missing = validB12AuthLifecycleEntries();
-  missing.splice(3, 1);
-  expect(() => partitionB12AuthLifecycleEntries(missing, 3)).toThrow(
+  missing[6] = b12LifecycleEntry({
+    resourceType: 'document',
+    initiator: 'navigation',
+    safeUrlPattern: '/login',
+  });
+  expect(() => partitionB12AuthLifecycleEntries(missing, 3, 6)).toThrow(
     'B12 logout transition requires exactly one logout request',
   );
 
   const repeated = validB12AuthLifecycleEntries();
-  repeated.splice(
-    4,
-    0,
-    b12LifecycleEntry({
-      method: 'POST',
-      status: 204,
-      safeUrlPattern: '/auth/logout',
-    }),
-  );
-  expect(() => partitionB12AuthLifecycleEntries(repeated, 3)).toThrow(
+  repeated[9] = b12LifecycleEntry({
+    method: 'POST',
+    status: 204,
+    safeUrlPattern: '/auth/logout',
+  });
+  expect(() => partitionB12AuthLifecycleEntries(repeated, 3, 6)).toThrow(
     'B12 logout transition requires exactly one logout request',
   );
 
   const failed = validB12AuthLifecycleEntries();
-  failed[3] = b12LifecycleEntry({
+  failed[6] = b12LifecycleEntry({
     method: 'POST',
     status: 500,
     safeUrlPattern: '/auth/logout',
   });
-  expect(() => partitionB12AuthLifecycleEntries(failed, 3)).toThrow(
+  expect(() => partitionB12AuthLifecycleEntries(failed, 3, 6)).toThrow(
     'B12 logout request was not successful',
   );
 
   const nonScript = validB12AuthLifecycleEntries();
-  nonScript[3] = b12LifecycleEntry({
+  nonScript[6] = b12LifecycleEntry({
     method: 'POST',
     status: 204,
     initiator: 'other',
     safeUrlPattern: '/auth/logout',
   });
-  expect(() => partitionB12AuthLifecycleEntries(nonScript, 3)).toThrow(
+  expect(() => partitionB12AuthLifecycleEntries(nonScript, 3, 6)).toThrow(
     'B12 logout request was not initiated by page script',
+  );
+
+  const beforeBoundary = validB12AuthLifecycleEntries();
+  beforeBoundary[5] = b12LifecycleEntry({
+    method: 'POST',
+    status: 204,
+    safeUrlPattern: '/auth/logout',
+  });
+  expect(() => partitionB12AuthLifecycleEntries(beforeBoundary, 3, 6)).toThrow(
+    'B12 logout request occurred before the logout boundary',
   );
 });
 
-test('rejects invalid or repeated B12 logout boundary assignment', () => {
+test('rejects invalid, unordered, or repeated B12 boundary assignment', () => {
   const entries = validB12AuthLifecycleEntries();
-  expect(() => partitionB12AuthLifecycleEntries(entries, -1)).toThrow(
+  expect(() => partitionB12AuthLifecycleEntries(entries, -1, 6)).toThrow(
+    'B12 login boundary entry index is out of range',
+  );
+  expect(() => partitionB12AuthLifecycleEntries(entries, 3.5, 6)).toThrow(
+    'B12 login boundary entry index is out of range',
+  );
+  expect(() => partitionB12AuthLifecycleEntries(entries, 3, -1)).toThrow(
     'B12 logout boundary entry index is out of range',
   );
   expect(() =>
-    partitionB12AuthLifecycleEntries(entries, entries.length + 1),
+    partitionB12AuthLifecycleEntries(entries, 3, entries.length + 1),
   ).toThrow('B12 logout boundary entry index is out of range');
+  expect(() => partitionB12AuthLifecycleEntries(entries, 6, 6)).toThrow(
+    'B12 login boundary must precede the logout boundary',
+  );
 
-  const boundary = setB12LogoutBoundaryEntryIndex(null, 3);
-  expect(boundary).toBe(3);
-  expect(() => setB12LogoutBoundaryEntryIndex(boundary, 3)).toThrow(
+  const loginBoundary = setB12LoginBoundaryEntryIndex(null, 3);
+  expect(loginBoundary).toBe(3);
+  expect(() => setB12LoginBoundaryEntryIndex(loginBoundary, 3)).toThrow(
+    'B12 login boundary entry index is already set',
+  );
+  const logoutBoundary = setB12LogoutBoundaryEntryIndex(
+    null,
+    loginBoundary,
+    6,
+  );
+  expect(logoutBoundary).toBe(6);
+  expect(() =>
+    setB12LogoutBoundaryEntryIndex(logoutBoundary, loginBoundary, 6),
+  ).toThrow(
     'B12 logout boundary entry index is already set',
   );
+  expect(() =>
+    setB12LogoutBoundaryEntryIndex(null, loginBoundary, loginBoundary),
+  ).toThrow('B12 logout boundary must be after the login boundary');
 });
 
 test('does not mutate B12 authentication lifecycle input entries', () => {
@@ -445,10 +713,184 @@ test('does not mutate B12 authentication lifecycle input entries', () => {
     bodyKeys: [...entry.bodyKeys],
   }));
 
-  const partition = partitionB12AuthLifecycleEntries(entries, 3);
+  const partition = partitionB12AuthLifecycleEntries(entries, 3, 6);
+  partition.preAuthenticationEntries[0]?.bodyKeys.push('pre-copy-only');
+  partition.loginAndAuthenticatedEntries[0]?.bodyKeys.push('login-copy-only');
   partition.authenticatedEntries[0]?.bodyKeys.push('returned-copy-only');
 
   expect(entries).toEqual(before);
+});
+
+test('keeps B12 logout fallback restricted to the denied system Session', () => {
+  const deniedRoleTarget = {
+    scenarioKey: 'eligibility-state',
+    routeKey: 'denied-role-entry',
+  } as const;
+  expect(
+    resolveB12LogoutDisposition({
+      target: deniedRoleTarget,
+      role: 'doctor',
+      openMode: 'readable',
+      hasHttpOnlySessionCookie: true,
+      hasVisibleUiLogout: true,
+    }),
+  ).toBe('ui_control');
+  expect(
+    resolveB12LogoutDisposition({
+      target: deniedRoleTarget,
+      role: 'system',
+      openMode: 'forbidden',
+      hasHttpOnlySessionCookie: true,
+      hasVisibleUiLogout: false,
+    }),
+  ).toBe('scripted_cleanup_fallback');
+  expect(
+    resolveB12LogoutDisposition({
+      target: deniedRoleTarget,
+      role: 'doctor',
+      openMode: 'readable',
+      hasHttpOnlySessionCookie: true,
+      hasVisibleUiLogout: false,
+    }),
+  ).toBe('unsupported');
+  expect(
+    resolveB12LogoutDisposition({
+      target: {
+        scenarioKey: 'eligibility-state',
+        routeKey: 'confirmed-doctor-entry',
+      },
+      role: 'system',
+      openMode: 'forbidden',
+      hasHttpOnlySessionCookie: true,
+      hasVisibleUiLogout: false,
+    }),
+  ).toBe('unsupported');
+  expect(
+    resolveB12LogoutDisposition({
+      target: deniedRoleTarget,
+      role: 'system',
+      openMode: 'forbidden',
+      hasHttpOnlySessionCookie: false,
+      hasVisibleUiLogout: false,
+    }),
+  ).toBe('not_authenticated');
+});
+
+test('executes the denied system Session scripted logout through the page', async ({
+  page,
+}) => {
+  scriptedLogoutRequestCount = 0;
+  await page.goto(`${origin}/logout-fixture`);
+  expect((await page.context().cookies()).some(({ httpOnly }) => httpOnly)).toBe(
+    true,
+  );
+  const ledger = new NetworkLedger();
+  await ledger.attach(page);
+  let boundaryCount = 0;
+  try {
+    const attempt = await attemptB12BrowserLogout({
+      page,
+      target: {
+        scenarioKey: 'eligibility-state',
+        routeKey: 'denied-role-entry',
+      },
+      role: 'system',
+      openMode: 'forbidden',
+      backendOrigin: origin,
+      frontendOrigin: origin,
+      contextCookies: () => page.context().cookies(),
+      recordBoundary: () => {
+        boundaryCount += 1;
+      },
+    });
+    expect({
+      attempt,
+      path: new URL(page.url()).pathname,
+      httpOnlyCookieCount: (await page.context().cookies()).filter(
+        ({ httpOnly }) => httpOnly,
+      ).length,
+      scriptedLogoutRequestCount,
+    }).toEqual({
+      attempt: {
+        result: 'succeeded',
+        mechanism: 'scripted_cleanup_fallback',
+      },
+      path: '/login',
+      httpOnlyCookieCount: 0,
+      scriptedLogoutRequestCount: 1,
+    });
+    expect(boundaryCount).toBe(1);
+    expect(scriptedLogoutRequestCount).toBe(1);
+    expect(page.url()).toBe(`${origin}/login`);
+    expect(
+      (await page.context().cookies()).some(({ httpOnly }) => httpOnly),
+    ).toBe(false);
+
+    const entries = ledger.entries();
+    const logoutEntries = entries.filter(
+      ({ method, safeUrlPattern }) =>
+        method === 'POST' && safeUrlPattern === '/auth/logout',
+    );
+    expect(logoutEntries).toHaveLength(1);
+    expect(logoutEntries[0]).toMatchObject({
+      status: 200,
+      initiator: 'script',
+      failureReason: null,
+    });
+    const postLogoutAuthMeEntries = entries.filter(
+      ({ method, safeUrlPattern }) =>
+        method === 'GET' && safeUrlPattern === '/auth/me',
+    );
+    expect(postLogoutAuthMeEntries).toHaveLength(1);
+    expect(postLogoutAuthMeEntries[0]).toMatchObject({
+      status: 401,
+      failureReason: null,
+    });
+
+    const secondAttempt = await attemptB12BrowserLogout({
+      page,
+      target: {
+        scenarioKey: 'eligibility-state',
+        routeKey: 'denied-role-entry',
+      },
+      role: 'system',
+      openMode: 'forbidden',
+      backendOrigin: origin,
+      frontendOrigin: origin,
+      contextCookies: () => page.context().cookies(),
+      recordBoundary: () => {
+        boundaryCount += 1;
+      },
+    });
+    expect(secondAttempt).toEqual({
+      result: 'not_authenticated',
+      mechanism: null,
+    });
+    expect(boundaryCount).toBe(1);
+    expect(scriptedLogoutRequestCount).toBe(1);
+  } finally {
+    await ledger.detach();
+  }
+});
+
+test('checks every B12 narrative section and rejects leaks or empty matches', async ({
+  page,
+}) => {
+  const excludedText = 'Synthetic excluded marker';
+  await page.goto(`${origin}/narrative-clean`);
+  expect(
+    await assertReportNarrativeSectionsExcludeText(page, excludedText),
+  ).toBe(2);
+
+  await page.goto(`${origin}/narrative-leak`);
+  await expect(
+    assertReportNarrativeSectionsExcludeText(page, excludedText),
+  ).rejects.toThrow();
+
+  await page.goto(`${origin}/narrative-empty`);
+  await expect(
+    assertReportNarrativeSectionsExcludeText(page, excludedText),
+  ).rejects.toThrow();
 });
 
 test.afterAll(async () => {

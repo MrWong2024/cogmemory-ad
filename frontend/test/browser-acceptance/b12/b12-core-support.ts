@@ -154,19 +154,28 @@ export type B12DomPrivacySummary = {
 };
 
 export type B12AuthLifecyclePartition = {
+  preAuthenticationEntries: NetworkLedgerEntry[];
+  loginAndAuthenticatedEntries: NetworkLedgerEntry[];
   authenticatedEntries: NetworkLedgerEntry[];
   logoutAndPostLogoutEntries: NetworkLedgerEntry[];
+  preLoginAuthMeEntries: NetworkLedgerEntry[];
+  loginEntries: NetworkLedgerEntry[];
   authenticatedAuthMeEntries: NetworkLedgerEntry[];
   logoutEntries: NetworkLedgerEntry[];
   postLogoutAuthMeEntries: NetworkLedgerEntry[];
   postLogoutBusinessEntries: NetworkLedgerEntry[];
 };
 
+export type B12LogoutMechanism =
+  | "ui_control"
+  | "scripted_cleanup_fallback";
+
 export type B12SessionSummary = {
   label: string;
   role: AcceptanceRole;
   login: "passed";
   logout: "succeeded";
+  logoutMechanism: B12LogoutMechanism;
   routeExpectedPublicReadOutcome: B12ExpectedPublicReadOutcome;
   sessionOpenMode: B12SessionOpenMode;
   workflowAuthMeRequestCount: 1;
@@ -187,6 +196,7 @@ export type B12SessionSummary = {
     a25CorrectionRequestCount: 0;
     loginRequestCount: 1;
     authMeRequestCount: number;
+    preLoginUnauthenticatedAuthMeRequestCount: 1;
     authenticatedAuthMeRequestCount: number;
     postLogoutUnauthenticatedAuthMeRequestCount: 1;
     logoutRequestCount: 1;
@@ -212,7 +222,12 @@ export type B12SessionSummary = {
   domPrivacy: B12DomPrivacySummary;
 };
 
-type B12LogoutResult = "succeeded" | "failed" | "not_authenticated";
+export type B12LogoutResult = "succeeded" | "failed" | "not_authenticated";
+
+export type B12LogoutAttempt = {
+  result: B12LogoutResult;
+  mechanism: B12LogoutMechanism | null;
+};
 
 type CaptureFailureCategory =
   | "response_headers"
@@ -479,8 +494,22 @@ function expectedLoginPageRequest(entry: NetworkLedgerEntry): boolean {
   );
 }
 
+export function setB12LoginBoundaryEntryIndex(
+  currentBoundaryEntryIndex: number | null,
+  entryCount: number,
+): number {
+  if (currentBoundaryEntryIndex !== null) {
+    throw new Error("B12 login boundary entry index is already set");
+  }
+  if (!Number.isInteger(entryCount) || entryCount < 0) {
+    throw new Error("B12 login boundary entry count is invalid");
+  }
+  return entryCount;
+}
+
 export function setB12LogoutBoundaryEntryIndex(
   currentBoundaryEntryIndex: number | null,
+  loginBoundaryEntryIndex: number,
   entryCount: number,
 ): number {
   if (currentBoundaryEntryIndex !== null) {
@@ -489,13 +518,30 @@ export function setB12LogoutBoundaryEntryIndex(
   if (!Number.isInteger(entryCount) || entryCount < 0) {
     throw new Error("B12 logout boundary entry count is invalid");
   }
+  if (
+    !Number.isInteger(loginBoundaryEntryIndex) ||
+    loginBoundaryEntryIndex < 0
+  ) {
+    throw new Error("B12 login boundary entry index is invalid");
+  }
+  if (entryCount <= loginBoundaryEntryIndex) {
+    throw new Error("B12 logout boundary must be after the login boundary");
+  }
   return entryCount;
 }
 
 export function partitionB12AuthLifecycleEntries(
   entries: readonly NetworkLedgerEntry[],
+  loginBoundaryEntryIndex: number,
   logoutBoundaryEntryIndex: number,
 ): B12AuthLifecyclePartition {
+  if (
+    !Number.isInteger(loginBoundaryEntryIndex) ||
+    loginBoundaryEntryIndex < 0 ||
+    loginBoundaryEntryIndex >= entries.length
+  ) {
+    throw new Error("B12 login boundary entry index is out of range");
+  }
   if (
     !Number.isInteger(logoutBoundaryEntryIndex) ||
     logoutBoundaryEntryIndex < 0 ||
@@ -503,10 +549,56 @@ export function partitionB12AuthLifecycleEntries(
   ) {
     throw new Error("B12 logout boundary entry index is out of range");
   }
+  if (loginBoundaryEntryIndex >= logoutBoundaryEntryIndex) {
+    throw new Error("B12 login boundary must precede the logout boundary");
+  }
 
-  const authenticatedEntries = entries.slice(0, logoutBoundaryEntryIndex);
+  const preAuthenticationEntries = entries.slice(0, loginBoundaryEntryIndex);
+  const loginAndAuthenticatedEntries = entries.slice(
+    loginBoundaryEntryIndex,
+    logoutBoundaryEntryIndex,
+  );
   const logoutAndPostLogoutEntries = entries.slice(
     logoutBoundaryEntryIndex,
+  );
+  const preLoginAuthMeEntries = preAuthenticationEntries.filter(
+    ({ method, safeUrlPattern }) =>
+      method === "GET" && safeUrlPattern === "/auth/me",
+  );
+  const loginEntries = loginAndAuthenticatedEntries.filter(
+    ({ method, safeUrlPattern }) =>
+      method === "POST" && safeUrlPattern === "/auth/login",
+  );
+  const postBoundaryLoginEntries = logoutAndPostLogoutEntries.filter(
+    ({ method, safeUrlPattern }) =>
+      method === "POST" && safeUrlPattern === "/auth/login",
+  );
+  if (postBoundaryLoginEntries.length > 0) {
+    throw new Error("B12 login request occurred after the logout boundary");
+  }
+  if (loginEntries.length !== 1) {
+    throw new Error("B12 login transition requires exactly one login request");
+  }
+  const loginEntry = loginEntries[0];
+  if (!loginEntry || !successfulResponse(loginEntry)) {
+    throw new Error("B12 login request was not successful");
+  }
+  if (loginEntry.initiator !== "script") {
+    throw new Error("B12 login request was not initiated by page script");
+  }
+  const loginOffset = loginAndAuthenticatedEntries.indexOf(loginEntry);
+  if (
+    loginAndAuthenticatedEntries
+      .slice(0, loginOffset)
+      .some(
+        ({ method, safeUrlPattern }) =>
+          method === "GET" && safeUrlPattern === "/auth/me",
+      )
+  ) {
+    throw new Error("B12 authenticated /auth/me preceded the login request");
+  }
+  const authenticatedEntries = loginAndAuthenticatedEntries.slice(
+    loginOffset + 1,
   );
   const authenticatedAuthMeEntries = authenticatedEntries.filter(
     ({ method, safeUrlPattern }) =>
@@ -530,8 +622,31 @@ export function partitionB12AuthLifecycleEntries(
       ),
   );
 
+  if (preLoginAuthMeEntries.length !== 1) {
+    throw new Error(
+      "B12 pre-authentication phase requires exactly one unauthenticated /auth/me",
+    );
+  }
+  const preLoginAuthMeEntry = preLoginAuthMeEntries[0];
   if (
-    authenticatedEntries.some(
+    !preLoginAuthMeEntry ||
+    preLoginAuthMeEntry.status !== 401 ||
+    preLoginAuthMeEntry.failureReason !== null
+  ) {
+    throw new Error("B12 pre-authentication /auth/me response was not a clean 401");
+  }
+  if (
+    preAuthenticationEntries.some(
+      (entry) =>
+        entry !== preLoginAuthMeEntry && !expectedLoginPageRequest(entry),
+    )
+  ) {
+    throw new Error(
+      "B12 protected business request occurred before authentication",
+    );
+  }
+  if (
+    entries.slice(0, logoutBoundaryEntryIndex).some(
       ({ method, safeUrlPattern }) =>
         method === "POST" && safeUrlPattern === "/auth/logout",
     )
@@ -579,10 +694,18 @@ export function partitionB12AuthLifecycleEntries(
   }
 
   return {
+    preAuthenticationEntries: preAuthenticationEntries.map(
+      cloneNetworkLedgerEntry,
+    ),
+    loginAndAuthenticatedEntries: loginAndAuthenticatedEntries.map(
+      cloneNetworkLedgerEntry,
+    ),
     authenticatedEntries: authenticatedEntries.map(cloneNetworkLedgerEntry),
     logoutAndPostLogoutEntries: logoutAndPostLogoutEntries.map(
       cloneNetworkLedgerEntry,
     ),
+    preLoginAuthMeEntries: preLoginAuthMeEntries.map(cloneNetworkLedgerEntry),
+    loginEntries: loginEntries.map(cloneNetworkLedgerEntry),
     authenticatedAuthMeEntries: authenticatedAuthMeEntries.map(
       cloneNetworkLedgerEntry,
     ),
@@ -675,6 +798,152 @@ export function resolveB12SessionOpenMode(
     return "clinical_report_incomplete";
   }
   return "readable";
+}
+
+export function resolveB12LogoutDisposition(input: {
+  target: B12CoreRouteTarget;
+  role: AcceptanceRole;
+  openMode: B12SessionOpenMode;
+  hasHttpOnlySessionCookie: boolean;
+  hasVisibleUiLogout: boolean;
+}): B12LogoutMechanism | "not_authenticated" | "unsupported" {
+  if (!input.hasHttpOnlySessionCookie) return "not_authenticated";
+  if (input.hasVisibleUiLogout) return "ui_control";
+  if (
+    targetKey(input.target) === "eligibility-state/denied-role-entry" &&
+    input.role === "system" &&
+    input.openMode === "forbidden"
+  ) {
+    return "scripted_cleanup_fallback";
+  }
+  return "unsupported";
+}
+
+export async function attemptB12BrowserLogout(input: {
+  page: Page;
+  target: B12CoreRouteTarget;
+  role: AcceptanceRole;
+  openMode: B12SessionOpenMode;
+  backendOrigin: string;
+  frontendOrigin: string;
+  contextCookies: () => Promise<Array<{ httpOnly: boolean }>>;
+  recordBoundary: () => void | Promise<void>;
+}): Promise<B12LogoutAttempt> {
+  if (input.page.isClosed()) return { result: "failed", mechanism: null };
+
+  let hasHttpOnlySessionCookie: boolean;
+  try {
+    hasHttpOnlySessionCookie = (await input.contextCookies()).some(
+      ({ httpOnly }) => httpOnly,
+    );
+  } catch {
+    return { result: "failed", mechanism: null };
+  }
+
+  const logoutControl = input.page.getByRole("button", {
+    name: "退出登录",
+    exact: true,
+  });
+  const hasVisibleUiLogout = await logoutControl
+    .isVisible()
+    .catch(() => false);
+  const disposition = resolveB12LogoutDisposition({
+    target: input.target,
+    role: input.role,
+    openMode: input.openMode,
+    hasHttpOnlySessionCookie,
+    hasVisibleUiLogout,
+  });
+  if (disposition === "not_authenticated") {
+    return { result: "not_authenticated", mechanism: null };
+  }
+  if (disposition === "unsupported") {
+    return { result: "failed", mechanism: null };
+  }
+
+  const logoutResponsePromise = input.page
+    .waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).origin === input.backendOrigin &&
+        new URL(response.url()).pathname === "/auth/logout",
+      { timeout: 5_000 },
+    )
+    .catch(() => null);
+  const logoutRequestFinishedPromise = input.page
+    .waitForEvent("requestfinished", {
+      predicate: (request) =>
+        request.method() === "POST" &&
+        new URL(request.url()).origin === input.backendOrigin &&
+        new URL(request.url()).pathname === "/auth/logout",
+      timeout: 5_000,
+    })
+    .catch(() => null);
+  const postLogoutAuthMeResponsePromise = input.page
+    .waitForResponse(
+      (response) =>
+        response.request().method() === "GET" &&
+        new URL(response.url()).origin === input.backendOrigin &&
+        new URL(response.url()).pathname === "/auth/me",
+      { timeout: 5_000 },
+    )
+    .catch(() => null);
+
+  try {
+    await input.recordBoundary();
+    let scriptedStatus: number | null = null;
+    if (disposition === "ui_control") {
+      await logoutControl.click();
+    } else {
+      scriptedStatus = await input.page.evaluate(async (backendOrigin) => {
+        const response = await fetch(
+          new URL("/auth/logout", backendOrigin).toString(),
+          {
+            method: "POST",
+            credentials: "include",
+          },
+        );
+        const status = response.status;
+        await response.text();
+        return status;
+      }, input.backendOrigin);
+    }
+
+    const logoutResponse = await logoutResponsePromise;
+    const logoutRequestFinished = await logoutRequestFinishedPromise;
+    if (
+      !logoutResponse ||
+      !logoutRequestFinished ||
+      logoutResponse.status() < 200 ||
+      logoutResponse.status() >= 300 ||
+      (scriptedStatus !== null && scriptedStatus !== logoutResponse.status())
+    ) {
+      return { result: "failed", mechanism: disposition };
+    }
+
+    if (disposition === "scripted_cleanup_fallback") {
+      await input.page.goto(`${input.frontendOrigin}/login`, {
+        waitUntil: "domcontentloaded",
+        timeout: 5_000,
+      });
+    } else {
+      await input.page.waitForURL(`${input.frontendOrigin}/login`, {
+        timeout: 5_000,
+      });
+    }
+    const postLogoutAuthMeResponse = await postLogoutAuthMeResponsePromise;
+    if (!postLogoutAuthMeResponse || postLogoutAuthMeResponse.status() !== 401) {
+      return { result: "failed", mechanism: disposition };
+    }
+    const sessionCookieRemains = (await input.contextCookies()).some(
+      ({ httpOnly }) => httpOnly,
+    );
+    return sessionCookieRemains
+      ? { result: "failed", mechanism: disposition }
+      : { result: "succeeded", mechanism: disposition };
+  } catch {
+    return { result: "failed", mechanism: disposition };
+  }
 }
 
 function assertSessionOpenModeAllowed(
@@ -802,10 +1071,12 @@ export class B12BrowserSession {
     null;
   private authMeBeforeWorkflow = 0;
   private authMeAfterWorkflow = 0;
+  private loginBoundaryEntryIndex: number | null = null;
   private logoutBoundaryEntryIndex: number | null = null;
   private collectState: B12CollectState = "open";
   private collectedSummary: B12SessionSummary | null = null;
   private logoutResult: B12LogoutResult | null = null;
+  private logoutMechanism: B12LogoutMechanism | null = null;
   private explicitLockCount = 0;
   private explicitAbortedLockCount = 0;
   private acceptingCaptures = true;
@@ -1055,17 +1326,34 @@ export class B12BrowserSession {
     this.page.on("request", this.onRequest);
     this.page.on("response", this.onResponse);
 
+    const initialAuthMeResponsePromise = this.page.waitForResponse(
+      (response) =>
+        response.request().method() === "GET" &&
+        new URL(response.url()).origin === this.environment.backendOrigin &&
+        new URL(response.url()).pathname === "/auth/me",
+      { timeout: 20_000 },
+    );
     await this.page.goto(`${this.environment.frontendOrigin}/login`, {
       waitUntil: "domcontentloaded",
     });
     const accountInput = this.page.getByLabel("账号", { exact: true });
     const passwordInput = this.page.getByLabel("密码", { exact: true });
-    await expect(accountInput).toBeVisible();
+    const [, initialAuthMeResponse] = await Promise.all([
+      expect(accountInput).toBeVisible(),
+      initialAuthMeResponsePromise,
+    ]);
+    expect(initialAuthMeResponse.status()).toBe(401);
+    await this.page.waitForLoadState("networkidle", { timeout: 10_000 });
+    this.loginBoundaryEntryIndex = setB12LoginBoundaryEntryIndex(
+      this.loginBoundaryEntryIndex,
+      this.ledger.entries().length,
+    );
     await accountInput.fill(this.loginIdentifier);
     await passwordInput.fill(this.environment.fixturePassword);
     const loginResponsePromise = this.page.waitForResponse(
       (response) =>
         response.request().method() === "POST" &&
+        new URL(response.url()).origin === this.environment.backendOrigin &&
         new URL(response.url()).pathname === "/auth/login",
       { timeout: 20_000 },
     );
@@ -1082,21 +1370,28 @@ export class B12BrowserSession {
     ).toBe(true);
     await this.page.waitForLoadState("networkidle", { timeout: 10_000 });
 
-    this.authMeBeforeWorkflow = this.ledger.count({
-      method: "GET",
-      safeUrlPattern: "/auth/me",
-    });
+    this.authMeBeforeWorkflow = this.authenticatedAuthMeCount();
     this.consoleAudit.start();
     this.consoleListening = true;
   }
 
   private async finishWorkflowNavigation(): Promise<void> {
     await this.page.waitForLoadState("networkidle", { timeout: 10_000 });
-    this.authMeAfterWorkflow = this.ledger.count({
-      method: "GET",
-      safeUrlPattern: "/auth/me",
-    });
+    this.authMeAfterWorkflow = this.authenticatedAuthMeCount();
     expect(this.authMeAfterWorkflow - this.authMeBeforeWorkflow).toBe(1);
+  }
+
+  private authenticatedAuthMeCount(): number {
+    if (this.loginBoundaryEntryIndex === null) {
+      throw new Error("B12 login boundary entry index is missing");
+    }
+    return this.ledger
+      .entries()
+      .slice(this.loginBoundaryEntryIndex)
+      .filter(
+        ({ method, safeUrlPattern }) =>
+          method === "GET" && safeUrlPattern === "/auth/me",
+      ).length;
   }
 
   private async openReadable(): Promise<void> {
@@ -1465,58 +1760,28 @@ export class B12BrowserSession {
   }
 
   private recordLogoutBoundary(): void {
+    if (this.loginBoundaryEntryIndex === null) return;
     this.logoutBoundaryEntryIndex = setB12LogoutBoundaryEntryIndex(
       this.logoutBoundaryEntryIndex,
+      this.loginBoundaryEntryIndex,
       this.ledger.entries().length,
     );
   }
 
   private async attemptLogout(): Promise<B12LogoutResult> {
     if (this.logoutResult) return this.logoutResult;
-    if (this.page.isClosed()) {
-      this.logoutResult = "failed";
-      return this.logoutResult;
-    }
-    if (
-      new URL(this.page.url()).pathname === "/login" ||
-      (await this.page
-        .getByRole("button", { name: "登录系统", exact: true })
-        .isVisible()
-        .catch(() => false))
-    ) {
-      this.logoutResult = "not_authenticated";
-      return this.logoutResult;
-    }
-    const logout = this.page.getByRole("button", {
-      name: "退出登录",
-      exact: true,
+    const attempt = await attemptB12BrowserLogout({
+      page: this.page,
+      target: this.target,
+      role: this.role,
+      openMode: this.openMode,
+      backendOrigin: this.environment.backendOrigin,
+      frontendOrigin: this.environment.frontendOrigin,
+      contextCookies: this.contextCookies,
+      recordBoundary: () => this.recordLogoutBoundary(),
     });
-    if (!(await logout.isVisible().catch(() => false))) {
-      this.logoutResult = "failed";
-      return this.logoutResult;
-    }
-    try {
-      if (this.logoutBoundaryEntryIndex === null) {
-        this.recordLogoutBoundary();
-      }
-      const responsePromise = this.page.waitForResponse(
-        (response) =>
-          response.request().method() === "POST" &&
-          new URL(response.url()).pathname === "/auth/logout",
-        { timeout: 5_000 },
-      );
-      await logout.click();
-      const response = await responsePromise;
-      await this.page.waitForURL(`${this.environment.frontendOrigin}/login`, {
-        timeout: 5_000,
-      });
-      this.logoutResult =
-        response.status() >= 200 && response.status() < 300
-          ? "succeeded"
-          : "failed";
-    } catch {
-      this.logoutResult = "failed";
-    }
+    this.logoutResult = attempt.result;
+    this.logoutMechanism = attempt.mechanism;
     return this.logoutResult;
   }
 
@@ -1581,7 +1846,6 @@ export class B12BrowserSession {
       ).toBe(true);
 
       await this.page.waitForLoadState("networkidle", { timeout: 10_000 });
-      this.recordLogoutBoundary();
       expect(await this.attemptLogout()).toBe("succeeded");
       expect(
         (await this.contextCookies()).some(({ httpOnly }) => httpOnly),
@@ -1592,11 +1856,15 @@ export class B12BrowserSession {
 
       const network = await this.detachLedger();
       const entries = network.entries;
+      if (this.loginBoundaryEntryIndex === null) {
+        throw new Error("B12 login boundary entry index is missing");
+      }
       if (this.logoutBoundaryEntryIndex === null) {
         throw new Error("B12 logout boundary entry index is missing");
       }
       const authLifecycle = partitionB12AuthLifecycleEntries(
         entries,
+        this.loginBoundaryEntryIndex,
         this.logoutBoundaryEntryIndex,
       );
       const count = (method: string, pattern: RegExp | string) =>
@@ -1608,10 +1876,7 @@ export class B12BrowserSession {
               : pattern.test(entry.safeUrlPattern)),
         ).length;
       const latestReadCount = count("GET", LATEST_SAFE_PATTERN);
-      const loginEntries = entries.filter(
-        ({ method, safeUrlPattern }) =>
-          method === "POST" && safeUrlPattern === "/auth/login",
-      );
+      const loginEntries = authLifecycle.loginEntries;
       const a21EditRequestCount = count(
         "PATCH",
         /\/clinical-reports\/<id>\/draft$/,
@@ -1651,6 +1916,7 @@ export class B12BrowserSession {
           ({ status }) => status !== null && status >= 200 && status < 300,
         ),
       ).toBe(true);
+      expect(authLifecycle.preLoginAuthMeEntries).toHaveLength(1);
       expect(authLifecycle.authenticatedAuthMeEntries.length).toBeGreaterThan(
         0,
       );
@@ -1702,12 +1968,16 @@ export class B12BrowserSession {
       } else {
         expect(this.controlledReadEvidence).not.toBeNull();
       }
+      if (this.logoutMechanism === null) {
+        throw new Error("B12 successful logout omitted its mechanism");
+      }
 
       const summary: B12SessionSummary = {
         label: this.label,
         role: this.role,
         login: "passed",
         logout: "succeeded",
+        logoutMechanism: this.logoutMechanism,
         routeExpectedPublicReadOutcome: expectedPublicReadOutcomeFor(
           this.target,
         ),
@@ -1739,6 +2009,7 @@ export class B12BrowserSession {
           a25CorrectionRequestCount: 0,
           loginRequestCount: 1,
           authMeRequestCount: count("GET", "/auth/me"),
+          preLoginUnauthenticatedAuthMeRequestCount: 1,
           authenticatedAuthMeRequestCount:
             authLifecycle.authenticatedAuthMeEntries.length,
           postLogoutUnauthenticatedAuthMeRequestCount: 1,
@@ -1775,12 +2046,18 @@ export class B12BrowserSession {
 
   async bestEffortLogout(): Promise<B12LogoutResult> {
     if (this.collectState !== "collected") this.collectState = "closing";
-    await this.disposeControlledRead().catch(() => undefined);
-    this.freezeCaptureListeners();
-    await this.flushCaptures();
-    this.stopConsoleAudit();
-    const result = await this.attemptLogout();
-    await this.detachLedger().catch(() => undefined);
+    let result: B12LogoutResult = "failed";
+    try {
+      await this.disposeControlledRead().catch(() => undefined);
+      this.freezeCaptureListeners();
+      await this.flushCaptures().catch(() => undefined);
+      this.stopConsoleAudit();
+      result = await this.attemptLogout().catch(() => "failed" as const);
+    } finally {
+      this.freezeCaptureListeners();
+      this.stopConsoleAudit();
+      await this.detachLedger().catch(() => undefined);
+    }
     return result;
   }
 
@@ -2042,6 +2319,26 @@ export function reportNarrativeSections(page: Page) {
       'section[aria-labelledby="clinical-report-clinician-narrative-heading"]',
     ].join(","),
   );
+}
+
+export async function assertReportNarrativeSectionsExcludeText(
+  page: Page,
+  text: string,
+): Promise<number> {
+  const sections = reportNarrativeSections(page);
+  const count = await sections.count();
+  expect(count).toBeGreaterThan(0);
+  for (let index = 0; index < count; index += 1) {
+    const section = sections.nth(index);
+    await expect(section).toBeVisible();
+    const containsExcludedText = await section.evaluate(
+      (node, excludedText) =>
+        (node.textContent ?? "").includes(excludedText),
+      text,
+    );
+    expect(containsExcludedText).toBe(false);
+  }
+  return count;
 }
 
 async function markerExists(markerPath: string): Promise<boolean> {
