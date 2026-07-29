@@ -28,17 +28,24 @@ export const B12_AUDIT_IDS: readonly B12AuditId[] = Array.from(
 function route(
   definition: Omit<
     B12RouteDefinition,
-    'automaticWriteRetry' | 'boundaryType' | 'controlledPublicResponseVariant'
+    | 'automaticWriteRetry'
+    | 'boundaryType'
+    | 'controlledPublicResponseVariant'
+    | 'expectedPublicReadOutcome'
   > &
     Partial<
       Pick<
         B12RouteDefinition,
-        'boundaryType' | 'controlledPublicResponseVariant'
+        | 'boundaryType'
+        | 'controlledPublicResponseVariant'
+        | 'expectedPublicReadOutcome'
       >
     >,
 ): B12RouteDefinition {
   return {
     ...definition,
+    expectedPublicReadOutcome:
+      definition.expectedPublicReadOutcome ?? 'readable',
     boundaryType: definition.boundaryType ?? 'none',
     controlledPublicResponseVariant:
       definition.controlledPublicResponseVariant ?? 'none',
@@ -157,6 +164,7 @@ const CORE_SCENARIOS: readonly B12ScenarioDefinition[] = [
         primaryRole: 'doctor',
         secondaryRole: null,
         preparedState: 'confirmed_confirmation_missing',
+        expectedPublicReadOutcome: 'clinical_report_incomplete',
         allowedStages: [],
         expectedProductMutationClass: 'none',
         expectedFixtureOwnedMutationClass: 'none',
@@ -726,6 +734,7 @@ export const B12_AUDIT_MATRIX: readonly B12AuditContractEntry[] =
         primaryRole: null,
         secondaryRole: null,
         preparedState: 'static_gate',
+        expectedPublicReadOutcome: 'readable',
         boundaryType: 'none',
         controlledPublicResponseVariant: 'none',
         allowedStages: [],
@@ -746,6 +755,7 @@ export const B12_AUDIT_MATRIX: readonly B12AuditContractEntry[] =
       primaryRole: AUDIT_ROLE_OVERRIDES[auditId] ?? owner.route.primaryRole,
       secondaryRole: owner.route.secondaryRole,
       preparedState: owner.route.preparedState,
+      expectedPublicReadOutcome: owner.route.expectedPublicReadOutcome,
       boundaryType: owner.route.boundaryType,
       controlledPublicResponseVariant:
         owner.route.controlledPublicResponseVariant,
@@ -1085,6 +1095,14 @@ export function assertB12Contract(): void {
     )
     .map(({ routeValue }) => routeValue.key)
     .sort();
+  const nonReadableRoutes = allRoutes
+    .filter(
+      ({ routeValue }) => routeValue.expectedPublicReadOutcome !== 'readable',
+    )
+    .map(
+      ({ scenario, routeValue }) =>
+        `${scenario.profile}/${scenario.scenarioKey}/${routeValue.key}/${routeValue.expectedPublicReadOutcome}`,
+    );
   const stageTargets = allRoutes.flatMap(({ scenario, routeValue }) =>
     routeValue.allowedStages.map(
       (transition) =>
@@ -1113,6 +1131,8 @@ export function assertB12Contract(): void {
     routesFor('resilience-security').length !== 11 ||
     controlledRoutes.join('|') !==
       'finality-inconsistent|lock-time-mismatch-warning|lock-without-locked-at-warning|locked-at-without-lock-warning' ||
+    nonReadableRoutes.join('|') !==
+      'core-workflow/eligibility-state/confirmation-missing/clinical_report_incomplete' ||
     stageTargets.length !== 5 ||
     allRoutes.some(
       ({ routeValue }) =>
@@ -1127,7 +1147,7 @@ export function assertB12Contract(): void {
   ) {
     throw new B12FixtureError(
       'B12_FIXTURE_CONTRACT_INVALID',
-      'The fixed B12 88-ID ownership, profile, route, boundary, and Stage contract is invalid',
+      'The fixed B12 88-ID ownership, profile, route, public-read, boundary, and Stage contract is invalid',
     );
   }
 }

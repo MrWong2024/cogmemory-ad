@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { chromium } from '@playwright/test';
+import { resolveB12SessionOpenMode } from '../b12/b12-core-support';
 import { runAccessibilityAudit } from '../support/accessibility-audit';
 import {
   assertAriaNode,
@@ -225,6 +226,39 @@ test.beforeAll(async () => {
   });
   const address = server.address() as AddressInfo;
   origin = `http://127.0.0.1:${address.port}`;
+});
+
+test('keeps B12 readable, forbidden, and incomplete-report open modes route-scoped', () => {
+  const deniedRoleTarget = {
+    scenarioKey: 'eligibility-state',
+    routeKey: 'denied-role-entry',
+  } as const;
+  const confirmationMissingTarget = {
+    scenarioKey: 'eligibility-state',
+    routeKey: 'confirmation-missing',
+  } as const;
+  const ordinaryTarget = {
+    scenarioKey: 'eligibility-state',
+    routeKey: 'confirmed-doctor-entry',
+  } as const;
+
+  expect(resolveB12SessionOpenMode(deniedRoleTarget, 'nurse')).toBe('readable');
+  expect(
+    resolveB12SessionOpenMode(deniedRoleTarget, 'research_assistant'),
+  ).toBe('readable');
+  expect(resolveB12SessionOpenMode(deniedRoleTarget, 'system')).toBe(
+    'forbidden',
+  );
+  expect(resolveB12SessionOpenMode(confirmationMissingTarget, 'doctor')).toBe(
+    'clinical_report_incomplete',
+  );
+  expect(resolveB12SessionOpenMode(ordinaryTarget, 'doctor')).toBe('readable');
+  expect(() =>
+    resolveB12SessionOpenMode(ordinaryTarget, 'system'),
+  ).toThrow('B12 system Session is allowed only for B12-08');
+  expect(() =>
+    resolveB12SessionOpenMode(confirmationMissingTarget, 'nurse'),
+  ).toThrow('B12 incomplete-report open is allowed only for B12-14 doctor');
 });
 
 test.afterAll(async () => {

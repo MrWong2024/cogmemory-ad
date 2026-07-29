@@ -33,6 +33,26 @@ async function openTechnicalSummary(page: Page) {
   return summary.locator("..");
 }
 
+async function assertNoProtectedReportSurface(page: Page) {
+  for (const ariaLabelledBy of [
+    "clinical-report-patient-snapshot-heading",
+    "clinical-report-visit-snapshot-heading",
+    "clinical-report-narrative-heading",
+    "clinical-report-clinician-narrative-heading",
+    "clinical-report-workflow-summary-heading",
+  ]) {
+    await expect(
+      page.locator(`section[aria-labelledby="${ariaLabelledBy}"]`),
+    ).toHaveCount(0);
+  }
+  for (const heading of ["报告工作流摘要", "报告锁定", "锁定摘要"]) {
+    await expect(
+      page.getByRole("heading", { name: heading, exact: true }),
+    ).toHaveCount(0);
+  }
+  await assertNoAvailableLockEntry(page);
+}
+
 test.describe("B12 core / eligibility-state", () => {
   test.describe.configure({ timeout: 120_000 });
 
@@ -158,18 +178,16 @@ test.describe("B12 core / eligibility-state", () => {
         },
       },
       async (run) => {
-        const sessions = [
-          await run.primary(),
-          await run.secondary(),
-          await run.system(),
-        ];
+        const readableSessions = [await run.primary(), await run.secondary()];
+        const system = await run.system();
+        const sessions = [...readableSessions, system];
         expect(new Set(sessions.map(({ role }) => role))).toEqual(
           new Set(["nurse", "research_assistant", "system"]),
         );
         expect(new Set(sessions.map(({ page }) => page.context())).size).toBe(
           3,
         );
-        for (const session of sessions) {
+        for (const session of readableSessions) {
           await assertConfirmedUnlocked(session);
           await assertNoAvailableLockEntry(session.page);
           await expect(
@@ -185,6 +203,28 @@ test.describe("B12 core / eligibility-state", () => {
             ),
           ).toBeVisible();
         }
+        expect(system.latestCount()).toBe(0);
+        expect(system.publicReadEvidence()).toMatchObject({
+          method: "GET",
+          status: 403,
+          errorCategory: "forbidden",
+          count: 1,
+        });
+        await expect(
+          system.page.getByRole("heading", {
+            name: "当前账号没有访问评估访视的权限",
+            exact: true,
+          }),
+        ).toBeVisible();
+        await expect(
+          system.page.getByText("评估访视访问权限最终以后端校验结果为准。", {
+            exact: true,
+          }),
+        ).toBeVisible();
+        await expect(
+          system.page.getByText("患者 / 受试者编号：", { exact: false }),
+        ).toHaveCount(0);
+        await assertNoProtectedReportSurface(system.page);
       },
     );
   });
@@ -274,23 +314,27 @@ test.describe("B12 core / eligibility-state", () => {
       },
       async (run) => {
         const session = await run.primary();
-        expect(session.latestSafeFacts()).toMatchObject({
-          status: "confirmed",
-          confirmationPresent: false,
-          lockedAtPresent: false,
+        expect(session.latestCount()).toBe(0);
+        expect(session.publicReadEvidence()).toEqual({
+          method: "GET",
+          safeEndpointPattern:
+            "/patients/<id>/visits/<id>/clinical-reports/latest",
+          status: 409,
+          errorCategory: "clinical_report_incomplete",
+          count: 1,
         });
-        await assertNoAvailableLockEntry(session.page);
         await expect(
-          session.page.getByText("当前报告缺少完整的医生或管理员确认摘要。", {
+          session.page.getByText("暂时无法安全加载最新报告", {
             exact: true,
           }),
         ).toBeVisible();
         await expect(
           session.page.getByText(
-            "当前安全响应未提供完整确认摘要；不会使用访视操作者补齐。",
+            "当前存在不完整的历史报告记录，系统不能自动修复，请联系管理员。",
             { exact: true },
           ),
         ).toBeVisible();
+        await assertNoProtectedReportSurface(session.page);
       },
     );
   });

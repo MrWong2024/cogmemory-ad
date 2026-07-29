@@ -43,6 +43,20 @@ export type B12ControlledPublicResponseVariant =
   | "lock_summary_null"
   | "lock_time_mismatch";
 
+export type B12ExpectedPublicReadOutcome =
+  | "readable"
+  | "clinical_report_incomplete";
+
+export type B12SessionOpenMode =
+  | "readable"
+  | "forbidden"
+  | "clinical_report_incomplete";
+
+type B12SafeErrorCategory =
+  | "forbidden"
+  | "clinical_report_incomplete"
+  | null;
+
 type SafeActorFacts = {
   operatorNamePresent: boolean;
   operatorRole: string | null;
@@ -116,16 +130,21 @@ export type B12ControlledReadEvidence = {
   changedPublicFields: string[];
 };
 
-type SafeNetworkGroup = Pick<
-  NetworkLedgerEntry,
-  | "method"
-  | "status"
-  | "initiator"
-  | "initiatorSource"
-  | "failureReason"
-  | "safeUrlPattern"
-  | "bodyKeys"
-> & { count: number };
+type SafeNetworkGroup = {
+  method: string;
+  safeEndpointPattern: string;
+  status: number | null;
+  errorCategory: B12SafeErrorCategory;
+  count: number;
+};
+
+export type B12SafePublicReadEvidence = {
+  method: "GET";
+  safeEndpointPattern: string;
+  status: 200 | 403 | 409;
+  errorCategory: B12SafeErrorCategory;
+  count: number;
+};
 
 export type B12DomPrivacySummary = {
   forbiddenRawFieldDetected: false;
@@ -139,6 +158,8 @@ export type B12SessionSummary = {
   role: AcceptanceRole;
   login: "passed";
   logout: "succeeded";
+  routeExpectedPublicReadOutcome: B12ExpectedPublicReadOutcome;
+  sessionOpenMode: B12SessionOpenMode;
   workflowAuthMeRequestCount: 1;
   latestFacts: Array<Omit<B12LatestFacts, "updatedAt">>;
   lockResponses: Array<{
@@ -155,6 +176,7 @@ export type B12SessionSummary = {
     a23FreezeSourcesRequestCount: 0;
     a24ArchiveRequestCount: 0;
     a25CorrectionRequestCount: 0;
+    loginRequestCount: 1;
     authMeRequestCount: number;
     logoutRequestCount: 1;
     unrelatedOutputRequestCount: 0;
@@ -162,6 +184,7 @@ export type B12SessionSummary = {
     automaticRetryDetected: false;
     pollingDetected: false;
     controlledPublicRead: B12ControlledReadEvidence | null;
+    publicRead: B12SafePublicReadEvidence;
     entries: SafeNetworkGroup[];
   };
   console: {
@@ -183,6 +206,7 @@ type B12LogoutResult = "succeeded" | "failed" | "not_authenticated";
 type CaptureFailureCategory =
   | "response_headers"
   | "latest_parse"
+  | "expected_error_code"
   | "controlled_read";
 
 type B12CollectState =
@@ -222,6 +246,12 @@ const CONTROLLED_VARIANTS: Readonly<
     "top_level_locked_at_null",
   "eligibility-state/locked-at-without-lock-warning": "lock_summary_null",
   "eligibility-state/lock-time-mismatch-warning": "lock_time_mismatch",
+};
+
+const EXPECTED_PUBLIC_READ_OUTCOMES: Readonly<
+  Partial<Record<string, B12ExpectedPublicReadOutcome>>
+> = {
+  "eligibility-state/confirmation-missing": "clinical_report_incomplete",
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -322,6 +352,13 @@ async function parseLatestResponse(response: Response) {
   return parseLatestBody((await response.json()) as unknown);
 }
 
+async function hasClinicalReportIncompleteCode(
+  response: Response,
+): Promise<boolean> {
+  const body = (await response.json()) as unknown;
+  return isRecord(body) && body.code === "CLINICAL_REPORT_INCOMPLETE";
+}
+
 async function parseLockResponse(
   response: Response,
   expectedPersistedNote: string | undefined,
@@ -373,6 +410,14 @@ function latestResponse(response: Response): boolean {
   );
 }
 
+function protectedPatientWorkflowResponse(response: Response): boolean {
+  return (
+    response.request().method() === "GET" &&
+    response.status() === 403 &&
+    sanitizeUrlPattern(response.url()).startsWith("/patients/")
+  );
+}
+
 function lockRequest(request: Request): boolean {
   return (
     request.method() === "POST" &&
@@ -389,9 +434,27 @@ function relevantEntry(entry: NetworkLedgerEntry): boolean {
     entry.safeUrlPattern === "/auth/login" ||
     entry.safeUrlPattern === "/auth/logout" ||
     entry.safeUrlPattern === "/auth/me" ||
-    entry.safeUrlPattern.includes("/clinical-reports") ||
+    entry.safeUrlPattern.startsWith("/patients/") ||
     /(?:pdf|print|download|signature|\bai\b|llm)/i.test(entry.safeUrlPattern)
   );
+}
+
+function safeErrorCategory(entry: NetworkLedgerEntry): B12SafeErrorCategory {
+  if (
+    entry.method === "GET" &&
+    entry.status === 403 &&
+    entry.safeUrlPattern.startsWith("/patients/")
+  ) {
+    return "forbidden";
+  }
+  if (
+    entry.method === "GET" &&
+    entry.status === 409 &&
+    entry.safeUrlPattern === LATEST_SAFE_PATTERN
+  ) {
+    return "clinical_report_incomplete";
+  }
+  return null;
 }
 
 function groupNetworkEntries(
@@ -401,12 +464,9 @@ function groupNetworkEntries(
   for (const entry of entries.filter(relevantEntry)) {
     const value: SafeNetworkGroup = {
       method: entry.method,
+      safeEndpointPattern: entry.safeUrlPattern,
       status: entry.status,
-      initiator: entry.initiator,
-      initiatorSource: entry.initiatorSource,
-      failureReason: entry.failureReason,
-      safeUrlPattern: entry.safeUrlPattern,
-      bodyKeys: [...entry.bodyKeys],
+      errorCategory: safeErrorCategory(entry),
       count: 1,
     };
     const key = JSON.stringify(value);
@@ -416,7 +476,7 @@ function groupNetworkEntries(
   }
   return [...groups.values()].sort(
     (left, right) =>
-      left.safeUrlPattern.localeCompare(right.safeUrlPattern) ||
+      left.safeEndpointPattern.localeCompare(right.safeEndpointPattern) ||
       left.method.localeCompare(right.method) ||
       (left.status ?? -1) - (right.status ?? -1),
   );
@@ -430,6 +490,44 @@ function controlledVariantFor(
   target: B12CoreRouteTarget,
 ): B12ControlledPublicResponseVariant {
   return CONTROLLED_VARIANTS[targetKey(target)] ?? "none";
+}
+
+function expectedPublicReadOutcomeFor(
+  target: B12CoreRouteTarget,
+): B12ExpectedPublicReadOutcome {
+  return EXPECTED_PUBLIC_READ_OUTCOMES[targetKey(target)] ?? "readable";
+}
+
+export function resolveB12SessionOpenMode(
+  target: B12CoreRouteTarget,
+  role: AcceptanceRole,
+): B12SessionOpenMode {
+  const key = targetKey(target);
+  if (role === "system") {
+    if (key !== "eligibility-state/denied-role-entry") {
+      throw new Error("B12 system Session is allowed only for B12-08");
+    }
+    return "forbidden";
+  }
+  if (expectedPublicReadOutcomeFor(target) === "clinical_report_incomplete") {
+    if (key !== "eligibility-state/confirmation-missing" || role !== "doctor") {
+      throw new Error(
+        "B12 incomplete-report open is allowed only for B12-14 doctor",
+      );
+    }
+    return "clinical_report_incomplete";
+  }
+  return "readable";
+}
+
+function assertSessionOpenModeAllowed(
+  target: B12CoreRouteTarget,
+  role: AcceptanceRole,
+  mode: B12SessionOpenMode,
+): void {
+  if (mode !== resolveB12SessionOpenMode(target, role)) {
+    throw new Error("B12 Session open mode does not match the fixed route contract");
+  }
 }
 
 function expectedSessionCount(target: B12CoreRouteTarget): number {
@@ -465,6 +563,9 @@ function expectedLatestCount(
   label: string,
 ): number {
   const key = targetKey(target);
+  if (key === "eligibility-state/denied-role-entry" && label === "system") {
+    return 0;
+  }
   if (key === "conflict/lock-conflict-continue") return 2;
   if (key === "conflict/lock-conflict-latest-locked" && label === "primary") {
     return 2;
@@ -538,6 +639,7 @@ export class B12BrowserSession {
   private readonly corsChecks: boolean[] = [];
   private readonly captureTasks: Promise<void>[] = [];
   private readonly captureFailures: CaptureFailureCategory[] = [];
+  private clinicalReportIncompleteCodeCount = 0;
   private controlledReadEvidence: B12ControlledReadEvidence | null = null;
   private controlledReadHandler: ((route: Route) => Promise<void>) | null =
     null;
@@ -559,6 +661,7 @@ export class B12BrowserSession {
     private readonly loginIdentifier: string,
     private readonly descriptor: B12CoreRuntimeDescriptor,
     private readonly target: B12CoreRouteTarget,
+    private readonly openMode: B12SessionOpenMode,
     private readonly environment: EnabledB12BrowserEnvironment,
     private readonly contextCookies: () => Promise<
       Array<{ httpOnly: boolean }>
@@ -576,9 +679,11 @@ export class B12BrowserSession {
     loginIdentifier: string;
     descriptor: B12CoreRuntimeDescriptor;
     target: B12CoreRouteTarget;
+    openMode: B12SessionOpenMode;
     environment: EnabledB12BrowserEnvironment;
     roleContexts: RoleContextFactory;
   }): Promise<B12BrowserSession> {
+    assertSessionOpenModeAllowed(input.target, input.role, input.openMode);
     const roleContext = await input.roleContexts.create(
       input.role,
       input.label,
@@ -592,6 +697,7 @@ export class B12BrowserSession {
       input.loginIdentifier,
       input.descriptor,
       input.target,
+      input.openMode,
       input.environment,
       () => roleContext.context.cookies(),
       () => roleContext.context.close(),
@@ -667,6 +773,21 @@ export class B12BrowserSession {
         parseLatestResponse(response).then(({ facts, internalActorId }) => {
           this.latestFacts.push(facts);
           if (internalActorId) this.internalActorIds.add(internalActorId);
+        }),
+      );
+    }
+    if (
+      this.openMode === "clinical_report_incomplete" &&
+      latestResponse(response) &&
+      response.status() === 409
+    ) {
+      this.registerCapture(
+        "expected_error_code",
+        hasClinicalReportIncompleteCode(response).then((matches) => {
+          if (!matches) {
+            throw new Error("B12 expected error category did not match");
+          }
+          this.clinicalReportIncompleteCodeCount += 1;
         }),
       );
     }
@@ -771,7 +892,7 @@ export class B12BrowserSession {
     this.controlledReadHandler = null;
   }
 
-  private async open(): Promise<void> {
+  private async authenticateForWorkflow(): Promise<void> {
     await this.ledger.attach(this.page);
     this.page.on("request", this.onRequest);
     this.page.on("response", this.onResponse);
@@ -809,6 +930,19 @@ export class B12BrowserSession {
     });
     this.consoleAudit.start();
     this.consoleListening = true;
+  }
+
+  private async finishWorkflowNavigation(): Promise<void> {
+    await this.page.waitForLoadState("networkidle", { timeout: 10_000 });
+    this.authMeAfterWorkflow = this.ledger.count({
+      method: "GET",
+      safeUrlPattern: "/auth/me",
+    });
+    expect(this.authMeAfterWorkflow - this.authMeBeforeWorkflow).toBe(1);
+  }
+
+  private async openReadable(): Promise<void> {
+    await this.authenticateForWorkflow();
     await this.installControlledInitialLatest();
     const latestResponsePromise = this.page.waitForResponse(
       (response) => latestResponse(response) && response.status() === 200,
@@ -833,18 +967,85 @@ export class B12BrowserSession {
         exact: true,
       }),
     ).toBeVisible();
-    await this.page.waitForLoadState("networkidle", { timeout: 10_000 });
-    this.authMeAfterWorkflow = this.ledger.count({
-      method: "GET",
-      safeUrlPattern: "/auth/me",
-    });
-    expect(this.authMeAfterWorkflow - this.authMeBeforeWorkflow).toBe(1);
+    await this.finishWorkflowNavigation();
     expect(this.latestFacts).toHaveLength(1);
+    expect(this.clinicalReportIncompleteCodeCount).toBe(0);
     if (controlledVariantFor(this.target) === "none") {
       expect(this.controlledReadEvidence).toBeNull();
     } else {
       expect(this.controlledReadEvidence?.requestCount).toBe(1);
     }
+  }
+
+  private async openExpectingForbidden(): Promise<void> {
+    await this.authenticateForWorkflow();
+    const forbiddenResponsePromise = this.page.waitForResponse(
+      protectedPatientWorkflowResponse,
+      { timeout: 45_000 },
+    );
+    await this.page.goto(
+      `${this.environment.frontendOrigin}${this.descriptor.navigationPath}`,
+      { waitUntil: "domcontentloaded" },
+    );
+    await forbiddenResponsePromise;
+    await this.flushCaptures();
+    this.throwCaptureFailures();
+    await expect(
+      this.page.getByRole("heading", {
+        name: "当前账号没有访问评估访视的权限",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      this.page.getByRole("heading", {
+        name: "访视级临床报告",
+        exact: true,
+      }),
+    ).toHaveCount(0);
+    await this.finishWorkflowNavigation();
+    expect(this.latestFacts).toHaveLength(0);
+    expect(this.clinicalReportIncompleteCodeCount).toBe(0);
+    expect(this.controlledReadEvidence).toBeNull();
+  }
+
+  private async openExpectingClinicalReportIncomplete(): Promise<void> {
+    await this.authenticateForWorkflow();
+    const incompleteResponsePromise = this.page.waitForResponse(
+      (response) => latestResponse(response) && response.status() === 409,
+      { timeout: 45_000 },
+    );
+    await this.page.goto(
+      `${this.environment.frontendOrigin}${this.descriptor.navigationPath}`,
+      { waitUntil: "domcontentloaded" },
+    );
+    await incompleteResponsePromise;
+    await this.flushCaptures();
+    this.throwCaptureFailures();
+    await expect(
+      this.page.getByRole("heading", {
+        name: "访视级临床报告",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      this.page.getByText("暂时无法安全加载最新报告", { exact: true }),
+    ).toBeVisible();
+    await this.finishWorkflowNavigation();
+    expect(this.latestFacts).toHaveLength(0);
+    expect(this.clinicalReportIncompleteCodeCount).toBe(1);
+    expect(this.controlledReadEvidence).toBeNull();
+  }
+
+  private async open(): Promise<void> {
+    if (this.openMode === "readable") {
+      await this.openReadable();
+      return;
+    }
+    if (this.openMode === "forbidden") {
+      await this.openExpectingForbidden();
+      return;
+    }
+    await this.openExpectingClinicalReportIncomplete();
   }
 
   latestCount(): number {
@@ -884,6 +1085,61 @@ export class B12BrowserSession {
           ],
         }
       : null;
+  }
+
+  publicReadEvidence(): B12SafePublicReadEvidence {
+    const entries = this.ledger.entries();
+    if (this.openMode === "forbidden") {
+      const failures = entries.filter(
+        (entry) =>
+          entry.method === "GET" &&
+          entry.status === 403 &&
+          entry.safeUrlPattern.startsWith("/patients/"),
+      );
+      expect(failures).toHaveLength(1);
+      const safeEndpointPattern = failures[0]?.safeUrlPattern;
+      if (!safeEndpointPattern) {
+        throw new Error("B12 forbidden public-read evidence is missing");
+      }
+      return {
+        method: "GET",
+        safeEndpointPattern,
+        status: 403,
+        errorCategory: "forbidden",
+        count: 1,
+      };
+    }
+    if (this.openMode === "clinical_report_incomplete") {
+      const failures = entries.filter(
+        (entry) =>
+          entry.method === "GET" &&
+          entry.status === 409 &&
+          entry.safeUrlPattern === LATEST_SAFE_PATTERN,
+      );
+      expect(failures).toHaveLength(1);
+      expect(this.clinicalReportIncompleteCodeCount).toBe(1);
+      return {
+        method: "GET",
+        safeEndpointPattern: LATEST_SAFE_PATTERN,
+        status: 409,
+        errorCategory: "clinical_report_incomplete",
+        count: 1,
+      };
+    }
+    const reads = entries.filter(
+      (entry) =>
+        entry.method === "GET" &&
+        entry.status === 200 &&
+        entry.safeUrlPattern === LATEST_SAFE_PATTERN,
+    );
+    expect(reads).toHaveLength(expectedLatestCount(this.target, this.label));
+    return {
+      method: "GET",
+      safeEndpointPattern: LATEST_SAFE_PATTERN,
+      status: 200,
+      errorCategory: null,
+      count: reads.length,
+    };
   }
 
   lockRequestEvidence(): B12LockRequestEvidence[] {
@@ -1135,15 +1391,21 @@ export class B12BrowserSession {
         (await this.contextCookies()).some(({ httpOnly }) => httpOnly),
       ).toBe(true);
 
+      const publicRead = this.publicReadEvidence();
       const consoleSummary = this.stopConsoleAudit();
       const routeScopedAllowedFailureCount =
         this.lockResponses.filter(({ status }) => status >= 400).length +
-        this.explicitAbortedLockCount;
+        this.explicitAbortedLockCount +
+        (this.openMode === "readable" ? 0 : publicRead.count);
       expect(consoleSummary.warningCount).toBe(0);
       expect(consoleSummary.pageErrorCount).toBe(0);
-      expect(consoleSummary.errorCount).toBeLessThanOrEqual(
-        routeScopedAllowedFailureCount,
-      );
+      if (this.openMode === "clinical_report_incomplete") {
+        expect(consoleSummary.errorCount).toBe(publicRead.count);
+      } else {
+        expect(consoleSummary.errorCount).toBeLessThanOrEqual(
+          routeScopedAllowedFailureCount,
+        );
+      }
       expect(
         consoleSummary.categories.every(
           ({ category }) => category === "network",
@@ -1169,6 +1431,14 @@ export class B12BrowserSession {
               : pattern.test(entry.safeUrlPattern)),
         ).length;
       const latestReadCount = count("GET", LATEST_SAFE_PATTERN);
+      const loginEntries = entries.filter(
+        ({ method, safeUrlPattern }) =>
+          method === "POST" && safeUrlPattern === "/auth/login",
+      );
+      const authMeEntries = entries.filter(
+        ({ method, safeUrlPattern }) =>
+          method === "GET" && safeUrlPattern === "/auth/me",
+      );
       const a21EditRequestCount = count(
         "PATCH",
         /\/clinical-reports\/<id>\/draft$/,
@@ -1202,6 +1472,18 @@ export class B12BrowserSession {
       expect(latestReadCount).toBe(
         expectedLatestCount(this.target, this.label),
       );
+      expect(loginEntries).toHaveLength(1);
+      expect(
+        loginEntries.every(
+          ({ status }) => status !== null && status >= 200 && status < 300,
+        ),
+      ).toBe(true);
+      expect(authMeEntries.length).toBeGreaterThan(0);
+      expect(
+        authMeEntries.every(
+          ({ status }) => status !== null && status >= 200 && status < 300,
+        ),
+      ).toBe(true);
       expect(a22LockRequestCount).toBe(
         expectedLockCount(this.target, this.label),
       );
@@ -1215,7 +1497,7 @@ export class B12BrowserSession {
       expect(unrelatedOutputRequestCount).toBe(0);
       const businessEntries = entries.filter(
         (entry) =>
-          (entry.safeUrlPattern === LATEST_SAFE_PATTERN ||
+          (entry.safeUrlPattern === publicRead.safeEndpointPattern ||
             (mutation(entry) &&
               entry.safeUrlPattern.includes("/clinical-reports"))) &&
           entry.failureReason === null,
@@ -1253,6 +1535,10 @@ export class B12BrowserSession {
         role: this.role,
         login: "passed",
         logout: "succeeded",
+        routeExpectedPublicReadOutcome: expectedPublicReadOutcomeFor(
+          this.target,
+        ),
+        sessionOpenMode: this.openMode,
         workflowAuthMeRequestCount: 1,
         latestFacts: this.latestFacts.map(({ updatedAt, ...facts }) => {
           void updatedAt;
@@ -1278,6 +1564,7 @@ export class B12BrowserSession {
           a23FreezeSourcesRequestCount: 0,
           a24ArchiveRequestCount: 0,
           a25CorrectionRequestCount: 0,
+          loginRequestCount: 1,
           authMeRequestCount: count("GET", "/auth/me"),
           logoutRequestCount: 1,
           unrelatedOutputRequestCount: 0,
@@ -1285,6 +1572,7 @@ export class B12BrowserSession {
           automaticRetryDetected: false,
           pollingDetected: false,
           controlledPublicRead: this.controlledRead(),
+          publicRead,
           entries: groupNetworkEntries(entries),
         },
         console: {
@@ -1355,6 +1643,10 @@ export class B12RouteRun {
         loginIdentifier: this.descriptor.loginIdentifier,
         descriptor: this.descriptor,
         target: this.target,
+        openMode: resolveB12SessionOpenMode(
+          this.target,
+          this.descriptor.primaryRole,
+        ),
         environment: this.environment,
         roleContexts: this.roleContexts,
       });
@@ -1376,6 +1668,10 @@ export class B12RouteRun {
         loginIdentifier: this.descriptor.secondaryLoginIdentifier,
         descriptor: this.descriptor,
         target: this.target,
+        openMode: resolveB12SessionOpenMode(
+          this.target,
+          this.descriptor.secondaryRole,
+        ),
         environment: this.environment,
         roleContexts: this.roleContexts,
       });
@@ -1400,6 +1696,7 @@ export class B12RouteRun {
         loginIdentifier: this.systemDescriptor.loginIdentifier,
         descriptor: this.systemDescriptor,
         target: this.target,
+        openMode: resolveB12SessionOpenMode(this.target, "system"),
         environment: this.environment,
         roleContexts: this.roleContexts,
       });

@@ -26,6 +26,7 @@ import {
   Patient,
   type PatientDocument,
 } from '../src/modules/patients/schemas/patient.schema';
+import { PATIENT_WORKFLOW_ROLES } from '../src/modules/patients/patients.constants';
 import {
   ClinicalReport,
   type ClinicalReportDocument,
@@ -262,12 +263,93 @@ describe('B12 report-lock browser fixture support (e2e)', () => {
     expect(routesFor('core-workflow')).toHaveLength(22);
     expect(scenariosFor('resilience-security')).toHaveLength(6);
     expect(routesFor('resilience-security')).toHaveLength(11);
+    const allRoutes = [
+      ...routesFor('core-workflow'),
+      ...routesFor('resilience-security'),
+    ];
+    expect(
+      allRoutes.filter(
+        ({ expectedPublicReadOutcome }) =>
+          expectedPublicReadOutcome === 'clinical_report_incomplete',
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        key: 'confirmation-missing',
+        preparedState: 'confirmed_confirmation_missing',
+        expectedPublicReadOutcome: 'clinical_report_incomplete',
+        boundaryType: 'none',
+        controlledPublicResponseVariant: 'none',
+        expectedProductMutationClass: 'none',
+        expectedFixtureOwnedMutationClass: 'none',
+      }),
+    ]);
+    expect(
+      allRoutes.filter(
+        ({ expectedPublicReadOutcome }) =>
+          expectedPublicReadOutcome === 'readable',
+      ),
+    ).toHaveLength(32);
     expect(
       routesFor('core-workflow').filter(
         ({ boundaryType }) =>
           boundaryType === 'controlled_public_read_boundary',
       ),
     ).toHaveLength(4);
+    expect(
+      routesFor('core-workflow').filter(
+        ({ boundaryType }) =>
+          boundaryType === 'controlled_public_read_boundary',
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: 'finality-inconsistent',
+          expectedPublicReadOutcome: 'readable',
+        }),
+        expect.objectContaining({
+          key: 'lock-without-locked-at-warning',
+          expectedPublicReadOutcome: 'readable',
+        }),
+        expect.objectContaining({
+          key: 'locked-at-without-lock-warning',
+          expectedPublicReadOutcome: 'readable',
+        }),
+        expect.objectContaining({
+          key: 'lock-time-mismatch-warning',
+          expectedPublicReadOutcome: 'readable',
+        }),
+      ]),
+    );
+    const deniedRoleEntry = routeFor(
+      'core-workflow',
+      'eligibility-state',
+      'denied-role-entry',
+    );
+    expect(deniedRoleEntry).toMatchObject({
+      primaryAuditIds: ['B12-06', 'B12-07', 'B12-08'],
+      primaryRole: 'nurse',
+      secondaryRole: 'research_assistant',
+      expectedPublicReadOutcome: 'readable',
+      expectedProductMutationClass: 'none',
+      expectedFixtureOwnedMutationClass: 'none',
+    });
+    expect(PATIENT_WORKFLOW_ROLES).not.toContain('system');
+    expect(
+      B12_AUDIT_MATRIX.find(({ auditId }) => auditId === 'B12-08'),
+    ).toMatchObject({
+      routeKey: 'denied-role-entry',
+      primaryRole: 'system',
+      expectedPublicReadOutcome: 'readable',
+    });
+    expect(
+      B12_AUDIT_MATRIX.find(({ auditId }) => auditId === 'B12-14'),
+    ).toMatchObject({
+      routeKey: 'confirmation-missing',
+      primaryRole: 'doctor',
+      expectedPublicReadOutcome: 'clinical_report_incomplete',
+      boundaryType: 'none',
+      controlledPublicResponseVariant: 'none',
+    });
     expect(
       [...routesFor('core-workflow'), ...routesFor('resilience-security')]
         .flatMap(({ allowedStages }) => allowedStages)
@@ -408,8 +490,30 @@ describe('B12 report-lock browser fixture support (e2e)', () => {
     );
     expect(core.roles).toEqual(B12_ROLES);
     expect(resilience.roles).toEqual(B12_ROLES);
+    const manifestRoutes = core.scenarios.flatMap(({ routes }) => routes);
+    expect(
+      manifestRoutes.filter(
+        ({ expectedPublicReadOutcome }) =>
+          expectedPublicReadOutcome === 'clinical_report_incomplete',
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        routeKey: 'confirmation-missing',
+        expectedPublicReadOutcome: 'clinical_report_incomplete',
+        boundaryType: 'none',
+        controlledPublicResponseVariant: 'none',
+      }),
+    ]);
+    expect(
+      new Set(
+        [
+          ...manifestRoutes,
+          ...resilience.scenarios.flatMap(({ routes }) => routes),
+        ].map(({ expectedPublicReadOutcome }) => expectedPublicReadOutcome),
+      ),
+    ).toEqual(new Set(['readable', 'clinical_report_incomplete']));
     expect(JSON.stringify(core)).not.toMatch(
-      /password|cookie|mongodb|navigationPath|metadata|lockNote|patientId|reportId/i,
+      /password|cookie|mongodb|navigationPath|metadata|lockNote|patientId|reportId|responseBody|dynamicUrl/i,
     );
 
     const allPatients = await patientModel

@@ -36,6 +36,10 @@ export type B12ControlledPublicResponseVariant =
 
 export type B12BoundaryType = 'none' | 'controlled_public_read_boundary';
 
+export type B12ExpectedPublicReadOutcome =
+  | 'readable'
+  | 'clinical_report_incomplete';
+
 export type B12ProductMutationClass =
   | 'none'
   | 'lock_once_doctor'
@@ -69,6 +73,7 @@ export type B12AuditContractEntry = {
   primaryRole: B12Role | null;
   secondaryRole: B12Role | null;
   preparedState: B12PreparedState | 'static_gate';
+  expectedPublicReadOutcome: B12ExpectedPublicReadOutcome;
   boundaryType: B12BoundaryType;
   controlledPublicResponseVariant: B12ControlledPublicResponseVariant;
   allowedStages: readonly B12StageTransition[];
@@ -84,6 +89,7 @@ export type B12RouteDefinition = {
   primaryRole: B12Role;
   secondaryRole: B12Role | null;
   preparedState: B12PreparedState;
+  expectedPublicReadOutcome: B12ExpectedPublicReadOutcome;
   boundaryType: B12BoundaryType;
   controlledPublicResponseVariant: B12ControlledPublicResponseVariant;
   allowedStages: readonly B12StageTransition[];

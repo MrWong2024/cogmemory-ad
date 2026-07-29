@@ -30,6 +30,7 @@ const ALLOWED_MANIFEST_KEYS = new Set([
   'primaryRole',
   'secondaryRole',
   'preparedState',
+  'expectedPublicReadOutcome',
   'boundaryType',
   'controlledPublicResponseVariant',
   'allowedStages',
@@ -178,6 +179,7 @@ export function buildB12SafeManifest(input: {
         primaryRole: routeValue.primaryRole,
         secondaryRole: routeValue.secondaryRole,
         preparedState: routeValue.preparedState,
+        expectedPublicReadOutcome: routeValue.expectedPublicReadOutcome,
         boundaryType: routeValue.boundaryType,
         controlledPublicResponseVariant:
           routeValue.controlledPublicResponseVariant,
