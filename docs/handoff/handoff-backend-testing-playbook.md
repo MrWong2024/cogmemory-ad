@@ -188,7 +188,7 @@ B11-C `resilience-security` 已完整执行 4 个 scenarioKey / 9 条 route，B1
 
 ## 6. Browser fixture 通用生命周期
 
-每个新 Browser 批次统一执行以下生命周期：
+需要真实 Browser 拓扑并依赖 fixture 或数据库事实的独立完整验收 profile，按以下标准 fixture 生命周期执行：
 
 Playwright 只负责 Browser、独立 BrowserContext、Network、键盘、viewport、Axe、ARIA tree 基本结构、runtime 与 beforeunload 自动化。现有 live-region helper 可以保留为可选技术能力，但 live region、动态播报和屏幕阅读器行为不属于强制验收合同；Axe 与 ARIA tree 自动检查也不等同于屏幕阅读器专项验收。各 Batch 既有 fixture CLI 继续唯一负责 prepare / replace、prepared verify、post-browser verify、cleanup、namespace ownership、数据库门禁与稳定 fixture password；不得把这些数据库生命周期重新实现到 Playwright 测试中，Playwright 也不得直接连接 MongoDB。
 
@@ -207,6 +207,45 @@ prepare / replace 与后续账号密码校验必须处于相同的稳定 fixture
 不得以手工补插或修改数据库账号、降低账号有效性或密码校验标准、只反复执行 verify，或把 verify 未执行、未通过或密码校验失败记为 prepared gate 通过来绕过不一致。prepared verify 始终是只读门禁，不能修复账号或重设密码。
 
 固定测试凭据可由目标进程自动读取，但不得进入 CLI 参数、manifest、截图、日志或报告。prepare / prepared verify 只证明前置就绪，不等于 Browser 通过；Browser 场景通过但缺 post-browser verify 或 cleanup，也不得宣布工程收口。
+
+### 6.1 执行边界、定向重验与组合证据
+
+标准生命周期的强制执行单元是独立完整验收 profile，而不是所有 Batch 标签或所有验证项。独立完整验收 profile 可以是一个完整 Browser profile、一个具有独立 namespace、前置状态和 mutation contract 的验收矩阵，或一个必须独立形成 prepared、Browser、post-browser 和 cleanup 证据的验收范围。
+
+以下情形必须执行完整生命周期：
+
+1. 某一 profile 的首次完整 Browser 验收。
+2. 新建或实质修改 fixture contract。
+3. 修改 namespace ownership、数据库基线或资源矩阵。
+4. 修改产品 mutation contract、状态机、并发、幂等或权限合同。
+5. 修改 audit ID primary owner 或完整 route 映射。
+6. 现有证据影响面无法被可靠限定。
+7. 既有完整生命周期证据已经失效。
+8. 需要重新证明整个 profile 的最终数据库终态。
+
+完整 profile 必须覆盖 fixture contract、prepare 或受控 replace、prepared verify、production frontend、真实 Browser test backend、完整 Browser 矩阵、完整 post-browser verify、logout、Browser 与进程关闭、namespace cleanup 和第二次幂等 cleanup。prepared verify 未通过不得进入 Browser；Browser 页面通过不能替代数据库终态验证；完整 profile 不得省略 post-browser verify；创建 namespace 后不得省略双次 cleanup；fixture-ready、静态门禁或 E2E 均不得冒充 Browser 通过。Playwright runner 仍不得直接连接 MongoDB，数据库生命周期只能由受门禁的 fixture CLI 执行。
+
+纯静态门禁，lint、typecheck、build，Browser test list，synthetic infrastructure，不连接数据库的通用 Playwright helper 测试，实体设备验收，人工视觉或专业判断，以及不依赖 fixture 或数据库事实的独立检查，按各自合同执行，不机械套用完整 Browser fixture 生命周期。未创建 namespace 的纯静态或 synthetic 任务不机械执行数据库 cleanup，但仍须清理实际创建的 BrowserContext、Chromium / Browser、Node 进程、服务端口、runtime、test-results、Session 和其他临时产物。
+
+某一 profile 已完成完整生命周期后，明确、局部的测试资产缺陷或产品缺陷可以进行定向重验（定向回归）。后置验证按本次 route 的副作用合同选择：
+
+- 定向写入 route 必须执行能够覆盖本次 mutation 的 route-specific verifier；全 profile fixture contract 允许时也可执行完整 post-browser verify。
+- 定向零写入 route 可以在 Browser 后执行 prepared re-verify，但必须证明报告、audit、`updatedAt` 和其他业务资源未变化。
+- cleanup 只能收口资源，不能替代任何后置只读验证。
+
+本次定向证据可以与仍然有效的既有完整生命周期证据组成组合证据，但必须同时：
+
+- 明确引用既有完整生命周期证据，并列出本次定向重验的 route、audit ID 和缺陷影响范围。
+- 明确本次未执行的步骤及其不适用原因。
+- 说明既有 post-browser verify、Stage、mutation 和 cleanup 证据是否继续有效。
+- 证明本次产生的 Session、Browser、进程、runtime 和 namespace 已完整收口。
+- 确认没有跨数据库基线、fixture contract 或不兼容状态 / mutation contract 拼接证据。
+
+组合证据不得替代某一 profile 的首次完整验收，不得以局部 Browser 通过替代从未执行过的完整 post-browser verify，不得无条件沿用旧产品代码证据或用历史通过掩盖本次实际 `fail` / `not_executed`，也不得省略影响面分析后直接宣布旧证据仍有效。
+
+产品代码、fixture、数据库基线、mutation contract、角色权限、audit owner、route 映射或验收口径变化时，必须先分析影响面。只有能够可靠证明变化不影响既有通过范围，才可保留对应旧证据；无法可靠限定影响范围时，必须使用全新 namespace 重新执行完整生命周期。
+
+只要本次创建了 namespace，就必须执行两次 cleanup：第一次要求 `residualCount=0`，第二次要求 `residualCount=0` 且 `matched=false`。cleanup 后仍须确认 namespace-owned 记录与临时文件无残留，且非 namespace 数据、全局 seed 和其他 namespace 未受影响；无论是否创建 namespace，也必须关闭和清理本次实际创建的 Session、BrowserContext、Browser、Node 进程、服务端口、runtime、test-results 和其他临时文件。
 
 ## 7. 已完成批次证据索引
 
