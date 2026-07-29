@@ -279,6 +279,41 @@ describe('B12 report-lock browser fixture support (e2e)', () => {
       'lock-conflict-touch',
       'lock-metadata-unsupported',
     ]);
+    const noRepeat = routeFor(
+      'core-workflow',
+      'eligibility-state',
+      'already-locked-no-repeat',
+    );
+    expect(noRepeat).toMatchObject({
+      primaryAuditIds: ['B12-16'],
+      primaryRole: 'doctor',
+      secondaryRole: null,
+      preparedState: 'historical_locked_fallback',
+      allowedStages: [],
+      expectedProductMutationClass: 'already_locked_readonly',
+      expectedFixtureOwnedMutationClass: 'none',
+      requiresIndependentSession: false,
+    });
+    const idempotency = routeFor(
+      'core-workflow',
+      'success-idempotency',
+      'already-locked-idempotency',
+    );
+    expect(idempotency).toMatchObject({
+      primaryAuditIds: ['B12-41', 'B12-42', 'B12-43'],
+      primaryRole: 'doctor',
+      secondaryRole: 'doctor',
+      preparedState: 'confirmed_unlocked',
+      allowedStages: [],
+      expectedProductMutationClass: 'secondary_lock_once_primary_idempotent',
+      expectedFixtureOwnedMutationClass: 'none',
+      requiresIndependentSession: true,
+    });
+    expect(
+      B12_AUDIT_MATRIX.filter(
+        ({ routeKey }) => routeKey === 'already-locked-idempotency',
+      ).map(({ auditId }) => auditId),
+    ).toEqual(['B12-41', 'B12-42', 'B12-43']);
   });
 
   it('rejects arbitrary CLI values, unsafe scopes, and non-allowlisted Stage extensions', () => {
@@ -360,12 +395,12 @@ describe('B12 report-lock browser fixture support (e2e)', () => {
     expect(core.reportStateCounts).toEqual({
       draft: 1,
       pending_confirmation: 1,
-      confirmed_unlocked: 10,
+      confirmed_unlocked: 11,
       confirmed_quality_blocked: 1,
       confirmed_confirmation_missing: 1,
       confirmed_v1_visit_locked: 1,
       confirmed_v1_visit_voided: 1,
-      confirmed_locked: 5,
+      confirmed_locked: 4,
       historical_locked_fallback: 1,
     });
     expect(resilience.reportStateCounts).toEqual(
@@ -402,6 +437,27 @@ describe('B12 report-lock browser fixture support (e2e)', () => {
           voidedAt === null,
       ),
     ).toBe(true);
+
+    const noRepeatReport = await reportFor(
+      'core-workflow',
+      CORE_NAMESPACE,
+      'eligibility-state',
+      'already-locked-no-repeat',
+    );
+    expect(noRepeatReport.lockedAt).toBeInstanceOf(Date);
+    expect(noRepeatReport.lockedBy).not.toBeNull();
+    expect(noRepeatReport.metadata?.a22Lock).toBeUndefined();
+    const idempotencyReport = await reportFor(
+      'core-workflow',
+      CORE_NAMESPACE,
+      'success-idempotency',
+      'already-locked-idempotency',
+    );
+    expect(idempotencyReport.status).toBe('confirmed');
+    expect(idempotencyReport.qualityStatus).toBe('passed');
+    expect(idempotencyReport.lockedAt).toBeNull();
+    expect(idempotencyReport.lockedBy).toBeNull();
+    expect(idempotencyReport.metadata?.a22Lock).toBeUndefined();
 
     for (const routeValue of routesFor('core-workflow').filter(
       ({ boundaryType }) => boundaryType === 'controlled_public_read_boundary',
@@ -456,18 +512,30 @@ describe('B12 report-lock browser fixture support (e2e)', () => {
     expect(after).toEqual(before);
   });
 
-  it('writes only the runtime whitelist and enforces basename, traversal, existing-target, and symlink safety', async () => {
+  it('supports same-account independent Sessions while enforcing the runtime whitelist and path safety', async () => {
     const runtimeRoot = await mkdtemp(path.join(tmpdir(), 'b12-runtime-'));
     try {
       const descriptor = await manager.resolveRuntimeDescriptor({
         profile: 'core-workflow',
         namespace: CORE_NAMESPACE,
         password: testPassword,
-        scenarioKey: 'conflict',
-        routeKey: 'lock-conflict-latest-locked',
+        scenarioKey: 'success-idempotency',
+        routeKey: 'already-locked-idempotency',
         role: 'doctor',
       });
       expect(() => assertB12RuntimeDescriptor(descriptor)).not.toThrow();
+      expect(descriptor.primaryRole).toBe('doctor');
+      expect(descriptor.secondaryRole).toBe('doctor');
+      expect(descriptor.secondaryLoginIdentifier).toBe(
+        descriptor.loginIdentifier,
+      );
+      expect(
+        routeFor(
+          'core-workflow',
+          'success-idempotency',
+          'already-locked-idempotency',
+        ).requiresIndependentSession,
+      ).toBe(true);
       expect(Object.keys(descriptor).sort()).toEqual([
         'batch',
         'loginIdentifier',
@@ -492,6 +560,66 @@ describe('B12 report-lock browser fixture support (e2e)', () => {
         ),
       ) as B12RuntimeDescriptor;
       expect(written).toEqual(descriptor);
+
+      const doctor = await userModel.findOne({
+        accountName: descriptor.loginIdentifier,
+      });
+      if (!doctor) throw new Error('Missing B12 doctor account');
+      const sessionsBefore = await sessionModel
+        .find({ userId: doctor._id })
+        .select({ _id: 1 })
+        .lean()
+        .exec();
+      const existingSessionIds = new Set(
+        sessionsBefore.map(({ _id }) => _id.toString()),
+      );
+      const primaryAgent = request.agent(server);
+      const secondaryAgent = request.agent(server);
+      try {
+        await primaryAgent
+          .post('/auth/login')
+          .send({
+            accountName: descriptor.loginIdentifier,
+            password: testPassword,
+          })
+          .expect(201);
+        await secondaryAgent
+          .post('/auth/login')
+          .send({
+            accountName: descriptor.secondaryLoginIdentifier,
+            password: testPassword,
+          })
+          .expect(201);
+        const sessionsAfter = await sessionModel
+          .find({ userId: doctor._id })
+          .select({ _id: 1 })
+          .lean()
+          .exec();
+        const createdSessions = sessionsAfter.filter(
+          ({ _id }) => !existingSessionIds.has(_id.toString()),
+        );
+        expect(createdSessions).toHaveLength(2);
+        expect(
+          new Set(createdSessions.map(({ _id }) => _id.toString())).size,
+        ).toBe(2);
+        await sessionModel.deleteMany({
+          _id: { $in: createdSessions.map(({ _id }) => _id) },
+        });
+      } catch (error: unknown) {
+        const sessionsAfterFailure = await sessionModel
+          .find({ userId: doctor._id })
+          .select({ _id: 1 })
+          .lean()
+          .exec();
+        await sessionModel.deleteMany({
+          _id: {
+            $in: sessionsAfterFailure
+              .filter(({ _id }) => !existingSessionIds.has(_id.toString()))
+              .map(({ _id }) => _id),
+          },
+        });
+        throw error;
+      }
       await expect(
         writeB12RuntimeDescriptor(
           descriptor,
@@ -588,48 +716,43 @@ describe('B12 report-lock browser fixture support (e2e)', () => {
   });
 
   it('accepts all legal core mutation classes and transition-aware Stage progress', async () => {
-    await manager.simulateProductMutationForE2e({
-      profile: 'core-workflow',
-      namespace: CORE_NAMESPACE,
-      password: testPassword,
-      scenarioKey: 'success-idempotency',
-      routeKey: 'doctor-lock-success',
+    const idempotencyBefore = await reportFor(
+      'core-workflow',
+      CORE_NAMESPACE,
+      'success-idempotency',
+      'already-locked-idempotency',
+    );
+    const idempotencyBeforeUpdatedAt = (
+      idempotencyBefore as ClinicalReportDocument & { updatedAt: Date }
+    ).updatedAt;
+    expect(idempotencyBefore.metadata?.a22Lock).toBeUndefined();
+    await manager.simulatePostBrowserForE2e(
+      'core-workflow',
+      CORE_NAMESPACE,
+      testPassword,
+    );
+    const idempotencyAfter = await reportFor(
+      'core-workflow',
+      CORE_NAMESPACE,
+      'success-idempotency',
+      'already-locked-idempotency',
+    );
+    const idempotencyAfterUpdatedAt = (
+      idempotencyAfter as ClinicalReportDocument & { updatedAt: Date }
+    ).updatedAt;
+    expect(idempotencyAfterUpdatedAt.getTime()).not.toBe(
+      idempotencyBeforeUpdatedAt.getTime(),
+    );
+    expect(idempotencyAfterUpdatedAt.getTime()).toBe(
+      idempotencyAfter.lockedAt?.getTime(),
+    );
+    expect(idempotencyAfter.metadata?.a22Lock).toMatchObject({
+      lockedByRole: 'doctor',
+      lockNote:
+        'B12 synthetic Secondary Context simulated lock process text with no clinical meaning.',
     });
-    await manager.simulateProductMutationForE2e({
-      profile: 'core-workflow',
-      namespace: CORE_NAMESPACE,
-      password: testPassword,
-      scenarioKey: 'success-idempotency',
-      routeKey: 'admin-lock-success',
-    });
-    await stage({
-      profile: 'core-workflow',
-      namespace: CORE_NAMESPACE,
-      scenarioKey: 'conflict',
-      routeKey: 'lock-conflict-continue',
-      transition: 'lock-conflict-touch',
-    });
-    await manager.simulateProductMutationForE2e({
-      profile: 'core-workflow',
-      namespace: CORE_NAMESPACE,
-      password: testPassword,
-      scenarioKey: 'conflict',
-      routeKey: 'lock-conflict-continue',
-    });
-    await stage({
-      profile: 'core-workflow',
-      namespace: CORE_NAMESPACE,
-      scenarioKey: 'conflict',
-      routeKey: 'lock-conflict-latest-locked',
-      transition: 'lock-conflict-latest-locked-touch',
-    });
-    await manager.simulateProductMutationForE2e({
-      profile: 'core-workflow',
-      namespace: CORE_NAMESPACE,
-      password: testPassword,
-      scenarioKey: 'conflict',
-      routeKey: 'lock-conflict-latest-locked',
-    });
+    expect(idempotencyAfter.status).toBe('confirmed');
+    expect(idempotencyAfter.qualityStatus).toBe('passed');
     await expect(
       manager.verify(
         'core-workflow',
@@ -694,11 +817,11 @@ describe('B12 report-lock browser fixture support (e2e)', () => {
   });
 
   it('rejects missing, extra, wrong-actor, A23-A25, narrative, and root drift without repair', async () => {
-    const doctorReport = await reportFor(
+    const idempotencyReport = await reportFor(
       'core-workflow',
       CORE_NAMESPACE,
       'success-idempotency',
-      'doctor-lock-success',
+      'already-locked-idempotency',
     );
     const verifyCore = () =>
       manager.verify(
@@ -708,26 +831,43 @@ describe('B12 report-lock browser fixture support (e2e)', () => {
         'post-browser',
       );
     await withRawReportMutation(
-      doctorReport,
+      idempotencyReport,
+      {
+        $set: { lockedAt: null, lockedBy: null },
+        $unset: { 'metadata.a22Lock': '' },
+      },
+      verifyCore,
+    );
+    const originalLockAudit = idempotencyReport.metadata?.a22Lock;
+    if (!originalLockAudit) throw new Error('Missing B12 A22 audit');
+    await withRawReportMutation(
+      idempotencyReport,
+      { $set: { 'metadata.a22Lock': [originalLockAudit, originalLockAudit] } },
+      verifyCore,
+    );
+    await withRawReportMutation(
+      idempotencyReport,
       { $set: { 'metadata.a22Lock.lockedByRole': 'admin' } },
       verifyCore,
     );
     await withRawReportMutation(
-      doctorReport,
+      idempotencyReport,
       { $set: { 'metadata.a22Lock.extraAudit': true } },
       verifyCore,
     );
     await withRawReportMutation(
-      doctorReport,
+      idempotencyReport,
       { $set: { 'metadata.a23SourceFreeze': { version: 1 } } },
       verifyCore,
     );
     await withRawReportMutation(
-      doctorReport,
+      idempotencyReport,
       { $set: { 'narrative.chiefSummary': 'drift' } },
       verifyCore,
     );
-    const patient = await patientModel.findById(doctorReport.patientId).exec();
+    const patient = await patientModel
+      .findById(idempotencyReport.patientId)
+      .exec();
     if (!patient) throw new Error('Missing B12 patient');
     const originalPatient = await patientModel.collection.findOne({
       _id: patient._id,
@@ -746,10 +886,10 @@ describe('B12 report-lock browser fixture support (e2e)', () => {
       );
     }
     const visit = await visitModel
-      .findById(doctorReport.assessmentVisitId)
+      .findById(idempotencyReport.assessmentVisitId)
       .exec();
     const instance = await instanceModel
-      .findOne({ assessmentVisitId: doctorReport.assessmentVisitId })
+      .findOne({ assessmentVisitId: idempotencyReport.assessmentVisitId })
       .exec();
     if (!visit || !instance) throw new Error('Missing B12 source roots');
     const originalVisit = await visitModel.collection.findOne({
@@ -848,6 +988,7 @@ describe('B12 report-lock browser fixture support (e2e)', () => {
         'none',
         'lock_once_doctor',
         'lock_once_admin',
+        'secondary_lock_once_primary_idempotent',
         'already_locked_readonly',
         'fixture_touch_plus_lock_once',
         'fixture_touch_plus_secondary_lock_once',

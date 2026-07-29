@@ -40,6 +40,7 @@ export type B12ProductMutationClass =
   | 'none'
   | 'lock_once_doctor'
   | 'lock_once_admin'
+  | 'secondary_lock_once_primary_idempotent'
   | 'already_locked_readonly'
   | 'fixture_touch_plus_lock_once'
   | 'fixture_touch_plus_secondary_lock_once';

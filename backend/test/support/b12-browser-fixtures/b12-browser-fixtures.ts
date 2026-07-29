@@ -545,7 +545,9 @@ export class B12BrowserFixtureManager {
       lockedAt,
       actor: actorFor(actorUser, role),
       lockNote:
-        'B12 synthetic simulated lock process text with no clinical meaning.',
+        input.mutation === 'secondary_lock_once_primary_idempotent'
+          ? 'B12 synthetic Secondary Context simulated lock process text with no clinical meaning.'
+          : 'B12 synthetic simulated lock process text with no clinical meaning.',
     });
     const result = await this.models.reports.updateOne(
       {

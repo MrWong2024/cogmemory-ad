@@ -501,6 +501,7 @@ function expectedLockRole(
   return mutation === 'lock_once_admin'
     ? 'admin'
     : mutation === 'lock_once_doctor' ||
+        mutation === 'secondary_lock_once_primary_idempotent' ||
         mutation === 'fixture_touch_plus_lock_once' ||
         mutation === 'fixture_touch_plus_secondary_lock_once'
       ? 'doctor'
