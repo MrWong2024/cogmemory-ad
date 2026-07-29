@@ -111,7 +111,7 @@ type SafeNetworkGroup = Pick<
   | 'bodyKeys'
 > & { count: number };
 
-type DomPrivacySummary = {
+export type DomPrivacySummary = {
   forbiddenSerializedFieldDetected: false;
   primaryInternalIdDetected: false;
   sensitiveAttributeDetected: false;
@@ -481,7 +481,9 @@ async function parseSafeReportFacts(
   };
 }
 
-async function auditDomPrivacy(page: Page): Promise<DomPrivacySummary> {
+export async function auditB11DomPrivacy(
+  page: Page,
+): Promise<DomPrivacySummary> {
   const result = await page.evaluate(() => {
     const objectId = /\b[a-f\d]{24}\b/i;
     const uuid =
@@ -1056,7 +1058,7 @@ export class B11BrowserSession {
       const currentUrl = new URL(this.page.url());
       expect(currentUrl.search).toBe('');
       expect(currentUrl.hash).toBe('');
-      const domPrivacy = await auditDomPrivacy(this.page);
+      const domPrivacy = await auditB11DomPrivacy(this.page);
       expect(
         (await this.contextCookies()).some(({ httpOnly }) => httpOnly),
       ).toBe(true);
@@ -1304,7 +1306,7 @@ export class B11RouteRun {
   }
 }
 
-async function removeCurrentB11TestOutput(): Promise<boolean> {
+export async function removeCurrentB11TestOutput(): Promise<boolean> {
   const outputRoot = path.resolve(
     process.cwd(),
     'test-results',
