@@ -57,7 +57,7 @@ Playwright Test、Chromium 和 Axe 是当前 Browser acceptance 默认工具。�
 5. 执行只读 post-browser verify，核对最终数据库事实、请求次数、无副作用和合同计数；verify 不创建、不修复、不删除业务结果。
 6. logout、关闭 Browser、停止进程，按 namespace 精确 cleanup；再执行第二次幂等 cleanup，两次均要求 `residualCount=0`。
 
-prepare / prepared verify 只说明账号和前置数据就绪，不等于 Browser 通过；Browser 页面场景通过但没有 post-browser verify 或 cleanup，也不得宣布工程收口。旧 Batch namespace、端口和临时文件名不是未来 fixture 合同。
+prepare / prepared verify 只说明账号和前置数据就绪，不等于 Browser 通过；Browser 场景通过但缺少与本次验收范围及副作用合同相匹配的后置只读验证，或缺少对本次实际创建资源的必要清理，不得宣布工程收口。完整 profile 必须执行完整 post-browser verify；定向重验按本节的 route-specific verifier、prepared re-verify 与组合证据规则执行。旧 Batch namespace、端口和临时文件名不是未来 fixture 合同。
 
 #### 4.1.1 适用边界与组合证据
 

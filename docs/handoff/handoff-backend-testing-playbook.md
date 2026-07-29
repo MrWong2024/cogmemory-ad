@@ -206,7 +206,7 @@ prepare / replace 与后续账号密码校验必须处于相同的稳定 fixture
 
 不得以手工补插或修改数据库账号、降低账号有效性或密码校验标准、只反复执行 verify，或把 verify 未执行、未通过或密码校验失败记为 prepared gate 通过来绕过不一致。prepared verify 始终是只读门禁，不能修复账号或重设密码。
 
-固定测试凭据可由目标进程自动读取，但不得进入 CLI 参数、manifest、截图、日志或报告。prepare / prepared verify 只证明前置就绪，不等于 Browser 通过；Browser 场景通过但缺 post-browser verify 或 cleanup，也不得宣布工程收口。
+固定测试凭据可由目标进程自动读取，但不得进入 CLI 参数、manifest、截图、日志或报告。prepare / prepared verify 只证明前置就绪，不等于 Browser 通过；Browser 场景通过但缺少与本次验收范围及副作用合同相匹配的后置只读验证，或缺少对本次实际创建资源的必要清理，不得宣布工程收口。完整 profile 必须执行完整 post-browser verify；定向重验按 6.1 节的 route-specific verifier、prepared re-verify 与组合证据规则执行。
 
 ### 6.1 执行边界、定向重验与组合证据
 
