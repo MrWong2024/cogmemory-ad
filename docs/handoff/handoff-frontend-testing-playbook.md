@@ -660,6 +660,8 @@ B11-C `resilience-security` 已完整执行 4 个 scenarioKey / 9 条 route，B1
 
 本阶段没有启动 production frontend、Browser test backend、Playwright 或 Chromium，没有执行任何真实 B12 Browser Action，因此不得把 fixture-ready、E2E、CLI 冒烟或静态门禁记为 B12 Browser pass；B12 的 88 项均未记为 pass，B12-86–B12-88 也尚未关闭。不填写不存在的 evidence commit。下一阶段为 B12-B `core-workflow` Browser 验收，B11 已完成事实保持不变，Batch D 仍未完成。
 
+B12-B 基于指定基线 `28685a744bd4ddc021a112e656f7ef887e8423d7`，使用 production frontend、Browser test backend 与 Playwright Chromium 完整执行 `core-workflow` 的 5 个 scenarioKey / 22 条 route / 62 个 Browser audit ID。最终为 18 route / 45 audit ID pass、4 route / 17 audit ID fail；失败项为 B12-06–B12-08、B12-14、B12-33–B12-40、B12-44–B12-48。稳定产品阻断有两项：`system` 未包含在 Patient / ClinicalReport workflow roles 中，因而被拒绝读取报告，B12-08 无法成立且同一原子 route 的 B12-06–B12-08 均未关闭；`confirmed` 且 `confirmation=null` 的报告被 public readability 判为 `CLINICAL_REPORT_INCOMPLETE`，页面无法呈现 B12-14 要求的缺失确认告警。另有一项 Playwright 测试资产缺陷：doctor / admin 首次锁定成功 route 的 pending-readable 断言定位了不存在的标题，导致 B12-33–B12-40、B12-44–B12-48 未形成完整 Browser pass；资产已改为正文 section 定位，但因前述稳定产品阻断未再启动新一轮 Browser，不能用实际 A22 写入或 post-browser verify 代替这些 ID 的页面断言。两项 Stage、完整 post-browser verify、Session logout、Browser / 服务停止、runtime 与测试产物清理均完成；cleanup 1 为 `matched=true,residualCount=0`，cleanup 2 为 `matched=false,residualCount=0`，canonical seed、其他 namespace 与非 namespace 数据不变。分类为产品缺陷 2、fixture 缺陷 0、Playwright 测试资产缺陷 1（已修正、尚未 Browser 复验）、稳定环境限制 0。B12-B 与 B12 均未完成，不进入 B12-C，B12-86–B12-88 不关闭；不填写不存在的 evidence commit。
+
 ### 6.3 B13 报告来源冻结：116 项
 
 1. 未生成报告时无来源冻结区域写入口。
