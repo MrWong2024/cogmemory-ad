@@ -15,7 +15,7 @@
 | Batch A / B1–B3 | 已完成 | 67 个验证原子全部有明确处置，正式 fixture 双次 cleanup，残留为 0 |
 | Batch B / B4–B6 | 桌面范围已完成 | Browser 133 + automated boundary 2 = 135；post-browser verify 通过；双次 cleanup `residualCount=0`；产品缺陷 0 |
 | Batch C / B7–B10 | 已完成 | B10 最终为 `generation-workflow` 48 pass + `public-surface-security` 47 pass，共 95 项 |
-| Batch D / B11–B15 | B11 已完成，Batch D 尚未完成 | B11 `core-workflow` 58 Browser pass + `resilience-security` 11 Browser pass + B11-70 static-gate 1 pass，共 70 项闭环；下一阶段为 Batch D / B12，B12–B15（含 B14.1）仍待验 |
+| Batch D / B11–B15 | B11 已完成；B12-A fixture 已完成；Batch D 尚未完成 | B11 的 70 项保持闭环；B12 已建立 62 core + 23 resilience Browser ID 与 3 static-gate ID 的 fixture 合同，但 88 项均未最终关闭；下一阶段为 B12-B `core-workflow` Browser 验收 |
 | Batch E | 尚未执行，保留 8 项 | 真实设备或人工验收；不被桌面 Browser、大屏抽查或 automated boundary 替代 |
 
 Batch B 的正式 namespace 和临时文件已经删除，不存在“尚待 post-browser verify”或“下一步重建 Batch B 终态”的当前任务。B7 采用组合证据完成：原完整 Browser 验收中 B7-01–B7-37、B7-39、B7-40 通过，完整 post-browser verify 通过且双次 cleanup 均为 `residualCount=0`；B7-38 修复后的三个 viewport 定向回归、Browser 前后 prepared verify 和双次 cleanup 也均通过。本次定向回归没有执行 compute，namespace 按合同保持 prepared 状态，因此对它执行要求写终态的 post-browser verify 不适用，不构成当前阻断。B8 `core-workflow` 的 39 项真实 Browser 验收与 `resilience-security` 的 21 项真实 Browser 验收均已完成；后者的 post-browser verify 通过，双次 cleanup 均为 `residualCount=0`。B8 共 60 项全部闭环，B8 已完成。B9-B1 已修复规范 seed 首次物化前误采基线的问题，并在 Git 忽略的本地 Browser 配置建立稳定 B9 fixture 密码来源；B9-B2 已完成五条 `local_write_gate` route、服务端数组顺序和内部 ID DOM 边界的定向修复。B9-B3 在指定基线上使用全新 namespace 重跑完整 `core-workflow` 的 37 项 Browser pass、产品缺陷 0、logout/停服和双次 `residualCount=0` cleanup 事实继续保留。B9-B4 已将无法在产品合法状态下成立的 B9-32 唯一处置为 `obsolete`，不得创建非法草稿 fixture 或写成 pass；core 合同现为 37 active + 1 obsolete。seed-drift 目标已改为实际受保护 canonical 集合，score-confirmation-only verifier 已与真实 A18 confirm 字段对齐；定向 E2E 1 suite / 7 tests、完整 E2E 24 suites / 110 tests 与全新 namespace core fixture prepare/verify/replace/verify/双 cleanup 冒烟均通过。B9-B5 已在基线 `ed37e22dab3950e62bf434572f5a4bd4a983227a` 使用全新 namespace `b9c-b9b5-20260726-f3a7` 重跑 19 条 `core-workflow` route；B9-01–B9-31、B9-33–B9-38 共 37 个 active 项全部通过，B9-32 保持唯一 `obsolete`，post-browser verify 通过，logout、Browser/服务关闭及端口释放完成，两次 cleanup 均为 `residualCount=0`，第二次 `matched=false`。B9-C 原完整 `resilience-security` 的 B9-39–B9-50 与 B9-52 共 13 项、post-browser verify 和双次 `residualCount=0` cleanup 证据继续有效；B9-C1 已在基线 `ff3b55ba1d4422234a93c923d1a107c2bfd4c16e` 修复并定向重验 B9-51，七个固定 viewport、768×900 压力尺寸和最大化 Chrome 均通过，Browser 前后 prepared verify 与双次 cleanup 均通过。该只读 namespace 未执行全量 post-browser verify，符合本次定向合同且不构成缺陷。B9 最终为 51 active pass + B9-32 obsolete，B9 已完成。B10-A 当时只完成 fixture，Browser 验收尚未开始；该历史状态后续已由 B10-B5、B10-C 和 B10-C2 关闭，当前 B10 已完成。不填写不存在的 evidence commit。
@@ -466,7 +466,7 @@ Fixture 前置：准备 Visit 无报告、合法 scope、不同实例状态、dr
 
 ## 6. Batch D 当前待验合同：B11–B15（含 B14.1）
 
-Batch D 已完成 B11，尚未执行 B12–B15。B11 fixture 建立的两个互斥 profile 均已闭环：`core-workflow` 覆盖 58 个 Browser 项，`resilience-security` 覆盖 11 个 Browser 项；B11-70 是单独的 `static-gate`。共 70 个稳定 ID、69 个 Browser 项和 1 个静态项，每个 ID 只有一个 primary owner。Fixture 支持 doctor、admin、nurse、research_assistant、system 五个精确角色、双 Session 并发、合法报告状态矩阵、严格 allowlist Stage、临时 runtime descriptor、prepared / post-browser verifier 与双次 cleanup。所有 note、opinion、reason、summary 均为无临床含义的脱敏文本。
+Batch D 已完成 B11，并已进入 B12-A fixture 阶段；B12-A fixture 现已完成，但尚未执行任何 B12 Browser Action，也尚未执行 B13–B15。B11 fixture 建立的两个互斥 profile 均已闭环：`core-workflow` 覆盖 58 个 Browser 项，`resilience-security` 覆盖 11 个 Browser 项；B11-70 是单独的 `static-gate`。共 70 个稳定 ID、69 个 Browser 项和 1 个静态项，每个 ID 只有一个 primary owner。B11 已完成事实保持不变。B12 的 88 项仍全部未最终关闭；Batch D 仍未完成，下一阶段为 B12-B `core-workflow` Browser 验收。
 
 B11-B 已使用 production frontend、Browser test backend、Playwright Chromium 和全新 core namespace 启动 5 个 scenarioKey / 20 条 route。`confirmation-conflict` 页面按合同先加载并冻结版本，但随后唯一一次 `confirmation-conflict-touch` Stage 在写入前对整个 profile 重做 `prepared` 校验，因此前合法完成的 `edit-success` 已变为 mixed 而返回 `B11_FIXTURE_REPORT_STATE_INVALID`；Stage 实际写入为 0，Browser confirm 因此未执行。post-browser verify 随后精确拒绝 `confirmation/confirmation-conflict`。服务、Browser、runtime 与测试产物均已收口；两次 cleanup 均为 `residualCount=0`，第二次 `matched=false`，canonical seed 不变。B11-B、B11 与 Batch D 均保持未完成，不进入 B11-C；B11-56–B11-59、B11-63–B11-69 与 B11-70 仍未关闭。不填写不存在的 evidence commit。
 
@@ -649,6 +649,12 @@ B11-C `resilience-security` 已完整执行 4 个 scenarioKey / 9 条 route，B1
 86. lint 通过。
 87. typecheck 通过。
 88. build 通过。
+
+当前处置：B12-A fixture 已完成。B12 合同固定为 `core-workflow` 62 个 Browser audit ID（5 个 scenarioKey / 22 条 route）、`resilience-security` 23 个 Browser audit ID（6 个 scenarioKey / 11 条 route）和 B12-86–B12-88 三个 `static-gate`；88 个 ID 均有唯一 owner，85 个 Browser ID 均恰有一条 route，三个 static-gate 无 Browser route。两个 profile 均使用 doctor、admin、nurse、research_assistant、system 五角色和互不共享的 Patient / Visit / ScaleInstance / ClinicalReport / marker 根。core 合法状态矩阵覆盖 draft、pending、confirmed unlocked、quality blocked、confirmation missing、Visit locked / voided V1、confirmed locked 与 historical locked fallback；resilience 使用独立 confirmed unlocked 根。
+
+四条 controlled public-read boundary 均从合法数据库状态开始，未来只允许单次初始公开读取分别改变 `isFinal`、top-level `lockedAt`、`lock` summary 或 `lock.lockedAt`，数据库必须零变化。五个 Stage 仅允许 `lock-conflict-touch`、`lock-conflict-latest-locked-touch`、`lock-audit-unavailable`、`lock-metadata-unsupported` 与 `forbidden-lock-role`，并具备严格前置、transition-aware 进度与幂等门禁。runtime 使用字段白名单、原子临时文件、basename / traversal / symlink / existing-target 防护；prepared / post-browser verifier 分离产品 A22 mutation 与 fixture-owned mutation，并严格拒绝多写、漏写、错误 actor、A23–A25 和来源根漂移。两个 profile 均完成 prepare、prepared verify、replace、再次 prepared verify、runtime 生成与删除、Stage 冒烟和双次 `residualCount=0` cleanup，resilience 的三个代表性 Stage 逐一完成；canonical seed、其他 namespace 与非 namespace 数据不变，runtime / manifest 无残留。
+
+本阶段没有启动 production frontend、Browser test backend、Playwright 或 Chromium，没有执行任何真实 B12 Browser Action，因此不得把 fixture-ready、E2E、CLI 冒烟或静态门禁记为 B12 Browser pass；B12-86–B12-88 也尚未关闭。不填写不存在的 evidence commit。下一阶段为 B12-B `core-workflow` Browser 验收，Batch D 仍未完成。
 
 ### 6.3 B13 报告来源冻结：116 项
 
