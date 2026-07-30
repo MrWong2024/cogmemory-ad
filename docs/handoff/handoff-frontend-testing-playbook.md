@@ -6,7 +6,7 @@
 
 本文档不改变产品、接口、DTO、Schema、测试合同或 roadmap。下文 B7–B15 的阶段内序号保持减肥前基线顺序，序号即该阶段稳定验证项；不得重排、合并或用数量摘要替代验证意图。
 
-> B12-G1 的 88 项完整性与主证据分层已通过；G2 初审确认 execution group、fixture state cluster、Session/根资源复用与失败隔离仍需修订，当前已形成 [B12-G2 Draft v2 执行与证据矩阵](./handoff-testing-evidence-matrix-b12.md)，等待用户审批。B12 Browser 继续暂停；当前正式 owner、route、fixture、Playwright 资产与 B12-B1～B12-B9 历史状态全部不变，审批前不进入 G3 或 B12-C，也不关闭任何 B12 ID。
+> B12-G1 的 88 项完整性与主证据分层已通过，G2 的 execution group、fixture state cluster、Session/根资源复用与失败隔离方向已认可；Draft v2 随后发现 Visit/latest 可达性、横切 direct/supporting 映射和 execution/fixture 同步改动风险，现已校正为 [B12-G2.1 Draft v3 执行与证据矩阵](./handoff-testing-evidence-matrix-b12.md)，等待用户审批。审批后只允许先进入 G3-A execution layer，G3-A 稳定后 G3-B fixture cluster 仍须另行审批。B12 Browser 继续暂停；当前正式 owner、route、fixture、Playwright 资产与 B12-B1～B12-B9 历史状态全部不变，审批前不进入 G3 或 B12-C，也不关闭任何 B12 ID。
 
 ## 2. 当前验证状态总表
 

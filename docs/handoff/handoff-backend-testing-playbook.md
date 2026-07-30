@@ -6,7 +6,7 @@
 
 本文档不改变产品、接口、DTO、Schema、测试合同或 roadmap 工作包状态。当前唯一事实是：WP-02、WP-04、Batch A 已完成；Batch B 桌面范围已完成；Batch C 的 B7–B10 已完成。B10 `generation-workflow` 为 48 pass，`public-surface-security` 为 47 pass，共 95 项全部完成。Batch D 的 B11 `core-workflow` 58 Browser 项、`resilience-security` 11 Browser 项与 B11-70 static-gate 1 项均已通过，共 70 项完成，B11 已完成。B12-B6 已基于指定基线用全新 namespace 从 prepare 开始完整执行 22 条 core route，结果为 0 route pass / 22 route fail、0 audit pass / 62 audit fail：全部 route 在工作流导航阶段发现相对 Dashboard 的额外 `/auth/me` 实际为 2、合同要求为 1，未进入后续 route Action。post-browser verify 按不完整产品终态失败，双次 cleanup 与零残留收口通过。B12-B7 已完成 core 提前执行 B12-83 精确次数合同的代码级 Playwright 资产纠正，但未执行产品 Browser 或数据库；上述 B12-B6 历史不变。当前分类为产品缺陷 0、fixture 缺陷 0、B12-B7 完成代码级纠正的 Playwright 验收资产缺陷 1、B12-B6 Session 收口证据缺口 1、稳定环境限制 0。B12-B、B12 与 Batch D 仍未完成，不进入 B12-C，B12-83 与 B12-86–B12-88 未关闭。Batch E 的 8 项真实设备或人工验收尚未执行并继续保留。
 
-> B12-G1 的 88 项完整性与主证据分层已通过；G2 初审确认 execution group、fixture state cluster、Session/根资源复用与失败隔离仍需修订，当前已形成 [B12-G2 Draft v2 执行与证据矩阵](./handoff-testing-evidence-matrix-b12.md)，等待用户审批。B12 Browser 继续暂停；当前正式 owner、route、fixture、Playwright 资产与 B12-B1～B12-B9 历史状态全部不变，审批前不进入 G3 或 B12-C，也不关闭任何 B12 ID。
+> B12-G1 的 88 项完整性与主证据分层已通过，G2 的 execution group、fixture state cluster、Session/根资源复用与失败隔离方向已认可；Draft v2 随后发现 Visit/latest 可达性、横切 direct/supporting 映射和 execution/fixture 同步改动风险，现已校正为 [B12-G2.1 Draft v3 执行与证据矩阵](./handoff-testing-evidence-matrix-b12.md)，等待用户审批。审批后只允许先进入 G3-A execution layer，G3-A 稳定后 G3-B fixture cluster 仍须另行审批。B12 Browser 继续暂停；当前正式 owner、route、fixture、Playwright 资产与 B12-B1～B12-B9 历史状态全部不变，审批前不进入 G3 或 B12-C，也不关闭任何 B12 ID。
 
 ## 2. 当前验证状态
 

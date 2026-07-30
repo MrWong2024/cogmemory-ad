@@ -1,18 +1,18 @@
-# B12-G2 验收点—执行与证据矩阵
+# B12-G2.1 验收点—执行与证据矩阵
 
-**状态：Draft v2 — G2 执行设计修订，等待用户审批**
+**状态：Draft v3 — G2.1 可执行性校核，等待用户审批**
 
-本文件完整保留 B12-01～B12-88 的稳定要求、顺序、正式 Audit owner、route contract、当前 fixture 与 B12-B1～B12-B9 历史状态；新增 execution group、fixture state cluster、Session/根资源策略与横切代表只是 G3 候选，不是已实施合同、执行证据或 evidence commit。
+本文件完整保留 B12-01～B12-88 的稳定要求、顺序、正式 Audit owner、33 条 owner route、route contract、当前 fixture / Playwright 与 B12-B1～B12-B9 历史状态。G2 的分组、复用与失败隔离方向已获认可，但 Draft v2 从未获批；本 Draft v3 只校正 visit/latest 可寻址性、横切证据映射及 G3 分阶段边界，不是已实施合同、执行证据或 evidence commit。
 
-本轮不是 G2 最终批准。用户审批前不进入 G3，不修改正式 fixture、route、owner、Playwright、verifier 或产品；B12 Browser 继续暂停，B12-B、B12 与 Batch D 仍未完成，不进入 B12-C，不关闭任何 B12 ID，不启动 B13～B15。
+本轮仍须用户审批。审批后只允许进入 G3-A；G3-A canary 与正式 execution runner 稳定后，G3-B 仍须另行审批。审批前不进入 G3，不修改正式 fixture、route、owner、Playwright、verifier 或产品；B12 Browser 继续暂停，B12-B、B12 与 Batch D 状态不变，不进入 B12-C，不关闭任何 B12 ID，不启动 B13～B15。
 
 ## 1. 三层口径与固定枚举
 
 ### 1.1 Audit owner、execution group、fixture cluster
 
 - `正式 Audit owner` 是稳定 ID 的唯一业务责任归属；本草案不移动 ID、不删除/合并 owner，也不因执行分组改变稳定要求。
-- `Browser execution group` 是一次 Playwright test、一个连续 Session 或一个有界多 Context 工作流中可顺序执行的 owner route 集合。每个 ID 保留独立断言和结果，已完成 owner 不因后续 owner 失败自动归零。
-- `Fixture state cluster` 是可共享合法状态模板、Patient/Visit 或一组 Report roots 的 route 集合。共享 fixture 不等于共享可写 Report；写入、并发、401、403、network abort 与终止性 Session 保持隔离。
+- `Browser execution group` 是 G3-A 候选：一次 Playwright test、一个连续 Session 或一个有界多 Context 工作流中可顺序执行的 owner route 集合。每个 ID 保留独立断言和逐 owner 结果，已完成 owner 不因后续 owner 或同一 Playwright test 失败自动归零。
+- `Fixture state cluster` 是 G3-B 候选：在现有页面和 latest API 可寻址前提下共享合法状态模板、Patient/Visit 或 Report root 的 route 集合。共享 fixture 不等于共享可写 Report；写入、并发、401、403、network abort 与终止性 Session 保持隔离。
 
 Fixture cluster 类型：`read_only_shared`、`write_isolated`、`concurrency_isolated`、`authorization_isolated`、`network_failure_isolated`、`cross_cutting_shared`、`static_no_fixture`。
 
@@ -24,7 +24,22 @@ Fixture cluster 类型：`read_only_shared`、`write_isolated`、`concurrency_is
 - core 62 个 ID 为 `invalidated`：B12-B6 为 0 route pass / 62 audit fail，B12-B7 只纠正代码资产而未重跑正式 Browser。resilience 23 个 ID 为 `not_executed`；B12-86～88 为 `historical_partial`，因为历史门禁不是最终 B12 代码态证据。
 - fixture E2E、synthetic、代码阅读、Browser test list、单独 verifier 或 post-browser verify 通过不能关闭 Browser ID；readiness 不能写成 executed pass。
 
-### 1.3 其余固定枚举
+### 1.3 Route 可寻址性固定口径
+
+当前 runtime descriptor 的 `navigationPath` 只允许 `/patients/:patientId/visits/:visitId`，不含 `reportId`。页面读取该 Visit 的 latest cognitive assessment；`ReportsService.findLatestReportByVisitId()` 按 `reportVersion DESC, createdAt DESC` 排序并只返回一个 Report。因此同一 Visit 中即使存在多个普通 Report，也只有一个 `Latest-visible report`，不得把其余 Report 当成可由 Browser 分别访问。
+
+- `Route addressability` 固定枚举：`visit_latest`、`same_report_controlled_read`、`same_report_sequential_read_only`、`isolated_visit_latest`、`no_browser_route`。
+- `Latest-visible report count` 是某 owner 或 cluster 通过现有 Visit 路由实际可读的 latest Report 数；每个 Visit 最大为 1。
+- `Shared report precondition` 记录同一 Report 可共享所需的全部条件；没有满足条件时必须回退到不同 Visit/Report。
+- `visit_latest`：owner 通过自己的 Visit 读取唯一 latest，且不依赖 owner-specific controlled response。
+- `same_report_controlled_read`：数据库基线完全相同、所有 owner 零产品写入，并以严格 route-scoped 的单次 controlled public response 区分展示；每次必须完整安装/移除拦截、恢复真实读取并重置页面/表单状态。
+- `same_report_sequential_read_only`：多个 owner 使用完全相同的数据库与公开读取状态，严格顺序执行、零产品写入，并在 owner 间真实 reload 或明确关闭表单以清除本地状态。
+- `isolated_visit_latest`：owner 独占 Visit/Report；适用于全部可写、并发、401、403、network abort、终止性 Session 或其他不得共享的边界。
+- `no_browser_route`：静态门禁，不解析 runtime navigationPath。
+
+不得新增 reportId 页面路由，不得通过在同一 Visit 放置多个不同状态的普通 Report 来降低数量，也不得新增 fixture Stage 反复切换普通只读状态。两个 owner 需要不同数据库状态时原则上使用不同 Visit；唯一共享例外必须同时满足：相同数据库基线、双方零产品写入、仅 route-scoped controlled response 区分、拦截完整收口、本地状态明确重置，且前一 owner 不改变 `updatedAt`、audit、Session 或服务端状态。
+
+### 1.4 其余固定枚举
 
 - `Session 策略`：`reuse_same_role_read_only`、`new_context_same_role`、`new_context_different_role`、`isolated_write_session`、`isolated_failure_session`、`no_browser_session`。
 - `根资源策略`：`shared_read_only_root`、`shared_patient_multiple_reports`、`isolated_report_same_patient`、`isolated_patient_visit_report`、`no_fixture_root`。
@@ -144,47 +159,47 @@ Fixture cluster 类型：`read_only_shared`、`write_isolated`、`concurrency_is
 
 ## 4. 候选业务 Browser owner 表
 
-下表保留全部 33 条现有正式 route。`visit-voided-v1` 仍只是 B12-15 支持 route，primary owner 仍为 `visit-locked-v1`；execution group 不改变 owner、primary/support 或当前 preparedState。
+下表保留全部 33 条现有正式 route。`visit-voided-v1` 仍只是 B12-15 支持 route，primary owner 仍为 `visit-locked-v1`；addressability、execution group 与共享前置不改变 owner、primary/support、route contract 或当前 preparedState。所有 `Latest-visible report count=1` 都表示该 owner 经当前 Visit 路由只能看到一个 latest Report。
 
-| 正式 owner route | 直接 Audit ID | 当前合法 fixture / route contract | G2 execution group | Route 特有断言 |
-|---|---|---|---|---|
-| `core-workflow/eligibility-state/draft-no-entry` | B12-01 | draft | `eg-doctor-eligibility-read-only` | draft 页面无入口 |
-| `core-workflow/eligibility-state/pending-no-entry` | B12-02 | pending_confirmation | `eg-doctor-eligibility-read-only` | pending 页面无入口 |
-| `core-workflow/eligibility-state/confirmed-doctor-entry` | B12-03、B12-04、B12-09～B12-11 | confirmed_unlocked | `eg-doctor-eligibility-read-only` | doctor 入口、未锁定文案和技术 status |
-| `core-workflow/eligibility-state/confirmed-admin-entry` | B12-05 | confirmed_unlocked | `eg-admin-eligibility-read-only` | admin 独立角色入口 |
-| `core-workflow/eligibility-state/denied-role-entry` | B12-06～B12-08 | confirmed_unlocked | `eg-denied-roles` | nurse/research 可读无入口；system 403 无泄露 |
-| `core-workflow/eligibility-state/quality-not-passed` | B12-12 | confirmed_quality_blocked | `eg-doctor-eligibility-read-only` | needs_review 阻断 |
-| `core-workflow/eligibility-state/finality-inconsistent` | B12-13 | confirmed_unlocked + controlled isFinal=false | `eg-doctor-eligibility-read-only` | 受控响应阻断；拦截独立安装/移除 |
-| `core-workflow/eligibility-state/confirmation-missing` | B12-14 | confirmed_confirmation_missing | `eg-doctor-eligibility-read-only` | 真实 409 fail-closed |
-| `core-workflow/eligibility-state/visit-locked-v1` | B12-15（primary owner） | confirmed_v1_visit_locked | `eg-doctor-eligibility-read-only` | Visit locked 分支 |
-| `core-workflow/eligibility-state/visit-voided-v1` | 支持 B12-15；primary owner 不变 | confirmed_v1_visit_voided | `eg-doctor-eligibility-read-only` | Visit voided 独立分支 |
-| `core-workflow/eligibility-state/already-locked-no-repeat` | B12-16 | historical_locked_fallback | `eg-doctor-eligibility-read-only` | 无重复入口且不猜测审计 |
-| `core-workflow/eligibility-state/lock-without-locked-at-warning` | B12-17 | confirmed_locked + controlled top-level null | `eg-doctor-eligibility-read-only` | 一致性警告；拦截独立收口 |
-| `core-workflow/eligibility-state/locked-at-without-lock-warning` | B12-18 | confirmed_locked + controlled lock null | `eg-doctor-eligibility-read-only` | 审计摘要不完整警告 |
-| `core-workflow/eligibility-state/lock-time-mismatch-warning` | B12-19 | confirmed_locked + controlled time mismatch | `eg-doctor-eligibility-read-only` | 时间不一致警告 |
-| `core-workflow/lock-form-contract/irreversible-disclosure` | B12-20～B12-25、B12-28～B12-29 | confirmed_unlocked | `eg-lock-form-read-only` | 提交前说明与空 note |
-| `core-workflow/lock-form-contract/validation-request-contract` | B12-26～B12-27、B12-30～B12-32 | confirmed_unlocked | `eg-lock-form-read-only` | 控件校验与一次中止 POST 连接 |
-| `core-workflow/success-idempotency/doctor-lock-success` | B12-33～B12-40、B12-44、B12-46～B12-48 | confirmed_unlocked | `eg-doctor-lock-write` | doctor 首锁与 UI receipt |
-| `core-workflow/success-idempotency/admin-lock-success` | B12-45；支持 B12-35～B12-38 | confirmed_unlocked | `eg-admin-lock-write` | admin actor 姓名/角色 |
-| `core-workflow/success-idempotency/already-locked-idempotency` | B12-41～B12-43 | confirmed_unlocked | `eg-already-locked-idempotency` | 双 Context false/true；仅 route 内共享目标 Report |
-| `core-workflow/conflict/lock-conflict-continue` | B12-49～B12-54 | confirmed_unlocked + lock-conflict-touch | `eg-lock-conflict-continue` | 409 后显式继续 |
-| `core-workflow/conflict/lock-conflict-latest-locked` | B12-55 | confirmed_unlocked + latest-locked touch | `eg-lock-conflict-latest-locked` | 双 Context 最新已锁定 |
-| `core-workflow/locked-readonly/locked-readonly-semantics` | B12-64～B12-70 | confirmed_locked | `eg-core-locked-read-only` | locked 页面只读与时间语义 |
-| `resilience-security/error-contract/audit-unavailable` | B12-56 | confirmed_unlocked + lock-audit-unavailable | `eg-audit-unavailable` | 不猜锁定人 |
-| `resilience-security/error-contract/metadata-unsupported` | B12-57 | confirmed_unlocked + lock-metadata-unsupported | `eg-metadata-unsupported` | 不显示 metadata |
-| `resilience-security/authorization/forbidden-lock` | B12-58 | confirmed_unlocked + forbidden-lock-role | `eg-forbidden-403` | 403 后报告/note 保留 |
-| `resilience-security/authorization/unauthorized-lock` | B12-59 | confirmed_unlocked | `eg-unauthorized-401` | Session 失效后 401/登录页 |
-| `resilience-security/network-failure/lock-network-abort` | B12-60 | confirmed_unlocked | `eg-network-abort` | 单次网络中止且无自动重试 |
-| `resilience-security/client-boundary/lock-beforeunload` | B12-61 | confirmed_unlocked | `eg-beforeunload` | 真实 beforeunload |
-| `resilience-security/client-boundary/storage-refresh` | B12-62～B12-63 | confirmed_unlocked | `eg-storage-refresh` | Storage/URL 与刷新丢草稿 |
-| `resilience-security/action-ownership/unsupported-actions` | B12-71～B12-77 | confirmed_unlocked（当前合同） | `eg-resilience-presentation-read-only` | 非 owner Action DOM/Network 支持 |
-| `resilience-security/presentation-safety/non-diagnostic-language` | B12-78～B12-80 | confirmed_unlocked（当前合同） | `eg-resilience-presentation-read-only` | 非诊断语言专属 DOM |
-| `resilience-security/presentation-safety/responsive-accessibility` | B12-81～B12-82 | confirmed_unlocked | `eg-responsive-accessibility` | viewport/Axe/focus/label |
-| `resilience-security/presentation-safety/auth-route-deidentified` | B12-83～B12-85 | confirmed_unlocked | `eg-auth-route-deidentified` | auth/CORS/deidentified 连接 |
+| 正式 owner route | 直接 Audit ID | 当前合法 fixture / route contract | G3-A execution group | Route addressability | Latest-visible report count | Shared report precondition | Route 特有断言 |
+|---|---|---|---|---|---:|---|---|
+| `core-workflow/eligibility-state/draft-no-entry` | B12-01 | draft | `eg-doctor-eligibility-read-only` | `visit_latest` | 1 | 不共享；draft 独立 Visit/Report | draft 页面无入口 |
+| `core-workflow/eligibility-state/pending-no-entry` | B12-02 | pending_confirmation | `eg-doctor-eligibility-read-only` | `visit_latest` | 1 | 不共享；pending 独立 Visit/Report | pending 页面无入口 |
+| `core-workflow/eligibility-state/confirmed-doctor-entry` | B12-03、B12-04、B12-09～B12-11 | confirmed_unlocked | `eg-doctor-eligibility-read-only` | `same_report_controlled_read` | 1 | 仅与 finality-inconsistent 共享合法 confirmed-unlocked；本 owner 真实读取，owner 间 reload、表单/监听清空，数据库零变化 | doctor 入口、未锁定文案和技术 status |
+| `core-workflow/eligibility-state/confirmed-admin-entry` | B12-05 | confirmed_unlocked | `eg-admin-eligibility-read-only` | `visit_latest` | 1 | 不跨角色/Session 共享 | admin 独立角色入口 |
+| `core-workflow/eligibility-state/denied-role-entry` | B12-06～B12-08 | confirmed_unlocked | `eg-denied-roles` | `same_report_sequential_read_only` | 1 | nurse/research 只读共享同一 latest；system 独立 Context 真实 403；三者零业务写入、Cookie/Context 分离 | nurse/research 可读无入口；system 403 无泄露 |
+| `core-workflow/eligibility-state/quality-not-passed` | B12-12 | confirmed_quality_blocked | `eg-doctor-eligibility-read-only` | `visit_latest` | 1 | 不共享；quality 数据库状态独立 | needs_review 阻断 |
+| `core-workflow/eligibility-state/finality-inconsistent` | B12-13 | confirmed_unlocked + controlled isFinal=false | `eg-doctor-eligibility-read-only` | `same_report_controlled_read` | 1 | 与 confirmed-doctor-entry 共享同一合法 Report；只改 initial public response 的 `report.isFinal`，单次安装/移除拦截后恢复真实读取，零服务端写入 | 受控响应阻断；拦截独立安装/移除 |
+| `core-workflow/eligibility-state/confirmation-missing` | B12-14 | confirmed_confirmation_missing | `eg-doctor-eligibility-read-only` | `visit_latest` | 1 | 不共享；真实 409 状态独立 | 真实 409 fail-closed |
+| `core-workflow/eligibility-state/visit-locked-v1` | B12-15（primary owner） | confirmed_v1_visit_locked | `eg-doctor-eligibility-read-only` | `visit_latest` | 1 | 不共享；Visit locked 独立 Visit/Report | Visit locked 分支 |
+| `core-workflow/eligibility-state/visit-voided-v1` | 支持 B12-15；primary owner 不变 | confirmed_v1_visit_voided | `eg-doctor-eligibility-read-only` | `visit_latest` | 1 | 不共享；Visit voided 独立 Visit/Report | Visit voided 独立分支 |
+| `core-workflow/eligibility-state/already-locked-no-repeat` | B12-16 | historical_locked_fallback | `eg-doctor-eligibility-read-only` | `visit_latest` | 1 | 不共享；historical fallback 独立 Visit/Report | 无重复入口且不猜测审计 |
+| `core-workflow/eligibility-state/lock-without-locked-at-warning` | B12-17 | confirmed_locked + controlled top-level null | `eg-doctor-eligibility-read-only` | `same_report_controlled_read` | 1 | 三个 warning 共用同一合法 confirmed-locked Report；本 owner 单次 controlled response，结束后 unroute、真实 reload、零 `updatedAt`/audit/Session 变化 | 一致性警告；拦截独立收口 |
+| `core-workflow/eligibility-state/locked-at-without-lock-warning` | B12-18 | confirmed_locked + controlled lock null | `eg-doctor-eligibility-read-only` | `same_report_controlled_read` | 1 | 与另两个 warning 同基线；本 owner 单次 controlled response，结束后恢复真实读取并清空 listener/页面状态 | 审计摘要不完整警告 |
+| `core-workflow/eligibility-state/lock-time-mismatch-warning` | B12-19 | confirmed_locked + controlled time mismatch | `eg-doctor-eligibility-read-only` | `same_report_controlled_read` | 1 | 与另两个 warning 同基线；本 owner 单次 controlled response，结束后恢复真实读取并证明数据库 hash 不变 | 时间不一致警告 |
+| `core-workflow/lock-form-contract/irreversible-disclosure` | B12-20～B12-25、B12-28～B12-29 | confirmed_unlocked | `eg-lock-form-read-only` | `same_report_sequential_read_only` | 1 | 仅在无成功 POST、明确关闭表单/真实 reload、draft/listener 清空且 `updatedAt` 不变时与 validation owner 共享 | 提交前说明与空 note |
+| `core-workflow/lock-form-contract/validation-request-contract` | B12-26～B12-27、B12-30～B12-32 | confirmed_unlocked | `eg-lock-form-read-only` | `same_report_sequential_read_only` | 1 | 单次 abort 必须在服务端前终止；Network 与 verifier 证明零 mutation、`updatedAt` 不变，随后关闭表单/真实 reload；否则回退独立 Visit/Report | 控件校验与一次中止 POST 连接 |
+| `core-workflow/success-idempotency/doctor-lock-success` | B12-33～B12-40、B12-44、B12-46～B12-48 | confirmed_unlocked | `eg-doctor-lock-write` | `isolated_visit_latest` | 1 | 禁止共享；可写 Report 独占 | doctor 首锁与 UI receipt |
+| `core-workflow/success-idempotency/admin-lock-success` | B12-45；支持 B12-35～B12-38 | confirmed_unlocked | `eg-admin-lock-write` | `isolated_visit_latest` | 1 | 禁止共享；admin 可写 Report 与 Session 独占 | admin actor 姓名/角色 |
+| `core-workflow/success-idempotency/already-locked-idempotency` | B12-41～B12-43 | confirmed_unlocked | `eg-already-locked-idempotency` | `isolated_visit_latest` | 1 | 仅正式 owner 内双 Context 协同同一专属 Report；不跨 owner 共享 | 双 Context false/true；仅 route 内共享目标 Report |
+| `core-workflow/conflict/lock-conflict-continue` | B12-49～B12-54 | confirmed_unlocked + lock-conflict-touch | `eg-lock-conflict-continue` | `isolated_visit_latest` | 1 | 禁止共享；Stage、updatedAt、A22 与 Report 独占 | 409 后显式继续 |
+| `core-workflow/conflict/lock-conflict-latest-locked` | B12-55 | confirmed_unlocked + latest-locked touch | `eg-lock-conflict-latest-locked` | `isolated_visit_latest` | 1 | 仅正式 owner 内双 Context 协同；与另一 conflict 不共享 | 双 Context 最新已锁定 |
+| `core-workflow/locked-readonly/locked-readonly-semantics` | B12-64～B12-70 | confirmed_locked | `eg-core-locked-read-only` | `visit_latest` | 1 | core 独立只读根，不与 warning controlled-read 根混用 | locked 页面只读与时间语义 |
+| `resilience-security/error-contract/audit-unavailable` | B12-56 | confirmed_unlocked + lock-audit-unavailable | `eg-audit-unavailable` | `isolated_visit_latest` | 1 | 错误 Stage/Session/Report 独占 | 不猜锁定人 |
+| `resilience-security/error-contract/metadata-unsupported` | B12-57 | confirmed_unlocked + lock-metadata-unsupported | `eg-metadata-unsupported` | `isolated_visit_latest` | 1 | 错误 Stage/Session/Report 独占 | 不显示 metadata |
+| `resilience-security/authorization/forbidden-lock` | B12-58 | confirmed_unlocked + forbidden-lock-role | `eg-forbidden-403` | `isolated_visit_latest` | 1 | 403 role Stage、Context、Report 独占 | 403 后报告/note 保留 |
+| `resilience-security/authorization/unauthorized-lock` | B12-59 | confirmed_unlocked | `eg-unauthorized-401` | `isolated_visit_latest` | 1 | 401 失效 Session 与 Report 独占 | Session 失效后 401/登录页 |
+| `resilience-security/network-failure/lock-network-abort` | B12-60 | confirmed_unlocked | `eg-network-abort` | `isolated_visit_latest` | 1 | abort handler、pending request、Session 与 Report 独占 | 单次网络中止且无自动重试 |
+| `resilience-security/client-boundary/lock-beforeunload` | B12-61 | confirmed_unlocked | `eg-beforeunload` | `isolated_visit_latest` | 1 | dialog、dirty draft、listener 与 Session 独占 | 真实 beforeunload |
+| `resilience-security/client-boundary/storage-refresh` | B12-62～B12-63 | confirmed_unlocked | `eg-storage-refresh` | `isolated_visit_latest` | 1 | refresh/Storage 终止性 Session 与 Report 独占 | Storage/URL 与刷新丢草稿 |
+| `resilience-security/action-ownership/unsupported-actions` | B12-71～B12-77 | confirmed_unlocked（当前合同） | `eg-resilience-presentation-read-only` | `same_report_sequential_read_only` | 1 | 仅与 non-diagnostic-language 共用相同公开状态；双方零写入，owner 间真实 reload、DOM/listener 清空 | 非 owner Action DOM/Network 支持 |
+| `resilience-security/presentation-safety/non-diagnostic-language` | B12-78～B12-80 | confirmed_unlocked（当前合同） | `eg-resilience-presentation-read-only` | `same_report_sequential_read_only` | 1 | 与 unsupported-actions 同基线、零写入；必须重新扫描专属 DOM，前一 owner 不留下页面状态 | 非诊断语言专属 DOM |
+| `resilience-security/presentation-safety/responsive-accessibility` | B12-81～B12-82 | confirmed_unlocked | `eg-responsive-accessibility` | `visit_latest` | 1 | 独立 viewport/focus 根 | viewport/Axe/focus/label |
+| `resilience-security/presentation-safety/auth-route-deidentified` | B12-83～B12-85 | confirmed_unlocked | `eg-auth-route-deidentified` | `isolated_visit_latest` | 1 | auth/logout/Cookie/CORS 终止性 Session 与 Report 独占；B12-84 主证据仍是 static route gate | auth/CORS/deidentified 连接 |
 
-## 5. Browser execution group 表
+## 5. G3-A Browser execution group 与 Owner result journal
 
-只组合同角色、零写入、合法只读状态或同 profile 共享实现。doctor/admin 不混合；nurse/research/system 使用三个 Context；首次锁定、alreadyLocked、两类 conflict、401、403、network abort、beforeunload、Storage/auth 终止性 Session 均隔离。
+以下只描述 G3-A execution layer 候选。G3-A 只组合同角色、零写入、合法只读状态或同 profile 共享实现；fixture 仍保持现有 33 套 roots、builder、manifest、runtime descriptor schema、Stage、verifier 与 cleanup，不采用第 6 节的 cluster root 减量。doctor/admin 不混合；nurse/research/system 使用三个 Context；首次锁定、alreadyLocked、两类 conflict、401、403、network abort、beforeunload、Storage/auth 终止性 Session 均隔离。
 
 | groupKey | role / Context | owner routes | Audit ID | Session 次数 | fixture cluster | 写入 | 后置验证 | 失败范围 |
 |---|---|---|---|---:|---|---|---|---|
@@ -209,55 +224,118 @@ Fixture cluster 类型：`read_only_shared`、`write_isolated`、`concurrency_is
 | `eg-storage-refresh` | doctor / 1 隔离 Context | storage-refresh | B12-62～B12-63 | 1 | `fc-storage-refresh-client-boundary` | 否 | baseline/hash 不变 | cross_cutting_group |
 | `eg-auth-route-deidentified` | doctor / 1 隔离 Context | auth-route-deidentified | B12-83～B12-85 | 1 | `fc-auth-cross-cutting` | 否 | Session/logout 完整收口 | cross_cutting_group |
 
-合计：33 条 route → 20 个 execution group、24 个 Context/Session。公共登录/导航失败只影响尚未完成 owner；已完成且安全收集的 owner 不自动归零。
+合计：33 条 route → 20 个 execution group、24 个 Context/Session。G3-A 的 fixture roots、Patient、Visit、Report 与 runtime descriptor 数均不减少。公共登录/导航失败只影响尚未开始的 owner；已完成且安全收集的 owner 不自动归零。
+
+### 5.1 Owner result journal
+
+G3-A 必须为 33 条 owner route 各写一条内存 journal 记录，并在 test 结束前输出脱敏、可归因的结构化结果；同一 execution group 的 Playwright test 最终失败不等于组内所有 owner 失败。最小结构为：
+
+```text
+{
+  auditOwner,
+  executionGroup,
+  fixtureCluster,
+  started,
+  businessAssertionsCompleted,
+  routeNetworkCompleted,
+  minimalCleanupCompleted,
+  result: pass | fail | not_executed | blocked_by_group_setup,
+  failureCategory,
+  directAuditIds,
+  supportingEvidenceCompleted
+}
+```
+
+`failureCategory` 至少区分 `none`、`product`、`owner_assertion`、`route_network`、`group_setup_auth`、`shared_support`、`fixture`、`cross_cutting`、`cleanup` 与 `unknown`；它只描述该 owner 的失败来源，不迁移 Audit owner。journal 规则固定如下：
+
+1. owner 开始前先建立记录；成功完成业务断言、route-specific Network/Console 与最小清理后才可记 `pass`。
+2. 同组一个 owner 失败，只把该 owner 记 `fail`；已完成 owner 的字段与结果保持，不因 test 最终失败归零。
+3. 公共登录或 group setup 失败时，尚未开始的 owner 记 `blocked_by_group_setup`，不得记产品 `fail`；从未调度的 owner 记 `not_executed`。
+4. 公共 support 在第二个 owner 再次失败时立即停止该 group，保留已完成 owner journal；不得用 soft assertion 让未知污染继续传播。
+5. 每个 owner 后都执行 minimal cleanup：移除 route-scoped intercept、清除 local draft、收口 pending request、移除 owner-specific listener，并记录 `minimalCleanupCompleted`。
+6. group 结束仍对每个所有权明确的 Context 执行一次真实 logout（仅既有合同允许的 system fallback 例外）并关闭 Context；group 级完整 collect/cleanup 失败不改写已完成 owner 的业务字段，但阻止 group/profile 宣布完成。
+7. `supportingEvidenceCompleted` 只表示共享基础证据完成，不得据此把 supporting Audit ID 记 pass；Direct Audit ID 仍由正式 owner 的特有断言决定。
 
 ## 6. Fixture state cluster 表
 
-G2 只提出候选 cluster，不改当前 33 套独立根。共享 Patient/Visit 只用于零写入且状态兼容的 route；每个 eligibility 状态仍用独立 Report。controlled public response 使用合法数据库状态与 route-scoped 拦截，不新增数据库非法状态。所有可写或并发 route 各自独占 Report；双 Context 只在同一正式并发 owner 内协同其专属 Report。
+本节只描述须在 G3-A 稳定并另行获批后才能实施的 G3-B 候选；G3-A 不使用这些减量数字。cluster 必须以现有 Visit 路由可寻址，表中每个 Visit 恰有一个 latest-visible cognitive assessment Report。所有可写或并发 route 各自独占 Report；双 Context 只在同一正式并发 owner 内协同其专属 Report。
 
-| clusterKey | 类型 | 合法状态 | owner route | Patient | Visit | Report | 可写 Report | Session 复用 | 根共享 | Stage | cleanup ownership | 污染风险 |
-|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
-| `fc-doctor-eligibility-shared` | `read_only_shared` | 12 个合法只读状态/受控响应 | 12 条 doctor eligibility route | 1 | 3 | 12 | 0 | 是 | 共享 Patient；3 Visit；每状态独立 Report | 无 | core profile | 拦截或 Visit 状态外溢 |
-| `fc-admin-eligibility-isolated` | `read_only_shared` | confirmed_unlocked | confirmed-admin-entry | 1 | 1 | 1 | 0 | 否 | 独立根 | 无 | core profile | 不得与 admin 写 route 共根 |
-| `fc-denied-role-shared-root` | `authorization_isolated` | confirmed_unlocked | denied-role-entry 三角色 | 1 | 1 | 1 | 0 | 否：3 Context | 三角色只读共享根 | 无 | core profile | 角色 Cookie/Context 串用 |
-| `fc-lock-form-shared-patient` | `read_only_shared` | 2 个 confirmed_unlocked Report | 两个 lock-form route | 1 | 1 | 2 | 0 | 是 | 共享 Patient/Visit；Report 隔离 | 无 | core profile | 中止 POST 泄漏写入 |
-| `fc-doctor-lock-write` | `write_isolated` | confirmed_unlocked | doctor-lock-success | 1 | 1 | 1 | 1 | 否 | 独立根 | 无 | core profile | A22/updatedAt 污染 |
-| `fc-admin-lock-write` | `write_isolated` | confirmed_unlocked | admin-lock-success | 1 | 1 | 1 | 1 | 否 | 独立根 | 无 | core profile | actor/终态污染 |
-| `fc-idempotency-concurrency` | `concurrency_isolated` | confirmed_unlocked | already-locked-idempotency | 1 | 1 | 1 | 1 | 否：route 内 2 Context | owner route 独占；仅 route 内协同 | 无 | core profile | 第二份 A22 或额外 POST |
-| `fc-conflict-continue` | `concurrency_isolated` | confirmed_unlocked | lock-conflict-continue | 1 | 1 | 1 | 1 | 否 | 独立根 | lock-conflict-touch | core profile | Stage/updatedAt 交叉 |
-| `fc-conflict-latest-locked` | `concurrency_isolated` | confirmed_unlocked | lock-conflict-latest-locked | 1 | 1 | 1 | 1 | 否：route 内 2 Context | owner route 独占 | lock-conflict-latest-locked-touch | core profile | Primary 写入或跨 route 共 Report |
-| `fc-core-locked-read-only` | `read_only_shared` | confirmed_locked | locked-readonly-semantics | 1 | 1 | 1 | 0 | 否 | core 独立只读根 | 无 | core profile | locked baseline 被写 |
-| `fc-resilience-presentation-shared-root` | `cross_cutting_shared` | confirmed_unlocked（当前合同；locked 候选待批） | unsupported-actions；non-diagnostic-language | 1 | 1 | 1 | 0 | 是 | profile 内共享只读根 | 无 | resilience profile | 两 route 出现不可互换状态 |
-| `fc-responsive-unlocked` | `cross_cutting_shared` | confirmed_unlocked | responsive-accessibility | 1 | 1 | 1 | 0 | 否 | 独立根 | 无 | resilience profile | viewport/focus 外溢 |
-| `fc-audit-unavailable-stage` | `write_isolated` | 精确不一致审计事实 | audit-unavailable | 1 | 1 | 1 | 0 | 否 | 独立根 | lock-audit-unavailable | resilience profile | Stage 越界 |
-| `fc-metadata-unsupported-stage` | `write_isolated` | fixed unsupported metadata | metadata-unsupported | 1 | 1 | 1 | 0 | 否 | 独立根 | lock-metadata-unsupported | resilience profile | metadata 外溢 |
-| `fc-forbidden-authorization` | `authorization_isolated` | confirmed_unlocked + role Stage | forbidden-lock | 1 | 1 | 1 | 0 | 否 | 独立根 | forbidden-lock-role | resilience profile | 角色状态外溢 |
-| `fc-unauthorized-authorization` | `authorization_isolated` | confirmed_unlocked | unauthorized-lock | 1 | 1 | 1 | 0 | 否 | 独立根/失效 Session | 无 | resilience profile | 401/403 混淆 |
-| `fc-network-abort` | `network_failure_isolated` | confirmed_unlocked | lock-network-abort | 1 | 1 | 1 | 0 | 否 | 独立根/失败 Session | 无 | resilience profile | abort 外溢 |
-| `fc-beforeunload-client-boundary` | `cross_cutting_shared` | confirmed_unlocked | lock-beforeunload | 1 | 1 | 1 | 0 | 否 | 独立根/dialog Session | 无 | resilience profile | dirty/dialog 外溢 |
-| `fc-storage-refresh-client-boundary` | `cross_cutting_shared` | confirmed_unlocked | storage-refresh | 1 | 1 | 1 | 0 | 否 | 独立根/refresh Session | 无 | resilience profile | Storage/receipt 污染 |
-| `fc-auth-cross-cutting` | `cross_cutting_shared` | confirmed_unlocked | auth-route-deidentified | 1 | 1 | 1 | 0 | 否 | 独立根/auth Session | 无 | resilience profile | logout/Cookie 外溢 |
-| `fc-static-no-fixture` | `static_no_fixture` | 无运行时状态 | lint/typecheck/build | 0 | 0 | 0 | 0 | 不适用 | no_fixture_root | 无 | 无 | 最终代码态变化 |
+| clusterKey | 类型 | owner route | Route addressability | Shared report precondition | Patient | Visit | Report | Latest-visible report count | 可写 Report | Stage / 隔离事实 |
+|---|---|---|---|---|---:|---:|---:|---:|---:|---|
+| `fc-doctor-eligibility-shared` | `read_only_shared` | 12 条 doctor eligibility route | `visit_latest` + `same_report_controlled_read` | confirmed-doctor/finality 共用 1 个合法 unlocked；三个 warning 共用 1 个合法 locked；其他不同数据库状态各用独立 Visit | 1 | 9 | 9 | 9 | 0 | 无 Stage；逐 owner unroute/reload/hash |
+| `fc-admin-eligibility-isolated` | `read_only_shared` | confirmed-admin-entry | `visit_latest` | 不跨角色或 admin write 共享 | 1 | 1 | 1 | 1 | 0 | 独立 Session/root |
+| `fc-denied-role-shared-root` | `authorization_isolated` | denied-role-entry 三角色 | `same_report_sequential_read_only` | 相同数据库状态、零业务写入；三 Context/Cookie 分离，system 真实 403 | 1 | 1 | 1 | 1 | 0 | 无 Stage；角色收口独立 |
+| `fc-lock-form-shared-patient` | `read_only_shared` | 两个 lock-form route | `same_report_sequential_read_only` | 只有 G3-A journal/Network/verifier 证明首 owner 无成功 POST、abort 未到服务端、`updatedAt` 不变且页面草稿明确清理时才共用；否则回退 1 Patient / 2 Visit / 2 Report | 1 | 1 | 1 | 1 | 0 | 无 Stage；条件不满足即禁用共享 |
+| `fc-doctor-lock-write` | `write_isolated` | doctor-lock-success | `isolated_visit_latest` | 禁止共享 | 1 | 1 | 1 | 1 | 1 | doctor A22 独占 |
+| `fc-admin-lock-write` | `write_isolated` | admin-lock-success | `isolated_visit_latest` | 禁止共享 | 1 | 1 | 1 | 1 | 1 | admin A22/actor 独占 |
+| `fc-idempotency-concurrency` | `concurrency_isolated` | already-locked-idempotency | `isolated_visit_latest` | 仅 owner 内双 Context 协同，不跨 owner 共享 | 1 | 1 | 1 | 1 | 1 | Secondary A22 1；Primary note 不持久化 |
+| `fc-conflict-continue` | `concurrency_isolated` | lock-conflict-continue | `isolated_visit_latest` | 禁止共享 | 1 | 1 | 1 | 1 | 1 | `lock-conflict-touch` 独占 |
+| `fc-conflict-latest-locked` | `concurrency_isolated` | lock-conflict-latest-locked | `isolated_visit_latest` | 仅 owner 内双 Context 协同 | 1 | 1 | 1 | 1 | 1 | `lock-conflict-latest-locked-touch` 独占 |
+| `fc-core-locked-read-only` | `read_only_shared` | locked-readonly-semantics | `visit_latest` | 不与 warning controlled-read 根共享 | 1 | 1 | 1 | 1 | 0 | locked baseline/hash 不变 |
+| `fc-resilience-presentation-shared-root` | `cross_cutting_shared` | unsupported-actions；non-diagnostic-language | `same_report_sequential_read_only` | 相同 confirmed-unlocked 公开状态、零写入，owner 间真实 reload/DOM/listener 清空 | 1 | 1 | 1 | 1 | 0 | 不引入 locked 候选或新 Stage |
+| `fc-responsive-unlocked` | `cross_cutting_shared` | responsive-accessibility | `visit_latest` | 独立 viewport/focus 根 | 1 | 1 | 1 | 1 | 0 | viewport/focus 收口 |
+| `fc-audit-unavailable-stage` | `write_isolated` | audit-unavailable | `isolated_visit_latest` | 禁止共享 | 1 | 1 | 1 | 1 | 0 | `lock-audit-unavailable` 独占 |
+| `fc-metadata-unsupported-stage` | `write_isolated` | metadata-unsupported | `isolated_visit_latest` | 禁止共享 | 1 | 1 | 1 | 1 | 0 | `lock-metadata-unsupported` 独占 |
+| `fc-forbidden-authorization` | `authorization_isolated` | forbidden-lock | `isolated_visit_latest` | 403 语义、Context 与 Report 独占 | 1 | 1 | 1 | 1 | 0 | `forbidden-lock-role` 独占 |
+| `fc-unauthorized-authorization` | `authorization_isolated` | unauthorized-lock | `isolated_visit_latest` | 401 失效 Session 与 Report 独占 | 1 | 1 | 1 | 1 | 0 | 不与 403 共根 |
+| `fc-network-abort` | `network_failure_isolated` | lock-network-abort | `isolated_visit_latest` | abort handler、pending request、Session 与 Report 独占 | 1 | 1 | 1 | 1 | 0 | abort 不得到达服务端 |
+| `fc-beforeunload-client-boundary` | `cross_cutting_shared` | lock-beforeunload | `isolated_visit_latest` | dialog/dirty state/Session 独占 | 1 | 1 | 1 | 1 | 0 | owner listener 精确移除 |
+| `fc-storage-refresh-client-boundary` | `cross_cutting_shared` | storage-refresh | `isolated_visit_latest` | refresh/Storage 终止性 Session 独占 | 1 | 1 | 1 | 1 | 0 | draft/Storage 清空 |
+| `fc-auth-cross-cutting` | `cross_cutting_shared` | auth-route-deidentified | `isolated_visit_latest` | logout/Cookie/CORS Session 独占 | 1 | 1 | 1 | 1 | 0 | 真实 logout/Context 关闭 |
+| `fc-static-no-fixture` | `static_no_fixture` | lint/typecheck/build | `no_browser_route` | 不适用 | 0 | 0 | 0 | 0 | 0 | 无 runtime/fixture |
 
-候选 Browser roots 总计：20 Patient、22 Visit、32 Report、5 可写 Report。只读共享安全依据：无服务端写入、状态各有独立 Report、拦截逐 route 安装/移除、baseline/hash 可逐 Report 对账；Visit locked/voided 因 Visit 状态不可互换使用独立 Visit。
+### 6.1 Doctor eligibility 逐状态重算
+
+Draft v2 的 `1 Patient / 3 Visit / 12 Report` 不可达：3 个 Visit 最多只能暴露 3 个 latest Report。Draft v3 不硬编码结论，而按状态与共享规则逐行求和：
+
+| 状态单元 | owner route | Visit | Report | 共享理由 |
+|---|---|---:|---:|---|
+| draft | draft-no-entry | 1 | 1 | 独立数据库状态 |
+| pending_confirmation | pending-no-entry | 1 | 1 | 独立数据库状态 |
+| confirmed-unlocked baseline | confirmed-doctor-entry + finality-inconsistent | 1 | 1 | 相同合法基线；finality 只改 initial public response 的 `isFinal` |
+| quality blocked | quality-not-passed | 1 | 1 | 独立数据库状态 |
+| confirmation missing | confirmation-missing | 1 | 1 | 独立数据库状态与真实 409 |
+| Visit locked | visit-locked-v1 | 1 | 1 | Visit 状态不可互换 |
+| Visit voided | visit-voided-v1 | 1 | 1 | Visit 状态不可互换 |
+| historical locked fallback | already-locked-no-repeat | 1 | 1 | 与合法 locked baseline 不同 |
+| legal confirmed-locked baseline | 三个 lock consistency warning | 1 | 1 | 每 owner 单次 controlled response，之后恢复真实读取 |
+| **合计** | 12 条 route | **9** | **9** | 共享 1 个 Patient；9 个 Visit 各有 1 个可见 latest |
+
+因此修订前后预算为 `1/3/12 → 1/9/9`（Patient/Visit/Report）。这不是把 9 当常量写入 builder，而是上述 9 个可复算状态单元的和。
+
+### 6.2 Lock-form 逐 owner重算
+
+Draft v2 的 `1 Patient / 1 Visit / 2 Report` 同样不可达，因为 Browser 只能看到其中一个 latest。两个 owner 都是零服务端写入意图：`irreversible-disclosure` 不提交；`validation-request-contract` 的唯一 POST 必须由 one-shot abort 在到达服务端前终止。G3-B 的 `1/1/1` 预算只有在 G3-A 证据同时满足以下四项后才生效：
+
+1. `irreversible-disclosure` journal 与 Network 证明成功 POST 为 0；
+2. `validation-request-contract` 证明 abort 未到达服务端，且没有 retry/polling；
+3. owner 前后 verifier/hash 证明 `report.updatedAt`、audit 与服务端状态不变；
+4. 两 owner 之间明确关闭表单或真实 reload，并证明 local draft、pending request 与 owner listener 已清理。
+
+任一条件未证明，G3-B 自动使用可寻址回退 `1 Patient / 2 Visit / 2 Report`，不得使用 `1 Visit / 2 Report`。修订前后预算因此为 `1/1/2 → 条件式 1/1/1（回退 1/2/2）`。
+
+### 6.3 Cluster 可寻址性合计
+
+采用经 G3-A 证明的 lock-form 共享前提时，G3-B 候选共 `20 Patient / 28 Visit / 28 Report / 28 latest-visible Report / 5 可写 Report`：eligibility 为 `1/9/9`，lock-form 为 `1/1/1`，其余 18 个非静态 cluster 各为 `1/1/1`。若 lock-form 前提未满足，则为 `20/29/29/29`。两种路径均保证每 Visit 恰有一个 latest-visible Report；不可达 cluster 为 0，同 Visit 多普通 Report 被当成分别可达的设计为 0，可写 Report 跨 owner 共享为 0。
 
 ## 7. 横切 Browser 代表表
 
-横切代表只证明共享 Browser 实现路径，不充当业务行为代表。每个业务 route 仍保留：Context 关闭；Session 真实 logout 或明确失效；route 特有 Network；route 特有 Console/pageerror；本地草稿/业务状态；runtime 清理。
+横切代表只证明共享实现路径。`Direct Audit IDs` 只有在稳定要求本身就是该横切事实、且 representative route 是其正式 owner 时才能直接关闭；`Supporting Audit IDs` 仍须各自 owner route 完成特有断言；`Non-audit quality gate` 没有稳定 B12 ID，失败可阻止 group/profile 完成，但不得把无关业务 ID 记 fail。每个业务 route 仍保留 Context 关闭、真实 logout 或明确失效、route-specific Network/Console/pageerror、本地草稿/业务状态与 runtime 清理。
 
-| 横切组 | representative group | representative route | 直接 ID | 共享实现路径 | 不重复 route | 失败范围 | 业务最小保留 |
-|---|---|---|---|---|---|---|---|
-| `auth_lifecycle` | `eg-auth-route-deidentified` | `presentation-safety/auth-route-deidentified` | B12-59、B12-83 | 五阶段 auth ledger/auth shell | 除 401 特有 route 外不重复完整五阶段 | 只影响映射 ID | 认证前置、自有 auth/network、Context 关闭 |
-| `logout_cookie` | `eg-auth-route-deidentified` | `presentation-safety/auth-route-deidentified` | B12-59、B12-83 | logout/Cookie/post-logout 401 | 其余 owner 不跑完整 Cookie 生命周期 | 只影响映射 ID | 真实 logout 或明确失效 |
-| `storage_url_privacy` | `eg-storage-refresh` | `client-boundary/storage-refresh` | B12-61～B12-63 | runtime-audit + dirty draft + refresh | 空表单/纯只读/后端错误 route | 只影响 B12-61～63 | 草稿和业务状态逐 route |
-| `console_network` | `eg-doctor-lock-write` | `success-idempotency/doctor-lock-success` | B12-31～32、B12-42、B12-51～52、B12-56～60 | ConsoleAudit/NetworkLedger 基线 | 无关 eligibility/read-only route | 横切组；不替代错误 route | 精确 endpoint/status/count/Console/pageerror |
-| `dom_sensitive_data` | `eg-doctor-lock-write` | `success-idempotency/doctor-lock-success` | B12-44～48、B12-56～57、B12-78～80 | 全 DOM privacy scan | 其余 route 不跑全页面扫描 | 横切组；不影响 mutation | 专属不猜测/不显示/正文分区 |
-| `action_ownership` | `eg-resilience-presentation-read-only` | `action-ownership/unsupported-actions` | B12-71～77 | DOM 入口/API owner/零请求 | 其余 owner 不扫七类 Action | 只影响 B12-71～77 | B12-22～25、64～67 仍直接断言 |
-| `responsive_accessibility` | `eg-responsive-accessibility` | `presentation-safety/responsive-accessibility` | B12-81～82 | viewport/focus/label/ARIA/Axe | 其余 owner 不跑全矩阵 | 只影响 B12-81～82 | route 特有控件状态 |
-| `cors_origin` | `eg-auth-route-deidentified` | `presentation-safety/auth-route-deidentified` | B12-83 | 真实双 origin/credentials | 其余 owner 不跑全 CORS | 只影响 B12-83 | route 自有 HTTP 状态 |
-| `deidentified_fixture` | `eg-auth-route-deidentified` | `presentation-safety/auth-route-deidentified` | B12-85 | Browser/runtime safe output | 其余 owner 不扫全 fixture 输出 | 只影响 B12-85 支持 | 每 route 禁止自身敏感动态值；verifier 为主 |
+| 横切组 | Direct Audit IDs | Supporting Audit IDs | Non-audit quality gate | Representative route | Failure mapping |
+|---|---|---|---|---|---|
+| `auth_lifecycle` | B12-83 | B12-58、B12-59 | 否 | `presentation-safety/auth-route-deidentified` | 精确 auth lifecycle 断言失败只直接映射 B12-83；B12-58 的 403 保留/恢复与 B12-59 的 401 登录页仍由各自 route 决定，代表 route 不关闭 B12-59 |
+| `logout_cookie` | ∅ | B12-59、B12-83 | 是：logout/Cookie/post-logout profile gate | `presentation-safety/auth-route-deidentified` | gate 失败阻止 profile 完成；B12-59、B12-83 不因此自动记产品 fail，分别回到 unauthorized 与 auth owner |
+| `storage_url_privacy` | B12-62、B12-63 | B12-61 | 否 | `client-boundary/storage-refresh` | storage-refresh 可直接判断 B12-62/63；B12-61 仍由 beforeunload owner 的真实 dialog/dirty-state 断言关闭 |
+| `console_network` | ∅ | B12-31～B12-32、B12-42、B12-51～B12-52、B12-56～B12-60 | 是：通用 ConsoleAudit / NetworkLedger collector gate | `success-idempotency/doctor-lock-success` | collector 失败阻止 profile 完成但不直接关闭或判 fail 这些 ID；每个 ID 保留自己的 endpoint/status/count/recovery，B12-31/32 仍由实际 A22 route 与非 Browser 主证据共同关闭 |
+| `dom_sensitive_data` | B12-44～B12-48 | B12-56～B12-57、B12-78～B12-80 | 是：代表页全 DOM 敏感数据扫描 | `success-idempotency/doctor-lock-success` | doctor-lock-success 直接承担其正式 owner B12-44～48；B12-56/57 必须由两个 error route 验证不猜测/不显示，B12-78～80 必须由 non-diagnostic-language 直接验证；全页扫描只作支持 |
+| `action_ownership` | B12-71～B12-77 | B12-22～B12-25、B12-64～B12-67 | 否 | `action-ownership/unsupported-actions` | representative 直接映射 B12-71～77；表单和 locked-readonly 的控件/请求要求仍由各自 owner 直接断言 |
+| `responsive_accessibility` | B12-81～B12-82 | ∅ | 否 | `presentation-safety/responsive-accessibility` | viewport/focus/label/ARIA/Axe 失败只映射 B12-81/82，不扩散到其他 route |
+| `cors_origin` | ∅ | B12-83 | 是：真实 origin/credentials profile gate | `presentation-safety/auth-route-deidentified` | CORS gate 失败阻止 profile 完成，但不等同 B12-83；B12-83 仍由精确 auth lifecycle owner 断言 |
+| `deidentified_fixture` | B12-85 | ∅ | 否 | `presentation-safety/auth-route-deidentified` | safe manifest/verifier 与 Browser/runtime safe-output 连接共同直接判断 B12-85，不影响其他业务 ID |
+| `static_route_gate` | B12-84 | ∅ | 否 | `static-gate/no-new-route`；Browser 由 `presentation-safety/auth-route-deidentified` 支持连接 | 只有 static route gate 可直接关闭 B12-84；Browser auth route 仅提供支持，不能替代静态 route 存在性判断 |
 
-其他 route 不重复完整五阶段认证、全 Storage/URL、全 DOM 敏感扫描、Axe、全 viewport 或全部无关 Action endpoint；它们仍完成自身状态、控件、错误恢复、精确请求和数据库终态连接。
+Direct Audit ID 在本表中各出现一次；同一行 Direct 与 Supporting 交集为 0。Supporting ID 可以在其真正拥有的另一横切事实中作为 Direct，但 representative 不获得该业务 ID 的所有权。其他 route 不重复完整五阶段认证、全 Storage/URL、全 DOM 敏感扫描、Axe、全 viewport 或全部无关 Action endpoint；它们仍完成自身状态、控件、错误恢复、精确请求和数据库终态连接。
 
 ## 8. 非 Browser 主证据表
 
@@ -273,37 +351,49 @@ backend unit、fixture E2E、mapper unit、synthetic 与 verifier 可作辅助�
 
 ## 9. 失败隔离与证据保存
 
-1. Route 特有断言失败：只影响该 owner route 及直接 Audit ID；同 route 各 ID 分别记录。
-2. Execution group 公共登录/导航失败：只影响尚未完成的同组 owner；已完成且收集成功的 owner 不自动归零。
-3. 横切代表失败：只影响映射横切组的 ID；其他业务 ID 不失败。
-4. Profile verifier 失败：影响依赖数据库终态的 mutation ID；不抹除已形成的纯 UI 证据，但 profile 不得宣布完成。
-5. fixture prepare / ownership / seed 失败：整个 profile 不得进入 Browser。
-
-公共 support 导致同 group 第二个 owner 失败时立即停止该 group，保存已完成 owner 结果；先分类测试机制/fixture/support，不直接归产品缺陷。
+1. Route 特有断言失败：只影响该 owner route 的 Direct Audit ID；同 route 各 ID 分别记录，Supporting ID 不随代表 route 失败。
+2. Execution group 公共登录/导航失败：尚未开始的同组 owner 记 `blocked_by_group_setup`，不是产品 fail；已完成 owner journal 不自动归零。
+3. 一个 owner 失败不使同一 Playwright test 中其他已完成 owner 失败；Playwright 最终 exit status 与 owner journal 分开汇总。
+4. 横切 Direct 断言失败只映射该行 Direct Audit ID；Supporting 证据或 non-audit gate 失败只阻止依赖证据/profile 完成，不越权把业务 ID 记 fail。
+5. Profile verifier 失败：影响依赖数据库终态的 mutation ID；不抹除已形成的纯 UI 字段，但 profile 不得宣布完成。
+6. fixture prepare / ownership / seed 失败：整个 profile 不得进入 Browser，全部未开始 owner 记 `blocked_by_group_setup`。
+7. 每个 owner 无论 pass/fail 都必须执行 route intercept、draft、pending request 与 listener 的 minimal cleanup；未知清理结果立即停止 group，不用 soft assertion 继续。
+8. 公共 support 在第二个 owner 再次失败时立即停止该 group，保存已完成 owner 结果；先分类测试机制/fixture/support，不直接归产品缺陷。
+9. Group 结束对已创建且所有权明确的每个 Session 执行一次真实 logout，并关闭 Context；失败路径也不得跳过该 group 收口。
 
 ## 10. 优化前后量化对比
 
-基线由合同推导：33 route；每 route 至少 1 Context，加 denied-role 额外 2、alreadyLocked 额外 1、latest-locked conflict 额外 1，共 37 Session；fixture E2E 断言 33 Patient/33 Report，builder 每 route 建 1 Visit。G2 数量由第 5、6 节求和。
+基线按完整 33-route 合同推导：每 route 至少 1 Context，加 denied-role 额外 2、alreadyLocked 额外 1、latest-locked conflict 额外 1，共 37 Session；fixture builder 当前为每 route 建 1 Patient/Visit/Report。当前仓库实际只有 22 个 core Playwright runtime test（源码 21 个静态 `test()` 声明，其中 Visit locked/voided 参数化生成 2 个），11 个 resilience route 尚未实施；为与 33 条正式 owner 同口径，表中“Playwright test 数”同时标注实际资产与完整矩阵逻辑数。
 
-| 指标 | 当前设计 | G2建议 | 变化 |
-|---|---:|---:|---:|
-| 稳定 Audit ID | 88 | 88 | 0 |
-| 正式 Browser owner route | 33 | 33 | 0 |
-| Browser execution group | 33 | 20 | -13（-39.4%） |
-| 独立 BrowserContext / Session | 37 | 24 | -13（-35.1%） |
-| 完整五阶段认证检查次数 | 37 | 1 | -36（-97.3%） |
-| 全 Storage / URL 扫描次数 | 37 | 1 | -36（-97.3%） |
-| 全 DOM 隐私扫描次数 | 37 | 1 | -36（-97.3%） |
-| Axe / viewport 矩阵次数 | 1 | 1 | 0 |
-| 独立 Patient 根 | 33 | 20 | -13（-39.4%） |
-| 独立 Visit 根 | 33 | 22 | -11（-33.3%） |
-| 独立 Report 根 | 33 | 32 | -1（-3.0%） |
-| 可写 Report | 5 | 5 | 0 |
-| Stage 数 | 5 | 5 | 0 |
-| profile post-browser verifier 数 | 2 | 2 | 0 |
-| cleanup 生命周期数 | 2 | 2 | 0 |
+runtime descriptor 数按 33 条 route 各 1 个，加 denied-role 的 system role override 1 个复算为 34；现有 core 执行对应 23 个 descriptor。route-scoped intercept 安装按完整矩阵显式控制点复算为 19：4 次 controlled latest read，加 15 次 one-shot request gate/abort/continue；现有 core 已定义其中 14 次，resilience 的 5 次不在本 Draft 实施。
 
-未减少项均为有意保留：88 ID/33 owner 是稳定合同；Axe/viewport 已是单一代表；5 可写 Report 对应五个不可互换 mutation owner；5 Stage 对应两 conflict、两稳定错误、403；两个 profile verifier/cleanup 维持 namespace、账号、终态隔离。Report 只减 1，因为 eligibility 每状态、lock form 两 route、所有 mutation/并发/失败 route 必须独立，不能为降数字合并语义。
+| 指标 | 当前设计 | G3-A | G3-B | 可复算依据 |
+|---|---:|---:|---:|---|
+| 稳定 Audit ID | 88 | 88 | 88 | B12-01～B12-88 |
+| 正式 Browser owner route | 33 | 33 | 33 | core 22 + resilience 11 |
+| runtime descriptor 数 | 34（现有 core 23） | 34 | 34 | 每 route 1 + system override 1；G3-B 仍保留 route identity |
+| Playwright test 数 | 33 逻辑（现有 22、缺 11） | 20 | 20 | 33 单 route → 第 5 节 20 execution group |
+| Browser execution group | 33 | 20 | 20 | 第 5 节 20 行 |
+| 独立 BrowserContext / Session | 37 | 24 | 24 | 20 groups + denied 额外 2 + 两个双 Context owner各额外 1 |
+| Owner result journal 条目 | 0 | 33 | 33 | 每正式 owner route 1 条 |
+| route-scoped intercept 安装次数 | 19（现有 core 14） | 19 | 19 | controlled latest 4 + request control 15 |
+| 完整 collect 次数 | 37 | 24 | 24 | 当前每 Session 1；G3-A/B 每 group Context 1 |
+| minimal owner 收口次数 | 0（无独立 journal 阶段） | 33 | 33 | 每 owner 1 次 |
+| 完整五阶段认证检查次数 | 37 | 1 | 1 | `auth_lifecycle` representative |
+| 全 Storage / URL 扫描次数 | 37 | 1 | 1 | `storage_url_privacy` representative |
+| 全 DOM 隐私扫描次数 | 37 | 1 | 1 | `dom_sensitive_data` representative |
+| Axe / viewport 矩阵次数 | 1 | 1 | 1 | responsive representative 保留 |
+| 独立 Patient 根 | 33 | 33 | 20 | G3-A fixture 变化 0；G3-B 第 6.3 节 |
+| 独立 Visit 根 | 33 | 33 | 28（条件失败 29） | eligibility 9 + lock-form 1 + 其余 18 |
+| independently addressable Visit 数 | 33 | 33 | 28（条件失败 29） | 每 Visit 恰有 1 个 latest-visible Report |
+| 独立 Report 根 | 33 | 33 | 28（条件失败 29） | 与可寻址 Visit 一一对应 |
+| Latest-visible report count | 33 | 33 | 28（条件失败 29） | current latest API 每 Visit 只返回 1 个 |
+| 可写 Report | 5 | 5 | 5 | doctor/admin/alreadyLocked/two conflict 各 1 |
+| Stage 数 | 5 | 5 | 5 | 两 conflict、两稳定错误、403 |
+| profile post-browser verifier 数 | 2 | 2 | 2 | core/resilience 隔离 |
+| cleanup 生命周期数 | 2 | 2 | 2 | core/resilience namespace 隔离 |
+
+G3-A 只减少 execution layer 的 test/group、Session、完整 collect 与重复横切扫描，不减少 fixture root、runtime descriptor、可写 Report、Stage、verifier 或 cleanup。G3-B 才按第 6 节减少 Patient/Visit/Report；其 lock-form `28` 目标只有在四项共享前提被 G3-A 证据证明后有效，否则使用 `29` 的可寻址回退，未验证的 root 减量绝不计入 G3-A 收益。
 
 ## 11. 可写、并发与失败隔离证明
 
@@ -323,12 +413,13 @@ backend unit、fixture E2E、mapper unit、synthetic 与 verifier 可作辅助�
 - 69 个 `yes` ID 仍要求真实 DOM、交互、BrowserContext、Network、Cookie、Storage、viewport 或 accessibility；分组只复用登录/只读根。
 - nurse、research、system 保持三个 Context/ID；system 403 不替代两类可读语义。
 - 首次锁定与 alreadyLocked、两 conflict、401/403、网络中止/业务错误均独立。
-- controlled-read 各自安装/移除拦截、独立 Report；不持久化非法数据库状态。
-- 横切失败只影响直接映射 ID；业务文案、控件、草稿、恢复和数据库终态仍直接断言。
+- controlled-read 在 G3-A 仍使用现有独立 roots；G3-B 仅可按第 4、6 节共享完全相同的合法 Report，每个 owner 仍各自安装/移除单次拦截、恢复真实读取且不持久化非法数据库状态。
+- 横切 Direct 失败只影响直接映射 ID；Supporting/non-audit 失败不越权映射业务 ID。B12-59、B12-61、B12-56/57、B12-58～60、B12-78～80 的业务文案、控件、草稿、状态/count/recovery 仍由各自 owner 直接断言。
+- B12-31～B12-32 仍要求实际 A22 route 与非 Browser 主证据；B12-84 仍要求 static route gate，Browser auth route 只能支持连接。
 
 ## 13. 成本预算与停止门禁建议
 
-以下仅为 B12 G3 候选，不修改 playbook 全局强制规则；是否纳入由用户决定：
+以下仅为 B12 G3-A/B 候选，不修改 playbook 全局强制规则；是否纳入由用户决定：
 
 - canary 未通过不得进入正式矩阵。
 - 公共 support 导致第二个 owner 失败时立即停止 group。
@@ -338,21 +429,46 @@ backend unit、fixture E2E、mapper unit、synthetic 与 verifier 可作辅助�
 - 测试机制失败不得直接归类产品缺陷。
 - 每轮报告产品缺陷、fixture 缺陷、Playwright/support 缺陷、假阳性、运行耗时、资产修改耗时。
 
-## 14. G3 实施边界与待审批争议
+## 14. G3-A：Execution layer 优化
 
-用户批准后，G3 才可在不改产品/API/DTO/Service/Component、稳定 ID、正式 owner 与 route 语义前提下实施 execution runner、逐 owner 结果、cluster-aware builder/manifest、同角色只读 Session 复用、横切 collector、逐 cluster/profile verifier 与精确 cleanup。G3 仍先做 canary，且不自动进入 B12-C。
+用户批准本 Draft v3 后只允许进入 G3-A。G3-A 只可修改 Playwright B12 runner/support、Owner result journal、execution group、横切 collector、失败隔离，以及 testing playbook/本矩阵；不得修改产品或 fixture kernel。
 
-待审批：
+G3-A 必须保持现有 33 套 fixture roots、fixture builder、manifest、runtime descriptor schema、5 个 Stage、prepared/post-browser verifier、cleanup、正式 Audit owner、33 条 route contract 与历史状态。目标只是在既有 roots 上先证明 Session 复用、横切检查分离、owner 结果隔离、canary 与停止门禁，不同时承担 fixture 共享风险。
 
-1. 接受 20 execution group、24 Session 与 20/22/32 Patient/Visit/Report 预算，或采用更保守方案。
-2. 是否允许 resilience 的 unsupported-actions 与 non-diagnostic-language 共享当前合法只读根；如改 locked template，须另批正式 fixture state。
-3. core/resilience 不跨 profile 复用账号、Session、root、verifier、cleanup 的长期边界。
-4. B12-31/32、35～38、41、56/57、69、71～77、84/85 的非 Browser 主证据/Browser 支持连接。
-5. 横切失败只映射横切 ID、已完成业务证据不归零的记录格式。
-6. 成本/停止规则是否仅在 B12 G3 局部试行。
+### 14.1 G3-A canary
 
-## 15. Draft v2 边界结论
+canary 固定覆盖以下 owner，不改变它们的正式所有权或既有独立 fixture：
+
+| canary 能力 | owner route | 目的 |
+|---|---|---|
+| 同 Session 两个 doctor 只读 owner | draft-no-entry；pending-no-entry | journal 顺序、Session 复用、owner 间页面/listener 清理 |
+| controlled-read owner | finality-inconsistent | 单次 route 拦截安装/移除、恢复真实读取 |
+| 普通写入 owner | doctor-lock-success | 写入 owner 与共享 Session/横切 collector 隔离 |
+| 权限失败 owner | denied-role-entry 的 system 403 分支 | 真实 403、group setup 与产品失败分类、独立 Context 收口 |
+| 横切代表 owner | auth-route-deidentified | auth lifecycle、logout/Cookie/CORS gate 与 supporting evidence 隔离 |
+
+canary 预算可复算为 6 个 owner journal、4 个 execution test/group、4 个 Context/Session、6 套现有独立 Patient/Visit/Report roots、6 个 runtime descriptor、2 次 route-scoped intercept（finality controlled read、doctor A22 gate；system 403 使用真实响应而不拦截）、4 次完整 collect 与 6 次 minimal owner 收口。该 canary 只验证 journal、Session 复用、route 拦截清理、横切失败隔离和真实 logout；不验证 fixture cluster 共享，也不减少任何 root。
+
+任一 canary 失败不得进入 G3-A 正式矩阵；任一公共 support 连续影响两个 owner，立即停止 G3-A 正式矩阵并保存已完成 journal。G3-A 正式预算为第 10 节的 20 groups、24 Sessions、33 journal、33/33/33 Patient/Visit/Report，不得把 G3-B 的 root 减量计入。
+
+## 15. G3-B：Fixture cluster 优化
+
+G3-B 只有在 G3-A canary 与正式 execution runner 稳定、结果 journal/失败隔离可用，并再次取得用户审批后才允许开始。G3-B 只可修改 cluster-aware builder、cluster-aware manifest、runtime 解析、prepared/post-browser verifier 与 cleanup；不得同时修改 Playwright execution model、execution group、journal 语义、横切映射或正式 owner/route。
+
+G3-B 固定边界：
+
+1. 每个 cluster 单独验证现有 `navigationPath` 与 latest 查询可达性，且每 Visit 最多一个 latest-visible Report。
+2. 先优化第 6 节只读 cluster；doctor/admin write、alreadyLocked、两个 conflict、401、403、network abort 与终止性 Session roots 保持隔离。
+3. lock-form 只有四项共享证据齐备才使用 `1/1/1`；否则使用 `1/2/2` 回退。
+4. 不新增 reportId 页面路由，不新增 Stage 切换普通只读状态，不跨 core/resilience 复用账号、Session、root、verifier 或 cleanup。
+5. G3-B 失败时回退到已稳定的 G3-A runner + 旧 33 套 fixture roots 继续验收；回退不要求撤销 G3-A execution layer。
+6. G3-B 候选预算为 `20 Patient / 28 Visit / 28 Report`，lock-form 条件失败时为 `20/29/29`；5 个可写 Report、5 个 Stage、2 个 profile verifier 与 2 个 cleanup 生命周期不变。
+
+G3-A 不批准 G3-B，G3-A 稳定也不自动开始 G3-B；两阶段均不自动进入 B12-C。
+
+## 16. Draft v3 边界结论
 
 - 未实施 fixture、Session、execution group、Playwright、测试、verifier 或产品修改；未执行 Browser、fixture、unit、E2E、lint、typecheck、build 或数据库命令。
 - 正式 owner、route、fixture contract 与 B12-B1～B12-B9 历史事实不变；88 行均 unclosed，Executed evidence 无 passed。
-- B12 Browser 继续暂停；等待用户审批才能进入 G3；不进入 B12-C，不关闭任何 B12 ID，不启动 B13～B15，不填写 evidence commit。
+- G2 方向认可，但 Draft v2 未批准；本 Draft v3 仍等待用户审批。审批后只进入 G3-A，G3-A 稳定后 G3-B 另行审批。
+- B12 Browser 继续暂停；B12-B、B12 与 Batch D 状态不变；不进入 B12-C，不关闭任何 B12 ID，不启动 B13～B15，不填写 evidence commit。
