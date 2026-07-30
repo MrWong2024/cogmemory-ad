@@ -2,16 +2,22 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import type { AddressInfo } from 'node:net';
 import { chromium } from '@playwright/test';
 import {
+  B12SafeConsoleDiagnosticListener,
+  assertB12SafeConsoleNetworkCorrelation,
   assertReportNarrativeSectionsExcludeText,
   attemptB12BrowserLogout,
+  correlateB12SafeConsoleNetworkEvents,
   inspectB12CoreWorkflowNavigationAuthEntries,
   partitionB12AuthLifecycleEntries,
+  rethrowAfterB12SessionOpenFailureCleanup,
   resolveB12LogoutDisposition,
   resolveB12SessionOpenMode,
   setB12LoginBoundaryEntryIndex,
   setB12LogoutBoundaryEntryIndex,
   setB12WorkflowNavigationBoundaryEntryIndex,
   setB12WorkflowNavigationCompletedEntryIndex,
+  toB12SafeNetworkDiagnosticEntries,
+  type B12SafeConsoleDiagnosticEvent,
 } from '../b12/b12-core-support';
 import { runAccessibilityAudit } from '../support/accessibility-audit';
 import {
@@ -158,6 +164,49 @@ function validB12AuthLifecycleEntries(): NetworkLedgerEntry[] {
       safeUrlPattern: '/_next/static/chunks/login.js',
     }),
   ];
+}
+
+function captureB12Diagnostic(
+  action: () => void,
+  category: string,
+): unknown {
+  let captured: unknown;
+  try {
+    action();
+  } catch (error: unknown) {
+    captured = error;
+  }
+  if (!(captured instanceof Error)) {
+    throw new Error('Synthetic B12 diagnostic action did not throw');
+  }
+  expect(captured.message.startsWith(`${category} `)).toBe(true);
+  return JSON.parse(captured.message.slice(category.length + 1)) as unknown;
+}
+
+function b12IncompleteNetworkEntries(): NetworkLedgerEntry[] {
+  return [
+    b12LifecycleEntry({ safeUrlPattern: '/auth/me' }),
+    b12LifecycleEntry({ safeUrlPattern: '/dashboard' }),
+    b12LifecycleEntry({
+      status: 409,
+      safeUrlPattern:
+        '/patients/<id>/visits/<id>/clinical-reports/latest',
+    }),
+  ];
+}
+
+function b12ConsoleEvent(
+  overrides: Partial<B12SafeConsoleDiagnosticEvent> = {},
+): B12SafeConsoleDiagnosticEvent {
+  return {
+    sequence: 1,
+    level: 'error',
+    category: 'network',
+    safeLocationPattern:
+      '/patients/<id>/visits/<id>/clinical-reports/latest',
+    locationPresent: true,
+    ...overrides,
+  };
 }
 
 function handleRequest(request: IncomingMessage, response: ServerResponse): void {
@@ -439,44 +488,35 @@ test('rejects B12 core workflow navigation without an auth probe', () => {
 
   expect(() =>
     inspectB12CoreWorkflowNavigationAuthEntries(entries, 0, entries.length),
-  ).toThrow('B12 workflow navigation omitted /auth/me');
+  ).toThrow('B12_WORKFLOW_NAVIGATION_AUTH_PROBE_INVALID');
 });
 
 test('rejects invalid B12 core workflow navigation auth probe entries', () => {
-  const invalidEntries: Array<{
-    entry: NetworkLedgerEntry;
-    message: string;
-  }> = [
+  const invalidEntries: NetworkLedgerEntry[] = [
     {
-      entry: b12LifecycleEntry({ method: 'POST' }),
-      message: 'B12 workflow navigation /auth/me was not a GET request',
+      ...b12LifecycleEntry({ method: 'POST' }),
     },
     {
-      entry: b12LifecycleEntry({ status: 401 }),
-      message: 'B12 workflow navigation /auth/me response was not 2xx',
+      ...b12LifecycleEntry({ status: 401 }),
     },
     {
-      entry: b12LifecycleEntry({
+      ...b12LifecycleEntry({
         status: null,
         failureReason: 'failed',
       }),
-      message: 'B12 workflow navigation /auth/me had a request failure',
     },
     {
-      entry: b12LifecycleEntry({ failureReason: 'failed' }),
-      message: 'B12 workflow navigation /auth/me had a request failure',
+      ...b12LifecycleEntry({ failureReason: 'failed' }),
     },
     {
-      entry: b12LifecycleEntry({ initiator: 'other' }),
-      message:
-        'B12 workflow navigation /auth/me was not initiated by page script',
+      ...b12LifecycleEntry({ initiator: 'other' }),
     },
   ];
 
-  for (const { entry, message } of invalidEntries) {
+  for (const entry of invalidEntries) {
     expect(() =>
       inspectB12CoreWorkflowNavigationAuthEntries([entry], 0, 1),
-    ).toThrow(message);
+    ).toThrow('B12_WORKFLOW_NAVIGATION_AUTH_PROBE_INVALID');
   }
 });
 
@@ -646,7 +686,7 @@ test('rejects invalid pre-login B12 auth probe statuses and failures', () => {
   });
   expect(() =>
     partitionB12AuthLifecycleEntries(protectedRequest, 3, 6),
-  ).toThrow('B12 protected business request occurred before authentication');
+  ).toThrow('B12_PRE_AUTHENTICATION_UNEXPECTED_REQUEST');
 });
 
 test('rejects missing or repeated B12 login requests', () => {
@@ -908,6 +948,536 @@ test('does not mutate B12 authentication lifecycle input entries', () => {
   partition.authenticatedEntries[0]?.bodyKeys.push('returned-copy-only');
 
   expect(entries).toEqual(before);
+});
+
+test('keeps the existing B12 pre-authentication public allowlist unchanged', () => {
+  const partition = partitionB12AuthLifecycleEntries(
+    validB12AuthLifecycleEntries(),
+    3,
+    6,
+  );
+
+  expect(partition.preAuthenticationEntries).toMatchObject([
+    { method: 'GET', safeUrlPattern: '/login' },
+    { method: 'GET', safeUrlPattern: '/auth/me', status: 401 },
+    { method: 'GET', safeUrlPattern: '/_next/static/chunks/login.js' },
+  ]);
+});
+
+test('reports one unexpected pre-authentication request with ordered safe facts', () => {
+  const entries = validB12AuthLifecycleEntries();
+  entries[2] = b12LifecycleEntry({
+    status: 403,
+    safeUrlPattern:
+      'http://127.0.0.1/patients/507f1f77bcf86cd799439011?token=blocked#fragment',
+  });
+
+  const payload = captureB12Diagnostic(
+    () => partitionB12AuthLifecycleEntries(entries, 3, 6),
+    'B12_PRE_AUTHENTICATION_UNEXPECTED_REQUEST',
+  );
+  expect(payload).toMatchObject({
+    totalCount: 1,
+    truncated: false,
+    entries: [
+      {
+        relativeIndex: 2,
+        method: 'GET',
+        safeEndpointPattern: '/patients/<id>',
+        status: 403,
+        resourceType: 'fetch',
+        initiator: 'script',
+        failureReason: null,
+      },
+    ],
+  });
+});
+
+test('preserves every unexpected pre-authentication request in relative order', () => {
+  const entries = validB12AuthLifecycleEntries();
+  entries.splice(
+    2,
+    0,
+    b12LifecycleEntry({ status: 403, safeUrlPattern: '/patients/<id>' }),
+    b12LifecycleEntry({ status: 404, safeUrlPattern: '/patients/<id>' }),
+  );
+
+  const payload = captureB12Diagnostic(
+    () => partitionB12AuthLifecycleEntries(entries, 5, 8),
+    'B12_PRE_AUTHENTICATION_UNEXPECTED_REQUEST',
+  );
+  expect(payload).toMatchObject({
+    totalCount: 2,
+    truncated: false,
+    entries: [
+      { relativeIndex: 2, safeEndpointPattern: '/patients/<id>', status: 403 },
+      { relativeIndex: 3, safeEndpointPattern: '/patients/<id>', status: 404 },
+    ],
+  });
+});
+
+test('does not mutate network entries or expose body keys in safe diagnostics', () => {
+  const entries = [
+    b12LifecycleEntry({
+      method: 'POST',
+      status: 403,
+      safeUrlPattern: '/patients/<id>',
+      bodyKeys: ['accountName', '<blocked-key>'],
+    }),
+  ];
+  const before = entries.map((entry) => ({
+    ...entry,
+    bodyKeys: [...entry.bodyKeys],
+  }));
+
+  const diagnostic = toB12SafeNetworkDiagnosticEntries(entries);
+  expect(diagnostic.entries[0]).not.toHaveProperty('bodyKeys');
+  diagnostic.entries[0]!.safeEndpointPattern = '/copy-only';
+  expect(entries).toEqual(before);
+});
+
+test('sanitizes and truncates B12 network diagnostics at the fixed limit', () => {
+  const rawId = '507f1f77bcf86cd799439011';
+  const rawUrl = `http://127.0.0.1/patients/${rawId}?token=blocked#fragment`;
+  const entries = Array.from({ length: 22 }, () =>
+    b12LifecycleEntry({ safeUrlPattern: rawUrl, bodyKeys: ['secretBodyKey'] }),
+  );
+
+  const diagnostic = toB12SafeNetworkDiagnosticEntries(entries);
+  expect(diagnostic).toMatchObject({ totalCount: 22, truncated: true });
+  expect(diagnostic.entries).toHaveLength(20);
+  expect(
+    diagnostic.entries.every(
+      ({ safeEndpointPattern }) => safeEndpointPattern === '/patients/<id>',
+    ),
+  ).toBe(true);
+  expect(() =>
+    safeJsonStringify(diagnostic, [rawId, rawUrl, 'secretBodyKey']),
+  ).not.toThrow();
+});
+
+test('keeps successful system navigation auth probes strict beside a protected 403', () => {
+  const entries = [
+    b12LifecycleEntry(),
+    b12LifecycleEntry({
+      status: 403,
+      safeUrlPattern:
+        '/patients/<id>/visits/<id>/clinical-reports/latest',
+    }),
+  ];
+
+  const inspection = inspectB12CoreWorkflowNavigationAuthEntries(
+    entries,
+    0,
+    entries.length,
+  );
+  expect(inspection.workflowNavigationAuthMeRequestCount).toBe(1);
+  expect(inspection.workflowNavigationEntries[1]).toMatchObject({
+    status: 403,
+    safeUrlPattern:
+      '/patients/<id>/visits/<id>/clinical-reports/latest',
+  });
+});
+
+test('reports a 401 auth probe before its protected 403 with both boundaries', () => {
+  const entries = [
+    b12LifecycleEntry({ safeUrlPattern: '/dashboard' }),
+    b12LifecycleEntry({ status: 401 }),
+    b12LifecycleEntry({
+      status: 403,
+      safeUrlPattern:
+        '/patients/<id>/visits/<id>/clinical-reports/latest',
+    }),
+  ];
+
+  const payload = captureB12Diagnostic(
+    () => inspectB12CoreWorkflowNavigationAuthEntries(entries, 1, 3),
+    'B12_WORKFLOW_NAVIGATION_AUTH_PROBE_INVALID',
+  );
+  expect(payload).toMatchObject({
+    workflowStartBoundary: 1,
+    workflowCompletedBoundary: 3,
+    navigationEntryCount: 2,
+    authMe: {
+      entries: [
+        {
+          relativeIndex: 0,
+          status: 401,
+          method: 'GET',
+          initiator: 'script',
+          failureReason: null,
+        },
+      ],
+    },
+    protectedPatientVisitClinicalReportGets: {
+      entries: [
+        {
+          relativeIndex: 1,
+          safeEndpointPattern:
+            '/patients/<id>/visits/<id>/clinical-reports/latest',
+          status: 403,
+        },
+      ],
+    },
+    authMeToProtected403Order: {
+      entries: [
+        {
+          authMeRelativeIndex: 0,
+          protected403RelativeIndex: 1,
+          order: 'auth_me_before_protected_403',
+        },
+      ],
+    },
+  });
+});
+
+test('reports 403, request failure, and non-script workflow auth probes safely', () => {
+  const invalidEntries = [
+    b12LifecycleEntry({ status: 403 }),
+    b12LifecycleEntry({ status: null, failureReason: 'failed' }),
+    b12LifecycleEntry({ initiator: 'other' }),
+  ];
+
+  for (const entry of invalidEntries) {
+    const payload = captureB12Diagnostic(
+      () => inspectB12CoreWorkflowNavigationAuthEntries([entry], 0, 1),
+      'B12_WORKFLOW_NAVIGATION_AUTH_PROBE_INVALID',
+    );
+    expect(payload).toMatchObject({
+      authMe: {
+        entries: [
+          {
+            relativeIndex: 0,
+            status: entry.status,
+            initiator: entry.initiator,
+            failureReason: entry.failureReason,
+          },
+        ],
+      },
+    });
+  }
+});
+
+test('keeps workflow diagnostic boundaries and source entries immutable', () => {
+  const entries = [
+    b12LifecycleEntry({ safeUrlPattern: '/dashboard' }),
+    b12LifecycleEntry({ status: 403, bodyKeys: ['original'] }),
+    b12LifecycleEntry({ status: 403, safeUrlPattern: '/patients/<id>' }),
+  ];
+  const before = entries.map((entry) => ({
+    ...entry,
+    bodyKeys: [...entry.bodyKeys],
+  }));
+
+  const payload = captureB12Diagnostic(
+    () => inspectB12CoreWorkflowNavigationAuthEntries(entries, 1, 3),
+    'B12_WORKFLOW_NAVIGATION_AUTH_PROBE_INVALID',
+  );
+  expect(payload).toMatchObject({
+    workflowStartBoundary: 1,
+    workflowCompletedBoundary: 3,
+  });
+  expect(entries).toEqual(before);
+});
+
+test('correlates one exact Console location with the unique latest 409', () => {
+  const inspection = correlateB12SafeConsoleNetworkEvents({
+    networkEntries: b12IncompleteNetworkEntries(),
+    consoleEvents: [b12ConsoleEvent()],
+    failurePhaseConsoleSequences: [1],
+  });
+
+  expect(inspection).toMatchObject({
+    unique409: {
+      relativeIndex: 2,
+      method: 'GET',
+      safeEndpointPattern:
+        '/patients/<id>/visits/<id>/clinical-reports/latest',
+      status: 409,
+    },
+    correlations: [
+      {
+        consoleSequence: 1,
+        matchedNetworkRelativeIndex: 2,
+        correlation: 'exact_endpoint',
+      },
+    ],
+    exactCount: 1,
+    phaseOnlyCount: 0,
+    unmatchedCount: 0,
+  });
+});
+
+test('rejects one exact Console event plus one no-location phase event', () => {
+  const payload = captureB12Diagnostic(
+    () =>
+      assertB12SafeConsoleNetworkCorrelation({
+        networkEntries: b12IncompleteNetworkEntries(),
+        consoleEvents: [
+          b12ConsoleEvent(),
+          b12ConsoleEvent({
+            sequence: 2,
+            safeLocationPattern: null,
+            locationPresent: false,
+          }),
+        ],
+        failurePhaseConsoleSequences: [1, 2],
+        observedConsoleErrorCount: 2,
+        allowedConsoleErrorCount: 1,
+      }),
+    'B12_CONSOLE_NETWORK_CORRELATION_INVALID',
+  );
+  expect(payload).toMatchObject({
+    counts: { exact: 1, phaseOnly: 1, unmatched: 0 },
+    correlations: [
+      { correlation: 'exact_endpoint' },
+      { correlation: 'same_failure_phase_without_exact_endpoint' },
+    ],
+  });
+});
+
+test('does not allow a frontend bundle Console location by phase proximity', () => {
+  const payload = captureB12Diagnostic(
+    () =>
+      assertB12SafeConsoleNetworkCorrelation({
+        networkEntries: b12IncompleteNetworkEntries(),
+        consoleEvents: [
+          b12ConsoleEvent(),
+          b12ConsoleEvent({
+            sequence: 2,
+            safeLocationPattern: '/_next/static/chunks/app.js',
+          }),
+        ],
+        failurePhaseConsoleSequences: [2],
+        observedConsoleErrorCount: 2,
+        allowedConsoleErrorCount: 1,
+      }),
+    'B12_CONSOLE_NETWORK_CORRELATION_INVALID',
+  );
+  expect(payload).toMatchObject({
+    counts: { exact: 1, phaseOnly: 1, unmatched: 0 },
+  });
+});
+
+test('rejects a Console error that has no endpoint or phase correlation', () => {
+  const payload = captureB12Diagnostic(
+    () =>
+      assertB12SafeConsoleNetworkCorrelation({
+        networkEntries: b12IncompleteNetworkEntries(),
+        consoleEvents: [
+          b12ConsoleEvent({
+            safeLocationPattern: '/unrelated/runtime.js',
+            category: 'runtime',
+          }),
+        ],
+        failurePhaseConsoleSequences: [],
+        observedConsoleErrorCount: 1,
+        allowedConsoleErrorCount: 1,
+      }),
+    'B12_CONSOLE_NETWORK_CORRELATION_INVALID',
+  );
+  expect(payload).toMatchObject({
+    counts: { exact: 0, phaseOnly: 0, unmatched: 1 },
+    correlations: [
+      { consoleCategory: 'runtime', correlation: 'unmatched' },
+    ],
+  });
+});
+
+test('does not retain Console raw text, complete URLs, or dynamic identifiers', async ({
+  page,
+}) => {
+  const rawId = '507f1f77bcf86cd799439011';
+  const rawText =
+    `TypeError for http://127.0.0.1/patients/${rawId}?token=blocked`;
+  const listener = new B12SafeConsoleDiagnosticListener(page);
+  listener.start();
+  await page.goto(origin);
+  const observed = page.waitForEvent('console', {
+    predicate: (message) => message.text() === rawText,
+  });
+  await page.evaluate((message) => console.error(message), rawText);
+  await observed;
+  const summary = listener.stop();
+
+  expect(summary.events).toHaveLength(1);
+  expect(() =>
+    safeJsonStringify(summary.events, [rawText, rawId, origin]),
+  ).not.toThrow();
+});
+
+test('stops the B12 Console listener idempotently and removes its handler', async ({
+  page,
+}) => {
+  const listener = new B12SafeConsoleDiagnosticListener(page);
+  listener.start();
+  const firstObserved = page.waitForEvent('console', {
+    predicate: (message) => message.text() === 'synthetic first network error',
+  });
+  await page.evaluate(() => console.error('synthetic first network error'));
+  await firstObserved;
+  const firstStop = listener.stop();
+  const secondStop = listener.stop();
+  expect(secondStop).toEqual(firstStop);
+
+  const secondObserved = page.waitForEvent('console', {
+    predicate: (message) => message.text() === 'synthetic second network error',
+  });
+  await page.evaluate(() => console.error('synthetic second network error'));
+  await secondObserved;
+  expect(listener.summary()).toEqual(firstStop);
+});
+
+test('summarizes UI logout success before rethrowing an open failure', async () => {
+  const originalError = new Error('synthetic original open failure');
+  const lines: string[] = [];
+  let contextClosed = false;
+  await expect(
+    rethrowAfterB12SessionOpenFailureCleanup({
+      target: {
+        scenarioKey: 'eligibility-state',
+        routeKey: 'draft-no-entry',
+      },
+      role: 'doctor',
+      openMode: 'readable',
+      originalError,
+      cleanupLogout: async () => ({
+        result: 'succeeded',
+        mechanism: 'ui_control',
+      }),
+      closeContext: async () => {
+        contextClosed = true;
+      },
+      ledgerDetached: () => true,
+      contextClosed: () => contextClosed,
+      emit: (line) => lines.push(line),
+    }),
+  ).rejects.toBe(originalError);
+  expect(lines).toHaveLength(1);
+  expect(lines[0]).toContain(
+    '"logoutResult":"succeeded","logoutMechanism":"ui_control","ledgerDetached":true,"contextClosed":true',
+  );
+});
+
+test('summarizes the denied system scripted fallback after an open failure', async () => {
+  const originalError = new Error('synthetic system open failure');
+  const lines: string[] = [];
+  await expect(
+    rethrowAfterB12SessionOpenFailureCleanup({
+      target: {
+        scenarioKey: 'eligibility-state',
+        routeKey: 'denied-role-entry',
+      },
+      role: 'system',
+      openMode: 'forbidden',
+      originalError,
+      cleanupLogout: async () => ({
+        result: 'succeeded',
+        mechanism: 'scripted_cleanup_fallback',
+      }),
+      closeContext: async () => undefined,
+      ledgerDetached: () => true,
+      contextClosed: () => true,
+      emit: (line) => lines.push(line),
+    }),
+  ).rejects.toBe(originalError);
+  expect(lines[0]).toContain('"role":"system","openMode":"forbidden"');
+  expect(lines[0]).toContain(
+    '"logoutResult":"succeeded","logoutMechanism":"scripted_cleanup_fallback"',
+  );
+});
+
+test('summarizes a failed logout without expanding its internal error', async () => {
+  const originalError = new Error('synthetic original assertion');
+  const lines: string[] = [];
+  await expect(
+    rethrowAfterB12SessionOpenFailureCleanup({
+      target: {
+        scenarioKey: 'eligibility-state',
+        routeKey: 'draft-no-entry',
+      },
+      role: 'doctor',
+      openMode: 'readable',
+      originalError,
+      cleanupLogout: async () => {
+        throw new Error('http://127.0.0.1/private?token=blocked');
+      },
+      closeContext: async () => undefined,
+      ledgerDetached: () => true,
+      contextClosed: () => true,
+      emit: (line) => lines.push(line),
+    }),
+  ).rejects.toBe(originalError);
+  expect(lines[0]).toContain(
+    '"logoutResult":"failed","logoutMechanism":null',
+  );
+  expect(lines[0]).not.toContain('token=blocked');
+});
+
+test('records context closure failure after open-failure cleanup', async () => {
+  const originalError = new Error('synthetic original assertion');
+  const lines: string[] = [];
+  await expect(
+    rethrowAfterB12SessionOpenFailureCleanup({
+      target: {
+        scenarioKey: 'eligibility-state',
+        routeKey: 'draft-no-entry',
+      },
+      role: 'doctor',
+      openMode: 'readable',
+      originalError,
+      cleanupLogout: async () => ({
+        result: 'failed',
+        mechanism: 'ui_control',
+      }),
+      closeContext: async () => {
+        throw new Error('synthetic close failure');
+      },
+      ledgerDetached: () => false,
+      contextClosed: () => false,
+      emit: (line) => lines.push(line),
+    }),
+  ).rejects.toBe(originalError);
+  expect(lines[0]).toContain(
+    '"ledgerDetached":false,"contextClosed":false',
+  );
+});
+
+test('rethrows the original open error while emitting only fixed safe fields', async () => {
+  const secret = 'synthetic-secret-not-for-output';
+  const runtimePath = 'D:/private/runtime/descriptor.json';
+  const originalError = new Error(
+    `failed at ${runtimePath} with ${secret} and http://127.0.0.1/private`,
+  );
+  const lines: string[] = [];
+  let captured: unknown;
+  try {
+    await rethrowAfterB12SessionOpenFailureCleanup({
+      target: {
+        scenarioKey: 'eligibility-state',
+        routeKey: 'draft-no-entry',
+      },
+      role: 'doctor',
+      openMode: 'readable',
+      originalError,
+      cleanupLogout: async () => ({
+        result: 'not_authenticated',
+        mechanism: null,
+      }),
+      closeContext: async () => undefined,
+      ledgerDetached: () => true,
+      contextClosed: () => true,
+      forbiddenLiterals: [secret, runtimePath],
+      emit: (line) => lines.push(line),
+    });
+  } catch (error: unknown) {
+    captured = error;
+  }
+  expect(captured).toBe(originalError);
+  expect(lines).toHaveLength(1);
+  expect(lines[0]).not.toContain(secret);
+  expect(lines[0]).not.toContain(runtimePath);
+  expect(lines[0]).not.toContain('http://');
 });
 
 test('keeps B12 logout fallback restricted to the denied system Session', () => {

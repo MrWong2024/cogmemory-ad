@@ -1,6 +1,12 @@
 import { access, open, rm, unlink } from "node:fs/promises";
 import path from "node:path";
-import type { Page, Request, Response, Route } from "@playwright/test";
+import type {
+  ConsoleMessage,
+  Page,
+  Request,
+  Response,
+  Route,
+} from "@playwright/test";
 import { test as playwrightTest } from "@playwright/test";
 
 import type { B12BrowserEnvironment } from "./b12-env";
@@ -51,6 +57,53 @@ export type B12SessionOpenMode =
   | "readable"
   | "forbidden"
   | "clinical_report_incomplete";
+
+export type B12SafeNetworkDiagnosticEntry = {
+  relativeIndex: number;
+  method: string;
+  safeEndpointPattern: string;
+  status: number | null;
+  resourceType: string;
+  initiator: NetworkLedgerEntry["initiator"];
+  failureReason: NetworkLedgerEntry["failureReason"];
+};
+
+export type B12SafeNetworkDiagnosticEntries = {
+  totalCount: number;
+  truncated: boolean;
+  entries: B12SafeNetworkDiagnosticEntry[];
+};
+
+export type B12SafeConsoleDiagnosticEvent = {
+  sequence: number;
+  level: "warning" | "error";
+  category: "network" | "react" | "security" | "runtime" | "other";
+  safeLocationPattern: string | null;
+  locationPresent: boolean;
+};
+
+export type B12SafeConsoleNetworkCorrelation = {
+  consoleSequence: number;
+  consoleCategory: B12SafeConsoleDiagnosticEvent["category"];
+  consoleSafeLocationPattern: string | null;
+  matchedNetworkRelativeIndex: number | null;
+  matchedMethod: string | null;
+  matchedSafeEndpointPattern: string | null;
+  matchedStatus: number | null;
+  correlation:
+    | "exact_endpoint"
+    | "same_failure_phase_without_exact_endpoint"
+    | "unmatched";
+};
+
+export type B12SafeConsoleNetworkCorrelationInspection = {
+  unique409: B12SafeNetworkDiagnosticEntry | null;
+  consoleEvents: B12SafeConsoleDiagnosticEvent[];
+  correlations: B12SafeConsoleNetworkCorrelation[];
+  exactCount: number;
+  phaseOnlyCount: number;
+  unmatchedCount: number;
+};
 
 type B12SafeErrorCategory =
   | "forbidden"
@@ -235,6 +288,26 @@ export type B12LogoutAttempt = {
   mechanism: B12LogoutMechanism | null;
 };
 
+export type B12FailureCleanupResult = {
+  scenarioKey: B12CoreRouteTarget["scenarioKey"];
+  routeKey: B12CoreRouteTarget["routeKey"];
+  role: AcceptanceRole;
+  openMode: B12SessionOpenMode;
+  logout: B12LogoutResult;
+  mechanism: B12LogoutMechanism | null;
+};
+
+export type B12SessionOpenFailureCleanupSummary = {
+  scenarioKey: B12CoreRouteTarget["scenarioKey"];
+  routeKey: B12CoreRouteTarget["routeKey"];
+  role: AcceptanceRole;
+  openMode: B12SessionOpenMode;
+  logoutResult: B12LogoutResult;
+  logoutMechanism: B12LogoutMechanism | null;
+  ledgerDetached: boolean;
+  contextClosed: boolean;
+};
+
 type CaptureFailureCategory =
   | "response_headers"
   | "latest_parse"
@@ -269,6 +342,243 @@ const LOCK_SAFE_PATTERN =
   "/patients/<id>/visits/<id>/clinical-reports/<id>/lock";
 const LATEST_SAFE_PATTERN =
   "/patients/<id>/visits/<id>/clinical-reports/latest";
+const B12_SAFE_DIAGNOSTIC_ENTRY_LIMIT = 20;
+
+function toB12SafeNetworkDiagnosticEntry(
+  entry: NetworkLedgerEntry,
+  relativeIndex: number,
+): B12SafeNetworkDiagnosticEntry {
+  return {
+    relativeIndex,
+    method: entry.method,
+    safeEndpointPattern: sanitizeUrlPattern(entry.safeUrlPattern),
+    status: entry.status,
+    resourceType: entry.resourceType,
+    initiator: entry.initiator,
+    failureReason: entry.failureReason,
+  };
+}
+
+function limitB12SafeNetworkDiagnosticEntries(
+  entries: readonly B12SafeNetworkDiagnosticEntry[],
+): B12SafeNetworkDiagnosticEntries {
+  return {
+    totalCount: entries.length,
+    truncated: entries.length > B12_SAFE_DIAGNOSTIC_ENTRY_LIMIT,
+    entries: entries
+      .slice(0, B12_SAFE_DIAGNOSTIC_ENTRY_LIMIT)
+      .map((entry) => ({ ...entry })),
+  };
+}
+
+export function toB12SafeNetworkDiagnosticEntries(
+  entries: readonly NetworkLedgerEntry[],
+): B12SafeNetworkDiagnosticEntries {
+  return limitB12SafeNetworkDiagnosticEntries(
+    entries.map(toB12SafeNetworkDiagnosticEntry),
+  );
+}
+
+function classifyB12ConsoleText(
+  text: string,
+): B12SafeConsoleDiagnosticEvent["category"] {
+  if (/cors|cookie|credential|content security|csp/i.test(text)) {
+    return "security";
+  }
+  if (/fetch|network|failed to load|http/i.test(text)) return "network";
+  if (/react|hydration/i.test(text)) return "react";
+  if (/typeerror|referenceerror|syntaxerror/i.test(text)) return "runtime";
+  return "other";
+}
+
+export class B12SafeConsoleDiagnosticListener {
+  private readonly events: B12SafeConsoleDiagnosticEvent[] = [];
+  private readonly failurePhaseConsoleSequences = new Set<number>();
+  private sequence = 0;
+  private listening = false;
+  private clinicalReportIncompleteObserved = false;
+
+  private readonly onConsole = (message: ConsoleMessage): void => {
+    const level = message.type();
+    if (level !== "warning" && level !== "error") return;
+    this.sequence += 1;
+    const locationUrl = message.location().url;
+    const event: B12SafeConsoleDiagnosticEvent = {
+      sequence: this.sequence,
+      level,
+      category: classifyB12ConsoleText(message.text()),
+      safeLocationPattern:
+        locationUrl.length > 0 ? sanitizeUrlPattern(locationUrl) : null,
+      locationPresent: locationUrl.length > 0,
+    };
+    this.events.push(event);
+    if (this.clinicalReportIncompleteObserved) {
+      this.failurePhaseConsoleSequences.add(event.sequence);
+    }
+  };
+
+  constructor(private readonly page: Page) {}
+
+  start(): void {
+    if (this.listening) return;
+    this.listening = true;
+    this.page.on("console", this.onConsole);
+  }
+
+  markNetworkObservation(input: {
+    method: string;
+    safeEndpointPattern: string;
+    status: number;
+    failureReason: NetworkLedgerEntry["failureReason"];
+  }): void {
+    if (
+      input.method === "GET" &&
+      sanitizeUrlPattern(input.safeEndpointPattern) === LATEST_SAFE_PATTERN &&
+      input.status === 409 &&
+      input.failureReason === null
+    ) {
+      this.clinicalReportIncompleteObserved = true;
+    }
+  }
+
+  summary(): {
+    events: B12SafeConsoleDiagnosticEvent[];
+    failurePhaseConsoleSequences: number[];
+  } {
+    return {
+      events: this.events.map((event) => ({ ...event })),
+      failurePhaseConsoleSequences: [
+        ...this.failurePhaseConsoleSequences,
+      ].sort((left, right) => left - right),
+    };
+  }
+
+  stop(): {
+    events: B12SafeConsoleDiagnosticEvent[];
+    failurePhaseConsoleSequences: number[];
+  } {
+    if (this.listening) {
+      this.listening = false;
+      this.page.off("console", this.onConsole);
+    }
+    return this.summary();
+  }
+}
+
+function isB12FrontendScriptLocation(
+  safeLocationPattern: string | null,
+): boolean {
+  if (safeLocationPattern === null) return true;
+  return (
+    safeLocationPattern.startsWith("/_next/") ||
+    /\.(?:cjs|mjs|js|jsx|ts|tsx)$/.test(safeLocationPattern)
+  );
+}
+
+export function correlateB12SafeConsoleNetworkEvents(input: {
+  networkEntries: readonly NetworkLedgerEntry[];
+  consoleEvents: readonly B12SafeConsoleDiagnosticEvent[];
+  failurePhaseConsoleSequences: readonly number[];
+}): B12SafeConsoleNetworkCorrelationInspection {
+  const safeNetworkEntries = input.networkEntries.map(
+    toB12SafeNetworkDiagnosticEntry,
+  );
+  const candidates = safeNetworkEntries.filter(
+    (entry) =>
+      entry.method === "GET" &&
+      entry.safeEndpointPattern === LATEST_SAFE_PATTERN &&
+      entry.status === 409 &&
+      entry.failureReason === null,
+  );
+  const unique409 = candidates.length === 1 ? candidates[0] ?? null : null;
+  const failurePhaseSequences = new Set(input.failurePhaseConsoleSequences);
+  const consoleEvents = input.consoleEvents.map((event) => ({
+    sequence: event.sequence,
+    level: event.level,
+    category: event.category,
+    safeLocationPattern:
+      event.safeLocationPattern === null
+        ? null
+        : sanitizeUrlPattern(event.safeLocationPattern),
+    locationPresent: event.locationPresent,
+  }));
+  const correlations = consoleEvents
+    .filter(({ level }) => level === "error")
+    .map((event): B12SafeConsoleNetworkCorrelation => {
+      const exact =
+        unique409 !== null &&
+        event.safeLocationPattern === unique409.safeEndpointPattern;
+      const phaseOnly =
+        unique409 !== null &&
+        !exact &&
+        failurePhaseSequences.has(event.sequence) &&
+        isB12FrontendScriptLocation(event.safeLocationPattern);
+      const matched = exact || phaseOnly ? unique409 : null;
+      return {
+        consoleSequence: event.sequence,
+        consoleCategory: event.category,
+        consoleSafeLocationPattern: event.safeLocationPattern,
+        matchedNetworkRelativeIndex: matched?.relativeIndex ?? null,
+        matchedMethod: matched?.method ?? null,
+        matchedSafeEndpointPattern: matched?.safeEndpointPattern ?? null,
+        matchedStatus: matched?.status ?? null,
+        correlation: exact
+          ? "exact_endpoint"
+          : phaseOnly
+            ? "same_failure_phase_without_exact_endpoint"
+            : "unmatched",
+      };
+    });
+  return {
+    unique409: unique409 ? { ...unique409 } : null,
+    consoleEvents,
+    correlations,
+    exactCount: correlations.filter(
+      ({ correlation }) => correlation === "exact_endpoint",
+    ).length,
+    phaseOnlyCount: correlations.filter(
+      ({ correlation }) =>
+        correlation === "same_failure_phase_without_exact_endpoint",
+    ).length,
+    unmatchedCount: correlations.filter(
+      ({ correlation }) => correlation === "unmatched",
+    ).length,
+  };
+}
+
+export function assertB12SafeConsoleNetworkCorrelation(input: {
+  networkEntries: readonly NetworkLedgerEntry[];
+  consoleEvents: readonly B12SafeConsoleDiagnosticEvent[];
+  failurePhaseConsoleSequences: readonly number[];
+  observedConsoleErrorCount: number;
+  allowedConsoleErrorCount: number;
+  forbiddenLiterals?: readonly string[];
+}): B12SafeConsoleNetworkCorrelationInspection {
+  const inspection = correlateB12SafeConsoleNetworkEvents(input);
+  if (
+    input.observedConsoleErrorCount !== input.allowedConsoleErrorCount ||
+    inspection.unique409 === null ||
+    inspection.correlations.some(
+      ({ correlation }) => correlation !== "exact_endpoint",
+    )
+  ) {
+    throw b12SafeDiagnosticError(
+      "B12_CONSOLE_NETWORK_CORRELATION_INVALID",
+      {
+        unique409: inspection.unique409,
+        consoleEvents: inspection.consoleEvents,
+        correlations: inspection.correlations,
+        counts: {
+          exact: inspection.exactCount,
+          phaseOnly: inspection.phaseOnlyCount,
+          unmatched: inspection.unmatchedCount,
+        },
+      },
+      input.forbiddenLiterals,
+    );
+  }
+  return inspection;
+}
 
 const CONTROLLED_VARIANTS: Readonly<
   Record<string, B12ControlledPublicResponseVariant>
@@ -500,6 +810,76 @@ function expectedLoginPageRequest(entry: NetworkLedgerEntry): boolean {
   );
 }
 
+function b12SafeDiagnosticError(
+  category: string,
+  summary: unknown,
+  forbiddenLiterals: readonly string[] = [],
+): Error {
+  return new Error(
+    `${category} ${safeJsonStringify(summary, forbiddenLiterals)}`,
+  );
+}
+
+function limitB12SafeFacts<T>(entries: readonly T[]): {
+  totalCount: number;
+  truncated: boolean;
+  entries: T[];
+} {
+  return {
+    totalCount: entries.length,
+    truncated: entries.length > B12_SAFE_DIAGNOSTIC_ENTRY_LIMIT,
+    entries: entries.slice(0, B12_SAFE_DIAGNOSTIC_ENTRY_LIMIT),
+  };
+}
+
+export async function rethrowAfterB12SessionOpenFailureCleanup(input: {
+  target: B12CoreRouteTarget;
+  role: AcceptanceRole;
+  openMode: B12SessionOpenMode;
+  originalError: unknown;
+  cleanupLogout: () => Promise<B12LogoutAttempt>;
+  closeContext: () => Promise<void>;
+  ledgerDetached: () => boolean;
+  contextClosed: () => boolean;
+  forbiddenLiterals?: readonly string[];
+  emit?: (line: string) => void;
+}): Promise<never> {
+  let logoutAttempt: B12LogoutAttempt = {
+    result: "failed",
+    mechanism: null,
+  };
+  try {
+    logoutAttempt = await input.cleanupLogout();
+  } catch {
+    logoutAttempt = { result: "failed", mechanism: null };
+  }
+  try {
+    await input.closeContext();
+  } catch {
+    // The fixed contextClosed fact below preserves the failure safely.
+  }
+  const summary: B12SessionOpenFailureCleanupSummary = {
+    scenarioKey: input.target.scenarioKey,
+    routeKey: input.target.routeKey,
+    role: input.role,
+    openMode: input.openMode,
+    logoutResult: logoutAttempt.result,
+    logoutMechanism: logoutAttempt.mechanism,
+    ledgerDetached: input.ledgerDetached(),
+    contextClosed: input.contextClosed(),
+  };
+  try {
+    const line = `B12_SESSION_OPEN_FAILURE_CLEANUP ${safeJsonStringify(
+      summary,
+      input.forbiddenLiterals,
+    )}`;
+    (input.emit ?? console.log)(line);
+  } catch {
+    // Safe-summary emission must never replace the original assertion error.
+  }
+  throw input.originalError;
+}
+
 export function setB12LoginBoundaryEntryIndex(
   currentBoundaryEntryIndex: number | null,
   entryCount: number,
@@ -584,6 +964,7 @@ export function inspectB12CoreWorkflowNavigationAuthEntries(
   entries: readonly NetworkLedgerEntry[],
   workflowNavigationBoundaryEntryIndex: number | null | undefined,
   workflowNavigationCompletedEntryIndex: number | null | undefined,
+  forbiddenLiterals: readonly string[] = [],
 ): B12CoreWorkflowNavigationAuthInspection {
   if (
     typeof workflowNavigationBoundaryEntryIndex !== "number" ||
@@ -632,39 +1013,70 @@ export function inspectB12CoreWorkflowNavigationAuthEntries(
   const workflowNavigationAuthMeEntries = workflowNavigationEntries.filter(
     ({ safeUrlPattern }) => safeUrlPattern === "/auth/me",
   );
-  if (workflowNavigationAuthMeEntries.length === 0) {
-    throw new Error("B12 workflow navigation omitted /auth/me");
-  }
-  if (
-    workflowNavigationAuthMeEntries.some(({ method }) => method !== "GET")
-  ) {
-    throw new Error("B12 workflow navigation /auth/me was not a GET request");
-  }
-  if (
+  const invalidAuthMeEntryDetected =
+    workflowNavigationAuthMeEntries.length === 0 ||
     workflowNavigationAuthMeEntries.some(
-      ({ failureReason }) => failureReason !== null,
-    )
-  ) {
-    throw new Error(
-      "B12 workflow navigation /auth/me had a request failure",
+      ({ method, status, failureReason, initiator }) =>
+        method !== "GET" ||
+        status === null ||
+        status < 200 ||
+        status >= 300 ||
+        failureReason !== null ||
+        initiator !== "script",
     );
-  }
-  if (
-    workflowNavigationAuthMeEntries.some(
-      ({ status }) => status === null || status < 200 || status >= 300,
-    )
-  ) {
-    throw new Error(
-      "B12 workflow navigation /auth/me response was not 2xx",
+  if (invalidAuthMeEntryDetected) {
+    const safeEntries = workflowNavigationEntries.map(
+      toB12SafeNetworkDiagnosticEntry,
     );
-  }
-  if (
-    workflowNavigationAuthMeEntries.some(
-      ({ initiator }) => initiator !== "script",
-    )
-  ) {
-    throw new Error(
-      "B12 workflow navigation /auth/me was not initiated by page script",
+    const authMeFacts = safeEntries
+      .filter(
+        ({ safeEndpointPattern }) => safeEndpointPattern === "/auth/me",
+      )
+      .map(
+        ({ relativeIndex, status, method, initiator, failureReason }) => ({
+          relativeIndex,
+          status,
+          method,
+          initiator,
+          failureReason,
+        }),
+      );
+    const protectedGetFacts = safeEntries
+      .filter(
+        ({ method, safeEndpointPattern }) =>
+          method === "GET" && safeEndpointPattern.startsWith("/patients/"),
+      )
+      .map(({ relativeIndex, safeEndpointPattern, status }) => ({
+        relativeIndex,
+        safeEndpointPattern,
+        status,
+      }));
+    const protected403Facts = protectedGetFacts.filter(
+      ({ status }) => status === 403,
+    );
+    const relativeOrderFacts = authMeFacts.flatMap((authMe) =>
+      protected403Facts.map((protectedEntry) => ({
+        authMeRelativeIndex: authMe.relativeIndex,
+        protected403RelativeIndex: protectedEntry.relativeIndex,
+        order:
+          authMe.relativeIndex < protectedEntry.relativeIndex
+            ? "auth_me_before_protected_403"
+            : "auth_me_after_protected_403",
+      })),
+    );
+    throw b12SafeDiagnosticError(
+      "B12_WORKFLOW_NAVIGATION_AUTH_PROBE_INVALID",
+      {
+        workflowStartBoundary: workflowNavigationBoundaryEntryIndex,
+        workflowCompletedBoundary: workflowNavigationCompletedEntryIndex,
+        navigationEntryCount: workflowNavigationEntries.length,
+        authMe: limitB12SafeFacts(authMeFacts),
+        protectedPatientVisitClinicalReportGets:
+          limitB12SafeFacts(protectedGetFacts),
+        authMeToProtected403Order:
+          limitB12SafeFacts(relativeOrderFacts),
+      },
+      forbiddenLiterals,
     );
   }
 
@@ -686,6 +1098,7 @@ export function partitionB12AuthLifecycleEntries(
   entries: readonly NetworkLedgerEntry[],
   loginBoundaryEntryIndex: number,
   logoutBoundaryEntryIndex: number,
+  forbiddenLiterals: readonly string[] = [],
 ): B12AuthLifecyclePartition {
   if (
     !Number.isInteger(loginBoundaryEntryIndex) ||
@@ -716,6 +1129,16 @@ export function partitionB12AuthLifecycleEntries(
   const preLoginAuthMeEntries = preAuthenticationEntries.filter(
     ({ method, safeUrlPattern }) =>
       method === "GET" && safeUrlPattern === "/auth/me",
+  );
+  const expectedLoginPageEntries = preAuthenticationEntries.filter(
+    expectedLoginPageRequest,
+  );
+  const preLoginAuthMeEntrySet = new Set(preLoginAuthMeEntries);
+  const expectedLoginPageEntrySet = new Set(expectedLoginPageEntries);
+  const unexpectedPreAuthenticationEntries = preAuthenticationEntries.filter(
+    (entry) =>
+      !preLoginAuthMeEntrySet.has(entry) &&
+      !expectedLoginPageEntrySet.has(entry),
   );
   const loginEntries = loginAndAuthenticatedEntries.filter(
     ({ method, safeUrlPattern }) =>
@@ -787,14 +1210,18 @@ export function partitionB12AuthLifecycleEntries(
   ) {
     throw new Error("B12 pre-authentication /auth/me response was not a clean 401");
   }
-  if (
-    preAuthenticationEntries.some(
-      (entry) =>
-        entry !== preLoginAuthMeEntry && !expectedLoginPageRequest(entry),
-    )
-  ) {
-    throw new Error(
-      "B12 protected business request occurred before authentication",
+  if (unexpectedPreAuthenticationEntries.length > 0) {
+    const unexpectedEntrySet = new Set(unexpectedPreAuthenticationEntries);
+    const safeUnexpectedEntries = preAuthenticationEntries
+      .map(toB12SafeNetworkDiagnosticEntry)
+      .filter((_, index) => {
+        const entry = preAuthenticationEntries[index];
+        return entry !== undefined && unexpectedEntrySet.has(entry);
+      });
+    throw b12SafeDiagnosticError(
+      "B12_PRE_AUTHENTICATION_UNEXPECTED_REQUEST",
+      limitB12SafeNetworkDiagnosticEntries(safeUnexpectedEntries),
+      forbiddenLiterals,
     );
   }
   if (
@@ -1210,6 +1637,7 @@ export class B12BrowserSession {
   readonly page: Page;
   private readonly ledger = new NetworkLedger();
   private readonly consoleAudit: ConsoleAudit;
+  private readonly safeConsoleDiagnostics: B12SafeConsoleDiagnosticListener;
   private readonly latestFacts: B12LatestFacts[] = [];
   private readonly internalActorIds = new Set<string>();
   private readonly lockRequests: InternalLockRequestEvidence[] = [];
@@ -1253,6 +1681,7 @@ export class B12BrowserSession {
   ) {
     this.page = page;
     this.consoleAudit = new ConsoleAudit(page);
+    this.safeConsoleDiagnostics = new B12SafeConsoleDiagnosticListener(page);
   }
 
   static async create(input: {
@@ -1289,10 +1718,30 @@ export class B12BrowserSession {
       await session.open();
       return session;
     } catch (error: unknown) {
-      await session.bestEffortLogout().catch(() => "failed");
-      await session.closeContext().catch(() => undefined);
-      throw error;
+      return rethrowAfterB12SessionOpenFailureCleanup({
+        target: input.target,
+        role: input.role,
+        openMode: input.openMode,
+        originalError: error,
+        cleanupLogout: async () => ({
+          result: await session.bestEffortLogout(),
+          mechanism: session.logoutMechanism,
+        }),
+        closeContext: () => session.closeContext(),
+        ledgerDetached: () => session.ledgerDetached,
+        contextClosed: () => session.contextClosed,
+        forbiddenLiterals: session.diagnosticForbiddenLiterals(),
+      });
     }
+  }
+
+  private diagnosticForbiddenLiterals(): string[] {
+    return [
+      this.environment.fixturePassword,
+      this.loginIdentifier,
+      this.descriptor.navigationPath,
+      ...Object.values(B12_NEUTRAL_TEXT),
+    ];
   }
 
   private registerCapture(
@@ -1337,6 +1786,12 @@ export class B12BrowserSession {
 
   private readonly onResponse = (response: Response): void => {
     if (!this.acceptingCaptures) return;
+    this.safeConsoleDiagnostics.markNetworkObservation({
+      method: response.request().method(),
+      safeEndpointPattern: sanitizeUrlPattern(response.url()),
+      status: response.status(),
+      failureReason: null,
+    });
     if (response.url().startsWith(`${this.environment.backendOrigin}/`)) {
       this.registerCapture(
         "response_headers",
@@ -1524,6 +1979,7 @@ export class B12BrowserSession {
     await this.page.waitForLoadState("networkidle", { timeout: 10_000 });
 
     this.consoleAudit.start();
+    this.safeConsoleDiagnostics.start();
     this.consoleListening = true;
   }
 
@@ -1551,6 +2007,7 @@ export class B12BrowserSession {
       entries,
       this.workflowNavigationBoundaryEntryIndex,
       this.workflowNavigationCompletedEntryIndex,
+      this.diagnosticForbiddenLiterals(),
     );
     this.workflowNavigationAuthMeRequestCount =
       inspection.workflowNavigationAuthMeRequestCount;
@@ -1919,9 +2376,14 @@ export class B12BrowserSession {
   }
 
   private stopConsoleAudit() {
-    if (!this.consoleListening) return this.consoleAudit.summary();
+    if (!this.consoleListening) {
+      this.safeConsoleDiagnostics.stop();
+      return this.consoleAudit.summary();
+    }
     this.consoleListening = false;
-    return this.consoleAudit.stop();
+    const summary = this.consoleAudit.stop();
+    this.safeConsoleDiagnostics.stop();
+    return summary;
   }
 
   private recordLogoutBoundary(): void {
@@ -1991,6 +2453,7 @@ export class B12BrowserSession {
 
       const publicRead = this.publicReadEvidence();
       const consoleSummary = this.stopConsoleAudit();
+      const safeConsoleSummary = this.safeConsoleDiagnostics.summary();
       const routeScopedAllowedFailureCount =
         this.lockResponses.filter(({ status }) => status >= 400).length +
         this.explicitAbortedLockCount +
@@ -1998,7 +2461,15 @@ export class B12BrowserSession {
       expect(consoleSummary.warningCount).toBe(0);
       expect(consoleSummary.pageErrorCount).toBe(0);
       if (this.openMode === "clinical_report_incomplete") {
-        expect(consoleSummary.errorCount).toBe(publicRead.count);
+        assertB12SafeConsoleNetworkCorrelation({
+          networkEntries: this.ledger.entries(),
+          consoleEvents: safeConsoleSummary.events,
+          failurePhaseConsoleSequences:
+            safeConsoleSummary.failurePhaseConsoleSequences,
+          observedConsoleErrorCount: consoleSummary.errorCount,
+          allowedConsoleErrorCount: publicRead.count,
+          forbiddenLiterals: this.diagnosticForbiddenLiterals(),
+        });
       } else {
         expect(consoleSummary.errorCount).toBeLessThanOrEqual(
           routeScopedAllowedFailureCount,
@@ -2042,6 +2513,7 @@ export class B12BrowserSession {
           entries,
           this.workflowNavigationBoundaryEntryIndex,
           this.workflowNavigationCompletedEntryIndex,
+          this.diagnosticForbiddenLiterals(),
         );
       if (
         this.workflowNavigationAuthMeRequestCount !==
@@ -2055,6 +2527,7 @@ export class B12BrowserSession {
         entries,
         this.loginBoundaryEntryIndex,
         this.logoutBoundaryEntryIndex,
+        this.diagnosticForbiddenLiterals(),
       );
       const count = (method: string, pattern: RegExp | string) =>
         entries.filter(
@@ -2251,6 +2724,17 @@ export class B12BrowserSession {
     return result;
   }
 
+  failureCleanupResult(logout: B12LogoutResult): B12FailureCleanupResult {
+    return {
+      scenarioKey: this.target.scenarioKey,
+      routeKey: this.target.routeKey,
+      role: this.role,
+      openMode: this.openMode,
+      logout,
+      mechanism: this.logoutMechanism,
+    };
+  }
+
   async closeContext(): Promise<void> {
     if (this.contextClosed) return;
     await this.closeBrowserContext();
@@ -2364,7 +2848,7 @@ export class B12RouteRun {
   }
 
   async cleanupAfterFailure(): Promise<
-    Array<{ label: string; logout: B12LogoutResult }>
+    B12FailureCleanupResult[]
   > {
     return Promise.all(
       this.sessions().map(async (session) => {
@@ -2372,7 +2856,7 @@ export class B12RouteRun {
           .bestEffortLogout()
           .catch(() => "failed" as const);
         await session.closeContext().catch(() => undefined);
-        return { label: session.label, logout };
+        return session.failureCleanupResult(logout);
       }),
     );
   }
@@ -2472,13 +2956,22 @@ export async function runB12CoreRoute(
         () => false,
       );
       console.log(
-        `B12_CORE_FAILURE_CLEANUP ${safeJsonStringify({
-          logout,
-          contextsClosed,
-          runtimeDescriptorDeleted,
-          systemRuntimeDescriptorDeleted,
-          failureArtifactsRemoved,
-        })}`,
+        `B12_CORE_FAILURE_CLEANUP ${safeJsonStringify(
+          {
+            logout,
+            contextsClosed,
+            runtimeDescriptorDeleted,
+            systemRuntimeDescriptorDeleted,
+            failureArtifactsRemoved,
+          },
+          [
+            input.environment.fixturePassword,
+            descriptor.loginIdentifier,
+            descriptor.secondaryLoginIdentifier ?? "",
+            descriptor.navigationPath,
+            ...Object.values(B12_NEUTRAL_TEXT),
+          ],
+        )}`,
       );
     } else {
       await removeCurrentB12TestOutput().catch(() => false);
