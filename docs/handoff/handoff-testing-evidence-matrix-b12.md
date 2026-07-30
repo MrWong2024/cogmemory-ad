@@ -1,10 +1,10 @@
 # B12-G2.1 验收点—执行与证据矩阵
 
-**状态：G3-A approved — G3-A1 execution layer completed; G3-A2 canary pending; G3-B deferred**
+**状态：G3-A approved — G3-A1 completed; G3-A2 canary completed; G3-A3 pending; G3-B deferred**
 
-本文件完整保留 B12-01～B12-88 的稳定要求、顺序、正式 Audit owner、33 条 owner route、route contract、当前 fixture / Playwright 与 B12-B1～B12-B9 历史状态。B12-G2.1 Draft v3 已获用户批准，批准范围仅为 G3-A；G3-A1 已完成通用 execution layer 的代码级与 synthetic/static 门禁，未产生正式 Browser Audit 证据，也不填写 evidence commit。
+本文件完整保留 B12-01～B12-88 的稳定要求、顺序、正式 Audit owner、33 条 owner route、route contract、当前 fixture / Playwright 与 B12-B1～B12-B9 历史状态。B12-G2.1 Draft v3 已获用户批准，批准范围仅为 G3-A；G3-A1 已完成通用 execution layer，G3-A2 已完成真实 Browser canary。两者均不产生正式 Browser Audit pass，也不填写 evidence commit。
 
-G3-A1 不连接真实 Page、BrowserContext、产品 Browser、fixture 或数据库；现有正式 fixture、route、owner、runtime descriptor、Stage、verifier、cleanup 与产品均未改变。下一阶段仅为 G3-A2 canary；G3-B 仍须另行审批。B12 Browser 继续暂停，B12-B、B12 与 Batch D 状态不变，不进入 B12-C，不关闭任何 B12 ID，不启动 B13～B15。
+G3-A2 只在旧的 6 套独立 fixture roots 上验证 execution adapter、Owner journal、Session/Context、owner minimal cleanup、controlled-read 恢复、system 403 收口、auth 横切隔离与单次 doctor A22；现有正式 fixture、route、owner、mutation、Stage、verifier、cleanup 与产品均未改变。下一阶段仅为 G3-A3 正式 execution matrix；G3-B 仍须另行审批。B12-B、B12 与 Batch D 状态不变，不进入 B12-C，不关闭任何 B12 ID，不启动 B13～B15。
 
 ## 1. 三层口径与固定枚举
 
@@ -445,21 +445,28 @@ G3-A 必须保持现有 33 套 fixture roots、fixture builder、manifest、runt
 
 G3-A1 未启动产品 frontend、Browser backend、fixture CLI、产品 Browser 或 G3-A2 canary，未连接数据库。现有 33 条正式 owner route、fixture roots、runtime descriptor、Stage、verifier、cleanup 及 B12-01～B12-88 状态全部保持不变。
 
-### 14.2 G3-A2 canary（尚未执行）
+### 14.2 G3-A2 canary（已完成）
 
 canary 固定覆盖以下 owner，不改变它们的正式所有权或既有独立 fixture：
 
 | canary 能力 | owner route | 目的 |
 |---|---|---|
-| 同 Session 两个 doctor 只读 owner | draft-no-entry；pending-no-entry | journal 顺序、Session 复用、owner 间页面/listener 清理 |
-| controlled-read owner | finality-inconsistent | 单次 route 拦截安装/移除、恢复真实读取 |
+| 同 Session 三个 doctor 只读 owner | draft-no-entry；pending-no-entry；finality-inconsistent | journal 顺序、Session 复用、owner 间页面/listener 清理；controlled read 单次安装/移除并恢复真实读取 |
 | 普通写入 owner | doctor-lock-success | 写入 owner 与共享 Session/横切 collector 隔离 |
 | 权限失败 owner | denied-role-entry 的 system 403 分支 | 真实 403、group setup 与产品失败分类、独立 Context 收口 |
 | 横切代表 owner | auth-route-deidentified | auth lifecycle、logout/Cookie/CORS gate 与 supporting evidence 隔离 |
 
 canary 预算可复算为 6 个 owner journal、4 个 execution test/group、4 个 Context/Session、6 套现有独立 Patient/Visit/Report roots、6 个 runtime descriptor、2 次 route-scoped intercept（finality controlled read、doctor A22 gate；system 403 使用真实响应而不拦截）、4 次完整 collect 与 6 次 minimal owner 收口。该 canary 只验证 journal、Session 复用、route 拦截清理、横切失败隔离和真实 logout；不验证 fixture cluster 共享，也不减少任何 root。
 
-任一 canary 失败不得进入 G3-A 正式矩阵；任一公共 support 连续影响两个 owner，立即停止 G3-A 正式矩阵并保存已完成 journal。G3-A 正式预算为第 10 节的 20 groups、24 Sessions、33 journal、33/33/33 Patient/Visit/Report，不得把 G3-B 的 root 减量计入。
+实际结果：4 个 group 的 `stopReason=none`、`groupSetupSucceeded=true`、`groupCleanupSucceeded=true`、`profileCompletionBlocked=false`，6 个 owner 均为 `pass` 且 `minimalCleanupCompleted=true`。doctor-read-only 在一个真实 doctor Session 中依次完成 draft、pending、finality，finality controlled read 安装/移除各 1 次且 cleanup 后真实读取恢复 `isFinal=true`；system 使用独立 Context 取得真实 protected GET 403、scripted logout 2xx、post-logout `/auth/me` 401 与 Cookie 清除；auth 代表 owner 的 pre-auth/login/authenticated/logout/post-logout、CORS、Storage、URL 与 DOM 只登记 Supporting/Non-audit，`directAuditResults=[]`；doctor-lock 在独立 Context 的真实 A22 pending gate 下完成唯一 POST 200，gate 安装/移除各 1 次，`databaseTerminalEvidence=not_applicable_to_canary`。
+
+Owner journal 实际使用 `onOwnerFinalized`，在每次 minimal cleanup 后、下一 owner 开始前通过临时文件、fsync 与 atomic rename 固化；成功 group 校验顺序后删除，失败演练中已固化安全文件可读且在收口后删除。journal 固定 `evidenceScope=canary_only`、`auditClosureAllowed=false`，6 个 owner 的 `directAuditIds=[]`；`formalTargetAuditIds` 只用于追踪 B12-01、B12-02、B12-08、B12-13、B12-33～40、B12-44、B12-46～48、B12-83～85，不进入 Direct impact。88 行 Executed evidence 与 testing playbook 中的 B12 ID 状态均未改变。
+
+两个 profile 均完成 prepare、prepared verify；Core 在四个零写入 owner 后、Resilience 在 auth owner 后分别再次通过 prepared verify。两个独立 namespace 最终均完成双次 cleanup：第一次 `matched=true,residualCount=0`，第二次 `matched=false,residualCount=0`，canonical seed 不变；6 个 runtime、4 个 journal、`test-results`、任务 Node/Chromium 与 3002/5002 listener 均无残留。最终候选 group 记录耗时分别为 4682ms、3052ms、2878ms、3101ms；Core prepare/verify/runtime 为 113.1s，Resilience 为 52.4s，两次 re-verify 为 17.3s / 16.6s，双 profile cleanup 合计 62.2s，最终 fixture-to-cleanup 命令墙钟约 327s。资产修改窗口约 5254s，从首个 canary 资产创建到残留审计约 6050s；以上仅记录耗时，不设置性能阈值。
+
+前置门禁最终通过：frontend infrastructure 90/90、test list 147 tests / 23 files（现有 B12 core 仍为 22 route）、lint、typecheck、production build；backend build、B12 fixture 定向 E2E 1 suite / 11 tests，以及因 package script 参数行为实际触发的完整 E2E 27 suites / 148 tests 均通过。确认产品缺陷 0、fixture 缺陷 0、execution layer 缺陷 0、最终 Playwright/support 缺陷 0、环境缺陷 0；执行过程中发现并修复的均为 canary adapter 资产问题，且每次都先完整收口旧 namespace、重跑 synthetic/static，再用两个全新 namespace 从头执行，未拼接旧证据。
+
+G3-A2 完成不授权 G3-A3 或 G3-B。G3-A 正式预算仍为第 10 节的 20 groups、24 Sessions、33 journal、33/33/33 Patient/Visit/Report；G3-A3 为 `not_executed`，不得把 G3-B 的 root 减量计入。
 
 ## 15. G3-B：Fixture cluster 优化
 
@@ -478,7 +485,7 @@ G3-A 不批准 G3-B，G3-A 稳定也不自动开始 G3-B；两阶段均不自动
 
 ## 16. 当前边界结论
 
-- G3-A1 execution layer 的 types、Owner result journal、group runner、横切证据 registry、安全 snapshot/callback 与独立 synthetic spec 已完成；只执行 synthetic/static 门禁，不产生正式 Browser evidence。
+- G3-A1 execution layer 与 G3-A2 真实 Browser canary 均已完成；canary 只证明 execution adapter 与支持边界，不产生正式 Browser Audit pass。
 - 正式 owner、route、fixture contract、runtime descriptor、Stage、verifier、cleanup 与 B12-B1～B12-B9 历史事实不变；88 行均 unclosed，Executed evidence 无 passed。
-- G3-A2 canary 为 `not_executed`，下一阶段仅为 G3-A2；G3-B 仍未批准，不实施第 6 节 fixture cluster 减量或 20 个正式 execution group。
+- G3-A3 正式 execution matrix 为 `not_executed`，下一阶段仅为 G3-A3；G3-B 仍未批准，不实施第 6 节 fixture cluster 减量或 20 个正式 execution group。
 - B12 Browser 继续暂停；B12-B、B12 与 Batch D 状态不变；不进入 B12-C，不关闭任何 B12 ID，不启动 B13～B15，不修改 roadmap，不填写 evidence commit。

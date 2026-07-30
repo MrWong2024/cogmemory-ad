@@ -15,6 +15,12 @@ export type B12CoreRouteTarget = {
   routeKey: string;
 };
 
+export type B12ResilienceCanaryRouteTarget = {
+  profile: "resilience-security";
+  scenarioKey: "presentation-safety";
+  routeKey: "auth-route-deidentified";
+};
+
 export type B12CoreRuntimeDescriptor = {
   version: 1;
   batch: "B12";
@@ -25,6 +31,17 @@ export type B12CoreRuntimeDescriptor = {
   secondaryRole?: AcceptanceRole;
   loginIdentifier: string;
   secondaryLoginIdentifier?: string;
+  navigationPath: string;
+};
+
+export type B12ResilienceCanaryRuntimeDescriptor = {
+  version: 1;
+  batch: "B12";
+  profile: "resilience-security";
+  scenarioKey: "presentation-safety";
+  routeKey: "auth-route-deidentified";
+  primaryRole: "doctor";
+  loginIdentifier: string;
   navigationPath: string;
 };
 
@@ -81,6 +98,10 @@ export function b12RuntimeOutputName(
   role?: "system",
 ): string {
   return `b12-${target.scenarioKey}-${target.routeKey}${role ? `-${role}` : ""}.json`;
+}
+
+export function b12ResilienceCanaryRuntimeOutputName(): string {
+  return "b12-resilience-presentation-safety-auth-route-deidentified.json";
 }
 
 export function b12StageMarkerPath(
@@ -178,6 +199,36 @@ function parseDescriptor(
   return value as B12CoreRuntimeDescriptor;
 }
 
+export function validateB12ResilienceCanaryRuntimeDescriptorValue(
+  value: unknown,
+): B12ResilienceCanaryRuntimeDescriptor {
+  if (!isRecord(value)) {
+    throw new Error("B12 resilience canary runtime descriptor is invalid");
+  }
+  const expectedKeys = ALLOWED_BASE_KEYS;
+  if (
+    JSON.stringify(Object.keys(value).sort()) !==
+      JSON.stringify([...expectedKeys].sort()) ||
+    value.version !== 1 ||
+    value.batch !== "B12" ||
+    value.profile !== "resilience-security" ||
+    value.scenarioKey !== "presentation-safety" ||
+    value.routeKey !== "auth-route-deidentified" ||
+    value.primaryRole !== "doctor" ||
+    typeof value.loginIdentifier !== "string" ||
+    !/^b12r-[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value.loginIdentifier) ||
+    typeof value.navigationPath !== "string" ||
+    !/^\/patients\/[a-f\d]{24}\/visits\/[a-f\d]{24}$/i.test(
+      value.navigationPath,
+    )
+  ) {
+    throw new Error(
+      "B12 resilience canary runtime descriptor differs from its fixed target",
+    );
+  }
+  return value as B12ResilienceCanaryRuntimeDescriptor;
+}
+
 export async function readB12CoreRuntimeDescriptor(
   target: B12CoreRouteTarget,
   roleOverride?: "system",
@@ -198,12 +249,37 @@ export async function readB12CoreRuntimeDescriptor(
   return parseDescriptor(parsed, target, roleOverride);
 }
 
+export async function readB12ResilienceCanaryRuntimeDescriptor(): Promise<B12ResilienceCanaryRuntimeDescriptor> {
+  const runtimeFile = await resolveSafeRuntimeFile(
+    b12ResilienceCanaryRuntimeOutputName(),
+  );
+  const source = await readFile(runtimeFile, "utf8");
+  if (Buffer.byteLength(source, "utf8") > 4096) {
+    throw new Error("B12 runtime descriptor exceeds the fixed size limit");
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(source);
+  } catch {
+    throw new Error("B12 runtime descriptor is not valid JSON");
+  }
+  return validateB12ResilienceCanaryRuntimeDescriptorValue(parsed);
+}
+
 export async function deleteB12CoreRuntimeDescriptor(
   target: B12CoreRouteTarget,
   roleOverride?: "system",
 ): Promise<boolean> {
   const runtimeFile = await resolveSafeRuntimeFile(
     b12RuntimeOutputName(target, roleOverride),
+  );
+  await unlink(runtimeFile);
+  return true;
+}
+
+export async function deleteB12ResilienceCanaryRuntimeDescriptor(): Promise<boolean> {
+  const runtimeFile = await resolveSafeRuntimeFile(
+    b12ResilienceCanaryRuntimeOutputName(),
   );
   await unlink(runtimeFile);
   return true;

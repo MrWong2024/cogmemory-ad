@@ -6,7 +6,7 @@
 
 本文档不改变产品、接口、DTO、Schema、测试合同或 roadmap。下文 B7–B15 的阶段内序号保持减肥前基线顺序，序号即该阶段稳定验证项；不得重排、合并或用数量摘要替代验证意图。
 
-> [B12-G2.1 Draft v3 执行与证据矩阵](./handoff-testing-evidence-matrix-b12.md) 已获用户批准，批准范围仅为 G3-A。G3-A1 通用 execution layer 已完成：Owner result journal、execution group runner、逐 owner minimal cleanup 门禁、Direct/Supporting/Non-audit 隔离和安全 snapshot 通过 20 项独立 synthetic 测试，完整 infrastructure 79 项及 test list、lint、typecheck、build 均通过；未启动产品 Browser、frontend/backend、fixture 或数据库，现有 33 条正式 owner route、fixture/runtime/Stage/verifier/cleanup 与 88 项状态不变。下一阶段仅为 G3-A2 canary；G3-B 仍未批准，B12 Browser 继续暂停，不进入 B12-C，也不关闭任何 B12 ID。
+> [B12-G2.1 Draft v3 执行与证据矩阵](./handoff-testing-evidence-matrix-b12.md) 已获用户批准，批准范围仅为 G3-A。G3-A1 execution layer 与 G3-A2 真实 Browser canary 已完成：6 个 canary owner 通过 4 个 execution group / 4 个独立 Session 使用 6 套旧 roots，完成 6 次原子 Owner journal callback、6 次 minimal cleanup、finality controlled-read 恢复、system 真实 403 + fallback logout、auth Supporting/Non-audit 隔离及 doctor 真实 A22；两个 profile prepared re-verify 与双次 cleanup 均通过，运行产物无残留。所有 canary owner 的 `directAuditIds=[]`、`auditClosureAllowed=false`，88 个 B12 ID 状态不变。G3-A3 仍为 `not_executed`，G3-B 未批准；下一阶段仅为 G3-A3，不进入 B12-C。
 
 ## 2. 当前验证状态总表
 
