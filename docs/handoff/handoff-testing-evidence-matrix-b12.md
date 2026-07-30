@@ -2,9 +2,9 @@
 
 **状态：G3-A approved — G3-A1 completed; G3-A2 completed; G3-A3.1 core matrix and profile evidence assets completed; G3-A3.2 core execution pending; G3-B deferred**
 
-本文件完整保留 B12-01～B12-88 的稳定要求、顺序、正式 Audit owner、33 条 owner route、route contract、当前 fixture / Playwright 与 B12-B1～B12-B9 历史状态。B12-G2.1 Draft v3 已获用户批准，批准范围仅为 G3-A；G3-A1 已完成通用 execution layer，G3-A2 已完成真实 Browser canary，G3-A3.1 已完成 core 正式 execution matrix 与 profile evidence 资产及 synthetic/static 门禁。G3-A3.1 不产生正式 Browser Audit pass，也不填写 evidence commit。
+本文件完整保留 B12-01～B12-88 的稳定要求、顺序、正式 Audit owner、33 条 owner route、route contract、当前 fixture / Playwright 与 B12-B1～B12-B9 历史状态。B12-G2.1 Draft v3 已获用户批准，批准范围仅为 G3-A；G3-A1 已完成通用 execution layer，G3-A2 已完成真实 Browser canary，G3-A3.1 已完成 core 正式 execution matrix 与 profile evidence 资产及 synthetic/static 门禁。G3-A3.2 首轮正式执行已按停止门禁收口，但因外层 Browser origin 编排不一致在第一个 group 的 setup/auth 阶段失败；未形成任何 owner pass 或 profile closure。不存在可填写的 evidence commit。
 
-G3-A2 只在旧的 6 套独立 fixture roots 上验证 execution adapter、Owner journal、Session/Context、owner minimal cleanup、controlled-read 恢复、system 403 收口、auth 横切隔离与单次 doctor A22；G3-A3.1 只接入 10 个 core execution group、22 个共享 owner action、62 个 Direct Audit ID、14 个 Session 与 23 个 runtime descriptor 的正式资产，并补齐 group outcome、provisional closure 与 profile evidence aggregator。现有正式 fixture、route、owner、mutation、Stage、verifier、cleanup 与产品均未改变。下一阶段仅为 G3-A3.2 core 正式 Browser 执行；G3-B 仍须另行审批。B12-B、B12 与 Batch D 状态不变，不进入 B12-C，不关闭任何 B12 ID，不启动 B13～B15。
+G3-A2 只在旧的 6 套独立 fixture roots 上验证 execution adapter、Owner journal、Session/Context、owner minimal cleanup、controlled-read 恢复、system 403 收口、auth 横切隔离与单次 doctor A22；G3-A3.1 只接入 10 个 core execution group、22 个共享 owner action、62 个 Direct Audit ID、14 个 Session 与 23 个 runtime descriptor 的正式资产，并补齐 group outcome、provisional closure 与 profile evidence aggregator。现有正式 fixture、route、owner、mutation、Stage、verifier、cleanup 与产品均未改变。G3-A3.2 仍须在正确且完全一致的 production/frontend/backend/runner origin 下使用另一个全新 namespace 从 prepare 开始完整执行；本轮失败证据不得与后续证据拼接。G3-B 仍须另行审批。B12-B、B12 与 Batch D 状态不变，不进入 B12-C，不关闭任何 B12 ID，不启动 B13～B15。
 
 ## 1. 三层口径与固定枚举
 
@@ -484,6 +484,16 @@ G3-A3.1 已接入 `core-workflow` 的 10 个正式 execution group、22 条正�
 
 静态门禁结果：G3-A1 20/20、G3-A2 11/11、既有 G3-A3.1 core matrix 15/15 与新增 profile evidence 35/35 分别通过；完整 infrastructure 140/140 通过。Browser test list 为 31 files / 208 tests，其中旧 core 22、formal Browser group 10、formal profile evidence 1、canary 4、resilience formal 0；frontend lint、typecheck 与 production build 均通过。以上只证明资产、类型、安全输出与 synthetic 合同，不证明任何正式 Browser route 或 Audit ID。88 个 B12 ID 的 Executed evidence 和当前状态全部不变，resilience 的 10 个正式 execution group 仍未接入。
 
+### 14.4 G3-A3.2 core 正式执行首轮（已阻断并收口）
+
+本轮基于 `207eb264c78362d5b9740d56de6809e85b0ba5e5`，起点为 `main`、精确 HEAD、clean 工作区。G3-A2 后没有 backend、fixture builder/contract/manifest、runtime schema、Stage、prepared/post-browser verifier、cleanup 或 Playwright 配置变化，因此只执行 backend build 与 B12 fixture 定向 E2E；已有完整 E2E 27 suites / 148 tests 证据不机械重跑。frontend G3-A1 20/20、G3-A2 11/11、G3-A3.1 core matrix 15/15、profile evidence 35/35、完整 infrastructure 140/140、test list 31 files / 208 tests、lint、typecheck 与 production build 均通过；backend build、B12 定向 E2E 1 suite / 11 tests 均通过，`standard_test` 实际为 `cogmemory_ad_test` / app / `readWrite`。
+
+一个全新 `core-workflow` namespace 完成 prepare、prepared verify 与 23 个 runtime descriptor；fixture CLI 使用 Browser 测试库的 db_admin / `dbOwner`，Browser backend 使用同库 app / `readWrite`，Playwright runner 未加载数据库变量。production frontend、Browser backend、health、CORS 与 credentials 探针通过后，首个 `eg-doctor-eligibility-read-only` 实际执行并在 group setup/auth 阶段停止：12 个 owner 均为 `blocked_by_group_setup`，0 pass，`failureCategory=group_setup_auth`，`stopReason=group_setup_failed`，`groupSetupSucceeded=false`，`groupCleanupSucceeded=true`，`operationallyPassed=false`。唯一 journal 为 version 2 / finalized，group outcome 非空，provisional closure 保持 `group_provisional` 且 verifier 为 `not_executed`；它未被用作 final closure。该 group 安全摘要为 Context 0、Session 0、minimal cleanup 0、Stage 0，耗时 20,923ms；group cleanup 删除本组 12 个 runtime，剩余 11 个随后由 namespace cleanup 精确删除。
+
+根因不是产品、fixture、execution layer、formal adapter 或 Playwright/support 缺陷：production build 从既有 `.env.local` 编译的 API origin 为 `localhost:5002`，本轮外层编排却向 formal runner 与 Browser backend CORS 注入 `127.0.0.1` origin，导致真实认证响应无法匹配 adapter 的精确 backend-origin 等待条件。由于本任务只允许在已证明的正式测试资产缺陷修复后使用第二个全新 namespace，本轮没有修改测试资产，也没有以环境修正绕过失败停止门禁。其余 9 个 group、22 个 owner 中的全部业务执行、两个 Stage、零写入 group 后 prepared re-verify、完整 post-browser verifier、`99-core-profile-evidence.spec.ts` 与 62 项 profile closure 均为 `not_executed`；失败路径只读 post-browser 诊断按不完整终态返回 `B12_FIXTURE_POST_BROWSER_MUTATION_INVALID`，不得视为完整 verifier pass或第二个产品缺陷。
+
+收口结果：cleanup 1 为 `matched=true,residualCount=0`，并删除剩余 11 个 runtime；cleanup 2 为 `matched=false,residualCount=0`；两次 canonical seed 均不变。BrowserContext、Chromium、production frontend、Browser backend、3002/5002、runtime、Stage marker、journal、profile artifact、Playwright test-results、Session 与临时编排目录最终均为 0。缺陷分类为产品 0、fixture 0、execution layer 0、formal adapter 0、Playwright/support 0、外层环境编排阻断 1；测试资产修改耗时 0。B12-01～B12-55、B12-64～B12-70 不得关闭；B12-56～B12-63、B12-71～B12-85 与 B12-86～B12-88 状态也全部保持不变。
+
 ## 15. G3-B：Fixture cluster 优化
 
 G3-B 只有在 G3-A canary 与正式 execution runner 稳定、结果 journal/失败隔离可用，并再次取得用户审批后才允许开始。G3-B 只可修改 cluster-aware builder、cluster-aware manifest、runtime 解析、prepared/post-browser verifier 与 cleanup；不得同时修改 Playwright execution model、execution group、journal 语义、横切映射或正式 owner/route。
@@ -503,5 +513,5 @@ G3-A 不批准 G3-B，G3-A 稳定也不自动开始 G3-B；两阶段均不自动
 
 - G3-A1 execution layer、G3-A2 真实 Browser canary 与 G3-A3.1 core 正式矩阵/profile evidence 资产均已完成；G3-A3.1 的 synthetic/static 只证明资产、registry、group outcome、provisional/profile closure、journal、安全输出与共享 action 合同，不产生正式 Browser Audit pass。
 - 正式 owner、route、fixture contract、runtime descriptor、Stage、verifier、cleanup 与 B12-B1～B12-B9 历史事实不变；88 行均 unclosed，Executed evidence 无 passed。
-- G3-A3.2 core 正式 Browser execution 为 `not_executed`，resilience 的 10 个正式 execution group 仍未接入；下一阶段仅为 G3-A3.2 core 正式 Browser 执行。G3-B 仍未批准，不实施第 6 节 fixture cluster 减量。
+- G3-A3.2 core 正式 Browser execution 首轮在第一个 group setup/auth 阶段失败并完成双次 cleanup；没有 owner pass、完整 verifier 或 profile closure，62 个 core ID 全部不关闭。resilience 的 10 个正式 execution group 仍未接入；下一阶段仍是使用正确 origin 与全新 namespace 完整重跑 G3-A3.2。G3-B 仍未批准，不实施第 6 节 fixture cluster 减量。
 - B12 Browser 继续暂停；B12-B、B12 与 Batch D 状态不变；不进入 B12-C，不关闭任何 B12 ID，不启动 B13～B15，不修改 roadmap，不填写 evidence commit。
