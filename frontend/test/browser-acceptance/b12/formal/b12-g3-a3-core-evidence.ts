@@ -17,10 +17,14 @@ export type B12G3A3FormalJournalSnapshot = Readonly<{
   ownerRecords: readonly B12OwnerJournalRecord[];
 }>;
 
+export const B12_G3_A3_PROFILE_VERIFIER_RESULTS = [
+  "pass",
+  "fail",
+  "not_executed",
+] as const;
+
 export type B12G3A3ProfileVerifierResult =
-  | "pass"
-  | "fail"
-  | "not_executed";
+  (typeof B12_G3_A3_PROFILE_VERIFIER_RESULTS)[number];
 
 function ownerRecordMap(
   snapshot: B12G3A3FormalJournalSnapshot,
@@ -72,6 +76,9 @@ export function computeB12CoreAuditClosure(
     B12_G3_A3_CORE_OWNERS,
   profileVerifierResult: B12G3A3ProfileVerifierResult = "not_executed",
 ): readonly B12G3A3AuditClosureEntry[] {
+  if (!B12_G3_A3_PROFILE_VERIFIER_RESULTS.includes(profileVerifierResult)) {
+    throw new Error("B12_FORMAL_CORE_PROFILE_VERIFIER_RESULT_INVALID");
+  }
   validateB12G3A3CoreRegistry(ownerRegistry);
   const records = ownerRecordMap(ownerJournal);
   const registryByKey = new Map(

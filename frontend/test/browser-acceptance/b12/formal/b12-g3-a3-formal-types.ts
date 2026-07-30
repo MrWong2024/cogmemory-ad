@@ -10,6 +10,14 @@ import type {
 export const B12_G3_A3_CORE_PHASE = "G3-A3_CORE" as const;
 export const B12_G3_A3_CORE_EVIDENCE_SCOPE = "formal_core" as const;
 export const B12_G3_A3_CORE_AUDIT_CLOSURE_ALLOWED = true as const;
+export const B12_G3_A3_CORE_JOURNAL_VERSION = 2 as const;
+export const B12_G3_A3_GROUP_PROVISIONAL_CLOSURE_SCOPE =
+  "group_provisional" as const;
+export const B12_G3_A3_CORE_PROFILE_PHASE = "G3-A3_CORE_PROFILE" as const;
+export const B12_G3_A3_CORE_PROFILE_EVIDENCE_SCOPE =
+  "formal_core_profile" as const;
+export const B12_G3_A3_PROFILE_FINAL_CLOSURE_SCOPE = "profile_final" as const;
+export const B12_G3_A3_CORE_PROFILE_ARTIFACT_VERSION = 1 as const;
 
 export const B12_G3_A3_CORE_EXECUTION_GROUPS = [
   "eg-doctor-eligibility-read-only",
@@ -101,6 +109,25 @@ export type B12G3A3AuditClosureEntry = Readonly<{
   directOwner: string;
   result: B12G3A3AuditClosureResult;
   closureBlockedBySupportingOwner: boolean;
+}>;
+
+export type B12G3A3CoreGroupOutcome = Readonly<{
+  groupSetupSucceeded: boolean;
+  groupCleanupSucceeded: boolean;
+  profileCompletionBlockedByGroup: boolean;
+  stopReason: B12GroupStopReason;
+  ownerCount: number;
+  expectedOwnerCount: number;
+  allOwnersFinalized: boolean;
+  allOwnersPassed: boolean;
+  allMinimalCleanupCompleted: boolean;
+  operationallyPassed: boolean;
+}>;
+
+export type B12G3A3GroupProvisionalClosureSnapshot = Readonly<{
+  closureScope: typeof B12_G3_A3_GROUP_PROVISIONAL_CLOSURE_SCOPE;
+  profileVerifierResult: "not_executed";
+  auditClosureEntries: readonly B12G3A3AuditClosureEntry[];
 }>;
 
 export type B12G3A3OwnerResultSummary = Readonly<{

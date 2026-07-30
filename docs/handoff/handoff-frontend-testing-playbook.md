@@ -6,7 +6,7 @@
 
 本文档不改变产品、接口、DTO、Schema、测试合同或 roadmap。下文 B7–B15 的阶段内序号保持减肥前基线顺序，序号即该阶段稳定验证项；不得重排、合并或用数量摘要替代验证意图。
 
-> [B12-G2.1 Draft v3 执行与证据矩阵](./handoff-testing-evidence-matrix-b12.md) 当前状态为：`G3-A approved — G3-A1 completed; G3-A2 completed; G3-A3.1 core matrix assets completed; G3-A3.2 core execution pending; G3-B deferred`。G3-A3.1 已接入 10 个 core execution group、22 个共享 owner action、62 个 Direct Audit ID、14 个 Session 与 23 个 runtime descriptor 预算，formal supporting closure、Owner journal 和安全输出通过 synthetic/static 门禁；旧 core 22 条、formal 10 条、canary 4 条 test 注册保持精确。未启动产品 frontend、Browser backend、fixture CLI、数据库或真实 core Browser，88 个 B12 ID 状态不变；下一阶段仅为 G3-A3.2，不进入 B12-C。
+> [B12-G2.1 Draft v3 执行与证据矩阵](./handoff-testing-evidence-matrix-b12.md) 当前状态为：`G3-A approved — G3-A1 completed; G3-A2 completed; G3-A3.1 core matrix and profile evidence assets completed; G3-A3.2 core execution pending; G3-B deferred`。G3-A3.1 已补齐 finalized group outcome、明确标记的 provisional group closure，以及独立汇总 10 group / 22 owner / supporting / post-browser verifier / 62 Audit ID 的 profile evidence 资产；旧 core 22、formal Browser group 10、formal profile evidence 1、canary 4 保持精确。synthetic/static 门禁通过，但未启动产品 frontend、Browser backend、fixture CLI、数据库或真实 core Browser，88 个 B12 ID 状态不变；下一阶段仅为 G3-A3.2，不进入 B12-C。
 
 ## 2. 当前验证状态总表
 

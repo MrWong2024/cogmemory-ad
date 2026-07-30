@@ -387,10 +387,14 @@ export class B12G3A3CoreGroupHarness {
   async finalize(
     summary: B12ExecutionGroupSummary,
   ): Promise<B12G3A3CoreSafeSummary> {
-    await this.journal.finalize();
+    await this.journal.finalize(summary);
     const document = await this.journal.read();
+    const groupOutcome = document.groupOutcome;
+    if (!groupOutcome) {
+      throw new Error("B12_FORMAL_CORE_GROUP_OUTCOME_MISSING");
+    }
     const ownAuditIds = this.owners.flatMap(({ directAuditIds }) => directAuditIds);
-    const blockedAuditIds = document.auditClosureSnapshot
+    const blockedAuditIds = document.groupProvisionalClosureSnapshot.auditClosureEntries
       .filter(
         ({ auditId, result }) =>
           ownAuditIds.includes(auditId) && result !== "pass",
@@ -401,9 +405,9 @@ export class B12G3A3CoreGroupHarness {
       evidenceScope: B12_G3_A3_CORE_EVIDENCE_SCOPE,
       auditClosureAllowed: B12_G3_A3_CORE_AUDIT_CLOSURE_ALLOWED,
       executionGroup: this.executionGroup,
-      ownerCount: summary.ownerResults.length,
+      ownerCount: groupOutcome.ownerCount,
       ownerResults: Object.freeze(
-        summary.ownerResults.map((record) =>
+        document.ownerRecords.map((record) =>
           Object.freeze({
             auditOwner: record.auditOwner,
             result: record.result,
@@ -420,26 +424,17 @@ export class B12G3A3CoreGroupHarness {
       minimalCleanupCount: this.minimalCleanupCount,
       interceptInstalledCount: this.interceptInstalledCount,
       interceptRemovedCount: this.interceptRemovedCount,
-      groupSetupSucceeded: summary.groupSetupSucceeded,
-      groupCleanupSucceeded: summary.groupCleanupSucceeded,
+      groupSetupSucceeded: groupOutcome.groupSetupSucceeded,
+      groupCleanupSucceeded: groupOutcome.groupCleanupSucceeded,
       profileCompletionBlocked:
-        summary.profileCompletionBlocked || blockedAuditIds.length > 0,
-      stopReason: summary.stopReason,
+        groupOutcome.profileCompletionBlockedByGroup || blockedAuditIds.length > 0,
+      stopReason: groupOutcome.stopReason,
       elapsedMs: Date.now() - this.startedAt,
     });
     console.log(`B12_G3_A3_CORE ${safeJsonStringify(safeSummary, [
       this.environment.fixturePassword,
     ])}`);
-    const operationallyPassed =
-      summary.stopReason === "none" &&
-      summary.groupSetupSucceeded &&
-      summary.groupCleanupSucceeded &&
-      summary.ownerResults.length === this.owners.length &&
-      summary.ownerResults.every(
-        ({ result, minimalCleanupCompleted }) =>
-          result === "pass" && minimalCleanupCompleted,
-      );
-    if (!operationallyPassed) {
+    if (!groupOutcome.operationallyPassed) {
       throw new Error("B12_FORMAL_CORE_GROUP_FAILED");
     }
     return safeSummary;

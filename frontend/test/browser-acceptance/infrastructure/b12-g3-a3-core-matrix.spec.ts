@@ -432,15 +432,31 @@ test("writes, fsyncs, atomically replaces, finalizes, reads, and removes a safe 
       first.auditOwner,
     ]);
     await journal.onOwnerFinalized(second);
-    await journal.finalize();
+    await journal.finalize({
+      executionGroup: "eg-lock-form-read-only",
+      stopReason: "none",
+      groupSetupSucceeded: true,
+      groupCleanupSucceeded: true,
+      profileCompletionBlocked: false,
+      ownerResults: Object.freeze([first, second]),
+    });
     const finalized = await journal.read();
     expect(finalized).toMatchObject({
-      version: 1,
+      version: 2,
       phase: "G3-A3_CORE",
       evidenceScope: "formal_core",
       auditClosureAllowed: true,
       executionGroup: "eg-lock-form-read-only",
       state: "finalized",
+      groupProvisionalClosureSnapshot: {
+        closureScope: "group_provisional",
+        profileVerifierResult: "not_executed",
+      },
+      groupOutcome: {
+        groupSetupSucceeded: true,
+        groupCleanupSucceeded: true,
+        operationallyPassed: true,
+      },
     });
     expect(finalized.ownerRecords.map(({ auditOwner }) => auditOwner)).toEqual([
       first.auditOwner,
