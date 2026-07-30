@@ -21,8 +21,7 @@
 - [Backend Service map](./handoff-backend-service-map.md)：Service、调用关系、职责边界与一致性要求。
 - [Backend config matrix](./handoff-backend-config-matrix.md)：环境、配置来源、用途与部署事实。
 - [Backend decisions](./handoff-backend-decisions.md)：稳定架构决策、理由与影响范围。
-- [Backend testing playbook](./handoff-backend-testing-playbook.md)：后端门禁、fixture、数据库隔离、证据、verify 与 cleanup。
-- [B12-G1 验收点—证据分层矩阵](./handoff-testing-evidence-matrix-b12.md)：B12-01～B12-88 的唯一逐 ID 证据盘点、建议主证据层、Browser 必要性、缺口、横切分组、失效条件与 G2 审核输入；不维护阶段状态。
+- [Backend testing playbook](./handoff-backend-testing-playbook.md)：数据库用途、后端自动测试、最小 fixture、verifier 和 cleanup 规则的权威来源。
 
 - 跨端 Browser 验收参考：[Frontend testing playbook](./handoff-frontend-testing-playbook.md)。
 
@@ -32,5 +31,5 @@
 - 后端工程结构、能力范围或真实未实现边界变化时，更新 backend snapshot。
 - endpoint、请求、响应、权限或错误变化时更新 API map；DTO、response 或字段形状变化时更新 DTO cheatsheet。
 - Service 职责或调用关系、环境配置、稳定架构决策变化时，分别更新 Service map、config matrix、decisions。
-- 门禁、批次、Browser、evidence、verify 或 cleanup 变化时，更新对应 testing playbook。
+- 数据库用途、后端自动测试、最小 fixture、verifier 或 cleanup 规则变化时，更新 backend testing playbook；跨层设计、Browser 验收、稳定 Audit 清单或当前状态变化时，更新 frontend testing playbook。
 - 仅当导航入口或文档职责变化时更新本 INDEX，不在此累积实现流水、测试事实或工作包状态。

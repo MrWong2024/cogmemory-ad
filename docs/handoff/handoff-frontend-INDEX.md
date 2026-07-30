@@ -26,8 +26,7 @@
 - [Frontend API map](./handoff-frontend-api-map.md)：API Client 对接、请求、响应、错误处理与 UI 映射。
 - [Frontend component map](./handoff-frontend-component-map.md)：组件、Hook、API Client 与调用职责。
 - [Frontend design baseline](./handoff-frontend-design-baseline.md)：前端视觉与交互原则。
-- [Frontend testing playbook](./handoff-frontend-testing-playbook.md)：门禁、批次、Browser、evidence、verify 与 cleanup。
-- [B12-G1 验收点—证据分层矩阵](./handoff-testing-evidence-matrix-b12.md)：B12-01～B12-88 的唯一逐 ID 证据盘点、建议主证据层、Browser 必要性、缺口、横切分组、失效条件与 G2 审核输入；不维护阶段状态。
+- [Frontend testing playbook](./handoff-frontend-testing-playbook.md)：跨层测试设计思想、Browser 验收策略、稳定 Audit 清单和当前验证状态的权威来源。
 
 - 跨端契约参考：[Backend API map](./handoff-backend-api-map.md) 维护后端 endpoint、权限与错误；[Backend DTO cheatsheet](./handoff-backend-dto-cheatsheet.md) 维护 DTO、response 与字段形状。
 
@@ -39,5 +38,5 @@
 - 前端工程结构、能力范围或真实未实现边界变化时，更新 frontend snapshot。
 - 路由、API 对接、组件或 Hook 变化时，分别更新 route map、API map、component map。
 - 视觉或交互原则变化时，更新 frontend design baseline。
-- 门禁、批次、Browser、evidence、verify 或 cleanup 变化时，更新 frontend testing playbook。
+- 跨层测试设计、Browser 验收、稳定 Audit 清单或当前验证状态变化时，更新 frontend testing playbook。
 - 仅当导航入口或文档职责变化时更新本 INDEX，不在此累积实现流水、测试事实或工作包状态。
