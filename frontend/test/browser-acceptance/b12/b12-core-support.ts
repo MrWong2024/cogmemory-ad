@@ -166,6 +166,12 @@ export type B12AuthLifecyclePartition = {
   postLogoutBusinessEntries: NetworkLedgerEntry[];
 };
 
+export type B12CoreWorkflowNavigationAuthInspection = {
+  workflowNavigationEntries: NetworkLedgerEntry[];
+  workflowNavigationAuthMeEntries: NetworkLedgerEntry[];
+  workflowNavigationAuthMeRequestCount: number;
+};
+
 export type B12LogoutMechanism =
   | "ui_control"
   | "scripted_cleanup_fallback";
@@ -178,7 +184,7 @@ export type B12SessionSummary = {
   logoutMechanism: B12LogoutMechanism;
   routeExpectedPublicReadOutcome: B12ExpectedPublicReadOutcome;
   sessionOpenMode: B12SessionOpenMode;
-  workflowAuthMeRequestCount: 1;
+  workflowNavigationAuthMeRequestCount: number;
   latestFacts: Array<Omit<B12LatestFacts, "updatedAt">>;
   lockResponses: Array<{
     status: number;
@@ -528,6 +534,152 @@ export function setB12LogoutBoundaryEntryIndex(
     throw new Error("B12 logout boundary must be after the login boundary");
   }
   return entryCount;
+}
+
+export function setB12WorkflowNavigationBoundaryEntryIndex(
+  currentBoundaryEntryIndex: number | null,
+  entryCount: number,
+): number {
+  if (currentBoundaryEntryIndex !== null) {
+    throw new Error(
+      "B12 workflow navigation boundary entry index is already set",
+    );
+  }
+  if (!Number.isInteger(entryCount) || entryCount < 0) {
+    throw new Error("B12 workflow navigation boundary entry count is invalid");
+  }
+  return entryCount;
+}
+
+export function setB12WorkflowNavigationCompletedEntryIndex(
+  currentCompletedEntryIndex: number | null,
+  workflowNavigationBoundaryEntryIndex: number,
+  entryCount: number,
+): number {
+  if (currentCompletedEntryIndex !== null) {
+    throw new Error(
+      "B12 workflow navigation completed entry index is already set",
+    );
+  }
+  if (!Number.isInteger(entryCount) || entryCount < 0) {
+    throw new Error(
+      "B12 workflow navigation completed entry count is invalid",
+    );
+  }
+  if (
+    !Number.isInteger(workflowNavigationBoundaryEntryIndex) ||
+    workflowNavigationBoundaryEntryIndex < 0
+  ) {
+    throw new Error("B12 workflow navigation boundary entry index is invalid");
+  }
+  if (entryCount <= workflowNavigationBoundaryEntryIndex) {
+    throw new Error(
+      "B12 workflow navigation completed boundary must be after the start boundary",
+    );
+  }
+  return entryCount;
+}
+
+export function inspectB12CoreWorkflowNavigationAuthEntries(
+  entries: readonly NetworkLedgerEntry[],
+  workflowNavigationBoundaryEntryIndex: number | null | undefined,
+  workflowNavigationCompletedEntryIndex: number | null | undefined,
+): B12CoreWorkflowNavigationAuthInspection {
+  if (
+    typeof workflowNavigationBoundaryEntryIndex !== "number" ||
+    !Number.isInteger(workflowNavigationBoundaryEntryIndex) ||
+    workflowNavigationBoundaryEntryIndex < 0
+  ) {
+    throw new Error(
+      "B12 workflow navigation boundary entry index is out of range",
+    );
+  }
+  if (
+    typeof workflowNavigationCompletedEntryIndex !== "number" ||
+    !Number.isInteger(workflowNavigationCompletedEntryIndex) ||
+    workflowNavigationCompletedEntryIndex < 0 ||
+    workflowNavigationCompletedEntryIndex > entries.length
+  ) {
+    throw new Error(
+      "B12 workflow navigation completed entry index is out of range",
+    );
+  }
+  if (
+    workflowNavigationBoundaryEntryIndex >=
+    workflowNavigationCompletedEntryIndex
+  ) {
+    throw new Error(
+      "B12 workflow navigation boundary must precede the completed boundary",
+    );
+  }
+
+  const workflowNavigationEntries = entries.slice(
+    workflowNavigationBoundaryEntryIndex,
+    workflowNavigationCompletedEntryIndex,
+  );
+  if (
+    workflowNavigationEntries.some(
+      ({ safeUrlPattern }) =>
+        safeUrlPattern === "/auth/login" ||
+        safeUrlPattern === "/auth/logout",
+    )
+  ) {
+    throw new Error(
+      "B12 workflow navigation contained a login or logout transition",
+    );
+  }
+
+  const workflowNavigationAuthMeEntries = workflowNavigationEntries.filter(
+    ({ safeUrlPattern }) => safeUrlPattern === "/auth/me",
+  );
+  if (workflowNavigationAuthMeEntries.length === 0) {
+    throw new Error("B12 workflow navigation omitted /auth/me");
+  }
+  if (
+    workflowNavigationAuthMeEntries.some(({ method }) => method !== "GET")
+  ) {
+    throw new Error("B12 workflow navigation /auth/me was not a GET request");
+  }
+  if (
+    workflowNavigationAuthMeEntries.some(
+      ({ failureReason }) => failureReason !== null,
+    )
+  ) {
+    throw new Error(
+      "B12 workflow navigation /auth/me had a request failure",
+    );
+  }
+  if (
+    workflowNavigationAuthMeEntries.some(
+      ({ status }) => status === null || status < 200 || status >= 300,
+    )
+  ) {
+    throw new Error(
+      "B12 workflow navigation /auth/me response was not 2xx",
+    );
+  }
+  if (
+    workflowNavigationAuthMeEntries.some(
+      ({ initiator }) => initiator !== "script",
+    )
+  ) {
+    throw new Error(
+      "B12 workflow navigation /auth/me was not initiated by page script",
+    );
+  }
+
+  // Core verifies every navigation probe, while B12-83's unique owner separately
+  // decides the exact no-second-/auth/me contract in resilience-security.
+  return {
+    workflowNavigationEntries: workflowNavigationEntries.map(
+      cloneNetworkLedgerEntry,
+    ),
+    workflowNavigationAuthMeEntries: workflowNavigationAuthMeEntries.map(
+      cloneNetworkLedgerEntry,
+    ),
+    workflowNavigationAuthMeRequestCount:
+      workflowNavigationAuthMeEntries.length,
+  };
 }
 
 export function partitionB12AuthLifecycleEntries(
@@ -1069,9 +1221,10 @@ export class B12BrowserSession {
   private controlledReadEvidence: B12ControlledReadEvidence | null = null;
   private controlledReadHandler: ((route: Route) => Promise<void>) | null =
     null;
-  private authMeBeforeWorkflow = 0;
-  private authMeAfterWorkflow = 0;
   private loginBoundaryEntryIndex: number | null = null;
+  private workflowNavigationBoundaryEntryIndex: number | null = null;
+  private workflowNavigationCompletedEntryIndex: number | null = null;
+  private workflowNavigationAuthMeRequestCount: number | null = null;
   private logoutBoundaryEntryIndex: number | null = null;
   private collectState: B12CollectState = "open";
   private collectedSummary: B12SessionSummary | null = null;
@@ -1370,28 +1523,37 @@ export class B12BrowserSession {
     ).toBe(true);
     await this.page.waitForLoadState("networkidle", { timeout: 10_000 });
 
-    this.authMeBeforeWorkflow = this.authenticatedAuthMeCount();
     this.consoleAudit.start();
     this.consoleListening = true;
   }
 
-  private async finishWorkflowNavigation(): Promise<void> {
-    await this.page.waitForLoadState("networkidle", { timeout: 10_000 });
-    this.authMeAfterWorkflow = this.authenticatedAuthMeCount();
-    expect(this.authMeAfterWorkflow - this.authMeBeforeWorkflow).toBe(1);
+  private recordWorkflowNavigationBoundary(): void {
+    this.workflowNavigationBoundaryEntryIndex =
+      setB12WorkflowNavigationBoundaryEntryIndex(
+        this.workflowNavigationBoundaryEntryIndex,
+        this.ledger.entries().length,
+      );
   }
 
-  private authenticatedAuthMeCount(): number {
-    if (this.loginBoundaryEntryIndex === null) {
-      throw new Error("B12 login boundary entry index is missing");
+  private async finishWorkflowNavigation(): Promise<void> {
+    await this.page.waitForLoadState("networkidle", { timeout: 10_000 });
+    if (this.workflowNavigationBoundaryEntryIndex === null) {
+      throw new Error("B12 workflow navigation boundary entry index is missing");
     }
-    return this.ledger
-      .entries()
-      .slice(this.loginBoundaryEntryIndex)
-      .filter(
-        ({ method, safeUrlPattern }) =>
-          method === "GET" && safeUrlPattern === "/auth/me",
-      ).length;
+    const entries = this.ledger.entries();
+    this.workflowNavigationCompletedEntryIndex =
+      setB12WorkflowNavigationCompletedEntryIndex(
+        this.workflowNavigationCompletedEntryIndex,
+        this.workflowNavigationBoundaryEntryIndex,
+        entries.length,
+      );
+    const inspection = inspectB12CoreWorkflowNavigationAuthEntries(
+      entries,
+      this.workflowNavigationBoundaryEntryIndex,
+      this.workflowNavigationCompletedEntryIndex,
+    );
+    this.workflowNavigationAuthMeRequestCount =
+      inspection.workflowNavigationAuthMeRequestCount;
   }
 
   private async openReadable(): Promise<void> {
@@ -1401,6 +1563,7 @@ export class B12BrowserSession {
       (response) => latestResponse(response) && response.status() === 200,
       { timeout: 45_000 },
     );
+    this.recordWorkflowNavigationBoundary();
     await this.page.goto(
       `${this.environment.frontendOrigin}${this.descriptor.navigationPath}`,
       { waitUntil: "domcontentloaded" },
@@ -1436,6 +1599,7 @@ export class B12BrowserSession {
       protectedPatientWorkflowResponse,
       { timeout: 45_000 },
     );
+    this.recordWorkflowNavigationBoundary();
     await this.page.goto(
       `${this.environment.frontendOrigin}${this.descriptor.navigationPath}`,
       { waitUntil: "domcontentloaded" },
@@ -1467,6 +1631,7 @@ export class B12BrowserSession {
       (response) => latestResponse(response) && response.status() === 409,
       { timeout: 45_000 },
     );
+    this.recordWorkflowNavigationBoundary();
     await this.page.goto(
       `${this.environment.frontendOrigin}${this.descriptor.navigationPath}`,
       { waitUntil: "domcontentloaded" },
@@ -1862,6 +2027,30 @@ export class B12BrowserSession {
       if (this.logoutBoundaryEntryIndex === null) {
         throw new Error("B12 logout boundary entry index is missing");
       }
+      if (this.workflowNavigationBoundaryEntryIndex === null) {
+        throw new Error(
+          "B12 workflow navigation boundary entry index is missing",
+        );
+      }
+      if (this.workflowNavigationCompletedEntryIndex === null) {
+        throw new Error(
+          "B12 workflow navigation completed entry index is missing",
+        );
+      }
+      const workflowNavigationAuth =
+        inspectB12CoreWorkflowNavigationAuthEntries(
+          entries,
+          this.workflowNavigationBoundaryEntryIndex,
+          this.workflowNavigationCompletedEntryIndex,
+        );
+      if (
+        this.workflowNavigationAuthMeRequestCount !==
+        workflowNavigationAuth.workflowNavigationAuthMeRequestCount
+      ) {
+        throw new Error(
+          "B12 workflow navigation /auth/me count changed after inspection",
+        );
+      }
       const authLifecycle = partitionB12AuthLifecycleEntries(
         entries,
         this.loginBoundaryEntryIndex,
@@ -1982,7 +2171,8 @@ export class B12BrowserSession {
           this.target,
         ),
         sessionOpenMode: this.openMode,
-        workflowAuthMeRequestCount: 1,
+        workflowNavigationAuthMeRequestCount:
+          workflowNavigationAuth.workflowNavigationAuthMeRequestCount,
         latestFacts: this.latestFacts.map(({ updatedAt, ...facts }) => {
           void updatedAt;
           return {

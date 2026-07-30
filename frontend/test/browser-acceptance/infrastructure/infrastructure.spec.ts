@@ -4,11 +4,14 @@ import { chromium } from '@playwright/test';
 import {
   assertReportNarrativeSectionsExcludeText,
   attemptB12BrowserLogout,
+  inspectB12CoreWorkflowNavigationAuthEntries,
   partitionB12AuthLifecycleEntries,
   resolveB12LogoutDisposition,
   resolveB12SessionOpenMode,
   setB12LoginBoundaryEntryIndex,
   setB12LogoutBoundaryEntryIndex,
+  setB12WorkflowNavigationBoundaryEntryIndex,
+  setB12WorkflowNavigationCompletedEntryIndex,
 } from '../b12/b12-core-support';
 import { runAccessibilityAudit } from '../support/accessibility-audit';
 import {
@@ -389,6 +392,192 @@ test('keeps B12 readable, forbidden, and incomplete-report open modes route-scop
   expect(() =>
     resolveB12SessionOpenMode(confirmationMissingTarget, 'nurse'),
   ).toThrow('B12 incomplete-report open is allowed only for B12-14 doctor');
+});
+
+test('counts one successful B12 core workflow navigation auth probe only inside its boundaries', () => {
+  const entries = validB12AuthLifecycleEntries();
+  const inspection = inspectB12CoreWorkflowNavigationAuthEntries(
+    entries,
+    4,
+    6,
+  );
+
+  expect(inspection.workflowNavigationEntries).toHaveLength(2);
+  expect(inspection.workflowNavigationAuthMeEntries).toHaveLength(1);
+  expect(inspection.workflowNavigationAuthMeRequestCount).toBe(1);
+  expect(inspection.workflowNavigationAuthMeEntries[0]).toMatchObject({
+    method: 'GET',
+    status: 200,
+    failureReason: null,
+    initiator: 'script',
+  });
+  expect(entries.filter(({ status }) => status === 401)).toHaveLength(2);
+});
+
+test('counts two successful core navigation auth probes without treating B12-83 as passed', () => {
+  const entries = validB12AuthLifecycleEntries();
+  entries.splice(5, 0, b12LifecycleEntry());
+
+  const inspection = inspectB12CoreWorkflowNavigationAuthEntries(
+    entries,
+    4,
+    7,
+  );
+
+  expect(inspection.workflowNavigationAuthMeEntries).toHaveLength(2);
+  expect(inspection.workflowNavigationAuthMeRequestCount).toBe(2);
+});
+
+test('rejects B12 core workflow navigation without an auth probe', () => {
+  const entries = [
+    b12LifecycleEntry({ safeUrlPattern: '/dashboard' }),
+    b12LifecycleEntry({
+      safeUrlPattern:
+        '/patients/<id>/visits/<id>/clinical-reports/latest',
+    }),
+  ];
+
+  expect(() =>
+    inspectB12CoreWorkflowNavigationAuthEntries(entries, 0, entries.length),
+  ).toThrow('B12 workflow navigation omitted /auth/me');
+});
+
+test('rejects invalid B12 core workflow navigation auth probe entries', () => {
+  const invalidEntries: Array<{
+    entry: NetworkLedgerEntry;
+    message: string;
+  }> = [
+    {
+      entry: b12LifecycleEntry({ method: 'POST' }),
+      message: 'B12 workflow navigation /auth/me was not a GET request',
+    },
+    {
+      entry: b12LifecycleEntry({ status: 401 }),
+      message: 'B12 workflow navigation /auth/me response was not 2xx',
+    },
+    {
+      entry: b12LifecycleEntry({
+        status: null,
+        failureReason: 'failed',
+      }),
+      message: 'B12 workflow navigation /auth/me had a request failure',
+    },
+    {
+      entry: b12LifecycleEntry({ failureReason: 'failed' }),
+      message: 'B12 workflow navigation /auth/me had a request failure',
+    },
+    {
+      entry: b12LifecycleEntry({ initiator: 'other' }),
+      message:
+        'B12 workflow navigation /auth/me was not initiated by page script',
+    },
+  ];
+
+  for (const { entry, message } of invalidEntries) {
+    expect(() =>
+      inspectB12CoreWorkflowNavigationAuthEntries([entry], 0, 1),
+    ).toThrow(message);
+  }
+});
+
+test('rejects a login transition inside B12 core workflow navigation', () => {
+  const entries = [
+    b12LifecycleEntry(),
+    b12LifecycleEntry({ method: 'POST', safeUrlPattern: '/auth/login' }),
+  ];
+
+  expect(() =>
+    inspectB12CoreWorkflowNavigationAuthEntries(entries, 0, entries.length),
+  ).toThrow('B12 workflow navigation contained a login or logout transition');
+});
+
+test('rejects a logout transition inside B12 core workflow navigation', () => {
+  const entries = [
+    b12LifecycleEntry(),
+    b12LifecycleEntry({ method: 'POST', safeUrlPattern: '/auth/logout' }),
+  ];
+
+  expect(() =>
+    inspectB12CoreWorkflowNavigationAuthEntries(entries, 0, entries.length),
+  ).toThrow('B12 workflow navigation contained a login or logout transition');
+});
+
+test('rejects unset, invalid, unordered, or out-of-range B12 workflow navigation boundaries', () => {
+  const entries = [b12LifecycleEntry(), b12LifecycleEntry()];
+  const invalidBoundaries: Array<{
+    start: number | null | undefined;
+    completed: number | null | undefined;
+  }> = [
+    { start: null, completed: 1 },
+    { start: undefined, completed: 1 },
+    { start: 0, completed: null },
+    { start: 0, completed: undefined },
+    { start: -1, completed: 1 },
+    { start: 0, completed: -1 },
+    { start: 0.5, completed: 1 },
+    { start: 0, completed: 1.5 },
+    { start: 1, completed: 1 },
+    { start: 2, completed: 1 },
+    { start: 0, completed: entries.length + 1 },
+  ];
+
+  for (const { start, completed } of invalidBoundaries) {
+    expect(() =>
+      inspectB12CoreWorkflowNavigationAuthEntries(
+        entries,
+        start,
+        completed,
+      ),
+    ).toThrow();
+  }
+});
+
+test('rejects repeated B12 workflow navigation boundary assignment', () => {
+  const start = setB12WorkflowNavigationBoundaryEntryIndex(null, 4);
+  expect(start).toBe(4);
+  expect(() =>
+    setB12WorkflowNavigationBoundaryEntryIndex(start, 4),
+  ).toThrow('B12 workflow navigation boundary entry index is already set');
+
+  const completed = setB12WorkflowNavigationCompletedEntryIndex(
+    null,
+    start,
+    6,
+  );
+  expect(completed).toBe(6);
+  expect(() =>
+    setB12WorkflowNavigationCompletedEntryIndex(completed, start, 6),
+  ).toThrow(
+    'B12 workflow navigation completed entry index is already set',
+  );
+  expect(() =>
+    setB12WorkflowNavigationCompletedEntryIndex(null, start, start),
+  ).toThrow(
+    'B12 workflow navigation completed boundary must be after the start boundary',
+  );
+});
+
+test('does not mutate B12 workflow navigation entries or body keys', () => {
+  const entries = [
+    b12LifecycleEntry({ bodyKeys: ['original'] }),
+    b12LifecycleEntry({ safeUrlPattern: '/dashboard' }),
+  ];
+  const before = entries.map((entry) => ({
+    ...entry,
+    bodyKeys: [...entry.bodyKeys],
+  }));
+
+  const inspection = inspectB12CoreWorkflowNavigationAuthEntries(
+    entries,
+    0,
+    entries.length,
+  );
+  inspection.workflowNavigationEntries[0]?.bodyKeys.push('slice-copy-only');
+  inspection.workflowNavigationAuthMeEntries[0]?.bodyKeys.push(
+    'auth-copy-only',
+  );
+
+  expect(entries).toEqual(before);
 });
 
 test('partitions the valid B12 authentication lifecycle into five stages', () => {
