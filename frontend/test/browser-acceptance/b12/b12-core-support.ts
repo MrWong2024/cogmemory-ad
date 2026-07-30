@@ -297,6 +297,22 @@ export type B12FailureCleanupResult = {
   mechanism: B12LogoutMechanism | null;
 };
 
+export type B12GroupedOwnerNetworkSummary = Readonly<{
+  latestReadCount: number;
+  lockRequestCount: number;
+  abortedRequestCount: number;
+}>;
+
+export type B12GroupedOwnerCleanupSummary = Readonly<{
+  listenerRemovedCount: number;
+  interceptInstalledCount: number;
+  interceptRemovedCount: number;
+  controlledReadRestored: boolean;
+  captureTasksSettled: boolean;
+  localDraftCleared: boolean;
+  formClosed: boolean;
+}>;
+
 export type B12SessionOpenFailureCleanupSummary = {
   scenarioKey: B12CoreRouteTarget["scenarioKey"];
   routeKey: B12CoreRouteTarget["routeKey"];
@@ -1649,6 +1665,8 @@ export class B12BrowserSession {
   private controlledReadEvidence: B12ControlledReadEvidence | null = null;
   private controlledReadHandler: ((route: Route) => Promise<void>) | null =
     null;
+  private controlledReadUrl: string | null = null;
+  private readonly pendingGates = new Set<ControlledRequestGate>();
   private loginBoundaryEntryIndex: number | null = null;
   private workflowNavigationBoundaryEntryIndex: number | null = null;
   private workflowNavigationCompletedEntryIndex: number | null = null;
@@ -1660,6 +1678,8 @@ export class B12BrowserSession {
   private logoutMechanism: B12LogoutMechanism | null = null;
   private explicitLockCount = 0;
   private explicitAbortedLockCount = 0;
+  private interceptInstalledCount = 0;
+  private interceptRemovedCount = 0;
   private acceptingCaptures = true;
   private consoleListening = false;
   private ledgerDetached = false;
@@ -1733,6 +1753,34 @@ export class B12BrowserSession {
         forbiddenLiterals: session.diagnosticForbiddenLiterals(),
       });
     }
+  }
+
+  static async createInAuthenticatedGroup(input: {
+    label: "primary" | "secondary" | "system";
+    role: AcceptanceRole;
+    loginIdentifier: string;
+    descriptor: B12CoreRuntimeDescriptor;
+    target: B12CoreRouteTarget;
+    openMode: B12SessionOpenMode;
+    environment: EnabledB12BrowserEnvironment;
+    page: Page;
+    contextCookies: () => Promise<Array<{ httpOnly: boolean }>>;
+  }): Promise<B12BrowserSession> {
+    assertSessionOpenModeAllowed(input.target, input.role, input.openMode);
+    const session = new B12BrowserSession(
+      input.label,
+      input.role,
+      input.loginIdentifier,
+      input.descriptor,
+      input.target,
+      input.openMode,
+      input.environment,
+      input.contextCookies,
+      async () => undefined,
+      input.page,
+    );
+    await session.openInAuthenticatedGroup();
+    return session;
   }
 
   private diagnosticForbiddenLiterals(): string[] {
@@ -1856,6 +1904,7 @@ export class B12BrowserSession {
         return;
       }
       matched += 1;
+      this.controlledReadUrl = route.request().url();
       const response = await route.fetch();
       if (response.status() !== 200) {
         throw new Error("B12 controlled public read requires a real HTTP 200");
@@ -1921,12 +1970,14 @@ export class B12BrowserSession {
     };
     this.controlledReadHandler = handler;
     await this.page.route("**/*", handler);
+    this.interceptInstalledCount += 1;
   }
 
   private async disposeControlledRead(): Promise<void> {
     if (!this.controlledReadHandler) return;
     await this.page.unroute("**/*", this.controlledReadHandler);
     this.controlledReadHandler = null;
+    this.interceptRemovedCount += 1;
   }
 
   private async authenticateForWorkflow(): Promise<void> {
@@ -2015,6 +2066,10 @@ export class B12BrowserSession {
 
   private async openReadable(): Promise<void> {
     await this.authenticateForWorkflow();
+    await this.navigateReadable();
+  }
+
+  private async navigateReadable(): Promise<void> {
     await this.installControlledInitialLatest();
     const latestResponsePromise = this.page.waitForResponse(
       (response) => latestResponse(response) && response.status() === 200,
@@ -2052,6 +2107,10 @@ export class B12BrowserSession {
 
   private async openExpectingForbidden(): Promise<void> {
     await this.authenticateForWorkflow();
+    await this.navigateExpectingForbidden();
+  }
+
+  private async navigateExpectingForbidden(): Promise<void> {
     const forbiddenResponsePromise = this.page.waitForResponse(
       protectedPatientWorkflowResponse,
       { timeout: 45_000 },
@@ -2084,6 +2143,10 @@ export class B12BrowserSession {
 
   private async openExpectingClinicalReportIncomplete(): Promise<void> {
     await this.authenticateForWorkflow();
+    await this.navigateExpectingClinicalReportIncomplete();
+  }
+
+  private async navigateExpectingClinicalReportIncomplete(): Promise<void> {
     const incompleteResponsePromise = this.page.waitForResponse(
       (response) => latestResponse(response) && response.status() === 409,
       { timeout: 45_000 },
@@ -2121,6 +2184,24 @@ export class B12BrowserSession {
       return;
     }
     await this.openExpectingClinicalReportIncomplete();
+  }
+
+  private async openInAuthenticatedGroup(): Promise<void> {
+    await this.ledger.attach(this.page);
+    this.page.on("request", this.onRequest);
+    this.page.on("response", this.onResponse);
+    this.consoleAudit.start();
+    this.safeConsoleDiagnostics.start();
+    this.consoleListening = true;
+    if (this.openMode === "readable") {
+      await this.navigateReadable();
+      return;
+    }
+    if (this.openMode === "forbidden") {
+      await this.navigateExpectingForbidden();
+      return;
+    }
+    await this.navigateExpectingClinicalReportIncomplete();
   }
 
   latestCount(): number {
@@ -2284,6 +2365,7 @@ export class B12BrowserSession {
       20_000,
     );
     await gate.install();
+    this.interceptInstalledCount += 1;
     this.explicitLockCount += 1;
     const responsePromise = this.page.waitForResponse(
       (response) => lockRequest(response.request()),
@@ -2310,6 +2392,7 @@ export class B12BrowserSession {
       return result;
     } finally {
       const summary = await gate.dispose();
+      this.interceptRemovedCount += 1;
       expect(summary).toEqual({
         matchedRequestCount: 1,
         abortedRequestCount: 0,
@@ -2326,6 +2409,7 @@ export class B12BrowserSession {
       lockRequest(request),
     );
     await abort.install();
+    this.interceptInstalledCount += 1;
     this.explicitLockCount += 1;
     this.explicitAbortedLockCount += 1;
     try {
@@ -2346,6 +2430,7 @@ export class B12BrowserSession {
         .toBe(1);
     } finally {
       const summary = await abort.dispose();
+      this.interceptRemovedCount += 1;
       expect(summary).toEqual({
         matchedRequestCount: 1,
         abortedRequestCount: 1,
@@ -2361,11 +2446,216 @@ export class B12BrowserSession {
       30_000,
     );
     await gate.install();
+    this.interceptInstalledCount += 1;
+    this.pendingGates.add(gate);
+    const dispose = gate.dispose.bind(gate);
+    let removed = false;
+    gate.dispose = async () => {
+      const summary = await dispose();
+      if (!removed) {
+        removed = true;
+        this.pendingGates.delete(gate);
+        this.interceptRemovedCount += 1;
+      }
+      return summary;
+    };
     return gate;
   }
 
   async assertCapturedActorIdsNotLeaked(): Promise<void> {
     await auditB12DomPrivacy(this.page, [...this.internalActorIds]);
+  }
+
+  async completeGroupedOwnerNetwork(): Promise<B12GroupedOwnerNetworkSummary> {
+    await this.page.waitForLoadState("networkidle", { timeout: 10_000 });
+    await this.flushCaptures();
+    this.throwCaptureFailures();
+    const entries = this.ledger.entries();
+    const publicRead = this.publicReadEvidence();
+    const count = (method: string, pattern: RegExp | string) =>
+      entries.filter(
+        (entry) =>
+          entry.method === method &&
+          (typeof pattern === "string"
+            ? entry.safeUrlPattern === pattern
+            : pattern.test(entry.safeUrlPattern)),
+      ).length;
+    const latestReadCount = count("GET", LATEST_SAFE_PATTERN);
+    const lockRequestCount = count("POST", LOCK_SAFE_PATTERN);
+    const abortedRequestCount = entries.filter(
+      ({ failureReason, safeUrlPattern }) =>
+        failureReason !== null && safeUrlPattern === LOCK_SAFE_PATTERN,
+    ).length;
+    expect(latestReadCount).toBe(expectedLatestCount(this.target, this.label));
+    expect(lockRequestCount).toBe(expectedLockCount(this.target, this.label));
+    expect(lockRequestCount).toBe(this.explicitLockCount);
+    expect(abortedRequestCount).toBe(this.explicitAbortedLockCount);
+    for (const [method, pattern] of [
+      ["PATCH", /\/clinical-reports\/<id>\/draft$/],
+      ["POST", /\/clinical-reports\/<id>\/submit-confirmation$/],
+      ["POST", /\/clinical-reports\/<id>\/confirm$/],
+      ["POST", /\/clinical-reports\/<id>\/freeze-sources$/],
+      ["POST", /\/clinical-reports\/<id>\/archive$/],
+      ["POST", /\/clinical-reports\/<id>\/corrections$/],
+    ] as const) {
+      expect(count(method, pattern)).toBe(0);
+    }
+    expect(
+      entries.filter((entry) =>
+        /(?:pdf|print|download|signature|\bai\b|llm)/i.test(
+          entry.safeUrlPattern,
+        ),
+      ),
+    ).toHaveLength(0);
+    expect(
+      entries
+        .filter(
+          (entry) =>
+            (entry.safeUrlPattern === publicRead.safeEndpointPattern ||
+              (mutation(entry) &&
+                entry.safeUrlPattern.includes("/clinical-reports"))) &&
+            entry.failureReason === null,
+        )
+        .every(({ initiator }) => initiator === "script"),
+    ).toBe(true);
+    expect(
+      this.lockRequests.every(
+        (request) =>
+          request.bodyKeys.join("|") ===
+            "confirm|expectedUpdatedAt|lockNote" &&
+          request.confirmIsTrue &&
+          request.expectedUpdatedAtMatchesLatest &&
+          request.lockNoteTrimmed &&
+          request.lockNoteMatchesExpected &&
+          !request.forbiddenBodyKeyDetected,
+      ),
+    ).toBe(true);
+    return Object.freeze({
+      latestReadCount,
+      lockRequestCount,
+      abortedRequestCount,
+    });
+  }
+
+  async minimalCleanupInGroup(
+    runFullCrossCutting: boolean,
+  ): Promise<B12GroupedOwnerCleanupSummary> {
+    let controlledReadRestored = false;
+    const controlledReadUrl = this.controlledReadUrl;
+    const variant = this.controlledReadEvidence?.variant ?? null;
+    await this.disposeControlledRead();
+    for (const gate of [...this.pendingGates]) {
+      const current = gate.summary();
+      if (
+        current.matchedRequestCount > 0 &&
+        current.abortedRequestCount + current.continuedRequestCount === 0
+      ) {
+        gate.abort();
+      }
+      await gate.dispose();
+    }
+    if (controlledReadUrl && variant) {
+      const restored = await this.page.evaluate(async (url) => {
+        const response = await fetch(url, { credentials: "include" });
+        const body = (await response.json()) as {
+          report?: { isFinal?: unknown; lockedAt?: unknown; lock?: unknown };
+        };
+        return {
+          status: response.status,
+          isFinal: body.report?.isFinal,
+          lockedAtPresent: typeof body.report?.lockedAt === "string",
+          lockPresent:
+            typeof body.report?.lock === "object" && body.report.lock !== null,
+        };
+      }, controlledReadUrl);
+      expect(restored.status).toBe(200);
+      if (variant === "is_final_false") expect(restored.isFinal).toBe(true);
+      if (variant === "top_level_locked_at_null") {
+        expect(restored.lockedAtPresent).toBe(true);
+      }
+      if (variant === "lock_summary_null") expect(restored.lockPresent).toBe(true);
+      if (variant === "lock_time_mismatch") {
+        expect(restored.lockedAtPresent && restored.lockPresent).toBe(true);
+      }
+      controlledReadRestored = true;
+    }
+
+    const note = this.page.getByLabel("锁定流程说明（必填）", { exact: true });
+    if ((await note.count()) > 0 && (await note.isEditable().catch(() => false))) {
+      await note.fill("");
+    }
+    const checkbox = this.page.locator("#clinical-report-lock-confirmed");
+    if (
+      (await checkbox.count()) > 0 &&
+      (await checkbox.isEnabled().catch(() => false)) &&
+      (await checkbox.isChecked().catch(() => false))
+    ) {
+      await checkbox.uncheck();
+    }
+    const cancel = this.page.getByRole("button", { name: "取消", exact: true });
+    if (
+      (await cancel.count()) > 0 &&
+      (await cancel.isVisible().catch(() => false)) &&
+      (await cancel.isEnabled().catch(() => false))
+    ) {
+      await cancel.click();
+    }
+    const formClosed =
+      (await this.page
+        .getByRole("heading", { name: "二次确认不可逆锁定", exact: true })
+        .count()) === 0;
+    await this.flushCaptures();
+    this.throwCaptureFailures();
+    if (runFullCrossCutting) {
+      const storage = await auditRuntimeStorage(this.page);
+      expect(storage.localStorageKeys).toEqual([]);
+      expect(storage.sessionStorageKeys).toEqual([]);
+      expect(storage.indexedDbNames).toEqual([]);
+      expect(storage.forbiddenValueDetected).toBe(false);
+      expect(storage.urlHasSensitiveQueryOrHash).toBe(false);
+      await auditB12DomPrivacy(this.page, [...this.internalActorIds]);
+    }
+    const publicRead = this.publicReadEvidence();
+    this.freezeCaptureListeners();
+    const consoleSummary = this.stopConsoleAudit();
+    const safeConsoleSummary = this.safeConsoleDiagnostics.summary();
+    const routeScopedAllowedFailureCount =
+      this.lockResponses.filter(({ status }) => status >= 400).length +
+      this.explicitAbortedLockCount +
+      (this.openMode === "readable" ? 0 : publicRead.count);
+    expect(consoleSummary.warningCount).toBe(0);
+    expect(consoleSummary.pageErrorCount).toBe(0);
+    if (this.openMode === "clinical_report_incomplete") {
+      assertB12SafeConsoleNetworkCorrelation({
+        networkEntries: this.ledger.entries(),
+        consoleEvents: safeConsoleSummary.events,
+        failurePhaseConsoleSequences:
+          safeConsoleSummary.failurePhaseConsoleSequences,
+        observedConsoleErrorCount: consoleSummary.errorCount,
+        allowedConsoleErrorCount: publicRead.count,
+        forbiddenLiterals: this.diagnosticForbiddenLiterals(),
+      });
+    } else {
+      expect(consoleSummary.errorCount).toBeLessThanOrEqual(
+        routeScopedAllowedFailureCount,
+      );
+    }
+    expect(
+      consoleSummary.categories.every(({ category }) => category === "network"),
+    ).toBe(true);
+    await this.detachLedger();
+    expect(this.pendingGates.size).toBe(0);
+    expect(this.interceptRemovedCount).toBe(this.interceptInstalledCount);
+    this.collectState = "collected";
+    return Object.freeze({
+      listenerRemovedCount: 4,
+      interceptInstalledCount: this.interceptInstalledCount,
+      interceptRemovedCount: this.interceptRemovedCount,
+      controlledReadRestored,
+      captureTasksSettled: true,
+      localDraftCleared: true,
+      formClosed,
+    });
   }
 
   private freezeCaptureListeners(): void {
@@ -2761,6 +3051,10 @@ export class B12RouteRun {
     private readonly environment: EnabledB12BrowserEnvironment,
     private readonly roleContexts: RoleContextFactory,
   ) {}
+
+  runtimeDescriptor(): Readonly<B12CoreRuntimeDescriptor> {
+    return this.descriptor;
+  }
 
   async primary(): Promise<B12BrowserSession> {
     if (!this.primarySession) {
