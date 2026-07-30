@@ -6,6 +6,8 @@
 
 本文档不改变产品、接口、DTO、Schema、测试合同或 roadmap。下文 B7–B15 的阶段内序号保持减肥前基线顺序，序号即该阶段稳定验证项；不得重排、合并或用数量摘要替代验证意图。
 
+> B12 当前暂停继续 Browser 执行，正在进行 B12-01～B12-88 的 G1 证据分层治理；当前 fixture、Playwright 资产与 B12-B1～B12-B9 历史执行事实全部保留。未经用户 G2 审核，不调整 audit owner、route、fixture 或任何现有状态；逐 ID 盘点、建议主证据层、Browser 必要性、缺口与横切分组见 [B12-G1 验收点—证据分层矩阵](./handoff-testing-evidence-matrix-b12.md)。
+
 ## 2. 当前验证状态总表
 
 | 范围 | 当前状态 | 唯一当前事实 |

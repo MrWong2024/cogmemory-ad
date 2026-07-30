@@ -22,6 +22,7 @@
 - [Backend config matrix](./handoff-backend-config-matrix.md)：环境、配置来源、用途与部署事实。
 - [Backend decisions](./handoff-backend-decisions.md)：稳定架构决策、理由与影响范围。
 - [Backend testing playbook](./handoff-backend-testing-playbook.md)：后端门禁、fixture、数据库隔离、证据、verify 与 cleanup。
+- [B12-G1 验收点—证据分层矩阵](./handoff-testing-evidence-matrix-b12.md)：B12-01～B12-88 的唯一逐 ID 证据盘点、建议主证据层、Browser 必要性、缺口、横切分组、失效条件与 G2 审核输入；不维护阶段状态。
 
 - 跨端 Browser 验收参考：[Frontend testing playbook](./handoff-frontend-testing-playbook.md)。
 

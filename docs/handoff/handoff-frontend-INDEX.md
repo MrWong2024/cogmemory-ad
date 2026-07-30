@@ -27,6 +27,7 @@
 - [Frontend component map](./handoff-frontend-component-map.md)：组件、Hook、API Client 与调用职责。
 - [Frontend design baseline](./handoff-frontend-design-baseline.md)：前端视觉与交互原则。
 - [Frontend testing playbook](./handoff-frontend-testing-playbook.md)：门禁、批次、Browser、evidence、verify 与 cleanup。
+- [B12-G1 验收点—证据分层矩阵](./handoff-testing-evidence-matrix-b12.md)：B12-01～B12-88 的唯一逐 ID 证据盘点、建议主证据层、Browser 必要性、缺口、横切分组、失效条件与 G2 审核输入；不维护阶段状态。
 
 - 跨端契约参考：[Backend API map](./handoff-backend-api-map.md) 维护后端 endpoint、权限与错误；[Backend DTO cheatsheet](./handoff-backend-dto-cheatsheet.md) 维护 DTO、response 与字段形状。
 
