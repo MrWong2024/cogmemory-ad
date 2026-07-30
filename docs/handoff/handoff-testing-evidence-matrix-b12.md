@@ -1,10 +1,10 @@
 # B12-G2.1 验收点—执行与证据矩阵
 
-**状态：Draft v3 — G2.1 可执行性校核，等待用户审批**
+**状态：G3-A approved — G3-A1 execution layer completed; G3-A2 canary pending; G3-B deferred**
 
-本文件完整保留 B12-01～B12-88 的稳定要求、顺序、正式 Audit owner、33 条 owner route、route contract、当前 fixture / Playwright 与 B12-B1～B12-B9 历史状态。G2 的分组、复用与失败隔离方向已获认可，但 Draft v2 从未获批；本 Draft v3 只校正 visit/latest 可寻址性、横切证据映射及 G3 分阶段边界，不是已实施合同、执行证据或 evidence commit。
+本文件完整保留 B12-01～B12-88 的稳定要求、顺序、正式 Audit owner、33 条 owner route、route contract、当前 fixture / Playwright 与 B12-B1～B12-B9 历史状态。B12-G2.1 Draft v3 已获用户批准，批准范围仅为 G3-A；G3-A1 已完成通用 execution layer 的代码级与 synthetic/static 门禁，未产生正式 Browser Audit 证据，也不填写 evidence commit。
 
-本轮仍须用户审批。审批后只允许进入 G3-A；G3-A canary 与正式 execution runner 稳定后，G3-B 仍须另行审批。审批前不进入 G3，不修改正式 fixture、route、owner、Playwright、verifier 或产品；B12 Browser 继续暂停，B12-B、B12 与 Batch D 状态不变，不进入 B12-C，不关闭任何 B12 ID，不启动 B13～B15。
+G3-A1 不连接真实 Page、BrowserContext、产品 Browser、fixture 或数据库；现有正式 fixture、route、owner、runtime descriptor、Stage、verifier、cleanup 与产品均未改变。下一阶段仅为 G3-A2 canary；G3-B 仍须另行审批。B12 Browser 继续暂停，B12-B、B12 与 Batch D 状态不变，不进入 B12-C，不关闭任何 B12 ID，不启动 B13～B15。
 
 ## 1. 三层口径与固定枚举
 
@@ -431,11 +431,21 @@ G3-A 只减少 execution layer 的 test/group、Session、完整 collect 与重�
 
 ## 14. G3-A：Execution layer 优化
 
-用户批准本 Draft v3 后只允许进入 G3-A。G3-A 只可修改 Playwright B12 runner/support、Owner result journal、execution group、横切 collector、失败隔离，以及 testing playbook/本矩阵；不得修改产品或 fixture kernel。
+用户已批准本 Draft v3 的 G3-A 范围。G3-A 只可修改 Playwright B12 runner/support、Owner result journal、execution group、横切 collector、失败隔离，以及 testing playbook/本矩阵；不得修改产品或 fixture kernel。
 
 G3-A 必须保持现有 33 套 fixture roots、fixture builder、manifest、runtime descriptor schema、5 个 Stage、prepared/post-browser verifier、cleanup、正式 Audit owner、33 条 route contract 与历史状态。目标只是在既有 roots 上先证明 Session 复用、横切检查分离、owner 结果隔离、canary 与停止门禁，不同时承担 fixture 共享风险。
 
-### 14.1 G3-A canary
+### 14.1 G3-A1 execution layer（已完成）
+
+- 新增 `b12-execution-types.ts`：固定 owner result、failure category、group stop reason、横切组、B12 Audit ID 与安全 key 校验，不读取环境变量，也不依赖 Browser 或数据库类型。
+- 新增 `b12-owner-result-journal.ts`：owner 预注册、阶段单向完成、finalize-once、不可变安全 snapshot 与可选 finalized callback；`pass` 必须在 business、route Network 和 minimal cleanup 全部完成后固化，后续 owner 失败不能改写既有结果。
+- 新增 `b12-execution-group-runner.ts`：通过泛型异步回调编排 group setup、逐 owner run、逐 owner minimal cleanup、group cleanup 和 finalized callback；支持 owner 特有失败后安全继续、第二次 `shared_support` 失败停止、cleanup/output 失败停止，以及 group/profile 状态和 owner 业务结果分离。
+- 新增 `b12-cross-cutting-evidence.ts`：固定 Direct / Supporting / Non-audit 三分法；Direct 只影响本组 Direct IDs，Supporting 不生成 Audit pass/fail，Non-audit 失败只阻止 profile，且 Direct ID 跨组重复所有权与同组交集均被拒绝。
+- 新增独立 `b12-execution-layer.spec.ts`，20 项 synthetic 测试全部通过；完整 infrastructure 由修改前 59 项增至 79 项并全部通过。`test:browser:list`、frontend lint、typecheck 与 build 均通过。以上结果只证明 execution layer，不构成任何 B12 Audit pass。
+
+G3-A1 未启动产品 frontend、Browser backend、fixture CLI、产品 Browser 或 G3-A2 canary，未连接数据库。现有 33 条正式 owner route、fixture roots、runtime descriptor、Stage、verifier、cleanup 及 B12-01～B12-88 状态全部保持不变。
+
+### 14.2 G3-A2 canary（尚未执行）
 
 canary 固定覆盖以下 owner，不改变它们的正式所有权或既有独立 fixture：
 
@@ -466,9 +476,9 @@ G3-B 固定边界：
 
 G3-A 不批准 G3-B，G3-A 稳定也不自动开始 G3-B；两阶段均不自动进入 B12-C。
 
-## 16. Draft v3 边界结论
+## 16. 当前边界结论
 
-- 未实施 fixture、Session、execution group、Playwright、测试、verifier 或产品修改；未执行 Browser、fixture、unit、E2E、lint、typecheck、build 或数据库命令。
-- 正式 owner、route、fixture contract 与 B12-B1～B12-B9 历史事实不变；88 行均 unclosed，Executed evidence 无 passed。
-- G2 方向认可，但 Draft v2 未批准；本 Draft v3 仍等待用户审批。审批后只进入 G3-A，G3-A 稳定后 G3-B 另行审批。
-- B12 Browser 继续暂停；B12-B、B12 与 Batch D 状态不变；不进入 B12-C，不关闭任何 B12 ID，不启动 B13～B15，不填写 evidence commit。
+- G3-A1 execution layer 的 types、Owner result journal、group runner、横切证据 registry、安全 snapshot/callback 与独立 synthetic spec 已完成；只执行 synthetic/static 门禁，不产生正式 Browser evidence。
+- 正式 owner、route、fixture contract、runtime descriptor、Stage、verifier、cleanup 与 B12-B1～B12-B9 历史事实不变；88 行均 unclosed，Executed evidence 无 passed。
+- G3-A2 canary 为 `not_executed`，下一阶段仅为 G3-A2；G3-B 仍未批准，不实施第 6 节 fixture cluster 减量或 20 个正式 execution group。
+- B12 Browser 继续暂停；B12-B、B12 与 Batch D 状态不变；不进入 B12-C，不关闭任何 B12 ID，不启动 B13～B15，不修改 roadmap，不填写 evidence commit。
