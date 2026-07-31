@@ -11,15 +11,15 @@
 | Batch B / B4–B6 | 桌面范围已完成，既有状态不变 |
 | Batch C / B7–B10 | 已完成，既有状态不变 |
 | Batch D / B11 | 70 项已完成，状态不变 |
-| Batch D / B12 | 未完成；`passed=7`、`pending=81`、`failed=0`、`blocked=0`、`not_executed=0` |
-| Batch D / B13–B15（含 B14.1） | 稳定验收意图和顺序不变，尚未执行 |
+| Batch D / B12 | 清单治理已完成，产品验收尚未恢复执行；活动场景 `passed=2`、`pending=15`、`failed=0`、`blocked=0`、`not_executed=0`，具体清单、状态和旧 ID 映射见 frontend testing playbook 第 9 节 |
+| Batch D / B13–B15（含 B14.1） | 候选断言和历史设计输入保留，尚未执行；正式执行前须先场景化审查 |
 | Batch E | 8 个真实设备或人工项目尚未执行 |
 
 roadmap 继续维护产品范围和工作包状态；testing playbook 治理不得自动改变 roadmap。
 
-当前状态：ClinicalReport 锁定请求字段白名单、服务端 `updatedAt` 来源、stale 冲突无锁定副作用，以及不新增 locked status 与 public lock summary 均已由分层证据闭环；B12-P0 后端合同已完成。
+当前状态：B12-P0 后端合同已完成；既有分层证据已迁移为 `B12-S03`、`B12-S05` 通过，原 B12-84 的“无新增路由”证据继续有效并归入通用路由边界门禁。活动场景、具体状态和旧 ID 映射以 frontend testing playbook 第 9 节为权威来源。
 
-B12-P1 实验测试资产已全部移除，未新增关闭任何 Audit ID。B12 后续暂停执行，下一任务先审查验收清单本身；审查完成前不启动新的 Browser 实现。
+B12-P1 实验测试资产已全部移除，未新增关闭任何活动场景。B12 清单治理已经完成，产品验收尚未恢复执行；下一步须先设计最低充分执行方案，并经用户确认后才能启动 P1～P5 或新的 Browser 实现。未经确认不得重建 B12 专属 fixture/support。
 
 ## 2. 数据库用途和隔离
 
@@ -161,11 +161,13 @@ lint、typecheck、build、unit 和 E2E 必须分别报告，互不替代。删�
 
 ## 10. B12～B15 当前待验范围
 
-- B12：当前 `passed=7`、`pending=81`、`failed=0`、`blocked=0`、`not_executed=0`；P0 的 B12-09、B12-31、B12-32、B12-36、B12-37、B12-38、B12-84 有效证据保留，其余 81 项恢复为 `pending`。B12 暂停，下一任务先审查验收清单本身；审查完成前不启动 P1、P2 或新的 Browser 实现。
-- B13：116 项稳定验收意图和顺序不变，默认采用证据分层、微型 Profile、2～4 个 canary、独立关闭和最小 fixture。
-- B14：115 项稳定验收意图和顺序不变；B14.1 行为等价范围继续保留。
-- B15：10 组稳定验收意图和顺序不变，采用相同新方案。
+- B12：原 88 个 ID 不再作为活动关闭对象；当前有 17 个活动场景，状态为 `passed=2`、`pending=15`、`failed=0`、`blocked=0`、`not_executed=0`，其中 `B12-S03`、`B12-S05` 已通过。其余活动状态和旧 ID 映射以 frontend testing playbook 第 9 节为准；本手册继续负责数据库用途、后端证据、fixture、verifier 和 cleanup 规则。清单治理已完成，产品验收尚未恢复执行。
+- B13：原 116 项属于候选断言和历史设计输入，本次不改写具体候选条目；正式执行前须先场景化审查。
+- B14：原 115 项和 B14.1 行为范围属于候选断言和历史设计输入，本次不改写具体候选条目；正式执行前须先场景化审查。
+- B15：原 10 组属于候选断言和历史设计输入，本次不改写具体候选条目；正式执行前须先场景化审查。
 
-B13～B15 不创建批次专属大型 fixture、evidence matrix、runner、journal、aggregator 或完整 manifest，也不要求一次原子运行关闭整个批次。先完成非 Browser 证据，再执行 canary 与对应微型 Profile，最后执行一条轻量集成冒烟和静态门禁。
+B13～B15 的场景化审查允许合并重复断言、迁移通用门禁、退役失去阶段前提的断言，并重新分配最低充分证据层；审查必须保留核心业务风险、不可替代语义、旧条目映射和已有有效证据，不得冻结历史数量或顺序。
 
-本手册不关闭任何待验 Audit ID，不改变 B11 及以前完成状态，不改变 B13～B15 产品范围或验收意图。
+场景化审查后仍不创建批次专属大型 fixture、evidence matrix、runner、journal、aggregator 或完整 manifest，也不要求一次原子运行关闭整个批次。先完成非 Browser 证据，再执行 2～4 个 canary 与对应微型 Profile，最后执行一条轻量集成冒烟和通用门禁。
+
+本手册不关闭任何待验活动场景，不改变 B11 及以前完成状态，不改变 B13～B15 产品范围或具体候选条目。B12～B15 的活动场景清单、具体状态和旧 ID 映射以 frontend testing playbook 为权威来源。
