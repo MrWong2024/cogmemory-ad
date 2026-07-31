@@ -95,6 +95,33 @@ Codex 任务规模取决于业务风险是否一致、证据层是否相近、�
 
 横切失败只影响直接 Audit ID 或最终质量门禁；横切代表不得替代业务特有页面断言、业务特有错误恢复、角色差异、状态差异、请求次数与状态或数据库终态。
 
+### 6.1 Browser Origin、Cookie 与认证 preflight
+
+每个 Browser Profile 启动前必须记录并逐项核对以下非敏感事实：页面 URL 与实际页面 origin、前端构建实际使用的 `NEXT_PUBLIC_API_BASE_URL`、Browser 实际请求的 API origin、后端 `CORS_ORIGIN`、Session Cookie 所属 host，以及 backend 健康检查地址。声明值、构建产物、响应头、Cookie 元数据和实际 Network 请求必须相互一致。
+
+本地 Browser 验收使用以下 canonical host 规则：
+
+| canonical host | 页面 origin | API origin / API Base | CORS origin | Cookie host | health |
+|---|---|---|---|---|---|
+| `localhost` | `http://localhost:3002` | `http://localhost:5002` | `http://localhost:3002` | `localhost` | `http://localhost:5002/health` |
+| `127.0.0.1` | `http://127.0.0.1:3002` | `http://127.0.0.1:5002` | `http://127.0.0.1:3002` | `127.0.0.1` | `http://127.0.0.1:5002/health` |
+
+- 页面使用 `localhost` 时，API、health 和 Cookie host 必须使用 `localhost`，CORS 必须精确允许该页面 origin；页面使用 `127.0.0.1` 时，整条链路必须对应使用 `127.0.0.1`。同一认证链不得混用二者，也不得把它们视为等价 host。
+- 页面与 API 端口可以不同；当前本地链路的 scheme 和 host 必须一致，CORS 必须精确匹配包含 scheme 与端口的页面 origin，Cookie host / domain 语义必须匹配实际 API 请求 host。
+- 当前 Session Cookie 未设置 `Domain`，属于 API 响应 host 的 host-only Cookie；验收只记录 Cookie 名称、host/domain、path、HttpOnly、SameSite、Secure 和是否存在，不得输出 Cookie 值。
+- `BROWSER_ACCEPTANCE_FRONTEND_ORIGIN` 与 `BROWSER_ACCEPTANCE_BACKEND_ORIGIN` 声明 Playwright 预期拓扑；它们不能覆盖已经进入 production frontend 构建产物的 API Base。
+- `NEXT_PUBLIC_API_BASE_URL` 是 Next.js 公开构建时输入。该值变化后必须重新执行 production build，再启动生产服务；只重启既有 production server 不能证明新值已生效。Browser 必须以实际 Network 请求确认构建产物使用的 API origin。
+
+进入任何业务 Profile 前，必须在同一 BrowserContext 完成认证 preflight：
+
+1. 请求 canonical backend health 地址并确认成功。
+2. 打开页面并确认实际 `location.origin` 与声明的页面 origin 完全一致。
+3. 发起登录并确认请求发送到预期 API origin，响应 CORS origin 与 credentials 语义正确。
+4. 确认登录响应成功，并在该 BrowserContext 中产生预期的 HttpOnly Session Cookie；登录接口成功本身不能证明认证链通过。
+5. 保持同一 BrowserContext 调用 `GET /auth/me`，确认 Cookie 被发送且已认证读取成功。
+
+任一步失败都不得进入业务 Profile。origin、CORS、Cookie host 或公开构建输入不一致属于环境编排缺陷；受影响的业务结果无效，不得记为产品失败，也不得通过重试业务请求或延长超时绕过 preflight。
+
 ## 7. Audit ID 关闭规则
 
 状态只允许 `pending`、`passed`、`failed`、`blocked`、`not_executed`、`obsolete`。一个 Audit ID 只有在主证据、必要支持证据、必需数据库终态、资源 cleanup 全部实际通过，且没有测试资产、环境或未执行项阻断时才能关闭。

@@ -61,6 +61,37 @@ B12-P1 实验测试资产已全部移除，未新增关闭任何 Audit ID。B12 
 | database verifier | 写入次数、audit、幂等终态、protected roots、narrative、snapshot、Profile 隔离、canonical seed | 页面行为与用户可见结果 |
 | static gate | lint、typecheck、build、test discovery | 动态权限、状态机、数据库或 Browser 通过 |
 
+### 3.1 定向 Jest / HTTP E2E 命令契约
+
+当前 `npm run test:e2e` 是完整 HTTP E2E 入口：它在导入应用前设置 `NODE_ENV=test` 和 `COGMEMORY_DATABASE_PURPOSE=standard_test`，然后以 `test/jest-e2e.json`、`--runInBand` 及该配置的 `testRegex` 启动 Jest。该 Node 包装器传给 `jest.run()` 的参数数组是固定值，未读取 `process.argv`，所以 npm 追加参数不会进入 Jest。禁止使用以下命令表示定向运行：
+
+```powershell
+npm run test:e2e -- <target>
+```
+
+以下定向命令均从 `backend` 目录执行，与完整 E2E 一致地在 Jest 启动前设置 `NODE_ENV=test` 和 `COGMEMORY_DATABASE_PURPOSE=standard_test`，并使用同一 Jest 配置与串行执行语义；正式运行导入应用时据此加载 `.env.test` 并保持 `standard_test` 数据库用途。discovery 只列出文件，不连接数据库，也不证明任何动态测试通过。`<target>`、`<first-target>` 与 `<second-target>` 必须替换为仓库内相对于 `backend` 的实际 E2E 文件路径。
+
+单文件 discovery：
+
+```powershell
+node -e "process.env.NODE_ENV='test'; process.env.COGMEMORY_DATABASE_PURPOSE='standard_test'; require('jest').run(['--config', './test/jest-e2e.json', '--runInBand', '--listTests', '--runTestsByPath', ...process.argv.slice(1)])" ./test/<target>.e2e-spec.ts
+```
+
+单文件正式运行：
+
+```powershell
+node -e "process.env.NODE_ENV='test'; process.env.COGMEMORY_DATABASE_PURPOSE='standard_test'; require('jest').run(['--config', './test/jest-e2e.json', '--runInBand', '--runTestsByPath', ...process.argv.slice(1)])" ./test/<target>.e2e-spec.ts
+```
+
+多文件 discovery 与正式运行分别使用同一入口，并将目标路径逐个作为 Node 参数传入：
+
+```powershell
+node -e "process.env.NODE_ENV='test'; process.env.COGMEMORY_DATABASE_PURPOSE='standard_test'; require('jest').run(['--config', './test/jest-e2e.json', '--runInBand', '--listTests', '--runTestsByPath', ...process.argv.slice(1)])" ./test/<first-target>.e2e-spec.ts ./test/<second-target>.e2e-spec.ts
+node -e "process.env.NODE_ENV='test'; process.env.COGMEMORY_DATABASE_PURPOSE='standard_test'; require('jest').run(['--config', './test/jest-e2e.json', '--runInBand', '--runTestsByPath', ...process.argv.slice(1)])" ./test/<first-target>.e2e-spec.ts ./test/<second-target>.e2e-spec.ts
+```
+
+正式运行前必须把 `--listTests` 输出规范化为文件路径集合，并与预期目标做完全相等比较；单文件只能发现一个目标，多文件不得缺失、重复或包含额外文件。以下任一情况触发立即停止：discovery 为 0、discovery 包含非目标文件、正式运行出现无关测试文件或完整 E2E 套件启动迹象、长时间没有目标测试摘要。不得通过延长超时掩盖范围错误，也不得用该次结果关闭或判失败目标验收项；选择器或参数透传错误记为测试命令缺陷并将目标记为 `not_executed`，命令超时且无测试摘要时目标记为 `unknown`。
+
 四类动态证据各有不可替代职责。fixture E2E 只证明测试资产合同，不能冒充产品 Browser；页面文本不能替代 verifier；cleanup 成功不能推导业务通过。
 
 ## 4. 最小 fixture 原则
