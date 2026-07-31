@@ -83,6 +83,8 @@ roadmap 继续维护产品范围和工作包状态；testing playbook 治理不�
 6. 执行与该 Profile 副作用匹配的只读 verifier；零写入场景也必须证明报告、audit、`updatedAt` 和受保护资源未变。
 7. logout、关闭 Browser/Context、停止进程，按 Profile 所有权精确 cleanup，再执行幂等核对。
 
+一个 Codex 证据包可以包含多个微型 Profile，但同一 Codex 任务不等于共享数据库生命周期。每个 Profile 的最小数据库前置、写入副作用、并发窗口、post-action verifier、cleanup 与 residual 核对必须独立；不得跨 Profile 拼接数据库终态证据。只读 Profile 只有在测试数据可寻址、无状态污染且 cleanup 边界明确时，才可以复用安全的最小测试数据；可写、幂等、冲突和并发 Profile 不得为了减少任务数量而共享同一个可写 Report。
+
 同一 Profile 内必须保持 Git 代码态、前置、Browser、verifier 和 cleanup 原子性。后续无关 Profile 失败，不得使此前已经独立闭环的证据失效。
 
 ## 6. 写入、并发、Stage 与终态验证

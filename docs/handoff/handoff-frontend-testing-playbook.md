@@ -59,7 +59,17 @@ B12-09、B12-38不再重复要求Browser支持；页面状态、锁定回执与�
 
 禁止一个 Profile 混入十几个以上无关状态、让单次失败使整个批次证据归零、建设批次专属 runner/journal/aggregator/完整 manifest，或让所有 Profile 共享超长服务生命周期。
 
-### 4.1 B12 Profile 基线
+### 4.1 Codex 任务、证据包与微型 Profile 的粒度
+
+Codex 任务默认按业务风险一致、证据类型相近的完整业务风险包或证据包批量处理；非 Browser 证据可以在同一证据包内批量执行。单个 Audit ID 或单个微型 Profile 都不是默认任务边界，一个 Codex 任务可以包含多个相互独立的微型 Profile。不得为了减少 Codex 数量而合并不可互换的业务语义，也不得为了形式上的独立性将每个 Audit ID 机械拆成单独 Codex 任务。
+
+同一证据包可以覆盖多个相关 Audit ID，但每个 Audit ID 仍须单独定位主证据和必要支持证据、单独记录实际执行结果、单独判断关闭资格并单独更新状态；不得因为批量执行而批量推定通过。
+
+Browser 场景继续按微型 Profile 隔离执行。每个 Profile 必须独立拥有最小合法前置、业务特有断言、必要后置验证、verifier、cleanup 和证据结果。同一 Codex 包含多个 Profile，不表示这些 Profile 必须共享 fixture、namespace、可写 Report、BrowserContext 或 Session，也不表示可以跨 Profile 拼接数据库终态证据或形成一次大型原子运行。后续无关 Profile 失败，不得作废此前已经完成业务证据、必要 verifier 和 cleanup 的 Profile。
+
+Codex 任务规模取决于业务风险是否一致、证据层是否相近、前置状态是否兼容、写入和并发是否需要隔离，以及能否在合理时间内完成和收口。一个 Codex 通常可处理约 5～25 个相关 Audit ID；该数量仅是任务规划参考，不是验收门禁，不得为了达到该数字而扩大或缩减验收语义。
+
+### 4.2 B12 Profile 基线
 
 - `B12-P0-contract-state`（已完成）：DTO、权限、错误码、状态机、mapper、幂等、请求正文、并发基线、路由所有权和数据库终态，以 pure/static、unit、HTTP E2E 和 verifier 为主；已关闭 B12-09、B12-31、B12-32、B12-36、B12-37、B12-38、B12-84。
 - `B12-P1-eligibility-readonly`：draft、pending、confirmed、角色入口、quality、confirmation、locked/voided、一致性 warning 和 locked 只读。
