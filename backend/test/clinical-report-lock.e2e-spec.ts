@@ -963,6 +963,11 @@ describe('clinical report lock API (e2e)', () => {
       .expect((response) => {
         expect(body(response).code).toBe('CLINICAL_REPORT_LOCK_CONFLICT');
       });
+    const conflictAfter = await currentReport(conflict);
+    expect(conflictAfter.lockedAt).toBeNull();
+    expect(conflictAfter.lockedBy).toBeNull();
+    expect(conflictAfter.metadata?.a22Lock).toBeUndefined();
+    expect(conflictAfter.auditLogRefs).toHaveLength(0);
 
     const other = await createFixture('OTHER');
     await doctorAgent
