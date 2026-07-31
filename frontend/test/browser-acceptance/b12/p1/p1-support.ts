@@ -7,13 +7,20 @@ import {
 } from '../../support/acceptance-env';
 import { expect, test } from '../../support/acceptance-test';
 import { NetworkLedger } from '../../support/network-ledger';
-import type { NetworkLedgerSummary } from '../../support/network-ledger';
+import type {
+  NetworkLedgerEntry,
+  NetworkLedgerSummary,
+} from '../../support/network-ledger';
 import type {
   AcceptanceRole,
   RoleContextFactory,
 } from '../../support/role-context-factory';
 import { ConsoleAudit } from '../../support/runtime-audit';
 import type { ConsoleAuditSummary } from '../../support/runtime-audit';
+import {
+  safeJsonStringify,
+  sanitizeUrlPattern,
+} from '../../support/safe-output';
 
 const SESSION_COOKIE_NAME = 'cogmemory_ad_session';
 
@@ -94,6 +101,21 @@ export type B12P1BusinessPhaseSummary = {
   lockPostCount: number;
 };
 
+export type B12P1FailedNetworkFingerprint = Omit<
+  NetworkLedgerEntry,
+  'bodyKeys'
+> & {
+  count: number;
+};
+
+export type B12P1FailureDiagnostics = {
+  console: Pick<
+    ConsoleAuditSummary,
+    'errorCount' | 'pageErrorCount' | 'categories'
+  >;
+  network: B12P1FailedNetworkFingerprint[];
+};
+
 export function summarizeB12P1BusinessPhase(
   consoleSummary: ConsoleAuditSummary,
   networkSummary: NetworkLedgerSummary,
@@ -111,6 +133,77 @@ export function summarizeB12P1BusinessPhase(
         method === 'POST' &&
         safeUrlPattern.endsWith('/clinical-reports/<id>/lock'),
     ).length,
+  };
+}
+
+function isNetworkFailure(entry: NetworkLedgerEntry): boolean {
+  return (
+    entry.failureReason !== null ||
+    (entry.status !== null && (entry.status < 200 || entry.status >= 400))
+  );
+}
+
+function compareNetworkFingerprints(
+  left: B12P1FailedNetworkFingerprint,
+  right: B12P1FailedNetworkFingerprint,
+): number {
+  const leftFields = [
+    left.method,
+    left.status === null ? '' : String(left.status).padStart(3, '0'),
+    left.resourceType,
+    left.initiator,
+    left.initiatorSource,
+    left.failureReason ?? '',
+    left.safeUrlPattern,
+  ];
+  const rightFields = [
+    right.method,
+    right.status === null ? '' : String(right.status).padStart(3, '0'),
+    right.resourceType,
+    right.initiator,
+    right.initiatorSource,
+    right.failureReason ?? '',
+    right.safeUrlPattern,
+  ];
+  return leftFields.join('\u0000').localeCompare(rightFields.join('\u0000'));
+}
+
+export function summarizeB12P1FailureDiagnostics(
+  consoleSummary: ConsoleAuditSummary,
+  networkSummary: NetworkLedgerSummary,
+): B12P1FailureDiagnostics {
+  const fingerprints = new Map<string, B12P1FailedNetworkFingerprint>();
+  for (const entry of networkSummary.entries.filter(isNetworkFailure)) {
+    const fingerprint: B12P1FailedNetworkFingerprint = {
+      method: entry.method,
+      status: entry.status,
+      resourceType: entry.resourceType,
+      initiator: entry.initiator,
+      initiatorSource: entry.initiatorSource,
+      failureReason: entry.failureReason,
+      safeUrlPattern: sanitizeUrlPattern(entry.safeUrlPattern),
+      count: 1,
+    };
+    const key = JSON.stringify(fingerprint, (name, value) =>
+      name === 'count' ? undefined : value,
+    );
+    const existing = fingerprints.get(key);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      fingerprints.set(key, fingerprint);
+    }
+  }
+
+  return {
+    console: {
+      errorCount: consoleSummary.errorCount,
+      pageErrorCount: consoleSummary.pageErrorCount,
+      categories: consoleSummary.categories
+        .map((category) => ({ ...category }))
+        .sort((left, right) => left.category.localeCompare(right.category)),
+    },
+    network: [...fingerprints.values()].sort(compareNetworkFingerprints),
   };
 }
 
@@ -257,7 +350,18 @@ export class B12P1BrowserSession {
         lockPostCount: 0,
       });
     } catch (error: unknown) {
-      failures.push(error);
+      const diagnostics = summarizeB12P1FailureDiagnostics(
+        consoleSummary,
+        networkSummary,
+      );
+      failures.push(
+        new AggregateError(
+          [error],
+          `B12 P1 business audit failed; safe diagnostics=${safeJsonStringify(
+            diagnostics,
+          )}`,
+        ),
+      );
     }
 
     try {

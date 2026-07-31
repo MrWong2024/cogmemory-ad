@@ -23,7 +23,10 @@ import type {
   ClinicalReport,
   LockClinicalReportRequest,
 } from '@/src/features/assessments/types/clinical-report';
-import { summarizeB12P1BusinessPhase } from '../b12/p1/p1-support';
+import {
+  summarizeB12P1BusinessPhase,
+  summarizeB12P1FailureDiagnostics,
+} from '../b12/p1/p1-support';
 
 const PATIENT_ID = '507f1f77bcf86cd799439011';
 const VISIT_ID = '507f1f77bcf86cd799439012';
@@ -382,5 +385,103 @@ test('freezes the B12 P1 business audit before the independent logout lifecycle'
   );
   expect(finishSource.indexOf('await this.performLogout()')).toBeGreaterThan(
     finishSource.indexOf('await this.ledger.detach()'),
+  );
+});
+
+test('groups and sanitizes B12 P1 failure diagnostics without raw request or console data', () => {
+  const diagnostics = summarizeB12P1FailureDiagnostics(
+    {
+      warningCount: 4,
+      errorCount: 2,
+      pageErrorCount: 1,
+      categories: [
+        { category: 'runtime', count: 1 },
+        { category: 'network', count: 2 },
+      ],
+    },
+    {
+      requestCount: 4,
+      failedRequestCount: 2,
+      entries: [
+        {
+          method: 'POST',
+          status: null,
+          resourceType: 'document',
+          initiator: 'navigation',
+          initiatorSource: 'cdp',
+          failureReason: 'aborted',
+          safeUrlPattern:
+            'https://browser.invalid/patients/507f1f77bcf86cd799439011?token=blocked-one',
+          bodyKeys: ['password'],
+        },
+        {
+          method: 'POST',
+          status: null,
+          resourceType: 'document',
+          initiator: 'navigation',
+          initiatorSource: 'cdp',
+          failureReason: 'aborted',
+          safeUrlPattern:
+            'https://browser.invalid/patients/507f1f77bcf86cd799439012#blocked-two',
+          bodyKeys: ['cookie'],
+        },
+        {
+          method: 'GET',
+          status: 503,
+          resourceType: 'fetch',
+          initiator: 'script',
+          initiatorSource: 'playwright',
+          failureReason: null,
+          safeUrlPattern: '/api/proxy/clinical-reports/latest',
+          bodyKeys: [],
+        },
+        {
+          method: 'GET',
+          status: 200,
+          resourceType: 'fetch',
+          initiator: 'script',
+          initiatorSource: 'playwright',
+          failureReason: null,
+          safeUrlPattern: '/dashboard',
+          bodyKeys: [],
+        },
+      ],
+    },
+  );
+
+  expect(diagnostics).toEqual({
+    console: {
+      errorCount: 2,
+      pageErrorCount: 1,
+      categories: [
+        { category: 'network', count: 2 },
+        { category: 'runtime', count: 1 },
+      ],
+    },
+    network: [
+      {
+        method: 'GET',
+        status: 503,
+        resourceType: 'fetch',
+        initiator: 'script',
+        initiatorSource: 'playwright',
+        failureReason: null,
+        safeUrlPattern: '/api/proxy/clinical-reports/latest',
+        count: 1,
+      },
+      {
+        method: 'POST',
+        status: null,
+        resourceType: 'document',
+        initiator: 'navigation',
+        initiatorSource: 'cdp',
+        failureReason: 'aborted',
+        safeUrlPattern: '/patients/<id>',
+        count: 2,
+      },
+    ],
+  });
+  expect(JSON.stringify(diagnostics)).not.toMatch(
+    /blocked-one|blocked-two|password|cookie|507f1f77bcf86cd79943901[12]/,
   );
 });

@@ -21,7 +21,9 @@ B12-P0-A/B/C 已完成，`B12-P0-contract-state` 已完成：P0 拥有的 B12-09
 
 当前仍处于 B12-P1。B12-P1-R1 已将业务阶段 Console / Network audit 与 logout 生命周期分离，未增加 console、network、failed request 或 logout 忽略规则；frontend 静态门禁、B12-69 与 phase-boundary pure/static 证据、后端定向 unit/HTTP E2E 均通过。修正后 Profile A 的五项页面主断言、真实 logout、Session 撤销、post verifier、两次 cleanup 与 residual=0 均完成，但 logout 前冻结的业务阶段仍记录 `consoleErrorCount=1`、`failedRequestCount=6`；业务写请求与 lock POST 均为 0。该结果属于 Browser support / 测试资产质量门禁失败，不足以认定产品缺陷，也不能关闭 Audit ID。按 A 修正轮失败止损，B～G 本轮未执行。
 
-因此 B12 汇总保持 `passed=7`、`pending=56`、`failed=0`、`blocked=8`、`not_executed=17`。B12-17、B12-19 仍因 public mapper 会清洗对应不一致 lock 摘要而 `blocked`，不得用 mock 替代真实 read contract。下一步必须先在新的明确任务中处理 Profile A 业务阶段多次导航产生的 audit 事实；P1 完整收口前不得进入 B12-P2，也不得把 B12-17、B12-19 写成通过。
+B12-P1-A3 随后把正式 Browser 缩小为单个 doctor Context、一次登录、一次直接进入 `confirmed-unlocked`、一次真实 logout。B12-03、B12-10、B12-11 的三项页面断言均通过，logout、Session 撤销、post-browser verifier、两次 cleanup 和 `residual=0` 也均通过，报告业务写请求与 lock POST 均为 0；但业务审计仍为 `consoleErrorCount=1`、`pageErrorCount=0`、`failedRequestCount=2`，因此本轮未关闭任何 Audit ID。安全化诊断为 Console `network=1`；Network 指纹分别为 `GET /patients/<id>`、`status=200`、`fetch/script`、`initiatorSource=cdp`、`aborted`、`count=1`，同路径同字段但 `initiatorSource=playwright`、`count=1`，以及 `GET /auth/me`、`status=401`、`fetch/script/playwright`、`failureReason=null`、`count=1`。两条 aborted 均不是 navigation initiator，不能归为与页面切换严格对应的测试支持边界候选；HTTP 401 与关联 network Console 目前只构成网络、服务或产品缺陷候选事实，不作最终产品缺陷结论。
+
+因此 B12 汇总保持 `passed=7`、`pending=56`、`failed=0`、`blocked=8`、`not_executed=17`。B12-17、B12-19 仍因 public mapper 会清洗对应不一致 lock 摘要而 `blocked`，不得用 mock 替代真实 read contract。下一步必须在新的明确任务中定向处理 A3 Canary 的安全化 Console / Network 诊断；Canary 闭环前不执行 A1 draft、A2 pending，也不得进入 B12-P2。
 
 ### 1.1 B12-P1-R1 的 23 个目标 Audit ID 实际结果
 
