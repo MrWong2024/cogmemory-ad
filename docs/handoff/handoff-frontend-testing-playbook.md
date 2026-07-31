@@ -23,7 +23,9 @@ B12-P0-A/B/C 已完成，`B12-P0-contract-state` 已完成：P0 拥有的 B12-09
 
 B12-P1-A3 随后把正式 Browser 缩小为单个 doctor Context、一次登录、一次直接进入 `confirmed-unlocked`、一次真实 logout。B12-03、B12-10、B12-11 的三项页面断言均通过，logout、Session 撤销、post-browser verifier、两次 cleanup 和 `residual=0` 也均通过，报告业务写请求与 lock POST 均为 0；但业务审计仍为 `consoleErrorCount=1`、`pageErrorCount=0`、`failedRequestCount=2`，因此本轮未关闭任何 Audit ID。安全化诊断为 Console `network=1`；Network 指纹分别为 `GET /patients/<id>`、`status=200`、`fetch/script`、`initiatorSource=cdp`、`aborted`、`count=1`，同路径同字段但 `initiatorSource=playwright`、`count=1`，以及 `GET /auth/me`、`status=401`、`fetch/script/playwright`、`failureReason=null`、`count=1`。两条 aborted 均不是 navigation initiator，不能归为与页面切换严格对应的测试支持边界候选；HTTP 401 与关联 network Console 目前只构成网络、服务或产品缺陷候选事实，不作最终产品缺陷结论。
 
-因此 B12 汇总保持 `passed=7`、`pending=56`、`failed=0`、`blocked=8`、`not_executed=17`。B12-17、B12-19 仍因 public mapper 会清洗对应不一致 lock 摘要而 `blocked`，不得用 mock 替代真实 read contract。下一步必须在新的明确任务中定向处理 A3 Canary 的安全化 Console / Network 诊断；Canary 闭环前不执行 A1 draft、A2 pending，也不得进入 B12-P2。
+B12-P1-A3-R2 已在 B12-P1 局部 support 中建立 `auth_bootstrap`、`scenario_load`、`stable_evidence`、`logout` 四阶段门禁，并以一套连续 lifecycle ledger 覆盖登录至稳定证据冻结之间的报告业务写入。唯一一次正式 Canary 在 `auth_bootstrap` 止损：`GET /auth/me -> 401` 共 3 次，至少一次发生在唯一成功的 `POST /auth/login` 之后；安全 Console 摘要为 `errorCount=3`、`pageErrorCount=0`、category `network=3`，报告业务写请求与 lock POST 均为 0。由于加载阶段未开始，本轮没有 `scenario_load_success_response_aborted` 诊断，也未执行三个页面主断言或 `stable_evidence`；真实 logout 与 Session 撤销未取得通过证据，post-browser verifier 以安全 Session 生命周期错误失败。两次精确 cleanup 均通过，最终 `residual=0`。本轮不关闭 B12-03、B12-10、B12-11，且未重跑 Browser、未执行其他 Profile。
+
+因此 B12 汇总保持 `passed=7`、`pending=56`、`failed=0`、`blocked=8`、`not_executed=17`。B12-17、B12-19 仍因 public mapper 会清洗对应不一致 lock 摘要而 `blocked`，不得用 mock 替代真实 read contract。下一步必须在新的明确任务中定向处理 A3-R2 `auth_bootstrap` 的重复 401 与 Session 生命周期诊断；Canary 闭环前不执行 A1 draft、A2 pending，也不得进入 B12-P2。
 
 ### 1.1 B12-P1-R1 的 23 个目标 Audit ID 实际结果
 
@@ -31,14 +33,14 @@ B12-P1-A3 随后把正式 Browser 缩小为单个 doctor Context、一次登录�
 |---|---|---|
 | B12-01 | A 页面主断言通过；业务阶段 audit 门禁失败 | `blocked` |
 | B12-02 | A 页面主断言通过；业务阶段 audit 门禁失败 | `blocked` |
-| B12-03 | A 页面主断言通过；业务阶段 audit 门禁失败 | `blocked` |
+| B12-03 | A3 页面主断言曾通过；A3-R2 在 auth_bootstrap 止损，未进入页面复验 | `blocked` |
 | B12-04 | A 失败触发止损，本轮未执行 B | `blocked` |
 | B12-05 | A 失败触发止损，本轮未执行 B | `not_executed` |
 | B12-06 | A 失败触发止损，本轮未执行 C | `not_executed` |
 | B12-07 | A 失败触发止损，本轮未执行 C | `not_executed` |
 | B12-08 | A 失败触发止损，本轮未执行 C | `not_executed` |
-| B12-10 | A 页面主断言通过；业务阶段 audit 门禁失败 | `blocked` |
-| B12-11 | A 页面主断言通过；业务阶段 audit 门禁失败 | `blocked` |
+| B12-10 | A3 页面主断言曾通过；A3-R2 在 auth_bootstrap 止损，未进入页面复验 | `blocked` |
+| B12-11 | A3 页面主断言曾通过；A3-R2 在 auth_bootstrap 止损，未进入页面复验 | `blocked` |
 | B12-12 | A 失败触发止损，本轮未执行 D | `not_executed` |
 | B12-13 | A 失败触发止损，本轮未执行 D | `not_executed` |
 | B12-14 | A 失败触发止损，本轮未执行 D | `not_executed` |

@@ -24,9 +24,18 @@ import type {
   LockClinicalReportRequest,
 } from '@/src/features/assessments/types/clinical-report';
 import {
+  summarizeB12P1AuthBootstrap,
   summarizeB12P1BusinessPhase,
   summarizeB12P1FailureDiagnostics,
+  summarizeB12P1LifecycleWrites,
+  summarizeB12P1ScenarioLoad,
+  summarizeB12P1StableEvidence,
 } from '../b12/p1/p1-support';
+import type {
+  NetworkLedgerEntry,
+  NetworkLedgerSummary,
+} from '../support/network-ledger';
+import type { ConsoleAuditSummary } from '../support/runtime-audit';
 
 const PATIENT_ID = '507f1f77bcf86cd799439011';
 const VISIT_ID = '507f1f77bcf86cd799439012';
@@ -35,6 +44,39 @@ const NORMALIZED_REPORT_ID = REPORT_ID.toLowerCase();
 const REPORT_UPDATED_AT = '2026-07-31T01:02:03.000Z';
 const TEST_LOCK_NOTE = 'TEST DE-IDENTIFIED clinical report lock note';
 const originalFetch = globalThis.fetch;
+
+const EMPTY_CONSOLE_SUMMARY: ConsoleAuditSummary = {
+  warningCount: 0,
+  errorCount: 0,
+  pageErrorCount: 0,
+  categories: [],
+};
+
+function ledgerEntry(
+  input: Partial<NetworkLedgerEntry> &
+    Pick<NetworkLedgerEntry, 'method' | 'safeUrlPattern'>,
+): NetworkLedgerEntry {
+  return {
+    status: 200,
+    resourceType: 'fetch',
+    initiator: 'script',
+    initiatorSource: 'playwright',
+    failureReason: null,
+    bodyKeys: [],
+    ...input,
+    method: input.method.toUpperCase(),
+  };
+}
+
+function ledgerSummary(entries: NetworkLedgerEntry[]): NetworkLedgerSummary {
+  return {
+    requestCount: entries.length,
+    failedRequestCount: entries.filter(
+      ({ failureReason }) => failureReason !== null,
+    ).length,
+    entries,
+  };
+}
 
 type RouteEntry = {
   kind: 'page' | 'route';
@@ -316,7 +358,7 @@ test('B12-69: derives locked read-only semantics from lockedAt and never from is
   expect(isClinicalReportLocked(lockedNonFinal)).toBe(true);
 });
 
-test('freezes the B12 P1 business audit before the independent logout lifecycle', () => {
+test('orders B12 P1 phase audits around one lifecycle ledger and independent logout', () => {
   const businessSummary = summarizeB12P1BusinessPhase(
     {
       warningCount: 0,
@@ -379,12 +421,234 @@ test('freezes the B12 P1 business audit before the independent logout lifecycle'
     supportSource.indexOf('async finish(): Promise<void>'),
     supportSource.indexOf('private async performLogout(): Promise<void>'),
   );
-  expect(finishSource.indexOf('this.consoleAudit.stop()')).toBeGreaterThan(-1);
-  expect(finishSource.indexOf('await this.ledger.detach()')).toBeGreaterThan(
-    finishSource.indexOf('this.consoleAudit.stop()'),
+  expect(supportSource).toContain(
+    'private readonly lifecycleLedger = new NetworkLedger()',
+  );
+  expect(supportSource.indexOf('authConsoleAudit.start()')).toBeLessThan(
+    supportSource.indexOf('scenarioConsoleAudit.start()'),
+  );
+  expect(supportSource.indexOf('scenarioConsoleAudit.start()')).toBeLessThan(
+    supportSource.indexOf('this.stableConsoleAudit.start()'),
+  );
+  expect(
+    finishSource.indexOf('this.stableConsoleAudit.stop()'),
+  ).toBeGreaterThan(-1);
+  expect(
+    finishSource.indexOf('await this.lifecycleLedger.detach()'),
+  ).toBeGreaterThan(
+    finishSource.indexOf('this.stableConsoleAudit.stop()'),
   );
   expect(finishSource.indexOf('await this.performLogout()')).toBeGreaterThan(
-    finishSource.indexOf('await this.ledger.detach()'),
+    finishSource.indexOf('await this.lifecycleLedger.detach()'),
+  );
+});
+
+test('accepts only the pre-login GET /auth/me 401 authentication contract', () => {
+  const summary = summarizeB12P1AuthBootstrap(
+    {
+      warningCount: 0,
+      errorCount: 1,
+      pageErrorCount: 0,
+      categories: [{ category: 'network', count: 1 }],
+    },
+    ledgerSummary([
+      ledgerEntry({
+        method: 'GET',
+        safeUrlPattern: '/auth/me',
+        status: 401,
+      }),
+      ledgerEntry({
+        method: 'POST',
+        safeUrlPattern: '/auth/login',
+        status: 201,
+      }),
+    ]),
+  );
+
+  expect(summary).toMatchObject({
+    hardFailures: [],
+    authProbeCount: 1,
+    loginRequestCount: 1,
+    reportBusinessWriteCount: 0,
+    lockPostCount: 0,
+  });
+});
+
+test('rejects GET /auth/me 401 after successful login', () => {
+  const summary = summarizeB12P1AuthBootstrap(
+    EMPTY_CONSOLE_SUMMARY,
+    ledgerSummary([
+      ledgerEntry({
+        method: 'GET',
+        safeUrlPattern: '/auth/me',
+        status: 401,
+      }),
+      ledgerEntry({
+        method: 'POST',
+        safeUrlPattern: '/auth/login',
+        status: 200,
+      }),
+      ledgerEntry({
+        method: 'GET',
+        safeUrlPattern: '/auth/me',
+        status: 401,
+      }),
+    ]),
+  );
+
+  expect(summary.hardFailures).toContain(
+    'auth_bootstrap_post_login_unauthorized',
+  );
+  expect(summary.hardFailures).toContain('auth_bootstrap_http_error');
+});
+
+test('classifies only ready scenario-load GET 2xx aborted requests as diagnostics', () => {
+  const summary = summarizeB12P1ScenarioLoad(
+    {
+      warningCount: 0,
+      errorCount: 1,
+      pageErrorCount: 0,
+      categories: [{ category: 'network', count: 1 }],
+    },
+    ledgerSummary([
+      ledgerEntry({
+        method: 'GET',
+        safeUrlPattern:
+          '/api/proxy/patients/<id>/visits/<id>/clinical-reports/latest',
+      }),
+      ledgerEntry({
+        method: 'GET',
+        safeUrlPattern: '/unexpected/safe-read',
+        failureReason: 'aborted',
+      }),
+    ]),
+    { pageReady: true, expectLatestReport: true },
+  );
+
+  expect(summary.hardFailures).toEqual([]);
+  expect(summary.diagnostics).toEqual([
+    expect.objectContaining({
+      method: 'GET',
+      status: 200,
+      failureReason: 'aborted',
+      safeUrlPattern: '/unexpected/safe-read',
+      classification: 'scenario_load_success_response_aborted',
+      count: 1,
+    }),
+  ]);
+});
+
+test('keeps scenario-load HTTP errors, timed out, and ordinary failed requests hard', () => {
+  const summary = summarizeB12P1ScenarioLoad(
+    EMPTY_CONSOLE_SUMMARY,
+    ledgerSummary([
+      ledgerEntry({
+        method: 'GET',
+        safeUrlPattern:
+          '/api/proxy/patients/<id>/visits/<id>/clinical-reports/latest',
+      }),
+      ledgerEntry({ method: 'GET', safeUrlPattern: '/read/a', status: 404 }),
+      ledgerEntry({ method: 'GET', safeUrlPattern: '/read/b', status: 503 }),
+      ledgerEntry({
+        method: 'GET',
+        safeUrlPattern: '/read/c',
+        status: null,
+        failureReason: 'timed_out',
+      }),
+      ledgerEntry({
+        method: 'GET',
+        safeUrlPattern: '/read/d',
+        status: null,
+        failureReason: 'failed',
+      }),
+    ]),
+    { pageReady: true, expectLatestReport: true },
+  );
+
+  expect(summary.hardFailures).toEqual(
+    expect.arrayContaining([
+      'scenario_load_http_error',
+      'scenario_load_request_failed',
+      'scenario_load_request_timed_out',
+    ]),
+  );
+});
+
+test('keeps every stable-evidence aborted request as a hard failure', () => {
+  const summary = summarizeB12P1StableEvidence(
+    EMPTY_CONSOLE_SUMMARY,
+    ledgerSummary([
+      ledgerEntry({
+        method: 'GET',
+        safeUrlPattern: '/stable/read',
+        failureReason: 'aborted',
+      }),
+    ]),
+  );
+
+  expect(summary.failedRequestCount).toBe(1);
+  expect(summary.hardFailures).toContain('stable_evidence_failed_request');
+});
+
+test('captures writes from scenario-load and stable-evidence in one lifecycle invariant', () => {
+  const scenarioEntries = [
+    ledgerEntry({
+      method: 'PATCH',
+      safeUrlPattern: '/api/proxy/clinical-reports/<id>',
+    }),
+  ];
+  const stableEntries = [
+    ledgerEntry({
+      method: 'POST',
+      safeUrlPattern: '/api/proxy/clinical-reports/<id>/lock',
+    }),
+  ];
+  const summary = summarizeB12P1LifecycleWrites(
+    ledgerSummary([
+      ledgerEntry({ method: 'POST', safeUrlPattern: '/auth/login' }),
+      ...scenarioEntries,
+      ...stableEntries,
+      ledgerEntry({ method: 'POST', safeUrlPattern: '/auth/logout' }),
+    ]),
+  );
+
+  expect(summary).toEqual({
+    reportBusinessWriteCount: 2,
+    lockPostCount: 1,
+  });
+});
+
+test('does not use a patient route or aborted text as a broad scenario-load allowlist', () => {
+  const summary = summarizeB12P1ScenarioLoad(
+    EMPTY_CONSOLE_SUMMARY,
+    ledgerSummary([
+      ledgerEntry({
+        method: 'GET',
+        safeUrlPattern:
+          '/api/proxy/patients/<id>/visits/<id>/clinical-reports/latest',
+      }),
+      ledgerEntry({
+        method: 'GET',
+        safeUrlPattern: '/not-a-patient-route',
+        failureReason: 'aborted',
+      }),
+      ledgerEntry({
+        method: 'POST',
+        safeUrlPattern: '/patients/<id>',
+        failureReason: 'aborted',
+      }),
+    ]),
+    { pageReady: true, expectLatestReport: true },
+  );
+
+  expect(summary.diagnostics).toHaveLength(1);
+  expect(summary.diagnostics[0]?.safeUrlPattern).toBe('/not-a-patient-route');
+  expect(summary.hardFailures).toEqual(
+    expect.arrayContaining([
+      'scenario_load_request_aborted',
+      'scenario_load_unexpected_non_get',
+      'scenario_load_report_business_write',
+    ]),
   );
 });
 
