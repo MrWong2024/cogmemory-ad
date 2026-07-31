@@ -11,13 +11,13 @@
 | Batch B / B4–B6 | 桌面范围已完成，既有状态不变 |
 | Batch C / B7–B10 | 已完成，既有状态不变 |
 | Batch D / B11 | 70 项已完成，状态不变 |
-| Batch D / B12 | 未完成；B12-09、B12-36、B12-37、B12-38 已通过，其余 84 个 Audit ID 仍待验 |
+| Batch D / B12 | 未完成；B12-09、B12-31、B12-32、B12-36、B12-37、B12-38、B12-84 已通过，其余 81 个 Audit ID 仍待验 |
 | Batch D / B13–B15（含 B14.1） | 稳定验收意图和顺序不变，尚未执行 |
 | Batch E | 8 个真实设备或人工项目尚未执行 |
 
 roadmap 继续维护产品范围和工作包状态；testing playbook 治理不得自动改变 roadmap。
 
-当前状态：ClinicalReport 锁定不新增 locked status，且 public lock summary 合同已由 mapper unit、HTTP E2E 与存储事实闭环；B12-09、B12-36、B12-37、B12-38 已通过，其余项目仍待验。
+当前状态：ClinicalReport 锁定请求字段白名单、服务端 `updatedAt` 来源、stale 冲突无锁定副作用，以及不新增 locked status 与 public lock summary 均已由分层证据闭环；B12-P0 后端合同已完成。
 
 ## 2. 数据库用途和隔离
 
@@ -124,7 +124,7 @@ lint、typecheck、build、unit 和 E2E 必须分别报告，互不替代。删�
 
 ## 10. B12～B15 当前待验范围
 
-- B12：B12-09、B12-36、B12-37、B12-38 为 `passed`，其余 84 项为 `pending`；按 frontend testing playbook 的 P0～P5 主 Profile 继续重验，P6 仅为最终轻量集成冒烟。
+- B12：B12-09、B12-31、B12-32、B12-36、B12-37、B12-38、B12-84 为 `passed`，其余 81 项为 `pending`；P0 已完成，下一阶段进入 P1 批量证据包。P6 最终审核 B12 测试数据来源、执行 lint/typecheck/build 并承担一条不新增 Audit ID 的轻量集成冒烟。
 - B13：116 项稳定验收意图和顺序不变，默认采用证据分层、微型 Profile、2～4 个 canary、独立关闭和最小 fixture。
 - B14：115 项稳定验收意图和顺序不变；B14.1 行为等价范围继续保留。
 - B15：10 组稳定验收意图和顺序不变，采用相同新方案。

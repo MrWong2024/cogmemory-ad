@@ -14,12 +14,12 @@
 | Batch B / B4–B6 | 桌面范围已完成，Batch E 仍保留 8 项 |
 | Batch C / B7–B10 | 已完成；B7、B8、B9、B10 各自既有最终处置不变 |
 | Batch D / B11 | 70 项已完成，状态不变 |
-| Batch D / B12 | 未完成；B12-09、B12-36、B12-37、B12-38 为 `passed`，其余 84 项仍为 `pending` |
+| Batch D / B12 | 未完成；B12-09、B12-31、B12-32、B12-36、B12-37、B12-38、B12-84 为 `passed`，其余 81 项仍为 `pending` |
 | Batch D / B13–B15（含 B14.1） | 稳定验收点和顺序保留，尚未执行 |
 
-B12-P0-A/B完成：B12-09、B12-36、B12-37、B12-38已通过非Browser证据闭环；P0其余项目仍待验。
+B12-P0-A/B/C 已完成，`B12-P0-contract-state` 已完成：P0 拥有的 B12-09、B12-31、B12-32、B12-36、B12-37、B12-38、B12-84 均已通过非 Browser 证据闭环。
 
-下一阶段继续选择一个独立的小型证据任务，不自动进入 Browser 微型 Profile。
+下一阶段直接进入 B12-P1 批量证据包，不再生成 P0-D、P0-E 或单项 P0 任务。
 
 B12-09、B12-38不再重复要求Browser支持；页面状态、锁定回执与字段语义仍分别由B12-10、B12-11、B12-16、B12-39、B12-44～B12-48承担。
 
@@ -61,13 +61,13 @@ B12-09、B12-38不再重复要求Browser支持；页面状态、锁定回执与�
 
 ### 4.1 B12 Profile 基线
 
-- `B12-P0-contract-state`：DTO、权限、错误码、状态机、mapper、幂等和数据库终态，以 unit、HTTP E2E 和 verifier 为主。
+- `B12-P0-contract-state`（已完成）：DTO、权限、错误码、状态机、mapper、幂等、请求正文、并发基线、路由所有权和数据库终态，以 pure/static、unit、HTTP E2E 和 verifier 为主；已关闭 B12-09、B12-31、B12-32、B12-36、B12-37、B12-38、B12-84。
 - `B12-P1-eligibility-readonly`：draft、pending、confirmed、角色入口、quality、confirmation、locked/voided、一致性 warning 和 locked 只读。
 - `B12-P2-lock-success-idempotency`：doctor/admin 首次锁定、alreadyLocked、必要支持证据和数据库终态。
 - `B12-P3-conflict`：可继续冲突、latest 已锁冲突、必要 Stage 和终态 verifier。
 - `B12-P4-error-client-boundary`：audit unavailable、metadata unsupported、401、403、network abort、beforeunload、Storage 和 refresh。
 - `B12-P5-presentation-accessibility`：action ownership、非诊断语言、敏感信息、响应式、键盘、focus、label 和 Axe。
-- `B12-P6-final-smoke`：只跑一条核心端到端链路，用于发现跨层集成断裂；不拥有 Audit ID，也不重新执行 88 项。
+- `B12-P6-final-smoke`：拥有 B12-85～B12-88；审核全部 B12 测试数据的脱敏与来源，针对 B12-P1～P5 完成后的最终代码态执行 lint、typecheck、build，并跑一条轻量跨层集成冒烟。冒烟本身不新增 Audit ID，也不重新执行 88 项。
 
 ## 5. Browser 必须验证的行为
 
@@ -142,8 +142,8 @@ B12-09、B12-38不再重复要求Browser支持；页面状态、锁定回执与�
 | B12-28 | lockNote 不自动生成。 | `browser_micro_profile` | `frontend_static_or_pure` | 是 | `B12-P2-lock-success-idempotency` | `pending` |
 | B12-29 | confirmationNote 不自动填入 lockNote。 | `browser_micro_profile` | `frontend_static_or_pure` | 是 | `B12-P2-lock-success-idempotency` | `pending` |
 | B12-30 | 未勾选 checkbox 不能锁定。 | `browser_micro_profile` | `frontend_static_or_pure` | 是 | `B12-P2-lock-success-idempotency` | `pending` |
-| B12-31 | lock 只发送 confirm、lockNote、expectedUpdatedAt。 | `frontend_static_or_pure` | `backend_unit + browser_micro_profile` | 是（横切代表） | `B12-P0-contract-state` | `pending` |
-| B12-32 | expectedUpdatedAt 来自服务端。 | `backend_http_e2e` | `frontend_static_or_pure + browser_micro_profile` | 是（横切代表） | `B12-P0-contract-state` | `pending` |
+| B12-31 | lock 只发送 confirm、lockNote、expectedUpdatedAt。 | `frontend_static_or_pure` | `backend_unit + backend_http_e2e` | 否 | `B12-P0-contract-state` | `passed` |
+| B12-32 | expectedUpdatedAt 来自服务端。 | `frontend_static_or_pure` | `backend_http_e2e` | 否 | `B12-P0-contract-state` | `passed` |
 | B12-33 | 锁定期间 edit / submit / confirm / lock 均禁用。 | `browser_micro_profile` | `frontend_static_or_pure` | 是 | `B12-P2-lock-success-idempotency` | `pending` |
 | B12-34 | 锁定期间报告仍可阅读。 | `browser_micro_profile` | — | 是 | `B12-P2-lock-success-idempotency` | `pending` |
 | B12-35 | 锁定成功使用服务端完整 report。 | `backend_http_e2e` | `browser_micro_profile + database_verifier` | 是 | `B12-P2-lock-success-idempotency` | `pending` |
@@ -195,11 +195,11 @@ B12-09、B12-38不再重复要求Browser支持；页面状态、锁定回执与�
 | B12-81 | 小屏幕锁定表单可用。 | `browser_micro_profile` | — | 是 | `B12-P5-presentation-accessibility` | `pending` |
 | B12-82 | label、错误提示和交互状态反馈正确。 | `browser_micro_profile` | — | 是 | `B12-P5-presentation-accessibility` | `pending` |
 | B12-83 | 没有第二次 `/auth/me`。 | `browser_micro_profile` | `frontend_static_or_pure` | 是 | `B12-P4-error-client-boundary` | `pending` |
-| B12-84 | 没有新增路由。 | `static_gate` | `browser_micro_profile` | 否 | `B12-P0-contract-state` | `pending` |
-| B12-85 | 没有使用真实患者或锁定说明。 | `database_verifier` | `static_gate` | 否 | `B12-P0-contract-state` | `pending` |
-| B12-86 | lint 通过。 | `static_gate` | — | 否 | `B12-P0-contract-state` | `pending` |
-| B12-87 | typecheck 通过。 | `static_gate` | — | 否 | `B12-P0-contract-state` | `pending` |
-| B12-88 | build 通过。 | `static_gate` | — | 否 | `B12-P0-contract-state` | `pending` |
+| B12-84 | 没有新增路由。 | `frontend_static_or_pure` | — | 否 | `B12-P0-contract-state` | `passed` |
+| B12-85 | 没有使用真实患者或锁定说明。 | `database_verifier` | `static_gate` | 否 | `B12-P6-final-smoke` | `pending` |
+| B12-86 | lint 通过。 | `static_gate` | — | 否 | `B12-P6-final-smoke` | `pending` |
+| B12-87 | typecheck 通过。 | `static_gate` | — | 否 | `B12-P6-final-smoke` | `pending` |
+| B12-88 | build 通过。 | `static_gate` | — | 否 | `B12-P6-final-smoke` | `pending` |
 
 ## 10. B13～B15 后续设计规则
 
@@ -496,7 +496,7 @@ B16 / WP-02 已完成不能替代这组 B14.1 行为等价回归；只有 Batch 
 
 最终前端代码态分别执行 `npm run test:browser:list`、`npm run test:browser:infra`、`npm run lint`、`npm run typecheck`、`npm run build`。test discovery 与 infrastructure 只能证明测试资产和通用能力可执行，不能关闭业务 Audit ID。
 
-所有主证据与必要支持证据独立闭环后，执行一条 P6 核心端到端链路作为轻量集成冒烟；P6 只发现跨层装配断裂，不拥有 Audit ID、不重新执行全部验收点，也不能替代失败或未执行的主证据。
+所有主证据与必要支持证据独立闭环后，P6 审核全部 B12 测试数据来源并执行最终 lint、typecheck、build，以关闭仍为 `pending` 的 B12-85～B12-88；同时执行一条核心端到端链路作为轻量集成冒烟。冒烟只发现跨层装配断裂、不新增 Audit ID、不重新执行全部验收点，也不能替代失败或未执行的主证据。本轮 P0 代码门禁不能冒充这些最终证据。
 
 Browser 结果必须记录业务、fixture、测试资产修改和收口耗时，并清理本次创建的 Session、BrowserContext、Chromium、Node 进程、端口、runtime、test-results 与其他临时产物。数据库生命周期、最小 fixture、verifier 和 cleanup 的权威规则见 backend testing playbook。
 
