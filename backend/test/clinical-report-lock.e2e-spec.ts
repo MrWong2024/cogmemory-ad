@@ -207,6 +207,50 @@ describe('clinical report lock API (e2e)', () => {
     await userModel
       .deleteMany({ accountName: { $in: Object.values(ACCOUNTS) } })
       .exec();
+    const residualCounts = {
+      users: await userModel
+        .countDocuments({ accountName: { $in: Object.values(ACCOUNTS) } })
+        .exec(),
+      sessions: await sessionModel
+        .countDocuments({ userId: { $in: userIds } })
+        .exec(),
+      patients: await patientModel
+        .countDocuments({ subjectCode: /^SUBJ-A22-TEST-/ })
+        .exec(),
+      visits: await visitModel
+        .countDocuments({ visitCode: /^VISIT-A22-TEST-/ })
+        .exec(),
+      reports: await reportModel
+        .countDocuments({ assessmentVisitId: { $in: visitIds } })
+        .exec(),
+      instances: await instanceModel
+        .countDocuments({ assessmentVisitId: { $in: visitIds } })
+        .exec(),
+      items: await itemModel
+        .countDocuments({ scaleInstanceId: { $in: instanceIds } })
+        .exec(),
+      media: await mediaModel
+        .countDocuments({ scaleInstanceId: { $in: instanceIds } })
+        .exec(),
+      scores: await scoreModel
+        .countDocuments({ scaleInstanceId: { $in: instanceIds } })
+        .exec(),
+      domains: await domainModel
+        .countDocuments({ scaleInstanceId: { $in: instanceIds } })
+        .exec(),
+    };
+    expect(residualCounts).toEqual({
+      users: 0,
+      sessions: 0,
+      patients: 0,
+      visits: 0,
+      reports: 0,
+      instances: 0,
+      items: 0,
+      media: 0,
+      scores: 0,
+      domains: 0,
+    });
   }
 
   async function createFixture(
@@ -615,11 +659,7 @@ describe('clinical report lock API (e2e)', () => {
     await app.init();
     connection = app.get<Connection>(getConnectionToken());
     const databaseName = connection.name.toLowerCase();
-    if (
-      !databaseName.includes('_test') ||
-      databaseName.includes('_dev') ||
-      databaseName.includes('_prod')
-    ) {
+    if (databaseName !== 'cogmemory_ad_test') {
       throw new Error('E2E database isolation is not active');
     }
     const config = app.get(ConfigService);
@@ -686,9 +726,20 @@ describe('clinical report lock API (e2e)', () => {
   });
 
   afterAll(async () => {
-    if (app) {
+    if (!app) return;
+    let cleanupFailure: unknown;
+    try {
       if (modelsReady) await cleanup();
+    } catch (error: unknown) {
+      cleanupFailure = error;
+    } finally {
       await app.close();
+    }
+    if (modelsReady) expect(connection.readyState).toBe(0);
+    if (cleanupFailure !== undefined) {
+      throw cleanupFailure instanceof Error
+        ? cleanupFailure
+        : new Error('E2E cleanup failed');
     }
   });
 
@@ -781,15 +832,26 @@ describe('clinical report lock API (e2e)', () => {
     );
     const locked = record(lockedBody.report, 'locked report');
     const receipt = record(lockedBody.lockReceipt, 'lock receipt');
+    const reportLockedAt = stringValue(
+      locked.lockedAt,
+      'locked report lockedAt',
+    );
+    const receiptLockedAt = stringValue(
+      receipt.lockedAt,
+      'lock receipt lockedAt',
+    );
     expect(locked.status).toBe('confirmed');
     expect(locked.qualityStatus).toBe('passed');
     expect(locked.isFinal).toBe(true);
-    expect(typeof locked.lockedAt).toBe('string');
+    expect(reportLockedAt).toBe(new Date(reportLockedAt).toISOString());
+    expect(receiptLockedAt).toBe(new Date(receiptLockedAt).toISOString());
+    expect(reportLockedAt).toBe(receiptLockedAt);
+    expect(receipt.lockNote).toBe('A22 de-identified lock note');
     expect(record(locked.lock, 'lock summary')).toEqual(
       expect.objectContaining({
         lockId: receipt.lockId,
         lockedAt: receipt.lockedAt,
-        lockNote: 'A22 de-identified lock note',
+        lockNote: receipt.lockNote,
       }),
     );
     expect(receipt.alreadyLocked).toBe(false);
@@ -820,6 +882,8 @@ describe('clinical report lock API (e2e)', () => {
     const stored = await currentReport(fixture);
     expect(stored.status).toBe('confirmed');
     expect(stored.qualityStatus).toBe('passed');
+    expect(stored.lockedAt).toBeInstanceOf(Date);
+    expect(stored.lockedAt?.toISOString()).toBe(reportLockedAt);
     expect(immutableReportContent(stored)).toEqual(originalContent);
     expect(record(stored.metadata?.a22Lock, 'stored A22 audit')).toEqual(
       expect.objectContaining({

@@ -14,10 +14,12 @@
 | Batch B / B4–B6 | 桌面范围已完成，Batch E 仍保留 8 项 |
 | Batch C / B7–B10 | 已完成；B7、B8、B9、B10 各自既有最终处置不变 |
 | Batch D / B11 | 70 项已完成，状态不变 |
-| Batch D / B12 | 未完成；88 项全部为 `pending`，待按本手册重新验收 |
+| Batch D / B12 | 未完成；B12-36、B12-37 为 `passed`，其余 86 项仍为 `pending` |
 | Batch D / B13–B15（含 B14.1） | 稳定验收点和顺序保留，尚未执行 |
 
-下一阶段只设计 B12 的首批微型 Profile，不在本阶段实现或执行新测试。
+B12-P0-A完成：B12-36、B12-37已通过非Browser证据闭环；P0其余项目仍待验。
+
+下一阶段继续选择一个独立的小型证据任务，不自动进入 Browser 微型 Profile。
 
 ## 2. 强制测试设计理念
 
@@ -143,8 +145,8 @@
 | B12-33 | 锁定期间 edit / submit / confirm / lock 均禁用。 | `browser_micro_profile` | `frontend_static_or_pure` | 是 | `B12-P2-lock-success-idempotency` | `pending` |
 | B12-34 | 锁定期间报告仍可阅读。 | `browser_micro_profile` | — | 是 | `B12-P2-lock-success-idempotency` | `pending` |
 | B12-35 | 锁定成功使用服务端完整 report。 | `backend_http_e2e` | `browser_micro_profile + database_verifier` | 是 | `B12-P2-lock-success-idempotency` | `pending` |
-| B12-36 | 锁定成功 status 仍为 confirmed。 | `backend_http_e2e` | `backend_unit + database_verifier` | 否 | `B12-P0-contract-state` | `pending` |
-| B12-37 | 锁定成功 lockedAt 非空。 | `database_verifier` | `backend_http_e2e` | 否 | `B12-P0-contract-state` | `pending` |
+| B12-36 | 锁定成功 status 仍为 confirmed。 | `backend_http_e2e` | `backend_unit + database_verifier` | 否 | `B12-P0-contract-state` | `passed` |
+| B12-37 | 锁定成功 lockedAt 非空。 | `database_verifier` | `backend_http_e2e` | 否 | `B12-P0-contract-state` | `passed` |
 | B12-38 | 锁定成功 lock summary 非空。 | `backend_unit` | `backend_http_e2e + browser_micro_profile` | 否 | `B12-P0-contract-state` | `pending` |
 | B12-39 | 锁定成功显示 lockReceipt。 | `browser_micro_profile` | `backend_http_e2e` | 是 | `B12-P2-lock-success-idempotency` | `pending` |
 | B12-40 | alreadyLocked=false 显示首次锁定成功。 | `browser_micro_profile` | `backend_http_e2e` | 是 | `B12-P2-lock-success-idempotency` | `pending` |
