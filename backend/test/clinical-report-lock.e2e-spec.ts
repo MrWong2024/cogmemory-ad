@@ -943,6 +943,22 @@ describe('clinical report lock API (e2e)', () => {
         expect(body(response).code).toBe('VISIT_NOT_EDITABLE');
       });
 
+    const voidedVisit = await createFixture('VOIDED-VISIT', {
+      visitStatus: 'voided',
+    });
+    const voidedVisitReport = await currentReport(voidedVisit);
+    await doctorAgent
+      .post(lockPath(voidedVisit))
+      .send({
+        confirm: true,
+        lockNote: 'A22 voided visit test',
+        expectedUpdatedAt: timestampValue(voidedVisitReport, 'updatedAt'),
+      })
+      .expect(409)
+      .expect((response) => {
+        expect(body(response).code).toBe('VISIT_NOT_EDITABLE');
+      });
+
     const conflict = await createFixture('CONFLICT');
     const conflictReport = await currentReport(conflict);
     const staleUpdatedAt = timestampValue(conflictReport, 'updatedAt');

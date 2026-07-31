@@ -11,13 +11,13 @@
 | Batch B / B4–B6 | 桌面范围已完成，既有状态不变 |
 | Batch C / B7–B10 | 已完成，既有状态不变 |
 | Batch D / B11 | 70 项已完成，状态不变 |
-| Batch D / B12 | 未完成；B12-09、B12-31、B12-32、B12-36、B12-37、B12-38、B12-84 已通过，其余 81 个 Audit ID 仍待验 |
+| Batch D / B12 | 未完成；`passed=7`、`pending=56`、`failed=0`、`blocked=8`、`not_executed=17`；P1 尚未收口 |
 | Batch D / B13–B15（含 B14.1） | 稳定验收意图和顺序不变，尚未执行 |
 | Batch E | 8 个真实设备或人工项目尚未执行 |
 
 roadmap 继续维护产品范围和工作包状态；testing playbook 治理不得自动改变 roadmap。
 
-当前状态：ClinicalReport 锁定请求字段白名单、服务端 `updatedAt` 来源、stale 冲突无锁定副作用，以及不新增 locked status 与 public lock summary 均已由分层证据闭环；B12-P0 后端合同已完成。
+当前状态：ClinicalReport 锁定请求字段白名单、服务端 `updatedAt` 来源、stale 冲突无锁定副作用，以及不新增 locked status 与 public lock summary 均已由分层证据闭环；B12-P0 后端合同已完成。B12-P1 本轮后端 unit、`cogmemory_ad_test` HTTP E2E、七个 Profile 在 `cogmemory_ad_browser_test` 的 prepared verifier、两次精确 cleanup 与 residual=0 均通过。A/B 正式 Browser 暴露同一 logout 边界 support 缺陷并触发止损，C～G 未进入 Browser；B12-17、B12-19 的不一致组合会被当前 public mapper 清洗为 `lock=null`，真实 Browser read contract 无法表达。
 
 ## 2. 数据库用途和隔离
 
@@ -126,7 +126,7 @@ lint、typecheck、build、unit 和 E2E 必须分别报告，互不替代。删�
 
 ## 10. B12～B15 当前待验范围
 
-- B12：B12-09、B12-31、B12-32、B12-36、B12-37、B12-38、B12-84 为 `passed`，其余 81 项为 `pending`；P0 已完成，下一阶段进入 P1 批量证据包。P6 最终审核 B12 测试数据来源、执行 lint/typecheck/build 并承担一条不新增 Audit ID 的轻量集成冒烟。
+- B12：当前 `passed=7`、`pending=56`、`failed=0`、`blocked=8`、`not_executed=17`；P0 已完成，P1 尚未收口。下一待验阶段仍是 P1 受影响 Profile 的定向复验，不得提前进入 P2。P6 最终审核 B12 测试数据来源、执行 lint/typecheck/build 并承担一条不新增 Audit ID 的轻量集成冒烟。
 - B13：116 项稳定验收意图和顺序不变，默认采用证据分层、微型 Profile、2～4 个 canary、独立关闭和最小 fixture。
 - B14：115 项稳定验收意图和顺序不变；B14.1 行为等价范围继续保留。
 - B15：10 组稳定验收意图和顺序不变，采用相同新方案。

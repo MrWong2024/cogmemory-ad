@@ -18,6 +18,7 @@ import {
   buildLockClinicalReportRequest,
   createClinicalReportLockDraft,
 } from '@/src/features/assessments/lib/clinical-report-workflow-draft';
+import { isClinicalReportLocked } from '@/src/features/assessments/lib/clinical-report-display';
 import type {
   ClinicalReport,
   LockClinicalReportRequest,
@@ -293,4 +294,20 @@ test('keeps the lock workflow on the existing visit detail route without a dedic
   expect(lockHookSource).toContain(
     'lockClinicalReport( patientId, visitId, lockDraft.reportId, buildLockClinicalReportRequest(lockDraft),',
   );
+});
+
+test('B12-69: derives locked read-only semantics from lockedAt and never from isFinal', () => {
+  const unlockedFinal = { ...createTestReport(), isFinal: true };
+  const unlockedNonFinal = { ...createTestReport(), isFinal: false };
+  const lockedFinal = {
+    ...createTestReport(),
+    lockedAt: '2026-07-31T01:03:00.000Z',
+    isFinal: true,
+  };
+  const lockedNonFinal = { ...lockedFinal, isFinal: false };
+
+  expect(isClinicalReportLocked(unlockedFinal)).toBe(false);
+  expect(isClinicalReportLocked(unlockedNonFinal)).toBe(false);
+  expect(isClinicalReportLocked(lockedFinal)).toBe(true);
+  expect(isClinicalReportLocked(lockedNonFinal)).toBe(true);
 });
