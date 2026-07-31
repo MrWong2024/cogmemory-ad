@@ -2,9 +2,9 @@
 
 ## 1. 文档定位与当前状态
 
-本文档是跨层测试设计、Browser 验收策略、稳定 Audit 清单和当前验证状态的权威来源。它只维护当前有效规则与待验合同；roadmap 继续维护产品范围和工作包状态，Git 历史负责旧命令、旧结果与失败过程。
+本文档是跨层测试设计、Browser 验收策略、场景级活动 Audit 清单和当前验证状态的权威来源。它只维护当前有效规则与待验合同；roadmap 继续维护产品范围和工作包状态，Git 历史负责旧命令、旧清单、旧结果与失败过程。
 
-> B12-P1 eligibility-readonly、R1、A3、A3-R2 已退役。约70小时投入后，专属fixture/support复杂度超过业务；未新增关闭Audit ID，代码全删。继续前须重审ID的业务必要性、可表达性、重复性和证据层；未获新设计及用户确认，不重建B12专属fixture/support。
+> B12-P1 eligibility-readonly、R1、A3、A3-R2 已退役。约 70 小时投入后，专属 fixture/support 复杂度超过业务；未新增关闭 Audit ID，代码全删。B12 清单治理现已完成，产品验收尚未恢复执行；下一步须按新场景设计最小执行方案并经用户确认，未经确认不重建 B12 专属 fixture/support。
 
 | 范围 | 当前状态 |
 |---|---|
@@ -14,23 +14,27 @@
 | Batch B / B4–B6 | 桌面范围已完成，Batch E 仍保留 8 项 |
 | Batch C / B7–B10 | 已完成；B7、B8、B9、B10 各自既有最终处置不变 |
 | Batch D / B11 | 70 项已完成，状态不变 |
-| Batch D / B12 | 未完成；`passed=7`、`pending=81`、`failed=0`、`blocked=0`、`not_executed=0` |
-| Batch D / B13–B15（含 B14.1） | 稳定验收点和顺序保留，尚未执行 |
+| Batch D / B12 | 清单治理已完成，产品验收尚未恢复执行；活动场景 `passed=2`、`pending=15`、`failed=0`、`blocked=0`、`not_executed=0` |
+| Batch D / B13–B15（含 B14.1） | 候选断言和历史设计输入保留，尚未执行；正式执行前须先场景化审查 |
 
-B12-P0-A/B/C 已完成，`B12-P0-contract-state` 已完成：P0 拥有的 B12-09、B12-31、B12-32、B12-36、B12-37、B12-38、B12-84 均已通过非 Browser 证据闭环。
+B12-P0-A/B/C 已完成，`B12-P0-contract-state` 已完成：P0 当前拥有 `B12-S03`、`B12-S05`，并保留既有“无新增路由”静态证据。原 B12-09、B12-31、B12-32、B12-36、B12-37、B12-38、B12-84 共 7 个 `passed` 事实没有失效，已分别迁移到上述两个活动场景和通用路由边界门禁。
 
-B12 当前汇总为 `passed=7`、`pending=81`、`failed=0`、`blocked=0`、`not_executed=0`。B12 已暂停；下一任务先审查验收清单本身，审查完成前不启动 P1、P2 或新的 Browser 实现。
+B12 当前活动场景总数为 17，汇总为 `passed=2`、`pending=15`、`failed=0`、`blocked=0`、`not_executed=0`。B12 清单治理已完成，产品验收尚未恢复执行；下一步须先根据新场景设计最低充分的执行方案，并经用户确认后才开始 P1～P5 或新的 Browser 实现。
 
-B12-09、B12-38不再重复要求Browser支持；页面状态、锁定回执与字段语义仍分别由B12-10、B12-11、B12-16、B12-39、B12-44～B12-48承担。
+原 88 个 ID 不再作为活动关闭对象；其语义迁移、过期处置与既有证据归属见 9.2。场景合并只降低清单管理粒度，不降低 doctor/admin、授权/非授权、401/403、首次成功/幂等和两类冲突等不可替代语义。
 
 ## 2. 强制测试设计理念
 
-### 2.1 验收点守恒
+### 2.1 业务风险守恒与清单治理
 
-- 稳定 Audit ID 总数和不同业务语义不得减少；优化的是取证方式，不是验收要求。
-- 每个 Audit ID 必须定位到主证据层、必要支持证据、Browser 必要性、微型 Profile 和当前状态。
-- 不得以“类似场景已覆盖”替代具体证据；doctor 与 admin、401 与 403、首次成功与幂等、两种冲突、不同状态机结果均不得互相替代。
-- 先选择最低充分主证据，再安排支持证据；不得因为 Browser 更直观而把全部验证塞进 Browser。
+- 守恒对象是核心业务风险、不可替代的状态语义和安全边界，不是历史 Audit ID 的数量或顺序。
+- 经审查后，Audit ID 可以合并为场景、迁移到其他场景、降为通用门禁，或在失去适用前提后标记为 `obsolete`；任何处置都必须保留旧语义映射和已有有效证据的来源。
+- 一个场景可以包含多个紧密耦合、可明确执行的子断言。子断言必须分别记录实际结果；只有全部必需子断言均通过，场景才能标记为 `passed`。任一必需子断言失败、阻断或未执行时，整个场景均不得标记为 `passed`。
+- 场景合并不得抹平 doctor 与 admin、授权角色与非授权角色、401 与 403、首次成功与幂等、可继续冲突与 latest 已锁定冲突等不可替代差异；这些差异可以作为同一场景中的独立子断言，不要求机械拆成独立 ID。
+- 阶段性“不得提前实现后续功能”只在对应阶段有效；后续能力落地后必须退役原来的“不存在”断言，只保留仍成立的动作隔离和不可自动串联边界。
+- lint、typecheck、build、测试数据脱敏、认证/路由所有权等通用门禁不伪装成独立业务风险，也不为每个业务场景重复执行。
+- Browser 只承担真实入口、控件、输入、交互、刷新、错误恢复、浏览器状态、响应式和可访问性等不可替代事实。
+- 静态事实、DTO 白名单、完整权限矩阵、状态机和数据库终态应选择 pure/unit/backend/verifier 的最低充分证据；不得仅因 Browser 更直观而重复要求独立 Browser 证据。
 
 ### 2.2 分层取证
 
@@ -61,23 +65,26 @@ B12-09、B12-38不再重复要求Browser支持；页面状态、锁定回执与�
 
 ### 4.1 Codex 任务、证据包与微型 Profile 的粒度
 
-Codex 任务默认按业务风险一致、证据类型相近的完整业务风险包或证据包批量处理；非 Browser 证据可以在同一证据包内批量执行。单个 Audit ID 或单个微型 Profile 都不是默认任务边界，一个 Codex 任务可以包含多个相互独立的微型 Profile。不得为了减少 Codex 数量而合并不可互换的业务语义，也不得为了形式上的独立性将每个 Audit ID 机械拆成单独 Codex 任务。
+Codex 任务默认按业务风险一致、证据类型相近、能在合理时间内完成和收口的完整业务风险包规划；非 Browser 证据可以在同一证据包内批量执行。单个场景 ID 或单个微型 Profile 都不是默认任务边界，一个 Codex 任务可以包含多个相互独立的微型 Profile。不得为了减少 Codex 数量而合并不可互换的业务语义，也不得为了形式上的独立性将每个子断言机械拆成单独任务。
 
-同一证据包可以覆盖多个相关 Audit ID，但每个 Audit ID 仍须单独定位主证据和必要支持证据、单独记录实际执行结果、单独判断关闭资格并单独更新状态；不得因为批量执行而批量推定通过。
+活动清单使用场景级 Audit ID。同一场景可以包含多个紧密耦合的明确子断言；每个必需子断言必须分别记录实际结果，但不要求机械拆成独立 ID。任一必需子断言为失败、阻断或未执行时，整个场景不得标记为 `passed`；同一证据包覆盖多个场景时也不得批量推定通过。
 
-Browser 场景继续按微型 Profile 隔离执行。每个 Profile 必须独立拥有最小合法前置、业务特有断言、必要后置验证、verifier、cleanup 和证据结果。同一 Codex 包含多个 Profile，不表示这些 Profile 必须共享 fixture、namespace、可写 Report、BrowserContext 或 Session，也不表示可以跨 Profile 拼接数据库终态证据或形成一次大型原子运行。后续无关 Profile 失败，不得作废此前已经完成业务证据、必要 verifier 和 cleanup 的 Profile。
+Browser 场景继续按微型 Profile 隔离执行。每个 Profile 必须独立拥有最小合法前置、业务特有断言、必要后置验证、适用的 verifier、cleanup 和证据结果。同一 Codex 包含多个 Profile，不表示这些 Profile 必须共享 fixture、namespace、可写 Report、BrowserContext 或 Session，也不表示可以跨 Profile 拼接数据库终态证据或形成一次大型原子运行。后续无关 Profile 失败，不得作废此前已经完成业务证据、必要 verifier 和 cleanup 的 Profile。
 
-Codex 任务规模取决于业务风险是否一致、证据层是否相近、前置状态是否兼容、写入和并发是否需要隔离，以及能否在合理时间内完成和收口。一个 Codex 通常可处理约 5～25 个相关 Audit ID；该数量仅是任务规划参考，不是验收门禁，不得为了达到该数字而扩大或缩减验收语义。
+Codex 任务规模取决于业务风险是否一致、证据层是否相近、前置状态是否兼容、写入和并发是否需要隔离，以及能否在合理时间内完成和收口；不再以“一个 Codex 处理 5～25 个 Audit ID”作为主要规划尺度。
 
 ### 4.2 B12 Profile 基线
 
-- `B12-P0-contract-state`（已完成）：DTO、权限、错误码、状态机、mapper、幂等、请求正文、并发基线、路由所有权和数据库终态，以 pure/static、unit、HTTP E2E 和 verifier 为主；已关闭 B12-09、B12-31、B12-32、B12-36、B12-37、B12-38、B12-84。
-- `B12-P1-eligibility-readonly`：draft、pending、confirmed、角色入口、quality、confirmation、locked/voided、一致性 warning 和 locked 只读。
-- `B12-P2-lock-success-idempotency`：doctor/admin 首次锁定、alreadyLocked、必要支持证据和数据库终态。
-- `B12-P3-conflict`：可继续冲突、latest 已锁冲突、必要 Stage 和终态 verifier。
-- `B12-P4-error-client-boundary`：audit unavailable、metadata unsupported、401、403、network abort、beforeunload、Storage 和 refresh。
-- `B12-P5-presentation-accessibility`：action ownership、非诊断语言、敏感信息、响应式、键盘、focus、label 和 Axe。
-- `B12-P6-final-smoke`：拥有 B12-85～B12-88；审核全部 B12 测试数据的脱敏与来源，针对 B12-P1～P5 完成后的最终代码态执行 lint、typecheck、build，并跑一条轻量跨层集成冒烟。冒烟本身不新增 Audit ID，也不重新执行 88 项。
+- `B12-P0-contract-state`（已完成）：拥有 `B12-S03`、`B12-S05`，以及既有“无新增路由”静态证据；以 pure/static、unit、HTTP E2E 和 verifier 为主。
+- `B12-P1-eligibility-role-readonly`：拥有 `B12-S01`、`B12-S02`、`B12-S14`。
+- `B12-P2A-form-writing`：拥有 `B12-S04`、`B12-S06`。
+- `B12-P2B-success-idempotency`：拥有 `B12-S07`、`B12-S08`、`B12-S15`。
+- `B12-P3-conflict`：拥有 `B12-S09`、`B12-S10`。
+- `B12-P4-error-draft-boundary`：拥有 `B12-S11`、`B12-S12`、`B12-S13`、`B12-S16`。
+- `B12-P5-presentation-accessibility`：拥有 `B12-S17`。
+- `B12-P6-final-gates`：只执行通用最终门禁，不拥有新的业务场景 ID。
+
+P1～P5 尚未启动正式执行，其所拥有的活动场景保持 `pending`。不要求每个前端条件制造独立 Browser fixture；完整状态矩阵由 pure/unit/backend 证据覆盖，Browser 只选择最小但有代表性的允许、禁止和只读状态。不同 Profile 继续保持证据隔离和 cleanup 原子性。
 
 ## 5. Browser 必须验证的行为
 
@@ -124,11 +131,13 @@ Codex 任务规模取决于业务风险是否一致、证据层是否相近、�
 
 ## 7. Audit ID 关闭规则
 
-状态只允许 `pending`、`passed`、`failed`、`blocked`、`not_executed`、`obsolete`。一个 Audit ID 只有在主证据、必要支持证据、必需数据库终态、资源 cleanup 全部实际通过，且没有测试资产、环境或未执行项阻断时才能关闭。
+只对当前活动场景 ID 维护 `pending`、`passed`、`failed`、`blocked`、`not_executed` 状态；旧 ID 迁移表不参与活动数量统计。`obsolete` 只用于已经失去适用前提的历史断言，不是活动场景的通过或失败状态。
+
+一个活动场景只有在全部必需子断言的主证据、必要支持证据、适用的数据库终态和资源 cleanup 均实际通过，且没有测试资产、环境或未执行项阻断时，才能标记为 `passed`。场景合并后可以复用局部已有证据，但缺少任一必需子断言的完整证据时仍保持 `pending` 或按实际结果记录其他非通过状态。
 
 `unknown` 仅是命令已启动但没有可靠摘要或证据不足时的临时测试结论，不属于允许的 Audit ID 状态，也不得写入 Audit 清单。相关 Audit ID 不得据此关闭、通过或失败；尚未形成有效证据时通常保持原有 `pending`。只有存在符合既有定义的明确且持续外部环境、工具或权限阻断时才使用 `blocked`；目标测试因命令、选择器、权限或进程未启动而没有实际执行时，按既有规则使用 `not_executed`。
 
-不得根据 Playwright exit code、测试代码已存在、历史失败轮局部观察或 cleanup 成功批量关闭；`blocked` 和 `not_executed` 不得写成 `passed`。每个 Profile 独立关闭自己拥有的 ID。
+不得根据 Playwright exit code、测试代码已存在、历史失败轮局部观察或 cleanup 成功批量关闭；`blocked` 和 `not_executed` 不得写成 `passed`。每个 Profile 独立关闭自己拥有的活动场景，场景内 doctor/admin、401/403、首次/幂等和两类冲突等必需子断言须分别记录实际结果。
 
 ## 8. 失败分类与止损门禁
 
@@ -145,104 +154,85 @@ Codex 任务规模取决于业务风险是否一致、证据层是否相近、�
 7. 每轮分别报告业务测试、fixture 准备、测试资产修改和环境收口耗时。
 8. 测试基础设施复杂度明显超过被测业务时，立即停止扩张。
 
-## 9. B12 验收清单（暂停，待审查）
+## 9. B12 验收清单（清单治理已完成，产品验收尚未恢复执行）
 
-下表保留 B12 现有 88 项清单语义，本轮只复位状态，不增删、合并、降级或改写 Audit ID；“是（横切代表）”表示主证据不一定在 Browser，但关闭仍需要横切代表 Browser 支持证据。
+### 9.1 活动场景
 
-| Audit ID | 紧凑验收意图 | 主证据层 | 必要支持证据 | 必须 Browser | 微型 Profile | 当前状态 |
-|---|---|---|---|---|---|---|
-| B12-01 | draft 报告不显示锁定入口。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `pending` |
-| B12-02 | pending_confirmation 不显示锁定入口。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `pending` |
-| B12-03 | confirmed 未锁定报告显示锁定状态。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `pending` |
-| B12-04 | confirmed 未锁定报告对 doctor 显示锁定入口。 | `browser_micro_profile` | `backend_http_e2e` | 是 | `B12-P1-eligibility-readonly` | `pending` |
-| B12-05 | confirmed 未锁定报告对 admin 显示锁定入口。 | `browser_micro_profile` | `backend_http_e2e` | 是 | `B12-P1-eligibility-readonly` | `pending` |
-| B12-06 | nurse 不显示可用锁定入口。 | `browser_micro_profile` | `backend_http_e2e` | 是 | `B12-P1-eligibility-readonly` | `pending` |
-| B12-07 | research_assistant 不显示可用锁定入口。 | `browser_micro_profile` | `backend_http_e2e` | 是 | `B12-P1-eligibility-readonly` | `pending` |
-| B12-08 | system 不显示可用锁定入口。 | `browser_micro_profile` | `backend_http_e2e` | 是 | `B12-P1-eligibility-readonly` | `pending` |
-| B12-09 | 不新增 locked status。 | `backend_http_e2e` | `backend_unit + frontend_static_or_pure` | 否 | `B12-P0-contract-state` | `passed` |
-| B12-10 | 技术信息中的 status 仍为 confirmed。 | `browser_micro_profile` | `backend_http_e2e` | 是 | `B12-P1-eligibility-readonly` | `pending` |
-| B12-11 | 页面独立显示“尚未锁定”。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `pending` |
-| B12-12 | quality 非 passed 不开放锁定。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `pending` |
-| B12-13 | isFinal=false 不开放锁定。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `pending` |
-| B12-14 | confirmation 缺失不开放锁定。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `pending` |
-| B12-15 | Visit locked / voided 不开放首次锁定。 | `browser_micro_profile` | `backend_http_e2e + backend_unit` | 是 | `B12-P1-eligibility-readonly` | `pending` |
-| B12-16 | lockedAt 非空不显示再次锁定入口。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `pending` |
-| B12-17 | lock 非空但 lockedAt 为空显示一致性警告。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `pending` |
-| B12-18 | lockedAt 非空但 lock 为空显示审计摘要不完整。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `pending` |
-| B12-19 | lock.lockedAt 与 top-level 不一致显示警告。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `pending` |
-| B12-20 | 锁定前显示不可逆说明。 | `browser_micro_profile` | `frontend_static_or_pure` | 是 | `B12-P2-lock-success-idempotency` | `pending` |
-| B12-21 | 锁定前说明 status 仍为 confirmed。 | `browser_micro_profile` | `backend_http_e2e` | 是 | `B12-P2-lock-success-idempotency` | `pending` |
-| B12-22 | 锁定前说明只锁报告本身。 | `browser_micro_profile` | `database_verifier` | 是 | `B12-P2-lock-success-idempotency` | `pending` |
-| B12-23 | 锁定前说明不锁来源数据。 | `browser_micro_profile` | `database_verifier` | 是 | `B12-P2-lock-success-idempotency` | `pending` |
-| B12-24 | 锁定前说明不等于归档。 | `browser_micro_profile` | `static_gate` | 是 | `B12-P2-lock-success-idempotency` | `pending` |
-| B12-25 | 锁定前说明不生成签名或 PDF。 | `browser_micro_profile` | `static_gate` | 是 | `B12-P2-lock-success-idempotency` | `pending` |
-| B12-26 | lockNote 少于 3 字符不能提交。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P2-lock-success-idempotency` | `pending` |
-| B12-27 | lockNote 超过 2000 字符不能提交。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P2-lock-success-idempotency` | `pending` |
-| B12-28 | lockNote 不自动生成。 | `browser_micro_profile` | `frontend_static_or_pure` | 是 | `B12-P2-lock-success-idempotency` | `pending` |
-| B12-29 | confirmationNote 不自动填入 lockNote。 | `browser_micro_profile` | `frontend_static_or_pure` | 是 | `B12-P2-lock-success-idempotency` | `pending` |
-| B12-30 | 未勾选 checkbox 不能锁定。 | `browser_micro_profile` | `frontend_static_or_pure` | 是 | `B12-P2-lock-success-idempotency` | `pending` |
-| B12-31 | lock 只发送 confirm、lockNote、expectedUpdatedAt。 | `frontend_static_or_pure` | `backend_unit + backend_http_e2e` | 否 | `B12-P0-contract-state` | `passed` |
-| B12-32 | expectedUpdatedAt 来自服务端。 | `frontend_static_or_pure` | `backend_http_e2e` | 否 | `B12-P0-contract-state` | `passed` |
-| B12-33 | 锁定期间 edit / submit / confirm / lock 均禁用。 | `browser_micro_profile` | `frontend_static_or_pure` | 是 | `B12-P2-lock-success-idempotency` | `pending` |
-| B12-34 | 锁定期间报告仍可阅读。 | `browser_micro_profile` | — | 是 | `B12-P2-lock-success-idempotency` | `pending` |
-| B12-35 | 锁定成功使用服务端完整 report。 | `backend_http_e2e` | `browser_micro_profile + database_verifier` | 是 | `B12-P2-lock-success-idempotency` | `pending` |
-| B12-36 | 锁定成功 status 仍为 confirmed。 | `backend_http_e2e` | `backend_unit + database_verifier` | 否 | `B12-P0-contract-state` | `passed` |
-| B12-37 | 锁定成功 lockedAt 非空。 | `database_verifier` | `backend_http_e2e` | 否 | `B12-P0-contract-state` | `passed` |
-| B12-38 | 锁定成功 lock summary 非空。 | `backend_unit` | `backend_http_e2e + database_verifier` | 否 | `B12-P0-contract-state` | `passed` |
-| B12-39 | 锁定成功显示 lockReceipt。 | `browser_micro_profile` | `backend_http_e2e` | 是 | `B12-P2-lock-success-idempotency` | `pending` |
-| B12-40 | alreadyLocked=false 显示首次锁定成功。 | `browser_micro_profile` | `backend_http_e2e` | 是 | `B12-P2-lock-success-idempotency` | `pending` |
-| B12-41 | alreadyLocked=true 按成功处理。 | `backend_http_e2e` | `browser_micro_profile + database_verifier` | 是 | `B12-P2-lock-success-idempotency` | `pending` |
-| B12-42 | alreadyLocked 不自动重发。 | `browser_micro_profile` | `backend_http_e2e + database_verifier` | 是 | `B12-P2-lock-success-idempotency` | `pending` |
-| B12-43 | 重复锁定不显示第二个可用入口。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P2-lock-success-idempotency` | `pending` |
-| B12-44 | lockId 弱化为技术追溯号。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P2-lock-success-idempotency` | `pending` |
-| B12-45 | lockedBy 显示姓名和角色。 | `browser_micro_profile` | `backend_unit + backend_http_e2e` | 是 | `B12-P2-lock-success-idempotency` | `pending` |
-| B12-46 | operatorId 不作为主要业务字段。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P2-lock-success-idempotency` | `pending` |
-| B12-47 | lockNote 标记为锁定流程说明。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P2-lock-success-idempotency` | `pending` |
-| B12-48 | lockNote 不显示为报告正文。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P2-lock-success-idempotency` | `pending` |
-| B12-49 | lock conflict 保留 lockNote。 | `browser_micro_profile` | `backend_http_e2e` | 是 | `B12-P3-conflict` | `pending` |
-| B12-50 | lock conflict 清除 checkbox。 | `browser_micro_profile` | `frontend_static_or_pure` | 是 | `B12-P3-conflict` | `pending` |
-| B12-51 | lock conflict 自动 latest 一次。 | `browser_micro_profile` | `backend_http_e2e` | 是 | `B12-P3-conflict` | `pending` |
-| B12-52 | lock conflict 不自动 POST。 | `browser_micro_profile` | `backend_http_e2e` | 是 | `B12-P3-conflict` | `pending` |
-| B12-53 | stale 时不能锁定。 | `browser_micro_profile` | `frontend_static_or_pure` | 是 | `B12-P3-conflict` | `pending` |
-| B12-54 | 基于最新报告继续后保留 lockNote。 | `browser_micro_profile` | `frontend_static_or_pure` | 是 | `B12-P3-conflict` | `pending` |
-| B12-55 | 最新报告已锁定时不能继续提交本地草稿。 | `browser_micro_profile` | `backend_http_e2e + database_verifier` | 是 | `B12-P3-conflict` | `pending` |
-| B12-56 | audit unavailable 不猜测锁定人。 | `backend_unit` | `backend_unit + browser_micro_profile` | 是 | `B12-P4-error-client-boundary` | `pending` |
-| B12-57 | metadata unsupported 不显示 metadata。 | `backend_unit` | `backend_unit + browser_micro_profile` | 是 | `B12-P4-error-client-boundary` | `pending` |
-| B12-58 | action 403 保留报告和 lockNote。 | `browser_micro_profile` | `backend_http_e2e` | 是 | `B12-P4-error-client-boundary` | `pending` |
-| B12-59 | 401 返回登录页。 | `browser_micro_profile` | `backend_http_e2e` | 是 | `B12-P4-error-client-boundary` | `pending` |
-| B12-60 | 网络错误保留 lockNote。 | `browser_micro_profile` | `frontend_static_or_pure` | 是 | `B12-P4-error-client-boundary` | `pending` |
-| B12-61 | beforeunload 覆盖 lockNote。 | `browser_micro_profile` | `frontend_static_or_pure` | 是 | `B12-P4-error-client-boundary` | `pending` |
-| B12-62 | lockNote 不写 localStorage。 | `browser_micro_profile` | `frontend_static_or_pure` | 是 | `B12-P4-error-client-boundary` | `pending` |
-| B12-63 | 刷新后未提交 lockNote 消失。 | `browser_micro_profile` | — | 是 | `B12-P4-error-client-boundary` | `pending` |
-| B12-64 | 已锁定报告 edit 不可用。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `pending` |
-| B12-65 | 已锁定报告 submit 不可用。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `pending` |
-| B12-66 | 已锁定报告 confirm 不可用。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `pending` |
-| B12-67 | 已锁定报告 lock 不可用。 | `browser_micro_profile` | `backend_http_e2e` | 是 | `B12-P1-eligibility-readonly` | `pending` |
-| B12-68 | confirmed 不显示为 locked status。 | `browser_micro_profile` | `backend_http_e2e` | 是 | `B12-P1-eligibility-readonly` | `pending` |
-| B12-69 | isFinal 不作为锁定判断。 | `frontend_static_or_pure` | `browser_micro_profile` | 是（横切代表） | `B12-P1-eligibility-readonly` | `pending` |
-| B12-70 | lockedAt 不显示为归档时间。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `pending` |
-| B12-71 | 页面不存在 unlock。 | `static_gate` | `browser_micro_profile` | 是（横切代表） | `B12-P5-presentation-accessibility` | `pending` |
-| B12-72 | 页面不存在 reopen / return / reject / withdraw。 | `static_gate` | `browser_micro_profile` | 是（横切代表） | `B12-P5-presentation-accessibility` | `pending` |
-| B12-73 | 页面不存在 signature。 | `static_gate` | `browser_micro_profile` | 是（横切代表） | `B12-P5-presentation-accessibility` | `pending` |
-| B12-74 | 页面不存在 archive / correct / void。 | `static_gate` | `browser_micro_profile` | 是（横切代表） | `B12-P5-presentation-accessibility` | `pending` |
-| B12-75 | 页面不存在 PDF / 下载。 | `static_gate` | `browser_micro_profile` | 是（横切代表） | `B12-P5-presentation-accessibility` | `pending` |
-| B12-76 | 页面不存在来源链锁定。 | `static_gate` | `browser_micro_profile` | 是（横切代表） | `B12-P5-presentation-accessibility` | `pending` |
-| B12-77 | 页面不存在 AI 操作。 | `static_gate` | `browser_micro_profile` | 是（横切代表） | `B12-P5-presentation-accessibility` | `pending` |
-| B12-78 | 页面不显示患者、访视或评分已锁定。 | `browser_micro_profile` | — | 是 | `B12-P5-presentation-accessibility` | `pending` |
-| B12-79 | 页面不把 quality passed 显示为患者正常。 | `browser_micro_profile` | — | 是 | `B12-P5-presentation-accessibility` | `pending` |
-| B12-80 | 页面不输出诊断结论。 | `browser_micro_profile` | — | 是 | `B12-P5-presentation-accessibility` | `pending` |
-| B12-81 | 小屏幕锁定表单可用。 | `browser_micro_profile` | — | 是 | `B12-P5-presentation-accessibility` | `pending` |
-| B12-82 | label、错误提示和交互状态反馈正确。 | `browser_micro_profile` | — | 是 | `B12-P5-presentation-accessibility` | `pending` |
-| B12-83 | 没有第二次 `/auth/me`。 | `browser_micro_profile` | `frontend_static_or_pure` | 是 | `B12-P4-error-client-boundary` | `pending` |
-| B12-84 | 没有新增路由。 | `frontend_static_or_pure` | — | 否 | `B12-P0-contract-state` | `passed` |
-| B12-85 | 没有使用真实患者或锁定说明。 | `database_verifier` | `static_gate` | 否 | `B12-P6-final-smoke` | `pending` |
-| B12-86 | lint 通过。 | `static_gate` | — | 否 | `B12-P6-final-smoke` | `pending` |
-| B12-87 | typecheck 通过。 | `static_gate` | — | 否 | `B12-P6-final-smoke` | `pending` |
-| B12-88 | build 通过。 | `static_gate` | — | 否 | `B12-P6-final-smoke` | `pending` |
+下表是 B12 当前唯一活动关闭清单。场景内的每个必需子断言都必须分别记录实际结果；只有全部必需子断言均通过，场景才可标记为 `passed`。本次只完成文档治理，不启动新的 B12 测试实现或正式验收。
+
+| 场景 ID | 场景级验收意图 | 主证据层 | Browser 职责 | Profile | 当前状态 |
+|---|---|---|---|---|---|
+| `B12-S01` | **锁定资格与阻断状态**：完整资格矩阵由 pure/unit/backend 证明；Browser 验证一个合法 confirmed 未锁定状态、一个代表性不合法状态和一个已锁定只读状态。 | `frontend_static_or_pure + backend_unit + backend_http_e2e` | 只证明三个代表状态下的真实入口、控件与只读表现。 | `B12-P1-eligibility-role-readonly` | `pending` |
+| `B12-S02` | **角色与权限**：doctor/admin 具备后端授权，nurse/research_assistant/system 不具备授权；Browser 验证代表性授权和非授权用户，后端保留完整角色矩阵。 | `backend_http_e2e` | 验证代表性授权与非授权 Session 的入口和反馈，不重复完整角色矩阵。 | `B12-P1-eligibility-role-readonly` | `pending` |
+| `B12-S03` | **报告锁定领域不变量**：不新增 locked status；成功后 status 仍为 confirmed；lockedAt 与 lock summary 按合同形成。 | `backend_unit + backend_http_e2e + database_verifier` | 不要求 Browser。 | `B12-P0-contract-state` | `passed` |
+| `B12-S04` | **锁定说明与显式确认**：展示不可逆且只锁报告自身的准确说明；lockNote 长度、无自动生成/自动填充和 checkbox 校验正确。 | `browser_micro_profile + frontend_static_or_pure` | 验证真实文案、输入、边界校验、checkbox 与提交状态。 | `B12-P2A-form-writing` | `pending` |
+| `B12-S05` | **请求白名单与乐观并发基线**：请求只发送 confirm、lockNote、expectedUpdatedAt；expectedUpdatedAt 来自当前服务端 report。 | `frontend_static_or_pure + backend_http_e2e` | 不要求 Browser。 | `B12-P0-contract-state` | `passed` |
+| `B12-S06` | **写入期间互斥与可读性**：lock 请求期间相关写操作受控禁用，报告正文仍可阅读。 | `browser_micro_profile` | 在真实写请求期间观察互斥、disabled 与正文可读。 | `B12-P2A-form-writing` | `pending` |
+| `B12-S07` | **首次锁定成功与用户回执**：页面应用服务端完整 report，正确显示首次成功回执、操作者姓名/角色、弱化追溯号和锁定流程说明，不把 lockNote 当成报告正文。 | `browser_micro_profile + backend_http_e2e` | 验证完整 report 应用、首次回执与安全展示。 | `B12-P2B-success-idempotency` | `pending` |
+| `B12-S08` | **幂等重复锁定**：alreadyLocked 按成功结果处理，不产生第二次写入，也不重新开放锁定入口。 | `backend_http_e2e + database_verifier` | 验证幂等回执、Network 无第二次写入和入口保持关闭。 | `B12-P2B-success-idempotency` | `pending` |
+| `B12-S09` | **可继续的版本冲突**：保留本地 lockNote、清除确认 checkbox、最多读取一次 latest、不自动重发 POST；只有用户明确选择基于最新报告继续后才能再次提交。 | `browser_micro_profile + backend_http_e2e` | 验证真实冲突恢复交互、请求次数和重新提交门槛。 | `B12-P3-conflict` | `pending` |
+| `B12-S10` | **latest 已锁定冲突**：不允许继续提交本地锁定草稿，保留可解释的本地说明，并证明无额外写入。 | `browser_micro_profile + backend_http_e2e + database_verifier` | 验证只读转入、本地说明与 Network 无额外 POST。 | `B12-P3-conflict` | `pending` |
+| `B12-S11` | **audit/metadata 安全降级**：audit unavailable 时不猜测操作者；metadata unsupported 时不展示不受支持或敏感 metadata；页面仍保持安全可读。 | `frontend_static_or_pure + browser_micro_profile` | 验证降级文案、无敏感展示和页面可读。 | `B12-P4-error-draft-boundary` | `pending` |
+| `B12-S12` | **认证、权限和网络错误**：401 返回登录流程；403 和网络失败保留安全报告事实与本地 lockNote；不自动重发写请求。 | `backend_http_e2e + browser_micro_profile` | 验证 401/403/网络错误的真实页面恢复和 Network 次数。 | `B12-P4-error-draft-boundary` | `pending` |
+| `B12-S13` | **未提交 lockNote 生命周期**：纳入 beforeunload；不写入 localStorage、sessionStorage 或 IndexedDB；刷新后未提交内容消失。 | `browser_micro_profile` | 负责 beforeunload、Storage 与刷新后的真实浏览器状态。 | `B12-P4-error-draft-boundary` | `pending` |
+| `B12-S14` | **已锁定报告只读与术语边界**：edit/submit/confirm/lock 不可用；report status 仍为 confirmed；lockedAt 不显示为归档时间；不把患者、访视或评分误称为已锁定。 | `frontend_static_or_pure + backend_http_e2e` | 验证代表性已锁页面的只读控件和用户可见术语。 | `B12-P1-eligibility-role-readonly` | `pending` |
+| `B12-S15` | **相邻生命周期动作边界**：lock 动作自身不得自动执行、伪装或串联 unlock、reopen、return、reject、withdraw、signature、source-freeze、archive、correction、void、PDF 或 AI 动作；后续独立动作可以在页面上按各自资格存在。 | `browser_micro_profile + frontend_static_or_pure` | 验证 lock 交互和 Network 不自动触发相邻动作，不扫描或禁止后续独立入口。 | `B12-P2B-success-idempotency` | `pending` |
+| `B12-S16` | **非诊断性临床文案**：quality passed 不解释为患者正常；页面不生成诊断结论。 | `frontend_static_or_pure + browser_micro_profile` | 验证代表性页面文案与锁定反馈不产生诊断性推断。 | `B12-P4-error-draft-boundary` | `pending` |
+| `B12-S17` | **代表性响应式与可访问性**：在代表性小屏完成表单使用；label、错误提示、键盘、焦点、交互反馈和 Axe 检查成立。 | `browser_micro_profile` | 承担代表性小屏、键盘、焦点、反馈与 Axe。 | `B12-P5-presentation-accessibility` | `pending` |
+
+B12 活动场景总数为 17：`passed=2`、`pending=15`、`failed=0`、`blocked=0`、`not_executed=0`。原 88 个 ID 不再作为活动关闭对象；原 7 个 `passed` 事实没有失效，其中 B12-09、B12-36～B12-38 进入 `B12-S03`，B12-31～B12-32 进入 `B12-S05`，B12-84 进入通用“无新增路由”门禁。只有这两个新场景的全部必需子断言已有完整证据，因此不得把其他包含未验子断言的场景推定为 `passed`。
+
+### 9.2 旧 ID 迁移与退役说明
+
+旧清单的逐行原文由 Git 历史追溯；下表保留原 88 项到新场景或通用门禁的完整迁移关系，不抹除已经形成的有效证据。
+
+| 旧 ID | 迁移或处置 |
+|---|---|
+| B12-01～B12-03、B12-10～B12-19 | `B12-S01` / `B12-S14` |
+| B12-04～B12-08 | `B12-S02` |
+| B12-09、B12-36～B12-38 | `B12-S03` |
+| B12-20～B12-30 | `B12-S04` |
+| B12-31～B12-32 | `B12-S05` |
+| B12-33～B12-34 | `B12-S06` |
+| B12-35、B12-39～B12-40、B12-44～B12-48 | `B12-S07` |
+| B12-41～B12-43 | `B12-S08` |
+| B12-49～B12-54 | `B12-S09` |
+| B12-55 | `B12-S10` |
+| B12-56～B12-57 | `B12-S11` |
+| B12-58～B12-60 | `B12-S12` |
+| B12-61～B12-63 | `B12-S13` |
+| B12-64～B12-70、B12-78 | `B12-S14` |
+| B12-71～B12-73、B12-75、B12-77 | `B12-S15` 的持久行为边界 |
+| B12-74、B12-76 | `obsolete`：原断言要求页面不存在 archive/correction/void 或来源冻结，已因后续独立生命周期能力落地而过期；仍有价值的“不由 lock 自动触发”语义由 `B12-S15` 保留。 |
+| B12-79～B12-80 | `B12-S16` |
+| B12-81～B12-82 | `B12-S17` |
+| B12-83 | 通用认证所有权/重复 `/auth/me` 架构门禁 |
+| B12-84 | 通用路由边界门禁，保留既有 `passed` 证据 |
+| B12-85 | 通用测试数据治理门禁 |
+| B12-86～B12-88 | 通用 lint/typecheck/build 门禁 |
+
+### 9.3 B12 通用最终门禁
+
+以下门禁不分配新的业务 Audit ID，只在 B12 最终代码态执行一次，不为每个业务场景重复执行：
+
+- 不产生第二次 `/auth/me`。
+- 不新增无合同依据的路由。
+- 不使用真实患者、真实医疗数据或真实锁定说明。
+- 不新增依赖。
+- lint。
+- typecheck。
+- build。
+- 一条轻量跨层 Browser 冒烟。
+
+既有 B12-84 `passed` 证据继续有效；产品验收恢复后仍须在最终代码态按本节完成一次通用门禁收口。轻量冒烟只发现跨层装配断裂，不新增业务场景 ID，也不能替代任何失败、阻断或未执行的场景证据。
 
 ## 10. B13～B15 后续设计规则
 
-B13～B15 的稳定验证点与顺序保持不变。默认采用相同新方案：先分配主证据层，再划分微型 Profile；先完成非 Browser 证据；Browser 先执行 2～4 个 canary，canary 通过后才执行对应 Profile；每个 Profile 独立关闭 ID；最后执行轻量集成冒烟与静态门禁。
+B13 的 116 项、B14 的 115 项、B14.1 行为范围和 B15 的 10 组属于候选断言与历史设计输入，不是不可合并、不可迁移的永久活动 ID。它们的具体条目与产品语义在本次 B12 文档治理中保持原样，不据此推定任何执行结果。
+
+正式执行各批次前，必须先按 B12 方法完成场景化审查：删除重复断言，迁移 lint/typecheck/build、认证/路由所有权、测试数据治理等通用门禁，退役已经失去阶段前提的“不存在后续功能”断言，并为剩余业务风险重新分配最低充分证据层。审查必须保留核心业务风险、不可替代语义、旧条目映射和已有有效证据，但不得冻结历史数量或顺序。
+
+场景化审查完成并经确认后，再划分微型 Profile：先完成非 Browser 证据；Browser 先执行 2～4 个 canary，canary 通过后才执行对应 Profile；每个 Profile 独立关闭活动场景；最后执行轻量集成冒烟与通用静态门禁。
 
 不得再创建批次专属大型 fixture、独立 evidence matrix、批次专属 runner/journal/aggregator，也不要求一次原子运行关闭整个批次。fixture 只制造合法最小前置，不改变下列验收意图。
 
@@ -535,8 +525,8 @@ B16 / WP-02 已完成不能替代这组 B14.1 行为等价回归；只有 Batch 
 
 最终前端代码态分别执行 `npm run test:browser:list`、`npm run test:browser:infra`、`npm run lint`、`npm run typecheck`、`npm run build`。test discovery 与 infrastructure 只能证明测试资产和通用能力可执行，不能关闭业务 Audit ID。
 
-所有主证据与必要支持证据独立闭环后，P6 审核全部 B12 测试数据来源并执行最终 lint、typecheck、build，以关闭仍为 `pending` 的 B12-85～B12-88；同时执行一条核心端到端链路作为轻量集成冒烟。冒烟只发现跨层装配断裂、不新增 Audit ID、不重新执行全部验收点，也不能替代失败或未执行的主证据。本轮 P0 代码门禁不能冒充这些最终证据。
+所有活动场景的主证据与必要支持证据独立闭环后，B12-P6 只在最终代码态执行一次 9.3 的通用最终门禁；这些门禁不拥有新的业务 Audit ID，也不改变活动场景的子断言结果。轻量集成冒烟只发现跨层装配断裂，不新增场景、不重新执行全部验收点，也不能替代失败、阻断或未执行的主证据。P0 的既有静态证据可以复用，但不能冒充尚未执行的最终代码态门禁。
 
 Browser 结果必须记录业务、fixture、测试资产修改和收口耗时，并清理本次创建的 Session、BrowserContext、Chromium、Node 进程、端口、runtime、test-results 与其他临时产物。数据库生命周期、最小 fixture、verifier 和 cleanup 的权威规则见 backend testing playbook。
 
-roadmap 业务工作包状态不因 playbook 治理或测试资产退役自动变化。B12 保持未完成并暂停，下一任务先审查验收清单；审查完成前不启动 P1、P2 或新的 Browser 实现。B11 及以前状态不变；B13～B15 不因本手册重写而改变产品范围或验收意图。
+roadmap 业务工作包状态不因 playbook 治理或测试资产退役自动变化。B12 清单治理已完成，产品验收尚未恢复执行；下一步须根据新场景设计最小执行方案，并经用户确认后再启动 P1～P5 或新的 Browser 实现，仍禁止未经确认重建 B12 专属 fixture/support。B11 及以前状态不变；B13～B15 的具体候选条目与产品语义不因本手册治理而改变。
