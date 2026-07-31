@@ -4,7 +4,7 @@
 
 本文档是跨层测试设计、Browser 验收策略、场景级活动 Audit 清单和当前验证状态的权威来源。它只维护当前有效规则与待验合同；roadmap 继续维护产品范围和工作包状态，Git 历史负责旧命令、旧清单、旧结果与失败过程。
 
-> B12-P1 eligibility-readonly、R1、A3、A3-R2 已退役。约 70 小时投入后，专属 fixture/support 复杂度超过业务；未新增关闭 Audit ID，代码全删。B12 清单治理现已完成，产品验收尚未恢复执行；下一步须按新场景设计最小执行方案并经用户确认，未经确认不重建 B12 专属 fixture/support。
+> B12-P1 eligibility-readonly、R1、A3、A3-R2 已退役。约 70 小时投入后，专属 fixture/support 复杂度超过业务；未新增关闭 Audit ID，代码全删。B12 清单治理与第一阶段非 Browser 证据收口现已完成，Browser 产品验收尚未恢复；下一阶段为 P1 只读资格与角色 canary，须另行确认后执行，未经确认不重建 B12 专属 fixture/support。
 
 | 范围 | 当前状态 |
 |---|---|
@@ -14,12 +14,12 @@
 | Batch B / B4–B6 | 桌面范围已完成，Batch E 仍保留 8 项 |
 | Batch C / B7–B10 | 已完成；B7、B8、B9、B10 各自既有最终处置不变 |
 | Batch D / B11 | 70 项已完成，状态不变 |
-| Batch D / B12 | 清单治理已完成，产品验收尚未恢复执行；活动场景 `passed=2`、`pending=15`、`failed=0`、`blocked=0`、`not_executed=0` |
+| Batch D / B12 | 第一阶段非 Browser 证据已收口，Browser 产品验收尚未恢复执行；活动场景 `passed=4`、`pending=13`、`failed=0`、`blocked=0`、`not_executed=0` |
 | Batch D / B13–B15（含 B14.1） | 候选断言和历史设计输入保留，尚未执行；正式执行前须先场景化审查 |
 
-B12-P0-A/B/C 已完成，`B12-P0-contract-state` 已完成：P0 当前拥有 `B12-S03`、`B12-S05`，并保留既有“无新增路由”静态证据。原 B12-09、B12-31、B12-32、B12-36、B12-37、B12-38、B12-84 共 7 个 `passed` 事实没有失效，已分别迁移到上述两个活动场景和通用路由边界门禁。
+B12-P0-A/B/C 已完成，`B12-P0-contract-state` 已完成：P0 当前拥有 `B12-S03`、`B12-S05`、`B12-S10`、`B12-S11`，并保留既有“无新增路由”静态证据。原 B12-09、B12-31、B12-32、B12-36、B12-37、B12-38、B12-84 共 7 个 `passed` 事实没有失效，已分别迁移到前两个活动场景和通用路由边界门禁；S10/S11 则由本轮新增的 frontend pure/static 与 backend HTTP E2E 证据关闭。
 
-B12 当前活动场景总数为 17，汇总为 `passed=2`、`pending=15`、`failed=0`、`blocked=0`、`not_executed=0`。B12 清单治理已完成，产品验收尚未恢复执行；下一步须先根据新场景设计最低充分的执行方案，并经用户确认后才开始 P1～P5 或新的 Browser 实现。
+B12 当前活动场景总数为 17，汇总为 `passed=4`、`pending=13`、`failed=0`、`blocked=0`、`not_executed=0`。S01/S02/S14/S16 的非 Browser 证据已经完成，但因代表性 Browser 尚未执行而继续保持 `pending`。B12 Browser 产品验收尚未恢复；下一阶段是 P1 只读资格与角色 canary，须另行确认后执行。
 
 原 88 个 ID 不再作为活动关闭对象；其语义迁移、过期处置与既有证据归属见 9.2。场景合并只降低清单管理粒度，不降低 doctor/admin、授权/非授权、401/403、首次成功/幂等和两类冲突等不可替代语义。
 
@@ -75,16 +75,16 @@ Codex 任务规模取决于业务风险是否一致、证据层是否相近、�
 
 ### 4.2 B12 Profile 基线
 
-- `B12-P0-contract-state`（已完成）：拥有 `B12-S03`、`B12-S05`，以及既有“无新增路由”静态证据；以 pure/static、unit、HTTP E2E 和 verifier 为主。
+- `B12-P0-contract-state`（已完成）：拥有 `B12-S03`、`B12-S05`、`B12-S10`、`B12-S11`，以及既有“无新增路由”静态证据；以 pure/static、unit、HTTP E2E 和 verifier 为主。
 - `B12-P1-eligibility-role-readonly`：拥有 `B12-S01`、`B12-S02`、`B12-S14`。
 - `B12-P2A-form-writing`：拥有 `B12-S04`、`B12-S06`。
 - `B12-P2B-success-idempotency`：拥有 `B12-S07`、`B12-S08`、`B12-S15`。
-- `B12-P3-conflict`：拥有 `B12-S09`、`B12-S10`。
-- `B12-P4-error-draft-boundary`：拥有 `B12-S11`、`B12-S12`、`B12-S13`、`B12-S16`。
+- `B12-P3-conflict`：拥有 `B12-S09`。
+- `B12-P4-error-draft-boundary`：拥有 `B12-S12`、`B12-S13`、`B12-S16`。
 - `B12-P5-presentation-accessibility`：拥有 `B12-S17`。
 - `B12-P6-final-gates`：只执行通用最终门禁，不拥有新的业务场景 ID。
 
-P1～P5 尚未启动正式执行，其所拥有的活动场景保持 `pending`。不要求每个前端条件制造独立 Browser fixture；完整状态矩阵由 pure/unit/backend 证据覆盖，Browser 只选择最小但有代表性的允许、禁止和只读状态。不同 Profile 继续保持证据隔离和 cleanup 原子性。
+P1～P5 尚未启动正式执行，其仍拥有的活动场景保持 `pending`。不要求每个前端条件制造独立 Browser fixture；完整状态矩阵由 pure/unit/backend 证据覆盖，Browser 只选择最小但有代表性的允许、禁止和只读状态。不同 Profile 继续保持证据隔离和 cleanup 原子性。
 
 ## 5. Browser 必须验证的行为
 
@@ -158,7 +158,7 @@ P1～P5 尚未启动正式执行，其所拥有的活动场景保持 `pending`�
 
 ### 9.1 活动场景
 
-下表是 B12 当前唯一活动关闭清单。场景内的每个必需子断言都必须分别记录实际结果；只有全部必需子断言均通过，场景才可标记为 `passed`。本次只完成文档治理，不启动新的 B12 测试实现或正式验收。
+下表是 B12 当前唯一活动关闭清单。场景内的每个必需子断言都必须分别记录实际结果；只有全部必需子断言均通过，场景才可标记为 `passed`。第一阶段只完成非 Browser 证据收口，不启动 B12 Browser 产品验收。
 
 | 场景 ID | 场景级验收意图 | 主证据层 | Browser 职责 | Profile | 当前状态 |
 |---|---|---|---|---|---|
@@ -171,8 +171,8 @@ P1～P5 尚未启动正式执行，其所拥有的活动场景保持 `pending`�
 | `B12-S07` | **首次锁定成功与用户回执**：页面应用服务端完整 report，正确显示首次成功回执、操作者姓名/角色、弱化追溯号和锁定流程说明，不把 lockNote 当成报告正文。 | `browser_micro_profile + backend_http_e2e` | 验证完整 report 应用、首次回执与安全展示。 | `B12-P2B-success-idempotency` | `pending` |
 | `B12-S08` | **幂等重复锁定**：alreadyLocked 按成功结果处理，不产生第二次写入，也不重新开放锁定入口。 | `backend_http_e2e + database_verifier` | 验证幂等回执、Network 无第二次写入和入口保持关闭。 | `B12-P2B-success-idempotency` | `pending` |
 | `B12-S09` | **可继续的版本冲突**：保留本地 lockNote、清除确认 checkbox、最多读取一次 latest、不自动重发 POST；只有用户明确选择基于最新报告继续后才能再次提交。 | `browser_micro_profile + backend_http_e2e` | 验证真实冲突恢复交互、请求次数和重新提交门槛。 | `B12-P3-conflict` | `pending` |
-| `B12-S10` | **latest 已锁定冲突**：不允许继续提交本地锁定草稿，保留可解释的本地说明，并证明无额外写入。 | `browser_micro_profile + backend_http_e2e + database_verifier` | 验证只读转入、本地说明与 Network 无额外 POST。 | `B12-P3-conflict` | `pending` |
-| `B12-S11` | **audit/metadata 安全降级**：audit unavailable 时不猜测操作者；metadata unsupported 时不展示不受支持或敏感 metadata；页面仍保持安全可读。 | `frontend_static_or_pure + browser_micro_profile` | 验证降级文案、无敏感展示和页面可读。 | `B12-P4-error-draft-boundary` | `pending` |
+| `B12-S10` | **latest 已锁定冲突**：不允许继续提交本地锁定草稿，保留可解释的本地说明，并证明无额外写入。 | `frontend_static_or_pure + backend_http_e2e` | 不要求 Browser。 | `B12-P0-contract-state` | `passed` |
+| `B12-S11` | **audit/metadata 安全降级**：audit unavailable 时不猜测操作者；metadata unsupported 时不展示不受支持或敏感 metadata；报告主事实保持安全可读，异常时禁止不安全写入。 | `frontend_static_or_pure + backend_http_e2e` | 不要求 Browser。 | `B12-P0-contract-state` | `passed` |
 | `B12-S12` | **认证、权限和网络错误**：401 返回登录流程；403 和网络失败保留安全报告事实与本地 lockNote；不自动重发写请求。 | `backend_http_e2e + browser_micro_profile` | 验证 401/403/网络错误的真实页面恢复和 Network 次数。 | `B12-P4-error-draft-boundary` | `pending` |
 | `B12-S13` | **未提交 lockNote 生命周期**：纳入 beforeunload；不写入 localStorage、sessionStorage 或 IndexedDB；刷新后未提交内容消失。 | `browser_micro_profile` | 负责 beforeunload、Storage 与刷新后的真实浏览器状态。 | `B12-P4-error-draft-boundary` | `pending` |
 | `B12-S14` | **已锁定报告只读与术语边界**：edit/submit/confirm/lock 不可用；report status 仍为 confirmed；lockedAt 不显示为归档时间；不把患者、访视或评分误称为已锁定。 | `frontend_static_or_pure + backend_http_e2e` | 验证代表性已锁页面的只读控件和用户可见术语。 | `B12-P1-eligibility-role-readonly` | `pending` |
@@ -180,7 +180,7 @@ P1～P5 尚未启动正式执行，其所拥有的活动场景保持 `pending`�
 | `B12-S16` | **非诊断性临床文案**：quality passed 不解释为患者正常；页面不生成诊断结论。 | `frontend_static_or_pure + browser_micro_profile` | 验证代表性页面文案与锁定反馈不产生诊断性推断。 | `B12-P4-error-draft-boundary` | `pending` |
 | `B12-S17` | **代表性响应式与可访问性**：在代表性小屏完成表单使用；label、错误提示、键盘、焦点、交互反馈和 Axe 检查成立。 | `browser_micro_profile` | 承担代表性小屏、键盘、焦点、反馈与 Axe。 | `B12-P5-presentation-accessibility` | `pending` |
 
-B12 活动场景总数为 17：`passed=2`、`pending=15`、`failed=0`、`blocked=0`、`not_executed=0`。原 88 个 ID 不再作为活动关闭对象；原 7 个 `passed` 事实没有失效，其中 B12-09、B12-36～B12-38 进入 `B12-S03`，B12-31～B12-32 进入 `B12-S05`，B12-84 进入通用“无新增路由”门禁。只有这两个新场景的全部必需子断言已有完整证据，因此不得把其他包含未验子断言的场景推定为 `passed`。
+B12 活动场景总数为 17：`passed=4`、`pending=13`、`failed=0`、`blocked=0`、`not_executed=0`。原 88 个 ID 不再作为活动关闭对象；原 7 个 `passed` 事实没有失效，其中 B12-09、B12-36～B12-38 进入 `B12-S03`，B12-31～B12-32 进入 `B12-S05`，B12-84 进入通用“无新增路由”门禁。`B12-S10`、`B12-S11` 的 frontend pure/static 与 backend HTTP E2E 必需证据已全部通过，因此一并关闭。`B12-S01`、`B12-S02`、`B12-S14`、`B12-S16` 的非 Browser 证据已完成，但代表性 Browser 尚未执行，四项仍保持 `pending`。B12 Browser 产品验收尚未恢复；下一阶段为 P1 只读资格与角色 canary，须另行确认后执行。
 
 ### 9.2 旧 ID 迁移与退役说明
 

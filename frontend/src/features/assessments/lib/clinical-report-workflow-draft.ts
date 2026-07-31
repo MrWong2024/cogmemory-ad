@@ -125,7 +125,11 @@ export function createClinicalReportConfirmationDraft(
 export function createClinicalReportLockDraft(
   report: ClinicalReport,
 ): ClinicalReportLockDraft | null {
-  if (!isSafeClinicalReportWriteIdentity(report.id, report.updatedAt)) {
+  if (
+    report.lockedAt !== null ||
+    report.lock !== null ||
+    !isSafeClinicalReportWriteIdentity(report.id, report.updatedAt)
+  ) {
     return null;
   }
   return {
@@ -304,11 +308,25 @@ export function buildLockClinicalReportRequest(
   };
 }
 
+export function markClinicalReportLockDraftStale(
+  draft: ClinicalReportLockDraft,
+): ClinicalReportLockDraft {
+  return {
+    ...draft,
+    confirmed: false,
+    stale: true,
+  };
+}
+
 export function continueClinicalReportLockDraftWithLatest(
   draft: ClinicalReportLockDraft,
   report: ClinicalReport,
 ): ClinicalReportLockDraft | null {
-  if (!isSafeClinicalReportWriteIdentity(report.id, report.updatedAt)) {
+  if (
+    report.lockedAt !== null ||
+    report.lock !== null ||
+    !isSafeClinicalReportWriteIdentity(report.id, report.updatedAt)
+  ) {
     return null;
   }
   return {

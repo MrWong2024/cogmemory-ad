@@ -11,15 +11,15 @@
 | Batch B / B4–B6 | 桌面范围已完成，既有状态不变 |
 | Batch C / B7–B10 | 已完成，既有状态不变 |
 | Batch D / B11 | 70 项已完成，状态不变 |
-| Batch D / B12 | 清单治理已完成，产品验收尚未恢复执行；活动场景 `passed=2`、`pending=15`、`failed=0`、`blocked=0`、`not_executed=0`，具体清单、状态和旧 ID 映射见 frontend testing playbook 第 9 节 |
+| Batch D / B12 | 第一阶段非 Browser 证据已收口，Browser 产品验收尚未恢复执行；活动场景 `passed=4`、`pending=13`、`failed=0`、`blocked=0`、`not_executed=0`，具体清单、状态和旧 ID 映射见 frontend testing playbook 第 9 节 |
 | Batch D / B13–B15（含 B14.1） | 候选断言和历史设计输入保留，尚未执行；正式执行前须先场景化审查 |
 | Batch E | 8 个真实设备或人工项目尚未执行 |
 
 roadmap 继续维护产品范围和工作包状态；testing playbook 治理不得自动改变 roadmap。
 
-当前状态：B12-P0 后端合同已完成；既有分层证据已迁移为 `B12-S03`、`B12-S05` 通过，原 B12-84 的“无新增路由”证据继续有效并归入通用路由边界门禁。活动场景、具体状态和旧 ID 映射以 frontend testing playbook 第 9 节为权威来源。
+当前状态：B12-P0 后端合同与第一阶段非 Browser 证据已完成；`B12-P0-contract-state` 当前拥有 `B12-S03`、`B12-S05`、`B12-S10`、`B12-S11`，四项均已通过，且 S10/S11 不要求 Browser。原 B12-84 的“无新增路由”证据继续有效并归入通用路由边界门禁。其余活动场景、具体状态和旧 ID 映射以 frontend testing playbook 第 9 节为权威来源。
 
-B12-P1 实验测试资产已全部移除，未新增关闭任何活动场景。B12 清单治理已经完成，产品验收尚未恢复执行；下一步须先设计最低充分执行方案，并经用户确认后才能启动 P1～P5 或新的 Browser 实现。未经确认不得重建 B12 专属 fixture/support。
+B12-P1 实验测试资产已全部移除；第一阶段没有恢复或重建 B12 专属 fixture/support。B12 Browser 产品验收尚未恢复；下一阶段为 P1 只读资格与角色 canary，须另行确认后执行。未经确认不得重建 B12 专属 fixture/support。
 
 ## 2. 数据库用途和隔离
 
@@ -161,7 +161,7 @@ lint、typecheck、build、unit 和 E2E 必须分别报告，互不替代。删�
 
 ## 10. B12～B15 当前待验范围
 
-- B12：原 88 个 ID 不再作为活动关闭对象；当前有 17 个活动场景，状态为 `passed=2`、`pending=15`、`failed=0`、`blocked=0`、`not_executed=0`，其中 `B12-S03`、`B12-S05` 已通过。其余活动状态和旧 ID 映射以 frontend testing playbook 第 9 节为准；本手册继续负责数据库用途、后端证据、fixture、verifier 和 cleanup 规则。清单治理已完成，产品验收尚未恢复执行。
+- B12：原 88 个 ID 不再作为活动关闭对象；当前有 17 个活动场景，状态为 `passed=4`、`pending=13`、`failed=0`、`blocked=0`、`not_executed=0`。P0 已拥有并通过 `B12-S03`、`B12-S05`、`B12-S10`、`B12-S11`，其中 S10/S11 由 frontend pure/static 与 backend HTTP E2E 共同证明，不要求 Browser。其余活动场景及映射仍以 frontend testing playbook 第 9 节为权威来源；本手册继续负责数据库用途、后端证据、fixture、verifier 和 cleanup 规则。第一阶段非 Browser 证据已收口，Browser 产品验收尚未恢复执行。
 - B13：原 116 项属于候选断言和历史设计输入，本次不改写具体候选条目；正式执行前须先场景化审查。
 - B14：原 115 项和 B14.1 行为范围属于候选断言和历史设计输入，本次不改写具体候选条目；正式执行前须先场景化审查。
 - B15：原 10 组属于候选断言和历史设计输入，本次不改写具体候选条目；正式执行前须先场景化审查。

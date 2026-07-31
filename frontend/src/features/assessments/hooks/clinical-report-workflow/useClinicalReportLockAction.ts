@@ -23,6 +23,8 @@ import {
   createClinicalReportLockDraft,
   isClinicalReportLockDirty,
   isSafeClinicalReportWriteIdentity,
+  markClinicalReportLockDraftStale,
+  type ClinicalReportLockDraft,
   validateClinicalReportLockDraft,
 } from '@/src/features/assessments/lib/clinical-report-workflow-draft';
 import type { ClinicalReport } from '@/src/features/assessments/types/clinical-report';
@@ -47,7 +49,15 @@ const lockableVisitStatuses = new Set<AssessmentVisitStatus>([
   'completed',
 ]);
 
-function isLockableReport(
+export function canClinicalReportRoleLock(
+  currentUserRoles: readonly string[],
+): boolean {
+  return currentUserRoles.some(
+    (role) => role === 'doctor' || role === 'admin',
+  );
+}
+
+export function isClinicalReportLockEligible(
   report: ClinicalReport | null,
   visitStatus: AssessmentVisitStatus | null,
 ): boolean {
@@ -76,6 +86,67 @@ function isLockableReport(
   );
 }
 
+export function canContinueClinicalReportLockDraftWithLatest(
+  draft: ClinicalReportLockDraft | null,
+  report: ClinicalReport | null,
+  visitStatus: AssessmentVisitStatus | null,
+  roleCanLock: boolean,
+  reportWriteBlocked: boolean,
+  writeProhibited: boolean,
+): boolean {
+  return Boolean(
+    draft?.stale &&
+      roleCanLock &&
+      !reportWriteBlocked &&
+      !writeProhibited &&
+      isClinicalReportLockEligible(report, visitStatus),
+  );
+}
+
+export function getClinicalReportLockEligibilityBlockReason(
+  report: ClinicalReport,
+  visitStatus: AssessmentVisitStatus | null,
+): string | null {
+  if (report.lockedAt !== null) {
+    return '当前报告已经锁定，不能重复开放锁定入口。';
+  }
+  const consistencyWarning = getClinicalReportLockConsistencyWarning(report);
+  if (consistencyWarning) return consistencyWarning;
+  if (getClinicalReportFinalityWarning(report.status, report.isFinal)) {
+    return '报告状态与最终性标记不一致，当前不能安全锁定。';
+  }
+  const lifecycleTarget = getClinicalReportLifecycleTarget(report);
+  const lifecycleWarning = getClinicalReportLifecycleTargetWarning(report);
+  if (!lifecycleTarget) return lifecycleWarning;
+  if (report.status !== 'confirmed') return '只有已确认报告可以执行锁定。';
+  if (report.source !== 'mixed') return '当前报告来源状态不满足锁定要求。';
+  if (report.qualityStatus !== 'passed') {
+    return '报告流程质量标记未通过，不能锁定。';
+  }
+  if (!report.isFinal) return '服务端尚未将当前报告标记为最终，不能锁定。';
+  if (
+    !report.confirmation?.confirmedAt ||
+    (report.confirmation.confirmedByRole !== 'doctor' &&
+      report.confirmation.confirmedByRole !== 'admin')
+  ) {
+    return '当前报告缺少完整的医生或管理员确认摘要。';
+  }
+  if (report.lock !== null) return '锁定字段不一致，当前不能继续写入。';
+  if (report.archivedAt !== null || report.voidedAt !== null) {
+    return '已归档或已作废报告不开放首次锁定。';
+  }
+  if (
+    lifecycleTarget.kind === 'version_one' &&
+    (!visitStatus || !lockableVisitStatuses.has(visitStatus))
+  ) {
+    return '当前访视状态不允许首次锁定报告。';
+  }
+  if (!isSafeClinicalReportWriteIdentity(report.id, report.updatedAt)) {
+    return '当前报告缺少安全的 updatedAt 并发基线。';
+  }
+  return null;
+}
+
 export function useClinicalReportLockAction({
   patientId,
   visitId,
@@ -89,8 +160,7 @@ export function useClinicalReportLockAction({
   const { state, setLockDraft, setLockError } = coordinator;
   const lockDraft = state.lock.draft;
   const roleCanLock = useMemo(
-    () =>
-      currentUserRoles.some((role) => role === 'doctor' || role === 'admin'),
+    () => canClinicalReportRoleLock(currentUserRoles),
     [currentUserRoles],
   );
   const lockDirty = isClinicalReportLockDirty(lockDraft);
@@ -112,7 +182,7 @@ export function useClinicalReportLockAction({
     !state.writeProhibited &&
     !hasLocalDraft &&
     roleCanLock &&
-    isLockableReport(report, visitStatus);
+    isClinicalReportLockEligible(report, visitStatus);
   const canConfirmLock = Boolean(
     lockDraft &&
       lockValidation.valid &&
@@ -122,57 +192,26 @@ export function useClinicalReportLockAction({
       !reportWriteBlocked &&
       !state.writeProhibited &&
       roleCanLock &&
-      isLockableReport(report, visitStatus),
+      isClinicalReportLockEligible(report, visitStatus),
   );
-  const canContinueLockWithLatest = Boolean(
-    lockDraft &&
-      lockDraft.stale &&
-      roleCanLock &&
-      !reportWriteBlocked &&
-      !state.writeProhibited &&
-      isLockableReport(report, visitStatus),
-  );
+  const canContinueLockWithLatest =
+    canContinueClinicalReportLockDraftWithLatest(
+      lockDraft,
+      report,
+      visitStatus,
+      roleCanLock,
+      reportWriteBlocked,
+      state.writeProhibited,
+    );
 
   const lockBlockReason = useMemo(() => {
     if (!report) return '请先加载当前临床报告。';
     if (!roleCanLock) return '报告锁定需由医生或管理员执行。';
-    if (report.lockedAt !== null) {
-      return '当前报告已经锁定，不能重复开放锁定入口。';
-    }
-    const consistencyWarning = getClinicalReportLockConsistencyWarning(report);
-    if (consistencyWarning) return consistencyWarning;
-    if (getClinicalReportFinalityWarning(report.status, report.isFinal)) {
-      return '报告状态与最终性标记不一致，当前不能安全锁定。';
-    }
-    const lifecycleTarget = getClinicalReportLifecycleTarget(report);
-    const lifecycleWarning = getClinicalReportLifecycleTargetWarning(report);
-    if (!lifecycleTarget) return lifecycleWarning;
-    if (report.status !== 'confirmed') return '只有已确认报告可以执行锁定。';
-    if (report.source !== 'mixed') return '当前报告来源状态不满足锁定要求。';
-    if (report.qualityStatus !== 'passed') {
-      return '报告流程质量标记未通过，不能锁定。';
-    }
-    if (!report.isFinal) return '服务端尚未将当前报告标记为最终，不能锁定。';
-    if (
-      !report.confirmation?.confirmedAt ||
-      (report.confirmation.confirmedByRole !== 'doctor' &&
-        report.confirmation.confirmedByRole !== 'admin')
-    ) {
-      return '当前报告缺少完整的医生或管理员确认摘要。';
-    }
-    if (report.lock !== null) return '锁定字段不一致，当前不能继续写入。';
-    if (report.archivedAt !== null || report.voidedAt !== null) {
-      return '已归档或已作废报告不开放首次锁定。';
-    }
-    if (
-      lifecycleTarget.kind === 'version_one' &&
-      (!visitStatus || !lockableVisitStatuses.has(visitStatus))
-    ) {
-      return '当前访视状态不允许首次锁定报告。';
-    }
-    if (!isSafeClinicalReportWriteIdentity(report.id, report.updatedAt)) {
-      return '当前报告缺少安全的 updatedAt 并发基线。';
-    }
+    const eligibilityBlockReason = getClinicalReportLockEligibilityBlockReason(
+      report,
+      visitStatus,
+    );
+    if (eligibilityBlockReason) return eligibilityBlockReason;
     if (reportWriteBlocked) return '当前存在其他访视或报告写操作，请等待完成。';
     if (state.writeProhibited) return '报告审计结构当前禁止继续安全写入。';
     if (state.activeMode !== 'idle' || hasLocalDraft) {
@@ -205,7 +244,7 @@ export function useClinicalReportLockAction({
     ) {
       setLockDraft((current) =>
         current && !current.stale
-          ? { ...current, confirmed: false, stale: true }
+          ? markClinicalReportLockDraftStale(current)
           : current,
       );
     }
@@ -277,7 +316,7 @@ export function useClinicalReportLockAction({
         if (shouldRefreshClinicalReportAfterError(error)) {
           setLockDraft((current) =>
             current
-              ? { ...current, confirmed: false, stale: true }
+              ? markClinicalReportLockDraftStale(current)
               : current,
           );
         }

@@ -135,6 +135,17 @@ function immutableReportContent(document: ClinicalReportDocument) {
   };
 }
 
+function lockPersistenceFacts(document: ClinicalReportDocument) {
+  return {
+    updatedAt: timestampValue(document, 'updatedAt'),
+    lockedAt: document.lockedAt?.toISOString() ?? null,
+    lockedBy: document.lockedBy?.toString() ?? null,
+    auditLogRefs: document.auditLogRefs.map((value) => value.toString()),
+    metadata: JSON.stringify(document.metadata ?? null),
+    immutableContent: JSON.stringify(immutableReportContent(document)),
+  };
+}
+
 describe('clinical report lock API (e2e)', () => {
   let app: INestApplication;
   let connection: Connection;
@@ -859,6 +870,21 @@ describe('clinical report lock API (e2e)', () => {
     expect(serialized).not.toContain('metadata');
     expect(locked).not.toHaveProperty('lockedBy');
 
+    const storedAfterFirst = await currentReport(fixture);
+    const firstPersistence = lockPersistenceFacts(storedAfterFirst);
+    expect(firstPersistence.updatedAt).not.toBe(expectedUpdatedAt);
+    expect(firstPersistence.auditLogRefs).toEqual([]);
+    expect(
+      record(storedAfterFirst.metadata?.a22Lock, 'first A22 audit'),
+    ).toEqual(
+      expect.objectContaining({
+        lockId: receipt.lockId,
+        lockNote: 'A22 de-identified lock note',
+        lockedBy: doctorId.toString(),
+        lockedByRole: 'doctor',
+      }),
+    );
+
     const repeated = record(
       body(
         await doctorAgent
@@ -880,6 +906,7 @@ describe('clinical report lock API (e2e)', () => {
     expect(latestAfter.lock).toEqual(locked.lock);
 
     const stored = await currentReport(fixture);
+    expect(lockPersistenceFacts(stored)).toEqual(firstPersistence);
     expect(stored.status).toBe('confirmed');
     expect(stored.qualityStatus).toBe('passed');
     expect(stored.lockedAt).toBeInstanceOf(Date);
@@ -894,6 +921,92 @@ describe('clinical report lock API (e2e)', () => {
       }),
     );
     expect(stored.metadata?.futureNamespace).toEqual({ preserved: true });
+  });
+
+  it('rejects incomplete lock audit without guessing or writing', async () => {
+    const fixture = await createFixture('AUDIT-UNAVAILABLE');
+    const internalMarker = 'A22-INTERNAL-AUDIT-MARKER';
+    const setup = await reportModel.updateOne(
+      { _id: fixture.reportId },
+      {
+        $set: {
+          lockedAt: new Date('2026-07-31T10:00:00.000Z'),
+          lockedBy: null,
+          'metadata.futureNamespace': {
+            preserved: true,
+            internalMarker,
+          },
+        },
+      },
+    );
+    expect(setup.matchedCount).toBe(1);
+    expect(setup.modifiedCount).toBe(1);
+
+    const before = await currentReport(fixture);
+    const beforeFacts = lockPersistenceFacts(before);
+    expect(before.lockedAt).toBeInstanceOf(Date);
+    expect(before.lockedBy).toBeNull();
+    expect(before.metadata?.a22Lock).toBeUndefined();
+    expect(before.auditLogRefs).toHaveLength(0);
+
+    const errorBody = body(
+      await doctorAgent
+        .post(lockPath(fixture))
+        .send({
+          confirm: true,
+          lockNote: 'A22 must not write incomplete audit',
+          expectedUpdatedAt: timestampValue(before, 'updatedAt'),
+        })
+        .expect(409),
+    );
+    expect(errorBody.code).toBe('CLINICAL_REPORT_LOCK_AUDIT_UNAVAILABLE');
+    expect(errorBody).not.toHaveProperty('details');
+    const serialized = JSON.stringify(errorBody);
+    expect(serialized).not.toContain(internalMarker);
+    expect(serialized).not.toContain('futureNamespace');
+    expect(serialized).not.toContain('lockedBy');
+    expect(serialized).not.toContain('metadata');
+
+    const after = await currentReport(fixture);
+    expect(lockPersistenceFacts(after)).toEqual(beforeFacts);
+  });
+
+  it('rejects unsupported metadata without exposing it or writing', async () => {
+    const fixture = await createFixture('METADATA-UNSUPPORTED');
+    const internalMarker = 'A22-INTERNAL-METADATA-MARKER';
+    const setup = await reportModel.updateOne(
+      { _id: fixture.reportId },
+      { $set: { metadata: [{ internalMarker }] } },
+    );
+    expect(setup.matchedCount).toBe(1);
+    expect(setup.modifiedCount).toBe(1);
+
+    const before = await currentReport(fixture);
+    const beforeFacts = lockPersistenceFacts(before);
+    expect(before.lockedAt).toBeNull();
+    expect(before.lockedBy).toBeNull();
+    expect(before.auditLogRefs).toHaveLength(0);
+
+    const errorBody = body(
+      await doctorAgent
+        .post(lockPath(fixture))
+        .send({
+          confirm: true,
+          lockNote: 'A22 must not write unsupported metadata',
+          expectedUpdatedAt: timestampValue(before, 'updatedAt'),
+        })
+        .expect(409),
+    );
+    expect(errorBody.code).toBe('CLINICAL_REPORT_METADATA_UNSUPPORTED');
+    expect(errorBody).not.toHaveProperty('details');
+    const serialized = JSON.stringify(errorBody);
+    expect(serialized).not.toContain(internalMarker);
+    expect(serialized).not.toContain('internalMarker');
+    expect(serialized).not.toContain('futureNamespace');
+    expect(serialized).not.toContain('"metadata"');
+
+    const after = await currentReport(fixture);
+    expect(lockPersistenceFacts(after)).toEqual(beforeFacts);
   });
 
   it('returns stable state, ownership and optimistic concurrency errors', async () => {
