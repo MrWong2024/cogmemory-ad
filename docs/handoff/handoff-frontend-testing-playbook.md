@@ -120,11 +120,13 @@ Codex 任务规模取决于业务风险是否一致、证据层是否相近、�
 4. 确认登录响应成功，并在该 BrowserContext 中产生预期的 HttpOnly Session Cookie；登录接口成功本身不能证明认证链通过。
 5. 保持同一 BrowserContext 调用 `GET /auth/me`，确认 Cookie 被发送且已认证读取成功。
 
-任一步失败都不得进入业务 Profile。origin、CORS、Cookie host 或公开构建输入不一致属于环境编排缺陷；受影响的业务结果无效，不得记为产品失败，也不得通过重试业务请求或延长超时绕过 preflight。
+任一步失败都不得进入业务 Profile；受影响的本轮业务结果无效，也不得通过重试业务请求或延长超时绕过 preflight。origin、CORS、Cookie host 或公开构建输入不一致时，先排查环境与配置链：本地 `.env.local`、启动 URL 或未重新 build 导致的不一致属于环境编排缺陷。完成正确声明、重新 production build 和 canonical 规范启动后，若构建产物或实际请求仍违反已确认的 Origin 合同，必须按证据重新分类为产品代码或受版本管理配置缺陷；不得把所有 Origin 类问题永久豁免为非产品缺陷。
 
 ## 7. Audit ID 关闭规则
 
 状态只允许 `pending`、`passed`、`failed`、`blocked`、`not_executed`、`obsolete`。一个 Audit ID 只有在主证据、必要支持证据、必需数据库终态、资源 cleanup 全部实际通过，且没有测试资产、环境或未执行项阻断时才能关闭。
+
+`unknown` 仅是命令已启动但没有可靠摘要或证据不足时的临时测试结论，不属于允许的 Audit ID 状态，也不得写入 Audit 清单。相关 Audit ID 不得据此关闭、通过或失败；尚未形成有效证据时通常保持原有 `pending`。只有存在符合既有定义的明确且持续外部环境、工具或权限阻断时才使用 `blocked`；目标测试因命令、选择器、权限或进程未启动而没有实际执行时，按既有规则使用 `not_executed`。
 
 不得根据 Playwright exit code、测试代码已存在、历史失败轮局部观察或 cleanup 成功批量关闭；`blocked` 和 `not_executed` 不得写成 `passed`。每个 Profile 独立关闭自己拥有的 ID。
 
