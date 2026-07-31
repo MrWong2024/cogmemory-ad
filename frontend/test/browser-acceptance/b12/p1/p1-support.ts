@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { Page } from '@playwright/test';
+import type { Page, Response } from '@playwright/test';
 
 import {
   assertDatabaseBoundaryIsClear,
@@ -7,11 +7,15 @@ import {
 } from '../../support/acceptance-env';
 import { expect, test } from '../../support/acceptance-test';
 import { NetworkLedger } from '../../support/network-ledger';
+import type { NetworkLedgerSummary } from '../../support/network-ledger';
 import type {
   AcceptanceRole,
   RoleContextFactory,
 } from '../../support/role-context-factory';
 import { ConsoleAudit } from '../../support/runtime-audit';
+import type { ConsoleAuditSummary } from '../../support/runtime-audit';
+
+const SESSION_COOKIE_NAME = 'cogmemory_ad_session';
 
 export type B12P1Profile = 'a' | 'b' | 'c' | 'd' | 'e' | 'f' | 'g';
 
@@ -80,6 +84,43 @@ function isReportBusinessWrite(
 ): boolean {
   if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) return false;
   return !['/auth/login', '/auth/logout'].includes(safeUrlPattern);
+}
+
+export type B12P1BusinessPhaseSummary = {
+  consoleErrorCount: number;
+  pageErrorCount: number;
+  failedRequestCount: number;
+  reportBusinessWriteCount: number;
+  lockPostCount: number;
+};
+
+export function summarizeB12P1BusinessPhase(
+  consoleSummary: ConsoleAuditSummary,
+  networkSummary: NetworkLedgerSummary,
+): B12P1BusinessPhaseSummary {
+  return {
+    consoleErrorCount: consoleSummary.errorCount,
+    pageErrorCount: consoleSummary.pageErrorCount,
+    failedRequestCount: networkSummary.failedRequestCount,
+    reportBusinessWriteCount: networkSummary.entries.filter(
+      ({ method, safeUrlPattern }) =>
+        isReportBusinessWrite(method, safeUrlPattern),
+    ).length,
+    lockPostCount: networkSummary.entries.filter(
+      ({ method, safeUrlPattern }) =>
+        method === 'POST' &&
+        safeUrlPattern.endsWith('/clinical-reports/<id>/lock'),
+    ).length,
+  };
+}
+
+function throwCollectedFailures(
+  failures: unknown[],
+  message: string,
+): void {
+  if (failures.length === 0) return;
+  if (failures.length === 1) throw failures[0];
+  throw new AggregateError(failures, message);
 }
 
 export class B12P1BrowserSession {
@@ -192,57 +233,136 @@ export class B12P1BrowserSession {
   async finish(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
-    let logoutSucceeded = false;
+
+    const failures: unknown[] = [];
+    const consoleSummary = this.consoleAudit.stop();
+    const networkSummary = this.ledger.summary();
+
     try {
-      if (
-        !this.page.isClosed() &&
-        new URL(this.page.url()).pathname !== '/login'
-      ) {
-        const logout = this.page.getByRole('button', {
-          name: '退出登录',
-          exact: true,
-        });
-        if (await logout.isVisible()) {
-          const responsePromise = this.page.waitForResponse(
-            (response) =>
-              response.request().method() === 'POST' &&
-              new URL(response.url()).pathname === '/auth/logout',
-          );
-          await logout.click();
-          const response = await responsePromise;
-          expect(response.status()).toBeGreaterThanOrEqual(200);
-          expect(response.status()).toBeLessThan(300);
-          await this.page.waitForURL(/\/login$/);
-          logoutSucceeded = true;
-        }
-      }
-      expect(logoutSucceeded).toBe(true);
-      const consoleSummary = this.consoleAudit.stop();
-      const networkSummary = await this.ledger.detach();
-      expect({
-        consoleErrorCount: consoleSummary.errorCount,
-        pageErrorCount: consoleSummary.pageErrorCount,
-        failedRequestCount: networkSummary.failedRequestCount,
-      }).toEqual({
+      await this.ledger.detach();
+    } catch (error: unknown) {
+      failures.push(error);
+    }
+
+    const businessSummary = summarizeB12P1BusinessPhase(
+      consoleSummary,
+      networkSummary,
+    );
+    try {
+      expect(businessSummary).toEqual({
         consoleErrorCount: 0,
         pageErrorCount: 0,
         failedRequestCount: 0,
+        reportBusinessWriteCount: 0,
+        lockPostCount: 0,
+      });
+    } catch (error: unknown) {
+      failures.push(error);
+    }
+
+    try {
+      await this.performLogout();
+    } catch (error: unknown) {
+      failures.push(error);
+    }
+
+    try {
+      await this.closeBrowserContext();
+    } catch (error: unknown) {
+      failures.push(error);
+    }
+
+    throwCollectedFailures(
+      failures,
+      'B12 P1 business audit, logout, or BrowserContext cleanup failed',
+    );
+  }
+
+  private async performLogout(): Promise<void> {
+    const logoutLedger = new NetworkLedger();
+    const failures: unknown[] = [];
+    let ledgerAttached = false;
+    let logoutResponse: Response | null = null;
+
+    try {
+      await logoutLedger.attach(this.page);
+      ledgerAttached = true;
+    } catch (error: unknown) {
+      failures.push(error);
+    }
+
+    try {
+      expect(this.page.isClosed()).toBe(false);
+      expect(new URL(this.page.url()).pathname).not.toBe('/login');
+      const logout = this.page.getByRole('button', {
+        name: '退出登录',
+        exact: true,
+      });
+      await expect(logout).toBeVisible();
+      [logoutResponse] = await Promise.all([
+        this.page.waitForResponse(
+          (response) =>
+            response.request().method() === 'POST' &&
+            new URL(response.url()).pathname === '/auth/logout',
+        ),
+        logout.click(),
+      ]);
+      expect(logoutResponse.status()).toBeGreaterThanOrEqual(200);
+      expect(logoutResponse.status()).toBeLessThan(300);
+      await this.page.waitForURL((url) => url.pathname === '/login');
+      await expect(
+        this.page.getByLabel('账号', { exact: true }),
+      ).toBeVisible();
+      await expect(
+        this.page.getByLabel('密码', { exact: true }),
+      ).toBeVisible();
+      await expect(
+        this.page.getByRole('button', {
+          name: '登录系统',
+          exact: true,
+        }),
+      ).toBeVisible();
+      await expect(logout).toHaveCount(0);
+      const sessionCookieCount = (await this.page.context().cookies()).filter(
+        ({ name }) => name === SESSION_COOKIE_NAME,
+      ).length;
+      expect(sessionCookieCount).toBe(0);
+    } catch (error: unknown) {
+      failures.push(error);
+    }
+
+    const logoutNetworkSummary = logoutLedger.summary();
+    if (ledgerAttached) {
+      try {
+        await logoutLedger.detach();
+      } catch (error: unknown) {
+        failures.push(error);
+      }
+    }
+
+    try {
+      const logoutRequests = logoutNetworkSummary.entries.filter(
+        ({ method, safeUrlPattern }) =>
+          method === 'POST' && safeUrlPattern === '/auth/logout',
+      );
+      expect(logoutRequests).toHaveLength(1);
+      expect(logoutRequests[0]).toMatchObject({
+        failureReason: null,
+        status: logoutResponse?.status() ?? null,
       });
       expect(
-        networkSummary.entries.filter(({ method, safeUrlPattern }) =>
+        logoutNetworkSummary.entries.filter(({ method, safeUrlPattern }) =>
           isReportBusinessWrite(method, safeUrlPattern),
         ),
       ).toHaveLength(0);
-      expect(
-        networkSummary.entries.filter(
-          ({ method, safeUrlPattern }) =>
-            method === 'POST' &&
-            safeUrlPattern.endsWith('/clinical-reports/<id>/lock'),
-        ),
-      ).toHaveLength(0);
-    } finally {
-      await this.closeBrowserContext();
+    } catch (error: unknown) {
+      failures.push(error);
     }
+
+    throwCollectedFailures(
+      failures,
+      'B12 P1 logout lifecycle or listener cleanup failed',
+    );
   }
 }
 
@@ -256,9 +376,24 @@ export async function withB12P1Session(
   body: (session: B12P1BrowserSession) => Promise<void>,
 ): Promise<void> {
   const session = await B12P1BrowserSession.login(input);
+  let bodyFailure: unknown;
   try {
     await body(session);
-  } finally {
-    await session.finish();
+  } catch (error: unknown) {
+    bodyFailure = error;
   }
+
+  try {
+    await session.finish();
+  } catch (finishFailure: unknown) {
+    if (bodyFailure !== undefined) {
+      throw new AggregateError(
+        [bodyFailure, finishFailure],
+        'B12 P1 scenario failed and session cleanup also reported a failure',
+      );
+    }
+    throw finishFailure;
+  }
+
+  if (bodyFailure !== undefined) throw bodyFailure;
 }

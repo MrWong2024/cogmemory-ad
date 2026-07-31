@@ -19,9 +19,37 @@
 
 B12-P0-A/B/C 已完成，`B12-P0-contract-state` 已完成：P0 拥有的 B12-09、B12-31、B12-32、B12-36、B12-37、B12-38、B12-84 均已通过非 Browser 证据闭环。
 
-当前仍处于 B12-P1：后端 unit/HTTP E2E、B12-69 pure/static、七个 Profile 的 fixture prepared verifier 与精确 cleanup 已通过；A 的业务断言与 post verifier 已执行，但公共 Browser support 在 logout 边界记录 Console error；B 在 doctor 场景复现同一 support 缺陷，admin 未执行。按连续两场景止损门禁停止 Browser 方案，C～G 未进入正式 Browser。B12-17、B12-19 另因 public mapper 会清洗对应不一致 lock 摘要而 `blocked`，不得用 mock 替代真实 read contract。
+当前仍处于 B12-P1。B12-P1-R1 已将业务阶段 Console / Network audit 与 logout 生命周期分离，未增加 console、network、failed request 或 logout 忽略规则；frontend 静态门禁、B12-69 与 phase-boundary pure/static 证据、后端定向 unit/HTTP E2E 均通过。修正后 Profile A 的五项页面主断言、真实 logout、Session 撤销、post verifier、两次 cleanup 与 residual=0 均完成，但 logout 前冻结的业务阶段仍记录 `consoleErrorCount=1`、`failedRequestCount=6`；业务写请求与 lock POST 均为 0。该结果属于 Browser support / 测试资产质量门禁失败，不足以认定产品缺陷，也不能关闭 Audit ID。按 A 修正轮失败止损，B～G 本轮未执行。
 
-下一阶段仍是 B12-P1 support 边界修正后的受影响 Profile 定向复验；P1 完整收口前不得进入 B12-P2，也不再生成 P0-D、P0-E 或单项 P0 任务。
+因此 B12 汇总保持 `passed=7`、`pending=56`、`failed=0`、`blocked=8`、`not_executed=17`。B12-17、B12-19 仍因 public mapper 会清洗对应不一致 lock 摘要而 `blocked`，不得用 mock 替代真实 read contract。下一步必须先在新的明确任务中处理 Profile A 业务阶段多次导航产生的 audit 事实；P1 完整收口前不得进入 B12-P2，也不得把 B12-17、B12-19 写成通过。
+
+### 1.1 B12-P1-R1 的 23 个目标 Audit ID 实际结果
+
+| Audit ID | 本轮实际证据 | 最终状态 |
+|---|---|---|
+| B12-01 | A 页面主断言通过；业务阶段 audit 门禁失败 | `blocked` |
+| B12-02 | A 页面主断言通过；业务阶段 audit 门禁失败 | `blocked` |
+| B12-03 | A 页面主断言通过；业务阶段 audit 门禁失败 | `blocked` |
+| B12-04 | A 失败触发止损，本轮未执行 B | `blocked` |
+| B12-05 | A 失败触发止损，本轮未执行 B | `not_executed` |
+| B12-06 | A 失败触发止损，本轮未执行 C | `not_executed` |
+| B12-07 | A 失败触发止损，本轮未执行 C | `not_executed` |
+| B12-08 | A 失败触发止损，本轮未执行 C | `not_executed` |
+| B12-10 | A 页面主断言通过；业务阶段 audit 门禁失败 | `blocked` |
+| B12-11 | A 页面主断言通过；业务阶段 audit 门禁失败 | `blocked` |
+| B12-12 | A 失败触发止损，本轮未执行 D | `not_executed` |
+| B12-13 | A 失败触发止损，本轮未执行 D | `not_executed` |
+| B12-14 | A 失败触发止损，本轮未执行 D | `not_executed` |
+| B12-15 | A 失败触发止损，本轮未执行 E | `not_executed` |
+| B12-16 | A 失败触发止损，本轮未执行 F | `not_executed` |
+| B12-18 | A 失败触发止损，本轮未执行 F | `not_executed` |
+| B12-64 | A 失败触发止损，本轮未执行 G | `not_executed` |
+| B12-65 | A 失败触发止损，本轮未执行 G | `not_executed` |
+| B12-66 | A 失败触发止损，本轮未执行 G | `not_executed` |
+| B12-67 | A 失败触发止损，本轮未执行 G | `not_executed` |
+| B12-68 | A 失败触发止损，本轮未执行 G | `not_executed` |
+| B12-69 | pure/static 支持证据通过；A 失败触发止损，本轮未执行 G Browser | `not_executed` |
+| B12-70 | mapper unit 支持证据通过；A 失败触发止损，本轮未执行 G | `not_executed` |
 
 B12-09、B12-38不再重复要求Browser支持；页面状态、锁定回执与字段语义仍分别由B12-10、B12-11、B12-16、B12-39、B12-44～B12-48承担。
 

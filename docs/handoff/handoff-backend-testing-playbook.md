@@ -17,7 +17,7 @@
 
 roadmap 继续维护产品范围和工作包状态；testing playbook 治理不得自动改变 roadmap。
 
-当前状态：ClinicalReport 锁定请求字段白名单、服务端 `updatedAt` 来源、stale 冲突无锁定副作用，以及不新增 locked status 与 public lock summary 均已由分层证据闭环；B12-P0 后端合同已完成。B12-P1 本轮后端 unit、`cogmemory_ad_test` HTTP E2E、七个 Profile 在 `cogmemory_ad_browser_test` 的 prepared verifier、两次精确 cleanup 与 residual=0 均通过。A/B 正式 Browser 暴露同一 logout 边界 support 缺陷并触发止损，C～G 未进入 Browser；B12-17、B12-19 的不一致组合会被当前 public mapper 清洗为 `lock=null`，真实 Browser read contract 无法表达。
+当前状态：ClinicalReport 锁定请求字段白名单、服务端 `updatedAt` 来源、stale 冲突无锁定副作用，以及不新增 locked status 与 public lock summary 均已由分层证据闭环；B12-P0 后端合同已完成。B12-P1-R1 的 lock workflow / public mapper 定向 unit 为 25/25，通过的 `cogmemory_ad_test` HTTP E2E 为 4 个目标用例；实际连接数据库名门禁、测试 cleanup 与连接关闭均通过。logout phase boundary 已在局部 Browser support 中分离，未修改后端产品或 public contract。Profile A 在 `cogmemory_ad_browser_test` 的 prepare、prepared verifier、真实 logout、post verifier、两次 cleanup 与 residual=0 均通过，且 Session 已撤销、业务数据与受保护 roots 未变化；但 logout 前业务阶段 audit 仍记录 1 个 console error 和 6 个 failed request，因此 A 未闭环并触发止损，B～G 本轮未执行。B12-17、B12-19 的不一致组合仍会被当前 public mapper 清洗为 `lock=null`，真实 Browser read contract 无法表达。
 
 ## 2. 数据库用途和隔离
 
@@ -126,7 +126,7 @@ lint、typecheck、build、unit 和 E2E 必须分别报告，互不替代。删�
 
 ## 10. B12～B15 当前待验范围
 
-- B12：当前 `passed=7`、`pending=56`、`failed=0`、`blocked=8`、`not_executed=17`；P0 已完成，P1 尚未收口。下一待验阶段仍是 P1 受影响 Profile 的定向复验，不得提前进入 P2。P6 最终审核 B12 测试数据来源、执行 lint/typecheck/build 并承担一条不新增 Audit ID 的轻量集成冒烟。
+- B12：当前 `passed=7`、`pending=56`、`failed=0`、`blocked=8`、`not_executed=17`；P0 已完成，P1 尚未收口。B12-P1-R1 已完成 logout phase boundary 修正，但 Profile A 的业务阶段 audit 门禁仍失败并触发止损；下一步须先在新的明确任务中处理该业务阶段 audit 事实，不得提前进入 P2。B12-17、B12-19 的 public read contract 缺口保持不变。P6 最终审核 B12 测试数据来源、执行 lint/typecheck/build 并承担一条不新增 Audit ID 的轻量集成冒烟。
 - B13：116 项稳定验收意图和顺序不变，默认采用证据分层、微型 Profile、2～4 个 canary、独立关闭和最小 fixture。
 - B14：115 项稳定验收意图和顺序不变；B14.1 行为等价范围继续保留。
 - B15：10 组稳定验收意图和顺序不变，采用相同新方案。

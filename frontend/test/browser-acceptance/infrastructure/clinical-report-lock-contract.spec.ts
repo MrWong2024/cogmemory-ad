@@ -23,6 +23,7 @@ import type {
   ClinicalReport,
   LockClinicalReportRequest,
 } from '@/src/features/assessments/types/clinical-report';
+import { summarizeB12P1BusinessPhase } from '../b12/p1/p1-support';
 
 const PATIENT_ID = '507f1f77bcf86cd799439011';
 const VISIT_ID = '507f1f77bcf86cd799439012';
@@ -310,4 +311,76 @@ test('B12-69: derives locked read-only semantics from lockedAt and never from is
   expect(isClinicalReportLocked(unlockedNonFinal)).toBe(false);
   expect(isClinicalReportLocked(lockedFinal)).toBe(true);
   expect(isClinicalReportLocked(lockedNonFinal)).toBe(true);
+});
+
+test('freezes the B12 P1 business audit before the independent logout lifecycle', () => {
+  const businessSummary = summarizeB12P1BusinessPhase(
+    {
+      warningCount: 0,
+      errorCount: 1,
+      pageErrorCount: 1,
+      categories: [{ category: 'network', count: 2 }],
+    },
+    {
+      requestCount: 3,
+      failedRequestCount: 1,
+      entries: [
+        {
+          method: 'GET',
+          status: null,
+          resourceType: 'fetch',
+          initiator: 'script',
+          initiatorSource: 'playwright',
+          failureReason: 'aborted',
+          safeUrlPattern: '/patients/<id>/visits/<id>',
+          bodyKeys: [],
+        },
+        {
+          method: 'POST',
+          status: 200,
+          resourceType: 'fetch',
+          initiator: 'script',
+          initiatorSource: 'playwright',
+          failureReason: null,
+          safeUrlPattern: '/auth/logout',
+          bodyKeys: [],
+        },
+        {
+          method: 'POST',
+          status: 200,
+          resourceType: 'fetch',
+          initiator: 'script',
+          initiatorSource: 'playwright',
+          failureReason: null,
+          safeUrlPattern:
+            '/patients/<id>/visits/<id>/clinical-reports/<id>/lock',
+          bodyKeys: ['confirm', 'expectedUpdatedAt', 'lockNote'],
+        },
+      ],
+    },
+  );
+
+  expect(businessSummary).toEqual({
+    consoleErrorCount: 1,
+    pageErrorCount: 1,
+    failedRequestCount: 1,
+    reportBusinessWriteCount: 1,
+    lockPostCount: 1,
+  });
+
+  const supportSource = readFileSync(
+    resolve('test/browser-acceptance/b12/p1/p1-support.ts'),
+    'utf8',
+  );
+  const finishSource = supportSource.slice(
+    supportSource.indexOf('async finish(): Promise<void>'),
+    supportSource.indexOf('private async performLogout(): Promise<void>'),
+  );
+  expect(finishSource.indexOf('this.consoleAudit.stop()')).toBeGreaterThan(-1);
+  expect(finishSource.indexOf('await this.ledger.detach()')).toBeGreaterThan(
+    finishSource.indexOf('this.consoleAudit.stop()'),
+  );
+  expect(finishSource.indexOf('await this.performLogout()')).toBeGreaterThan(
+    finishSource.indexOf('await this.ledger.detach()'),
+  );
 });
