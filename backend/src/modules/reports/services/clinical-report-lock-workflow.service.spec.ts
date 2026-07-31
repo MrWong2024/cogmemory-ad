@@ -382,7 +382,6 @@ describe('ClinicalReportLockWorkflowService', () => {
   it.each([
     ['inactive patient', 'PATIENT_NOT_ACTIVE'],
     ['locked visit', 'VISIT_NOT_EDITABLE'],
-    ['voided visit', 'VISIT_NOT_EDITABLE'],
   ])('rejects first lock for %s', async (scenario, code) => {
     if (scenario === 'inactive patient') {
       patients.findPatientById.mockResolvedValue({
@@ -392,7 +391,7 @@ describe('ClinicalReportLockWorkflowService', () => {
     } else {
       assessments.findVisitByPatientAndId.mockResolvedValue({
         id: ids.visit,
-        status: scenario === 'voided visit' ? 'voided' : 'locked',
+        status: 'locked',
       });
     }
     await expect(

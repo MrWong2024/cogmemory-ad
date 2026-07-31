@@ -4,7 +4,7 @@
 
 本文档是跨层测试设计、Browser 验收策略、稳定 Audit 清单和当前验证状态的权威来源。它只维护当前有效规则与待验合同；roadmap 继续维护产品范围和工作包状态，Git 历史负责旧命令、旧结果与失败过程。
 
-> B12 原“大型专属 fixture + 全量原子 Browser profile + execution runner + Owner journal + profile aggregator”方案，因测试基础设施复杂度、执行稳定性及投入产出严重失衡而退役；该方案未形成能够关闭 B12 Audit ID 的最终完整证据，稳定验收点保留并按新方案重新验收。
+> B12-P1 eligibility-readonly、R1、A3、A3-R2 已退役。约70小时投入后，专属fixture/support复杂度超过业务；未新增关闭Audit ID，代码全删。继续前须重审ID的业务必要性、可表达性、重复性和证据层；未获新设计及用户确认，不重建B12专属fixture/support。
 
 | 范围 | 当前状态 |
 |---|---|
@@ -14,46 +14,12 @@
 | Batch B / B4–B6 | 桌面范围已完成，Batch E 仍保留 8 项 |
 | Batch C / B7–B10 | 已完成；B7、B8、B9、B10 各自既有最终处置不变 |
 | Batch D / B11 | 70 项已完成，状态不变 |
-| Batch D / B12 | 未完成；`passed=7`、`pending=56`、`failed=0`、`blocked=8`、`not_executed=17`；P1 尚未收口 |
+| Batch D / B12 | 未完成；`passed=7`、`pending=81`、`failed=0`、`blocked=0`、`not_executed=0` |
 | Batch D / B13–B15（含 B14.1） | 稳定验收点和顺序保留，尚未执行 |
 
 B12-P0-A/B/C 已完成，`B12-P0-contract-state` 已完成：P0 拥有的 B12-09、B12-31、B12-32、B12-36、B12-37、B12-38、B12-84 均已通过非 Browser 证据闭环。
 
-当前仍处于 B12-P1。B12-P1-R1 已将业务阶段 Console / Network audit 与 logout 生命周期分离，未增加 console、network、failed request 或 logout 忽略规则；frontend 静态门禁、B12-69 与 phase-boundary pure/static 证据、后端定向 unit/HTTP E2E 均通过。修正后 Profile A 的五项页面主断言、真实 logout、Session 撤销、post verifier、两次 cleanup 与 residual=0 均完成，但 logout 前冻结的业务阶段仍记录 `consoleErrorCount=1`、`failedRequestCount=6`；业务写请求与 lock POST 均为 0。该结果属于 Browser support / 测试资产质量门禁失败，不足以认定产品缺陷，也不能关闭 Audit ID。按 A 修正轮失败止损，B～G 本轮未执行。
-
-B12-P1-A3 随后把正式 Browser 缩小为单个 doctor Context、一次登录、一次直接进入 `confirmed-unlocked`、一次真实 logout。B12-03、B12-10、B12-11 的三项页面断言均通过，logout、Session 撤销、post-browser verifier、两次 cleanup 和 `residual=0` 也均通过，报告业务写请求与 lock POST 均为 0；但业务审计仍为 `consoleErrorCount=1`、`pageErrorCount=0`、`failedRequestCount=2`，因此本轮未关闭任何 Audit ID。安全化诊断为 Console `network=1`；Network 指纹分别为 `GET /patients/<id>`、`status=200`、`fetch/script`、`initiatorSource=cdp`、`aborted`、`count=1`，同路径同字段但 `initiatorSource=playwright`、`count=1`，以及 `GET /auth/me`、`status=401`、`fetch/script/playwright`、`failureReason=null`、`count=1`。两条 aborted 均不是 navigation initiator，不能归为与页面切换严格对应的测试支持边界候选；HTTP 401 与关联 network Console 目前只构成网络、服务或产品缺陷候选事实，不作最终产品缺陷结论。
-
-B12-P1-A3-R2 已在 B12-P1 局部 support 中建立 `auth_bootstrap`、`scenario_load`、`stable_evidence`、`logout` 四阶段门禁，并以一套连续 lifecycle ledger 覆盖登录至稳定证据冻结之间的报告业务写入。唯一一次正式 Canary 在 `auth_bootstrap` 止损：`GET /auth/me -> 401` 共 3 次，至少一次发生在唯一成功的 `POST /auth/login` 之后；安全 Console 摘要为 `errorCount=3`、`pageErrorCount=0`、category `network=3`，报告业务写请求与 lock POST 均为 0。由于加载阶段未开始，本轮没有 `scenario_load_success_response_aborted` 诊断，也未执行三个页面主断言或 `stable_evidence`；真实 logout 与 Session 撤销未取得通过证据，post-browser verifier 以安全 Session 生命周期错误失败。两次精确 cleanup 均通过，最终 `residual=0`。本轮不关闭 B12-03、B12-10、B12-11，且未重跑 Browser、未执行其他 Profile。
-
-因此 B12 汇总保持 `passed=7`、`pending=56`、`failed=0`、`blocked=8`、`not_executed=17`。B12-17、B12-19 仍因 public mapper 会清洗对应不一致 lock 摘要而 `blocked`，不得用 mock 替代真实 read contract。下一步必须在新的明确任务中定向处理 A3-R2 `auth_bootstrap` 的重复 401 与 Session 生命周期诊断；Canary 闭环前不执行 A1 draft、A2 pending，也不得进入 B12-P2。
-
-### 1.1 B12-P1-R1 的 23 个目标 Audit ID 实际结果
-
-| Audit ID | 本轮实际证据 | 最终状态 |
-|---|---|---|
-| B12-01 | A 页面主断言通过；业务阶段 audit 门禁失败 | `blocked` |
-| B12-02 | A 页面主断言通过；业务阶段 audit 门禁失败 | `blocked` |
-| B12-03 | A3 页面主断言曾通过；A3-R2 在 auth_bootstrap 止损，未进入页面复验 | `blocked` |
-| B12-04 | A 失败触发止损，本轮未执行 B | `blocked` |
-| B12-05 | A 失败触发止损，本轮未执行 B | `not_executed` |
-| B12-06 | A 失败触发止损，本轮未执行 C | `not_executed` |
-| B12-07 | A 失败触发止损，本轮未执行 C | `not_executed` |
-| B12-08 | A 失败触发止损，本轮未执行 C | `not_executed` |
-| B12-10 | A3 页面主断言曾通过；A3-R2 在 auth_bootstrap 止损，未进入页面复验 | `blocked` |
-| B12-11 | A3 页面主断言曾通过；A3-R2 在 auth_bootstrap 止损，未进入页面复验 | `blocked` |
-| B12-12 | A 失败触发止损，本轮未执行 D | `not_executed` |
-| B12-13 | A 失败触发止损，本轮未执行 D | `not_executed` |
-| B12-14 | A 失败触发止损，本轮未执行 D | `not_executed` |
-| B12-15 | A 失败触发止损，本轮未执行 E | `not_executed` |
-| B12-16 | A 失败触发止损，本轮未执行 F | `not_executed` |
-| B12-18 | A 失败触发止损，本轮未执行 F | `not_executed` |
-| B12-64 | A 失败触发止损，本轮未执行 G | `not_executed` |
-| B12-65 | A 失败触发止损，本轮未执行 G | `not_executed` |
-| B12-66 | A 失败触发止损，本轮未执行 G | `not_executed` |
-| B12-67 | A 失败触发止损，本轮未执行 G | `not_executed` |
-| B12-68 | A 失败触发止损，本轮未执行 G | `not_executed` |
-| B12-69 | pure/static 支持证据通过；A 失败触发止损，本轮未执行 G Browser | `not_executed` |
-| B12-70 | mapper unit 支持证据通过；A 失败触发止损，本轮未执行 G | `not_executed` |
+B12 当前汇总为 `passed=7`、`pending=81`、`failed=0`、`blocked=0`、`not_executed=0`。B12 已暂停；下一任务先审查验收清单本身，审查完成前不启动 P1、P2 或新的 Browser 实现。
 
 B12-09、B12-38不再重复要求Browser支持；页面状态、锁定回执与字段语义仍分别由B12-10、B12-11、B12-16、B12-39、B12-44～B12-48承担。
 
@@ -150,31 +116,31 @@ Codex 任务规模取决于业务风险是否一致、证据层是否相近、�
 7. 每轮分别报告业务测试、fixture 准备、测试资产修改和环境收口耗时。
 8. 测试基础设施复杂度明显超过被测业务时，立即停止扩张。
 
-## 9. B12 新方案验收清单
+## 9. B12 验收清单（暂停，待审查）
 
-下表是 B12 当前唯一紧凑验收清单。全部 88 项均待按新方案实际执行；“是（横切代表）”表示主证据不一定在 Browser，但关闭仍需要横切代表 Browser 支持证据。
+下表保留 B12 现有 88 项清单语义，本轮只复位状态，不增删、合并、降级或改写 Audit ID；“是（横切代表）”表示主证据不一定在 Browser，但关闭仍需要横切代表 Browser 支持证据。
 
 | Audit ID | 紧凑验收意图 | 主证据层 | 必要支持证据 | 必须 Browser | 微型 Profile | 当前状态 |
 |---|---|---|---|---|---|---|
-| B12-01 | draft 报告不显示锁定入口。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `blocked` |
-| B12-02 | pending_confirmation 不显示锁定入口。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `blocked` |
-| B12-03 | confirmed 未锁定报告显示锁定状态。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `blocked` |
-| B12-04 | confirmed 未锁定报告对 doctor 显示锁定入口。 | `browser_micro_profile` | `backend_http_e2e` | 是 | `B12-P1-eligibility-readonly` | `blocked` |
-| B12-05 | confirmed 未锁定报告对 admin 显示锁定入口。 | `browser_micro_profile` | `backend_http_e2e` | 是 | `B12-P1-eligibility-readonly` | `not_executed` |
-| B12-06 | nurse 不显示可用锁定入口。 | `browser_micro_profile` | `backend_http_e2e` | 是 | `B12-P1-eligibility-readonly` | `not_executed` |
-| B12-07 | research_assistant 不显示可用锁定入口。 | `browser_micro_profile` | `backend_http_e2e` | 是 | `B12-P1-eligibility-readonly` | `not_executed` |
-| B12-08 | system 不显示可用锁定入口。 | `browser_micro_profile` | `backend_http_e2e` | 是 | `B12-P1-eligibility-readonly` | `not_executed` |
+| B12-01 | draft 报告不显示锁定入口。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `pending` |
+| B12-02 | pending_confirmation 不显示锁定入口。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `pending` |
+| B12-03 | confirmed 未锁定报告显示锁定状态。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `pending` |
+| B12-04 | confirmed 未锁定报告对 doctor 显示锁定入口。 | `browser_micro_profile` | `backend_http_e2e` | 是 | `B12-P1-eligibility-readonly` | `pending` |
+| B12-05 | confirmed 未锁定报告对 admin 显示锁定入口。 | `browser_micro_profile` | `backend_http_e2e` | 是 | `B12-P1-eligibility-readonly` | `pending` |
+| B12-06 | nurse 不显示可用锁定入口。 | `browser_micro_profile` | `backend_http_e2e` | 是 | `B12-P1-eligibility-readonly` | `pending` |
+| B12-07 | research_assistant 不显示可用锁定入口。 | `browser_micro_profile` | `backend_http_e2e` | 是 | `B12-P1-eligibility-readonly` | `pending` |
+| B12-08 | system 不显示可用锁定入口。 | `browser_micro_profile` | `backend_http_e2e` | 是 | `B12-P1-eligibility-readonly` | `pending` |
 | B12-09 | 不新增 locked status。 | `backend_http_e2e` | `backend_unit + frontend_static_or_pure` | 否 | `B12-P0-contract-state` | `passed` |
-| B12-10 | 技术信息中的 status 仍为 confirmed。 | `browser_micro_profile` | `backend_http_e2e` | 是 | `B12-P1-eligibility-readonly` | `blocked` |
-| B12-11 | 页面独立显示“尚未锁定”。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `blocked` |
-| B12-12 | quality 非 passed 不开放锁定。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `not_executed` |
-| B12-13 | isFinal=false 不开放锁定。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `not_executed` |
-| B12-14 | confirmation 缺失不开放锁定。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `not_executed` |
-| B12-15 | Visit locked / voided 不开放首次锁定。 | `browser_micro_profile` | `backend_http_e2e + backend_unit` | 是 | `B12-P1-eligibility-readonly` | `not_executed` |
-| B12-16 | lockedAt 非空不显示再次锁定入口。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `not_executed` |
-| B12-17 | lock 非空但 lockedAt 为空显示一致性警告。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `blocked` |
-| B12-18 | lockedAt 非空但 lock 为空显示审计摘要不完整。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `not_executed` |
-| B12-19 | lock.lockedAt 与 top-level 不一致显示警告。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `blocked` |
+| B12-10 | 技术信息中的 status 仍为 confirmed。 | `browser_micro_profile` | `backend_http_e2e` | 是 | `B12-P1-eligibility-readonly` | `pending` |
+| B12-11 | 页面独立显示“尚未锁定”。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `pending` |
+| B12-12 | quality 非 passed 不开放锁定。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `pending` |
+| B12-13 | isFinal=false 不开放锁定。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `pending` |
+| B12-14 | confirmation 缺失不开放锁定。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `pending` |
+| B12-15 | Visit locked / voided 不开放首次锁定。 | `browser_micro_profile` | `backend_http_e2e + backend_unit` | 是 | `B12-P1-eligibility-readonly` | `pending` |
+| B12-16 | lockedAt 非空不显示再次锁定入口。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `pending` |
+| B12-17 | lock 非空但 lockedAt 为空显示一致性警告。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `pending` |
+| B12-18 | lockedAt 非空但 lock 为空显示审计摘要不完整。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `pending` |
+| B12-19 | lock.lockedAt 与 top-level 不一致显示警告。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `pending` |
 | B12-20 | 锁定前显示不可逆说明。 | `browser_micro_profile` | `frontend_static_or_pure` | 是 | `B12-P2-lock-success-idempotency` | `pending` |
 | B12-21 | 锁定前说明 status 仍为 confirmed。 | `browser_micro_profile` | `backend_http_e2e` | 是 | `B12-P2-lock-success-idempotency` | `pending` |
 | B12-22 | 锁定前说明只锁报告本身。 | `browser_micro_profile` | `database_verifier` | 是 | `B12-P2-lock-success-idempotency` | `pending` |
@@ -219,13 +185,13 @@ Codex 任务规模取决于业务风险是否一致、证据层是否相近、�
 | B12-61 | beforeunload 覆盖 lockNote。 | `browser_micro_profile` | `frontend_static_or_pure` | 是 | `B12-P4-error-client-boundary` | `pending` |
 | B12-62 | lockNote 不写 localStorage。 | `browser_micro_profile` | `frontend_static_or_pure` | 是 | `B12-P4-error-client-boundary` | `pending` |
 | B12-63 | 刷新后未提交 lockNote 消失。 | `browser_micro_profile` | — | 是 | `B12-P4-error-client-boundary` | `pending` |
-| B12-64 | 已锁定报告 edit 不可用。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `not_executed` |
-| B12-65 | 已锁定报告 submit 不可用。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `not_executed` |
-| B12-66 | 已锁定报告 confirm 不可用。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `not_executed` |
-| B12-67 | 已锁定报告 lock 不可用。 | `browser_micro_profile` | `backend_http_e2e` | 是 | `B12-P1-eligibility-readonly` | `not_executed` |
-| B12-68 | confirmed 不显示为 locked status。 | `browser_micro_profile` | `backend_http_e2e` | 是 | `B12-P1-eligibility-readonly` | `not_executed` |
-| B12-69 | isFinal 不作为锁定判断。 | `frontend_static_or_pure` | `browser_micro_profile` | 是（横切代表） | `B12-P1-eligibility-readonly` | `not_executed` |
-| B12-70 | lockedAt 不显示为归档时间。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `not_executed` |
+| B12-64 | 已锁定报告 edit 不可用。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `pending` |
+| B12-65 | 已锁定报告 submit 不可用。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `pending` |
+| B12-66 | 已锁定报告 confirm 不可用。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `pending` |
+| B12-67 | 已锁定报告 lock 不可用。 | `browser_micro_profile` | `backend_http_e2e` | 是 | `B12-P1-eligibility-readonly` | `pending` |
+| B12-68 | confirmed 不显示为 locked status。 | `browser_micro_profile` | `backend_http_e2e` | 是 | `B12-P1-eligibility-readonly` | `pending` |
+| B12-69 | isFinal 不作为锁定判断。 | `frontend_static_or_pure` | `browser_micro_profile` | 是（横切代表） | `B12-P1-eligibility-readonly` | `pending` |
+| B12-70 | lockedAt 不显示为归档时间。 | `browser_micro_profile` | `backend_unit` | 是 | `B12-P1-eligibility-readonly` | `pending` |
 | B12-71 | 页面不存在 unlock。 | `static_gate` | `browser_micro_profile` | 是（横切代表） | `B12-P5-presentation-accessibility` | `pending` |
 | B12-72 | 页面不存在 reopen / return / reject / withdraw。 | `static_gate` | `browser_micro_profile` | 是（横切代表） | `B12-P5-presentation-accessibility` | `pending` |
 | B12-73 | 页面不存在 signature。 | `static_gate` | `browser_micro_profile` | 是（横切代表） | `B12-P5-presentation-accessibility` | `pending` |
@@ -544,4 +510,4 @@ B16 / WP-02 已完成不能替代这组 B14.1 行为等价回归；只有 Batch 
 
 Browser 结果必须记录业务、fixture、测试资产修改和收口耗时，并清理本次创建的 Session、BrowserContext、Chromium、Node 进程、端口、runtime、test-results 与其他临时产物。数据库生命周期、最小 fixture、verifier 和 cleanup 的权威规则见 backend testing playbook。
 
-roadmap 业务工作包状态不因 playbook 治理或测试资产退役自动变化。B12 保持未完成；B11 及以前状态不变；B13～B15 不因本手册重写而改变产品范围或验收意图。
+roadmap 业务工作包状态不因 playbook 治理或测试资产退役自动变化。B12 保持未完成并暂停，下一任务先审查验收清单；审查完成前不启动 P1、P2 或新的 Browser 实现。B11 及以前状态不变；B13～B15 不因本手册重写而改变产品范围或验收意图。
