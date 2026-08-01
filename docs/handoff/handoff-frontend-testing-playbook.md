@@ -15,7 +15,8 @@
 | Batch C / B7–B10 | 已完成；B7、B8、B9、B10 各自既有最终处置不变 |
 | Batch D / B11 | 70 项已完成，状态不变 |
 | Batch D / B12 | 合同前置与防御证据保留；`B12-U01`～`B12-U03` 三个活动用户场景与最终通用门禁均已完成，状态 `passed=3`、`pending=0`、`failed=0`、`blocked=0`、`not_executed=0`；B12 Browser 验收闭环完成 |
-| Batch D / B13–B15（含 B14.1） | 候选断言和历史设计输入保留，尚未执行；正式设计活动清单前须先完成可达性、风险与证据复用审查 |
+| Batch D / B13 | 活动验收设计治理已完成；仅保留 `B13-U01`～`B13-U03` 3 个用户可达场景，状态 `passed=0`、`pending=3`、`failed=0`、`blocked=0`、`not_executed=0`，尚未执行；合同证据表包含本次只读核对确认的 `gap` |
+| Batch D / B14–B15（含 B14.1） | 候选断言和历史设计输入保留，尚未执行；正式设计活动清单前须先完成可达性、风险与证据复用审查 |
 
 B12 治理前有 17 个混合层级活动场景，汇总为 `passed=4`、`pending=13`；治理后只保留 `B12-U01`～`B12-U03` 三个 `ui_reachable` Browser 场景，初始汇总为 `passed=0`、`pending=3`。U01～U03 完成后最终汇总为 `passed=3`、`pending=0`。这不是历史证据倒退：原已通过事实和当前精确测试继续有效，但迁入不分配 B12 活动 ID 的合同前置证据、非阻断防御证据或最终通用门禁，不再计作活动 Browser 业务场景。
 
@@ -286,134 +287,168 @@ B12 活动用户场景最终汇总恰好为：`passed=3`、`pending=0`、`failed
 
 `B12-P4-final-gates` 已在 U03 最终代码态完成：U03 是本轮唯一轻量跨层 Browser 冒烟，定向 discovery 恰好发现 1 个文件、2 条测试，正式 Chromium headless 以 workers=1、retries=0 通过 2/2；测试数据全部脱敏，未新增依赖、package/锁文件变化或无合同路由，frontend 全量 lint、正式 typecheck 与 production build 均通过。B12 三个用户可达活动场景、合同前置证据和最终通用门禁均已完成，B12 Browser 验收闭环完成。
 
-## 10. B13～B15 后续设计规则
+## 10. B13 已治理；B14～B15 后续设计规则
 
-B13 的 116 项、B14 的 115 项、B14.1 行为范围和 B15 的 10 组属于未经治理的候选断言与历史设计输入，不是不可合并、不可迁移的永久活动 ID。它们的具体条目与产品语义在本次 B12 文档治理中保持原样；条目存在不表示必须执行，也不推定任何结果。
+B13 已按当前 A23 后端合同、当前前端实现、当前测试证据和现行分层治理规则独立重新生成，不再把原 116 个混合层级条目当作活动关闭对象。B14 的 115 项、B14.1 行为范围和 B15 的 10 组仍是未经治理的候选断言与历史设计输入；其正文和状态本次保持不变。
 
-正式设计各批次活动清单前，每个候选断言必须先标记 `ui_reachable`、`public_api_reachable`、`legitimate_concurrency`、`internal_corruption_only`、`manual_or_real_device`、`general_gate` 或 `duplicate_or_covered`。随后按真实触发路径、发布风险和已有证据完成场景化审查：合并重复或已有覆盖的断言，迁移通用门禁，退役失去阶段前提的断言，并为剩余风险分配最低充分证据层。审查必须保留核心业务风险、不可替代语义、旧条目映射和已有有效证据，但不得冻结历史数量或顺序。
+B13 采用“先生成当前最小活动设计，再反向迁移旧编号”的顺序。活动 ID 只分配给真实页面可达、风险不可互换、足以阻断发布且尚需 Browser 验证的用户场景；认证、权限、DTO、ownership、状态机、精确 scope、幂等、合法并发、pure/static、防御分支和通用门禁分别归入最低充分证据层。原逐条正文由 Git 历史追溯，当前文档只保留紧凑迁移表。
 
-场景化审查完成并经确认后，再划分微型 Profile：先完成非 Browser 证据；Browser 先执行 2～4 个 canary，canary 通过后才执行对应 Profile；每个 Profile 独立关闭活动场景；最后执行轻量集成冒烟与通用静态门禁。
+B13 后续必须先处理 `B13-P0-contract-evidence` 中已确认的最低充分证据缺口，再设计 Browser fixture、Stage、runner、manifest 或具体 spec；本次不设计这些测试资产，也不执行 P0～P4。B14～B15 正式设计时继续遵循第 2～8 节规则。
 
-不得再创建批次专属大型 fixture、独立 evidence matrix、批次专属 runner/journal/aggregator，也不要求一次原子运行关闭整个批次。fixture 只制造合法最小前置，不改变下列验收意图。
+### 10.1 B13 报告来源冻结：重新生成后的活动验收设计
 
-### 10.1 B13 报告来源冻结：116 项
+#### 10.1.1 设计结论与活动汇总
 
-1. 未生成报告时无来源冻结区域写入口。
-2. draft 报告不允许冻结来源。
-3. pending_confirmation 不允许冻结来源。
-4. confirmed 未锁定报告提示先锁报告。
-5. confirmed 已锁定且 sourceFreeze=null 显示尚未冻结。
-6. doctor 显示首次冻结入口。
-7. admin 显示首次冻结入口。
-8. nurse 不显示可用入口。
-9. research_assistant 不显示可用入口。
-10. system 不显示可用入口。
-11. 没有第二次 `/auth/me`。
-12. Visit draft 可首次发起。
-13. Visit in_progress 可首次发起。
-14. Visit completed 可首次发起。
-15. Visit locked 不开放首次发起。
-16. Visit voided 不开放首次发起。
-17. sourceFreeze=in_progress 时允许 doctor / admin 恢复。
-18. in_progress 恢复不因 Visit 后续 locked / voided 被前端擅自阻断。
-19. 首次 freezeNote 少于 3 字不能提交。
-20. freezeNote 超过 2000 字不能提交。
-21. freezeNote 不自动生成。
-22. lockNote 不自动填入 freezeNote。
-23. confirmationNote 不自动填入 freezeNote。
-24. 未勾选 checkbox 不能首次冻结。
-25. freeze 请求只发送 confirm、freezeNote、expectedUpdatedAt。
-26. 不发送来源 ID。
-27. expectedUpdatedAt 来自 report.updatedAt。
-28. POST 不自动重试。
-29. POST 期间 edit / submit / confirm / lock / freeze 均禁用。
-30. POST 期间报告仍可阅读。
-31. POST 期间不显示虚假逐项实时进度。
-32. 首次成功 sourceFreeze.state=completed。
-33. 首次成功显示 alreadyFrozen=false。
-34. 首次成功显示 resumedExisting=false。
-35. 恢复成功显示 resumedExisting=true。
-36. completed 幂等显示 alreadyFrozen=true。
-37. alreadyFrozen 不再次写入。
-38. sourceFreeze=null 显示来源尚未冻结。
-39. in_progress 显示可能已有部分来源冻结。
-40. in_progress 不显示已回滚。
-41. in_progress 显示原 freezeId。
-42. in_progress 显示原 freezeNote。
-43. in_progress freezeNote 不可编辑。
-44. in_progress 恢复使用服务端 freezeNote。
-45. 恢复不生成新 freezeId。
-46. 恢复不允许替换首次说明。
-47. 恢复必须重新勾选 checkbox。
-48. 恢复不自动 POST。
-49. completed 不显示再次冻结入口。
-50. completed 不显示恢复入口。
-51. completed 展示 started / completed actor。
-52. completed 展示 expectedCounts。
-53. completed 展示 completedCounts。
-54. completed 展示 newlyFrozenCounts。
-55. completed 展示 previouslyFrozenCounts。
-56. 五类来源名称正确。
-57. totalSourceCount 正确展示。
-58. 前端不重新统计来源。
-59. 前端不计算完成百分比。
-60. 前端不显示来源 ID。
-61. 前端不显示 metadata。
-62. sourceFreeze count 非安全整数显示一致性警告。
-63. total 与五类之和不一致显示警告。
-64. in_progress 包含 completedAt 时显示警告。
-65. completed 缺 completedCounts 时显示警告。
-66. completed expected / completed 不一致显示警告。
-67. 一致性异常时不开放恢复或首次写操作。
-68. conflict 保留首次 freezeNote。
-69. conflict 清除 checkbox。
-70. conflict 自动 latest 一次。
-71. conflict 不自动 POST。
-72. incomplete 自动 latest 一次。
-73. incomplete 不显示已回滚。
-74. incomplete latest=in_progress 时显示恢复入口。
-75. failed 后保留 freezeNote。
-76. failed 后不自动恢复。
-77. scope invalid 不显示内部 ID 差异。
-78. input invalid 不猜测具体来源。
-79. audit unavailable 不猜测完成状态。
-80. metadata unsupported 不显示 metadata。
-81. 401 返回登录页。
-82. action 403 保留报告和首次 freezeNote。
-83. 网络错误保留 freezeNote。
-84. 网络错误提示手工 latest 核对。
-85. 首次 note 纳入 beforeunload。
-86. 恢复的只读服务端 note 不额外触发文本 dirty。
-87. sourceFreeze 草稿不写 localStorage。
-88. 页面刷新后未提交首次 note 消失。
-89. sourceFreeze receipt 刷新后消失。
-90. 持久事实仍来自 report.sourceFreeze。
-91. status 仍显示 confirmed。
-92. report.lockedAt 仍表示报告自身锁定。
-93. sourceFreeze 单独表示来源冻结。
-94. isFinal 不作为来源冻结完成状态。
-95. sourceLockedAt 不显示为 report.lockedAt。
-96. 页面说明 A23 不是 Mongo transaction。
-97. 页面说明 completed 前可能部分冻结。
-98. 页面说明不自动解冻。
-99. 页面说明不冻结 Patient。
-100. 页面说明不冻结 Visit。
-101. 页面说明不冻结 Storage。
-102. 页面说明 CognitiveDomainResult 冻结不等于确认。
-103. 页面不存在 unfreeze。
-104. 页面不存在 rollback。
-105. 页面不存在后台恢复开关。
-106. 页面不存在 archive / correct / void。
-107. 页面不存在 PDF / 下载。
-108. 页面不存在 AI 操作。
-109. 页面不输出诊断结论。
-110. 小屏幕计数与确认表单可用。
-111. label、错误提示和交互状态反馈正确。
-112. 没有新增路由。
-113. 没有使用真实患者或冻结说明。
-114. lint 通过。
-115. typecheck 通过。
-116. build 通过。
+当前 A23 不可替代的用户可见风险收敛为三个场景，不增加第四个活动场景。完整角色、V1/V2+、Visit 状态、API 绕过、并发、数据库终态和防御分支由非 Browser 证据承担；一个场景内任一必需子断言未执行或失败，整个场景均不得标记为 `passed`。
+
+| 活动场景 | 分类 | Profile | 状态 |
+|---|---|---|---|
+| `B13-U01` 页面入口、人工角色与三种来源冻结持久状态 | `ui_reachable` | `B13-P1-entry-persisted-states` | `pending` |
+| `B13-U02` 首次真实来源冻结、精确 scope 与持久摘要 | `ui_reachable` | `B13-P2-first-freeze` | `pending` |
+| `B13-U03` 显式恢复 in_progress 与不确定结果处理 | `ui_reachable` | `B13-P3-resume-uncertain-result` | `pending` |
+
+活动初始汇总：`passed=0`、`pending=3`、`failed=0`、`blocked=0`、`not_executed=0`。这表示三项活动均已完成设计但尚未执行，不表示任何动态检查在本次文档治理中运行。
+
+#### 10.1.2 `B13-U01` 页面入口、人工角色与三种来源冻结持久状态
+
+- 分类与 Profile：`ui_reachable`；`B13-P1-entry-persisted-states`；状态 `pending`。
+- 真实起始状态：同一正式报告页分别加载（1）confirmed、已完成报告自身锁定、`sourceFreeze=null`，（2）合法 `sourceFreeze=in_progress`，（3）合法 `sourceFreeze=completed`。人工角色使用 doctor 和代表性非授权人工角色 nurse。
+- 真实触发路径：doctor 或 nurse 登录后进入当前访视详情的报告正文与工作流区域；不直接调用 API，不篡改运行时或数据库。
+- 必需断言：doctor 在合法 `sourceFreeze=null` 报告看到可用首次冻结入口；nurse 可阅读报告但没有可用首次冻结或恢复入口，Browser 不为了制造 403 暴露隐藏操作，完整权限矩阵引用 HTTP E2E。
+- 必需断言：`in_progress` 明确提示部分来源可能已经冻结且未自动回滚，展示原 `freezeId` 和原服务端 `freezeNote`；原说明只读，只能由用户显式进入恢复，不自动 POST。
+- 必需断言：`completed` 只读，不再显示首次冻结或恢复入口；展示安全 actor、时间及服务端计数摘要，不公开 metadata、内部 scope、来源 ID、ItemResponse ID 或原始 Schema actor 字段。
+- 必需断言：页面明确区分“报告已确认”“报告自身已锁定”“来源冻结未开始/未完成/已完成”“尚未归档/已经归档”；合法后续 archive 入口可以存在，不能因 B14 已实现而失败；报告正文始终可阅读。
+- 发布阻断风险：错误开放不可逆入口、把正式恢复状态误报为完成或回滚、泄露内部来源，或混淆锁定/冻结/归档事实，都会破坏权限、恢复能力、隐私或临床事实表达。
+
+Browser 只取 doctor、nurse、`sourceFreeze=null`、`in_progress`、`completed` 五个代表性维度；完整 V1/V2+、角色和 Visit 状态矩阵由非 Browser 证据负责。
+
+#### 10.1.3 `B13-U02` 首次真实来源冻结、精确 scope 与持久摘要
+
+- 分类与 Profile：`ui_reachable`；`B13-P2-first-freeze`；状态 `pending`。
+- 真实起始状态与触发路径：doctor 打开 confirmed、已完成报告自身锁定、`sourceFreeze=null` 的合法报告，通过正式来源冻结表单提交一次真实 `freeze-sources` POST。
+- 表单与请求：首次 `freezeNote` 为空，不自动生成、预填或复制 `lockNote` / `confirmationNote`；checkbox 初始未选中，trim 后最小无效值不能提交，只有有效脱敏说明并显式勾选后才可提交；请求只发生一次。
+- 写入期间：相关报告写入口互斥，报告正文仍可阅读；页面不显示虚假逐项百分比、实时进度、轮询或自动重试。
+- 成功事实：回执为 `state=completed`、`alreadyFrozen=false`、`resumedExisting=false`；页面应用完整服务端 `report` 与 `sourceFreezeReceipt`。
+- 安全摘要：五类来源名称正确；expected、completed、newlyFrozen、previouslyFrozen 和 total 均来自服务端，前端不重新统计来源、不计算完成百分比；不显示来源 ID、内部 scope 或 metadata。
+- 生命周期隔离：report status 仍为 confirmed，`report.lockedAt` 不被 `sourceLockedAt` 替换；冻结 POST 不自动触发 archive、correction、void、PDF、下载或 AI。刷新后当前会话 receipt 消失，持久 summary 继续来自服务端 `report.sourceFreeze`。
+- 后置数据库证据义务：后续 verifier 或可复用的精确既有 fixture verify 必须证明只冻结报告精确 scope、scope 外来源不变、五类目标来源按合同转换，Patient、Visit 与 Storage 不变；report narrative、snapshots、confirmation、lock、`archivedAt`、`correctionRecords` 不变；只形成一个合法 `a23SourceFreeze`，没有独立 A23 AuditLog，completed counts 与唯一实际终态一致。
+- 发布阻断风险：首次不可逆冻结若扩大/缩小 scope、重复写入、伪造计数、泄露来源、覆盖报告事实或自动串联后续生命周期，会直接破坏临床来源完整性和发布安全。
+
+#### 10.1.4 `B13-U03` 显式恢复 in_progress 与不确定结果处理
+
+- 分类与 Profile：`ui_reachable`；`B13-P3-resume-uncertain-result`；状态 `pending`。两个路径共同验证不可逆多集合操作的用户恢复能力，仍只使用一个活动 ID。
+- 路径 A 起始状态：报告具有 A23 正式合同定义的合法 `in_progress` 持久事实，scope 中允许已有部分来源完成冻结。页面提示部分完成风险，展示原 `freezeId` 但不泄露内部 scope，服务端原 `freezeNote` 只读且不可替换。
+- 路径 A 操作与结果：恢复 checkbox 初始未选中；不自动恢复、不轮询、不自动 POST。用户显式确认后只发送一次真实恢复请求；Body 仍只含合同允许字段，客户端不提交 freezeId 或 scope，由服务端沿用既有说明、`freezeId` 和 scope。成功回执必须为 `resumedExisting=true`、`alreadyFrozen=false`，`freezeId`、原 `freezeNote`、started actor 均不变，completed actor 按当前服务端合同保留原 started actor，最终 `state=completed`，counts 与数据库唯一终态一致。
+- 路径 B 起始状态：doctor 在首次冻结表单输入未提交的脱敏 `freezeNote`。网络层中止一次真实 `freeze-sources` 请求，不伪造响应；当前 React 内存保留说明，不自动 retry、不自动转入恢复，页面只提示手工读取最新状态，不显示已完成或已回滚。
+- 路径 B 刷新边界：刷新后未提交本地说明消失，且不写入 localStorage、sessionStorage 或 IndexedDB。
+- 复用边界：B12 已完成完整 401、beforeunload、Storage、键盘、焦点和 Axe 恢复模式；B13 不复制认证失效和全套可访问性矩阵，只在来源冻结表单附着最低必要 label、代表性小屏及错误反馈验证。
+- 发布阻断风险：自动重放不可逆 POST、覆盖首次事实、误报回滚/完成、丢失不确定结果恢复入口或持久化本地临床说明，都足以阻断发布。
+
+#### 10.1.5 B13 Profile 职责
+
+| Profile | 职责 | Browser / 活动 ID |
+|---|---|---|
+| `B13-P0-contract-evidence` | 后端合同、frontend pure/static、非阻断防御证据与已确认 gap；先处理最低充分证据缺口 | 不执行 Browser；不拥有活动 ID |
+| `B13-P1-entry-persisted-states` | 执行 `B13-U01` | Browser；只拥有 `B13-U01` |
+| `B13-P2-first-freeze` | 执行 `B13-U02` | Browser；只拥有 `B13-U02` |
+| `B13-P3-resume-uncertain-result` | 执行 `B13-U03` | Browser；只拥有 `B13-U03` |
+| `B13-P4-final-gates` | 在 B13 最终代码态只执行一次通用最终门禁 | 不拥有新的业务活动 ID |
+
+不得恢复原 116 项对应的 Profile 数量；本设计不决定 fixture 文件、Stage、runner、manifest、Browser spec 数量或 selector。
+
+#### 10.1.6 不分配 B13 活动 ID 的合同与非 Browser 证据
+
+下表是 B13 合同证据与缺口的权威来源。“covered”只表示当前仓库存在可定位且直接对应的既有证据；“covered_by_layered_evidence”表示多个现有层共同达到最低充分边界。本次仅作只读核对，没有重新执行任何动态测试。
+
+| # | 风险或合同 | 可达性分类 | 最低充分证据层 | 当前精确测试文件及测试名称 | 当前状态 | 后续定向任务 | 简要缺口说明 |
+|---|---|---|---|---|---|---|---|
+| 1 | 401；doctor/admin 与 nurse/research_assistant/system 角色边界 | `public_api_reachable` | `backend_http_e2e` | `backend/test/clinical-report-source-freeze.e2e-spec.ts`：`enforces authentication and doctor/admin roles`、`freezes the exact report source chain and is idempotent`、`allows admin to freeze a separate locked report` | `covered` | 否 | 401、三个禁止角色及 doctor/admin 成功路径均有精确现有证据；不为每个角色创建 Browser ID。 |
+| 2 | DTO 白名单、`confirm: true`、trim 后 3～2000 字 freezeNote、strict ISO `expectedUpdatedAt` | `public_api_reachable` | `backend_unit` + `backend_http_e2e` | `backend/src/modules/reports/dto/clinical-report-source-freeze-dto.spec.ts`：`accepts confirmation and trims the freeze note`、`leaves missing, false and string confirmation to the workflow`、`rejects malformed input %#`、`rejects client-controlled source and operation fields`；`backend/test/clinical-report-source-freeze.e2e-spec.ts`：`freezes the exact report source chain and is idempotent` | `covered` | 否 | ValidationPipe 白名单与 workflow 显式确认边界已有直接分层证据。 |
+| 3 | ownership、V1 readiness 与 V2+ replacement lineage；合法 V2+ 不因历史 Patient/Visit 被错误阻断 | `public_api_reachable` | `backend_http_e2e` + `backend_unit` | `backend/src/modules/reports/services/reports.service.spec.ts`：`uses complete ownership for direct report lookup`、`bypasses V1 and scopes a V2 predecessor lookup to current ownership`；`backend/src/modules/reports/lib/clinical-report-source-freeze.spec.ts`：`accepts only a complete locked report with the current updatedAt`；`backend/src/modules/reports/lib/clinical-report-replacement-lineage.spec.ts`：`accepts legal V2 and V3 links and bypasses V1`、`rejects missing or malformed replacement metadata and versions`、`rejects a predecessor that is not corrected or not completed`、`rejects correction mismatches and forged one-sided relationships`；`backend/test/clinical-report-correction.e2e-spec.ts`：`runs V2 and V3 lifecycles without rewriting shared frozen sources`、`rejects incomplete V2 replacement lineage with the stable conflict` | `covered_by_layered_evidence` | 否 | ownership、V1 资格和完整 replacement lineage 由共享查询、pure 与 A26 真实生命周期分层证明；缺少排列组合不构成独立 gap。 |
+| 4 | 精确 report scope，以及纳入 ScaleInstance 下的全部 ItemResponse | `public_api_reachable` | `backend_http_e2e` | `backend/test/clinical-report-source-freeze.e2e-spec.ts`：`freezes the exact report source chain and is idempotent`；`backend/src/modules/reports/lib/clinical-report-source-freeze.spec.ts`：`normalizes stable scope and rejects duplicate IDs` | `gap` | 是 | 现有 A23 HTTP fixture 每个纳入实例只有一条 ItemResponse，不能证明同一实例存在多条时全部进入 scope 并全部冻结；最低充分补证是含至少两条同实例 ItemResponse、同时含 scope 外记录的定向 HTTP E2E 与数据库终态。 |
+| 5 | ScaleInstance、ItemResponse、ScoreResult、CognitiveDomainResult、MediaEvidence 五类状态转换 | `public_api_reachable` | `backend_http_e2e` | `backend/test/clinical-report-source-freeze.e2e-spec.ts`：`freezes the exact report source chain and is idempotent` | `covered` | 否 | 同一真实 POST 后直接核对五个集合的状态与 `lockedAt`。 |
+| 6 | scope 外 ScaleInstance、MediaEvidence 等非目标来源不变 | `public_api_reachable` | `backend_http_e2e` | `backend/test/clinical-report-source-freeze.e2e-spec.ts`：`freezes the exact report source chain and is idempotent` | `covered` | 否 | 现有测试直接核对未引用 MediaEvidence 与外部 ScaleInstance 未变。 |
+| 7 | Patient、Visit、ScaleDefinition/ScaleVersion 与 Storage 不被冻结 | `public_api_reachable` | `backend_http_e2e` + `backend_unit` | `backend/test/clinical-report-source-freeze.e2e-spec.ts`：`freezes the exact report source chain and is idempotent`；`backend/src/modules/reports/services/clinical-report-source-freeze-workflow.service.ts` 仅批量更新五类来源，E2E 同时核对 Patient、Visit 和 Storage objectKey / storageStatus | `covered_by_layered_evidence` | 否 | Patient/Visit/Storage 有直接终态；ScaleDefinition/Version 不在 workflow 写依赖或 scope 中，结构性分层证据足够，不为“未调用的模型”虚构测试。 |
+| 8 | report status、lock、confirmation、narrative、snapshots、archive/correction 事实不被 A23 修改 | `public_api_reachable` | `backend_http_e2e` + `backend_unit` | `backend/test/clinical-report-source-freeze.e2e-spec.ts`：`freezes the exact report source chain and is idempotent`；`backend/src/modules/reports/services/reports.service.spec.ts`：`atomically starts source freeze only for the unchanged locked report`、`atomically completes only the matching in-progress freeze audit` | `covered_by_layered_evidence` | 否 | E2E 直接核对 status 与原 `lockedAt`；两个原子更新 spec 精确证明 report 只 `$set` metadata。U02 后续 verifier 仍须把所有保护根列入该次 Browser 写入终态。 |
+| 9 | completed 幂等保留原 freezeId、note、actor 且不重复写入 | `public_api_reachable` | `backend_http_e2e` + `backend_unit` | `backend/test/clinical-report-source-freeze.e2e-spec.ts`：`freezes the exact report source chain and is idempotent`；`backend/src/modules/reports/services/clinical-report-source-freeze-workflow.service.spec.ts`：`returns a completed audit idempotently without touching source rows` | `covered` | 否 | 顺序重复请求返回原事实并跳过来源写入；这不等于真实并发证据。 |
+| 10 | 合法 `in_progress` 沿用原 scope、freezeId、note 和 started actor，完成后 `resumedExisting=true` | `public_api_reachable` | `backend_http_e2e` + `backend_unit` | `backend/test/clinical-report-source-freeze.e2e-spec.ts`：`resumes an in-progress audit using the persisted scope and original note`；`backend/src/modules/reports/lib/clinical-report-source-freeze.spec.ts`：`builds immutable in-progress and completed audit while preserving metadata` | `covered` | 否 | E2E 从合法部分完成持久事实恢复为 completed，并核对原 freezeId/note/started actor。 |
+| 11 | public response / mapper 不泄露 metadata、内部 scope、来源 ID 或 ItemResponse ID | `public_api_reachable` | `backend_http_e2e` + `backend_unit` | `backend/test/clinical-report-source-freeze.e2e-spec.ts`：`freezes the exact report source chain and is idempotent`；`backend/src/modules/reports/services/clinical-report-public.mapper.spec.ts`：`maps only the explicit public report contract`、`maps full A24 archive summary, historical fallback and invalid audit safely` | `covered_by_layered_evidence` | 否 | A23 HTTP 响应直接断言无 metadata、回执无 scope；公共 mapper 白名单与类型只返回安全摘要，不复制内部 scope/ID。页面另由 U01 验证不展示原始 Schema actor 字段。 |
+| 12 | A14、A15、A16、A18 在真实来源冻结后拒绝公开 API 写入 | `public_api_reachable` | `backend_http_e2e` | 现有相邻证据：`backend/test/clinical-report-source-freeze.e2e-spec.ts`：`freezes the exact report source chain and is idempotent`；`backend/test/item-response-draft.e2e-spec.ts`：`rejects patient, visit, scale-instance, and item non-editable states`；`backend/test/media-evidence.e2e-spec.ts`：`blocks upload and void for every non-editable visit, instance and item state`；`backend/test/scale-instance-submission.e2e-spec.ts`：`enforces first-submission patient, visit and instance state boundaries`；`backend/test/manual-score-review.e2e-spec.ts`：`reviews every pending item, re-derives totals and confirms idempotently` | `gap` | 是 | 实现包含 `lockedAt`/状态/原子过滤，但没有测试把一次真实 A23 freeze 与 A14 PATCH、A15 upload/void、A16 submit、A18 review/confirm 的代表性公开写请求串联并核对零非法写入。最低充分层是定向跨模块 HTTP E2E。 |
+| 13 | 两个合法 HTTP 请求真实并发 `freeze-sources` 时只有一个 start/completed 事实 | `legitimate_concurrency` | `backend_http_e2e` | `backend/test/clinical-report-source-freeze.e2e-spec.ts` 仅有顺序幂等；`backend/src/modules/reports/services/reports.service.spec.ts`：`atomically starts source freeze only for the unchanged locked report`、`atomically completes only the matching in-progress freeze audit`；`backend/src/modules/reports/services/clinical-report-source-freeze-workflow.service.spec.ts`：`returns a completed audit idempotently without touching source rows` | `gap` | 是 | 当前没有两个独立合法 Session/请求同时进入同一报告的真实 HTTP 并发证据；现有 `Promise.all` 只并行读取数据库，原子 unit 也不证明真实竞争。最低充分层是双 Session HTTP E2E，核对唯一 freezeId、原首次事实、来源单次转换与唯一 completed 终态。 |
+| 14 | 跨集合部分失败、无 Mongo transaction、无 rollback/unfreeze 与显式恢复语义 | `public_api_reachable` | `backend_http_e2e` + `backend_unit` | `backend/test/clinical-report-source-freeze.e2e-spec.ts`：`resumes an in-progress audit using the persisted scope and original note`；`backend/src/modules/reports/lib/clinical-report-source-freeze.spec.ts`：`builds immutable in-progress and completed audit while preserving metadata`；`backend/src/modules/reports/services/clinical-report-source-freeze-workflow.service.ts` 依次处理五类集合并保留 `in_progress` | `covered_by_layered_evidence` | 否 | 现有 E2E 以合法部分完成持久事实证明可恢复终态，pure/实现证明原事实保留和无自动回滚；合法 `in_progress` 不是损坏数据。 |
+| 15 | A26 replacement 的 `previouslyFrozen` 兼容计数与共享来源不重复修改 | `public_api_reachable` | `backend_http_e2e` | `backend/test/clinical-report-correction.e2e-spec.ts`：`runs V2 and V3 lifecycles without rewriting shared frozen sources` | `covered` | 否 | V2/V3 真实生命周期直接核对 previous/new counts、幂等与共享来源事实不变。 |
+| 16 | 前端资格、请求构造、计数一致性和恢复草稿 pure/static 合同 | `ui_reachable` | `frontend_static_or_pure` | 当前 B13 生产文件存在，但只读搜索未找到 B13/source-freeze 专属 pure/static/contract 测试；B12 contract 文件只有 `sourceFreeze: null` fixture 或归档锚点 | `gap` | 是 | 当前无可定位的 B13 前端测试，不能以实现存在替代证据。最低充分层是定向 pure/static，覆盖 V1/V2+ 资格、空首次 note、Body 白名单、服务端计数直出、合法 resume 保留原事实与 defensive degradation。 |
+| 17 | 网络失败与受控错误最多读取 latest 一次，且不自动重放 POST | `ui_reachable` | `frontend_static_or_pure` + `browser_micro_profile` | 共享证据：`frontend/test/browser-acceptance/contracts/b12-lock-non-browser.spec.ts`：`B12-S10 has one production lock invocation and at-most-once latest recovery`；`frontend/test/browser-acceptance/b12/u03-recovery-accessibility.spec.ts`：`keeps the in-memory draft after one aborted lock request and clears it after reload`；B13 source-freeze action 当前无专属测试 | `gap` | 是 | B12 证明共享恢复模式，但没有证明 source-freeze action 自身只调用一次 POST、对受控错误最多 latest 一次、网络不确定时不自动 latest/POST。最低充分先补 source-freeze 定向 pure/static；用户可见网络中止仍由 `B13-U03` Browser 完成。 |
+| 18 | 非安全 count、组合不一致、非法 audit/scope/metadata 及只能损坏内部结构形成的状态 | `internal_corruption_only` | `backend_unit` / `frontend_static_or_pure` | `backend/src/modules/reports/lib/clinical-report-source-freeze.spec.ts`：`rejects malformed or drifted A23 audit`；现有前端实现含一致性防御，但无 B13 专属测试 | `supplemental_defensive` | 否 | 已有廉价测试可保留；缺少分支排列不阻断 U01～U03，也不创建 Browser ID。若正式导入、迁移或生产事故使其可达，再另行升级。 |
+| 19 | 原 68～71 generic conflict：只改变 report.updatedAt 且仍保持同一报告可首次冻结 | `ui_reachable` / `public_api_reachable` 可达性核对 | 无；当前退役 | `backend/src/modules/reports/controllers/clinical-reports.controller.ts` 当前写路由只含 draft/review、lock、freeze、archive、correction；锁定后的合法 archive/correction 会改变生命周期资格，未发现只改 updatedAt 且仍可首次冻结的正式页面或公开 API 链 | `retired_currently_unreachable` | 否 | 合法并发形成的 in_progress/completed 已归入第 13 行与 U03，不能伪装为 generic conflict Browser 场景；若未来出现真实触发链再重新评估。 |
+
+分类汇总：`covered=7`、`covered_by_layered_evidence=5`、`gap=5`、`supplemental_defensive=1`、`retired_currently_unreachable=1`、`duplicate_or_covered=0`。19 行中只有第 4、12、13、16、17 行是已确认 gap；均有真实风险与最低充分证据层，不是因为缺少角色或状态排列组合而产生。
+
+#### 10.1.7 已确认 gap 摘要与先后顺序
+
+| gap | 真实触发路径 | 现有证据 | 缺失证据 | 最低充分层 |
+|---|---|---|---|---|
+| G1 同一实例多 ItemResponse scope | doctor/admin 对包含多题目记录的合法报告调用公开 `freeze-sources` | 单 ItemResponse A23 E2E + scope pure | 所有同实例 ItemResponse 均纳入且 scope 外记录不变的真实终态 | `backend_http_e2e` |
+| G2 A23 后跨模块写保护 | 先真实冻结，再直接调用 A14/A15/A16/A18 公开写 API | A23 转换 E2E + 各模块一般状态门禁 + 实现原子过滤 | 同一真实冻结链后的代表性 HTTP 拒绝与零非法写入 | `backend_http_e2e` |
+| G3 A23 真实并发唯一事实 | 两个合法独立 Session 同时 POST 同一报告 | 顺序幂等 + 原子 unit | 真实竞争窗口中的唯一 start/completed、首次事实和来源终态 | `backend_http_e2e` |
+| G4 B13 前端 pure/static | 正式页面基于 report/role/visit/sourceFreeze 决定入口、Body、计数与 resume 草稿 | 当前实现代码；无 B13 专属测试 | 资格、请求白名单、服务端计数直出、resume 保真和 defensive degradation 的可定位测试 | `frontend_static_or_pure` |
+| G5 B13 错误恢复 action | 受控 conflict/incomplete/failed 或网络不确定结果进入 source-freeze action 错误链 | B12 共享 at-most-once/中止模式 + B13 实现 | B13 自身一次 POST、受控错误最多一次 latest、网络不自动 latest/POST | `frontend_static_or_pure`；用户可见中止另由 U03 Browser |
+
+下一步必须先在 `B13-P0-contract-evidence` 处理 G1～G5，再进入 Browser 执行设计；本节不提供下一阶段 Codex 指令，也不在本任务补测试。
+
+#### 10.1.8 非阻断防御性证据
+
+以下均不分配 B13 活动 ID，统一归入 `supplemental_defensive`：count 不是非负安全整数；total 与五类之和不一致；`in_progress` 却存在 `completedAt`；completed 缺少 `completedCounts`；expected、completed、newly、previously 无法组合；metadata 根结构不受支持；A23 audit 缺失或不一致；scope 包含非法或不可解析内部 ID；服务端内部来源数据不一致；以及只有直接改库或损坏内部结构才能形成的状态。
+
+已有廉价 pure/unit/代表性 E2E 可以保留，但这些分支不建立 Browser 场景、不阻断 B13 用户活动场景关闭。若正式导入、迁移或生产事故使其成为真实业务路径，再另行升级。合法 `in_progress` 是 A23 的正式持久恢复锚点，保留原 freezeId、原 freezeNote、原 started actor 和原 scope，绝不归入本类。
+
+#### 10.1.9 B13 通用最终门禁
+
+以下门禁不分配业务 Audit ID，只由 `B13-P4-final-gates` 在 B13 最终代码态执行一次：
+
+- 不产生第二次 `/auth/me`。
+- 不新增无合同依据的路由。
+- 不新增依赖。
+- 不使用真实患者、真实来源或真实冻结说明。
+- lint。
+- typecheck。
+- build。
+- 一条轻量跨层 Browser 冒烟。
+
+响应式、label、键盘、焦点与 Axe 附着在 U02 或 U03 的真实流程中，不建立独立 Profile。PDF、下载与 AI 仅作为 A23 非目标及 Network 边界，不分配活动 ID。
+
+#### 10.1.10 原 B13-01～B13-116 反向迁移
+
+原逐条正文已从当前权威文档移除，由 Git 历史继续追溯。下表每个编号只出现于一个连续范围，不同时作为活动场景和退役项。
+
+| 原编号或连续范围 | 新归属 | 分类 | 处理理由 |
+|---|---|---|---|
+| 1～5 | `B13-U01` + frontend pure/static + backend readiness/lineage | `ui_reachable` / 分层合同 | 页面只取代表性 null 状态；草稿、待确认、未锁定和版本资格由资格函数与后端门禁承担。 |
+| 6～10 | `B13-U01` + 后端角色合同 | `ui_reachable` / `public_api_reachable` | Browser 只用 doctor 与 nurse；admin 成功及完整 403 矩阵复用 HTTP E2E。 |
+| 11 | `B13-P4-final-gates` | `general_gate` | `/auth/me` 请求数是通用门禁，不是业务活动。 |
+| 12～18 | `B13-U01` + backend readiness/lineage/recovery | `ui_reachable` / 分层合同 | 代表性 persisted states 进 U01；完整 Visit/V1/V2+ 与正式恢复资格由非 Browser 证据负责。 |
+| 19～31 | `B13-U02` + request/validation pure/static + backend DTO | `ui_reachable` / 分层合同 | 表单、一次 POST 和可读性合并为首次真实冻结；字段逐项不拆活动 ID。 |
+| 32～34 | `B13-U02` | `ui_reachable` | 首次成功的 state 与两个布尔值是同一用户结果。 |
+| 35 | `B13-U03` | `ui_reachable` | `resumedExisting=true` 属于显式恢复成功。 |
+| 36～37 | 后端 completed 幂等合同 | `public_api_reachable` | 顺序幂等由 HTTP E2E/unit 负责，不另建 Browser 场景。 |
+| 38～50 | `B13-U01` + `B13-U03` + persisted-state pure/static | `ui_reachable` / 分层合同 | null/in_progress/completed 展示进 U01；恢复保真和显式确认进 U03；结构防御归 pure/static。 |
+| 51～61 | `B13-U01` / `B13-U02` / `B13-U03` 安全摘要 + mapper/pure/static | `ui_reachable` / 分层合同 | 页面只验完整安全摘要，计数与隐私的结构合同由 mapper/pure/static 支撑。 |
+| 62～67 | 非阻断防御性证据 | `supplemental_defensive` | 只能由异常内部摘要形成，不建立 Browser 场景。 |
+| 68～71 | 当前退役；合法并发另归合同第 13 行与 U03 | `retired_currently_unreachable` | 未发现只改变 report.updatedAt 且仍保持首次可冻结的正式 UI/API 链；不机械保留 generic conflict Browser。 |
+| 72～76 | `B13-U03` + backend incomplete/failed + frontend recovery pure/static | `ui_reachable` / 分层合同 | 合并为正式 in_progress 恢复和不确定结果的用户恢复风险。 |
+| 77～80 | 非阻断防御性证据 | `supplemental_defensive` | 内部 scope/input/audit/metadata 细节不向 Browser 拆分。 |
+| 81 | B12 共享认证 Browser + A23 HTTP 401 | `duplicate_or_covered` | 不复制 B12 完整认证失效路径，不创建 B13 独立活动 ID。 |
+| 82 | A23 HTTP 403 角色合同 | `public_api_reachable` | 页面不制造 403，首次本地说明保留由 U03/前端恢复合同覆盖。 |
+| 83～84 | `B13-U03` 路径 B | `ui_reachable` | 一次真实网络中止与手工 latest 提示是不可替代用户恢复风险。 |
+| 85～90 | `B13-U02` / `B13-U03` + B12 shared beforeunload/Storage/receipt | `ui_reachable` / `duplicate_or_covered` | B13 只验来源冻结特有的内存说明与持久摘要；共享恢复模式复用 B12。 |
+| 91～102 | `B13-U01` / `B13-U02` / `B13-U03` 生命周期术语 + static/contract | `ui_reachable` / 分层合同 | 合并验证确认、报告锁定、来源冻结、归档和非 transaction/非目标边界。 |
+| 103～105 | `B13-U03` + A23 非目标边界 | `ui_reachable` / `duplicate_or_covered` | 不自动 unfreeze、rollback 或后台恢复是同一恢复语义，不拆独立活动 ID。 |
+| 106 | 退役 | `retired_obsolete` | B14、B15 已实现；只保留 freeze-sources 不得自动触发 archive/correction/void。 |
+| 107～109 | A23 非目标、Network 或静态边界 | `duplicate_or_covered` | PDF、下载、AI 和诊断输出不生成独立 Browser 活动 ID。 |
+| 110～111 | 附着于 `B13-U02` 或 `B13-U03` | `ui_reachable` | 代表性小屏、label 与错误反馈随真实流程验证，不建独立 Profile。 |
+| 112～116 | `B13-P4-final-gates` | `general_gate` | 路由、脱敏、lint、typecheck、build 只执行一次。 |
+
+只读编号覆盖核对的验收目标为：覆盖 116 个、缺号 0 个、重复 0 个；第 106 项唯一归入 `retired_obsolete`。任何迁移归属都不代表本次动态通过。
 
 ### 10.2 B14 报告归档：115 项
 
