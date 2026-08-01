@@ -125,6 +125,14 @@ function timestampValue(
 function immutableReportContent(document: ClinicalReportDocument) {
   const value = document.toObject();
   return {
+    primaryScaleInstanceIds: value.primaryScaleInstanceIds.map((item) =>
+      item.toString(),
+    ),
+    scoreResultIds: value.scoreResultIds.map((item) => item.toString()),
+    cognitiveDomainResultIds: value.cognitiveDomainResultIds.map((item) =>
+      item.toString(),
+    ),
+    mediaEvidenceIds: value.mediaEvidenceIds.map((item) => item.toString()),
     confirmation: value.confirmation,
     narrative: value.narrative,
     patientSnapshot: value.patientSnapshot,
@@ -921,6 +929,196 @@ describe('clinical report lock API (e2e)', () => {
       }),
     );
     expect(stored.metadata?.futureNamespace).toEqual({ preserved: true });
+  });
+
+  it('locks exactly once under two concurrent authenticated HTTP requests', async () => {
+    const fixture = await createFixture('CONCURRENT-LOCK');
+    const before = await currentReport(fixture);
+    expect(before.status).toBe('confirmed');
+    expect(before.lockedAt).toBeNull();
+    expect(before.lockedBy).toBeNull();
+    expect(before.metadata?.a22Lock).toBeUndefined();
+
+    const expectedUpdatedAt = timestampValue(before, 'updatedAt');
+    const initialAuditLogRefs = before.auditLogRefs.map((value) =>
+      value.toString(),
+    );
+    const initialImmutableContent = immutableReportContent(before);
+    const initialPreservedMetadata = JSON.stringify({
+      a20Generation: before.metadata?.a20Generation,
+      a21Submission: before.metadata?.a21Submission,
+      a21Confirmation: before.metadata?.a21Confirmation,
+      futureNamespace: before.metadata?.futureNamespace,
+    });
+    const doctorLockNote = 'A22 concurrent doctor lock note';
+    const adminLockNote = 'A22 concurrent admin lock note';
+    const path = lockPath(fixture);
+
+    const doctorRequest = doctorAgent
+      .post(path)
+      .send({
+        confirm: true,
+        lockNote: doctorLockNote,
+        expectedUpdatedAt,
+      })
+      .expect(200);
+    const adminRequest = adminAgent
+      .post(path)
+      .send({
+        confirm: true,
+        lockNote: adminLockNote,
+        expectedUpdatedAt,
+      })
+      .expect(200);
+    const [doctorResponse, adminResponse] = await Promise.all([
+      doctorRequest,
+      adminRequest,
+    ]);
+
+    const results = [
+      {
+        requestRole: 'doctor',
+        requestLockNote: doctorLockNote,
+        response: doctorResponse,
+      },
+      {
+        requestRole: 'admin',
+        requestLockNote: adminLockNote,
+        response: adminResponse,
+      },
+    ].map((result) => {
+      const responseBody = body(result.response);
+      const report = record(
+        responseBody.report,
+        `${result.requestRole} report`,
+      );
+      const receipt = record(
+        responseBody.lockReceipt,
+        `${result.requestRole} lock receipt`,
+      );
+      expect(report.status).toBe('confirmed');
+      expect(report.qualityStatus).toBe('passed');
+      expect(report.isFinal).toBe(true);
+      expect(report.lockedAt).toBe(receipt.lockedAt);
+      expect(report).not.toHaveProperty('lockedBy');
+      expect(JSON.stringify(responseBody)).not.toContain('"metadata"');
+      return { ...result, report, receipt };
+    });
+
+    expect(
+      results.map((result) => result.receipt.alreadyLocked).sort(),
+    ).toEqual([false, true]);
+    const winner = results.find(
+      (result) => result.receipt.alreadyLocked === false,
+    );
+    const loser = results.find(
+      (result) => result.receipt.alreadyLocked === true,
+    );
+    if (!winner || !loser) {
+      throw new Error(
+        'Expected exactly one first lock and one idempotent lock',
+      );
+    }
+
+    const winnerActor = record(winner.receipt.lockedBy, 'winning lock actor');
+    const loserActor = record(loser.receipt.lockedBy, 'idempotent lock actor');
+    const winnerLock = record(
+      winner.report.lock,
+      'winning report lock summary',
+    );
+    const loserLock = record(
+      loser.report.lock,
+      'idempotent report lock summary',
+    );
+    expect(winner.receipt.lockNote).toBe(winner.requestLockNote);
+    expect(winnerActor.operatorRole).toBe(winner.requestRole);
+    expect(loser.receipt).toEqual({
+      ...winner.receipt,
+      alreadyLocked: true,
+    });
+    expect(loserActor).toEqual(winnerActor);
+    expect(loserLock).toEqual(winnerLock);
+    expect(winnerLock).toEqual({
+      lockId: winner.receipt.lockId,
+      lockedAt: winner.receipt.lockedAt,
+      lockedBy: winnerActor,
+      lockNote: winner.receipt.lockNote,
+    });
+    expect(loser.receipt.lockNote).toBe(winner.requestLockNote);
+    expect(loser.receipt.lockNote).not.toBe(loser.requestLockNote);
+    expect([doctorLockNote, adminLockNote]).toContain(winner.receipt.lockNote);
+
+    expect(
+      await reportModel
+        .countDocuments({
+          patientId: fixture.patientId,
+          assessmentVisitId: fixture.visitId,
+          reportType: 'cognitive_assessment',
+        })
+        .exec(),
+    ).toBe(1);
+    const stored = await currentReport(fixture);
+    const storedUpdatedAt = timestampValue(stored, 'updatedAt');
+    const storedLockedAt = stored.lockedAt?.toISOString() ?? null;
+    expect(new Date(storedUpdatedAt).getTime()).toBeGreaterThan(
+      new Date(expectedUpdatedAt).getTime(),
+    );
+    expect(storedUpdatedAt).toBe(
+      stringValue(winner.report.updatedAt, 'winning report updatedAt'),
+    );
+    expect(storedUpdatedAt).toBe(
+      stringValue(loser.report.updatedAt, 'idempotent report updatedAt'),
+    );
+    expect(stored.status).toBe('confirmed');
+    expect(stored.qualityStatus).toBe('passed');
+    expect(storedLockedAt).toBe(winner.receipt.lockedAt);
+    expect(stored.lockedBy?.toString()).toBe(winnerActor.operatorId);
+
+    const storedMetadata = record(stored.metadata, 'stored report metadata');
+    const storedAudit = record(storedMetadata.a22Lock, 'stored A22 audit');
+    expect(Object.keys(storedAudit).sort()).toEqual(
+      [
+        'version',
+        'lockId',
+        'lockedAt',
+        'lockedBy',
+        'lockedByName',
+        'lockedByRole',
+        'lockNote',
+      ].sort(),
+    );
+    expect(storedAudit.lockedAt).toBeInstanceOf(Date);
+    if (!(storedAudit.lockedAt instanceof Date)) {
+      throw new Error('Expected stored A22 audit lockedAt timestamp');
+    }
+    expect(storedAudit).toEqual({
+      version: 1,
+      lockId: winner.receipt.lockId,
+      lockedAt: storedAudit.lockedAt,
+      lockedBy: winnerActor.operatorId,
+      lockedByName: winnerActor.operatorName,
+      lockedByRole: winnerActor.operatorRole,
+      lockNote: winner.receipt.lockNote,
+    });
+    expect(storedAudit.lockedAt.toISOString()).toBe(winner.receipt.lockedAt);
+    expect(storedAudit.lockNote).not.toBe(loser.requestLockNote);
+    expect(
+      Object.keys(storedMetadata)
+        .filter((key) => key.toLowerCase().startsWith('a22'))
+        .sort(),
+    ).toEqual(['a22Lock']);
+    expect(stored.auditLogRefs.map((value) => value.toString())).toEqual(
+      initialAuditLogRefs,
+    );
+    expect(immutableReportContent(stored)).toEqual(initialImmutableContent);
+    expect(
+      JSON.stringify({
+        a20Generation: stored.metadata?.a20Generation,
+        a21Submission: stored.metadata?.a21Submission,
+        a21Confirmation: stored.metadata?.a21Confirmation,
+        futureNamespace: stored.metadata?.futureNamespace,
+      }),
+    ).toBe(initialPreservedMetadata);
   });
 
   it('rejects incomplete lock audit without guessing or writing', async () => {
