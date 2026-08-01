@@ -4,7 +4,7 @@
 
 本文档是跨层测试设计、Browser 验收策略、场景级活动 Audit 清单和当前验证状态的权威来源。它只维护当前有效规则与待验合同；roadmap 继续维护产品范围和工作包状态，Git 历史负责旧命令、旧清单、旧结果与失败过程。
 
-> B12-P1 eligibility-readonly、R1、A3、A3-R2 已退役。约 70 小时投入后，专属 fixture/support 复杂度超过业务；未新增关闭 Audit ID，代码全删。B12 已完成第二次清单收缩：历史通过证据继续作为合同或防御证据保留，活动关闭清单只剩 3 个用户可达 Browser 场景。U01、U02 已复用一个自包含最小 fixture CLI 分别完成只读入口与首次真实锁定验收，仍未恢复旧 B12 fixture/support。
+> B12-P1 eligibility-readonly、R1、A3、A3-R2 已退役。约 70 小时投入后，专属 fixture/support 复杂度超过业务；未新增关闭 Audit ID，代码全删。B12 已完成第二次清单收缩：历史通过证据继续作为合同或防御证据保留，活动关闭清单只剩 3 个用户可达 Browser 场景。U01～U03 已复用一个自包含最小 fixture CLI，分别完成只读入口、首次真实锁定，以及认证失效、网络中断、草稿与代表性可用性验收，仍未恢复旧 B12 fixture/support。
 
 | 范围 | 当前状态 |
 |---|---|
@@ -14,10 +14,10 @@
 | Batch B / B4–B6 | 桌面范围已完成，Batch E 仍保留 8 项 |
 | Batch C / B7–B10 | 已完成；B7、B8、B9、B10 各自既有最终处置不变 |
 | Batch D / B11 | 70 项已完成，状态不变 |
-| Batch D / B12 | 合同前置与防御证据保留；活动用户场景为 `B12-U01`～`B12-U03`，其中 U01、U02 已完成，状态 `passed=2`、`pending=1`、`failed=0`、`blocked=0`、`not_executed=0` |
+| Batch D / B12 | 合同前置与防御证据保留；`B12-U01`～`B12-U03` 三个活动用户场景与最终通用门禁均已完成，状态 `passed=3`、`pending=0`、`failed=0`、`blocked=0`、`not_executed=0`；B12 Browser 验收闭环完成 |
 | Batch D / B13–B15（含 B14.1） | 候选断言和历史设计输入保留，尚未执行；正式设计活动清单前须先完成可达性、风险与证据复用审查 |
 
-B12 治理前有 17 个混合层级活动场景，汇总为 `passed=4`、`pending=13`；治理后只保留 `B12-U01`～`B12-U03` 三个 `ui_reachable` Browser 场景，初始汇总为 `passed=0`、`pending=3`。U01、U02 完成后当前汇总为 `passed=2`、`pending=1`。这不是历史证据倒退：原已通过事实和当前精确测试继续有效，但迁入不分配 B12 活动 ID 的合同前置证据、非阻断防御证据或最终通用门禁，不再计作活动 Browser 业务场景。
+B12 治理前有 17 个混合层级活动场景，汇总为 `passed=4`、`pending=13`；治理后只保留 `B12-U01`～`B12-U03` 三个 `ui_reachable` Browser 场景，初始汇总为 `passed=0`、`pending=3`。U01～U03 完成后最终汇总为 `passed=3`、`pending=0`。这不是历史证据倒退：原已通过事实和当前精确测试继续有效，但迁入不分配 B12 活动 ID 的合同前置证据、非阻断防御证据或最终通用门禁，不再计作活动 Browser 业务场景。
 
 原 88 个 ID 和原 B12-S01～S17 都不再作为活动关闭对象；其语义迁移、不可达退役与既有证据归属见第 9 节。需要保留的是仍真实可达且尚无可信证据的风险，不是历史 ID、层级组合或执行次数。
 
@@ -175,7 +175,7 @@ Codex 任务规模取决于业务风险是否一致、证据层是否相近、�
 
 ### 9.1 唯一活动用户场景
 
-以下三个 `ui_reachable` 场景是 B12 当前唯一活动关闭清单。每个场景的必需事实都必须实际执行并分别记录；U01、U02 已完成，U03 继续保持 pending。
+以下三个 `ui_reachable` 场景是 B12 当前唯一活动关闭清单。每个场景的必需事实均已实际执行并分别记录，U01～U03 均已完成。
 
 #### B12-U01 页面资格、人工角色与锁定后只读
 
@@ -205,16 +205,18 @@ Codex 任务规模取决于业务风险是否一致、证据层是否相近、�
 
 #### B12-U03 认证失效、网络失败、草稿与代表性可用性
 
-- 起始状态：doctor 已打开合法首次锁定表单并在 React 内存输入未提交 lockNote；分别制造真实 Session 过期和有界请求延迟、中断或网络失败。
+- 起始状态：doctor 已打开合法首次锁定表单并在 React 内存输入未提交 lockNote；分别通过同一 BrowserContext 的兄弟页面正式退出登录，以及对当前报告真实 lock POST 的单次网络中止制造恢复路径。
 - 人工角色：doctor。
 - 入口边界：正式报告页面、真实认证 Session 与真实 lock 请求；可用性检查使用一个代表性小屏。
 - 实际操作：触发 401 并观察返回登录流程；在真实请求失败时核对本地输入、Network 次数、beforeunload 与 Storage；刷新页面；用键盘完成代表性相关操作并执行一次代表性 Axe。
-- 实际经过的接口：认证链的 `GET /auth/me`，以及失败或中断的 `POST /patients/:patientId/visits/:visitId/clinical-reports/:reportId/lock`；不得自动重发写请求。
+- 实际经过的接口：认证链的 `GET /auth/me`、兄弟页面正式 `POST /auth/logout`，以及返回 401 或被网络层中止的 `POST /patients/:patientId/visits/:visitId/clinical-reports/:reportId/lock`；写请求均未自动重发。
 - 预期业务结果：Session 过期 401 返回登录流程；请求延迟、中断或网络失败时保留当前内存中的 lockNote 且不自动重发；未提交内容纳入 beforeunload；不写 localStorage、sessionStorage 或 IndexedDB；刷新后未提交内容消失；代表性小屏可完成相关操作；必要 label、错误提示、键盘、焦点和一次代表性 Axe 成立。
 - 发布阻断理由：认证失效误处理、自动重发或草稿泄露会造成不可逆重复操作、隐私风险或无法恢复的用户输入损失。
-- Profile / 状态：`B12-P3-reachable-recovery` / `pending`。
+- Profile / 状态：`B12-P3-reachable-recovery` / `passed`。
+- 执行事实：两条测试各自使用独立 doctor BrowserContext。Session 失效路径在同一 Context 的兄弟页面点击正式“退出登录”，真实 logout POST 返回 201；原页面随后恰好一次真实 lock POST 返回 401，进入 `/login`，无自动 retry、无成功回执。网络路径在 390×844 竖屏以真实 Tab / Enter / Space 完成表单；`OneShotRequestAbort` 对当前 report 的 POST `/lock` 恰好 `matched=1`、`aborted=1`、`continued=0`，页面稳定显示“报告服务暂时不可用，请稍后手工重试。”，lockNote 与 checkbox 留在当前 React 内存，lock POST 保持一次且无成功回执。
+- 证据收口：textarea 与 checkbox 的 label / accessible name、自然键盘焦点与 focus-visible 均通过；局部 Axe 仅 include `section[aria-labelledby="clinical-report-lock-heading"]` 且 0 violation。真实顶层离页第一次产生 `beforeunload` dialog 并 dismiss，页面与草稿保持；真实 reload 第二次产生同类型 dialog 并 accept，刷新后 lockNote、checkbox 和表单草稿消失，“准备锁定报告”仍可用。请求前、网络中止后和刷新后的 localStorage、sessionStorage、IndexedDB、URL query/hash 均无锁定草稿；post-browser verify 匹配两份报告、updatedAt、正文、confirmation、metadata 与来源基线，证明无报告业务写入；两次 cleanup 均为 `residualCount=0`。
 
-B12 活动用户场景汇总恰好为：`passed=2`、`pending=1`、`failed=0`、`blocked=0`、`not_executed=0`。U03 是下一活动场景并继续保持 pending；本次未设计或执行 U03。
+B12 活动用户场景最终汇总恰好为：`passed=3`、`pending=0`、`failed=0`、`blocked=0`、`not_executed=0`。
 
 ### 9.2 不分配 B12 活动 ID 的合同前置证据
 
@@ -244,7 +246,7 @@ B12 活动用户场景汇总恰好为：`passed=2`、`pending=1`、`failed=0`、
 | 锁定请求失败不泄露 metadata、正文、actor 内部字段或 Secret | `backend/test/clinical-report-lock.e2e-spec.ts`；`backend/src/modules/reports/services/clinical-report-lock-workflow.service.spec.ts`；`backend/src/modules/reports/services/clinical-report-public.mapper.spec.ts` | A22 mapper 的 `maps only the explicit public report contract`、`maps a safe A22 lock summary and never exposes raw lockedBy` 与 invalid metadata fallback 验证公开字段白名单；E2E `rejects incomplete lock audit without guessing or writing`、`rejects unsupported metadata without exposing it or writing` 代表性验证错误响应不回显内部 audit/metadata 值，Service 还验证稳定失败不泄露 metadata。完整 Secret 边界由通用异常与序列化安全承担，不要求每个 A22 错误码同时枚举正文、actor 全部内部字段和所有 Secret；只有 mapper、异常过滤器或公共响应合同变化时才扩大安全回归。 | `covered_representatively + general_gate` | 否 |
 | A23 只冻结精确来源、保持报告 status=confirmed、幂等不重复冻结并保留原说明 | `backend/test/clinical-report-source-freeze.e2e-spec.ts` | `freezes the exact report source chain and is idempotent`；`resumes an in-progress audit using the persisted scope and original note` | `covered` | 否 |
 
-当前 B12 后端合同前置证据已无确认 `gap`；`B12-U01`、`B12-U02` 已完成，后续只剩 U03 一个用户可达 Browser 验收，当前保持 `passed=2`、`pending=1`。
+当前 B12 后端合同前置证据已无确认 `gap`；`B12-U01`～`B12-U03` 三个用户可达 Browser 场景均已完成，最终保持 `passed=3`、`pending=0`。
 
 ### 9.3 非阻断防御性证据
 
@@ -281,6 +283,8 @@ B12 活动用户场景汇总恰好为：`passed=2`、`pending=1`、`failed=0`、
 - 一条轻量跨层 Browser 冒烟。
 
 既有 B12-84 `passed` 证据继续有效；`B12-P4-final-gates` 仅在最终代码态按影响范围执行本节一次。轻量冒烟只发现跨层装配断裂，不新增业务场景 ID，也不能替代任何失败、阻断或未执行的场景证据。
+
+`B12-P4-final-gates` 已在 U03 最终代码态完成：U03 是本轮唯一轻量跨层 Browser 冒烟，定向 discovery 恰好发现 1 个文件、2 条测试，正式 Chromium headless 以 workers=1、retries=0 通过 2/2；测试数据全部脱敏，未新增依赖、package/锁文件变化或无合同路由，frontend 全量 lint、正式 typecheck 与 production build 均通过。B12 三个用户可达活动场景、合同前置证据和最终通用门禁均已完成，B12 Browser 验收闭环完成。
 
 ## 10. B13～B15 后续设计规则
 
@@ -585,4 +589,4 @@ B16 / WP-02 已完成不能替代这组 B14.1 行为等价回归；只有 Batch 
 
 Browser 结果必须记录业务、fixture、测试资产修改和收口耗时，并清理本次创建的 Session、BrowserContext、Chromium、Node 进程、端口、runtime、test-results 与其他临时产物。数据库生命周期、最小 fixture、verifier 和 cleanup 的权威规则见 backend testing playbook。
 
-roadmap 业务工作包状态不因 playbook 治理或测试资产退役自动变化。B12 二次收缩已完成，U01、U02 已通过，U03 仍为 `pending`；下一活动场景为 U03。本手册不恢复旧 P1 canary；任何后续执行必须按当前 Profile 另行形成最小方案，仍禁止未经确认重建大型 B12 专属 fixture/support。B11 及以前状态不变；B13～B15 的具体候选条目与产品语义不因本手册改变。
+roadmap 业务工作包状态不因 playbook 治理或测试资产退役自动变化。B12 二次收缩后的 U01～U03 与最终通用门禁均已完成，B12 Browser 验收闭环完成。本手册不恢复旧 P1 canary，仍禁止未经确认重建大型 B12 专属 fixture/support。B11 及以前状态不变；B13～B15 的具体候选条目与产品语义不因本手册改变。
