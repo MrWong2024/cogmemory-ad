@@ -57,7 +57,7 @@ import {
 } from '../src/modules/users/schemas/user.schema';
 
 type Command = 'prepare' | 'verify' | 'cleanup';
-type VerifyPhase = 'prepared' | 'post-browser';
+type VerifyPhase = 'prepared' | 'post-browser' | 'u02-post-lock';
 type ScenarioKey = 'unlocked-confirmed' | 'locked-confirmed';
 type AppModuleExport = { AppModule: Type<unknown> };
 
@@ -83,6 +83,7 @@ type ScenarioBaseline = ScenarioRoot & {
   navigationPath: string;
   updatedAt: string;
   reportHash: string;
+  lockProtectedReportHash: string;
   sourceHash: string;
 };
 
@@ -120,6 +121,7 @@ const SCENARIO_KEYS: readonly ScenarioKey[] = [
   'locked-confirmed',
 ];
 const MARKER = 'B12-U01 synthetic readable report marker.';
+const U02_LOCK_NOTE = 'B12 U02 脱敏首次锁定说明';
 
 function requireNamespace(value: string | undefined): string {
   const namespace = value ?? 'b12u01';
@@ -165,10 +167,14 @@ function parseCommand(argv: string[]): {
   }
   if (command === 'verify') {
     const phase = argv[1];
-    if (phase !== 'prepared' && phase !== 'post-browser') {
+    if (
+      phase !== 'prepared' &&
+      phase !== 'post-browser' &&
+      phase !== 'u02-post-lock'
+    ) {
       throw new FixtureError(
         'B12_U01_VERIFY_PHASE_INVALID',
-        'verify requires prepared or post-browser',
+        'verify requires prepared, post-browser, or u02-post-lock',
       );
     }
     if (argv.length !== 2) {
@@ -237,6 +243,27 @@ function hash(value: unknown): string {
 
 function plain(document: { toObject(): unknown }): unknown {
   return document.toObject();
+}
+
+function lockProtectedReportHash(document: { toObject(): unknown }): string {
+  const report = plain(document) as Record<string, unknown>;
+  const metadata = report.metadata;
+  const protectedMetadata =
+    metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+      ? Object.fromEntries(
+          Object.entries(metadata as Record<string, unknown>).filter(
+            ([key]) => key !== 'a22Lock',
+          ),
+        )
+      : metadata;
+  return hash({
+    ...Object.fromEntries(
+      Object.entries(report).filter(
+        ([key]) => !['lockedAt', 'lockedBy', 'updatedAt'].includes(key),
+      ),
+    ),
+    metadata: protectedMetadata,
+  });
 }
 
 async function readDescriptor(runtimePath: string): Promise<RuntimeDescriptor> {
@@ -770,6 +797,7 @@ async function computeBaseline(
     navigationPath: `/patients/${root.patientId}/visits/${root.visitId}`,
     updatedAt: reportObject.updatedAt.toISOString(),
     reportHash: hash(plain(report)),
+    lockProtectedReportHash: lockProtectedReportHash(report),
     sourceHash: hash({
       instances: instances.map(plain),
       items: items.map(plain),
@@ -777,6 +805,78 @@ async function computeBaseline(
       domains: domains.map(plain),
     }),
   };
+}
+
+async function assertU02PostLock(
+  baseline: ScenarioBaseline,
+  doctor: UserDocument,
+  models: Models,
+  reportsService: ReportsService,
+  publicMapper: ClinicalReportPublicMapper,
+): Promise<void> {
+  const report = await reportsService.findReportByOwnership({
+    reportId: baseline.reportId,
+    patientId: baseline.patientId,
+    assessmentVisitId: baseline.visitId,
+  });
+  const raw = await models.reports.findById(baseline.reportId).exec();
+  if (!report || !raw) {
+    throw new FixtureError(
+      'B12_U02_REPORT_MISSING',
+      'The U02 target report is missing',
+    );
+  }
+  const lock = resolveExistingClinicalReportLock(report);
+  const freeze = resolveExistingSourceFreeze(report);
+  const archive = resolveExistingClinicalReportArchive(report);
+  const publicReport = publicMapper.toPublicReport(report);
+  const current = await computeBaseline(baseline, models);
+  const baselineUpdatedAt = new Date(baseline.updatedAt);
+  const rawObject = plain(raw) as {
+    metadata?: unknown;
+    narrative?: { chiefSummary?: unknown } | null;
+  };
+  const metadata = rawObject.metadata;
+  const a22NamespaceCount =
+    metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+      ? Object.keys(metadata).filter((key) => key === 'a22Lock').length
+      : 0;
+  const valid = Boolean(
+    report.status === 'confirmed' &&
+    report.lockedAt &&
+    raw.lockedAt &&
+    raw.lockedBy?.toString() === doctor._id.toString() &&
+    lock?.lockId &&
+    lock.lockedBy.operatorId === doctor._id.toString() &&
+    lock.lockedBy.operatorRole === 'doctor' &&
+    lock.lockNote === U02_LOCK_NOTE &&
+    publicReport.status === 'confirmed' &&
+    publicReport.lockedAt &&
+    publicReport.lock?.lockId &&
+    publicReport.lock.lockedBy?.operatorId === doctor._id.toString() &&
+    publicReport.lock.lockedBy?.operatorRole === 'doctor' &&
+    publicReport.lock.lockNote === U02_LOCK_NOTE &&
+    freeze === null &&
+    publicReport.sourceFreeze === null &&
+    archive === null &&
+    raw.archivedAt === null &&
+    raw.voidedAt === null &&
+    raw.correctionRecords.length === 0 &&
+    raw.auditLogRefs.length === 0 &&
+    a22NamespaceCount === 1 &&
+    report.updatedAt &&
+    report.updatedAt.getTime() > baselineUpdatedAt.getTime() &&
+    current.reportHash !== baseline.reportHash &&
+    current.lockProtectedReportHash === baseline.lockProtectedReportHash &&
+    current.sourceHash === baseline.sourceHash &&
+    rawObject.narrative?.chiefSummary === MARKER,
+  );
+  if (!valid) {
+    throw new FixtureError(
+      'B12_U02_POST_LOCK_INVALID',
+      'The U02 lock facts or protected baselines do not satisfy the post-lock contract',
+    );
+  }
 }
 
 async function assertScenario(
@@ -964,14 +1064,31 @@ async function verify(
       'The doctor and nurse fixture accounts do not satisfy the role contract',
     );
   }
-  for (const key of SCENARIO_KEYS) {
-    await assertScenario(
-      key,
-      descriptor.scenarios[key],
+  if (phase === 'u02-post-lock') {
+    await assertU02PostLock(
+      descriptor.scenarios['unlocked-confirmed'],
+      doctor,
       models,
       reportsService,
       publicMapper,
     );
+    await assertScenario(
+      'locked-confirmed',
+      descriptor.scenarios['locked-confirmed'],
+      models,
+      reportsService,
+      publicMapper,
+    );
+  } else {
+    for (const key of SCENARIO_KEYS) {
+      await assertScenario(
+        key,
+        descriptor.scenarios[key],
+        models,
+        reportsService,
+        publicMapper,
+      );
+    }
   }
   return {
     ok: true,
@@ -981,11 +1098,31 @@ async function verify(
     actualDatabaseName: DATABASE_NAME,
     namespace,
     accountRoles: { doctor: 'doctor', nurse: 'nurse' },
-    scenarios: {
-      unlockedConfirmed: 'unchanged_and_eligible',
-      lockedConfirmed: 'unchanged_locked_not_archived',
-    },
-    protectedBaselines: 'matched',
+    scenarios:
+      phase === 'u02-post-lock'
+        ? {
+            unlockedConfirmed: 'first_lock_verified',
+            lockedConfirmed: 'unchanged_locked_not_archived',
+          }
+        : {
+            unlockedConfirmed: 'unchanged_and_eligible',
+            lockedConfirmed: 'unchanged_locked_not_archived',
+          },
+    protectedBaselines:
+      phase === 'u02-post-lock'
+        ? 'report_and_sources_matched_excluding_a22_lock'
+        : 'matched',
+    ...(phase === 'u02-post-lock'
+      ? {
+          lockFacts: {
+            uniqueA22Namespace: true,
+            independentAuditLogRefsAdded: 0,
+            sourceFreeze: 'absent',
+            archive: 'absent',
+            correctionRecordsAdded: 0,
+          },
+        }
+      : {}),
   };
 }
 

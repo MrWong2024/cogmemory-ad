@@ -11,15 +11,15 @@
 | Batch B / B4–B6 | 桌面范围已完成，既有状态不变 |
 | Batch C / B7–B10 | 已完成，既有状态不变 |
 | Batch D / B11 | 70 项已完成，状态不变 |
-| Batch D / B12 | 合同前置与防御证据保留；`B12-U01` 已完成，活动用户场景状态为 `passed=1`、`pending=2`、`failed=0`、`blocked=0`、`not_executed=0`；合同前置证据仍无确认 `gap`，真实 HTTP 并发锁定已由现有 A22 E2E 文件覆盖，权威明细见 frontend testing playbook 9.2 |
+| Batch D / B12 | 合同前置与防御证据保留；`B12-U01`、`B12-U02` 已完成，活动用户场景状态为 `passed=2`、`pending=1`、`failed=0`、`blocked=0`、`not_executed=0`；合同前置证据仍无确认 `gap`，真实 HTTP 并发锁定已由现有 A22 E2E 文件覆盖，权威明细见 frontend testing playbook 9.2 |
 | Batch D / B13–B15（含 B14.1） | 候选断言和历史设计输入保留，尚未执行；正式设计活动清单前须先完成可达性、风险与证据复用审查 |
 | Batch E | 8 个真实设备或人工项目尚未执行 |
 
 roadmap 继续维护产品范围和工作包状态；testing playbook 治理不得自动改变 roadmap。
 
-当前状态：B12 既有后端 HTTP E2E、unit/pure、mapper 与 frontend pure/static 证据继续作为合同或防御证据保留，不再分配 B12 活动 ID。合同前置证据仍无确认 `gap`；两个合法独立认证 Session 基于同一 expectedUpdatedAt 的真实 HTTP 并发锁定，已由现有 `backend/test/clinical-report-lock.e2e-spec.ts` 覆盖，权威明细仍以 frontend testing playbook 9.2 为准；`internal_corruption_only` 的 S11 迁为非阻断防御证据，原 B12-84 的“无新增路由”继续归入最终通用门禁。U01 已用真实 Browser 页面与真实 HTTP 读取完成，未执行报告业务写入。
+当前状态：B12 既有后端 HTTP E2E、unit/pure、mapper 与 frontend pure/static 证据继续作为合同或防御证据保留，不再分配 B12 活动 ID。合同前置证据仍无确认 `gap`；两个合法独立认证 Session 基于同一 expectedUpdatedAt 的真实 HTTP 并发锁定，已由现有 `backend/test/clinical-report-lock.e2e-spec.ts` 覆盖，权威明细仍以 frontend testing playbook 9.2 为准；`internal_corruption_only` 的 S11 迁为非阻断防御证据，原 B12-84 的“无新增路由”继续归入最终通用门禁。U01 已完成真实 Browser 只读入口验证；U02 已完成一次真实 Browser A22 lock 写入，并由 `u02-post-lock` 只读数据库验证确认唯一锁定事实、受保护报告正文与来源数据未污染。
 
-B12-P1 旧实验测试资产仍保持移除；U01 只新增一个自包含最小 fixture CLI 和一个 Browser spec，没有恢复旧 fixture/support，也没有引入 manager、contract、manifest、journal、aggregator、runner 或 Stage。后续 Browser 只围绕 U02、U03 的当前 Profile 另行形成最小方案，不再声明旧 P1 canary 为下一阶段。
+B12-P1 旧实验测试资产仍保持移除；U01、U02 复用一个自包含最小 fixture CLI，各自使用一个 Browser spec，没有恢复旧 fixture/support，也没有引入 manager、contract、manifest、journal、aggregator、runner、verifier 文件或 Stage。后续 Browser 只剩 U03 当前 Profile，不再声明旧 P1 canary 为下一阶段。
 
 ## 2. 数据库用途和隔离
 
@@ -186,7 +186,7 @@ node -e "process.env.NODE_ENV='test'; process.env.COGMEMORY_DATABASE_PURPOSE='st
 
 ## 10. B12～B15 当前待验范围
 
-- B12：原 88 个 ID 与原 S01～S17 不再作为活动关闭对象；当前唯一活动用户场景是 `B12-U01`～`B12-U03`，其中 U01 已完成，状态为 `passed=1`、`pending=2`、`failed=0`、`blocked=0`、`not_executed=0`。既有 A22/A23 HTTP E2E、unit/pure、mapper 和 frontend pure/static 证据迁入不分配活动 ID 的合同前置表或非阻断防御证据；合同前置证据仍无确认 `gap`，逐项权威明细、U01 Browser 结果与迁移仍以 frontend testing playbook 9.1～9.4 为准。
+- B12：原 88 个 ID 与原 S01～S17 不再作为活动关闭对象；当前唯一活动用户场景是 `B12-U01`～`B12-U03`，其中 U01、U02 已完成，状态为 `passed=2`、`pending=1`、`failed=0`、`blocked=0`、`not_executed=0`。U02 的真实 Browser 写入与后置数据库验证已通过；既有 A22/A23 HTTP E2E、unit/pure、mapper 和 frontend pure/static 证据继续作为不分配活动 ID 的合同前置或防御证据，仍无确认 `gap`。逐项权威明细、Browser 结果与迁移仍以 frontend testing playbook 9.1～9.4 为准。
 - B13：原 116 项属于未经治理的候选断言和历史设计输入，本次不改写具体候选条目；正式设计活动清单前须先分类。
 - B14：原 115 项和 B14.1 行为范围属于未经治理的候选断言和历史设计输入，本次不改写具体候选条目；正式设计活动清单前须先分类。
 - B15：原 10 组属于未经治理的候选断言和历史设计输入，本次不改写具体候选条目；正式设计活动清单前须先分类。
