@@ -46,7 +46,7 @@ import { ScoreResult, type ScoreResultDocument } from '../src/modules/scoring/sc
 import { User, type UserDocument } from '../src/modules/users/schemas/user.schema';
 
 type Command = 'prepare' | 'verify' | 'cleanup';
-type Phase = 'prepared' | 'post-browser';
+type Phase = 'prepared' | 'post-browser' | 'u02-post-freeze';
 // prettier-ignore
 type Key = 'source-freeze-null' | 'source-freeze-in-progress' | 'source-freeze-completed';
 type Root = { patientId: string; visitId: string; reportId: string };
@@ -56,6 +56,8 @@ type Baseline = Root & {
     updatedAt: string; sourceFreezeState: 'in_progress' | 'completed' | null;
     freezeIdHash: string | null; freezeNoteHash: string | null; countsHash: string | null;
     status: string; lockedAt: string; archivedAt: null;
+    reportProtectedFactsHash: string; sourceImmutableFactsHash: string;
+    patientVisitProtectedStateHash: string; auditLogRefsHash: string;
   };
 };
 // prettier-ignore
@@ -89,6 +91,7 @@ const PROFILE = 'B13-P1-entry-persisted-states' as const;
 const MARKER = 'B13-U01 synthetic readable report marker.';
 const IN_PROGRESS_NOTE = 'B13 U01 脱敏未完成来源冻结说明';
 const COMPLETED_NOTE = 'B13 U01 脱敏已完成来源冻结说明';
+const U02_NOTE = 'B13 U02 脱敏首次来源冻结说明';
 const KEYS: readonly Key[] = [
   'source-freeze-null',
   'source-freeze-in-progress',
@@ -111,11 +114,17 @@ function parseCommand(): { command: Command; phase?: Phase } {
   if (!['prepare', 'verify', 'cleanup'].includes(command) || extra) {
     fail(
       'B13_COMMAND_INVALID',
-      'Use prepare, verify prepared|post-browser, or cleanup',
+      'Use prepare, verify prepared|post-browser|u02-post-freeze, or cleanup',
     );
   }
-  if (command === 'verify' && !['prepared', 'post-browser'].includes(phase)) {
-    fail('B13_PHASE_INVALID', 'verify requires prepared or post-browser');
+  if (
+    command === 'verify' &&
+    !['prepared', 'post-browser', 'u02-post-freeze'].includes(phase)
+  ) {
+    fail(
+      'B13_PHASE_INVALID',
+      'verify requires prepared, post-browser, or u02-post-freeze',
+    );
   }
   if (command !== 'verify' && phase)
     fail('B13_ARGUMENT_INVALID', 'Unexpected fixture argument');
@@ -162,6 +171,59 @@ function countHash(freeze: ClinicalReportSourceFreezeMetadata): string {
     newlyFrozen: freeze.newlyFrozenCounts ?? null,
     previouslyFrozen: freeze.previouslyFrozenCounts,
   });
+}
+
+function documentFacts(
+  document: unknown,
+  omitted: readonly string[] = [],
+): Record<string, unknown> {
+  const value = (document as { toObject(): unknown }).toObject() as Record<
+    string,
+    unknown
+  >;
+  for (const key of omitted) delete value[key];
+  return value;
+}
+
+async function protectedFacts(root: Root, models: Models) {
+  const ownership = {
+    patientId: new Types.ObjectId(root.patientId),
+    assessmentVisitId: new Types.ObjectId(root.visitId),
+  };
+  // prettier-ignore
+  const [report, patient, visit, instances, items, scores, domains, media] = await Promise.all([
+    models.reports.findById(root.reportId), models.patients.findById(root.patientId), models.visits.findById(root.visitId),
+    models.instances.find(ownership).sort({ _id: 1 }), models.items.find(ownership).sort({ _id: 1 }),
+    models.scores.find(ownership).sort({ _id: 1 }), models.domains.find(ownership).sort({ _id: 1 }), models.media.find(ownership).sort({ _id: 1 }),
+  ]);
+  if (!report || !patient || !visit)
+    fail('B13_PROTECTED_FACTS_MISSING', 'Protected fixture facts are missing');
+  const reportFacts = documentFacts(report, [
+    '__v',
+    'updatedAt',
+    'auditLogRefs',
+  ]);
+  if (reportFacts.metadata && typeof reportFacts.metadata === 'object') {
+    reportFacts.metadata = {
+      ...(reportFacts.metadata as Record<string, unknown>),
+    };
+    delete (reportFacts.metadata as Record<string, unknown>).a23SourceFreeze;
+  }
+  const immutableSourceFacts = [instances, items, scores, domains, media].map(
+    (documents) =>
+      documents.map((document) =>
+        documentFacts(document, ['__v', 'status', 'lockedAt', 'updatedAt']),
+      ),
+  );
+  return {
+    reportProtectedFactsHash: hash(reportFacts),
+    sourceImmutableFactsHash: hash(immutableSourceFacts),
+    patientVisitProtectedStateHash: hash([
+      documentFacts(patient, ['__v']),
+      documentFacts(visit, ['__v']),
+    ]),
+    auditLogRefsHash: hash(report.auditLogRefs),
+  };
 }
 
 async function readDescriptor(path: string): Promise<Descriptor> {
@@ -525,6 +587,7 @@ async function completeFreeze(
 async function snapshot(
   root: Root,
   reports: ReportsService,
+  models: Models,
 ): Promise<Baseline> {
   const report = await reports.findReportByOwnership({
     reportId: root.reportId,
@@ -546,6 +609,7 @@ async function snapshot(
       status: report.status,
       lockedAt: report.lockedAt.toISOString(),
       archivedAt: null,
+      ...(await protectedFacts(root, models)),
     },
   };
 }
@@ -554,6 +618,7 @@ async function assertScenario(
   key: Key,
   baseline: Baseline,
   reports: ReportsService,
+  models: Models,
 ) {
   const report = await reports.findReportByOwnership({
     reportId: baseline.reportId,
@@ -600,14 +665,119 @@ async function assertScenario(
               freeze.completedCounts?.totalSourceCount === 4 &&
               freeze.newlyFrozenCounts?.totalSourceCount === 4),
         );
-  const current = await snapshot(baseline, reports);
+  const ownership = {
+    patientId: new Types.ObjectId(baseline.patientId),
+    assessmentVisitId: new Types.ObjectId(baseline.visitId),
+  };
+  // prettier-ignore
+  const [instances, items, scores, domains, media] = await Promise.all([
+    models.instances.find(ownership), models.items.find(ownership), models.scores.find(ownership),
+    models.domains.find(ownership), models.media.find(ownership),
+  ]);
+  const frozenAt =
+    expected === 'completed' && freeze
+      ? freeze.sourceLockedAt.toISOString()
+      : null;
+  // prettier-ignore
+  const sourceState =
+    instances.length === 1 && items.length === 1 && scores.length === 1 && domains.length === 1 && media.length === 0 &&
+    instances[0].status === (frozenAt ? 'locked' : 'completed') &&
+    items[0].status === (frozenAt ? 'locked' : 'answered') && scores[0].status === (frozenAt ? 'locked' : 'confirmed') && domains[0].status === 'computed' &&
+    [...instances, ...items, ...scores, ...domains]
+      .map((item) => item.lockedAt?.toISOString() ?? null)
+      .every((value) => value === frozenAt);
+  const current = await snapshot(baseline, reports, models);
   if (
     !common ||
     !state ||
+    !sourceState ||
     JSON.stringify(current.preparedBaseline) !==
       JSON.stringify(baseline.preparedBaseline)
   ) {
     fail('B13_SCENARIO_INVALID', `${key} or its protected baseline changed`);
+  }
+}
+
+async function assertU02PostFreeze(
+  baseline: Baseline,
+  doctor: UserDocument,
+  reports: ReportsService,
+  models: Models,
+) {
+  const report = await reports.findReportByOwnership({
+    reportId: baseline.reportId,
+    patientId: baseline.patientId,
+    assessmentVisitId: baseline.visitId,
+  });
+  const internal = await models.reports.findById(baseline.reportId);
+  if (!report?.updatedAt || !internal || !report.lockedAt)
+    fail('B13_U02_REPORT_MISSING', 'U02 target report is missing');
+  const freeze = resolveExistingSourceFreeze(report);
+  const ownership = {
+    patientId: new Types.ObjectId(baseline.patientId),
+    assessmentVisitId: new Types.ObjectId(baseline.visitId),
+  };
+  // prettier-ignore
+  const [instances, items, scores, domains, media, auditLogs] = await Promise.all([
+    models.instances.find(ownership).sort({ _id: 1 }), models.items.find(ownership).sort({ _id: 1 }),
+    models.scores.find(ownership).sort({ _id: 1 }), models.domains.find(ownership).sort({ _id: 1 }),
+    models.media.find(ownership).sort({ _id: 1 }),
+    models.reports.db.collection('audit_logs').countDocuments({ $or: [
+      { reportId: internal._id }, { clinicalReportId: internal._id }, { resourceId: internal._id },
+    ] }),
+  ]);
+  const actualScope = buildClinicalReportSourceFreezeScope(
+    report,
+    items.map((item) => item.id),
+  );
+  const actualCounts = buildClinicalReportSourceFreezeCounts(actualScope);
+  const lockedAt = freeze?.sourceLockedAt.toISOString();
+  const allLockedAt = [...instances, ...items, ...scores, ...domains, ...media]
+    .map((item) => item.lockedAt?.toISOString())
+    .every((value) => value === lockedAt);
+  // prettier-ignore
+  const sourceState = instances.length === 1 && items.length === 1 && scores.length === 1 && domains.length === 1 && media.length === 0 &&
+    instances[0].status === 'locked' && items[0].status === 'locked' && scores[0].status === 'locked' &&
+    domains[0].status === 'computed' && allLockedAt;
+  const countsSafe = Boolean(
+    freeze &&
+    hash(freeze.scope) === hash(actualScope) &&
+    hash(freeze.expectedCounts) === hash(actualCounts) &&
+    hash(freeze.completedCounts) === hash(actualCounts) &&
+    hash(freeze.newlyFrozenCounts) === hash(actualCounts) &&
+    freeze.previouslyFrozenCounts.totalSourceCount === 0,
+  );
+  const metadataOccurrences = (
+    JSON.stringify(internal.metadata).match(/"a23SourceFreeze"/g) ?? []
+  ).length;
+  const currentFacts = await protectedFacts(baseline, models);
+  // prettier-ignore
+  const protectedFactsMatch = (['reportProtectedFactsHash', 'sourceImmutableFactsHash',
+    'patientVisitProtectedStateHash', 'auditLogRefsHash'] as const)
+    .every((key) => currentFacts[key] === baseline.preparedBaseline[key]);
+  // prettier-ignore
+  const reportState = Boolean(
+    freeze?.state === 'completed' && freeze.freezeId && freeze.completedAt && freeze.sourceLockedAt &&
+      freeze.freezeNote === U02_NOTE && freeze.startedBy === doctor.id && freeze.completedBy === doctor.id &&
+      freeze.startedByRole === 'doctor' && freeze.completedByRole === 'doctor' &&
+      report.status === 'confirmed' && report.source === 'mixed' && report.qualityStatus === 'passed' &&
+      report.lockedAt.toISOString() === baseline.preparedBaseline.lockedAt &&
+      report.archivedAt === null && report.voidedAt === null && report.correctionRecords.length === 0 &&
+      report.narrative?.chiefSummary === MARKER &&
+      report.updatedAt.toISOString() > baseline.preparedBaseline.updatedAt,
+  );
+  if (
+    !reportState ||
+    !sourceState ||
+    !countsSafe ||
+    !protectedFactsMatch ||
+    metadataOccurrences !== 1 ||
+    auditLogs !== 0
+  ) {
+    fail(
+      'B13_U02_POST_FREEZE_INVALID',
+      'U02 completed fact or protected boundary is invalid',
+    );
   }
 }
 
@@ -704,13 +874,14 @@ async function prepare(input: {
     );
     const scenarios = {} as Record<Key, Baseline>;
     for (const key of KEYS)
-      scenarios[key] = await snapshot(roots[key], reports);
+      scenarios[key] = await snapshot(roots[key], reports, models);
     // prettier-ignore
     const descriptor: Descriptor = { schemaVersion: 1, batch: 'B13', profile: PROFILE,
       namespace, accounts: { doctor: { loginIdentifier: users.doctor.accountName },
         nurse: { loginIdentifier: users.nurse.accountName } }, scenarios };
     await writeDescriptor(path, descriptor);
-    for (const key of KEYS) await assertScenario(key, scenarios[key], reports);
+    for (const key of KEYS)
+      await assertScenario(key, scenarios[key], reports, models);
     // prettier-ignore
     return { ok: true, command: 'prepare', databasePurpose: 'browser_acceptance',
       actualDatabaseName: DB, namespace, accounts: { doctor: 'prepared', nurse: 'prepared' },
@@ -759,14 +930,25 @@ async function verify(input: {
   ) {
     fail('B13_ACCOUNTS_INVALID', 'Doctor or nurse account contract failed');
   }
-  for (const key of KEYS)
-    await assertScenario(key, descriptor.scenarios[key], reports);
+  if (phase === 'u02-post-freeze') {
+    await assertU02PostFreeze(
+      descriptor.scenarios['source-freeze-null'],
+      doctor,
+      reports,
+      models,
+    );
+    for (const key of KEYS.slice(1))
+      await assertScenario(key, descriptor.scenarios[key], reports, models);
+  } else {
+    for (const key of KEYS)
+      await assertScenario(key, descriptor.scenarios[key], reports, models);
+  }
   // prettier-ignore
   return { ok: true, command: 'verify', phase, databasePurpose: 'browser_acceptance',
     actualDatabaseName: DB, namespace, accountRoles: { doctor: 'doctor', nurse: 'nurse' },
-    scenarios: { sourceFreezeNull: 'unchanged', sourceFreezeInProgress: 'unchanged',
+    scenarios: { sourceFreezeNull: phase === 'u02-post-freeze' ? 'completed_once' : 'unchanged', sourceFreezeInProgress: 'unchanged',
       sourceFreezeCompleted: 'unchanged' },
-    protectedBaselines: 'updatedAt_status_lockedAt_archivedAt_sourceFreeze_id_note_counts_matched' };
+    protectedBaselines: 'report_sources_patient_visit_audit_refs_matched' };
 }
 
 function models(app: INestApplicationContext): Models {
