@@ -72,6 +72,11 @@ const SUBJECT_PREFIX = 'SUBJ-A23-TEST-';
 const VISIT_PREFIX = 'VISIT-A23-TEST-';
 type SupertestApp = NonNullable<Parameters<typeof request.agent>[0]>;
 
+type FixtureOptions = {
+  includeSecondTargetItemResponse?: boolean;
+  includeOutsideItemResponse?: boolean;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -84,6 +89,34 @@ function body(response: Response): Record<string, unknown> {
 function record(value: unknown, label: string): Record<string, unknown> {
   if (!isRecord(value)) throw new Error(`Expected ${label} object`);
   return value;
+}
+
+function sourceCounts(itemResponseCount: number) {
+  return {
+    scaleInstanceCount: 1,
+    itemResponseCount,
+    scoreResultCount: 1,
+    cognitiveDomainResultCount: 1,
+    mediaEvidenceCount: 1,
+    totalSourceCount: itemResponseCount + 4,
+  };
+}
+
+function expectProtectedReportFactsUnchanged(
+  before: ClinicalReportDocument,
+  after: ClinicalReportDocument,
+): void {
+  const beforeFacts = record(before.toObject(), 'before report facts');
+  const afterFacts = record(after.toObject(), 'after report facts');
+  delete beforeFacts.updatedAt;
+  delete afterFacts.updatedAt;
+  const beforeMetadata = record(beforeFacts.metadata, 'before report metadata');
+  const afterMetadata = {
+    ...record(afterFacts.metadata, 'after report metadata'),
+  };
+  delete afterMetadata.a23SourceFreeze;
+  afterFacts.metadata = afterMetadata;
+  expect(afterFacts).toEqual({ ...beforeFacts, metadata: beforeMetadata });
 }
 
 describe('clinical report source freeze API (e2e)', () => {
@@ -107,8 +140,9 @@ describe('clinical report source freeze API (e2e)', () => {
   let researchAgent: ReturnType<typeof request.agent>;
   let systemAgent: ReturnType<typeof request.agent>;
   let doctorId: Types.ObjectId;
+  let adminId: Types.ObjectId;
 
-  async function cleanup(): Promise<void> {
+  async function cleanup(): Promise<number> {
     const users = await userModel
       .find({ accountName: { $in: Object.values(ACCOUNTS) } })
       .select({ _id: 1 })
@@ -153,9 +187,26 @@ describe('clinical report source freeze API (e2e)', () => {
     await userModel
       .deleteMany({ accountName: { $in: Object.values(ACCOUNTS) } })
       .exec();
+    const residualCounts = await Promise.all([
+      userIds.length > 0
+        ? sessionModel.countDocuments({ userId: { $in: userIds } }).exec()
+        : Promise.resolve(0),
+      userModel
+        .countDocuments({ accountName: { $in: Object.values(ACCOUNTS) } })
+        .exec(),
+      patientModel.countDocuments({ subjectCode: /^SUBJ-A23-TEST-/ }).exec(),
+      visitModel.countDocuments({ visitCode: /^VISIT-A23-TEST-/ }).exec(),
+      instanceModel.countDocuments({ subjectCode: /^SUBJ-A23-TEST-/ }).exec(),
+      itemModel.countDocuments({ subjectCode: /^SUBJ-A23-TEST-/ }).exec(),
+      scoreModel.countDocuments({ subjectCode: /^SUBJ-A23-TEST-/ }).exec(),
+      domainModel.countDocuments({ subjectCode: /^SUBJ-A23-TEST-/ }).exec(),
+      mediaModel.countDocuments({ subjectCode: /^SUBJ-A23-TEST-/ }).exec(),
+      reportModel.countDocuments({ subjectCode: /^SUBJ-A23-TEST-/ }).exec(),
+    ]);
+    return residualCounts.reduce((total, count) => total + count, 0);
   }
 
-  async function createFixture(suffix: string) {
+  async function createFixture(suffix: string, options: FixtureOptions = {}) {
     const patient = await patientModel.create({
       subjectCode: `${SUBJECT_PREFIX}${suffix}`,
       displayName: 'A23 De-identified Subject',
@@ -206,12 +257,14 @@ describe('clinical report source freeze API (e2e)', () => {
       voidedAt: null,
       metadata: { submission: { submissionId: 'a23-test-submission' } },
     });
+    const outsideDefinitionId = new Types.ObjectId();
+    const outsideVersionId = new Types.ObjectId();
     const outsideInstance = await instanceModel.create({
       assessmentVisitId: visit._id,
       patientId: patient._id,
       subjectCode: patient.subjectCode,
-      scaleDefinitionId: new Types.ObjectId(),
-      scaleVersionId: new Types.ObjectId(),
+      scaleDefinitionId: outsideDefinitionId,
+      scaleVersionId: outsideVersionId,
       scaleCode: 'mmse',
       scaleVersion: '1.0',
       instanceCode: `INST-A23-OUTSIDE-${suffix}`,
@@ -250,6 +303,69 @@ describe('clinical report source freeze API (e2e)', () => {
       lockedAt: null,
       voidedAt: null,
     });
+    const targetItems = [item];
+    if (options.includeSecondTargetItemResponse) {
+      targetItems.push(
+        await itemModel.create({
+          assessmentVisitId: visit._id,
+          scaleInstanceId: instance._id,
+          patientId: patient._id,
+          subjectCode: patient.subjectCode,
+          scaleDefinitionId: definitionId,
+          scaleVersionId: versionId,
+          scaleCode: 'moca',
+          scaleVersion: '1.0',
+          instanceCode: instance.instanceCode,
+          itemCode: 'moca.a23.test.item.2',
+          itemOrder: 2,
+          responseType: 'text',
+          countsTowardTotal: true,
+          cognitiveDomainCodes: ['attention'],
+          itemConfigSnapshot: null,
+          versionTrace: { scaleVersion: '1.0' },
+          status: 'answered',
+          answerSource: 'clinician_recorded',
+          rawResponse: 'second de-identified test response',
+          structuredResponse: null,
+          isMissing: false,
+          stepResults: [],
+          promptResponses: [],
+          evidenceRefs: [],
+          lockedAt: null,
+          voidedAt: null,
+        }),
+      );
+    }
+    const outsideItem = options.includeOutsideItemResponse
+      ? await itemModel.create({
+          assessmentVisitId: visit._id,
+          scaleInstanceId: outsideInstance._id,
+          patientId: patient._id,
+          subjectCode: patient.subjectCode,
+          scaleDefinitionId: outsideDefinitionId,
+          scaleVersionId: outsideVersionId,
+          scaleCode: 'mmse',
+          scaleVersion: '1.0',
+          instanceCode: outsideInstance.instanceCode,
+          itemCode: 'mmse.a23.outside.item',
+          itemOrder: 1,
+          responseType: 'text',
+          countsTowardTotal: true,
+          cognitiveDomainCodes: ['orientation'],
+          itemConfigSnapshot: null,
+          versionTrace: { scaleVersion: '1.0' },
+          status: 'answered',
+          answerSource: 'clinician_recorded',
+          rawResponse: 'outside de-identified test response',
+          structuredResponse: null,
+          isMissing: false,
+          stepResults: [],
+          promptResponses: [],
+          evidenceRefs: [],
+          lockedAt: null,
+          voidedAt: null,
+        })
+      : null;
     const evidenceStorage = {
       storageDriver: 'fake',
       bucket: 'a23-test-bucket',
@@ -583,6 +699,8 @@ describe('clinical report source freeze API (e2e)', () => {
       instance,
       outsideInstance,
       item,
+      targetItems,
+      outsideItem,
       evidence,
       evidenceId,
       unreferencedEvidence,
@@ -605,11 +723,7 @@ describe('clinical report source freeze API (e2e)', () => {
     await app.init();
     connection = app.get<Connection>(getConnectionToken());
     const databaseName = connection.name.toLowerCase();
-    if (
-      !databaseName.includes('_test') ||
-      databaseName.includes('_dev') ||
-      databaseName.includes('_prod')
-    ) {
+    if (databaseName !== 'cogmemory_ad_test') {
       throw new Error('E2E database isolation is not active');
     }
     const config = app.get(ConfigService);
@@ -649,8 +763,11 @@ describe('clinical report source freeze API (e2e)', () => {
       });
     }
     const doctor = await userModel.findOne({ accountName: ACCOUNTS.doctor });
+    const admin = await userModel.findOne({ accountName: ACCOUNTS.admin });
     if (!doctor) throw new Error('Expected A23 doctor account');
+    if (!admin) throw new Error('Expected A23 admin account');
     doctorId = doctor._id;
+    adminId = admin._id;
     server = requireInitialized<SupertestApp>(
       app.getHttpServer() as SupertestApp | undefined,
       'HTTP server',
@@ -676,8 +793,9 @@ describe('clinical report source freeze API (e2e)', () => {
 
   afterAll(async () => {
     if (app) {
-      await cleanup();
+      expect(await cleanup()).toBe(0);
       await app.close();
+      expect(connection.readyState).toBe(0);
     }
   });
 
@@ -820,6 +938,281 @@ describe('clinical report source freeze API (e2e)', () => {
       .expect(200);
     const latestReport = record(body(latest).report, 'report');
     expect(latestReport.sourceFreeze).toEqual(firstReport.sourceFreeze);
+  });
+
+  it('freezes every ItemResponse in the report scale-instance scope and leaves outside items unchanged', async () => {
+    const fixture = await createFixture('MULTI', {
+      includeSecondTargetItemResponse: true,
+      includeOutsideItemResponse: true,
+    });
+    if (!fixture.outsideItem) throw new Error('Expected outside item response');
+    expect(fixture.targetItems).toHaveLength(2);
+    const [beforePatient, beforeVisit, beforeOutside, beforeOutsideItem] =
+      await Promise.all([
+        patientModel.findById(fixture.patient._id).lean().exec(),
+        visitModel.findById(fixture.visit._id).lean().exec(),
+        instanceModel.findById(fixture.outsideInstance._id).lean().exec(),
+        itemModel.findById(fixture.outsideItem._id).lean().exec(),
+      ]);
+    const beforeReport = await reportModel.findById(fixture.report._id).exec();
+    const expectedUpdatedAt: unknown = fixture.report.get('updatedAt');
+    if (!beforeReport || !(expectedUpdatedAt instanceof Date)) {
+      throw new Error('Expected complete multi-item fixture');
+    }
+
+    const response = await doctorAgent
+      .post(
+        `/patients/${fixture.patient._id.toString()}/visits/${fixture.visit._id.toString()}/clinical-reports/${fixture.report._id.toString()}/freeze-sources`,
+      )
+      .send({
+        confirm: true,
+        freezeNote: 'A23 multi-item de-identified freeze note',
+        expectedUpdatedAt: expectedUpdatedAt.toISOString(),
+      })
+      .expect(200);
+    const responseBody = body(response);
+    const receipt = record(
+      responseBody.sourceFreezeReceipt,
+      'multi-item source freeze receipt',
+    );
+    const expectedCounts = sourceCounts(fixture.targetItems.length);
+    for (const field of [
+      'expectedCounts',
+      'completedCounts',
+      'newlyFrozenCounts',
+    ]) {
+      expect(receipt[field]).toEqual(expectedCounts);
+    }
+    expect(receipt.previouslyFrozenCounts).toEqual({
+      scaleInstanceCount: 0,
+      itemResponseCount: 0,
+      scoreResultCount: 0,
+      cognitiveDomainResultCount: 0,
+      mediaEvidenceCount: 0,
+      totalSourceCount: 0,
+    });
+    const sourceLockedAt = String(receipt.sourceLockedAt);
+    expect(Number.isFinite(Date.parse(sourceLockedAt))).toBe(true);
+    const targetItems = await itemModel
+      .find({ scaleInstanceId: fixture.instance._id })
+      .sort({ itemOrder: 1 })
+      .exec();
+    expect(targetItems).toHaveLength(2);
+    for (const item of targetItems) {
+      expect(item.status).toBe('locked');
+      expect(item.lockedAt?.toISOString()).toBe(sourceLockedAt);
+    }
+    expect(
+      await itemModel.findById(fixture.outsideItem._id).lean().exec(),
+    ).toEqual(beforeOutsideItem);
+    expect(
+      await instanceModel.findById(fixture.outsideInstance._id).lean().exec(),
+    ).toEqual(beforeOutside);
+    expect(
+      await patientModel.findById(fixture.patient._id).lean().exec(),
+    ).toEqual(beforePatient);
+    expect(await visitModel.findById(fixture.visit._id).lean().exec()).toEqual(
+      beforeVisit,
+    );
+    const afterReport = await reportModel.findById(fixture.report._id).exec();
+    if (!afterReport) throw new Error('Expected frozen multi-item report');
+    expectProtectedReportFactsUnchanged(beforeReport, afterReport);
+    expect(record(responseBody.report, 'public report').status).toBe(
+      'confirmed',
+    );
+    expect(responseBody).not.toHaveProperty('metadata');
+    expect(receipt).not.toHaveProperty('scope');
+    const serializedResponse = JSON.stringify(responseBody);
+    for (const item of [...fixture.targetItems, fixture.outsideItem]) {
+      expect(serializedResponse).not.toContain(item._id.toString());
+    }
+  });
+
+  it('creates one source-freeze fact under two concurrent authenticated HTTP requests', async () => {
+    const fixture = await createFixture('CONCURRENT');
+    const expectedUpdatedAt: unknown = fixture.report.get('updatedAt');
+    const beforeReport = await reportModel.findById(fixture.report._id).exec();
+    const [
+      beforePatient,
+      beforeVisit,
+      beforeOutside,
+      beforeUnreferenced,
+      beforeEvidence,
+    ] = await Promise.all([
+      patientModel.findById(fixture.patient._id).lean().exec(),
+      visitModel.findById(fixture.visit._id).lean().exec(),
+      instanceModel.findById(fixture.outsideInstance._id).lean().exec(),
+      mediaModel.findById(fixture.unreferencedEvidenceId).lean().exec(),
+      mediaModel.findById(fixture.evidenceId).lean().exec(),
+    ]);
+    if (!beforeReport || !(expectedUpdatedAt instanceof Date)) {
+      throw new Error('Expected complete concurrent fixture');
+    }
+    expect(
+      record(beforeReport.metadata, 'initial report metadata'),
+    ).not.toHaveProperty('a23SourceFreeze');
+    const path = `/patients/${fixture.patient._id.toString()}/visits/${fixture.visit._id.toString()}/clinical-reports/${fixture.report._id.toString()}/freeze-sources`;
+    const doctorNote = 'A23 concurrent doctor de-identified note';
+    const adminNote = 'A23 concurrent admin de-identified note';
+    const doctorRequest = doctorAgent.post(path).send({
+      confirm: true,
+      freezeNote: doctorNote,
+      expectedUpdatedAt: expectedUpdatedAt.toISOString(),
+    });
+    const adminRequest = adminAgent.post(path).send({
+      confirm: true,
+      freezeNote: adminNote,
+      expectedUpdatedAt: expectedUpdatedAt.toISOString(),
+    });
+    const [doctorResponse, adminResponse] = await Promise.all([
+      doctorRequest,
+      adminRequest,
+    ]);
+    expect(doctorResponse.status).toBe(200);
+    expect(adminResponse.status).toBe(200);
+    const contenders = [
+      {
+        role: 'doctor' as const,
+        note: doctorNote,
+        actorId: doctorId.toString(),
+        response: doctorResponse,
+      },
+      {
+        role: 'admin' as const,
+        note: adminNote,
+        actorId: adminId.toString(),
+        response: adminResponse,
+      },
+    ].map((entry) => ({
+      ...entry,
+      receipt: record(
+        body(entry.response).sourceFreezeReceipt,
+        `${entry.role} source freeze receipt`,
+      ),
+    }));
+    const firstStarts = contenders.filter(
+      ({ receipt }) =>
+        receipt.alreadyFrozen === false && receipt.resumedExisting === false,
+    );
+    expect(firstStarts).toHaveLength(1);
+    const winner = firstStarts[0];
+    const loser = contenders.find((entry) => entry.role !== winner?.role);
+    if (!winner || !loser) throw new Error('Expected one concurrent winner');
+    expect(
+      (loser.receipt.alreadyFrozen === true &&
+        loser.receipt.resumedExisting === false) ||
+        (loser.receipt.alreadyFrozen === false &&
+          loser.receipt.resumedExisting === true),
+    ).toBe(true);
+    const winnerActor = record(winner.receipt.startedBy, 'winner actor');
+    expect(winner.receipt.freezeNote).toBe(winner.note);
+    expect(winnerActor.operatorId).toBe(winner.actorId);
+    expect(winnerActor.operatorRole).toBe(winner.role);
+    expect(loser.receipt.freezeNote).toBe(winner.note);
+    expect(loser.receipt.freezeNote).not.toBe(loser.note);
+    for (const field of [
+      'freezeId',
+      'state',
+      'startedAt',
+      'sourceLockedAt',
+      'startedBy',
+      'completedAt',
+      'completedBy',
+      'freezeNote',
+      'expectedCounts',
+      'completedCounts',
+      'newlyFrozenCounts',
+      'previouslyFrozenCounts',
+    ]) {
+      expect(loser.receipt[field]).toEqual(winner.receipt[field]);
+    }
+    expect(
+      record(body(loser.response).report, 'loser report').sourceFreeze,
+    ).toEqual(
+      record(body(winner.response).report, 'winner report').sourceFreeze,
+    );
+
+    const persisted = await reportModel.findById(fixture.report._id).exec();
+    if (!persisted) throw new Error('Expected concurrent frozen report');
+    expectProtectedReportFactsUnchanged(beforeReport, persisted);
+    const persistedMetadata = record(persisted.metadata, 'persisted metadata');
+    const audit = record(persistedMetadata.a23SourceFreeze, 'persisted audit');
+    expect(audit).toEqual(
+      expect.objectContaining({
+        version: 1,
+        state: 'completed',
+        freezeId: winner.receipt.freezeId,
+        startedBy: winner.actorId,
+        startedByRole: winner.role,
+        completedBy: winner.actorId,
+        completedByRole: winner.role,
+        freezeNote: winner.note,
+        expectedCounts: sourceCounts(1),
+        completedCounts: sourceCounts(1),
+        newlyFrozenCounts: sourceCounts(1),
+      }),
+    );
+    expect(JSON.stringify(audit)).not.toContain(loser.note);
+    expect(
+      Object.keys(persistedMetadata).filter((key) =>
+        key.toLowerCase().includes('a23'),
+      ),
+    ).toEqual(['a23SourceFreeze']);
+    expect(
+      await reportModel.countDocuments({
+        reportCode: fixture.report.reportCode,
+      }),
+    ).toBe(1);
+    expect(
+      await reportModel.countDocuments({
+        _id: fixture.report._id,
+        'metadata.a23SourceFreeze.freezeId': winner.receipt.freezeId,
+        'metadata.a23SourceFreeze.state': 'completed',
+      }),
+    ).toBe(1);
+    const [instance, item, score, domain, evidence] = await Promise.all([
+      instanceModel.findById(fixture.instance._id).exec(),
+      itemModel.findById(fixture.item._id).exec(),
+      scoreModel.findById(fixture.score._id).exec(),
+      domainModel.findById(fixture.domain._id).exec(),
+      mediaModel.findById(fixture.evidenceId).exec(),
+    ]);
+    const sourceLockedAt = String(winner.receipt.sourceLockedAt);
+    for (const source of [instance, item, score, evidence]) {
+      expect(source?.status).toBe('locked');
+      expect(source?.lockedAt?.toISOString()).toBe(sourceLockedAt);
+    }
+    expect(domain?.status).toBe('computed');
+    expect(domain?.lockedAt?.toISOString()).toBe(sourceLockedAt);
+    expect(evidence?.storageStatus).toBe(beforeEvidence?.storageStatus);
+    expect(JSON.stringify(evidence?.storage)).toBe(
+      JSON.stringify(beforeEvidence?.storage),
+    );
+    expect(
+      await patientModel.findById(fixture.patient._id).lean().exec(),
+    ).toEqual(beforePatient);
+    expect(await visitModel.findById(fixture.visit._id).lean().exec()).toEqual(
+      beforeVisit,
+    );
+    expect(
+      await instanceModel.findById(fixture.outsideInstance._id).lean().exec(),
+    ).toEqual(beforeOutside);
+    expect(
+      await mediaModel.findById(fixture.unreferencedEvidenceId).lean().exec(),
+    ).toEqual(beforeUnreferenced);
+    for (const entry of contenders) {
+      const serialized = JSON.stringify(body(entry.response));
+      expect(serialized).not.toContain('metadata');
+      expect(entry.receipt).not.toHaveProperty('scope');
+      for (const sourceId of [
+        fixture.item._id,
+        fixture.score._id,
+        fixture.domain._id,
+        fixture.evidenceId,
+      ]) {
+        expect(serialized).not.toContain(sourceId.toString());
+      }
+    }
   });
 
   it('allows admin to freeze a separate locked report', async () => {
