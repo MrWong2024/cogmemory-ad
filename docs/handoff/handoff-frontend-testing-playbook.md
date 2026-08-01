@@ -4,7 +4,7 @@
 
 本文档是跨层测试设计、Browser 验收策略、场景级活动 Audit 清单和当前验证状态的权威来源。它只维护当前有效规则与待验合同；roadmap 继续维护产品范围和工作包状态，Git 历史负责旧命令、旧清单、旧结果与失败过程。
 
-> B12-P1 eligibility-readonly、R1、A3、A3-R2 已退役。约 70 小时投入后，专属 fixture/support 复杂度超过业务；未新增关闭 Audit ID，代码全删。B12 清单治理与第一阶段非 Browser 证据收口现已完成，Browser 产品验收尚未恢复；下一阶段为 P1 只读资格与角色 canary，须另行确认后执行，未经确认不重建 B12 专属 fixture/support。
+> B12-P1 eligibility-readonly、R1、A3、A3-R2 已退役。约 70 小时投入后，专属 fixture/support 复杂度超过业务；未新增关闭 Audit ID，代码全删。B12 已完成第二次清单收缩：历史通过证据继续作为合同或防御证据保留，活动关闭清单只剩 3 个用户可达 Browser 场景；本次纯文档治理没有执行 B12 Browser，也不重建 B12 专属 fixture/support。
 
 | 范围 | 当前状态 |
 |---|---|
@@ -14,46 +14,67 @@
 | Batch B / B4–B6 | 桌面范围已完成，Batch E 仍保留 8 项 |
 | Batch C / B7–B10 | 已完成；B7、B8、B9、B10 各自既有最终处置不变 |
 | Batch D / B11 | 70 项已完成，状态不变 |
-| Batch D / B12 | 第一阶段非 Browser 证据已收口，Browser 产品验收尚未恢复执行；活动场景 `passed=4`、`pending=13`、`failed=0`、`blocked=0`、`not_executed=0` |
-| Batch D / B13–B15（含 B14.1） | 候选断言和历史设计输入保留，尚未执行；正式执行前须先场景化审查 |
+| Batch D / B12 | 合同前置与防御证据保留；活动用户场景为 `B12-U01`～`B12-U03`，状态 `passed=0`、`pending=3`、`failed=0`、`blocked=0`、`not_executed=0` |
+| Batch D / B13–B15（含 B14.1） | 候选断言和历史设计输入保留，尚未执行；正式设计活动清单前须先完成可达性、风险与证据复用审查 |
 
-B12-P0-A/B/C 已完成，`B12-P0-contract-state` 已完成：P0 当前拥有 `B12-S03`、`B12-S05`、`B12-S10`、`B12-S11`，并保留既有“无新增路由”静态证据。原 B12-09、B12-31、B12-32、B12-36、B12-37、B12-38、B12-84 共 7 个 `passed` 事实没有失效，已分别迁移到前两个活动场景和通用路由边界门禁；S10/S11 则由本轮新增的 frontend pure/static 与 backend HTTP E2E 证据关闭。
+B12 治理前有 17 个混合层级活动场景，汇总为 `passed=4`、`pending=13`；治理后只保留 `B12-U01`～`B12-U03` 三个尚需执行的 `ui_reachable` Browser 场景，汇总为 `passed=0`、`pending=3`。这不是历史证据倒退：原已通过事实和当前精确测试继续有效，但迁入不分配 B12 活动 ID 的合同前置证据、非阻断防御证据或最终通用门禁，不再计作活动 Browser 业务场景。
 
-B12 当前活动场景总数为 17，汇总为 `passed=4`、`pending=13`、`failed=0`、`blocked=0`、`not_executed=0`。S01/S02/S14/S16 的非 Browser 证据已经完成，但因代表性 Browser 尚未执行而继续保持 `pending`。B12 Browser 产品验收尚未恢复；下一阶段是 P1 只读资格与角色 canary，须另行确认后执行。
-
-原 88 个 ID 不再作为活动关闭对象；其语义迁移、过期处置与既有证据归属见 9.2。场景合并只降低清单管理粒度，不降低 doctor/admin、授权/非授权、401/403、首次成功/幂等和两类冲突等不可替代语义。
+原 88 个 ID 和原 B12-S01～S17 都不再作为活动关闭对象；其语义迁移、不可达退役与既有证据归属见第 9 节。需要保留的是仍真实可达且尚无可信证据的风险，不是历史 ID、层级组合或执行次数。
 
 ## 2. 强制测试设计理念
 
-### 2.1 业务风险守恒与清单治理
+### 2.1 可达性、风险与证据复用
 
-- 守恒对象是核心业务风险、不可替代的状态语义和安全边界，不是历史 Audit ID 的数量或顺序。
-- 经审查后，Audit ID 可以合并为场景、迁移到其他场景、降为通用门禁，或在失去适用前提后标记为 `obsolete`；任何处置都必须保留旧语义映射和已有有效证据的来源。
-- 一个场景可以包含多个紧密耦合、可明确执行的子断言。子断言必须分别记录实际结果；只有全部必需子断言均通过，场景才能标记为 `passed`。任一必需子断言失败、阻断或未执行时，整个场景均不得标记为 `passed`。
-- 场景合并不得抹平 doctor 与 admin、授权角色与非授权角色、401 与 403、首次成功与幂等、可继续冲突与 latest 已锁定冲突等不可替代差异；这些差异可以作为同一场景中的独立子断言，不要求机械拆成独立 ID。
-- 阶段性“不得提前实现后续功能”只在对应阶段有效；后续能力落地后必须退役原来的“不存在”断言，只保留仍成立的动作隔离和不可自动串联边界。
-- lint、typecheck、build、测试数据脱敏、认证/路由所有权等通用门禁不伪装成独立业务风险，也不为每个业务场景重复执行。
-- Browser 只承担真实入口、控件、输入、交互、刷新、错误恢复、浏览器状态、响应式和可访问性等不可替代事实。
-- 静态事实、DTO 白名单、完整权限矩阵、状态机和数据库终态应选择 pure/unit/backend/verifier 的最低充分证据；不得仅因 Browser 更直观而重复要求独立 Browser 证据。
+候选断言必须先分类，再决定是否成为强制验收：
 
-### 2.2 分层取证
+| 分类 | 判定边界 | 最低充分主证据 |
+|---|---|---|
+| `ui_reachable` | 当前正式页面可由正常人工操作触发 | Browser 验证入口、控件、输入、提示、刷新、浏览器状态与可访问性 |
+| `public_api_reachable` | 页面无入口，但公开 API 可被 Postman、curl 或自编客户端调用 | HTTP E2E 验证认证、权限、DTO、ownership、状态门禁、错误码与数据库无副作用；不另建 Browser 场景 |
+| `legitimate_concurrency` | 两个合法用户、标签页、Session 或请求可通过正式页面或公开 API 真实形成 | HTTP E2E 验证原子性、幂等、写入次数和数据库终态；仅在存在不可替代的用户可见恢复交互时增加最小 Browser 证据 |
+| `internal_corruption_only` | 只能直接改库、伪造内部对象、篡改运行时状态、损坏历史数据或依赖未实现未来功能形成 | 默认不进入业务批次强制验收；廉价 pure/unit 防御测试可保留，只有正式导入、迁移、兼容合同、已知生产事故或明确合规要求才升级为阻断性测试 |
+| `manual_or_real_device` | 自动化无法可靠替代的真实设备、相机、触控笔、手写、打印或专业判断 | Batch E 或明确人工验收；不得伪装为桌面 Browser 已通过 |
+| `general_gate` | lint、typecheck、build、test discovery、依赖、路由所有权、测试数据脱敏等 | 只在最终代码态或对应层发生变化后按影响范围执行；不创建业务 Audit ID |
 
-- 页面文本不能替代数据库终态，代码阅读不能替代真实交互，静态检查不能替代动态权限或状态机，fixture E2E 不能冒充产品 Browser 通过。
-- 一个验收点只在最合适层作为主证据；其他层只承担不可替代的支持事实。
-- 业务、权限、安全、数据库终态和真实 Browser 质量均不得因拆分 Profile 而降低。
+设计顺序必须是：
+
+1. 证明候选风险可由正式 UI、公开 API、合法并发、正式导入或真实设备触发。
+2. 判断风险是否涉及临床数据完整性、不可逆动作、权限、安全、隐私、用户恢复或已知回归，及其是否足以阻断发布。
+3. 检查相关代码、接口与配置未变化时是否已有可复用的精确证据。
+4. 选择覆盖该风险的最低充分证据层，只为尚未被准确证明的事实补证。
+5. 最后才设计最小合法前置、fixture 和断言；禁止先写大量断言，再反向建设 fixture。
+
+每个拟纳入强制验收的场景必须记录起始状态、人工或调用方角色、入口边界、实际操作、实际经过的接口、预期业务结果，以及该风险为何需要阻断发布。无法写出真实入口、只能依靠直接改库制造的场景不得进入强制业务验收。
+
+### 2.2 业务风险守恒与分层取证
+
+- 守恒对象是仍真实可达的核心业务风险、不可替代状态语义和安全边界，不是历史 Audit ID 的数量、层级组合或顺序。
+- 一个风险只在最合适层作为主证据；其他层只承担不可替代的支持事实。代码阅读不能记为动态测试通过，页面文本不能替代数据库终态，fixture E2E 不能冒充产品 Browser。
+- 同一风险已有准确证据，且相关代码、接口和配置未变化时，引用既有证据，不重复编写或执行 Browser、HTTP E2E、verifier，也不创建多个 Audit ID。
+- 认证、授权、ownership、DTO 白名单、不可逆状态门禁、幂等、合法并发、隐私和数据库无副作用不得因 Browser 收缩而删除；页面不可达的公开 API 绕过交给 HTTP E2E。
+- 阶段性“不存在后续功能”只在对应阶段有效；后续能力落地后退役旧断言，只保留当前仍成立的动作隔离和不自动串联边界。
 
 ## 3. 证据层级与最低充分证据
 
 | 证据层 | 主职责 | 不可替代边界 |
 |---|---|---|
-| `backend_unit` | 纯函数、mapper、DTO 局部规则、Service 状态分支、无数据库算法 | 不证明真实 HTTP、Guard 或数据库终态 |
-| `backend_http_e2e` | 权限、401/403、ValidationPipe、Body、错误码、状态机、幂等、并发、audit、真实 MongoDB 终态 | 不证明页面真实交互 |
-| `frontend_static_or_pure` | 纯展示映射、路由静态存在性、action ownership 静态边界、纯逻辑 | 不证明真实输入、Browser API 或后端动态行为 |
-| `browser_micro_profile` | 页面入口、控件状态、真实输入、刷新、beforeunload、Storage、Cookie、双 Session、错误恢复、focus、keyboard、viewport、Axe | 不替代真实数据库终态 |
-| `database_verifier` | 写入次数、audit、幂等终态、protected roots、narrative、snapshot、Profile 隔离、canonical seed | 不替代页面与用户体验 |
-| `static_gate` | lint、typecheck、build、test discovery | 不证明业务运行通过 |
+| `backend_unit` | 局部判断、mapper、DTO 与 Service 分支，以及 `internal_corruption_only` 的廉价非阻断防御 | 不证明真实 HTTP、Guard 或数据库终态 |
+| `backend_http_e2e` | `public_api_reachable` 与 `legitimate_concurrency` 的认证、权限、ValidationPipe、Body、ownership、错误码、状态机、幂等、原子性和真实数据库终态 | 不证明页面真实交互 |
+| `frontend_static_or_pure` | 纯展示映射、action ownership、局部资格与非阻断防御分支 | 不证明真实输入、Browser API 或后端动态行为 |
+| `browser_micro_profile` | 仅验证 `ui_reachable` 的页面入口、控件、输入、提示、刷新、beforeunload、Storage、Cookie、错误恢复、focus、keyboard、viewport 与 Axe | 不替代服务端合同或数据库终态 |
+| `database_verifier` | 仅当 Browser 写入结果无法由现有 HTTP E2E 充分证明时，补充写入次数、audit、protected roots 或持久终态 | 不重复已有准确 HTTP E2E，也不替代页面体验 |
+| `static_gate` | `general_gate`，包括 lint、typecheck、build、test discovery、依赖与路由边界 | 不证明业务运行通过，不创建业务 Audit ID |
 
-主证据与必要支持证据都实际通过后才具备关闭资格；支持证据为“—”表示没有独立附加层级，不表示免除通用质量门禁。
+主证据与确有必要的支持证据都实际通过后才具备关闭资格。已有历史通过证据在相关代码、接口和配置未变化时可以复用；本次只读核对不得把代码存在或测试名称存在写成“本次动态测试已通过”。
+
+### 3.1 按变化影响选择执行范围
+
+- 纯文档变化只执行文档内容、diff 与 Git 范围检查。
+- 单个测试文件变化执行 discovery、定向测试及必要静态检查，不自动要求完整 E2E。
+- 单模块生产代码变化执行受影响 unit / E2E 与对应层静态门禁。
+- 只有认证、公共 Guard、Schema、通用 mapper、公共测试基础设施或跨模块合同变化，才按实际影响扩大回归范围。
+- 完整 unit / E2E 原则上在批次最终代码态执行一次，或在存在明确跨模块影响时执行；不在每个微型 Profile 后重复。
+- Codex 指令要求完整套件时必须写明具体影响依据，不能只写“为了保险”。
 
 ## 4. 微型 Browser Profile
 
@@ -75,21 +96,17 @@ Codex 任务规模取决于业务风险是否一致、证据层是否相近、�
 
 ### 4.2 B12 Profile 基线
 
-- `B12-P0-contract-state`（已完成）：拥有 `B12-S03`、`B12-S05`、`B12-S10`、`B12-S11`，以及既有“无新增路由”静态证据；以 pure/static、unit、HTTP E2E 和 verifier 为主。
-- `B12-P1-eligibility-role-readonly`：拥有 `B12-S01`、`B12-S02`、`B12-S14`。
-- `B12-P2A-form-writing`：拥有 `B12-S04`、`B12-S06`。
-- `B12-P2B-success-idempotency`：拥有 `B12-S07`、`B12-S08`、`B12-S15`。
-- `B12-P3-conflict`：拥有 `B12-S09`。
-- `B12-P4-error-draft-boundary`：拥有 `B12-S12`、`B12-S13`、`B12-S16`。
-- `B12-P5-presentation-accessibility`：拥有 `B12-S17`。
-- `B12-P6-final-gates`：只执行通用最终门禁，不拥有新的业务场景 ID。
+- `B12-P1-user-entry-readonly`：只执行 `B12-U01`。
+- `B12-P2-first-lock`：只执行 `B12-U02`。
+- `B12-P3-reachable-recovery`：只执行 `B12-U03`。
+- `B12-P4-final-gates`：只在最终代码态执行一次通用门禁，不拥有业务场景 ID。
 
-P1～P5 尚未启动正式执行，其仍拥有的活动场景保持 `pending`。不要求每个前端条件制造独立 Browser fixture；完整状态矩阵由 pure/unit/backend 证据覆盖，Browser 只选择最小但有代表性的允许、禁止和只读状态。不同 Profile 继续保持证据隔离和 cleanup 原子性。
+旧 P0、P2A、P2B、P3 conflict、P4 error、P5 accessibility 及 P6 表达不再是活动 Profile。其历史证据按第 9 节迁入合同前置、防御证据或最终门禁；响应式、键盘、焦点和 Axe 附着在 U03 的代表性真实流程，不单独建设业务 Profile。
 
 ## 5. Browser 必须验证的行为
 
 - 使用 production frontend、真实 Browser test backend 和真实 HTTP；不得以 mock server、伪造成功响应或代码阅读替代。
-- 验证页面入口、角色可见性、控件 enabled/disabled、真实输入、请求次数与状态、用户可见成功、冲突和错误恢复。
+- 验证 `ui_reachable` 的页面入口、角色可见性、控件 enabled/disabled、真实输入、请求次数与状态，以及实际可达的成功或错误恢复；页面无入口的 403、DTO 或 ownership 绕过不强制制造 Browser 场景。
 - 验证刷新、beforeunload、localStorage、sessionStorage、IndexedDB、Cookie、URL、Console、DOM 和 Network 隐私边界。
 - 多角色或双 Session 使用独立 BrowserContext；不得通过清除同一 Context Cookie 模拟隔离。
 - 响应式代表覆盖 390×844、800×1280、1280×800、1024×1366、1366×1024、1280×720、1536×864；宽表只允许局部滚动。
@@ -98,9 +115,9 @@ P1～P5 尚未启动正式执行，其仍拥有的活动场景保持 `pending`�
 
 ## 6. 横切能力代表性验证
 
-认证生命周期、logout/Cookie、Storage/URL 隐私、CORS、通用 Console、通用 DOM 敏感信息扫描、Axe、viewport、focus-visible 和不支持 Action 扫描，可在少量代表 Profile 验证。代表组合至少包含一个正常只读、一个真实写入、一个权限失败和一个错误或冲突。
+认证生命周期、logout/Cookie、Storage/URL 隐私、CORS、通用 Console、通用 DOM 敏感信息扫描、Axe、viewport、focus-visible 和不支持 Action 扫描，只在本批次实际修改或尚无可信证据时附着于少量真实流程。不得机械要求每批次都覆盖“正常只读、真实写入、权限失败、错误或冲突”四种组合。
 
-横切失败只影响直接 Audit ID 或最终质量门禁；横切代表不得替代业务特有页面断言、业务特有错误恢复、角色差异、状态差异、请求次数与状态或数据库终态。
+页面没有入口的角色权限失败由 HTTP E2E 负责，不为了制造 Browser 403 暴露隐藏控件或伪造响应。响应式、键盘、焦点和 Axe 附着于代表性真实操作，不单独建设业务 Profile。横切证据不得替代业务特有页面断言、实际可达的错误恢复、请求次数或数据库终态。
 
 ### 6.1 Browser Origin、Cookie 与认证 preflight
 
@@ -137,7 +154,7 @@ P1～P5 尚未启动正式执行，其仍拥有的活动场景保持 `pending`�
 
 `unknown` 仅是命令已启动但没有可靠摘要或证据不足时的临时测试结论，不属于允许的 Audit ID 状态，也不得写入 Audit 清单。相关 Audit ID 不得据此关闭、通过或失败；尚未形成有效证据时通常保持原有 `pending`。只有存在符合既有定义的明确且持续外部环境、工具或权限阻断时才使用 `blocked`；目标测试因命令、选择器、权限或进程未启动而没有实际执行时，按既有规则使用 `not_executed`。
 
-不得根据 Playwright exit code、测试代码已存在、历史失败轮局部观察或 cleanup 成功批量关闭；`blocked` 和 `not_executed` 不得写成 `passed`。每个 Profile 独立关闭自己拥有的活动场景，场景内 doctor/admin、401/403、首次/幂等和两类冲突等必需子断言须分别记录实际结果。
+不得根据 Playwright exit code、测试代码已存在、历史失败轮局部观察或 cleanup 成功批量关闭；`blocked` 和 `not_executed` 不得写成 `passed`。每个 Profile 独立关闭自己拥有的活动场景；只有真实可达、风险不可互换且当前证据未覆盖的角色、认证、幂等、并发或恢复差异才需要分别记录，不得机械扩张组合矩阵。
 
 ## 8. 失败分类与止损门禁
 
@@ -154,64 +171,89 @@ P1～P5 尚未启动正式执行，其仍拥有的活动场景保持 `pending`�
 7. 每轮分别报告业务测试、fixture 准备、测试资产修改和环境收口耗时。
 8. 测试基础设施复杂度明显超过被测业务时，立即停止扩张。
 
-## 9. B12 验收清单（清单治理已完成，产品验收尚未恢复执行）
+## 9. B12 验收清单（二次收缩后）
 
-### 9.1 活动场景
+### 9.1 唯一活动用户场景
 
-下表是 B12 当前唯一活动关闭清单。场景内的每个必需子断言都必须分别记录实际结果；只有全部必需子断言均通过，场景才可标记为 `passed`。第一阶段只完成非 Browser 证据收口，不启动 B12 Browser 产品验收。
+以下三个 `ui_reachable` 场景是 B12 当前唯一活动关闭清单。每个场景的必需事实都必须实际执行并分别记录；本次纯文档治理没有执行它们。
 
-| 场景 ID | 场景级验收意图 | 主证据层 | Browser 职责 | Profile | 当前状态 |
-|---|---|---|---|---|---|
-| `B12-S01` | **锁定资格与阻断状态**：完整资格矩阵由 pure/unit/backend 证明；Browser 验证一个合法 confirmed 未锁定状态、一个代表性不合法状态和一个已锁定只读状态。 | `frontend_static_or_pure + backend_unit + backend_http_e2e` | 只证明三个代表状态下的真实入口、控件与只读表现。 | `B12-P1-eligibility-role-readonly` | `pending` |
-| `B12-S02` | **角色与权限**：doctor/admin 具备后端授权，nurse/research_assistant/system 不具备授权；Browser 验证代表性授权和非授权用户，后端保留完整角色矩阵。 | `backend_http_e2e` | 验证代表性授权与非授权 Session 的入口和反馈，不重复完整角色矩阵。 | `B12-P1-eligibility-role-readonly` | `pending` |
-| `B12-S03` | **报告锁定领域不变量**：不新增 locked status；成功后 status 仍为 confirmed；lockedAt 与 lock summary 按合同形成。 | `backend_unit + backend_http_e2e + database_verifier` | 不要求 Browser。 | `B12-P0-contract-state` | `passed` |
-| `B12-S04` | **锁定说明与显式确认**：展示不可逆且只锁报告自身的准确说明；lockNote 长度、无自动生成/自动填充和 checkbox 校验正确。 | `browser_micro_profile + frontend_static_or_pure` | 验证真实文案、输入、边界校验、checkbox 与提交状态。 | `B12-P2A-form-writing` | `pending` |
-| `B12-S05` | **请求白名单与乐观并发基线**：请求只发送 confirm、lockNote、expectedUpdatedAt；expectedUpdatedAt 来自当前服务端 report。 | `frontend_static_or_pure + backend_http_e2e` | 不要求 Browser。 | `B12-P0-contract-state` | `passed` |
-| `B12-S06` | **写入期间互斥与可读性**：lock 请求期间相关写操作受控禁用，报告正文仍可阅读。 | `browser_micro_profile` | 在真实写请求期间观察互斥、disabled 与正文可读。 | `B12-P2A-form-writing` | `pending` |
-| `B12-S07` | **首次锁定成功与用户回执**：页面应用服务端完整 report，正确显示首次成功回执、操作者姓名/角色、弱化追溯号和锁定流程说明，不把 lockNote 当成报告正文。 | `browser_micro_profile + backend_http_e2e` | 验证完整 report 应用、首次回执与安全展示。 | `B12-P2B-success-idempotency` | `pending` |
-| `B12-S08` | **幂等重复锁定**：alreadyLocked 按成功结果处理，不产生第二次写入，也不重新开放锁定入口。 | `backend_http_e2e + database_verifier` | 验证幂等回执、Network 无第二次写入和入口保持关闭。 | `B12-P2B-success-idempotency` | `pending` |
-| `B12-S09` | **可继续的版本冲突**：保留本地 lockNote、清除确认 checkbox、最多读取一次 latest、不自动重发 POST；只有用户明确选择基于最新报告继续后才能再次提交。 | `browser_micro_profile + backend_http_e2e` | 验证真实冲突恢复交互、请求次数和重新提交门槛。 | `B12-P3-conflict` | `pending` |
-| `B12-S10` | **latest 已锁定冲突**：不允许继续提交本地锁定草稿，保留可解释的本地说明，并证明无额外写入。 | `frontend_static_or_pure + backend_http_e2e` | 不要求 Browser。 | `B12-P0-contract-state` | `passed` |
-| `B12-S11` | **audit/metadata 安全降级**：audit unavailable 时不猜测操作者；metadata unsupported 时不展示不受支持或敏感 metadata；报告主事实保持安全可读，异常时禁止不安全写入。 | `frontend_static_or_pure + backend_http_e2e` | 不要求 Browser。 | `B12-P0-contract-state` | `passed` |
-| `B12-S12` | **认证、权限和网络错误**：401 返回登录流程；403 和网络失败保留安全报告事实与本地 lockNote；不自动重发写请求。 | `backend_http_e2e + browser_micro_profile` | 验证 401/403/网络错误的真实页面恢复和 Network 次数。 | `B12-P4-error-draft-boundary` | `pending` |
-| `B12-S13` | **未提交 lockNote 生命周期**：纳入 beforeunload；不写入 localStorage、sessionStorage 或 IndexedDB；刷新后未提交内容消失。 | `browser_micro_profile` | 负责 beforeunload、Storage 与刷新后的真实浏览器状态。 | `B12-P4-error-draft-boundary` | `pending` |
-| `B12-S14` | **已锁定报告只读与术语边界**：edit/submit/confirm/lock 不可用；report status 仍为 confirmed；lockedAt 不显示为归档时间；不把患者、访视或评分误称为已锁定。 | `frontend_static_or_pure + backend_http_e2e` | 验证代表性已锁页面的只读控件和用户可见术语。 | `B12-P1-eligibility-role-readonly` | `pending` |
-| `B12-S15` | **相邻生命周期动作边界**：lock 动作自身不得自动执行、伪装或串联 unlock、reopen、return、reject、withdraw、signature、source-freeze、archive、correction、void、PDF 或 AI 动作；后续独立动作可以在页面上按各自资格存在。 | `browser_micro_profile + frontend_static_or_pure` | 验证 lock 交互和 Network 不自动触发相邻动作，不扫描或禁止后续独立入口。 | `B12-P2B-success-idempotency` | `pending` |
-| `B12-S16` | **非诊断性临床文案**：quality passed 不解释为患者正常；页面不生成诊断结论。 | `frontend_static_or_pure + browser_micro_profile` | 验证代表性页面文案与锁定反馈不产生诊断性推断。 | `B12-P4-error-draft-boundary` | `pending` |
-| `B12-S17` | **代表性响应式与可访问性**：在代表性小屏完成表单使用；label、错误提示、键盘、焦点、交互反馈和 Axe 检查成立。 | `browser_micro_profile` | 承担代表性小屏、键盘、焦点、反馈与 Axe。 | `B12-P5-presentation-accessibility` | `pending` |
+#### B12-U01 页面资格、人工角色与锁定后只读
 
-B12 活动场景总数为 17：`passed=4`、`pending=13`、`failed=0`、`blocked=0`、`not_executed=0`。原 88 个 ID 不再作为活动关闭对象；原 7 个 `passed` 事实没有失效，其中 B12-09、B12-36～B12-38 进入 `B12-S03`，B12-31～B12-32 进入 `B12-S05`，B12-84 进入通用“无新增路由”门禁。`B12-S10`、`B12-S11` 的 frontend pure/static 与 backend HTTP E2E 必需证据已全部通过，因此一并关闭。`B12-S01`、`B12-S02`、`B12-S14`、`B12-S16` 的非 Browser 证据已完成，但代表性 Browser 尚未执行，四项仍保持 `pending`。B12 Browser 产品验收尚未恢复；下一阶段为 P1 只读资格与角色 canary，须另行确认后执行。
+- 起始状态：分别使用 confirmed、未锁定、合同完整的合法报告，以及已锁定但 status 仍为 confirmed 的报告。
+- 人工角色：doctor；代表性非授权人工角色 nurse。
+- 入口边界：正式报告页面的当前 workflow 区域。
+- 实际操作：doctor 查看并使用锁定入口；nurse 查看同类报告；随后查看已锁定报告及所有报告写入口。
+- 实际经过的接口：页面认证链及 `GET /patients/:patientId/visits/:visitId/clinical-reports/latest`；本场景不发锁定写请求。
+- 预期业务结果：doctor 在合法报告上看到并可使用锁定入口；nurse 不显示可用锁定入口；已锁定报告不再开放 edit、submit、confirm 或 lock；页面仍准确显示 report status 为 confirmed；lockedAt 不冒充 archivedAt。完整角色矩阵和完整状态矩阵引用 pure / backend HTTP E2E，不在 Browser 重复。
+- 发布阻断理由：错误入口或锁定后重新开放写操作会破坏不可逆报告事实，错误术语会误导临床用户。
+- Profile / 状态：`B12-P1-user-entry-readonly` / `pending`。
 
-### 9.2 旧 ID 迁移与退役说明
+#### B12-U02 首次锁定表单、真实写入与用户回执
 
-旧清单的逐行原文由 Git 历史追溯；下表保留原 88 项到新场景或通用门禁的完整迁移关系，不抹除已经形成的有效证据。
+- 起始状态：doctor 已登录，当前为 confirmed、未锁定、合同完整且可首次锁定的合法报告。
+- 人工角色：doctor。
+- 入口边界：正式报告页面的锁定表单。
+- 实际操作：核对不可逆说明，输入 lockNote，完成 checkbox 与最小必要边界校验，只提交一次真实锁定，观察请求期间与成功回执，再刷新页面。
+- 实际经过的接口：一次 `POST /patients/:patientId/visits/:visitId/clinical-reports/:reportId/lock`，刷新后由既有 latest GET 重新取得持久事实。expectedUpdatedAt 与请求 Body 合同引用既有前后端证据，不在 Browser 重复穷举。
+- 预期业务结果：说明准确表达不可逆且只锁定报告自身；lockNote、checkbox 和最小必要边界校验成立；真实 lock POST 只执行一次；请求期间防止重复写操作且报告正文仍可阅读；成功后应用服务端完整 report 和回执，status 仍为 confirmed；页面不把 lockNote 当报告正文，不生成诊断结论；Network 不自动触发 freeze、archive、correction、void、PDF 或 AI；刷新后持久事实来自服务端。
+- 发布阻断理由：重复或串联写入、错误回执、正文污染或持久事实不一致会破坏不可逆操作的完整性与临床可追溯性。
+- Profile / 状态：`B12-P2-first-lock` / `pending`。
 
-| 旧 ID | 迁移或处置 |
+#### B12-U03 认证失效、网络失败、草稿与代表性可用性
+
+- 起始状态：doctor 已打开合法首次锁定表单并在 React 内存输入未提交 lockNote；分别制造真实 Session 过期和有界请求延迟、中断或网络失败。
+- 人工角色：doctor。
+- 入口边界：正式报告页面、真实认证 Session 与真实 lock 请求；可用性检查使用一个代表性小屏。
+- 实际操作：触发 401 并观察返回登录流程；在真实请求失败时核对本地输入、Network 次数、beforeunload 与 Storage；刷新页面；用键盘完成代表性相关操作并执行一次代表性 Axe。
+- 实际经过的接口：认证链的 `GET /auth/me`，以及失败或中断的 `POST /patients/:patientId/visits/:visitId/clinical-reports/:reportId/lock`；不得自动重发写请求。
+- 预期业务结果：Session 过期 401 返回登录流程；请求延迟、中断或网络失败时保留当前内存中的 lockNote 且不自动重发；未提交内容纳入 beforeunload；不写 localStorage、sessionStorage 或 IndexedDB；刷新后未提交内容消失；代表性小屏可完成相关操作；必要 label、错误提示、键盘、焦点和一次代表性 Axe 成立。
+- 发布阻断理由：认证失效误处理、自动重发或草稿泄露会造成不可逆重复操作、隐私风险或无法恢复的用户输入损失。
+- Profile / 状态：`B12-P3-reachable-recovery` / `pending`。
+
+B12 活动用户场景汇总恰好为：`passed=0`、`pending=3`、`failed=0`、`blocked=0`、`not_executed=0`。这不是历史证据倒退；活动计数只保留尚需执行的用户可达 Browser 场景。
+
+### 9.2 不分配 B12 活动 ID 的合同前置证据
+
+下表中的 `covered` 表示仓库中存在精确测试断言且历史证据继续保留，不表示本次纯文档任务重新动态执行；`gap` 表示只读核对未找到最低充分的精确动态覆盖。表中项目不分配 B12 活动 ID，也不为页面不可达的 API 绕过另建 Browser 场景。
+
+| 合同风险 | 精确现有测试文件 | 精确测试名称或可定位描述 | 结果 | 需要后续定向后端任务 |
+|---|---|---|---|---|
+| A22 未认证与非授权角色直接调用公开 lock API | `backend/test/clinical-report-lock.e2e-spec.ts` | `enforces authentication and doctor/admin roles` | `covered` | 否 |
+| A22 DTO 白名单、显式确认、lockNote 与 expectedUpdatedAt 边界；伪造 status / actor / time / metadata 等字段 | `backend/test/clinical-report-lock.e2e-spec.ts`；`backend/src/modules/reports/dto/clinical-report-lock-dto.spec.ts` | HTTP E2E `locks once, returns safe public audit, and repeats idempotently` 的代表性额外字段拒绝；DTO spec `rejects malformed input %#`、`rejects all extra client-controlled fields` | `covered` | 否 |
+| A22 readiness、confirmed 状态保持、lockedAt/lock 形成、正文/快照不变与首次原子更新 | `backend/test/clinical-report-lock.e2e-spec.ts` | `locks once, returns safe public audit, and repeats idempotently`；`returns stable state, ownership and optimistic concurrency errors` | `covered` | 否 |
+| A22 完整 readiness、A20/A21 audit、一致性与锁定领域不变量 | `backend/src/modules/reports/lib/clinical-report-lock.spec.ts` | `accepts a complete confirmed report and detects stale updatedAt`；`requires supported A20/A21 metadata and consistent confirmation audit`；`builds one immutable audit namespace while preserving existing metadata` | `covered` | 否 |
+| A22 Service 角色、ownership、原子 race、幂等与稳定错误 | `backend/src/modules/reports/services/clinical-report-lock-workflow.service.spec.ts` | `enforces doctor/admin actors in addition to the route guard`；`recovers an atomic race as idempotent or a stable conflict`；`keeps ownership failures indistinguishable from missing reports` | `covered` | 否 |
+| cross-ownership 与不满足状态门禁的报告被公开 API 拒绝 | `backend/test/clinical-report-lock.e2e-spec.ts` | `returns stable state, ownership and optimistic concurrency errors` | `covered` | 否 |
+| 非授权角色、额外字段、cross-ownership 与状态门禁拒绝后，逐类证明目标数据库无非法变化 | `backend/test/clinical-report-lock.e2e-spec.ts` | 现有主流程显式核对 stale conflict 与损坏 audit/metadata 拒绝后的无写入；没有对全部公开拒绝类别逐类核对数据库终态 | `gap` | 是 |
+| 锁定后直接调用仍公开的 A21 edit / submit / confirm API，逐项证明无非法变化 | `backend/test/clinical-report-review.e2e-spec.ts`；`backend/test/clinical-report-lock.e2e-spec.ts`；`backend/src/modules/reports/services/clinical-report-review-workflow.service.spec.ts` | 已有 A21 `edits, submits and confirms one controlled report without changing sources`、A22 锁定主流程，以及 unit 的 confirmed edit 拒绝和 final submit/confirm 幂等；没有以已锁定报告逐一调用三个 A21 API 的 HTTP E2E | `gap` | 是 |
+| 重复锁定不产生第二次写入 | `backend/test/clinical-report-lock.e2e-spec.ts` | `locks once, returns safe public audit, and repeats idempotently` | `covered` | 否 |
+| 两个合法请求真实并发锁定时只写一次并形成唯一终态 | `backend/test/clinical-report-lock.e2e-spec.ts`；`backend/src/modules/reports/services/clinical-report-lock-workflow.service.spec.ts` | 已有 stale updatedAt HTTP 冲突和 mocked atomic race；没有两个合法 HTTP 请求真实并发的精确用例 | `gap` | 是 |
+| A22 安全公开 mapper 不泄露 metadata、原始 lockedBy、内部 audit 或不安全历史字段 | `backend/src/modules/reports/services/clinical-report-public.mapper.spec.ts` | `maps only the explicit public report contract`；`maps a safe A22 lock summary and never exposes raw lockedBy`；`uses historical fallback and safely ignores invalid A22 metadata` | `covered` | 否 |
+| 锁定请求失败不泄露 metadata、正文、actor 内部字段或 Secret | `backend/test/clinical-report-lock.e2e-spec.ts`；`backend/src/modules/reports/services/clinical-report-lock-workflow.service.spec.ts` | E2E `rejects incomplete lock audit without guessing or writing`、`rejects unsupported metadata without exposing it or writing`；unit `returns stable audit and persistence failures without leaking metadata`；现有断言未同时枚举正文、actor 内部字段与 Secret | `gap` | 是 |
+| A23 只冻结精确来源、保持报告 status=confirmed、幂等不重复冻结并保留原说明 | `backend/test/clinical-report-source-freeze.e2e-spec.ts` | `freezes the exact report source chain and is idempotent`；`resumes an in-progress audit using the persisted scope and original note` | `covered` | 否 |
+
+### 9.3 非阻断防御性证据
+
+原 S11 的 audit/metadata 损坏状态属于 `internal_corruption_only`：当前没有正式页面或公开 API 能把合法报告制造为该损坏形态，因此不再阻断 B12。`backend/test/clinical-report-lock.e2e-spec.ts` 中 `rejects incomplete lock audit without guessing or writing`、`rejects unsupported metadata without exposing it or writing`，以及 `frontend/test/browser-acceptance/contracts/b12-lock-non-browser.spec.ts` 中两个 B12-S11 pure/static 测试可以继续作为 `supplemental_defensive` 回归保留。是否删除直接改库 E2E 由后续独立代码治理任务决定，本次不删除测试资产。
+
+### 9.4 原 B12-S01～S17 迁移
+
+| 原场景 | 迁移或处置 |
 |---|---|
-| B12-01～B12-03、B12-10～B12-19 | `B12-S01` / `B12-S14` |
-| B12-04～B12-08 | `B12-S02` |
-| B12-09、B12-36～B12-38 | `B12-S03` |
-| B12-20～B12-30 | `B12-S04` |
-| B12-31～B12-32 | `B12-S05` |
-| B12-33～B12-34 | `B12-S06` |
-| B12-35、B12-39～B12-40、B12-44～B12-48 | `B12-S07` |
-| B12-41～B12-43 | `B12-S08` |
-| B12-49～B12-54 | `B12-S09` |
-| B12-55 | `B12-S10` |
-| B12-56～B12-57 | `B12-S11` |
-| B12-58～B12-60 | `B12-S12` |
-| B12-61～B12-63 | `B12-S13` |
-| B12-64～B12-70、B12-78 | `B12-S14` |
-| B12-71～B12-73、B12-75、B12-77 | `B12-S15` 的持久行为边界 |
-| B12-74、B12-76 | `obsolete`：原断言要求页面不存在 archive/correction/void 或来源冻结，已因后续独立生命周期能力落地而过期；仍有价值的“不由 lock 自动触发”语义由 `B12-S15` 保留。 |
-| B12-79～B12-80 | `B12-S16` |
-| B12-81～B12-82 | `B12-S17` |
-| B12-83 | 通用认证所有权/重复 `/auth/me` 架构门禁 |
-| B12-84 | 通用路由边界门禁，保留既有 `passed` 证据 |
-| B12-85 | 通用测试数据治理门禁 |
-| B12-86～B12-88 | 通用 lint/typecheck/build 门禁 |
+| S01、S02、S14 | 并入 `B12-U01`；完整角色与状态矩阵引用 pure / HTTP E2E。 |
+| S04、S06、S07、S15、S16，以及 S17 的写入页面部分 | 并入 `B12-U02`。 |
+| S12 的 401 / 网络失败、S13，以及 S17 的错误恢复与代表性可用性部分 | 并入 `B12-U03`。 |
+| S03、S05 | 迁入 9.2 合同前置证据，不分配活动 ID。 |
+| S08 | 重复锁定迁入 9.2 的幂等合同；真实合法并发仍为 `gap`，交由后续定向后端任务。 |
+| S09 | `retired_currently_unreachable`：当前没有已确认的正式页面或公开 API 操作能够只改变 updatedAt，同时仍保持报告可首次锁定；将来新增真实可达路径时再纳入。 |
+| S10 | 已锁定后不重新开放入口的语义并入 U01，重复锁定语义并入幂等合同；“先 conflict、再 latest 已锁定”的独立链路为 `retired_currently_unreachable`。 |
+| S11 | `supplemental_defensive`：损坏 audit/metadata 不再阻断 B12，既有 pure/E2E 可保留。 |
+| S12 的 403 | 迁入后端公开 API 权限证据，不要求 Browser。 |
+| S17 | 不再作为独立业务场景，按真实操作分别附着于 U02、U03。 |
 
-### 9.3 B12 通用最终门禁
+原 88 个 ID 继续由 Git 历史和既有迁移记录追溯，不恢复为活动关闭对象。原 7 个 `passed` 事实没有失效：领域不变量、Body 与 expectedUpdatedAt、无新增路由等分别保留在 9.2 合同证据或 9.5 通用门禁中。
+
+### 9.5 B12 通用最终门禁
 
 以下门禁不分配新的业务 Audit ID，只在 B12 最终代码态执行一次，不为每个业务场景重复执行：
 
@@ -224,13 +266,13 @@ B12 活动场景总数为 17：`passed=4`、`pending=13`、`failed=0`、`blocked
 - build。
 - 一条轻量跨层 Browser 冒烟。
 
-既有 B12-84 `passed` 证据继续有效；产品验收恢复后仍须在最终代码态按本节完成一次通用门禁收口。轻量冒烟只发现跨层装配断裂，不新增业务场景 ID，也不能替代任何失败、阻断或未执行的场景证据。
+既有 B12-84 `passed` 证据继续有效；`B12-P4-final-gates` 仅在最终代码态按影响范围执行本节一次。轻量冒烟只发现跨层装配断裂，不新增业务场景 ID，也不能替代任何失败、阻断或未执行的场景证据。
 
 ## 10. B13～B15 后续设计规则
 
-B13 的 116 项、B14 的 115 项、B14.1 行为范围和 B15 的 10 组属于候选断言与历史设计输入，不是不可合并、不可迁移的永久活动 ID。它们的具体条目与产品语义在本次 B12 文档治理中保持原样，不据此推定任何执行结果。
+B13 的 116 项、B14 的 115 项、B14.1 行为范围和 B15 的 10 组属于未经治理的候选断言与历史设计输入，不是不可合并、不可迁移的永久活动 ID。它们的具体条目与产品语义在本次 B12 文档治理中保持原样；条目存在不表示必须执行，也不推定任何结果。
 
-正式执行各批次前，必须先按 B12 方法完成场景化审查：删除重复断言，迁移 lint/typecheck/build、认证/路由所有权、测试数据治理等通用门禁，退役已经失去阶段前提的“不存在后续功能”断言，并为剩余业务风险重新分配最低充分证据层。审查必须保留核心业务风险、不可替代语义、旧条目映射和已有有效证据，但不得冻结历史数量或顺序。
+正式设计各批次活动清单前，每个候选断言必须先标记 `ui_reachable`、`public_api_reachable`、`legitimate_concurrency`、`internal_corruption_only`、`manual_or_real_device`、`general_gate` 或 `duplicate_or_covered`。随后按真实触发路径、发布风险和已有证据完成场景化审查：合并重复或已有覆盖的断言，迁移通用门禁，退役失去阶段前提的断言，并为剩余风险分配最低充分证据层。审查必须保留核心业务风险、不可替代语义、旧条目映射和已有有效证据，但不得冻结历史数量或顺序。
 
 场景化审查完成并经确认后，再划分微型 Profile：先完成非 Browser 证据；Browser 先执行 2～4 个 canary，canary 通过后才执行对应 Profile；每个 Profile 独立关闭活动场景；最后执行轻量集成冒烟与通用静态门禁。
 
@@ -525,8 +567,8 @@ B16 / WP-02 已完成不能替代这组 B14.1 行为等价回归；只有 Batch 
 
 最终前端代码态分别执行 `npm run test:browser:list`、`npm run test:browser:infra`、`npm run lint`、`npm run typecheck`、`npm run build`。test discovery 与 infrastructure 只能证明测试资产和通用能力可执行，不能关闭业务 Audit ID。
 
-所有活动场景的主证据与必要支持证据独立闭环后，B12-P6 只在最终代码态执行一次 9.3 的通用最终门禁；这些门禁不拥有新的业务 Audit ID，也不改变活动场景的子断言结果。轻量集成冒烟只发现跨层装配断裂，不新增场景、不重新执行全部验收点，也不能替代失败、阻断或未执行的主证据。P0 的既有静态证据可以复用，但不能冒充尚未执行的最终代码态门禁。
+所有活动场景的主证据与必要支持证据独立闭环后，`B12-P4-final-gates` 只在最终代码态执行一次 9.5 的通用最终门禁；这些门禁不拥有新的业务 Audit ID，也不改变活动场景的子断言结果。轻量集成冒烟只发现跨层装配断裂，不新增场景、不重新执行全部验收点，也不能替代失败、阻断或未执行的主证据。既有静态证据可以复用，但不能冒充尚未执行的最终代码态门禁。
 
 Browser 结果必须记录业务、fixture、测试资产修改和收口耗时，并清理本次创建的 Session、BrowserContext、Chromium、Node 进程、端口、runtime、test-results 与其他临时产物。数据库生命周期、最小 fixture、verifier 和 cleanup 的权威规则见 backend testing playbook。
 
-roadmap 业务工作包状态不因 playbook 治理或测试资产退役自动变化。B12 清单治理已完成，产品验收尚未恢复执行；下一步须根据新场景设计最小执行方案，并经用户确认后再启动 P1～P5 或新的 Browser 实现，仍禁止未经确认重建 B12 专属 fixture/support。B11 及以前状态不变；B13～B15 的具体候选条目与产品语义不因本手册治理而改变。
+roadmap 业务工作包状态不因 playbook 治理或测试资产退役自动变化。B12 二次收缩已完成，U01～U03 仍为 `pending`，本手册不声明旧 P1 canary 为下一阶段；任何后续执行必须按三个当前 Profile 另行形成最小方案，仍禁止未经确认重建 B12 专属 fixture/support。B11 及以前状态不变；B13～B15 的具体候选条目与产品语义不因本手册治理而改变。

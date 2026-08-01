@@ -11,15 +11,15 @@
 | Batch B / B4–B6 | 桌面范围已完成，既有状态不变 |
 | Batch C / B7–B10 | 已完成，既有状态不变 |
 | Batch D / B11 | 70 项已完成，状态不变 |
-| Batch D / B12 | 第一阶段非 Browser 证据已收口，Browser 产品验收尚未恢复执行；活动场景 `passed=4`、`pending=13`、`failed=0`、`blocked=0`、`not_executed=0`，具体清单、状态和旧 ID 映射见 frontend testing playbook 第 9 节 |
-| Batch D / B13–B15（含 B14.1） | 候选断言和历史设计输入保留，尚未执行；正式执行前须先场景化审查 |
+| Batch D / B12 | 合同前置与防御证据保留；活动用户场景为 `B12-U01`～`B12-U03`，状态 `passed=0`、`pending=3`、`failed=0`、`blocked=0`、`not_executed=0`，具体清单与迁移见 frontend testing playbook 第 9 节 |
+| Batch D / B13–B15（含 B14.1） | 候选断言和历史设计输入保留，尚未执行；正式设计活动清单前须先完成可达性、风险与证据复用审查 |
 | Batch E | 8 个真实设备或人工项目尚未执行 |
 
 roadmap 继续维护产品范围和工作包状态；testing playbook 治理不得自动改变 roadmap。
 
-当前状态：B12-P0 后端合同与第一阶段非 Browser 证据已完成；`B12-P0-contract-state` 当前拥有 `B12-S03`、`B12-S05`、`B12-S10`、`B12-S11`，四项均已通过，且 S10/S11 不要求 Browser。原 B12-84 的“无新增路由”证据继续有效并归入通用路由边界门禁。其余活动场景、具体状态和旧 ID 映射以 frontend testing playbook 第 9 节为权威来源。
+当前状态：B12 既有后端 HTTP E2E、unit/pure、mapper 与 frontend pure/static 证据继续作为合同或防御证据保留，不再分配 B12 活动 ID。合同前置证据的逐项 `covered/gap` 核对以 frontend testing playbook 9.2 为权威来源；`internal_corruption_only` 的 S11 迁为非阻断防御证据，原 B12-84 的“无新增路由”继续归入最终通用门禁。
 
-B12-P1 实验测试资产已全部移除；第一阶段没有恢复或重建 B12 专属 fixture/support。B12 Browser 产品验收尚未恢复；下一阶段为 P1 只读资格与角色 canary，须另行确认后执行。未经确认不得重建 B12 专属 fixture/support。
+B12-P1 实验测试资产已全部移除；本次治理没有恢复或重建 B12 专属 fixture/support，也没有执行动态测试。后续 Browser 只围绕 U01～U03 的三个当前 Profile 另行形成最小方案，不再声明旧 P1 canary 为下一阶段。
 
 ## 2. 数据库用途和隔离
 
@@ -51,17 +51,34 @@ B12-P1 实验测试资产已全部移除；第一阶段没有恢复或重建 B12
 - 同一微型 Profile 从 prepare 到认证、verifier 和 cleanup 使用一致凭据语义；凭据不一致时先停止并审计，不反复重试。
 - fixture runner 与 Browser backend 负责数据库生命周期；Playwright runner 和 production frontend 的用途始终为 `none`，不得直接连接 MongoDB。
 
-## 3. 后端 unit、HTTP E2E、Browser 与 verifier 职责
+## 3. 可达性与后端证据职责
+
+### 3.1 六类可达性
+
+| 分类 | 真实入口 | 后端测试处置 |
+|---|---|---|
+| `ui_reachable` | 当前正式页面与正常人工操作 | Browser 主验用户可见事实；后端只复用该流程需要的合同证据 |
+| `public_api_reachable` | 页面无入口，但公开 API 可被 Postman、curl 或自编客户端直接调用 | HTTP E2E 必须覆盖认证、权限、DTO 白名单、ownership、状态门禁、错误码和数据库无副作用；不重复建立 Browser 场景 |
+| `legitimate_concurrency` | 两个合法用户、标签页、Session 或请求能通过正式页面或公开 API 真实形成 | HTTP E2E 主验原子性、幂等、写入次数与数据库终态；仅有不可替代页面恢复交互时补最小 Browser |
+| `internal_corruption_only` | 只能直接改库、伪造内部对象、篡改运行时、损坏历史数据或依赖未实现未来功能形成 | 默认不阻断业务批次；可保留廉价 pure/unit 防御测试，只有正式导入、迁移、兼容合同、已知事故或明确合规要求才升级 |
+| `manual_or_real_device` | 真实设备、相机、触控笔、手写、打印或专业人工判断 | 归入 Batch E 或明确人工验收，不由桌面 Browser 或后端测试冒充 |
+| `general_gate` | lint、typecheck、build、discovery、依赖、路由所有权、数据脱敏等 | 最终代码态或对应层变化后按影响范围执行，不创建业务 Audit ID |
+
+每个拟纳入强制验收的候选场景必须能写明起始状态、调用方角色、页面/公开 API/合法并发/正式导入/真实设备入口、实际操作、实际接口、预期业务结果和发布阻断理由。无法证明真实入口、只能直接改库制造的异常默认不得进入强制业务验收。
+
+### 3.2 unit、HTTP E2E、Browser 与 verifier 职责
 
 | 层级 | 负责 | 不能替代 |
 |---|---|---|
-| unit / pure spec | 纯函数、DTO 局部规则、Controller 参数传递、Service 分支、mapper、状态边界 | 真实 HTTP、Guard、全局 Pipe、数据库终态 |
-| HTTP E2E | 认证、401/403、Guard、ValidationPipe、Body 白名单、错误码、状态机、幂等、并发、audit、真实 MongoDB | 页面入口、控件、真实 Browser API 和用户体验 |
-| Browser 微型 Profile | 页面、输入、角色体验、Cookie/CORS、Storage、刷新、beforeunload、双 Session、错误恢复、键盘与可访问性 | 数据库写入次数、受保护根和最终持久化事实 |
-| database verifier | 写入次数、audit、幂等终态、protected roots、narrative、snapshot、Profile 隔离、canonical seed | 页面行为与用户可见结果 |
-| static gate | lint、typecheck、build、test discovery | 动态权限、状态机、数据库或 Browser 通过 |
+| unit / pure spec | 局部判断、DTO、Controller 参数传递、Service 分支、mapper、状态边界和廉价防御分支 | 真实 HTTP、Guard、全局 Pipe、数据库终态 |
+| HTTP E2E | `public_api_reachable` 与 `legitimate_concurrency` 的认证、401/403、Guard、ValidationPipe、Body 白名单、ownership、错误码、状态机、幂等、原子性、audit 与真实 MongoDB | 页面入口、控件、真实 Browser API 和用户体验 |
+| Browser 微型 Profile | 仅验证 `ui_reachable` 的页面、输入、角色体验、Cookie/CORS、Storage、刷新、beforeunload、错误恢复、键盘与可访问性 | 不能替代服务端合同或数据库终态 |
+| database verifier | 仅在 Browser 写入结果无法由现有 HTTP E2E 充分证明时补充写入次数、audit、protected roots 或持久终态 | 不重复已有准确 HTTP E2E，不替代页面行为 |
+| static gate | `general_gate`：lint、typecheck、build、test discovery、依赖和路由边界 | 动态权限、状态机、数据库或 Browser 通过 |
 
-### 3.1 定向 Jest / HTTP E2E 命令契约
+同一风险已有准确证据，且相关代码、接口和配置未变化时，直接引用已有证据，不重复编写或执行 HTTP E2E、Browser 或 verifier。代码阅读、测试文件存在或测试名称存在不得写成“本次动态测试已通过”。
+
+### 3.3 定向 Jest / HTTP E2E 命令契约
 
 当前 `npm run test:e2e` 是完整 HTTP E2E 入口：它在导入应用前设置 `NODE_ENV=test` 和 `COGMEMORY_DATABASE_PURPOSE=standard_test`，然后以 `test/jest-e2e.json`、`--runInBand` 及该配置的 `testRegex` 启动 Jest。该 Node 包装器传给 `jest.run()` 的参数数组是固定值，未读取 `process.argv`，所以 npm 追加参数不会进入 Jest。禁止使用以下命令表示定向运行：
 
@@ -105,6 +122,7 @@ node -e "process.env.NODE_ENV='test'; process.env.COGMEMORY_DATABASE_PURPOSE='st
 5. 写入、并发和冲突场景必须 Report 隔离；只读场景仅在可寻址且证明无污染时共享最小状态。
 6. fixture 只输出安全、最小、稳定的导航与账号职责信息，不输出动态内部 ID、密码、连接串或业务正文。
 7. 微型 Profile 只验证自己的副作用，不机械执行整个批次的全量 verifier。
+8. fixture 不得用直接改库、mock 响应或运行时篡改创造产品永远无法进入的业务状态；`internal_corruption_only` 的防御测试不得包装成 Browser 业务前置。
 
 ## 5. 微型 Profile 的数据库生命周期
 
@@ -124,12 +142,14 @@ node -e "process.env.NODE_ENV='test'; process.env.COGMEMORY_DATABASE_PURPOSE='st
 
 ## 6. 写入、并发、Stage 与终态验证
 
-- 写请求验证 Body 白名单、次数、actor、状态转换、审计和最终 MongoDB 状态；禁止自动 retry 或 polling。
-- 首次成功与幂等、doctor 与 admin、两种冲突、401 与 403 必须使用各自证据，不得互相替代。
-- 多角色或双 Session 使用真实独立会话；网络结果不确定时先只读核对服务端事实，不得重试写请求。
-- Stage 只用于公开合法流程无法稳定制造的必要并发窗口；必须少量、固定、边界明确、幂等且可精确 cleanup。
-- Stage 前后 verifier 只允许目标 transition；非目标报告、Patient、Visit、ScaleInstance、narrative、snapshot、audit、seed 和其他 Profile 必须保持不变。
-- verifier 必须拒绝零写入、额外写入、错误 actor、错误状态、缺失 audit、受保护字段漂移和跨 Profile 污染。
+- 写请求按风险验证 Body 白名单、次数、actor、状态转换、审计和最终 MongoDB 状态；禁止自动 retry 或 polling。
+- 首次成功与幂等、doctor 与 admin、冲突、401 与 403 只有在真实可达、风险不可互换且当前证据未覆盖时才分别取证，不机械扩张为固定组合。
+- 页面没有入口但 Postman、curl 或自编客户端可直接调用的权限、DTO、ownership 与状态绕过属于 `public_api_reachable`，由 HTTP E2E 证明拒绝及数据库无非法变化，不要求 Browser。
+- 多角色或双 Session 使用真实独立会话；合法并发以两个真实可达请求形成，网络结果不确定时先只读核对服务端事实，不得重试写请求。
+- Stage 只能协调已经能够通过正式页面或公开 API 真实产生的并发时间窗口；它必须少量、固定、边界明确、幂等且可精确 cleanup，不能创造产品不可达的状态，也不能用直接改库或 mock 响应替代合法并发。
+- Stage 前后终态检查只允许目标 transition；非目标报告、Patient、Visit、ScaleInstance、narrative、snapshot、audit、seed 和其他 Profile 必须保持不变。
+- verifier 只在现有 HTTP E2E 无法充分证明 Browser 写入结果时补充；适用时必须拒绝零写入、额外写入、错误 actor、错误状态、缺失 audit、受保护字段漂移和跨 Profile 污染。
+- 直接改库形成的损坏状态默认属于 `internal_corruption_only`，不阻断业务批次；已有廉价 pure/unit 或 E2E 可以作为非阻断防御回归保留。
 
 ## 7. Cleanup 与隔离
 
@@ -149,25 +169,26 @@ node -e "process.env.NODE_ENV='test'; process.env.COGMEMORY_DATABASE_PURPOSE='st
 
 ## 9. 后端静态及自动化门禁
 
-后端代码、测试或 script 变化后的最终门禁按任务允许的数据库用途执行：
+测试执行范围按变化影响选择：
 
-1. `npm run lint`
-2. `npm run typecheck`
-3. `npm run build`
-4. `npm test -- --runInBand`
-5. `npm run test:e2e`（仅在任务允许 `standard_test` 数据库连接时执行）
+- 纯文档变化只执行文档内容、diff 与 Git 范围检查，不执行后端动态门禁。
+- 单个测试文件变化先执行 discovery，再执行定向测试及必要静态检查；不自动要求完整 E2E。
+- 单模块生产代码变化执行受影响 unit / HTTP E2E 和对应层 lint、typecheck、build。
+- 只有认证、公共 Guard、Schema、通用 mapper、公共测试基础设施或跨模块合同变化，才按实际影响扩大回归范围。
+- 完整 unit / E2E 原则上在批次最终代码态执行一次，或在存在明确跨模块影响时执行；不得在每个微型 Profile 后重复。
+- Codex 指令要求完整套件时必须写明具体影响依据，不能只写“为了保险”。
 
-lint、typecheck、build、unit 和 E2E 必须分别报告，互不替代。删除测试资产后必须额外验证 test discovery、TypeScript 全量范围、import、package script 和文档链接无悬空。禁止通过放宽 TypeScript、扩大 exclude、suppression、跳过测试或吞掉退出码制造通过。
+适用范围内实际执行的 lint、typecheck、build、unit 和 E2E 必须分别报告，互不替代。删除测试资产后必须额外验证 test discovery、TypeScript 全量范围、import、package script 和文档链接无悬空。禁止通过放宽 TypeScript、扩大 exclude、suppression、跳过测试或吞掉退出码制造通过。
 
 ## 10. B12～B15 当前待验范围
 
-- B12：原 88 个 ID 不再作为活动关闭对象；当前有 17 个活动场景，状态为 `passed=4`、`pending=13`、`failed=0`、`blocked=0`、`not_executed=0`。P0 已拥有并通过 `B12-S03`、`B12-S05`、`B12-S10`、`B12-S11`，其中 S10/S11 由 frontend pure/static 与 backend HTTP E2E 共同证明，不要求 Browser。其余活动场景及映射仍以 frontend testing playbook 第 9 节为权威来源；本手册继续负责数据库用途、后端证据、fixture、verifier 和 cleanup 规则。第一阶段非 Browser 证据已收口，Browser 产品验收尚未恢复执行。
-- B13：原 116 项属于候选断言和历史设计输入，本次不改写具体候选条目；正式执行前须先场景化审查。
-- B14：原 115 项和 B14.1 行为范围属于候选断言和历史设计输入，本次不改写具体候选条目；正式执行前须先场景化审查。
-- B15：原 10 组属于候选断言和历史设计输入，本次不改写具体候选条目；正式执行前须先场景化审查。
+- B12：原 88 个 ID 与原 S01～S17 不再作为活动关闭对象；当前唯一活动用户场景是 `B12-U01`～`B12-U03`，状态为 `passed=0`、`pending=3`、`failed=0`、`blocked=0`、`not_executed=0`。既有 A22/A23 HTTP E2E、unit/pure、mapper 和 frontend pure/static 证据迁入不分配活动 ID 的合同前置表或非阻断防御证据；逐项 `covered/gap` 与迁移以 frontend testing playbook 9.2～9.4 为准。
+- B13：原 116 项属于未经治理的候选断言和历史设计输入，本次不改写具体候选条目；正式设计活动清单前须先分类。
+- B14：原 115 项和 B14.1 行为范围属于未经治理的候选断言和历史设计输入，本次不改写具体候选条目；正式设计活动清单前须先分类。
+- B15：原 10 组属于未经治理的候选断言和历史设计输入，本次不改写具体候选条目；正式设计活动清单前须先分类。
 
-B13～B15 的场景化审查允许合并重复断言、迁移通用门禁、退役失去阶段前提的断言，并重新分配最低充分证据层；审查必须保留核心业务风险、不可替代语义、旧条目映射和已有有效证据，不得冻结历史数量或顺序。
+B13～B15 正式设计活动清单前，每个候选断言必须先标记 `ui_reachable`、`public_api_reachable`、`legitimate_concurrency`、`internal_corruption_only`、`manual_or_real_device`、`general_gate` 或 `duplicate_or_covered`。场景化审查允许合并重复或已有覆盖的断言、迁移通用门禁、退役失去阶段前提的断言，并重新分配最低充分证据层；审查必须保留核心业务风险、不可替代语义、旧条目映射和已有有效证据，不得冻结历史数量或顺序。
 
-场景化审查后仍不创建批次专属大型 fixture、evidence matrix、runner、journal、aggregator 或完整 manifest，也不要求一次原子运行关闭整个批次。先完成非 Browser 证据，再执行 2～4 个 canary 与对应微型 Profile，最后执行一条轻量集成冒烟和通用门禁。
+场景化审查后仍不创建批次专属大型 fixture、evidence matrix、runner、journal、aggregator 或完整 manifest，也不要求一次原子运行关闭整个批次。先复用或补齐最低充分的非 Browser 证据，再为剩余 `ui_reachable` 风险设计最小 Browser Profile，最后按影响范围执行一次轻量集成冒烟和通用门禁。
 
 本手册不关闭任何待验活动场景，不改变 B11 及以前完成状态，不改变 B13～B15 产品范围或具体候选条目。B12～B15 的活动场景清单、具体状态和旧 ID 映射以 frontend testing playbook 为权威来源。
