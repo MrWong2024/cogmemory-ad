@@ -11,13 +11,13 @@
 | Batch B / B4–B6 | 桌面范围已完成，既有状态不变 |
 | Batch C / B7–B10 | 已完成，既有状态不变 |
 | Batch D / B11 | 70 项已完成，状态不变 |
-| Batch D / B12 | 合同前置与防御证据保留；活动用户场景为 `B12-U01`～`B12-U03`，状态 `passed=0`、`pending=3`、`failed=0`、`blocked=0`、`not_executed=0`，具体清单与迁移见 frontend testing playbook 第 9 节 |
+| Batch D / B12 | 合同前置与防御证据保留；活动用户场景为 `B12-U01`～`B12-U03`，状态 `passed=0`、`pending=3`、`failed=0`、`blocked=0`、`not_executed=0`；合同证据表只剩一个确认 `gap`，具体清单与迁移见 frontend testing playbook 第 9 节 |
 | Batch D / B13–B15（含 B14.1） | 候选断言和历史设计输入保留，尚未执行；正式设计活动清单前须先完成可达性、风险与证据复用审查 |
 | Batch E | 8 个真实设备或人工项目尚未执行 |
 
 roadmap 继续维护产品范围和工作包状态；testing playbook 治理不得自动改变 roadmap。
 
-当前状态：B12 既有后端 HTTP E2E、unit/pure、mapper 与 frontend pure/static 证据继续作为合同或防御证据保留，不再分配 B12 活动 ID。合同前置证据的逐项 `covered/gap` 核对以 frontend testing playbook 9.2 为权威来源；`internal_corruption_only` 的 S11 迁为非阻断防御证据，原 B12-84 的“无新增路由”继续归入最终通用门禁。
+当前状态：B12 既有后端 HTTP E2E、unit/pure、mapper 与 frontend pure/static 证据继续作为合同或防御证据保留，不再分配 B12 活动 ID。合同前置证据只剩“两个合法 HTTP 请求真实并发锁定”一个确认 `gap`，各项状态与权威明细以 frontend testing playbook 9.2 为准；`internal_corruption_only` 的 S11 迁为非阻断防御证据，原 B12-84 的“无新增路由”继续归入最终通用门禁。
 
 B12-P1 实验测试资产已全部移除；本次治理没有恢复或重建 B12 专属 fixture/support，也没有执行动态测试。后续 Browser 只围绕 U01～U03 的三个当前 Profile 另行形成最小方案，不再声明旧 P1 canary 为下一阶段。
 
@@ -58,7 +58,7 @@ B12-P1 实验测试资产已全部移除；本次治理没有恢复或重建 B12
 | 分类 | 真实入口 | 后端测试处置 |
 |---|---|---|
 | `ui_reachable` | 当前正式页面与正常人工操作 | Browser 主验用户可见事实；后端只复用该流程需要的合同证据 |
-| `public_api_reachable` | 页面无入口，但公开 API 可被 Postman、curl 或自编客户端直接调用 | HTTP E2E 必须覆盖认证、权限、DTO 白名单、ownership、状态门禁、错误码和数据库无副作用；不重复建立 Browser 场景 |
+| `public_api_reachable` | 页面无入口，但公开 API 可被 Postman、curl 或自编客户端直接调用 | HTTP E2E 必须覆盖认证、权限、DTO 白名单、ownership、状态门禁、错误码和数据库无副作用；无副作用按风险选择最低充分证据，不等于为每种拒绝重复完整数据库快照；不重复建立 Browser 场景 |
 | `legitimate_concurrency` | 两个合法用户、标签页、Session 或请求能通过正式页面或公开 API 真实形成 | HTTP E2E 主验原子性、幂等、写入次数与数据库终态；仅有不可替代页面恢复交互时补最小 Browser |
 | `internal_corruption_only` | 只能直接改库、伪造内部对象、篡改运行时、损坏历史数据或依赖未实现未来功能形成 | 默认不阻断业务批次；可保留廉价 pure/unit 防御测试，只有正式导入、迁移、兼容合同、已知事故或明确合规要求才升级 |
 | `manual_or_real_device` | 真实设备、相机、触控笔、手写、打印或专业人工判断 | 归入 Batch E 或明确人工验收，不由桌面 Browser 或后端测试冒充 |
@@ -145,6 +145,10 @@ node -e "process.env.NODE_ENV='test'; process.env.COGMEMORY_DATABASE_PURPOSE='st
 - 写请求按风险验证 Body 白名单、次数、actor、状态转换、审计和最终 MongoDB 状态；禁止自动 retry 或 polling。
 - 首次成功与幂等、doctor 与 admin、冲突、401 与 403 只有在真实可达、风险不可互换且当前证据未覆盖时才分别取证，不机械扩张为固定组合。
 - 页面没有入口但 Postman、curl 或自编客户端可直接调用的权限、DTO、ownership 与状态绕过属于 `public_api_reachable`，由 HTTP E2E 证明拒绝及数据库无非法变化，不要求 Browser。
+- 数据库无非法变化按风险使用最低充分证据：在认证 Guard、角色 Guard、ValidationPipe 等写入逻辑之前被拒绝的请求，应验证真实 HTTP 状态与稳定错误合同，并可结合 Service 未调用、代表性无写入终态或现有层级证据；不要求为每种角色、错误码和字段组合重复完整数据库前后快照。
+- 已进入可能写入的 Service，或涉及原子更新、部分写入、幂等、并发、不可逆状态的请求，必须验证数据库终态、写入次数与受保护字段；这类证据不能只由 unit 或 Browser 替代。曾出现副作用缺陷或具有明确高风险的拒绝路径，可以单独增加终态断言。
+- 同一状态门禁适用于多个来源状态且产品代码没有独立分支时，复用已有证据，不为每个来源重复 HTTP E2E。接口已由状态机拒绝时，资源新增 `lockedAt` 字段不自动触发全部修改接口矩阵；只有 `lockedAt` 引入独立代码分支或改变原合同，才增加锁定专属 E2E。
+- 敏感信息不泄露由公共 mapper、异常过滤器、序列化合同与代表性错误响应分层覆盖，不要求每个业务错误逐字段枚举正文、actor 内部字段和全部 Secret；只有 mapper、异常过滤器或公共响应合同变化时，才扩大完整字段安全回归。
 - 多角色或双 Session 使用真实独立会话；合法并发以两个真实可达请求形成，网络结果不确定时先只读核对服务端事实，不得重试写请求。
 - Stage 只能协调已经能够通过正式页面或公开 API 真实产生的并发时间窗口；它必须少量、固定、边界明确、幂等且可精确 cleanup，不能创造产品不可达的状态，也不能用直接改库或 mock 响应替代合法并发。
 - Stage 前后终态检查只允许目标 transition；非目标报告、Patient、Visit、ScaleInstance、narrative、snapshot、audit、seed 和其他 Profile 必须保持不变。

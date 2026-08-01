@@ -214,7 +214,15 @@ B12 活动用户场景汇总恰好为：`passed=0`、`pending=3`、`failed=0`、
 
 ### 9.2 不分配 B12 活动 ID 的合同前置证据
 
-下表中的 `covered` 表示仓库中存在精确测试断言且历史证据继续保留，不表示本次纯文档任务重新动态执行；`gap` 表示只读核对未找到最低充分的精确动态覆盖。表中项目不分配 B12 活动 ID，也不为页面不可达的 API 绕过另建 Browser 场景。
+下表状态定义如下；这些状态只描述已有证据与后续测试必要性，不表示本次纯文档任务重新动态执行：
+
+- `covered`：单一现有测试层已经精确覆盖风险。
+- `covered_by_layered_evidence`：Guard、Validation、unit、HTTP E2E、状态门禁与代表性数据库终态共同形成最低充分证据。
+- `duplicate_or_covered`：候选测试重复现有状态门禁、幂等合同或同一路径证据，没有独立代码分支或独立风险。
+- `covered_representatively + general_gate`：业务模块已有代表性安全断言，完整敏感字段与 Secret 边界由公共 mapper、异常过滤、序列化和通用安全门禁承担。
+- `gap`：风险真实可达、足以阻断发布、当前最低充分证据确实缺失、其他层证据不能合理覆盖，且确实需要后续新增或修改测试。
+
+只有 `gap` 表示需要后续新增或修改测试；没有穷举全部角色、错误码、字段组合或数据库快照不构成 `gap`。表中项目不分配 B12 活动 ID，也不为页面不可达的 API 绕过另建 Browser 场景。
 
 | 合同风险 | 精确现有测试文件 | 精确测试名称或可定位描述 | 结果 | 需要后续定向后端任务 |
 |---|---|---|---|---|
@@ -224,13 +232,15 @@ B12 活动用户场景汇总恰好为：`passed=0`、`pending=3`、`failed=0`、
 | A22 完整 readiness、A20/A21 audit、一致性与锁定领域不变量 | `backend/src/modules/reports/lib/clinical-report-lock.spec.ts` | `accepts a complete confirmed report and detects stale updatedAt`；`requires supported A20/A21 metadata and consistent confirmation audit`；`builds one immutable audit namespace while preserving existing metadata` | `covered` | 否 |
 | A22 Service 角色、ownership、原子 race、幂等与稳定错误 | `backend/src/modules/reports/services/clinical-report-lock-workflow.service.spec.ts` | `enforces doctor/admin actors in addition to the route guard`；`recovers an atomic race as idempotent or a stable conflict`；`keeps ownership failures indistinguishable from missing reports` | `covered` | 否 |
 | cross-ownership 与不满足状态门禁的报告被公开 API 拒绝 | `backend/test/clinical-report-lock.e2e-spec.ts` | `returns stable state, ownership and optimistic concurrency errors` | `covered` | 否 |
-| 非授权角色、额外字段、cross-ownership 与状态门禁拒绝后，逐类证明目标数据库无非法变化 | `backend/test/clinical-report-lock.e2e-spec.ts` | 现有主流程显式核对 stale conflict 与损坏 audit/metadata 拒绝后的无写入；没有对全部公开拒绝类别逐类核对数据库终态 | `gap` | 是 |
-| 锁定后直接调用仍公开的 A21 edit / submit / confirm API，逐项证明无非法变化 | `backend/test/clinical-report-review.e2e-spec.ts`；`backend/test/clinical-report-lock.e2e-spec.ts`；`backend/src/modules/reports/services/clinical-report-review-workflow.service.spec.ts` | 已有 A21 `edits, submits and confirms one controlled report without changing sources`、A22 锁定主流程，以及 unit 的 confirmed edit 拒绝和 final submit/confirm 幂等；没有以已锁定报告逐一调用三个 A21 API 的 HTTP E2E | `gap` | 是 |
+| 非授权角色、额外字段、cross-ownership 与状态门禁拒绝后，逐类证明目标数据库无非法变化 | `backend/test/clinical-report-lock.e2e-spec.ts`；`backend/src/modules/reports/dto/clinical-report-lock-dto.spec.ts`；`backend/src/modules/reports/services/clinical-report-lock-workflow.service.spec.ts` | 认证、角色与 DTO 请求分别由真实 HTTP、Guard 和 Validation 在潜在写入前拒绝；`enforces authentication and doctor/admin roles`、额外字段 400、DTO `rejects all extra client-controlled fields`、Service `enforces doctor/admin actors in addition to the route guard` / `keeps ownership failures indistinguishable from missing reports`，以及 `returns stable state, ownership and optimistic concurrency errors` 和代表性 audit/metadata 无写入终态，共同覆盖 ownership、状态门禁、stale conflict 与拒绝分支。不为每类拒绝机械复制数据库前后快照；将来某一路径进入新的潜在写入分支时再定向补证。 | `covered_by_layered_evidence` | 否 |
+| 锁定后直接调用仍公开的 A21 edit / submit / confirm API，逐项证明无非法变化 | `backend/test/clinical-report-review.e2e-spec.ts`；`backend/test/clinical-report-lock.e2e-spec.ts`；`backend/src/modules/reports/services/clinical-report-review-workflow.service.spec.ts` | edit 的 confirmed 状态拒绝由 `rejects confirmed edit state` 覆盖；submit 与 confirm 的最终状态幂等由 `submits once and returns the stable existing receipt`、`returns the safe existing submission actor for confirmed reports`、`requires doctor/admin and confirms without locking` 及 HTTP E2E 重复提交/确认覆盖；A22 `locks once, returns safe public audit, and repeats idempotently` 证明锁定后 status 仍为 confirmed。只读实现核对未发现 A21 针对已锁定报告的独立写入分支或不同合同；`lockedAt` 仅参与通用可编辑/lineage 合法性谓词，而 confirmed 状态已触发 edit 门禁。U01 负责页面不重新开放写入口，不再以 locked report 重复执行三个 A21 API 的完整矩阵。 | `duplicate_or_covered` | 否 |
 | 重复锁定不产生第二次写入 | `backend/test/clinical-report-lock.e2e-spec.ts` | `locks once, returns safe public audit, and repeats idempotently` | `covered` | 否 |
-| 两个合法请求真实并发锁定时只写一次并形成唯一终态 | `backend/test/clinical-report-lock.e2e-spec.ts`；`backend/src/modules/reports/services/clinical-report-lock-workflow.service.spec.ts` | 已有 stale updatedAt HTTP 冲突和 mocked atomic race；没有两个合法 HTTP 请求真实并发的精确用例 | `gap` | 是 |
+| 两个合法请求真实并发锁定时只写一次并形成唯一终态 | `backend/test/clinical-report-lock.e2e-spec.ts`；`backend/src/modules/reports/services/clinical-report-lock-workflow.service.spec.ts` | 已有 stale updatedAt HTTP 冲突和 mocked atomic race，但没有两个合法 HTTP 请求真实同时到达的精确用例；仍须证明最多一次首次锁定写入、唯一锁定审计事实、第二个请求不覆盖首个 lockNote、第二个请求得到既有幂等结果或稳定冲突，并且最终 MongoDB 状态唯一且一致。 | `gap` | 是 |
 | A22 安全公开 mapper 不泄露 metadata、原始 lockedBy、内部 audit 或不安全历史字段 | `backend/src/modules/reports/services/clinical-report-public.mapper.spec.ts` | `maps only the explicit public report contract`；`maps a safe A22 lock summary and never exposes raw lockedBy`；`uses historical fallback and safely ignores invalid A22 metadata` | `covered` | 否 |
-| 锁定请求失败不泄露 metadata、正文、actor 内部字段或 Secret | `backend/test/clinical-report-lock.e2e-spec.ts`；`backend/src/modules/reports/services/clinical-report-lock-workflow.service.spec.ts` | E2E `rejects incomplete lock audit without guessing or writing`、`rejects unsupported metadata without exposing it or writing`；unit `returns stable audit and persistence failures without leaking metadata`；现有断言未同时枚举正文、actor 内部字段与 Secret | `gap` | 是 |
+| 锁定请求失败不泄露 metadata、正文、actor 内部字段或 Secret | `backend/test/clinical-report-lock.e2e-spec.ts`；`backend/src/modules/reports/services/clinical-report-lock-workflow.service.spec.ts`；`backend/src/modules/reports/services/clinical-report-public.mapper.spec.ts` | A22 mapper 的 `maps only the explicit public report contract`、`maps a safe A22 lock summary and never exposes raw lockedBy` 与 invalid metadata fallback 验证公开字段白名单；E2E `rejects incomplete lock audit without guessing or writing`、`rejects unsupported metadata without exposing it or writing` 代表性验证错误响应不回显内部 audit/metadata 值，Service 还验证稳定失败不泄露 metadata。完整 Secret 边界由通用异常与序列化安全承担，不要求每个 A22 错误码同时枚举正文、actor 全部内部字段和所有 Secret；只有 mapper、异常过滤器或公共响应合同变化时才扩大安全回归。 | `covered_representatively + general_gate` | 否 |
 | A23 只冻结精确来源、保持报告 status=confirmed、幂等不重复冻结并保留原说明 | `backend/test/clinical-report-source-freeze.e2e-spec.ts` | `freezes the exact report source chain and is idempotent`；`resumes an in-progress audit using the persisted scope and original note` | `covered` | 否 |
+
+当前 B12 后端合同前置证据中，唯一需要后续新增动态测试的 gap 是两个合法 HTTP 请求真实并发锁定；其余风险已有最低充分证据或属于通用门禁。
 
 ### 9.3 非阻断防御性证据
 

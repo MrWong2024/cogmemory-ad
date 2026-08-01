@@ -210,8 +210,9 @@
 2. 检查相关代码、接口与配置未变化时是否已有可复用的精确证据；不得为同一风险重复建设 Browser、HTTP E2E、verifier 或多个 Audit ID。
 3. 选择最低充分证据层：页面用户可见事实由 Browser 验证，Postman、curl 或自编客户端可触发的公开 API 绕过由 HTTP E2E 验证，合法并发以 HTTP E2E 为主，局部判断和非阻断防御分支使用 pure/unit。
 4. 不把只能直接改库、伪造内部对象或篡改运行时形成的异常默认列为阻断性业务验收；只有正式导入、迁移、兼容合同、已知生产事故或明确合规要求可以升级。
-5. 不为页面无入口的 API 绕过重复建立 Browser 场景，也不因 Browser 收缩删除认证、权限、DTO、ownership、状态门禁、幂等、原子性、隐私或数据库无副作用验证。
-6. 要求完整 unit、E2E 或 Browser 套件时，必须说明认证、公共 Guard、Schema、通用 mapper、公共测试基础设施、跨模块合同或其他具体影响依据；不得只写“为了保险”。
+5. 页面没有操作入口、但仍可通过 Postman、curl 或自编客户端直接调用公开 API 的非法操作，由后端 HTTP E2E 验证，不重复建立 Browser 场景。缩减 Browser 测试时，必须确认认证、权限、DTO 白名单、资源归属（ownership）、状态门禁、幂等、原子性、隐私和数据库无副作用等后端风险已有可靠证据；已有精确证据直接引用，只有存在真实缺口时才补充测试。
+6. 没有穷举所有角色、错误码、字段组合和数据库快照，不等于存在测试缺口；只有风险真实可达、风险独立且当前最低充分证据缺失时，才能标记为 `gap`。
+7. 要求完整 unit、E2E 或 Browser 套件时，必须说明认证、公共 Guard、Schema、通用 mapper、公共测试基础设施、跨模块合同或其他具体影响依据；不得只写“为了保险”。
 
 具体分类、证据复用、执行范围、fixture、Stage、verifier 与 Browser Profile 规则引用 `docs/handoff/handoff-frontend-testing-playbook.md` 和 `docs/handoff/handoff-backend-testing-playbook.md`，本规范不复制项目完整分类表或命令。
 
