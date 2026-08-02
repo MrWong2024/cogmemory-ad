@@ -108,7 +108,7 @@ describe('clinical report correction API (e2e)', () => {
   let systemAgent: ReturnType<typeof request.agent>;
   let doctorId: Types.ObjectId;
 
-  async function cleanup(): Promise<void> {
+  async function cleanup(): Promise<{ residualCount: number }> {
     const users = await userModel
       .find({ accountName: { $in: Object.values(ACCOUNTS) } })
       .select({ _id: 1 })
@@ -135,6 +135,46 @@ describe('clinical report correction API (e2e)', () => {
     await userModel
       .deleteMany({ accountName: { $in: Object.values(ACCOUNTS) } })
       .exec();
+    const [
+      userCount,
+      sessionCount,
+      patientCount,
+      visitCount,
+      reportCount,
+      instanceCount,
+      itemCount,
+      scoreCount,
+      domainCount,
+      mediaCount,
+    ] = await Promise.all([
+      userModel.countDocuments({
+        accountName: { $in: Object.values(ACCOUNTS) },
+      }),
+      sessionModel.countDocuments({ userId: { $in: userIds } }),
+      patientModel.countDocuments({ subjectCode: /^SUBJ-A25-TEST-/ }),
+      visitModel.countDocuments({ visitCode: /^VISIT-A25-TEST-/ }),
+      reportModel.countDocuments({ subjectCode: /^SUBJ-A25-TEST-/ }),
+      instanceModel.countDocuments({ subjectCode: /^SUBJ-A25-TEST-/ }),
+      itemModel.countDocuments({ subjectCode: /^SUBJ-A25-TEST-/ }),
+      scoreModel.countDocuments({ subjectCode: /^SUBJ-A25-TEST-/ }),
+      domainModel.countDocuments({ subjectCode: /^SUBJ-A25-TEST-/ }),
+      mediaModel.countDocuments({ subjectCode: /^SUBJ-A25-TEST-/ }),
+    ]);
+    const residualCount =
+      userCount +
+      sessionCount +
+      patientCount +
+      visitCount +
+      reportCount +
+      instanceCount +
+      itemCount +
+      scoreCount +
+      domainCount +
+      mediaCount;
+    if (residualCount !== 0) {
+      throw new Error('Expected exact A25 E2E cleanup');
+    }
+    return { residualCount };
   }
 
   async function createFixture(
@@ -722,7 +762,12 @@ describe('clinical report correction API (e2e)', () => {
   }
 
   beforeAll(async () => {
-    if (process.env.NODE_ENV !== 'test') throw new Error('E2E requires test');
+    if (
+      process.env.NODE_ENV !== 'test' ||
+      process.env.COGMEMORY_DATABASE_PURPOSE !== 'standard_test'
+    ) {
+      throw new Error('E2E requires the standard_test process environment');
+    }
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -730,12 +775,8 @@ describe('clinical report correction API (e2e)', () => {
     configureApp(app);
     await app.init();
     connection = app.get<Connection>(getConnectionToken());
-    const databaseName = connection.name.toLowerCase();
-    if (
-      !databaseName.includes('_test') ||
-      databaseName.includes('_dev') ||
-      databaseName.includes('_prod')
-    ) {
+    const databaseName = connection.name;
+    if (databaseName !== 'cogmemory_ad_test') {
       throw new Error('E2E database isolation is not active');
     }
     const config = app.get(ConfigService);
@@ -747,6 +788,9 @@ describe('clinical report correction API (e2e)', () => {
     ) {
       throw new Error('E2E external service isolation is not active');
     }
+    process.stdout.write(
+      `[A25 isolation] databasePurpose=${String(process.env.COGMEMORY_DATABASE_PURPOSE)}; actualDatabaseName=${databaseName}; storage=${String(config.get<string>('storage.driver'))}; llm=${String(config.get<string>('llm.provider'))}; sms=${String(config.get<string>('smsAuth.provider'))}\n`,
+    );
     authService = app.get(AuthService);
     userModel = app.get(getModelToken(User.name));
     sessionModel = app.get(getModelToken(Session.name));
@@ -802,8 +846,18 @@ describe('clinical report correction API (e2e)', () => {
 
   afterAll(async () => {
     if (app) {
-      await cleanup();
-      await app.close();
+      let cleanupAudit: { residualCount: number } | undefined;
+      try {
+        cleanupAudit = await cleanup();
+      } finally {
+        await app.close();
+      }
+      if (Number(connection.readyState) !== 0) {
+        throw new Error('Expected the A25 E2E database connection to close');
+      }
+      process.stdout.write(
+        `[A25 cleanup] residualCount=${String(cleanupAudit?.residualCount)}; readyState=${String(Number(connection.readyState))}\n`,
+      );
     }
   });
 
@@ -939,6 +993,728 @@ describe('clinical report correction API (e2e)', () => {
     expect(
       await reportModel.countDocuments({ patientId: fixture.patient._id }),
     ).toBe(2);
+  });
+
+  it('creates one linear correction under two concurrent authenticated HTTP requests', async () => {
+    const fixture = await createFixture('CONCURRENT');
+    const path = correctionPath(fixture);
+    const [sourceBeforeDocument, patientBeforeDocument, visitBeforeDocument] =
+      await Promise.all([
+        reportModel.findById(fixture.report._id).exec(),
+        patientModel.findById(fixture.patient._id).exec(),
+        visitModel.findById(fixture.visit._id).exec(),
+      ]);
+    if (
+      !sourceBeforeDocument ||
+      !patientBeforeDocument ||
+      !visitBeforeDocument
+    ) {
+      throw new Error('Expected complete concurrent correction fixture');
+    }
+    const sourceBefore = record(
+      sourceBeforeDocument.toObject(),
+      'initial persisted source report',
+    );
+    const patientBefore = patientBeforeDocument.toObject();
+    const visitBefore = visitBeforeDocument.toObject();
+    const sourceFactsBefore = await readSourceFacts(fixture);
+    const evidenceStorageBefore = JSON.stringify(fixture.evidence.storage);
+    const metadataBefore = record(
+      sourceBefore.metadata,
+      'initial source metadata',
+    );
+    const confirmationBefore = record(
+      sourceBefore.confirmation,
+      'initial confirmation',
+    );
+    const lockBefore = record(metadataBefore.a22Lock, 'initial A22 lock');
+    const freezeBefore = record(
+      metadataBefore.a23SourceFreeze,
+      'initial A23 source freeze',
+    );
+    const archiveBefore = record(
+      metadataBefore.a24Archive,
+      'initial A24 archive',
+    );
+    const expectedUpdatedAt: unknown = sourceBeforeDocument.get('updatedAt');
+    if (!(expectedUpdatedAt instanceof Date)) {
+      throw new Error('Expected persisted source updatedAt');
+    }
+
+    expect(sourceBeforeDocument.status).toBe('archived');
+    expect(sourceBeforeDocument.reportVersion).toBe(1);
+    expect(sourceBeforeDocument.reportType).toBe('cognitive_assessment');
+    expect(sourceBeforeDocument.source).toBe('mixed');
+    expect(sourceBeforeDocument.qualityStatus).toBe('passed');
+    expect(['confirmed', 'archived', 'corrected']).toContain(
+      sourceBeforeDocument.status,
+    );
+    expect(confirmationBefore.confirmedAt).toBeInstanceOf(Date);
+    expect(confirmationBefore.confirmedBy).not.toBeNull();
+    expect(lockBefore).toEqual(
+      expect.objectContaining({
+        version: 1,
+        lockedAt: sourceBeforeDocument.lockedAt,
+        lockedBy: sourceBeforeDocument.lockedBy?.toString(),
+      }),
+    );
+    expect(freezeBefore).toEqual(
+      expect.objectContaining({ version: 1, state: 'completed' }),
+    );
+    expect(freezeBefore.completedAt).toBeInstanceOf(Date);
+    expect(archiveBefore).toEqual(
+      expect.objectContaining({
+        version: 1,
+        archivedAt: sourceBeforeDocument.archivedAt,
+        archivedBy: sourceBeforeDocument.archivedBy?.toString(),
+        sourceFreezeId: freezeBefore.freezeId,
+        sourceFreezeCompletedAt: freezeBefore.completedAt,
+      }),
+    );
+    expect(metadataBefore).not.toHaveProperty('a25Correction');
+    expect(sourceBeforeDocument.correctionRecords).toHaveLength(0);
+    expect(sourceBeforeDocument.voidedAt).toBeNull();
+    expect(sourceBeforeDocument.voidedBy).toBeNull();
+    const reportFilter = {
+      patientId: fixture.patient._id,
+      assessmentVisitId: fixture.visit._id,
+      reportType: 'cognitive_assessment',
+    } as const;
+    expect(await reportModel.countDocuments(reportFilter).exec()).toBe(1);
+    expect(
+      await reportModel
+        .countDocuments({ ...reportFilter, reportVersion: 2 })
+        .exec(),
+    ).toBe(0);
+    const latestBefore = await reportModel
+      .findOne(reportFilter)
+      .sort({ reportVersion: -1, createdAt: -1 })
+      .exec();
+    expect(latestBefore?._id.equals(fixture.report._id)).toBe(true);
+
+    expect(doctorAgent === adminAgent).toBe(false);
+    const sessionUsers = await userModel
+      .find({ accountName: { $in: [ACCOUNTS.doctor, ACCOUNTS.admin] } })
+      .select({
+        _id: 1,
+        accountName: 1,
+        displayName: 1,
+        roles: 1,
+        userType: 1,
+        status: 1,
+      })
+      .exec();
+    const doctorUser = sessionUsers.find(
+      (user) => user.accountName === ACCOUNTS.doctor,
+    );
+    const adminUser = sessionUsers.find(
+      (user) => user.accountName === ACCOUNTS.admin,
+    );
+    if (!doctorUser || !adminUser) {
+      throw new Error('Expected doctor and admin users');
+    }
+    expect(sessionUsers).toHaveLength(2);
+    expect(doctorUser._id.equals(adminUser._id)).toBe(false);
+    expect(doctorUser.status).toBe('active');
+    expect(doctorUser.userType).toBe('doctor');
+    expect(doctorUser.roles).toEqual(['doctor']);
+    expect(adminUser.status).toBe('active');
+    expect(adminUser.userType).toBe('admin');
+    expect(adminUser.roles).toEqual(['admin']);
+    const authenticatedSessions = await sessionModel
+      .find({
+        userId: { $in: [doctorUser._id, adminUser._id] },
+        status: 'active',
+        revokedAt: null,
+        expiresAt: { $gt: new Date() },
+      })
+      .select({
+        _id: 1,
+        userId: 1,
+        status: 1,
+        expiresAt: 1,
+        revokedAt: 1,
+        rolesSnapshot: 1,
+      })
+      .exec();
+    expect(authenticatedSessions).toHaveLength(2);
+    for (const [user, role] of [
+      [doctorUser, 'doctor'],
+      [adminUser, 'admin'],
+    ] as const) {
+      const userSessions = authenticatedSessions.filter((session) =>
+        session.userId.equals(user._id),
+      );
+      expect(userSessions).toHaveLength(1);
+      expect(userSessions[0].rolesSnapshot).toContain(role);
+    }
+    expect(
+      authenticatedSessions[0]._id.equals(authenticatedSessions[1]._id),
+    ).toBe(false);
+
+    const doctorReason = 'A25 concurrent doctor de-identified reason';
+    const doctorSummary = 'A25 concurrent doctor de-identified summary';
+    const adminReason = 'A25 concurrent admin de-identified reason';
+    const adminSummary = 'A25 concurrent admin de-identified summary';
+    const sharedExpectedUpdatedAt = expectedUpdatedAt.toISOString();
+    const doctorPayload = {
+      confirm: true,
+      correctionReason: doctorReason,
+      changeSummary: doctorSummary,
+      expectedUpdatedAt: sharedExpectedUpdatedAt,
+    };
+    const adminPayload = {
+      confirm: true,
+      correctionReason: adminReason,
+      changeSummary: adminSummary,
+      expectedUpdatedAt: sharedExpectedUpdatedAt,
+    };
+    const expectedBodyKeys = [
+      'confirm',
+      'correctionReason',
+      'changeSummary',
+      'expectedUpdatedAt',
+    ].sort();
+    expect(Object.keys(doctorPayload).sort()).toEqual(expectedBodyKeys);
+    expect(Object.keys(adminPayload).sort()).toEqual(expectedBodyKeys);
+    expect(doctorPayload.expectedUpdatedAt).toBe(
+      adminPayload.expectedUpdatedAt,
+    );
+    expect(doctorPayload.correctionReason).not.toBe(
+      adminPayload.correctionReason,
+    );
+    expect(doctorPayload.changeSummary).not.toBe(adminPayload.changeSummary);
+
+    const doctorRequest = doctorAgent.post(path).send(doctorPayload);
+    const adminRequest = adminAgent.post(path).send(adminPayload);
+    const [doctorResponse, adminResponse] = await Promise.all([
+      doctorRequest,
+      adminRequest,
+    ]);
+    expect(doctorResponse.status).toBe(200);
+    expect(adminResponse.status).toBe(200);
+
+    const pairedResponses = [
+      {
+        requestRole: 'doctor' as const,
+        requestUserId: doctorUser._id.toString(),
+        requestUserName: doctorUser.displayName,
+        requestReason: doctorReason,
+        requestSummary: doctorSummary,
+        response: doctorResponse,
+      },
+      {
+        requestRole: 'admin' as const,
+        requestUserId: adminUser._id.toString(),
+        requestUserName: adminUser.displayName,
+        requestReason: adminReason,
+        requestSummary: adminSummary,
+        response: adminResponse,
+      },
+    ].map((pair) => {
+      const responseBody = body(pair.response);
+      const sourceReport = record(
+        responseBody.sourceReport,
+        `${pair.requestRole} source report`,
+      );
+      const replacementReport = record(
+        responseBody.replacementReport,
+        `${pair.requestRole} replacement report`,
+      );
+      const receipt = record(
+        responseBody.correctionReceipt,
+        `${pair.requestRole} correction receipt`,
+      );
+      const publicCorrection = record(
+        sourceReport.correction,
+        `${pair.requestRole} public correction`,
+      );
+      const publicLineage = record(
+        replacementReport.replacementOf,
+        `${pair.requestRole} public replacement lineage`,
+      );
+      expect(sourceReport.status).toBe('corrected');
+      expect(sourceReport.reportVersion).toBe(1);
+      expect(sourceReport.isFinal).toBe(true);
+      expect(replacementReport.reportVersion).toBe(2);
+      expect(replacementReport.status).toBe('draft');
+      expect(replacementReport.source).toBe('mixed');
+      expect(replacementReport.qualityStatus).toBe('needs_review');
+      expect(replacementReport.confirmation).toBeNull();
+      expect(replacementReport.lockedAt).toBeNull();
+      expect(replacementReport.sourceFreeze).toBeNull();
+      expect(replacementReport.archivedAt).toBeNull();
+      expect(replacementReport.archive).toBeNull();
+      expect(receipt.state).toBe('completed');
+      expect(
+        receipt.alreadyCreated === true || receipt.alreadyCreated === false,
+      ).toBe(true);
+      expect(
+        receipt.resumedExisting === true || receipt.resumedExisting === false,
+      ).toBe(true);
+      expect(
+        !(receipt.alreadyCreated === true && receipt.resumedExisting === true),
+      ).toBe(true);
+      expect(sourceReport.id === receipt.sourceReportId).toBe(true);
+      expect(replacementReport.id === receipt.replacementReportId).toBe(true);
+      expect(publicCorrection.correctionId === receipt.correctionId).toBe(true);
+      expect(publicCorrection.correctionNo).toBe(receipt.correctionNo);
+      expect(publicCorrection.state).toBe('completed');
+      expect(publicLineage.correctionId === receipt.correctionId).toBe(true);
+      expect(publicLineage.correctionNo).toBe(receipt.correctionNo);
+      expect(publicLineage.previousReportId === sourceReport.id).toBe(true);
+      expect(publicLineage.previousReportVersion).toBe(1);
+      expect(publicLineage.replacementReportVersion).toBe(2);
+      expect(publicLineage.replacementReportCode).toBe(
+        receipt.replacementReportCode,
+      );
+      expect(publicLineage.sourceArchiveId).toBe(archiveBefore.archiveId);
+      expect(publicLineage.sourceArchivedAt).toBe(
+        (archiveBefore.archivedAt as Date).toISOString(),
+      );
+      expect(publicLineage.sourceFreezeId).toBe(freezeBefore.freezeId);
+      expect(publicLineage.sourceFreezeCompletedAt).toBe(
+        (freezeBefore.completedAt as Date).toISOString(),
+      );
+      const serializedResponse = JSON.stringify(responseBody);
+      for (const forbiddenKey of [
+        'metadata',
+        'a25Correction',
+        'a25CorrectionReplacement',
+        'correctionRecords',
+        'auditLogId',
+        'auditLogRefs',
+        'patientId',
+        'assessmentVisitId',
+        'primaryScaleInstanceIds',
+        'scoreResultIds',
+        'cognitiveDomainResultIds',
+        'mediaEvidenceIds',
+        'externalRefs',
+        'clinicalContext',
+        'session',
+        'cookie',
+        'currentUser',
+        'branch',
+        '_id',
+        '__v',
+      ]) {
+        expect(serializedResponse.includes(`"${forbiddenKey}"`)).toBe(false);
+      }
+      return {
+        ...pair,
+        responseBody,
+        sourceReport,
+        replacementReport,
+        receipt,
+        publicCorrection,
+        publicLineage,
+      };
+    });
+
+    expect(
+      pairedResponses.map(({ receipt }) => receipt.alreadyCreated).sort(),
+    ).toEqual([false, true]);
+    expect(
+      pairedResponses.filter(({ receipt }) => receipt.resumedExisting === true)
+        .length,
+    ).toBeLessThanOrEqual(1);
+    const activeCompletionResponse = pairedResponses.find(
+      ({ receipt }) => receipt.alreadyCreated === false,
+    );
+    const completedReplayResponse = pairedResponses.find(
+      ({ receipt }) => receipt.alreadyCreated === true,
+    );
+    if (!activeCompletionResponse || !completedReplayResponse) {
+      throw new Error(
+        'Expected one active completion and one completed replay response',
+      );
+    }
+    expect(completedReplayResponse.receipt.resumedExisting).toBe(false);
+    expect(
+      activeCompletionResponse.receipt.resumedExisting === false ||
+        activeCompletionResponse.receipt.resumedExisting === true,
+    ).toBe(true);
+
+    const receiptCoreFields = [
+      'sourceReportId',
+      'replacementReportId',
+      'correctionId',
+      'correctionNo',
+      'state',
+      'startedAt',
+      'completedAt',
+      'correctionReason',
+      'changeSummary',
+      'previousReportCode',
+      'previousReportVersion',
+      'replacementReportCode',
+      'replacementReportVersion',
+    ] as const;
+    const [doctorPair, adminPair] = pairedResponses;
+    for (const field of receiptCoreFields) {
+      expect(doctorPair.receipt[field] === adminPair.receipt[field]).toBe(true);
+    }
+    for (const field of [
+      'sourceReportId',
+      'replacementReportId',
+      'correctionId',
+    ] as const) {
+      expect(typeof doctorPair.receipt[field]).toBe('string');
+      expect(String(doctorPair.receipt[field]).length).toBeGreaterThan(0);
+    }
+    expect(doctorPair.sourceReport.id === adminPair.sourceReport.id).toBe(true);
+    expect(
+      doctorPair.replacementReport.id === adminPair.replacementReport.id,
+    ).toBe(true);
+
+    const startedBy = record(
+      activeCompletionResponse.receipt.startedBy,
+      'common correction start actor',
+    );
+    const completedBy = record(
+      activeCompletionResponse.receipt.completedBy,
+      'common correction completion actor',
+    );
+    const startedRole = startedBy.operatorRole;
+    expect(startedRole === 'doctor' || startedRole === 'admin').toBe(true);
+    const startOwner = pairedResponses.find(
+      ({ requestRole }) => requestRole === startedRole,
+    );
+    if (!startOwner) {
+      throw new Error('Expected a paired correction start owner');
+    }
+    expect(startedBy.operatorRole).toBe(startOwner.requestRole);
+    expect(startedBy.operatorId === startOwner.requestUserId).toBe(true);
+    expect(startedBy.operatorName).toBe(startOwner.requestUserName);
+    expect(activeCompletionResponse.receipt.correctionReason).toBe(
+      startOwner.requestReason,
+    );
+    expect(activeCompletionResponse.receipt.changeSummary).toBe(
+      startOwner.requestSummary,
+    );
+    expect(
+      Number.isFinite(
+        new Date(String(activeCompletionResponse.receipt.startedAt)).getTime(),
+      ),
+    ).toBe(true);
+    expect(completedBy.operatorRole).toBe(activeCompletionResponse.requestRole);
+    expect(
+      completedBy.operatorId === activeCompletionResponse.requestUserId,
+    ).toBe(true);
+    expect(completedBy.operatorName).toBe(
+      activeCompletionResponse.requestUserName,
+    );
+    const replayCompletedBy = record(
+      completedReplayResponse.receipt.completedBy,
+      'completed replay actor',
+    );
+    expect(replayCompletedBy.operatorId === completedBy.operatorId).toBe(true);
+    expect(replayCompletedBy.operatorName).toBe(completedBy.operatorName);
+    expect(replayCompletedBy.operatorRole).toBe(completedBy.operatorRole);
+    expect(startedRole === activeCompletionResponse.requestRole).toBe(
+      activeCompletionResponse.receipt.resumedExisting === false,
+    );
+    for (const pair of pairedResponses) {
+      const responseStartedBy = record(
+        pair.receipt.startedBy,
+        `${pair.requestRole} response start actor`,
+      );
+      const responseCompletedBy = record(
+        pair.receipt.completedBy,
+        `${pair.requestRole} response completion actor`,
+      );
+      expect(responseStartedBy.operatorId === startedBy.operatorId).toBe(true);
+      expect(responseStartedBy.operatorName).toBe(startedBy.operatorName);
+      expect(responseStartedBy.operatorRole).toBe(startedBy.operatorRole);
+      expect(responseCompletedBy.operatorId === completedBy.operatorId).toBe(
+        true,
+      );
+      expect(responseCompletedBy.operatorName).toBe(completedBy.operatorName);
+      expect(responseCompletedBy.operatorRole).toBe(completedBy.operatorRole);
+      expect(pair.publicCorrection.startedAt).toBe(pair.receipt.startedAt);
+      expect(pair.publicCorrection.correctionReason).toBe(
+        startOwner.requestReason,
+      );
+      expect(pair.publicCorrection.changeSummary).toBe(
+        startOwner.requestSummary,
+      );
+      const lineageCreatedBy = record(
+        pair.publicLineage.createdBy,
+        `${pair.requestRole} public lineage creator`,
+      );
+      expect(lineageCreatedBy.operatorId === startedBy.operatorId).toBe(true);
+      expect(lineageCreatedBy.operatorName).toBe(startedBy.operatorName);
+      expect(lineageCreatedBy.operatorRole).toBe(startedBy.operatorRole);
+      expect(pair.publicLineage.correctionReason).toBe(
+        startOwner.requestReason,
+      );
+      expect(pair.publicLineage.changeSummary).toBe(startOwner.requestSummary);
+    }
+
+    const reportsAfter = await reportModel
+      .find(reportFilter)
+      .sort({ reportVersion: 1, createdAt: 1 })
+      .exec();
+    expect(reportsAfter).toHaveLength(2);
+    expect(reportsAfter.map((report) => report.reportVersion)).toEqual([1, 2]);
+    expect(
+      await reportModel
+        .countDocuments({ ...reportFilter, reportVersion: 1 })
+        .exec(),
+    ).toBe(1);
+    expect(
+      await reportModel
+        .countDocuments({ ...reportFilter, reportVersion: 2 })
+        .exec(),
+    ).toBe(1);
+    expect(
+      await reportModel
+        .countDocuments({ ...reportFilter, reportVersion: 3 })
+        .exec(),
+    ).toBe(0);
+    expect(
+      await reportModel
+        .countDocuments({ ...reportFilter, reportVersion: { $nin: [1, 2, 3] } })
+        .exec(),
+    ).toBe(0);
+    const persistedSource = reportsAfter.find(
+      (report) => report.reportVersion === 1,
+    );
+    const persistedReplacement = reportsAfter.find(
+      (report) => report.reportVersion === 2,
+    );
+    if (!persistedSource || !persistedReplacement) {
+      throw new Error('Expected one V1 source and one V2 replacement');
+    }
+    const sourceAfter = record(
+      persistedSource.toObject(),
+      'persisted completed source report',
+    );
+    const replacementAfter = record(
+      persistedReplacement.toObject(),
+      'persisted replacement report',
+    );
+    const sourceMetadataAfter = record(
+      sourceAfter.metadata,
+      'persisted source metadata',
+    );
+    const audit = record(
+      sourceMetadataAfter.a25Correction,
+      'persisted A25 correction audit',
+    );
+    expect(persistedSource.status).toBe('corrected');
+    expect(persistedSource.correctionRecords).toHaveLength(1);
+    expect(Object.keys(sourceMetadataAfter).sort()).toEqual(
+      [...Object.keys(metadataBefore), 'a25Correction'].sort(),
+    );
+    for (const namespace of Object.keys(metadataBefore)) {
+      expect(
+        JSON.stringify(sourceMetadataAfter[namespace]) ===
+          JSON.stringify(metadataBefore[namespace]),
+      ).toBe(true);
+    }
+    const allowedSourceChanges = new Set([
+      'status',
+      'updatedAt',
+      'metadata',
+      'correctionRecords',
+    ]);
+    for (const field of new Set([
+      ...Object.keys(sourceBefore),
+      ...Object.keys(sourceAfter),
+    ])) {
+      if (allowedSourceChanges.has(field)) continue;
+      expect(
+        JSON.stringify(sourceAfter[field]) ===
+          JSON.stringify(sourceBefore[field]),
+      ).toBe(true);
+    }
+    const persistedSourceUpdatedAt: unknown = persistedSource.get('updatedAt');
+    expect(persistedSourceUpdatedAt).toBeInstanceOf(Date);
+    expect((persistedSourceUpdatedAt as Date).getTime()).toBeGreaterThan(
+      expectedUpdatedAt.getTime(),
+    );
+
+    expect(audit.version).toBe(1);
+    expect(audit.state).toBe('completed');
+    expect(
+      audit.correctionId === activeCompletionResponse.receipt.correctionId,
+    ).toBe(true);
+    expect(audit.correctionNo).toBe(
+      activeCompletionResponse.receipt.correctionNo,
+    );
+    expect((audit.startedAt as Date).toISOString()).toBe(
+      activeCompletionResponse.receipt.startedAt,
+    );
+    expect(audit.startedBy === startedBy.operatorId).toBe(true);
+    expect(audit.startedByName).toBe(startedBy.operatorName);
+    expect(audit.startedByRole).toBe(startedBy.operatorRole);
+    expect(audit.correctionReason).toBe(startOwner.requestReason);
+    expect(audit.changeSummary).toBe(startOwner.requestSummary);
+    expect(audit.previousReportCode).toBe(sourceBeforeDocument.reportCode);
+    expect(audit.previousReportVersion).toBe(1);
+    expect(
+      audit.replacementReportId === persistedReplacement._id.toString(),
+    ).toBe(true);
+    expect(audit.replacementReportCode).toBe(persistedReplacement.reportCode);
+    expect(audit.replacementReportVersion).toBe(2);
+    expect(audit.sourceArchiveId).toBe(archiveBefore.archiveId);
+    expect((audit.sourceArchivedAt as Date).getTime()).toBe(
+      (archiveBefore.archivedAt as Date).getTime(),
+    );
+    expect(audit.sourceFreezeId).toBe(freezeBefore.freezeId);
+    expect((audit.sourceFreezeCompletedAt as Date).getTime()).toBe(
+      (freezeBefore.completedAt as Date).getTime(),
+    );
+    expect((audit.replacementCreatedAt as Date).getTime()).toBe(
+      persistedReplacement.get('createdAt') instanceof Date
+        ? (persistedReplacement.get('createdAt') as Date).getTime()
+        : Number.NaN,
+    );
+    expect((audit.completedAt as Date).toISOString()).toBe(
+      activeCompletionResponse.receipt.completedAt,
+    );
+    expect(audit.completedBy === completedBy.operatorId).toBe(true);
+    expect(audit.completedByName).toBe(completedBy.operatorName);
+    expect(audit.completedByRole).toBe(completedBy.operatorRole);
+
+    const correctionRecord = record(
+      sourceAfter.correctionRecords instanceof Array
+        ? sourceAfter.correctionRecords[0]
+        : null,
+      'persisted correction record',
+    );
+    expect(correctionRecord.correctionNo).toBe(audit.correctionNo);
+    expect((correctionRecord.correctedAt as Date).getTime()).toBe(
+      (audit.completedAt as Date).getTime(),
+    );
+    expect(
+      String(correctionRecord.correctedBy) === String(audit.completedBy),
+    ).toBe(true);
+    expect(correctionRecord.correctedByName).toBe(audit.completedByName);
+    expect(correctionRecord.reason).toBe(audit.correctionReason);
+    expect(correctionRecord.changeSummary).toBe(audit.changeSummary);
+    expect(correctionRecord.previousReportCode).toBe(
+      sourceBeforeDocument.reportCode,
+    );
+    expect(correctionRecord.replacementReportCode).toBe(
+      persistedReplacement.reportCode,
+    );
+    expect(correctionRecord.auditLogId).toBeNull();
+
+    expect(persistedReplacement.reportVersion).toBe(2);
+    expect(persistedReplacement.status).toBe('draft');
+    expect(persistedReplacement.source).toBe('mixed');
+    expect(persistedReplacement.qualityStatus).toBe('needs_review');
+    expect(persistedReplacement.confirmation).toBeNull();
+    expect(persistedReplacement.lockedAt).toBeNull();
+    expect(persistedReplacement.lockedBy).toBeNull();
+    expect(persistedReplacement.archivedAt).toBeNull();
+    expect(persistedReplacement.archivedBy).toBeNull();
+    expect(persistedReplacement.correctionRecords).toHaveLength(0);
+    expect(persistedReplacement.voidedAt).toBeNull();
+    expect(persistedReplacement.voidedBy).toBeNull();
+    expect(persistedReplacement.auditLogRefs).toHaveLength(0);
+    expect(persistedReplacement.reportCode).toBe(audit.replacementReportCode);
+    const replacementMetadata = record(
+      replacementAfter.metadata,
+      'persisted replacement metadata',
+    );
+    expect(Object.keys(replacementMetadata).sort()).toEqual([
+      'a20Generation',
+      'a25CorrectionReplacement',
+    ]);
+    expect(
+      JSON.stringify(replacementMetadata.a20Generation) ===
+        JSON.stringify(metadataBefore.a20Generation),
+    ).toBe(true);
+    for (const forbiddenNamespace of [
+      'a22Lock',
+      'a23SourceFreeze',
+      'a24Archive',
+      'a25Correction',
+    ]) {
+      expect(replacementMetadata).not.toHaveProperty(forbiddenNamespace);
+    }
+    const lineage = record(
+      replacementMetadata.a25CorrectionReplacement,
+      'persisted replacement lineage',
+    );
+    expect(lineage.correctionId === audit.correctionId).toBe(true);
+    expect(lineage.correctionNo).toBe(audit.correctionNo);
+    expect(lineage.previousReportId === persistedSource._id.toString()).toBe(
+      true,
+    );
+    expect(lineage.previousReportCode).toBe(persistedSource.reportCode);
+    expect(lineage.previousReportVersion).toBe(1);
+    expect(lineage.replacementReportCode).toBe(persistedReplacement.reportCode);
+    expect(lineage.replacementReportVersion).toBe(2);
+    expect((lineage.createdAt as Date).getTime()).toBe(
+      (audit.replacementCreatedAt as Date).getTime(),
+    );
+    expect(lineage.createdBy === audit.startedBy).toBe(true);
+    expect(lineage.createdByName).toBe(audit.startedByName);
+    expect(lineage.createdByRole).toBe(audit.startedByRole);
+    expect(lineage.correctionReason).toBe(audit.correctionReason);
+    expect(lineage.changeSummary).toBe(audit.changeSummary);
+    expect(lineage.sourceArchiveId).toBe(audit.sourceArchiveId);
+    expect((lineage.sourceArchivedAt as Date).getTime()).toBe(
+      (audit.sourceArchivedAt as Date).getTime(),
+    );
+    expect(lineage.sourceFreezeId).toBe(audit.sourceFreezeId);
+    expect((lineage.sourceFreezeCompletedAt as Date).getTime()).toBe(
+      (audit.sourceFreezeCompletedAt as Date).getTime(),
+    );
+
+    const otherRequest = pairedResponses.find(
+      ({ requestRole }) => requestRole !== startOwner.requestRole,
+    );
+    if (!otherRequest) {
+      throw new Error('Expected the non-starting concurrent request');
+    }
+    const serializedPersistedReports = JSON.stringify(
+      reportsAfter.map((report) => report.toObject()),
+    );
+    expect(
+      serializedPersistedReports.includes(otherRequest.requestReason),
+    ).toBe(false);
+    expect(
+      serializedPersistedReports.includes(otherRequest.requestSummary),
+    ).toBe(false);
+    const persistedCorrectionIds = new Set([
+      String(audit.correctionId),
+      String(lineage.correctionId),
+    ]);
+    expect(persistedCorrectionIds.size).toBe(1);
+    expect(
+      doctorPair.receipt.correctionNo === adminPair.receipt.correctionNo &&
+        doctorPair.receipt.correctionNo === audit.correctionNo,
+    ).toBe(true);
+
+    const [patientAfter, visitAfter, evidenceAfter] = await Promise.all([
+      patientModel.findById(fixture.patient._id).exec(),
+      visitModel.findById(fixture.visit._id).exec(),
+      mediaModel.findById(fixture.evidenceId).exec(),
+    ]);
+    if (!patientAfter || !visitAfter || !evidenceAfter) {
+      throw new Error('Expected protected concurrent correction facts');
+    }
+    expect(
+      JSON.stringify(patientAfter.toObject()) === JSON.stringify(patientBefore),
+    ).toBe(true);
+    expect(
+      JSON.stringify(visitAfter.toObject()) === JSON.stringify(visitBefore),
+    ).toBe(true);
+    expect(
+      JSON.stringify(await readSourceFacts(fixture)) ===
+        JSON.stringify(sourceFactsBefore),
+    ).toBe(true);
+    expect(JSON.stringify(evidenceAfter.storage)).toBe(evidenceStorageBefore);
+
+    process.stdout.write(
+      `[A25 concurrent correction] statuses=${String(doctorResponse.status)},${String(adminResponse.status)}; doctorFlags=${String(doctorPair.receipt.alreadyCreated)}/${String(doctorPair.receipt.resumedExisting)}; adminFlags=${String(adminPair.receipt.alreadyCreated)}/${String(adminPair.receipt.resumedExisting)}; startOwnerRole=${String(startedRole)}; completionExecutorRole=${String(activeCompletionResponse.requestRole)}; sameActor=${String(startedRole === activeCompletionResponse.requestRole)}; reports=2; v2=1; v3=0; branch=0\n`,
+    );
   });
 
   it('lets doctor/admin edit, submit and confirm replacement only', async () => {
