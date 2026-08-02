@@ -29,6 +29,9 @@ import { MediaEvidence, type MediaEvidenceDocument } from '../src/modules/media/
 import { Patient, type PatientDocument } from '../src/modules/patients/schemas/patient.schema';
 import { resolveExistingClinicalReportArchive } from '../src/modules/reports/lib/clinical-report-archive';
 import {
+  buildClinicalReportCorrectionPlan,
+  buildClinicalReportCorrectionStartMetadata,
+  evaluateClinicalReportCorrectionReadiness,
   resolveClinicalReportReplacementLineage,
   resolveExistingClinicalReportCorrection,
   validateClinicalReportReplacement,
@@ -52,7 +55,8 @@ import { ScoreResult, type ScoreResultDocument } from '../src/modules/scoring/sc
 import { User, type UserDocument } from '../src/modules/users/schemas/user.schema';
 
 type Command = 'prepare' | 'verify' | 'cleanup';
-type Phase = 'prepared' | 'u01-post-correction';
+type Profile = 'B15-P1-first-correction' | 'B15-P2-recovery-uncertain-result';
+type Phase = 'prepared' | 'u01-post-correction' | 'u02-post-recovery';
 type Root = { patientId: string; visitId: string; sourceReportId: string };
 type PreparedBaseline = {
   preparedUpdatedAt: string;
@@ -76,19 +80,33 @@ type PreparedBaseline = {
   sourceFactsHash: string;
   fakeStorageFactsHash: string;
   independentA25AuditLogCount: 0;
+  correctionIdHash?: string;
+  startedFactsHash?: string;
+  persistedTextHash?: string;
+  correctionPlanHash?: string;
 };
 type Scenario = Root & {
   navigationPath: string;
   preparedBaseline: PreparedBaseline;
 };
-type Descriptor = {
+type BaseDescriptor = {
   schemaVersion: 1;
   batch: 'B15';
-  profile: 'B15-P1-first-correction';
   namespace: string;
   accounts: Record<'doctor' | 'nurse', { loginIdentifier: string }>;
+};
+type P1Descriptor = BaseDescriptor & {
+  profile: 'B15-P1-first-correction';
   scenarios: Record<'first-correction-ready', Scenario>;
 };
+type P2Descriptor = BaseDescriptor & {
+  profile: 'B15-P2-recovery-uncertain-result';
+  scenarios: Record<
+    'correction-in-progress' | 'correction-network-uncertain',
+    Scenario
+  >;
+};
+type Descriptor = P1Descriptor | P2Descriptor;
 type Models = {
   users: Model<UserDocument>;
   sessions: Model<SessionDocument>;
@@ -114,15 +132,64 @@ class FixtureError extends Error {
 }
 
 const DB = 'cogmemory_ad_browser_test';
-const PROFILE = 'B15-P1-first-correction' as const;
-const SCENARIO = 'first-correction-ready' as const;
-const SOURCE_MARKER = 'B15-U01 synthetic first correction source marker.';
-const CONFIRMATION_NOTE = 'B15-U01 脱敏确认说明';
-const LOCK_NOTE = 'B15-U01 脱敏锁定说明';
-const FREEZE_NOTE = 'B15-U01 脱敏来源冻结说明';
-const ARCHIVE_NOTE = 'B15-U01 脱敏归档说明';
-const CORRECTION_REASON = 'B15 U01 脱敏首次更正原因';
-const CHANGE_SUMMARY = 'B15 U01 脱敏首次更正摘要';
+const P1_PROFILE = 'B15-P1-first-correction' as const;
+const P2_PROFILE = 'B15-P2-recovery-uncertain-result' as const;
+const P1_SCENARIO = 'first-correction-ready' as const;
+const P2_IN_PROGRESS_SCENARIO = 'correction-in-progress' as const;
+const P2_UNCERTAIN_SCENARIO = 'correction-network-uncertain' as const;
+const U01_SOURCE_MARKER = 'B15-U01 synthetic first correction source marker.';
+const U01_CORRECTION_REASON = 'B15 U01 脱敏首次更正原因';
+const U01_CHANGE_SUMMARY = 'B15 U01 脱敏首次更正摘要';
+const U02_PERSISTED_SOURCE_MARKER =
+  'B15-U02 synthetic persisted correction source marker.';
+const U02_UNCERTAIN_SOURCE_MARKER =
+  'B15-U02 synthetic uncertain correction source marker.';
+const U02_PERSISTED_REASON = 'B15 U02 脱敏恢复更正原因';
+const U02_PERSISTED_SUMMARY = 'B15 U02 脱敏恢复更正摘要';
+
+type ScenarioSeed = {
+  ordinal: 1 | 2;
+  marker: string;
+  displayLabel: 'U01' | 'U02';
+  confirmationNote: string;
+  submissionNote: string;
+  lockNote: string;
+  freezeNote: string;
+  archiveNote: string;
+};
+
+const U01_SEED: ScenarioSeed = {
+  ordinal: 1,
+  marker: U01_SOURCE_MARKER,
+  displayLabel: 'U01',
+  confirmationNote: 'B15-U01 脱敏确认说明',
+  submissionNote: 'B15-U01 脱敏提交说明',
+  lockNote: 'B15-U01 脱敏锁定说明',
+  freezeNote: 'B15-U01 脱敏来源冻结说明',
+  archiveNote: 'B15-U01 脱敏归档说明',
+};
+
+const U02_PERSISTED_SEED: ScenarioSeed = {
+  ordinal: 1,
+  marker: U02_PERSISTED_SOURCE_MARKER,
+  displayLabel: 'U02',
+  confirmationNote: 'B15-U02 脱敏恢复场景确认说明',
+  submissionNote: 'B15-U02 脱敏恢复场景提交说明',
+  lockNote: 'B15-U02 脱敏恢复场景锁定说明',
+  freezeNote: 'B15-U02 脱敏恢复场景来源冻结说明',
+  archiveNote: 'B15-U02 脱敏恢复场景归档说明',
+};
+
+const U02_UNCERTAIN_SEED: ScenarioSeed = {
+  ordinal: 2,
+  marker: U02_UNCERTAIN_SOURCE_MARKER,
+  displayLabel: 'U02',
+  confirmationNote: 'B15-U02 脱敏网络场景确认说明',
+  submissionNote: 'B15-U02 脱敏网络场景提交说明',
+  lockNote: 'B15-U02 脱敏网络场景锁定说明',
+  freezeNote: 'B15-U02 脱敏网络场景来源冻结说明',
+  archiveNote: 'B15-U02 脱敏网络场景归档说明',
+};
 
 function fail(code: string, message: string): never {
   throw new FixtureError(code, message);
@@ -136,27 +203,52 @@ function required(name: string, minimum = 1): string {
   return value;
 }
 
-function parseCommand(): { command: Command; phase?: Phase } {
+function parseProfile(): Profile {
+  const value = process.env.B15_PROFILE ?? P1_PROFILE;
+  if (value !== P1_PROFILE && value !== P2_PROFILE) {
+    fail(
+      'B15_PROFILE_INVALID',
+      'B15_PROFILE must be a supported exact B15 profile',
+    );
+  }
+  return value;
+}
+
+function profileEnvironment(profile: Profile) {
+  const prefix = profile === P1_PROFILE ? 'B15_U01' : 'B15_U02';
+  return {
+    namespace: `${prefix}_NAMESPACE`,
+    runtimePath: `${prefix}_RUNTIME_PATH`,
+    fixturePassword: `${prefix}_FIXTURE_PASSWORD`,
+    cleanupConfirmation: `${prefix}_CONFIRM_CLEANUP`,
+  } as const;
+}
+
+function parseCommand(
+  profile: Profile,
+  cleanupConfirmationName: string,
+): { command: Command; phase?: Phase } {
   const [command, phase, extra] = process.argv.slice(2);
   if (!['prepare', 'verify', 'cleanup'].includes(command) || extra) {
     fail(
       'B15_COMMAND_INVALID',
-      'Use prepare, verify prepared|u01-post-correction, or cleanup',
+      'Use prepare, verify prepared|profile-post-phase, or cleanup',
     );
   }
-  if (
-    command === 'verify' &&
-    !['prepared', 'u01-post-correction'].includes(phase)
-  ) {
+  const allowedPhases: Phase[] =
+    profile === P1_PROFILE
+      ? ['prepared', 'u01-post-correction']
+      : ['prepared', 'u02-post-recovery'];
+  if (command === 'verify' && !allowedPhases.includes(phase as Phase)) {
     fail(
       'B15_PHASE_INVALID',
-      'verify requires prepared or u01-post-correction',
+      'verify phase does not belong to the selected B15 profile',
     );
   }
   if (command !== 'verify' && phase) {
     fail('B15_ARGUMENT_INVALID', 'Unexpected fixture argument');
   }
-  if (command === 'cleanup' && process.env.B15_U01_CONFIRM_CLEANUP !== '1') {
+  if (command === 'cleanup' && process.env[cleanupConfirmationName] !== '1') {
     fail(
       'B15_CLEANUP_CONFIRMATION_REQUIRED',
       'cleanup requires explicit confirmation',
@@ -172,8 +264,16 @@ function fixtureNames(namespace: string) {
       `b15fx-${namespace}-doctor`,
       `b15fx-${namespace}-nurse`,
     ] as const,
-    subjectCode: `B15-${upper}-01`,
-    visitCode: `B15-${upper}-01-VISIT`,
+    subjects: [`B15-${upper}-01`, `B15-${upper}-02`] as const,
+    visits: [`B15-${upper}-01-VISIT`, `B15-${upper}-02-VISIT`] as const,
+  };
+}
+
+function scenarioNames(namespace: string, ordinal: 1 | 2) {
+  const names = fixtureNames(namespace);
+  return {
+    subjectCode: names.subjects[ordinal - 1],
+    visitCode: names.visits[ordinal - 1],
   };
 }
 
@@ -223,7 +323,10 @@ function assertRuntime(config: ConfigService, connection: Connection): void {
   }
 }
 
-async function readDescriptor(path: string): Promise<Descriptor> {
+async function readDescriptor(
+  path: string,
+  profile: Profile,
+): Promise<Descriptor> {
   let value: Partial<Descriptor>;
   try {
     value = JSON.parse(await readFile(path, 'utf8')) as Partial<Descriptor>;
@@ -233,12 +336,20 @@ async function readDescriptor(path: string): Promise<Descriptor> {
   if (
     value.schemaVersion !== 1 ||
     value.batch !== 'B15' ||
-    value.profile !== PROFILE ||
+    value.profile !== profile ||
     !value.namespace ||
     !value.accounts ||
-    !value.scenarios?.[SCENARIO]
+    !value.scenarios
   ) {
     fail('B15_RUNTIME_INVALID', 'Safe runtime descriptor is invalid');
+  }
+  const scenarioKeys = Object.keys(value.scenarios).sort();
+  const expectedScenarioKeys =
+    profile === P1_PROFILE
+      ? [P1_SCENARIO]
+      : [P2_IN_PROGRESS_SCENARIO, P2_UNCERTAIN_SCENARIO].sort();
+  if (scenarioKeys.join(',') !== expectedScenarioKeys.join(',')) {
+    fail('B15_RUNTIME_INVALID', 'Safe runtime scenario set is invalid');
   }
   return value as Descriptor;
 }
@@ -258,6 +369,8 @@ function assertDescriptorSafety(
     '"metadata"',
     '"scope"',
     '"correctionId"',
+    U02_PERSISTED_REASON,
+    U02_PERSISTED_SUMMARY,
     'cookie',
     'session',
   ];
@@ -279,12 +392,21 @@ async function writeDescriptor(
   });
 }
 
-async function assertUnused(namespace: string, models: Models): Promise<void> {
+async function assertUnused(
+  namespace: string,
+  profile: Profile,
+  models: Models,
+): Promise<void> {
   const names = fixtureNames(namespace);
+  const scenarioCount = profile === P1_PROFILE ? 1 : 2;
   const [users, patients, visits] = await Promise.all([
     models.users.countDocuments({ accountName: { $in: names.accounts } }),
-    models.patients.countDocuments({ subjectCode: names.subjectCode }),
-    models.visits.countDocuments({ visitCode: names.visitCode }),
+    models.patients.countDocuments({
+      subjectCode: { $in: names.subjects.slice(0, scenarioCount) },
+    }),
+    models.visits.countDocuments({
+      visitCode: { $in: names.visits.slice(0, scenarioCount) },
+    }),
   ]);
   if (users + patients + visits !== 0) {
     fail('B15_NAMESPACE_EXISTS', 'The exact B15 namespace is already in use');
@@ -293,6 +415,7 @@ async function assertUnused(namespace: string, models: Models): Promise<void> {
 
 async function createUsers(
   namespace: string,
+  profile: Profile,
   password: string,
   models: Models,
   auth: AuthService,
@@ -307,7 +430,13 @@ async function createUsers(
       models.users.create({
         accountName: names.accounts[index],
         displayName:
-          role === 'doctor' ? 'B15 U01 测试医生' : 'B15 U01 测试护士',
+          role === 'doctor'
+            ? profile === P1_PROFILE
+              ? 'B15 U01 测试医生'
+              : 'B15 U02 测试医生'
+            : profile === P1_PROFILE
+              ? 'B15 U01 测试护士'
+              : 'B15 U02 测试护士',
         staffCode: `B15FX-${namespace}-${role}`,
         passwordHash: passwordHashes[index],
         passwordChangedAt: new Date(),
@@ -328,9 +457,10 @@ async function createConfirmedChain(input: {
   namespace: string;
   models: Models;
   doctor: AuthenticatedUserContext;
+  seed: ScenarioSeed;
 }): Promise<Root> {
-  const { namespace, models, doctor } = input;
-  const names = fixtureNames(namespace);
+  const { namespace, models, doctor, seed } = input;
+  const names = scenarioNames(namespace, seed.ordinal);
   const assessmentDate = new Date('2026-08-03T01:00:00.000Z');
   const completedAt = new Date('2026-08-03T02:00:00.000Z');
   const confirmedAt = new Date('2026-08-03T02:30:00.000Z');
@@ -343,7 +473,7 @@ async function createConfirmedChain(input: {
   const unlocked = { lockedAt: null, voidedAt: null };
   const patient = await models.patients.create({
     subjectCode: names.subjectCode,
-    displayName: 'B15 U01 脱敏受试者',
+    displayName: `B15 ${seed.displayLabel} 脱敏受试者 ${seed.ordinal}`,
     sourceType: 'clinical',
     sex: 'unknown',
     handedness: 'unknown',
@@ -386,24 +516,24 @@ async function createConfirmedChain(input: {
     scaleVersionId,
     scaleCode: 'moca',
     scaleVersion: '1.0',
-    instanceCode: `B15-${namespace.toUpperCase()}-01-INST`,
+    instanceCode: `B15-${namespace.toUpperCase()}-0${seed.ordinal}-INST`,
     instanceNo: 1,
     status: 'completed',
     administrationMode: 'clinician_administered',
     completedAt,
     ...unlocked,
     versionTrace: {
-      crfVersion: 'b15-u01-crf-1.0',
-      scoringRuleVersion: 'b15-u01-score-1.0',
-      fieldEncodingVersion: 'b15-u01-field-1.0',
-      sourceDocument: 'b15-u01-deidentified-source',
+      crfVersion: `b15-${seed.displayLabel.toLowerCase()}-crf-1.0`,
+      scoringRuleVersion: `b15-${seed.displayLabel.toLowerCase()}-score-1.0`,
+      fieldEncodingVersion: `b15-${seed.displayLabel.toLowerCase()}-field-1.0`,
+      sourceDocument: `b15-${seed.displayLabel.toLowerCase()}-deidentified-source`,
     },
   });
   const item = await models.items.create({
     ...sourceIds,
     scaleInstanceId: instance._id,
     instanceCode: instance.instanceCode,
-    itemCode: 'moca.b15.u01.fixture.item',
+    itemCode: `moca.b15.${seed.displayLabel.toLowerCase()}.fixture.item.${seed.ordinal}`,
     itemOrder: 1,
     responseType: 'text',
     countsTowardTotal: true,
@@ -427,7 +557,7 @@ async function createConfirmedChain(input: {
     ...sourceIds,
     scaleInstanceId: instance._id,
     instanceCode: instance.instanceCode,
-    scoreResultCode: `B15-${namespace.toUpperCase()}-01-SCR`,
+    scoreResultCode: `B15-${namespace.toUpperCase()}-0${seed.ordinal}-SCR`,
     runNo: 1,
     status: 'confirmed',
     scoringSource: 'manual',
@@ -479,7 +609,7 @@ async function createConfirmedChain(input: {
     scaleInstanceId: instance._id,
     scoreResultId: score._id,
     instanceCode: instance.instanceCode,
-    domainResultCode: `B15-${namespace.toUpperCase()}-01-CDR`,
+    domainResultCode: `B15-${namespace.toUpperCase()}-0${seed.ordinal}-CDR`,
     runNo: 1,
     status: 'computed',
     mappingSource: 'scale_config',
@@ -543,7 +673,7 @@ async function createConfirmedChain(input: {
     cognitiveDomainResultIds: [domain._id],
     mediaEvidenceIds: [],
     subjectCode: names.subjectCode,
-    reportCode: `B15-${namespace.toUpperCase()}-01-RPT`,
+    reportCode: `B15-${namespace.toUpperCase()}-0${seed.ordinal}-RPT`,
     reportType: 'cognitive_assessment',
     status: 'confirmed',
     reportVersion: 1,
@@ -568,11 +698,11 @@ async function createConfirmedChain(input: {
         scaleInstanceId: instance._id,
         scaleCode: 'moca',
         scaleVersion: '1.0',
-        crfVersion: 'b15-u01-crf-1.0',
-        scoringRuleVersion: 'b15-u01-score-1.0',
-        fieldEncodingVersion: 'b15-u01-field-1.0',
+        crfVersion: `b15-${seed.displayLabel.toLowerCase()}-crf-1.0`,
+        scoringRuleVersion: `b15-${seed.displayLabel.toLowerCase()}-score-1.0`,
+        fieldEncodingVersion: `b15-${seed.displayLabel.toLowerCase()}-field-1.0`,
         domainMappingVersion: 'a19-item-domain-codes-1.0',
-        sourceDocument: 'b15-u01-deidentified-source',
+        sourceDocument: `b15-${seed.displayLabel.toLowerCase()}-deidentified-source`,
       },
     ],
     scoreSnapshots: [
@@ -605,14 +735,14 @@ async function createConfirmedChain(input: {
     ],
     evidenceSnapshots: [],
     narrative: {
-      chiefSummary: SOURCE_MARKER,
-      scoreSummary: 'B15 U01 safe score summary',
-      domainSummary: 'B15 U01 safe domain summary',
-      evidenceSummary: 'B15 U01 safe evidence summary',
-      trendSummary: 'B15 U01 safe trend summary',
-      recommendationText: 'B15 U01 safe recommendation',
-      doctorOpinion: 'B15 U01 safe doctor opinion',
-      limitations: 'B15 U01 safe limitations',
+      chiefSummary: seed.marker,
+      scoreSummary: `B15 ${seed.displayLabel} safe score summary ${seed.ordinal}`,
+      domainSummary: `B15 ${seed.displayLabel} safe domain summary ${seed.ordinal}`,
+      evidenceSummary: `B15 ${seed.displayLabel} safe evidence summary ${seed.ordinal}`,
+      trendSummary: `B15 ${seed.displayLabel} safe trend summary ${seed.ordinal}`,
+      recommendationText: `B15 ${seed.displayLabel} safe recommendation ${seed.ordinal}`,
+      doctorOpinion: `B15 ${seed.displayLabel} safe doctor opinion ${seed.ordinal}`,
+      limitations: `B15 ${seed.displayLabel} safe limitations ${seed.ordinal}`,
     },
     aiDraft: { status: 'not_requested', doctorEdited: false },
     confirmation: {
@@ -620,7 +750,7 @@ async function createConfirmedChain(input: {
       confirmedBy: doctorId,
       confirmedByName: doctor.displayName,
       confirmedByRole: 'doctor',
-      confirmationNote: CONFIRMATION_NOTE,
+      confirmationNote: seed.confirmationNote,
     },
     lockedAt: null,
     lockedBy: null,
@@ -655,7 +785,7 @@ async function createConfirmedChain(input: {
         submittedBy: doctor.id,
         submittedByName: doctor.displayName,
         submittedByRole: 'doctor',
-        submissionNote: 'B15-U01 脱敏提交说明',
+        submissionNote: seed.submissionNote,
       },
       a21Confirmation: {
         version: 1,
@@ -664,7 +794,7 @@ async function createConfirmedChain(input: {
         confirmedBy: doctor.id,
         confirmedByName: doctor.displayName,
         confirmedByRole: 'doctor',
-        confirmationNote: CONFIRMATION_NOTE,
+        confirmationNote: seed.confirmationNote,
       },
     },
   });
@@ -678,12 +808,13 @@ async function createConfirmedChain(input: {
 async function runA22A23A24(input: {
   root: Root;
   doctor: AuthenticatedUserContext;
+  seed: ScenarioSeed;
   reports: ReportsService;
   lock: ClinicalReportLockWorkflowService;
   freeze: ClinicalReportSourceFreezeWorkflowService;
   archive: ClinicalReportArchiveWorkflowService;
 }): Promise<void> {
-  const { root, doctor, reports, lock, freeze, archive } = input;
+  const { root, doctor, seed, reports, lock, freeze, archive } = input;
   let report = await reports.findReportByOwnership({
     reportId: root.sourceReportId,
     patientId: root.patientId,
@@ -699,7 +830,7 @@ async function runA22A23A24(input: {
     doctor,
     {
       confirm: true,
-      lockNote: LOCK_NOTE,
+      lockNote: seed.lockNote,
       expectedUpdatedAt: report.updatedAt.toISOString(),
     },
   );
@@ -721,7 +852,7 @@ async function runA22A23A24(input: {
     doctor,
     {
       confirm: true,
-      freezeNote: FREEZE_NOTE,
+      freezeNote: seed.freezeNote,
       expectedUpdatedAt: report.updatedAt.toISOString(),
     },
   );
@@ -747,7 +878,7 @@ async function runA22A23A24(input: {
     doctor,
     {
       confirm: true,
-      archiveNote: ARCHIVE_NOTE,
+      archiveNote: seed.archiveNote,
       expectedUpdatedAt: report.updatedAt.toISOString(),
     },
   );
@@ -756,6 +887,97 @@ async function runA22A23A24(input: {
     archiveResult.report.status !== 'archived'
   ) {
     fail('B15_A24_FAILED', 'Production A24 workflow did not archive once');
+  }
+}
+
+async function startRecoverableCorrection(input: {
+  root: Root;
+  doctor: AuthenticatedUserContext;
+  reports: ReportsService;
+}): Promise<void> {
+  const { root, doctor, reports } = input;
+  const source = await reports.findReportByOwnership({
+    reportId: root.sourceReportId,
+    patientId: root.patientId,
+    assessmentVisitId: root.visitId,
+  });
+  const latest = await reports.findLatestReportByVisitId(root.visitId);
+  if (!source?.updatedAt || !latest || latest.id !== source.id) {
+    fail(
+      'B15_U02_A25_PREREQUISITE_MISSING',
+      'Recoverable correction source is not the latest report',
+    );
+  }
+  const expectedUpdatedAt = source.updatedAt;
+  evaluateClinicalReportCorrectionReadiness({
+    sourceReport: source,
+    latestReport: latest,
+    expectedUpdatedAt,
+  });
+  const existingV2 = await reports.listReportsByVisitTypeVersion(
+    root.visitId,
+    source.reportType,
+    2,
+  );
+  if (existingV2.length !== 0) {
+    fail(
+      'B15_U02_A25_VERSION_EXISTS',
+      'Recoverable correction source already contains V2',
+    );
+  }
+  const plan = buildClinicalReportCorrectionPlan({
+    sourceReport: source,
+    correctionId: randomUUID(),
+    startedAt: new Date(),
+    actor: {
+      operatorId: doctor.id,
+      operatorName: doctor.displayName,
+      operatorRole: 'doctor',
+    },
+    correctionReason: U02_PERSISTED_REASON,
+    changeSummary: U02_PERSISTED_SUMMARY,
+  });
+  const metadata = buildClinicalReportCorrectionStartMetadata({
+    sourceReport: source,
+    plan,
+  });
+  const started = await reports.startCorrectionIfUnmodified({
+    reportId: source.id,
+    patientId: root.patientId,
+    assessmentVisitId: root.visitId,
+    reportVersion: source.reportVersion,
+    reportCode: source.reportCode,
+    expectedUpdatedAt,
+    metadata,
+  });
+  const resolution = started
+    ? resolveExistingClinicalReportCorrection(started)
+    : null;
+  if (
+    !started ||
+    started.status !== 'archived' ||
+    started.correctionRecords.length !== 0 ||
+    !resolution ||
+    resolution.completed ||
+    resolution.audit.state !== 'in_progress' ||
+    !resolution.audit.correctionId ||
+    resolution.audit.correctionNo !== 1 ||
+    resolution.audit.startedBy !== doctor.id ||
+    resolution.audit.startedByRole !== 'doctor' ||
+    !resolution.audit.startedAt ||
+    resolution.audit.correctionReason !== U02_PERSISTED_REASON ||
+    resolution.audit.changeSummary !== U02_PERSISTED_SUMMARY ||
+    resolution.audit.previousReportCode !== source.reportCode ||
+    resolution.audit.previousReportVersion !== 1 ||
+    resolution.audit.replacementReportVersion !== 2 ||
+    resolution.audit.replacementReportId !== undefined ||
+    resolution.audit.completedAt !== undefined ||
+    resolution.audit.completedBy !== undefined
+  ) {
+    fail(
+      'B15_U02_A25_START_INVALID',
+      'Production A25 start contract did not persist a recoverable correction',
+    );
   }
 }
 
@@ -883,69 +1105,133 @@ async function loadFacts(root: Root, models: Models) {
   };
 }
 
-async function snapshot(root: Root, models: Models): Promise<Scenario> {
+async function snapshot(
+  root: Root,
+  models: Models,
+  reports: ReportsService,
+): Promise<Scenario> {
   const facts = await loadFacts(root, models);
   if (facts.baseline.independentA25AuditLogCount !== 0) {
     fail('B15_A25_AUDIT_LOG_PRESENT', 'Expected no independent A25 AuditLog');
   }
+  const source = await reports.findReportByOwnership({
+    reportId: root.sourceReportId,
+    patientId: root.patientId,
+    assessmentVisitId: root.visitId,
+  });
+  if (!source) {
+    fail('B15_SNAPSHOT_SOURCE_MISSING', 'Snapshot source report is missing');
+  }
+  const correction = resolveExistingClinicalReportCorrection(source);
+  const correctionBaseline =
+    correction?.audit.state === 'in_progress'
+      ? {
+          correctionIdHash: hash(correction.audit.correctionId),
+          startedFactsHash: hash({
+            startedAt: correction.audit.startedAt,
+            startedBy: correction.audit.startedBy,
+            startedByName: correction.audit.startedByName,
+            startedByRole: correction.audit.startedByRole,
+          }),
+          persistedTextHash: hash({
+            correctionReason: correction.audit.correctionReason,
+            changeSummary: correction.audit.changeSummary,
+          }),
+          correctionPlanHash: hash({
+            correctionNo: correction.audit.correctionNo,
+            previousReportCode: correction.audit.previousReportCode,
+            previousReportVersion: correction.audit.previousReportVersion,
+            replacementReportCode: correction.audit.replacementReportCode,
+            replacementReportVersion: correction.audit.replacementReportVersion,
+            sourceArchiveId: correction.audit.sourceArchiveId,
+            sourceArchivedAt: correction.audit.sourceArchivedAt,
+            sourceFreezeId: correction.audit.sourceFreezeId,
+            sourceFreezeCompletedAt: correction.audit.sourceFreezeCompletedAt,
+          }),
+        }
+      : {};
   return {
     ...root,
     navigationPath: `/patients/${root.patientId}/visits/${root.visitId}`,
     preparedBaseline: {
       ...facts.baseline,
       independentA25AuditLogCount: 0,
+      ...correctionBaseline,
     },
   };
 }
 
 async function assertNamespace(
   namespace: string,
+  profile: Profile,
   models: Models,
 ): Promise<void> {
   const names = fixtureNames(namespace);
+  const scenarioCount = profile === P1_PROFILE ? 1 : 2;
+  const subjectCodes = names.subjects.slice(0, scenarioCount);
+  const visitCodes = names.visits.slice(0, scenarioCount);
   const [users, patients, visits] = await Promise.all([
     models.users.find({ accountName: { $in: names.accounts } }),
-    models.patients.find({ subjectCode: names.subjectCode }),
-    models.visits.find({ visitCode: names.visitCode }),
+    models.patients.find({ subjectCode: { $in: subjectCodes } }),
+    models.visits.find({ visitCode: { $in: visitCodes } }),
   ]);
-  if (users.length !== 2 || patients.length !== 1 || visits.length !== 1) {
+  if (
+    users.length !== 2 ||
+    patients.length !== scenarioCount ||
+    visits.length !== scenarioCount
+  ) {
     fail('B15_NAMESPACE_OWNERSHIP_INVALID', 'B15 root ownership is invalid');
   }
-  const patient = patients[0];
-  const visit = visits[0];
-  const ownership = {
-    patientId: patient._id,
-    assessmentVisitId: visit._id,
-  };
-  const [reports, instances, items, scores, domains, media] = await Promise.all(
-    [
-      models.reports.countDocuments(ownership),
-      models.instances.countDocuments(ownership),
-      models.items.countDocuments(ownership),
-      models.scores.countDocuments(ownership),
-      models.domains.countDocuments(ownership),
-      models.media.countDocuments(ownership),
-    ],
-  );
-  if (
-    !visit.patientId.equals(patient._id) ||
-    ![1, 2].includes(reports) ||
-    [instances, items, scores, domains, media].join(',') !== '1,1,1,1,0'
-  ) {
-    fail(
-      'B15_NAMESPACE_OWNERSHIP_INVALID',
-      'B15 business ownership is invalid',
+  for (const visit of visits) {
+    const patient = patients.find((candidate) =>
+      candidate._id.equals(visit.patientId),
     );
+    if (!patient || patient.subjectCode !== visit.subjectCode) {
+      fail('B15_NAMESPACE_OWNERSHIP_INVALID', 'B15 root ownership is invalid');
+    }
+    const ownership = {
+      patientId: patient._id,
+      assessmentVisitId: visit._id,
+    };
+    const [reports, instances, items, scores, domains, media] =
+      await Promise.all([
+        models.reports.countDocuments(ownership),
+        models.instances.countDocuments(ownership),
+        models.items.countDocuments(ownership),
+        models.scores.countDocuments(ownership),
+        models.domains.countDocuments(ownership),
+        models.media.countDocuments(ownership),
+      ]);
+    if (
+      ![1, 2].includes(reports) ||
+      [instances, items, scores, domains, media].join(',') !== '1,1,1,1,0'
+    ) {
+      fail(
+        'B15_NAMESPACE_OWNERSHIP_INVALID',
+        'B15 business ownership is invalid',
+      );
+    }
   }
 }
 
 async function assertPrepared(input: {
   scenario: Scenario;
+  seed: ScenarioSeed;
+  correctionState: 'none' | 'in_progress';
+  doctorId: string;
   reports: ReportsService;
   publicMapper: ClinicalReportPublicMapper;
   models: Models;
 }): Promise<void> {
-  const { scenario, reports, publicMapper, models } = input;
+  const {
+    scenario,
+    seed,
+    correctionState,
+    doctorId,
+    reports,
+    publicMapper,
+    models,
+  } = input;
   const report = await reports.findReportByOwnership({
     reportId: scenario.sourceReportId,
     patientId: scenario.patientId,
@@ -977,18 +1263,23 @@ async function assertPrepared(input: {
     assessmentVisitId: new Types.ObjectId(scenario.visitId),
     reportType: 'cognitive_assessment',
   } as const;
-  const [reportCount, v1Count, v2Count, v3Count] = await Promise.all([
-    models.reports.countDocuments(reportFilter),
-    models.reports.countDocuments({ ...reportFilter, reportVersion: 1 }),
-    models.reports.countDocuments({ ...reportFilter, reportVersion: 2 }),
-    models.reports.countDocuments({ ...reportFilter, reportVersion: 3 }),
-  ]);
+  const [reportCount, v1Count, v2Count, v3Count, otherVersionCount] =
+    await Promise.all([
+      models.reports.countDocuments(reportFilter),
+      models.reports.countDocuments({ ...reportFilter, reportVersion: 1 }),
+      models.reports.countDocuments({ ...reportFilter, reportVersion: 2 }),
+      models.reports.countDocuments({ ...reportFilter, reportVersion: 3 }),
+      models.reports.countDocuments({
+        ...reportFilter,
+        reportVersion: { $nin: [1, 2, 3] },
+      }),
+    ]);
   const confirmationSafe = Boolean(
     report.confirmation?.confirmedAt &&
     report.confirmation.confirmedBy &&
     report.confirmation.confirmedByName &&
     report.confirmation.confirmedByRole === 'doctor' &&
-    report.confirmation.confirmationNote === CONFIRMATION_NOTE &&
+    report.confirmation.confirmationNote === seed.confirmationNote &&
     a21.version === 1 &&
     a21.confirmedBy === report.confirmation.confirmedBy &&
     (a21.confirmedAt as Date).getTime() ===
@@ -1001,7 +1292,7 @@ async function assertPrepared(input: {
     lock.lockedAt.getTime() === report.lockedAt.getTime() &&
     lock.lockedBy.operatorId === report.lockedBy &&
     lock.lockedBy.operatorRole === 'doctor' &&
-    lock.lockNote === LOCK_NOTE &&
+    lock.lockNote === seed.lockNote &&
     a22.version === 1 &&
     a22.lockId === lock.lockId,
   );
@@ -1010,7 +1301,7 @@ async function assertPrepared(input: {
     freeze.completedAt &&
     freeze.completedBy &&
     freeze.completedByRole === 'doctor' &&
-    freeze.freezeNote === FREEZE_NOTE &&
+    freeze.freezeNote === seed.freezeNote &&
     hash(freeze.scope) === hash(actualScope) &&
     hash(freeze.expectedCounts) === hash(actualCounts) &&
     hash(freeze.completedCounts) === hash(actualCounts) &&
@@ -1023,7 +1314,7 @@ async function assertPrepared(input: {
     archive?.archiveId &&
     report.archivedAt &&
     report.archivedBy &&
-    archive.archiveNote === ARCHIVE_NOTE &&
+    archive.archiveNote === seed.archiveNote &&
     archive.archivedAt.getTime() === report.archivedAt.getTime() &&
     archive.archivedBy.operatorId === report.archivedBy &&
     archive.archivedBy.operatorRole === 'doctor' &&
@@ -1052,6 +1343,58 @@ async function assertPrepared(input: {
     sameIds(report.cognitiveDomainResultIds, [facts.domains[0].id]) &&
     report.mediaEvidenceIds.length === 0,
   );
+  const correctionSafe =
+    correctionState === 'none'
+      ? correction === null &&
+        publicReport.correction === null &&
+        metadata.a25Correction === undefined &&
+        scenario.preparedBaseline.correctionIdHash === undefined &&
+        scenario.preparedBaseline.startedFactsHash === undefined &&
+        scenario.preparedBaseline.persistedTextHash === undefined &&
+        scenario.preparedBaseline.correctionPlanHash === undefined
+      : Boolean(
+          correction &&
+          !correction.completed &&
+          correction.audit.state === 'in_progress' &&
+          correction.audit.correctionNo === 1 &&
+          correction.audit.startedBy === doctorId &&
+          correction.audit.startedByRole === 'doctor' &&
+          correction.audit.startedAt &&
+          correction.audit.correctionReason === U02_PERSISTED_REASON &&
+          correction.audit.changeSummary === U02_PERSISTED_SUMMARY &&
+          correction.audit.previousReportCode === report.reportCode &&
+          correction.audit.previousReportVersion === 1 &&
+          correction.audit.replacementReportVersion === 2 &&
+          correction.audit.replacementReportId === undefined &&
+          correction.audit.completedAt === undefined &&
+          correction.audit.completedBy === undefined &&
+          hash(correction.audit.correctionId) ===
+            scenario.preparedBaseline.correctionIdHash &&
+          hash({
+            startedAt: correction.audit.startedAt,
+            startedBy: correction.audit.startedBy,
+            startedByName: correction.audit.startedByName,
+            startedByRole: correction.audit.startedByRole,
+          }) === scenario.preparedBaseline.startedFactsHash &&
+          hash({
+            correctionReason: correction.audit.correctionReason,
+            changeSummary: correction.audit.changeSummary,
+          }) === scenario.preparedBaseline.persistedTextHash &&
+          hash({
+            correctionNo: correction.audit.correctionNo,
+            previousReportCode: correction.audit.previousReportCode,
+            previousReportVersion: correction.audit.previousReportVersion,
+            replacementReportCode: correction.audit.replacementReportCode,
+            replacementReportVersion: correction.audit.replacementReportVersion,
+            sourceArchiveId: correction.audit.sourceArchiveId,
+            sourceArchivedAt: correction.audit.sourceArchivedAt,
+            sourceFreezeId: correction.audit.sourceFreezeId,
+            sourceFreezeCompletedAt: correction.audit.sourceFreezeCompletedAt,
+          }) === scenario.preparedBaseline.correctionPlanHash &&
+          publicReport.correction?.state === 'in_progress' &&
+          publicReport.correction.correctionNo === 1 &&
+          publicReport.correction.replacementReportId === null,
+        );
   if (
     report.status !== 'archived' ||
     report.reportVersion !== 1 ||
@@ -1059,13 +1402,11 @@ async function assertPrepared(input: {
     report.source !== 'mixed' ||
     report.qualityStatus !== 'passed' ||
     publicReport.isFinal !== true ||
-    report.narrative?.chiefSummary !== SOURCE_MARKER ||
-    correction !== null ||
+    report.narrative?.chiefSummary !== seed.marker ||
+    !correctionSafe ||
     lineage !== null ||
-    publicReport.correction !== null ||
     publicReport.replacementOf !== null ||
     report.correctionRecords.length !== 0 ||
-    metadata.a25Correction !== undefined ||
     report.voidedAt !== null ||
     !confirmationSafe ||
     !lockSafe ||
@@ -1076,21 +1417,42 @@ async function assertPrepared(input: {
     v1Count !== 1 ||
     v2Count !== 0 ||
     v3Count !== 0 ||
+    otherVersionCount !== 0 ||
     facts.baseline.independentA25AuditLogCount !== 0 ||
-    JSON.stringify(facts.baseline) !== JSON.stringify(scenario.preparedBaseline)
+    !Object.entries(facts.baseline).every(
+      ([key, value]) =>
+        JSON.stringify(value) ===
+        JSON.stringify(
+          scenario.preparedBaseline[key as keyof PreparedBaseline],
+        ),
+    )
   ) {
     fail('B15_PREPARED_INVALID', 'Prepared correction source is invalid');
   }
 }
 
-async function assertU01PostCorrection(input: {
+async function assertPostCorrection(input: {
   scenario: Scenario;
   doctor: UserDocument;
+  expectedReason: string;
+  expectedSummary: string;
+  requirePersistedStart: boolean;
+  evidenceLabel: 'U01' | 'U02';
   reports: ReportsService;
   publicMapper: ClinicalReportPublicMapper;
   models: Models;
 }) {
-  const { scenario, doctor, reports, publicMapper, models } = input;
+  const {
+    scenario,
+    doctor,
+    expectedReason,
+    expectedSummary,
+    requirePersistedStart,
+    evidenceLabel,
+    reports,
+    publicMapper,
+    models,
+  } = input;
   const reportFilter = {
     patientId: new Types.ObjectId(scenario.patientId),
     assessmentVisitId: new Types.ObjectId(scenario.visitId),
@@ -1100,7 +1462,10 @@ async function assertU01PostCorrection(input: {
     .find(reportFilter)
     .sort({ reportVersion: 1, createdAt: 1 });
   if (reportDocuments.length !== 2) {
-    fail('B15_U01_REPORT_COUNT_INVALID', 'U01 report count is invalid');
+    fail(
+      `B15_${evidenceLabel}_REPORT_COUNT_INVALID`,
+      'Post-correction report count is invalid',
+    );
   }
   const sourceDocument = reportDocuments.find(
     (report) => report.reportVersion === 1,
@@ -1109,7 +1474,10 @@ async function assertU01PostCorrection(input: {
     (report) => report.reportVersion === 2,
   );
   if (!sourceDocument || !replacementDocument) {
-    fail('B15_U01_VERSION_MISSING', 'U01 V1 or V2 is missing');
+    fail(
+      `B15_${evidenceLabel}_VERSION_MISSING`,
+      'Post-correction V1 or V2 is missing',
+    );
   }
   const source = await reports.findReportByOwnership({
     reportId: sourceDocument.id,
@@ -1123,17 +1491,26 @@ async function assertU01PostCorrection(input: {
   });
   const latest = await reports.findLatestReportByVisitId(scenario.visitId);
   if (!source || !replacement || !latest || latest.id !== replacement.id) {
-    fail('B15_U01_LATEST_INVALID', 'U01 latest replacement is invalid');
+    fail(
+      `B15_${evidenceLabel}_LATEST_INVALID`,
+      'Post-correction latest replacement is invalid',
+    );
   }
   const facts = await loadFacts(scenario, models);
   const resolution = resolveExistingClinicalReportCorrection(source);
   if (!resolution?.completed || resolution.audit.state !== 'completed') {
-    fail('B15_U01_A25_INCOMPLETE', 'U01 completed A25 audit is missing');
+    fail(
+      `B15_${evidenceLabel}_A25_INCOMPLETE`,
+      'Post-correction completed A25 audit is missing',
+    );
   }
   const audit = resolution.audit;
   const lineage = resolveClinicalReportReplacementLineage(replacement);
   if (!lineage) {
-    fail('B15_U01_LINEAGE_INVALID', 'U01 replacement lineage is missing');
+    fail(
+      `B15_${evidenceLabel}_LINEAGE_INVALID`,
+      'Post-correction replacement lineage is missing',
+    );
   }
   validateClinicalReportReplacement({
     sourceReport: source,
@@ -1235,8 +1612,8 @@ async function assertU01PostCorrection(input: {
   const auditSafe = Boolean(
     audit.correctionId &&
     audit.correctionNo === 1 &&
-    audit.correctionReason === CORRECTION_REASON &&
-    audit.changeSummary === CHANGE_SUMMARY &&
+    audit.correctionReason === expectedReason &&
+    audit.changeSummary === expectedSummary &&
     audit.startedBy === doctor.id &&
     audit.startedByRole === 'doctor' &&
     audit.completedBy === doctor.id &&
@@ -1260,8 +1637,8 @@ async function assertU01PostCorrection(input: {
     correctionRecord.correctedAt?.getTime() === audit.completedAt?.getTime() &&
     correctionRecord.correctedBy?.toString() === doctor.id &&
     correctionRecord.correctedByName === doctor.displayName &&
-    correctionRecord.reason === CORRECTION_REASON &&
-    correctionRecord.changeSummary === CHANGE_SUMMARY &&
+    correctionRecord.reason === expectedReason &&
+    correctionRecord.changeSummary === expectedSummary &&
     correctionRecord.previousReportCode === source.reportCode &&
     correctionRecord.replacementReportCode === replacement.reportCode &&
     correctionRecord.auditLogId === null,
@@ -1303,8 +1680,8 @@ async function assertU01PostCorrection(input: {
     lineage.replacementReportVersion === 2 &&
     lineage.createdBy === doctor.id &&
     lineage.createdByRole === 'doctor' &&
-    lineage.correctionReason === CORRECTION_REASON &&
-    lineage.changeSummary === CHANGE_SUMMARY &&
+    lineage.correctionReason === expectedReason &&
+    lineage.changeSummary === expectedSummary &&
     lineage.sourceArchiveId === audit.sourceArchiveId &&
     lineage.sourceArchivedAt.getTime() === audit.sourceArchivedAt.getTime() &&
     lineage.sourceFreezeId === audit.sourceFreezeId &&
@@ -1315,12 +1692,12 @@ async function assertU01PostCorrection(input: {
     publicCorrection &&
     publicLineage &&
     publicCorrection.correctionNo === 1 &&
-    publicCorrection.correctionReason === CORRECTION_REASON &&
-    publicCorrection.changeSummary === CHANGE_SUMMARY &&
+    publicCorrection.correctionReason === expectedReason &&
+    publicCorrection.changeSummary === expectedSummary &&
     publicLineage.correctionNo === 1 &&
     publicLineage.previousReportId === source.id &&
-    publicLineage.correctionReason === CORRECTION_REASON &&
-    publicLineage.changeSummary === CHANGE_SUMMARY &&
+    publicLineage.correctionReason === expectedReason &&
+    publicLineage.changeSummary === expectedSummary &&
     !Object.hasOwn(sourcePublic, 'metadata') &&
     !Object.hasOwn(sourcePublic, 'correctionRecords') &&
     !Object.hasOwn(replacementPublic, 'metadata') &&
@@ -1337,6 +1714,32 @@ async function assertU01PostCorrection(input: {
     correctionIdDocumentCount === 2 &&
     sourceDocument.correctionRecords.length === 1,
   );
+  const persistedStartSafe =
+    !requirePersistedStart ||
+    Boolean(
+      hash(audit.correctionId) === scenario.preparedBaseline.correctionIdHash &&
+      hash({
+        startedAt: audit.startedAt,
+        startedBy: audit.startedBy,
+        startedByName: audit.startedByName,
+        startedByRole: audit.startedByRole,
+      }) === scenario.preparedBaseline.startedFactsHash &&
+      hash({
+        correctionReason: audit.correctionReason,
+        changeSummary: audit.changeSummary,
+      }) === scenario.preparedBaseline.persistedTextHash &&
+      hash({
+        correctionNo: audit.correctionNo,
+        previousReportCode: audit.previousReportCode,
+        previousReportVersion: audit.previousReportVersion,
+        replacementReportCode: audit.replacementReportCode,
+        replacementReportVersion: audit.replacementReportVersion,
+        sourceArchiveId: audit.sourceArchiveId,
+        sourceArchivedAt: audit.sourceArchivedAt,
+        sourceFreezeId: audit.sourceFreezeId,
+        sourceFreezeCompletedAt: audit.sourceFreezeCompletedAt,
+      }) === scenario.preparedBaseline.correctionPlanHash,
+    );
   if (
     !sourceFactsSafe ||
     !auditSafe ||
@@ -1345,12 +1748,13 @@ async function assertU01PostCorrection(input: {
     !lineageSafe ||
     !publicSurfaceSafe ||
     !versionSafe ||
+    !persistedStartSafe ||
     !sourceLock?.lockId ||
     facts.baseline.independentA25AuditLogCount !== 0
   ) {
     fail(
-      'B15_U01_POST_CORRECTION_INVALID',
-      'U01 correction facts or protected boundary are invalid',
+      `B15_${evidenceLabel}_POST_CORRECTION_INVALID`,
+      'Post-correction facts or protected boundary are invalid',
     );
   }
   return {
@@ -1365,15 +1769,31 @@ async function assertU01PostCorrection(input: {
     replacementLifecycle: 'formal_copy_reset_contract_matched',
     patientVisitSourcesStorage: 'unchanged',
     independentA25AuditLogCount: 0,
+    ...(requirePersistedStart
+      ? {
+          persistedCorrectionIdHash: 'matched',
+          persistedStartedFactsHash: 'matched',
+          persistedTextHash: 'matched',
+          persistedPlanHash: 'matched',
+        }
+      : {}),
   } as const;
 }
 
-async function cleanup(namespace: string, path: string, models: Models) {
+async function cleanup(
+  namespace: string,
+  profile: Profile,
+  path: string,
+  models: Models,
+) {
   const names = fixtureNames(namespace);
+  const scenarioCount = profile === P1_PROFILE ? 1 : 2;
+  const subjectCodes = names.subjects.slice(0, scenarioCount);
+  const visitCodes = names.visits.slice(0, scenarioCount);
   const [users, patients, visits] = await Promise.all([
     models.users.find({ accountName: { $in: names.accounts } }),
-    models.patients.find({ subjectCode: names.subjectCode }),
-    models.visits.find({ visitCode: names.visitCode }),
+    models.patients.find({ subjectCode: { $in: subjectCodes } }),
+    models.visits.find({ visitCode: { $in: visitCodes } }),
   ]);
   const userIds = users.map((entry) => entry._id);
   const patientIds = patients.map((entry) => entry._id);
@@ -1413,8 +1833,8 @@ async function cleanup(namespace: string, path: string, models: Models) {
   };
   const residuals = await Promise.all([
     models.users.countDocuments({ accountName: { $in: names.accounts } }),
-    models.patients.countDocuments({ subjectCode: names.subjectCode }),
-    models.visits.countDocuments({ visitCode: names.visitCode }),
+    models.patients.countDocuments({ subjectCode: { $in: subjectCodes } }),
+    models.visits.countDocuments({ visitCode: { $in: visitCodes } }),
     models.sessions.countDocuments({ userId: { $in: userIds } }),
     models.reports.countDocuments(owned),
     models.domains.countDocuments(owned),
@@ -1440,7 +1860,7 @@ async function cleanup(namespace: string, path: string, models: Models) {
   return {
     ok: true,
     command: 'cleanup',
-    profile: PROFILE,
+    profile,
     databasePurpose: 'browser_acceptance',
     actualDatabaseName: DB,
     namespace,
@@ -1451,6 +1871,7 @@ async function cleanup(namespace: string, path: string, models: Models) {
 }
 
 async function prepare(input: {
+  profile: Profile;
   namespace: string;
   password: string;
   path: string;
@@ -1463,6 +1884,7 @@ async function prepare(input: {
   archive: ClinicalReportArchiveWorkflowService;
 }) {
   const {
+    profile,
     namespace,
     password,
     path,
@@ -1480,54 +1902,149 @@ async function prepare(input: {
       if (error.code !== 'ENOENT') throw error;
     },
   );
-  await assertUnused(namespace, models);
+  await assertUnused(namespace, profile, models);
   try {
-    const users = await createUsers(namespace, password, models, auth);
+    const users = await createUsers(namespace, profile, password, models, auth);
     const doctor = actor(users.doctor);
-    const root = await createConfirmedChain({ namespace, models, doctor });
-    await runA22A23A24({
-      root,
-      doctor,
-      reports,
-      lock,
-      freeze,
-      archive,
-    });
-    const scenario = await snapshot(root, models);
-    const descriptor: Descriptor = {
-      schemaVersion: 1,
-      batch: 'B15',
-      profile: PROFILE,
-      namespace,
-      accounts: {
-        doctor: { loginIdentifier: users.doctor.accountName },
-        nurse: { loginIdentifier: users.nurse.accountName },
-      },
-      scenarios: { [SCENARIO]: scenario },
+    const accounts = {
+      doctor: { loginIdentifier: users.doctor.accountName },
+      nurse: { loginIdentifier: users.nurse.accountName },
     };
+    let descriptor: Descriptor;
+    if (profile === P1_PROFILE) {
+      const root = await createConfirmedChain({
+        namespace,
+        models,
+        doctor,
+        seed: U01_SEED,
+      });
+      await runA22A23A24({
+        root,
+        doctor,
+        seed: U01_SEED,
+        reports,
+        lock,
+        freeze,
+        archive,
+      });
+      const scenario = await snapshot(root, models, reports);
+      descriptor = {
+        schemaVersion: 1,
+        batch: 'B15',
+        profile,
+        namespace,
+        accounts,
+        scenarios: { [P1_SCENARIO]: scenario },
+      };
+      await assertPrepared({
+        scenario,
+        seed: U01_SEED,
+        correctionState: 'none',
+        doctorId: doctor.id,
+        reports,
+        publicMapper,
+        models,
+      });
+    } else {
+      const inProgressRoot = await createConfirmedChain({
+        namespace,
+        models,
+        doctor,
+        seed: U02_PERSISTED_SEED,
+      });
+      await runA22A23A24({
+        root: inProgressRoot,
+        doctor,
+        seed: U02_PERSISTED_SEED,
+        reports,
+        lock,
+        freeze,
+        archive,
+      });
+      await startRecoverableCorrection({
+        root: inProgressRoot,
+        doctor,
+        reports,
+      });
+      const uncertainRoot = await createConfirmedChain({
+        namespace,
+        models,
+        doctor,
+        seed: U02_UNCERTAIN_SEED,
+      });
+      await runA22A23A24({
+        root: uncertainRoot,
+        doctor,
+        seed: U02_UNCERTAIN_SEED,
+        reports,
+        lock,
+        freeze,
+        archive,
+      });
+      const inProgressScenario = await snapshot(
+        inProgressRoot,
+        models,
+        reports,
+      );
+      const uncertainScenario = await snapshot(uncertainRoot, models, reports);
+      descriptor = {
+        schemaVersion: 1,
+        batch: 'B15',
+        profile,
+        namespace,
+        accounts,
+        scenarios: {
+          [P2_IN_PROGRESS_SCENARIO]: inProgressScenario,
+          [P2_UNCERTAIN_SCENARIO]: uncertainScenario,
+        },
+      };
+      await assertPrepared({
+        scenario: inProgressScenario,
+        seed: U02_PERSISTED_SEED,
+        correctionState: 'in_progress',
+        doctorId: doctor.id,
+        reports,
+        publicMapper,
+        models,
+      });
+      await assertPrepared({
+        scenario: uncertainScenario,
+        seed: U02_UNCERTAIN_SEED,
+        correctionState: 'none',
+        doctorId: doctor.id,
+        reports,
+        publicMapper,
+        models,
+      });
+    }
     await writeDescriptor(path, descriptor, password);
-    await assertNamespace(namespace, models);
-    await assertPrepared({ scenario, reports, publicMapper, models });
+    await assertNamespace(namespace, profile, models);
     return {
       ok: true,
       command: 'prepare',
-      profile: PROFILE,
+      profile,
       databasePurpose: 'browser_acceptance',
       actualDatabaseName: DB,
       namespace,
       accounts: { doctor: 'prepared', nurse: 'prepared' },
       scenarios: {
-        firstCorrectionReady: 'production_a22_a23_a24',
+        ...(profile === P1_PROFILE
+          ? { firstCorrectionReady: 'production_a22_a23_a24' }
+          : {
+              correctionInProgress: 'production_a22_a23_a24_and_a25_plan_start',
+              correctionNetworkUncertain: 'production_a22_a23_a24',
+            }),
       },
       runtimeDescriptor: 'written_with_safe_hashes_and_counts_only',
     };
   } catch (error: unknown) {
-    await cleanup(namespace, path, models).catch(() => undefined);
+    await cleanup(namespace, profile, path, models).catch(() => undefined);
     throw error;
   }
 }
 
 async function verify(input: {
+  profile: Profile;
   phase: Phase;
   namespace: string;
   password: string;
@@ -1538,6 +2055,7 @@ async function verify(input: {
   publicMapper: ClinicalReportPublicMapper;
 }) {
   const {
+    profile,
     phase,
     namespace,
     password,
@@ -1547,7 +2065,7 @@ async function verify(input: {
     reports,
     publicMapper,
   } = input;
-  const descriptor = await readDescriptor(path);
+  const descriptor = await readDescriptor(path, profile);
   assertDescriptorSafety(descriptor, password);
   if (descriptor.namespace !== namespace) {
     fail('B15_NAMESPACE_MISMATCH', 'Runtime namespace mismatch');
@@ -1577,29 +2095,120 @@ async function verify(input: {
   if (!doctor) {
     fail('B15_DOCTOR_MISSING', 'Fixture doctor is missing');
   }
-  await assertNamespace(namespace, models);
-  const scenario = descriptor.scenarios[SCENARIO];
-  const scenarioResult =
-    phase === 'prepared'
-      ? await assertPrepared({ scenario, reports, publicMapper, models }).then(
-          () => ({
+  await assertNamespace(namespace, profile, models);
+  let scenarioResult: Record<string, unknown>;
+  if (descriptor.profile === P1_PROFILE) {
+    const scenario = descriptor.scenarios[P1_SCENARIO];
+    scenarioResult =
+      phase === 'prepared'
+        ? await assertPrepared({
+            scenario,
+            seed: U01_SEED,
+            correctionState: 'none',
+            doctorId: doctor.id,
+            reports,
+            publicMapper,
+            models,
+          }).then(() => ({
             firstCorrectionReady: 'unique_archived_v1_latest',
             v2Count: 0,
             v3Count: 0,
             completedA25Count: 0,
-          }),
-        )
-      : await assertU01PostCorrection({
-          scenario,
-          doctor,
-          reports,
-          publicMapper,
-          models,
-        });
+          }))
+        : await assertPostCorrection({
+            scenario,
+            doctor,
+            expectedReason: U01_CORRECTION_REASON,
+            expectedSummary: U01_CHANGE_SUMMARY,
+            requirePersistedStart: false,
+            evidenceLabel: 'U01',
+            reports,
+            publicMapper,
+            models,
+          });
+  } else {
+    const inProgress = descriptor.scenarios[P2_IN_PROGRESS_SCENARIO];
+    const uncertain = descriptor.scenarios[P2_UNCERTAIN_SCENARIO];
+    if (
+      inProgress.patientId === uncertain.patientId ||
+      inProgress.visitId === uncertain.visitId ||
+      inProgress.sourceReportId === uncertain.sourceReportId
+    ) {
+      fail(
+        'B15_U02_SCENARIO_ISOLATION_INVALID',
+        'U02 scenarios do not have independent ownership',
+      );
+    }
+    if (phase === 'prepared') {
+      await assertPrepared({
+        scenario: inProgress,
+        seed: U02_PERSISTED_SEED,
+        correctionState: 'in_progress',
+        doctorId: doctor.id,
+        reports,
+        publicMapper,
+        models,
+      });
+      await assertPrepared({
+        scenario: uncertain,
+        seed: U02_UNCERTAIN_SEED,
+        correctionState: 'none',
+        doctorId: doctor.id,
+        reports,
+        publicMapper,
+        models,
+      });
+      scenarioResult = {
+        correctionInProgress:
+          'unique_archived_v1_latest_with_persisted_a25_start',
+        correctionNetworkUncertain:
+          'unique_archived_v1_latest_without_correction',
+        v2Count: 0,
+        v3Count: 0,
+        branchCount: 0,
+        independentA25AuditLogCount: 0,
+      };
+    } else {
+      const recovered = await assertPostCorrection({
+        scenario: inProgress,
+        doctor,
+        expectedReason: U02_PERSISTED_REASON,
+        expectedSummary: U02_PERSISTED_SUMMARY,
+        requirePersistedStart: true,
+        evidenceLabel: 'U02',
+        reports,
+        publicMapper,
+        models,
+      });
+      await assertPrepared({
+        scenario: uncertain,
+        seed: U02_UNCERTAIN_SEED,
+        correctionState: 'none',
+        doctorId: doctor.id,
+        reports,
+        publicMapper,
+        models,
+      });
+      scenarioResult = {
+        correctionInProgress: recovered,
+        correctionNetworkUncertain: {
+          status: 'archived',
+          correction: null,
+          v2Count: 0,
+          v3Count: 0,
+          branchCount: 0,
+          businessBaseline: 'unchanged',
+          patientVisitSourcesStorage: 'unchanged',
+          independentA25AuditLogCount: 0,
+        },
+        crossScenarioOwnership: 'isolated',
+      };
+    }
+  }
   return {
     ok: true,
     command: 'verify',
-    profile: PROFILE,
+    profile,
     phase,
     databasePurpose: 'browser_acceptance',
     actualDatabaseName: DB,
@@ -1644,16 +2253,18 @@ async function run(): Promise<void> {
   let app: INestApplicationContext | null = null;
   let connection: Connection | null = null;
   try {
-    const parsed = parseCommand();
-    const namespace = required('B15_U01_NAMESPACE');
+    const profile = parseProfile();
+    const environment = profileEnvironment(profile);
+    const parsed = parseCommand(profile, environment.cleanupConfirmation);
+    const namespace = required(environment.namespace);
     if (!/^[a-z0-9][a-z0-9-]{2,19}$/.test(namespace)) {
       fail('B15_NAMESPACE_INVALID', 'Namespace format is invalid');
     }
-    const path = required('B15_U01_RUNTIME_PATH');
+    const path = required(environment.runtimePath);
     const password =
       parsed.command === 'cleanup'
         ? ''
-        : required('B15_U01_FIXTURE_PASSWORD', 16);
+        : required(environment.fixturePassword, 16);
     assertBrowserAcceptancePreImportEnvironment({
       nodeEnv: process.env.NODE_ENV,
       purpose: process.env.COGMEMORY_DATABASE_PURPOSE,
@@ -1676,6 +2287,7 @@ async function run(): Promise<void> {
     const result =
       parsed.command === 'prepare'
         ? await prepare({
+            profile,
             namespace,
             password,
             path,
@@ -1689,6 +2301,7 @@ async function run(): Promise<void> {
           })
         : parsed.command === 'verify'
           ? await verify({
+              profile,
               phase: parsed.phase!,
               namespace,
               password,
@@ -1698,7 +2311,7 @@ async function run(): Promise<void> {
               reports: app.get(ReportsService),
               publicMapper: app.get(ClinicalReportPublicMapper),
             })
-          : await cleanup(namespace, path, registry);
+          : await cleanup(namespace, profile, path, registry);
     console.log(JSON.stringify(result, null, 2));
   } catch (error: unknown) {
     process.exitCode = 1;
