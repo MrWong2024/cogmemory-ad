@@ -2,7 +2,7 @@
 
 ## 1. 文档定位与当前状态
 
-本文档是跨层测试设计、可达性与最低充分证据分类、Browser 验收规则、活动场景状态、Batch D 当前证据索引、B14.1 累计证据索引和 Batch E 待验范围的权威来源。产品范围与工作包状态由 `handoff-roadmap.md` 维护；数据库用途、fixture、verifier、cleanup 与后端定向命令由 `handoff-backend-testing-playbook.md` 维护；逐轮命令、执行耗时、失败过程、旧编号全文、迁移表和完整合同表由 Git 历史追溯。
+本文档是验证候选的项目级生成来源、跨层分类与最低充分证据、Browser 验收规则、活动场景状态、Batch D 当前证据索引、B14.1 累计证据索引和 Batch E 待验范围的权威来源。产品范围与工作包状态由 `handoff-roadmap.md` 维护；数据库用途、fixture、verifier、cleanup 与后端定向命令由 `handoff-backend-testing-playbook.md` 维护；通用候选生成、任务归属和即时验收规则由 `docs/codex-instruction-spec.md` 3.9 维护；逐轮命令、执行耗时、失败过程、旧编号全文、迁移表和完整合同表由 Git 历史追溯。
 
 | 范围 | 当前状态 | 详细入口 |
 |---|---|---|
@@ -23,9 +23,30 @@ B11～B15 均已完成。当前没有待执行的 Batch D 场景；testing playb
 
 ## 2. 当前测试设计规则
 
-### 2.1 可达性、风险与最低充分证据
+### 2.1 验证候选的系统生成与即时闭环
 
-候选风险必须先分类，再决定是否进入强制验收：
+新 B# 或其他产品模块在业务和接口合同基本锁定后、生成实现 Codex 指令前，必须按 `docs/codex-instruction-spec.md` 3.9 生成临时的 `初始验证风险候选集合`；发生影响性需求或产品代码变化时按变化范围重新扫描。合同尚未锁定时先完成合同设计或拆分阶段，纯文档、纯格式和无行为变化的机械重构只做简化扫描。
+
+项目级候选来源至少覆盖：
+
+1. 业务角色、用户目标、正常/阻断路径和明确非目标。
+2. 页面路由与入口、可见性、输入、writing / disabled、错误恢复、刷新、当前会话与持久状态。
+3. 公开 API、DTO、Guard / Pipe、ownership、客户端可控字段、服务端生成字段与 mapper 隐私。
+4. 状态机、readiness、幂等、合法并发、部分完成、显式恢复、网络结果不确定及版本/replacement 关系。
+5. 数据副作用、audit、protected roots，以及 Patient / Visit / 来源 / Storage 等外部对象的不变量。
+6. shared workflow、认证与权限、coordinator / writing lock / identity、Origin / CORS / Cookie 和构建时变量。
+7. 已有 unit / HTTP E2E / Browser / verifier、已知回归，以及证据形成后相关实现是否变化。
+8. Batch E 或其他人工、真实设备、相机、触控笔/手写、打印、硬件和专业判断边界。
+
+默认即时闭环为：`设计 B#` → `生成候选集合` → `按本节后续规则分类、去重、复用证据并选择最低充分层` → `写入本次或同一 B# 的明确阶段 Codex 指令` → `实现后由 Codex 立即执行可自动化验收` → `最终覆盖完整性核对和证据收口`。候选生成避免遗漏，后续治理避免过度测试；任何候选都必须有且只有一个主要归属，不得用“以后再看”替代明确阶段。
+
+候选集合只是 GPT 生成 Codex 指令期间的临时风险工作集，不要求完整输出给 Codex，不在 Playbook 保存新 B# 的候选全集，也不按候选建立永久 Audit ID 仓库。active / pending 阶段只持久化当前真实 `gap`、人工或真实设备项目和必要场景设计；完成后收缩为当前状态、精确证据资产、evidence commit 与长期合同摘要，逐轮生成、筛选、执行和治理过程由 Git 历史承担。
+
+B# 完成前必须确认所有独立风险均已有归属、当前阶段拥有的验收已实际通过、复用证据仍适用于当前代码态、明确后续阶段与人工项状态准确且没有未披露 `gap`。明确后续阶段或人工项不等于遗漏，但最终阶段仍必须完成全量候选覆盖对账；分阶段不得退化为在 Playbook 长期积压候选。
+
+### 2.2 可达性、风险与最低充分证据
+
+系统生成后的候选风险必须先分类，再决定是否进入强制验收：
 
 | 分类 | 判定边界 | 最低充分主证据 |
 |---|---|---|
@@ -46,7 +67,7 @@ B11～B15 均已完成。当前没有待执行的 Batch D 场景；testing playb
 
 业务风险守恒针对真实可达风险、不可替代状态语义和安全边界，不针对历史 Audit ID 数量、层级组合或顺序。同一风险只在最合适层作为主证据；代码阅读不等于动态通过，页面文本不替代数据库终态，fixture E2E 不冒充产品 Browser。Browser 收缩不得删除认证、授权、ownership、DTO 白名单、不可逆状态门禁、幂等、合法并发、隐私或数据库无副作用证据。
 
-### 2.2 证据层职责
+### 2.3 证据层职责
 
 | 证据层 | 主职责 | 不可替代边界 |
 |---|---|---|
@@ -59,7 +80,7 @@ B11～B15 均已完成。当前没有待执行的 Batch D 场景；testing playb
 
 backend unit、HTTP E2E、database verifier、fixture 与 cleanup 的具体规则以 backend testing playbook 为准。
 
-### 2.3 按变化影响选择执行范围
+### 2.4 按变化影响选择执行范围
 
 - 纯文档变化只执行文档内容、链接、diff 与 Git 范围检查。
 - 单个测试文件变化执行精确 discovery、定向测试和必要静态检查，不自动扩大到完整 E2E。
@@ -68,13 +89,13 @@ backend unit、HTTP E2E、database verifier、fixture 与 cleanup 的具体规�
 - 完整 unit / E2E 原则上在批次最终代码态执行一次，或在存在明确跨模块影响时执行；不得在每个 Profile 后机械重复。
 - 前端最终代码态按实际影响选择 `npm run test:browser:list`、`npm run test:browser:infra`、`npm run lint`、`npm run typecheck`、`npm run build`；discovery 和 infrastructure 不关闭业务场景。
 
-### 2.4 微型 Browser Profile 与任务粒度
+### 2.5 微型 Browser Profile 与任务粒度
 
 微型 Profile 原则上只包含 1～4 个紧密相关场景，具有单一主风险、最小合法前置、独立执行、独立证据、必要后置验证和精确 cleanup，并独立关闭自己拥有的活动场景。一个 Codex 任务可以包含多个风险一致、证据层相近且能分别收口的 Profile，但不因此共享可写 Report、BrowserContext、Session、数据库终态或 cleanup。
 
 同一 Profile 保持证据原子性：同一 Git 代码态、同一最小前置、一次 Browser 执行、适用的 verifier 和一次精确 cleanup。后续无关 Profile 失败，不得作废已经闭环的证据。禁止批次专属 runner、journal、aggregator 或完整 manifest，禁止把大量不相关状态塞入一次原子运行。
 
-### 2.5 Browser 必须验证的行为与横切抽样
+### 2.6 Browser 必须验证的行为与横切抽样
 
 - 使用 production frontend、真实 Browser test backend 和真实 HTTP；不得以 mock server、伪造响应或代码阅读替代。
 - 验证页面入口、角色可见性、控件 enabled/disabled、真实输入、请求次数、状态、成功或可达错误恢复；页面无入口的 403、DTO 或 ownership 绕过交给 HTTP E2E。
@@ -86,7 +107,7 @@ backend unit、HTTP E2E、database verifier、fixture 与 cleanup 的具体规�
 
 认证生命周期、logout/Cookie、Storage/URL 隐私、CORS、Console、DOM 敏感信息扫描、Axe、viewport、focus-visible 和不支持 Action 扫描，只在对应能力变化或缺少可信证据时附着少量真实流程；横切证据不得替代业务特有页面断言、错误恢复、请求次数或数据库终态。
 
-### 2.6 活动场景状态、失败与复杂度
+### 2.7 活动场景状态、失败与复杂度
 
 活动场景只使用 `pending`、`passed`、`failed`、`blocked`、`not_executed`。只有全部必需子断言的主证据、必要支持证据、适用数据库终态与资源 cleanup 均实际通过，且无测试资产、环境或未执行项阻断时，场景才能标记 `passed`。
 

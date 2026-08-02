@@ -2,7 +2,7 @@
 
 ## 1. 文档定位与紧凑状态
 
-本文档是数据库用途与隔离、Secret 和进程职责、后端定向 Jest / HTTP E2E、unit / HTTP E2E / database verifier 分工、fixture、verifier、cleanup、并发终态和后端静态门禁的权威来源。跨层可达性分类、Browser 规则、活动场景状态、Batch D Browser 证据和 Batch E 由 `handoff-frontend-testing-playbook.md` 维护；逐轮命令、耗时、失败过程与历史完整合同由 Git 历史追溯。
+本文档是后端验证候选来源的项目级补充，以及数据库用途与隔离、Secret 和进程职责、后端定向 Jest / HTTP E2E、unit / HTTP E2E / database verifier 分工、fixture、verifier、cleanup、并发终态和后端静态门禁的权威来源。跨层候选生成与分类、Browser 规则、活动场景状态、Batch D Browser 证据和 Batch E 由 `handoff-frontend-testing-playbook.md` 维护；通用任务归属与即时闭环由 `docs/codex-instruction-spec.md` 3.9 维护；逐轮命令、耗时、失败过程与历史完整合同由 Git 历史追溯。
 
 | 范围 | 当前状态 | backend-specific 证据 | Browser 详情 |
 |---|---|---|---|
@@ -51,6 +51,26 @@ roadmap 独立维护产品范围和工作包状态；testing playbook 治理不�
 - fixture runner 与 Browser backend 负责各自数据库职责；Playwright runner 和 production frontend 的用途始终为 `none`。
 
 ## 3. 后端证据职责
+
+### 3.1 后端候选来源补充
+
+新 B# 的后端合同基本锁定后、生成实现 Codex 指令前，后端风险候选至少核对：
+
+- Controller / Route / Guard / Pipe 的真实入口、认证顺序和拒绝边界。
+- DTO、whitelist、path/query/body 转换与 Controller 到 Service 的参数传递。
+- ownership、角色、服务端 actor 与跨资源归属。
+- Service 状态转换、readiness、错误边界、不可逆动作和相邻生命周期写保护。
+- Repository / Mongoose 条件过滤与原子写，以及幂等、合法并发、部分写入、显式恢复和网络不确定终态。
+- Schema、索引、唯一性、版本/replacement 关系与持久不变量。
+- mapper、response 白名单、错误响应与公开隐私。
+- audit、protected roots、数据库写入次数和最终状态，以及 Patient / Visit / 来源 / Storage 等外部副作用。
+- 是否需要 HTTP E2E，或现有 HTTP E2E 是否已提供当前代码态的精确证据。
+- Browser 写入是否需要后置 database verifier，fixture 是否只制造合法最小前置，cleanup 是否精确、幂等且可核对。
+- 已有 unit / HTTP E2E / verifier 等后端证据，以及证据形成后相关 Controller、DTO、Service、Repository、Schema、mapper 或配置是否变化。
+
+本小节只生成后端特有风险候选；跨层生成、分类、主要归属、即时验收和最终覆盖核对引用 frontend testing playbook“验证候选的系统生成与即时闭环”以及 `docs/codex-instruction-spec.md` 3.9，不复制完整跨层流程。不得为每个 Controller、DTO 字段或 Schema 字段机械建立测试，也不得把只能直接改库形成的数据库损坏状态默认升级为阻断验收。
+
+### 3.2 后端证据层职责
 
 新风险的 `ui_reachable`、`public_api_reachable`、`legitimate_concurrency`、`internal_corruption_only`、`manual_or_real_device` 与 `general_gate` 分类，以 frontend testing playbook“当前测试设计规则”为权威。后端在该分类上只补充以下证据职责：
 
