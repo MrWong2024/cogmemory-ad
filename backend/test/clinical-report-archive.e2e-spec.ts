@@ -83,7 +83,7 @@ describe('clinical report archive API (e2e)', () => {
   let systemAgent: ReturnType<typeof request.agent>;
   let doctorId: Types.ObjectId;
 
-  async function cleanup(): Promise<void> {
+  async function cleanup(): Promise<{ residualCount: number }> {
     const users = await userModel
       .find({ accountName: { $in: Object.values(ACCOUNTS) } })
       .select({ _id: 1 })
@@ -105,6 +105,22 @@ describe('clinical report archive API (e2e)', () => {
     await userModel
       .deleteMany({ accountName: { $in: Object.values(ACCOUNTS) } })
       .exec();
+    const [userCount, sessionCount, patientCount, visitCount, reportCount] =
+      await Promise.all([
+        userModel.countDocuments({
+          accountName: { $in: Object.values(ACCOUNTS) },
+        }),
+        sessionModel.countDocuments({ userId: { $in: userIds } }),
+        patientModel.countDocuments({ subjectCode: /^SUBJ-A24-TEST-/ }),
+        visitModel.countDocuments({ visitCode: /^VISIT-A24-TEST-/ }),
+        reportModel.countDocuments({ subjectCode: /^SUBJ-A24-TEST-/ }),
+      ]);
+    const residualCount =
+      userCount + sessionCount + patientCount + visitCount + reportCount;
+    if (residualCount !== 0) {
+      throw new Error('Expected exact A24 E2E cleanup');
+    }
+    return { residualCount };
   }
 
   async function createFixture(
@@ -342,8 +358,11 @@ describe('clinical report archive API (e2e)', () => {
   }
 
   beforeAll(async () => {
-    if (process.env.NODE_ENV !== 'test') {
-      throw new Error('E2E requires NODE_ENV=test');
+    if (
+      process.env.NODE_ENV !== 'test' ||
+      process.env.COGMEMORY_DATABASE_PURPOSE !== 'standard_test'
+    ) {
+      throw new Error('E2E requires the standard_test process environment');
     }
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
@@ -352,12 +371,8 @@ describe('clinical report archive API (e2e)', () => {
     configureApp(app);
     await app.init();
     connection = app.get<Connection>(getConnectionToken());
-    const databaseName = connection.name.toLowerCase();
-    if (
-      !databaseName.includes('_test') ||
-      databaseName.includes('_dev') ||
-      databaseName.includes('_prod')
-    ) {
+    const databaseName = connection.name;
+    if (databaseName !== 'cogmemory_ad_test') {
       throw new Error('E2E database isolation is not active');
     }
     const config = app.get(ConfigService);
@@ -419,8 +434,14 @@ describe('clinical report archive API (e2e)', () => {
 
   afterAll(async () => {
     if (app) {
-      await cleanup();
+      const cleanupAudit = await cleanup();
       await app.close();
+      if (Number(connection.readyState) !== 0) {
+        throw new Error('Expected the A24 E2E database connection to close');
+      }
+      process.stdout.write(
+        `[A24 cleanup] residualCount=${cleanupAudit.residualCount}; readyState=${Number(connection.readyState)}\n`,
+      );
     }
   });
 
@@ -675,6 +696,291 @@ describe('clinical report archive API (e2e)', () => {
     expect(afterLegacyIdempotency?.metadata).toEqual(after.metadata);
     expect(afterLegacyIdempotency?.get('updatedAt')).toEqual(
       persistedUpdatedAt,
+    );
+  });
+
+  it('archives exactly once under two concurrent authenticated HTTP requests', async () => {
+    const fixture = await createFixture('CONCURRENT');
+    const path = archivePath(fixture);
+    const beforeReport = await reportModel.findById(fixture.report._id).exec();
+    const beforePatient = await patientModel
+      .findById(fixture.patient._id)
+      .exec();
+    const beforeVisit = await visitModel.findById(fixture.visit._id).exec();
+    if (!beforeReport || !beforePatient || !beforeVisit) {
+      throw new Error('Expected complete concurrent archive fixture');
+    }
+    const before = record(beforeReport.toObject(), 'initial persisted report');
+    const beforeMetadata = record(before.metadata, 'initial report metadata');
+    const beforeLock = record(beforeMetadata.a22Lock, 'initial A22 lock');
+    const beforeSourceFreeze = record(
+      beforeMetadata.a23SourceFreeze,
+      'initial A23 source freeze',
+    );
+    const expectedUpdatedAt: unknown = beforeReport.get('updatedAt');
+    if (!(expectedUpdatedAt instanceof Date)) {
+      throw new Error('Expected report updatedAt');
+    }
+    expect(beforeReport.status).toBe('confirmed');
+    expect(beforeReport.archivedAt).toBeNull();
+    expect(beforeReport.archivedBy).toBeNull();
+    expect(beforeMetadata).not.toHaveProperty('a24Archive');
+    expect(beforeLock).toEqual(
+      expect.objectContaining({
+        version: 1,
+        lockId: '11111111-1111-4111-8111-111111111111',
+        lockedAt: beforeReport.lockedAt,
+        lockedBy: beforeReport.lockedBy?.toString(),
+      }),
+    );
+    expect(beforeSourceFreeze).toEqual(
+      expect.objectContaining({
+        version: 1,
+        state: 'completed',
+        freezeId: '22222222-2222-4222-8222-222222222222',
+      }),
+    );
+    expect(beforeSourceFreeze.completedAt).toBeInstanceOf(Date);
+
+    const sessionUsers = await userModel
+      .find({ accountName: { $in: [ACCOUNTS.doctor, ACCOUNTS.admin] } })
+      .select({ _id: 1 })
+      .exec();
+    const sessionUserIds = sessionUsers.map((user) => user._id);
+    expect(sessionUserIds).toHaveLength(2);
+    expect(new Set(sessionUserIds.map((id) => id.toString())).size).toBe(2);
+    expect(
+      await sessionModel
+        .countDocuments({ userId: { $in: sessionUserIds } })
+        .exec(),
+    ).toBe(2);
+
+    const doctorArchiveNote = 'A24 concurrent doctor de-identified note';
+    const adminArchiveNote = 'A24 concurrent admin de-identified note';
+    const doctorRequest = doctorAgent.post(path).send({
+      confirm: true,
+      archiveNote: doctorArchiveNote,
+      expectedUpdatedAt: expectedUpdatedAt.toISOString(),
+    });
+    const adminRequest = adminAgent.post(path).send({
+      confirm: true,
+      archiveNote: adminArchiveNote,
+      expectedUpdatedAt: expectedUpdatedAt.toISOString(),
+    });
+    const [doctorResponse, adminResponse] = await Promise.all([
+      doctorRequest,
+      adminRequest,
+    ]);
+    expect(doctorResponse.status).toBe(200);
+    expect(adminResponse.status).toBe(200);
+
+    const contenders = [
+      {
+        requestRole: 'doctor' as const,
+        requestArchiveNote: doctorArchiveNote,
+        response: doctorResponse,
+      },
+      {
+        requestRole: 'admin' as const,
+        requestArchiveNote: adminArchiveNote,
+        response: adminResponse,
+      },
+    ].map((contender) => {
+      const responseBody = body(contender.response);
+      const report = record(
+        responseBody.report,
+        `${contender.requestRole} report`,
+      );
+      const archive = record(
+        report.archive,
+        `${contender.requestRole} report archive`,
+      );
+      const receipt = record(
+        responseBody.archiveReceipt,
+        `${contender.requestRole} archive receipt`,
+      );
+      expect(report.status).toBe('archived');
+      expect(report.isFinal).toBe(true);
+      expect(report.archivedAt).toBe(receipt.archivedAt);
+      expect(report).not.toHaveProperty('metadata');
+      expect(report).not.toHaveProperty('archivedBy');
+      for (const field of [
+        'primaryScaleInstanceIds',
+        'scoreResultIds',
+        'cognitiveDomainResultIds',
+        'mediaEvidenceIds',
+      ]) {
+        expect(report).not.toHaveProperty(field);
+      }
+      for (const field of [
+        'archiveId',
+        'archivedAt',
+        'archivedBy',
+        'archiveNote',
+        'sourceFreezeId',
+        'sourceFreezeCompletedAt',
+      ]) {
+        expect(archive[field]).toEqual(receipt[field]);
+      }
+      return { ...contender, report, archive, receipt };
+    });
+
+    expect(
+      contenders.map(({ receipt }) => receipt.alreadyArchived).sort(),
+    ).toEqual([false, true]);
+    const winner = contenders.find(
+      ({ receipt }) => receipt.alreadyArchived === false,
+    );
+    const loser = contenders.find(
+      ({ receipt }) => receipt.alreadyArchived === true,
+    );
+    if (!winner || !loser) {
+      throw new Error(
+        'Expected exactly one first archive and one idempotent archive',
+      );
+    }
+
+    const winnerActor = record(
+      winner.receipt.archivedBy,
+      'winning archive actor',
+    );
+    const loserActor = record(
+      loser.receipt.archivedBy,
+      'idempotent archive actor',
+    );
+    expect(typeof winner.receipt.archiveId).toBe('string');
+    expect(winner.receipt.archiveId).not.toBe('');
+    expect(typeof winner.receipt.archivedAt).toBe('string');
+    expect(winner.receipt.archiveNote).toBe(winner.requestArchiveNote);
+    expect(winnerActor.operatorRole).toBe(winner.requestRole);
+    expect(winner.receipt.sourceFreezeId).toBe(beforeSourceFreeze.freezeId);
+    expect(winner.receipt.sourceFreezeCompletedAt).toBe(
+      (beforeSourceFreeze.completedAt as Date).toISOString(),
+    );
+    expect(loser.receipt).toEqual({
+      ...winner.receipt,
+      alreadyArchived: true,
+    });
+    expect(loserActor).toEqual(winnerActor);
+    expect(loser.archive).toEqual(winner.archive);
+    expect(loser.receipt.archiveNote).toBe(winner.requestArchiveNote);
+    expect(loser.receipt.archiveNote).not.toBe(loser.requestArchiveNote);
+    expect(loser.report.updatedAt).toBe(winner.report.updatedAt);
+
+    expect(
+      await reportModel
+        .countDocuments({
+          patientId: fixture.patient._id,
+          assessmentVisitId: fixture.visit._id,
+          reportType: 'cognitive_assessment',
+        })
+        .exec(),
+    ).toBe(1);
+    const persisted = await reportModel.findById(fixture.report._id).exec();
+    if (!persisted) throw new Error('Expected concurrent archived report');
+    expect(persisted.status).toBe('archived');
+    expect(persisted.archivedAt?.toISOString()).toBe(winner.receipt.archivedAt);
+    expect(persisted.archivedBy?.toString()).toBe(winnerActor.operatorId);
+    const persistedUpdatedAt: unknown = persisted.get('updatedAt');
+    expect(persistedUpdatedAt).toBeInstanceOf(Date);
+    expect((persistedUpdatedAt as Date).toISOString()).toBe(
+      winner.report.updatedAt,
+    );
+    const after = record(persisted.toObject(), 'persisted archived report');
+    const persistedMetadata = record(after.metadata, 'persisted metadata');
+    const archiveAudit = record(
+      persistedMetadata.a24Archive,
+      'persisted A24 audit',
+    );
+    expect(Object.keys(archiveAudit).sort()).toEqual(
+      [
+        'version',
+        'archiveId',
+        'archivedAt',
+        'archivedBy',
+        'archivedByName',
+        'archivedByRole',
+        'archiveNote',
+        'sourceFreezeId',
+        'sourceFreezeCompletedAt',
+      ].sort(),
+    );
+    expect(archiveAudit.archivedAt).toBeInstanceOf(Date);
+    expect(archiveAudit.sourceFreezeCompletedAt).toBeInstanceOf(Date);
+    expect(archiveAudit).toEqual({
+      version: 1,
+      archiveId: winner.receipt.archiveId,
+      archivedAt: archiveAudit.archivedAt,
+      archivedBy: winnerActor.operatorId,
+      archivedByName: winnerActor.operatorName,
+      archivedByRole: winnerActor.operatorRole,
+      archiveNote: winner.requestArchiveNote,
+      sourceFreezeId: winner.receipt.sourceFreezeId,
+      sourceFreezeCompletedAt: archiveAudit.sourceFreezeCompletedAt,
+    });
+    expect((archiveAudit.archivedAt as Date).toISOString()).toBe(
+      winner.receipt.archivedAt,
+    );
+    expect((archiveAudit.sourceFreezeCompletedAt as Date).toISOString()).toBe(
+      winner.receipt.sourceFreezeCompletedAt,
+    );
+    expect(JSON.stringify(persistedMetadata)).not.toContain(
+      loser.requestArchiveNote,
+    );
+    expect(
+      Object.keys(persistedMetadata).filter((key) =>
+        key.toLowerCase().startsWith('a24'),
+      ),
+    ).toEqual(['a24Archive']);
+    expect(
+      await reportModel
+        .countDocuments({
+          patientId: fixture.patient._id,
+          assessmentVisitId: fixture.visit._id,
+          reportType: 'cognitive_assessment',
+          'metadata.a24Archive.archiveId': winner.receipt.archiveId,
+        })
+        .exec(),
+    ).toBe(1);
+
+    for (const field of [
+      'lockedAt',
+      'lockedBy',
+      'confirmation',
+      'narrative',
+      'scaleTraces',
+      'scoreSnapshots',
+      'domainSnapshots',
+      'evidenceSnapshots',
+      'primaryScaleInstanceIds',
+      'scoreResultIds',
+      'cognitiveDomainResultIds',
+      'mediaEvidenceIds',
+      'auditLogRefs',
+      'correctionRecords',
+      'voidedAt',
+      'voidedBy',
+    ]) {
+      expect(after[field]).toEqual(before[field]);
+    }
+    for (const namespace of [
+      'a20Generation',
+      'a21Submission',
+      'a21Confirmation',
+      'a22Lock',
+      'a23SourceFreeze',
+      'futureNamespace',
+    ]) {
+      expect(persistedMetadata[namespace]).toEqual(beforeMetadata[namespace]);
+    }
+    expect(
+      (await patientModel.findById(fixture.patient._id).exec())?.status,
+    ).toBe(beforePatient.status);
+    expect((await visitModel.findById(fixture.visit._id).exec())?.status).toBe(
+      beforeVisit.status,
+    );
+    process.stdout.write(
+      `[A24 concurrent archive] winnerRole=${winner.requestRole}; loserRole=${loser.requestRole}; statuses=${doctorResponse.status},${adminResponse.status}; alreadyArchived=false,true\n`,
     );
   });
 
