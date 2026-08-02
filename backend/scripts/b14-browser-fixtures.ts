@@ -38,6 +38,7 @@ import {
 import { ClinicalReport, type ClinicalReportDocument } from '../src/modules/reports/schemas/clinical-report.schema';
 import { ClinicalReportArchiveWorkflowService } from '../src/modules/reports/services/clinical-report-archive-workflow.service';
 import { ClinicalReportLockWorkflowService } from '../src/modules/reports/services/clinical-report-lock-workflow.service';
+import { ClinicalReportPublicMapper } from '../src/modules/reports/services/clinical-report-public.mapper';
 import { ClinicalReportSourceFreezeWorkflowService } from '../src/modules/reports/services/clinical-report-source-freeze-workflow.service';
 import { ReportsService } from '../src/modules/reports/services/reports.service';
 // prettier-ignore
@@ -46,12 +47,15 @@ import { ScoreResult, type ScoreResultDocument } from '../src/modules/scoring/sc
 import { User, type UserDocument } from '../src/modules/users/schemas/user.schema';
 
 type Command = 'prepare' | 'verify' | 'cleanup';
-type Phase = 'prepared' | 'post-browser';
+type Phase = 'prepared' | 'post-browser' | 'u02-post-archive';
+type Profile = 'B14-P1-entry-readonly' | 'B14-P2-first-archive';
 type Key = 'archive-ready' | 'archive-completed';
 type Root = { patientId: string; visitId: string; reportId: string };
 type PreparedBaseline = {
   status: 'confirmed' | 'archived';
+  preArchiveUpdatedAt: string;
   reportBusinessFactsHash: string;
+  protectedReportFactsHash: string;
   patientVisitFactsHash: string;
   sourceFactsHash: string;
   sourceIdsHash: string;
@@ -59,6 +63,8 @@ type PreparedBaseline = {
   sourceFreezeFactsHash: string;
   archiveFactsHash: string | null;
   confirmationFactsHash: string;
+  narrativeAndSnapshotsHash: string;
+  otherMetadataNamespacesHash: string;
   auditLogRefsHash: string;
   independentA24AuditLogCount: 0;
 };
@@ -69,7 +75,7 @@ type Scenario = Root & {
 type Descriptor = {
   schemaVersion: 1;
   batch: 'B14';
-  profile: 'B14-P1-entry-readonly';
+  profile: Profile;
   namespace: string;
   accounts: Record<'doctor' | 'nurse', { loginIdentifier: string }>;
   scenarios: Record<Key, Scenario>;
@@ -99,13 +105,44 @@ class FixtureError extends Error {
 }
 
 const DB = 'cogmemory_ad_browser_test';
-const PROFILE = 'B14-P1-entry-readonly' as const;
+const P1_PROFILE = 'B14-P1-entry-readonly' as const;
+const P2_PROFILE = 'B14-P2-first-archive' as const;
+const PROFILES: readonly Profile[] = [P1_PROFILE, P2_PROFILE];
 const KEYS: readonly Key[] = ['archive-ready', 'archive-completed'];
-const MARKER = 'B14-U01 synthetic readable report marker.';
+const MARKERS: Record<Profile, string> = {
+  [P1_PROFILE]: 'B14-U01 synthetic readable report marker.',
+  [P2_PROFILE]: 'B14-U02 synthetic first archive report marker.',
+};
 const CONFIRMATION_NOTE = 'B14 脱敏确认说明';
 const LOCK_NOTE = 'B14 脱敏锁定说明';
 const FREEZE_NOTE = 'B14 脱敏来源冻结说明';
-const ARCHIVE_NOTE = 'B14 脱敏归档说明';
+const CONTROL_ARCHIVE_NOTES: Record<Profile, string> = {
+  [P1_PROFILE]: 'B14 脱敏归档说明',
+  [P2_PROFILE]: 'B14 U02 脱敏控制归档说明',
+};
+const U02_ARCHIVE_NOTE = 'B14 U02 脱敏首次归档说明';
+
+type ProfileVariables = {
+  namespace: string;
+  runtimePath: string;
+  fixturePassword: string;
+  cleanupConfirmation: string;
+};
+
+const PROFILE_VARIABLES: Record<Profile, ProfileVariables> = {
+  [P1_PROFILE]: {
+    namespace: 'B14_U01_NAMESPACE',
+    runtimePath: 'B14_U01_RUNTIME_PATH',
+    fixturePassword: 'B14_U01_FIXTURE_PASSWORD',
+    cleanupConfirmation: 'B14_U01_CONFIRM_CLEANUP',
+  },
+  [P2_PROFILE]: {
+    namespace: 'B14_U02_NAMESPACE',
+    runtimePath: 'B14_U02_RUNTIME_PATH',
+    fixturePassword: 'B14_U02_FIXTURE_PASSWORD',
+    cleanupConfirmation: 'B14_U02_CONFIRM_CLEANUP',
+  },
+};
 
 function fail(code: string, message: string): never {
   throw new FixtureError(code, message);
@@ -119,21 +156,47 @@ function required(name: string, minimum = 1): string {
   return value;
 }
 
-function parseCommand(): { command: Command; phase?: Phase } {
+function parseProfile(): Profile {
+  const value = process.env.B14_PROFILE ?? P1_PROFILE;
+  if (!PROFILES.includes(value as Profile)) {
+    fail('B14_PROFILE_INVALID', 'B14_PROFILE is invalid');
+  }
+  return value as Profile;
+}
+
+function parseCommand(
+  profile: Profile,
+  variables: ProfileVariables,
+): { command: Command; phase?: Phase } {
   const [command, phase, extra] = process.argv.slice(2);
   if (!['prepare', 'verify', 'cleanup'].includes(command) || extra) {
     fail(
       'B14_COMMAND_INVALID',
-      'Use prepare, verify prepared|post-browser, or cleanup',
+      'Use prepare, verify prepared|post-browser|u02-post-archive, or cleanup',
     );
   }
-  if (command === 'verify' && !['prepared', 'post-browser'].includes(phase)) {
-    fail('B14_PHASE_INVALID', 'verify requires prepared or post-browser');
+  if (
+    command === 'verify' &&
+    !['prepared', 'post-browser', 'u02-post-archive'].includes(phase)
+  ) {
+    fail(
+      'B14_PHASE_INVALID',
+      'verify requires prepared, post-browser, or u02-post-archive',
+    );
   }
   if (command !== 'verify' && phase) {
     fail('B14_ARGUMENT_INVALID', 'Unexpected fixture argument');
   }
-  if (command === 'cleanup' && process.env.B14_U01_CONFIRM_CLEANUP !== '1') {
+  if (phase === 'u02-post-archive' && profile !== P2_PROFILE) {
+    fail(
+      'B14_PHASE_PROFILE_MISMATCH',
+      'u02-post-archive requires the P2 profile',
+    );
+  }
+  if (
+    command === 'cleanup' &&
+    process.env[variables.cleanupConfirmation] !== '1'
+  ) {
     fail(
       'B14_CLEANUP_CONFIRMATION_REQUIRED',
       'cleanup requires explicit confirmation',
@@ -178,7 +241,10 @@ function documentFacts(document: unknown): Record<string, unknown> {
   return facts;
 }
 
-async function readDescriptor(path: string): Promise<Descriptor> {
+async function readDescriptor(
+  path: string,
+  profile: Profile,
+): Promise<Descriptor> {
   let value: Partial<Descriptor>;
   try {
     value = JSON.parse(await readFile(path, 'utf8')) as Partial<Descriptor>;
@@ -188,7 +254,7 @@ async function readDescriptor(path: string): Promise<Descriptor> {
   if (
     value.schemaVersion !== 1 ||
     value.batch !== 'B14' ||
-    value.profile !== PROFILE ||
+    value.profile !== profile ||
     !value.namespace ||
     !value.accounts ||
     !value.scenarios
@@ -300,12 +366,13 @@ async function createUsers(
 }
 
 async function createConfirmedChain(input: {
+  profile: Profile;
   namespace: string;
   ordinal: number;
   models: Models;
   doctor: AuthenticatedUserContext;
 }): Promise<Root> {
-  const { namespace, ordinal, models, doctor } = input;
+  const { profile, namespace, ordinal, models, doctor } = input;
   const fixtureNames = names(namespace);
   const subjectCode = fixtureNames.subjects[ordinal - 1];
   const suffix = `${namespace.toUpperCase()}-0${ordinal}`;
@@ -583,7 +650,7 @@ async function createConfirmedChain(input: {
     ],
     evidenceSnapshots: [],
     narrative: {
-      chiefSummary: MARKER,
+      chiefSummary: MARKERS[profile],
       scoreSummary: 'B14 safe score summary',
       domainSummary: 'B14 safe domain summary',
       evidenceSummary: 'B14 safe evidence summary',
@@ -654,6 +721,7 @@ async function createConfirmedChain(input: {
 }
 
 async function runA22A23A24(input: {
+  profile: Profile;
   root: Root;
   archived: boolean;
   doctor: AuthenticatedUserContext;
@@ -662,7 +730,8 @@ async function runA22A23A24(input: {
   freeze: ClinicalReportSourceFreezeWorkflowService;
   archive: ClinicalReportArchiveWorkflowService;
 }): Promise<void> {
-  const { root, archived, doctor, reports, lock, freeze, archive } = input;
+  const { profile, root, archived, doctor, reports, lock, freeze, archive } =
+    input;
   let report = await reports.findReportByOwnership({
     reportId: root.reportId,
     patientId: root.patientId,
@@ -727,7 +796,7 @@ async function runA22A23A24(input: {
     doctor,
     {
       confirm: true,
-      archiveNote: ARCHIVE_NOTE,
+      archiveNote: CONTROL_ARCHIVE_NOTES[profile],
       expectedUpdatedAt: report.updatedAt.toISOString(),
     },
   );
@@ -758,7 +827,25 @@ async function loadFacts(root: Root, models: Models) {
   if (!report || !patient || !visit) {
     fail('B14_FACTS_MISSING', 'Fixture business facts are missing');
   }
+  const updatedAt: unknown = report.get('updatedAt');
+  if (!(updatedAt instanceof Date)) {
+    fail('B14_REPORT_TIMESTAMP_MISSING', 'Fixture report timestamp is missing');
+  }
   const reportFacts = documentFacts(report);
+  const metadata =
+    reportFacts.metadata && typeof reportFacts.metadata === 'object'
+      ? (reportFacts.metadata as Record<string, unknown>)
+      : {};
+  const otherMetadata = { ...metadata };
+  delete otherMetadata.a24Archive;
+  const protectedReportFacts: Record<string, unknown> = {
+    ...reportFacts,
+    metadata: otherMetadata,
+  };
+  delete protectedReportFacts.status;
+  delete protectedReportFacts.updatedAt;
+  delete protectedReportFacts.archivedAt;
+  delete protectedReportFacts.archivedBy;
   const sourceFacts = [
     instances.map(documentFacts),
     items.map(documentFacts),
@@ -793,7 +880,9 @@ async function loadFacts(root: Root, models: Models) {
     media,
     baseline: {
       status: report.status as 'confirmed' | 'archived',
+      preArchiveUpdatedAt: updatedAt.toISOString(),
       reportBusinessFactsHash: hash(reportFacts),
+      protectedReportFactsHash: hash(protectedReportFacts),
       patientVisitFactsHash: hash([
         documentFacts(patient),
         documentFacts(visit),
@@ -818,9 +907,20 @@ async function loadFacts(root: Root, models: Models) {
         : null,
       confirmationFactsHash: hash({
         confirmation: report.confirmation,
-        a21Confirmation: (reportFacts.metadata as Record<string, unknown>)
-          .a21Confirmation,
+        a21Confirmation: metadata.a21Confirmation,
       }),
+      narrativeAndSnapshotsHash: hash({
+        narrative: report.narrative,
+        scaleTraces: report.scaleTraces,
+        scoreSnapshots: report.scoreSnapshots,
+        domainSnapshots: report.domainSnapshots,
+        evidenceSnapshots: report.evidenceSnapshots,
+        primaryScaleInstanceIds: report.primaryScaleInstanceIds,
+        scoreResultIds: report.scoreResultIds,
+        cognitiveDomainResultIds: report.cognitiveDomainResultIds,
+        mediaEvidenceIds: report.mediaEvidenceIds,
+      }),
+      otherMetadataNamespacesHash: hash(otherMetadata),
       auditLogRefsHash: hash(report.auditLogRefs),
       independentA24AuditLogCount,
     },
@@ -847,6 +947,7 @@ function sameIds(expected: readonly string[], actual: readonly string[]) {
 }
 
 async function assertScenario(
+  profile: Profile,
   key: Key,
   scenario: Scenario,
   reports: ReportsService,
@@ -937,7 +1038,7 @@ async function assertScenario(
     report.reportVersion === 1 &&
     report.source === 'mixed' &&
     report.qualityStatus === 'passed' &&
-    report.narrative?.chiefSummary === MARKER &&
+    report.narrative?.chiefSummary === MARKERS[profile] &&
     report.scaleTraces.length === 1 &&
     report.scoreSnapshots.length === 1 &&
     report.domainSnapshots.length === 1 &&
@@ -959,7 +1060,7 @@ async function assertScenario(
           report.archivedAt &&
           report.archivedBy &&
           archive?.archiveId &&
-          archive.archiveNote === ARCHIVE_NOTE &&
+          archive.archiveNote === CONTROL_ARCHIVE_NOTES[profile] &&
           archive.archivedAt.getTime() === report.archivedAt.getTime() &&
           archive.archivedBy.operatorId === report.archivedBy &&
           archive.archivedBy.operatorRole === 'doctor' &&
@@ -980,6 +1081,140 @@ async function assertScenario(
   ) {
     fail('B14_SCENARIO_INVALID', `${key} or its baseline is invalid`);
   }
+}
+
+async function assertU02PostArchive(input: {
+  scenario: Scenario;
+  doctor: UserDocument;
+  reports: ReportsService;
+  publicMapper: ClinicalReportPublicMapper;
+  models: Models;
+}) {
+  const { scenario, doctor, reports, publicMapper, models } = input;
+  const report = await reports.findReportByOwnership({
+    reportId: scenario.reportId,
+    patientId: scenario.patientId,
+    assessmentVisitId: scenario.visitId,
+  });
+  const internal = await models.reports.findById(scenario.reportId);
+  if (!report?.updatedAt || !internal) {
+    fail('B14_U02_REPORT_MISSING', 'U02 target report is missing');
+  }
+  const facts = await loadFacts(scenario, models);
+  const lock = resolveExistingClinicalReportLock(report);
+  const freeze = resolveExistingSourceFreeze(report);
+  const archive = resolveExistingClinicalReportArchive(report);
+  const publicReport = publicMapper.toPublicReport(report);
+  const publicArchive = publicReport.archive;
+  const metadata = report.metadata as Record<string, unknown>;
+  const a24 = metadata.a24Archive as Record<string, unknown> | undefined;
+  const protectedKeys = [
+    'protectedReportFactsHash',
+    'patientVisitFactsHash',
+    'sourceFactsHash',
+    'sourceIdsHash',
+    'lockFactsHash',
+    'sourceFreezeFactsHash',
+    'confirmationFactsHash',
+    'narrativeAndSnapshotsHash',
+    'otherMetadataNamespacesHash',
+    'auditLogRefsHash',
+  ] as const;
+  const protectedFactsMatch = protectedKeys.every(
+    (key) => facts.baseline[key] === scenario.preparedBaseline[key],
+  );
+  const archiveNamespaces = Object.keys(metadata).filter((key) =>
+    key.toLowerCase().startsWith('a24'),
+  );
+  const a24Keys = a24 ? Object.keys(a24).sort() : [];
+  const expectedA24Keys = [
+    'version',
+    'archiveId',
+    'archivedAt',
+    'archivedBy',
+    'archivedByName',
+    'archivedByRole',
+    'archiveNote',
+    'sourceFreezeId',
+    'sourceFreezeCompletedAt',
+  ].sort();
+  const uniqueArchiveCount = archive?.archiveId
+    ? await models.reports.countDocuments({
+        'metadata.a24Archive.archiveId': archive.archiveId,
+      })
+    : 0;
+  const a24ArchivedAt = a24?.archivedAt;
+  const a24FreezeCompletedAt = a24?.sourceFreezeCompletedAt;
+  const publicSurfaceSafe =
+    !Object.hasOwn(publicReport, 'metadata') &&
+    !Object.hasOwn(publicReport, 'archivedBy') &&
+    !Object.hasOwn(publicReport, 'primaryScaleInstanceIds') &&
+    !Object.hasOwn(publicReport, 'scoreResultIds') &&
+    !Object.hasOwn(publicReport, 'cognitiveDomainResultIds') &&
+    !Object.hasOwn(publicReport, 'mediaEvidenceIds');
+  const archiveFactsSafe = Boolean(
+    report.status === 'archived' &&
+    publicReport.status === 'archived' &&
+    publicReport.isFinal === true &&
+    report.archivedAt &&
+    report.archivedBy === doctor.id &&
+    archive?.archiveId &&
+    archive.archiveNote === U02_ARCHIVE_NOTE &&
+    archive.archivedAt.getTime() === report.archivedAt.getTime() &&
+    archive.archivedBy.operatorId === report.archivedBy &&
+    archive.archivedBy.operatorRole === 'doctor' &&
+    archive.sourceFreezeId === freeze?.freezeId &&
+    archive.sourceFreezeCompletedAt?.getTime() ===
+      freeze?.completedAt?.getTime() &&
+    a24?.version === 1 &&
+    a24.archiveId === archive.archiveId &&
+    a24ArchivedAt instanceof Date &&
+    a24ArchivedAt.getTime() === archive.archivedAt.getTime() &&
+    a24.archivedBy === doctor.id &&
+    a24.archivedByRole === 'doctor' &&
+    a24.archiveNote === U02_ARCHIVE_NOTE &&
+    a24.sourceFreezeId === freeze?.freezeId &&
+    a24FreezeCompletedAt instanceof Date &&
+    a24FreezeCompletedAt.getTime() === freeze?.completedAt?.getTime() &&
+    publicReport.archivedAt?.getTime() === report.archivedAt.getTime() &&
+    publicArchive?.archiveId === archive.archiveId &&
+    publicArchive.archivedAt.getTime() === archive.archivedAt.getTime() &&
+    publicArchive.archivedBy.operatorId === doctor.id &&
+    publicArchive.archivedBy.operatorRole === 'doctor' &&
+    publicArchive.archiveNote === U02_ARCHIVE_NOTE &&
+    publicArchive.sourceFreezeId === freeze?.freezeId &&
+    publicArchive.sourceFreezeCompletedAt?.getTime() ===
+      freeze?.completedAt?.getTime(),
+  );
+  const protectedStateSafe = Boolean(
+    protectedFactsMatch &&
+    lock?.lockId &&
+    freeze?.state === 'completed' &&
+    report.correctionRecords.length === 0 &&
+    report.voidedAt === null &&
+    report.updatedAt.getTime() >
+      new Date(scenario.preparedBaseline.preArchiveUpdatedAt).getTime() &&
+    facts.baseline.independentA24AuditLogCount === 0,
+  );
+  if (
+    !archiveFactsSafe ||
+    !protectedStateSafe ||
+    !publicSurfaceSafe ||
+    archiveNamespaces.join(',') !== 'a24Archive' ||
+    a24Keys.join(',') !== expectedA24Keys.join(',') ||
+    uniqueArchiveCount !== 1
+  ) {
+    fail(
+      'B14_U02_POST_ARCHIVE_INVALID',
+      'U02 archive fact or protected boundary is invalid',
+    );
+  }
+  return {
+    archiveReady: 'unique_first_a24_verified',
+    protectedReportFacts: 'unchanged',
+    patientVisitAndSources: 'unchanged',
+    independentA24AuditLogCount: 0,
+  } as const;
 }
 
 async function assertNamespace(
@@ -1111,6 +1346,7 @@ async function cleanup(namespace: string, path: string, models: Models) {
 }
 
 async function prepare(input: {
+  profile: Profile;
   namespace: string;
   password: string;
   path: string;
@@ -1122,6 +1358,7 @@ async function prepare(input: {
   archive: ClinicalReportArchiveWorkflowService;
 }) {
   const {
+    profile,
     namespace,
     password,
     path,
@@ -1143,18 +1380,21 @@ async function prepare(input: {
     const users = await createUsers(namespace, password, models, auth);
     const doctor = actor(users.doctor);
     const readyRoot = await createConfirmedChain({
+      profile,
       namespace,
       ordinal: 1,
       models,
       doctor,
     });
     const completedRoot = await createConfirmedChain({
+      profile,
       namespace,
       ordinal: 2,
       models,
       doctor,
     });
     await runA22A23A24({
+      profile,
       root: readyRoot,
       archived: false,
       doctor,
@@ -1164,6 +1404,7 @@ async function prepare(input: {
       archive,
     });
     await runA22A23A24({
+      profile,
       root: completedRoot,
       archived: true,
       doctor,
@@ -1179,7 +1420,7 @@ async function prepare(input: {
     const descriptor: Descriptor = {
       schemaVersion: 1,
       batch: 'B14',
-      profile: PROFILE,
+      profile,
       namespace,
       accounts: {
         doctor: { loginIdentifier: users.doctor.accountName },
@@ -1190,11 +1431,12 @@ async function prepare(input: {
     await writeDescriptor(path, descriptor, password);
     await assertNamespace(namespace, models);
     for (const key of KEYS) {
-      await assertScenario(key, scenarios[key], reports, models);
+      await assertScenario(profile, key, scenarios[key], reports, models);
     }
     return {
       ok: true,
       command: 'prepare',
+      profile,
       databasePurpose: 'browser_acceptance',
       actualDatabaseName: DB,
       namespace,
@@ -1212,6 +1454,7 @@ async function prepare(input: {
 }
 
 async function verify(input: {
+  profile: Profile;
   phase: Phase;
   namespace: string;
   password: string;
@@ -1219,9 +1462,20 @@ async function verify(input: {
   models: Models;
   auth: AuthService;
   reports: ReportsService;
+  publicMapper: ClinicalReportPublicMapper;
 }) {
-  const { phase, namespace, password, path, models, auth, reports } = input;
-  const descriptor = await readDescriptor(path);
+  const {
+    profile,
+    phase,
+    namespace,
+    password,
+    path,
+    models,
+    auth,
+    reports,
+    publicMapper,
+  } = input;
+  const descriptor = await readDescriptor(path, profile);
   assertDescriptorSafety(descriptor, password);
   if (descriptor.namespace !== namespace) {
     fail('B14_NAMESPACE_MISMATCH', 'Runtime namespace mismatch');
@@ -1249,21 +1503,51 @@ async function verify(input: {
     fail('B14_ACCOUNTS_INVALID', 'Doctor or nurse account contract failed');
   }
   await assertNamespace(namespace, models);
-  for (const key of KEYS) {
-    await assertScenario(key, descriptor.scenarios[key], reports, models);
+  let scenarioResult: Record<string, unknown>;
+  if (phase === 'u02-post-archive') {
+    const postArchive = await assertU02PostArchive({
+      scenario: descriptor.scenarios['archive-ready'],
+      doctor,
+      reports,
+      publicMapper,
+      models,
+    });
+    await assertScenario(
+      profile,
+      'archive-completed',
+      descriptor.scenarios['archive-completed'],
+      reports,
+      models,
+    );
+    scenarioResult = {
+      ...postArchive,
+      archiveCompleted: 'prepared_baseline_unchanged',
+    };
+  } else {
+    for (const key of KEYS) {
+      await assertScenario(
+        profile,
+        key,
+        descriptor.scenarios[key],
+        reports,
+        models,
+      );
+    }
+    scenarioResult = {
+      archiveReady: 'unchanged',
+      archiveCompleted: 'unchanged',
+    };
   }
   return {
     ok: true,
     command: 'verify',
+    profile,
     phase,
     databasePurpose: 'browser_acceptance',
     actualDatabaseName: DB,
     namespace,
     accountRoles: { doctor: 'doctor', nurse: 'nurse' },
-    scenarios: {
-      archiveReady: 'unchanged',
-      archiveCompleted: 'unchanged',
-    },
+    scenarios: scenarioResult,
     businessBaseline:
       'report_patient_visit_sources_metadata_snapshots_audit_boundaries_matched',
   };
@@ -1302,16 +1586,18 @@ async function run(): Promise<void> {
   let app: INestApplicationContext | null = null;
   let connection: Connection | null = null;
   try {
-    const parsed = parseCommand();
-    const namespace = required('B14_U01_NAMESPACE');
+    const profile = parseProfile();
+    const variables = PROFILE_VARIABLES[profile];
+    const parsed = parseCommand(profile, variables);
+    const namespace = required(variables.namespace);
     if (!/^[a-z0-9][a-z0-9-]{2,19}$/.test(namespace)) {
       fail('B14_NAMESPACE_INVALID', 'Namespace format is invalid');
     }
-    const path = required('B14_U01_RUNTIME_PATH');
+    const path = required(variables.runtimePath);
     const password =
       parsed.command === 'cleanup'
         ? ''
-        : required('B14_U01_FIXTURE_PASSWORD', 16);
+        : required(variables.fixturePassword, 16);
     assertBrowserAcceptancePreImportEnvironment({
       nodeEnv: process.env.NODE_ENV,
       purpose: process.env.COGMEMORY_DATABASE_PURPOSE,
@@ -1334,6 +1620,7 @@ async function run(): Promise<void> {
     const result =
       parsed.command === 'prepare'
         ? await prepare({
+            profile,
             namespace,
             password,
             path,
@@ -1346,6 +1633,7 @@ async function run(): Promise<void> {
           })
         : parsed.command === 'verify'
           ? await verify({
+              profile,
               phase: parsed.phase!,
               namespace,
               password,
@@ -1353,6 +1641,7 @@ async function run(): Promise<void> {
               models: registry,
               auth: app.get(AuthService),
               reports: app.get(ReportsService),
+              publicMapper: app.get(ClinicalReportPublicMapper),
             })
           : await cleanup(namespace, path, registry);
     console.log(JSON.stringify(result, null, 2));
