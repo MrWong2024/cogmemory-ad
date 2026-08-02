@@ -86,6 +86,15 @@ export class ClinicalReportCorrectionWorkflowService {
         message: 'Clinical report not found',
       });
     }
+    if (latestReport.id !== context.sourceReport.id) {
+      const concurrent = await this.tryResumeConcurrentCorrection(
+        context,
+        actor,
+      );
+      if (concurrent) {
+        return concurrent;
+      }
+    }
     this.applyRule(() =>
       evaluateClinicalReportCorrectionReadiness({
         sourceReport: context.sourceReport,
@@ -100,6 +109,13 @@ export class ClinicalReportCorrectionWorkflowService {
         context.sourceReport.reportVersion + 1,
       );
     if (nextVersionReports.length !== 0) {
+      const concurrent = await this.tryResumeConcurrentCorrection(
+        context,
+        actor,
+      );
+      if (concurrent) {
+        return concurrent;
+      }
       this.throwReplacementConflict();
     }
     const plan = this.applyRule(() =>
@@ -133,14 +149,12 @@ export class ClinicalReportCorrectionWorkflowService {
       this.throwFailed();
     }
     if (!started) {
-      const current = await this.reloadSource(context);
-      const raced = this.resolveExistingCorrection(current);
-      if (raced) {
-        return this.resumeOrReturnCompleted(
-          { ...context, sourceReport: current },
-          raced,
-          actor,
-        );
+      const concurrent = await this.tryResumeConcurrentCorrection(
+        context,
+        actor,
+      );
+      if (concurrent) {
+        return concurrent;
       }
       throw new ConflictException({
         code: 'CLINICAL_REPORT_CORRECTION_CONFLICT',
@@ -214,6 +228,17 @@ export class ClinicalReportCorrectionWorkflowService {
       : this.continueCorrection(context, audit, actor, true);
   }
 
+  private async tryResumeConcurrentCorrection(
+    context: CorrectionContext,
+    actor: ClinicalReportCorrectionActor,
+  ): Promise<CreateClinicalReportCorrectionResponse | null> {
+    const sourceReport = await this.reloadSource(context);
+    const audit = this.resolveExistingCorrection(sourceReport);
+    return audit
+      ? this.resumeOrReturnCompleted({ ...context, sourceReport }, audit, actor)
+      : null;
+  }
+
   private async continueCorrection(
     context: CorrectionContext,
     audit: ClinicalReportCorrectionMetadata,
@@ -231,29 +256,42 @@ export class ClinicalReportCorrectionWorkflowService {
           audit.replacementReportVersion,
         );
       if (collisions.length !== 0) {
-        this.throwReplacementConflict();
-      }
-      const replacementInput = this.applyRule(() =>
-        buildClinicalReportReplacement({
-          sourceReport: context.sourceReport,
-          audit,
-          createdAt: new Date(),
-        }),
-      );
-      try {
-        replacement =
-          await this.reportsService.createCorrectionReplacement(
-            replacementInput,
-          );
-      } catch (error: unknown) {
-        if (!this.reportsService.isDuplicateKeyError(error)) {
-          this.throwFailed();
-        }
-        replacement = await this.reportsService.findCorrectionReplacementByCode(
-          audit.replacementReportCode,
-        );
-        if (!replacement) {
+        const [collision] = collisions;
+        if (
+          collisions.length !== 1 ||
+          collision.reportCode !== audit.replacementReportCode ||
+          collision.reportVersion !== audit.replacementReportVersion ||
+          collision.reportType !== context.sourceReport.reportType ||
+          collision.patientId !== context.patientId ||
+          collision.assessmentVisitId !== context.visitId
+        ) {
           this.throwReplacementConflict();
+        }
+        replacement = collision;
+      } else {
+        const replacementInput = this.applyRule(() =>
+          buildClinicalReportReplacement({
+            sourceReport: context.sourceReport,
+            audit,
+            createdAt: new Date(),
+          }),
+        );
+        try {
+          replacement =
+            await this.reportsService.createCorrectionReplacement(
+              replacementInput,
+            );
+        } catch (error: unknown) {
+          if (!this.reportsService.isDuplicateKeyError(error)) {
+            this.throwFailed();
+          }
+          replacement =
+            await this.reportsService.findCorrectionReplacementByCode(
+              audit.replacementReportCode,
+            );
+          if (!replacement) {
+            this.throwReplacementConflict();
+          }
         }
       }
     }
