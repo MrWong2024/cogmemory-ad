@@ -41,6 +41,16 @@ export type ClinicalReportWritingAction = Exclude<
   'idle'
 > | null;
 
+export type ClinicalReportWorkflowIdentityTransition = {
+  kind: 'correction_replacement';
+  sourceReportId: string;
+  replacementReportId: string;
+};
+
+export type ApplyClinicalReportUpdateOptions = {
+  identityTransition?: ClinicalReportWorkflowIdentityTransition;
+};
+
 export type UseClinicalReportWorkflowOptions = {
   patientId: string;
   visitId: string;
@@ -98,6 +108,12 @@ export type ClinicalReportWorkflowState = {
 
 export type ClinicalReportWorkflowStateAction =
   | { type: 'RESET' }
+  | {
+      type: 'REPORT_IDENTITY_CHANGED';
+      previousReportId: string | null;
+      nextReportId: string | null;
+      expectedTransition: ClinicalReportWorkflowIdentityTransition | null;
+    }
   | {
       type: 'OPEN_EDIT';
       draft: ClinicalReportEditDraft;
@@ -287,7 +303,10 @@ export type ClinicalReportWorkflowCoordinator =
     execute: <Response>(
       options: ClinicalReportWorkflowExecuteOptions<Response>,
     ) => Promise<void>;
-    applyReportUpdate: (report: ClinicalReport) => void;
+    applyReportUpdate: (
+      report: ClinicalReport,
+      options?: ApplyClinicalReportUpdateOptions,
+    ) => void;
     refreshAfterError: (error: ClinicalReportApiError) => Promise<void>;
     refreshLatest: () => Promise<ClinicalReport | null>;
   };

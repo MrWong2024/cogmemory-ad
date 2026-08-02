@@ -4,10 +4,12 @@ import { refreshClinicalReportLatestAtMostOnce, toClinicalReportApiError } from 
 import {
   clinicalReportWorkflowReducer,
   createClinicalReportWorkflowState,
+  isExpectedClinicalReportCorrectionReplacement,
 } from '@/src/features/assessments/hooks/clinical-report-workflow/clinical-report-workflow.state';
 import type {
   ClinicalReportWorkflowCoordinator,
   ClinicalReportWorkflowExecuteOptions,
+  ClinicalReportWorkflowIdentityTransition,
   ClinicalReportWritingAction,
   UseClinicalReportWorkflowOptions,
 } from '@/src/features/assessments/hooks/clinical-report-workflow/clinical-report-workflow.types';
@@ -19,17 +21,34 @@ type CoordinatorOptions = Pick<
   | 'onUnauthorized'
   | 'onReportUpdated'
   | 'refreshLatest'
->;
+> & {
+  reportId: string | null;
+};
+
+type WorkflowIdentity = {
+  patientId: string;
+  visitId: string;
+  reportId: string | null;
+};
 
 export function useClinicalReportWorkflowCoordinator({
   patientId,
   visitId,
+  reportId,
   onUnauthorized,
   onReportUpdated,
   refreshLatest,
 }: CoordinatorOptions): ClinicalReportWorkflowCoordinator {
   const mountedRef = useRef(true);
   const writingRef = useRef<ClinicalReportWritingAction>(null);
+  const workflowIdentityRef = useRef<WorkflowIdentity>({
+    patientId,
+    visitId,
+    reportId,
+  });
+  const identityGenerationRef = useRef(0);
+  const expectedIdentityTransitionRef =
+    useRef<ClinicalReportWorkflowIdentityTransition | null>(null);
   const [state, dispatch] = useReducer(
     clinicalReportWorkflowReducer,
     undefined,
@@ -49,9 +68,31 @@ export function useClinicalReportWorkflowCoordinator({
   }, []);
 
   useEffect(() => {
+    const previousIdentity = workflowIdentityRef.current;
+    const routeChanged =
+      previousIdentity.patientId !== patientId ||
+      previousIdentity.visitId !== visitId;
+    const reportIdentityChanged = previousIdentity.reportId !== reportId;
+    if (!routeChanged && !reportIdentityChanged) return;
+
+    workflowIdentityRef.current = { patientId, visitId, reportId };
+    identityGenerationRef.current += 1;
     writingRef.current = null;
-    dispatch({ type: 'RESET' });
-  }, [patientId, visitId]);
+    const expectedTransition = expectedIdentityTransitionRef.current;
+    expectedIdentityTransitionRef.current = null;
+
+    if (routeChanged) {
+      dispatch({ type: 'RESET' });
+      return;
+    }
+
+    dispatch({
+      type: 'REPORT_IDENTITY_CHANGED',
+      previousReportId: previousIdentity.reportId,
+      nextReportId: reportId,
+      expectedTransition,
+    });
+  }, [patientId, visitId, reportId]);
 
   const setEditDraft = useCallback<
     ClinicalReportWorkflowCoordinator['setEditDraft']
@@ -187,8 +228,19 @@ export function useClinicalReportWorkflowCoordinator({
     dispatch({ type: 'CANCEL_CORRECTION' });
   }, []);
 
-  const applyReportUpdate = useCallback(
-    (report: Parameters<typeof onReportUpdated>[0]) => {
+  const applyReportUpdate = useCallback<
+    ClinicalReportWorkflowCoordinator['applyReportUpdate']
+  >(
+    (report, options) => {
+      const identityTransition = options?.identityTransition ?? null;
+      expectedIdentityTransitionRef.current =
+        isExpectedClinicalReportCorrectionReplacement(
+          workflowIdentityRef.current.reportId,
+          report.id,
+          identityTransition,
+        )
+          ? identityTransition
+          : null;
       onReportUpdated(report);
     },
     [onReportUpdated],
@@ -216,14 +268,25 @@ export function useClinicalReportWorkflowCoordinator({
       ) {
         return;
       }
+      const executionGeneration = identityGenerationRef.current;
       writingRef.current = action;
       dispatch({ type: 'BEGIN_WRITE', action, message: pendingMessage });
       try {
         const response = await request();
-        if (!mountedRef.current) return;
+        if (
+          !mountedRef.current ||
+          identityGenerationRef.current !== executionGeneration
+        ) {
+          return;
+        }
         onSuccess(response);
       } catch (requestError: unknown) {
-        if (!mountedRef.current) return;
+        if (
+          !mountedRef.current ||
+          identityGenerationRef.current !== executionGeneration
+        ) {
+          return;
+        }
         const error = toClinicalReportApiError(requestError);
         if (error.kind === 'unauthenticated') {
           onUnauthorized();
@@ -231,6 +294,7 @@ export function useClinicalReportWorkflowCoordinator({
         }
         await onError(error);
       } finally {
+        if (identityGenerationRef.current !== executionGeneration) return;
         writingRef.current = null;
         if (mountedRef.current) dispatch({ type: 'FINISH_WRITE' });
       }

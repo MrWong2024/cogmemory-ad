@@ -36,6 +36,7 @@ export function useClinicalReportWorkflow({
   const coordinator = useClinicalReportWorkflowCoordinator({
     patientId,
     visitId,
+    reportId: report?.id ?? null,
     onUnauthorized,
     onReportUpdated,
     refreshLatest,

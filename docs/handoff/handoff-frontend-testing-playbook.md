@@ -16,7 +16,7 @@
 | Batch D / B11 | 70 项已完成，状态不变 |
 | Batch D / B12 | 合同前置与防御证据保留；`B12-U01`～`B12-U03` 三个活动用户场景与最终通用门禁均已完成，状态 `passed=3`、`pending=0`、`failed=0`、`blocked=0`、`not_executed=0`；B12 Browser 验收闭环完成 |
 | Batch D / B13 | `B13-P0-contract-evidence` 继续完成且 `gap=0`；`B13-U01`～`B13-U03` 三个活动用户场景与 `B13-P4-final-gates` 均已完成，状态 `passed=3`、`pending=0`、`failed=0`、`blocked=0`、`not_executed=0`；B13 Browser 验收闭环完成 |
-| Batch D / B14（含 B14.1） | 已按当前 A24 合同独立重新生成 `B14-U01`、`B14-U02` 两个活动 Browser 场景，状态仍为 `passed=0`、`pending=2`、`failed=0`、`blocked=0`、`not_executed=0`；P0-G1 与 P0-G2 已关闭，C16 / P0-G3 因缺少 same-route report identity 完整 RESET 仍为 `gap`，权威明细见 10.2；B14.1 是累计证据索引，不是独立 Browser 批次 |
+| Batch D / B14（含 B14.1） | 已按当前 A24 合同独立重新生成 `B14-U01`、`B14-U02` 两个活动 Browser 场景，状态仍为 `passed=0`、`pending=2`、`failed=0`、`blocked=0`、`not_executed=0`；P0-G1～P0-G3 已关闭，C16 已由 shared Node-only 直接证据更新为 `covered`，`B14-P0-contract-evidence` 已完成且 `gap=0`，下一活动场景为 `B14-U01`；B14.1 是累计证据索引，不是独立 Browser 批次 |
 | Batch D / B15 | 原 10 组仍是未治理候选设计输入，尚未执行，本次不改写 |
 
 B12 治理前有 17 个混合层级活动场景，汇总为 `passed=4`、`pending=13`；治理后只保留 `B12-U01`～`B12-U03` 三个 `ui_reachable` Browser 场景，初始汇总为 `passed=0`、`pending=3`。U01～U03 完成后最终汇总为 `passed=3`、`pending=0`。这不是历史证据倒退：原已通过事实和当前精确测试继续有效，但迁入不分配 B12 活动 ID 的合同前置证据、非阻断防御证据或最终通用门禁，不再计作活动 Browser 业务场景。
@@ -304,7 +304,7 @@ B13 已按当前 A23 合同完成三个活动场景。B14 已以当前 A24 合�
 
 B13 与 B14 均采用“先生成当前最小活动设计，再反向迁移旧编号”的顺序。活动 ID 只分配给真实页面可达、风险不可互换、足以阻断发布且尚需 Browser 验证的用户场景；认证、权限、DTO、ownership、状态机、幂等、合法并发、pure/static、兼容或防御分支和通用门禁分别归入最低充分证据层。原逐条正文由 Git 历史追溯，当前文档只保留紧凑迁移表。
 
-`B13-P0-contract-evidence` 已完成且合同前置证据 `gap=0`；`B13-U01`～`B13-U03` 与 `B13-P4-final-gates` 均已完成，B13 Browser 验收闭环完成。B14 已关闭 P0-G1 真实双 Session HTTP 并发缺口；P0-G2 的 C12/C13 已由 Archive Node-only contract spec 关闭。C16 / P0-G3 的 reducer、单写锁、统一报告应用、route reset 与唯一 beforeunload 已有直接证据，但同一 patientId/visitId 下 `report.id` 变化不会触发完整 RESET，因此仍为 `gap`；`B14-P0-contract-evidence` 尚未完成，`B14-U01`、`B14-U02` 尚未执行。B15 未治理且未执行。
+`B13-P0-contract-evidence` 已完成且合同前置证据 `gap=0`；`B13-U01`～`B13-U03` 与 `B13-P4-final-gates` 均已完成，B13 Browser 验收闭环完成。B14 已关闭 P0-G1 真实双 Session HTTP 并发缺口与 P0-G2 的 C12/C13 Archive Node-only 合同。P0-G3 现由 shared Node-only spec 直接证明 route change 与 unexpected same-route report identity change 完整隔离、合法 correction replacement 保真及 identity generation 在途失效；C16 更新为 `covered`，`B14-P0-contract-evidence` 已完成且 `gap=0`。下一活动场景为 `B14-U01`；`B14-U01`、`B14-U02` 尚未执行，B15 未治理且未执行。
 
 ### 10.1 B13 报告来源冻结：重新生成后的活动验收设计
 
@@ -472,7 +472,7 @@ A24 是对单个 `ClinicalReport` 的一次原子归档：没有正式 `in_progr
 | `B14-U01` 页面入口、代表性角色与归档后只读 | `ui_reachable` | `B14-P1-entry-readonly` | `pending` |
 | `B14-U02` 首次真实归档、用户回执与持久摘要 | `ui_reachable` | `B14-P2-first-archive` | `pending` |
 
-活动汇总继续固定为 `passed=0`、`pending=2`、`failed=0`、`blocked=0`、`not_executed=0`。P0-G1 已通过定向 A24 HTTP E2E 动态关闭，P0-G2 已通过 frontend Node-only 合同测试关闭；两者都不拥有 Browser 活动 ID。P0-G3 仍有一个产品合同 gap，P1～P3 与 B14-U01/U02 仍未执行，不能由非 Browser 证据推定通过。
+活动汇总继续固定为 `passed=0`、`pending=2`、`failed=0`、`blocked=0`、`not_executed=0`。P0-G1 已通过定向 A24 HTTP E2E 动态关闭，P0-G2 与 P0-G3 已通过 frontend Node-only 合同测试关闭；三者都不拥有 Browser 活动 ID。`B14-P0-contract-evidence` 已完成，下一活动场景为 `B14-U01`；P1～P3 与 B14-U01/U02 仍未执行，不能由非 Browser 证据推定通过。
 
 #### 10.2.2 `B14-U01` 页面入口、代表性角色与归档后只读
 
@@ -502,7 +502,7 @@ A24 是对单个 `ClinicalReport` 的一次原子归档：没有正式 `in_progr
 
 | Profile | 职责 | 活动 ID |
 |---|---|---|
-| `B14-P0-contract-evidence` | 复用后端合同、frontend pure/static、B14.1 shared evidence、compatibility / defensive 证据并关闭确认 gap；当前 C12/C13 已关闭，C16 因 same-route report identity reset 缺失仍未完成；不执行 Browser | 无 |
+| `B14-P0-contract-evidence` | 已完成：复用后端合同、frontend pure/static、B14.1 shared evidence、compatibility / defensive 证据并关闭全部确认 gap；C12/C13 与 C16 均已关闭，本 Profile 不执行 Browser | 无 |
 | `B14-P1-entry-readonly` | 执行代表性 doctor/nurse 与 ready/archived 两状态的入口、取消、未发 POST 与归档后只读 | `B14-U01` |
 | `B14-P2-first-archive` | 执行一次首次真实归档、回执、刷新持久摘要、代表性可用性与后置数据库证据 | `B14-U02` |
 | `B14-P3-final-gates` | 在 B14 最终代码态执行一次通用门禁与轻量跨层 Browser 冒烟 | 无 |
@@ -511,7 +511,7 @@ A24 是对单个 `ClinicalReport` 的一次原子归档：没有正式 `in_progr
 
 #### 10.2.5 不分配 B14 活动 ID 的合同与非 Browser 证据
 
-“当前状态”记录可定位的已有证据；B14-C11 记录定向 HTTP E2E 动态证据，C12/C13 与 C16 的可取证部分记录本轮 Node-only 动态证据；其他行不因本轮只读复用而视为重新动态执行。
+“当前状态”记录可定位的已有证据；B14-C11 记录定向 HTTP E2E 动态证据，C12/C13 与 C16 记录各自 Node-only 动态证据；其他行不因本轮只读复用而视为重新动态执行。
 
 | 编号 | 风险或合同 | 可达性分类 | 最低充分证据层 | 当前精确测试文件及可定位测试名称 | 当前状态 | 后续定向任务 | 缺口说明 |
 |---|---|---|---|---|---|---|---|
@@ -530,11 +530,11 @@ A24 是对单个 `ClinicalReport` 的一次原子归档：没有正式 `in_progr
 | B14-C13 | Archive Action：一次 POST；受控错误 latest 最多一次；网络错误不自动 latest；不重放 POST | `frontend_static_or_pure` | `frontend_static_or_pure` | `frontend/test/browser-acceptance/contracts/b14-archive-non-browser.spec.ts` — `C13 classifies latest refresh and archive write prohibition without replay`、`C13 keeps one archive POST boundary and separates success, error, and manual latest`、`C13 keeps role, note confirmation reset, and baseline staleness bounded` | `covered` | 否 | 真实共享 recovery functions 证明 not-archivable/conflict/failed 各最多一次 latest，network 为 0 次；audit/metadata/lineage 禁止写入而普通 conflict/failed 不升级。Action 有界结构证明唯一生产 POST 位于 coordinator request，成功统一应用完整 report，错误只调用一次共享恢复且不自动 replay/retry/poll，手工 latest 独立。 |
 | B14-C14 | generic conflict 是否有正式 UI/API 可达路径 | `internal_corruption_only` | 可达性审查 + 已有防御 E2E | A24 E2E — `returns optimistic conflict and supports historical corrected fallback` 通过直接更新 `operatorNote` 制造 updatedAt 变化 | `retired_currently_unreachable` | 否 | 现有公开路由中不存在只改同一份 ready 报告 updatedAt 且保持可首次归档的操作链；另一用户已归档属合法并发+幂等，不是 generic conflict。 |
 | B14-C15 | audit unavailable、metadata unsupported、anchor/时间/actor 不一致与非法内部结构 | `internal_corruption_only` | `backend_unit` + `frontend_static_or_pure` | `clinical-report-archive.spec.ts` — `rejects inconsistent or malformed archive facts`；mapper A24 safe mapping 测试；A24 直接改库 conflict E2E | `supplemental_defensive` | 否 | 只能直接改库或损坏内部结构形成；廉价防御证据保留，不阻断 U01/U02。 |
-| B14-C16 | B14.1 shared façade/coordinator/reducer/beforeunload/report identity reset 累计证据 | `frontend_static_or_pure` + `ui_reachable` | `frontend_static_or_pure` + 代表性 `browser_micro_profile` | `frontend/test/browser-acceptance/contracts/clinical-report-workflow-shared-non-browser.spec.ts` 直接覆盖安全初态/RESET、activeMode 与 draft 互斥、BEGIN/FINISH_WRITE、CANCEL_ALL、COMPLETE_ARCHIVE，并有界核对唯一 writingRef、execute 三重 guard/finally、统一 `onReportUpdated`、共享 latest、七 Action 共用 coordinator、route RESET 与唯一 beforeunload；B11～B13 代表性 Browser 证据继续承担动作行为 | `gap` | 是，P0-G3 | reducer 与 shared coordinator/façade 的其余最低充分证据已通过；但 coordinator options 不含 report identity，RESET effect 仅依赖 `[patientId, visitId]`，façade 未传 `report.id`。同一路由 report 改变时各 Action 最多使自己的 draft stale，不能清理其他 draft/error/receipt/liveMessage，故不能写成 covered。 |
+| B14-C16 | B14.1 shared façade/coordinator/reducer/beforeunload/report identity reset 累计证据 | `frontend_static_or_pure` + `ui_reachable` | `frontend_static_or_pure` + 代表性 `browser_micro_profile` | `frontend/test/browser-acceptance/contracts/clinical-report-workflow-shared-non-browser.spec.ts` 直接覆盖安全初态/RESET、activeMode 与 draft 互斥、BEGIN/FINISH_WRITE、CANCEL_ALL、COMPLETE_ARCHIVE、unexpected same-route identity 完整 RESET、expected correction replacement 精确保真与非法保真降级；有界核对 façade 传稳定 `reportId`、route RESET 优先、服务端 receipt 声明一次性 transition、identity generation 废止旧 success/error/finally、唯一 writingRef、统一 `onReportUpdated`、共享 latest、七 Action 共用 coordinator 与唯一 beforeunload；B11～B13 代表性 Browser 证据继续承担动作行为 | `covered` | 否 | route 改变始终完整 RESET；unexpected same-route report change 清空全部旧 draft/error/receipt/sourceReport/liveMessage/writeProhibited 与写状态。只有 receipt 的 source/replacement 与实际 A→B 精确一致时保留本次 correction receipt/sourceReport/liveMessage，同时清除其他 workflow 状态；generation 变化后旧请求不能写回或清除新 writingRef。 |
 | B14-C17 | archived 下 edit/submit/confirm/lock/freeze/archive 的页面与 API 边界 | `ui_reachable` + `public_api_reachable` | 跨批次 Browser + `backend_http_e2e` | B11 `final-readonly.spec.ts` — `archived-readonly owns the archived half of B11-54`；B12 U01 locked readonly；B13 U01 completed readonly；A24 E2E 归档后 A20–A23 幂等调用 | `duplicate_or_covered` | 否；当前页面总结于 U01 | 既有跨批次证据与 U01 的一次当前页面验收即充分，不为每个入口创建 ID。 |
 | B14-C18 | archive 动作不自动触发 correction、void、PDF、download 或 AI | `public_api_reachable` + `frontend_static_or_pure` | `backend_unit` + `backend_http_e2e` + U02 后置证据 | `backend/src/modules/reports/services/reports.service.spec.ts` — `atomically archives only the unchanged completed-source-freeze report`；`backend/test/clinical-report-archive.e2e-spec.ts` — `archives once, preserves frozen facts, maps latest and is idempotent`；`backend/test/clinical-report-correction.e2e-spec.ts` — `runs V2 and V3 lifecycles without rewriting shared frozen sources` | `covered_by_layered_evidence` | 否 | 旧“没有 correction”已过时；持久边界只是归档动作本身不自动串联相邻写入，U02 再验当前页面与数据库结果。 |
 
-分类汇总：`covered=9`、`covered_by_layered_evidence=4`、`duplicate_or_covered=1`、`gap=1`、`supplemental_defensive=1`、`supplemental_compatibility=1`、`retired_currently_unreachable=1`、`retired_obsolete=0`，共 18 行。C12/C13 已关闭；唯一剩余 gap 为 C16 的 same-route report identity 完整 RESET。`B14-P0-contract-evidence` 因此仍未完成，不得进入 U01；后续最小范围是产品层让 coordinator 接收稳定 report identity 并在同一路由身份变化时清空 writingRef、dispatch RESET，再以现有 shared Node-only spec 增加直接证据。不得恢复 B14.1 大型 Browser suite 或七动作全排列。
+分类汇总：`covered=10`、`covered_by_layered_evidence=4`、`duplicate_or_covered=1`、`gap=0`、`supplemental_defensive=1`、`supplemental_compatibility=1`、`retired_currently_unreachable=1`、`retired_obsolete=0`，共 18 行。C12/C13/C16 已关闭，`B14-P0-contract-evidence` 已完成；下一活动场景为 `B14-U01`。`B14-U01/U02` 继续保持 `passed=0`、`pending=2`、`failed=0`、`blocked=0`、`not_executed=0`，本轮未执行 Browser。不得恢复 B14.1 大型 Browser suite 或七动作全排列。
 
 #### 10.2.6 兼容与防御证据
 
@@ -598,13 +598,13 @@ generic conflict 审查遍历了当前报告公开端点：generate、draft edit
 
 迁移表必须经不落盘计数核对：目标是覆盖 115、缺号 0、重复 0；第 99 项唯一归入 `retired_obsolete`，不得将同一编号同时归入活动与退役。
 
-#### 10.2.10 确认 gap 与下一步
+#### 10.2.10 P0 gap 关闭结论与下一步
 
-| Gap | 真实触发路径 | 现有证据 | 缺失证据 | 最低充分层 | 可否合并 |
+| 已关闭 Gap | 真实触发路径 | 既有证据 | 本轮闭合证据 | 最低充分层 | 处置 |
 |---|---|---|---|---|---|
-| P0-G3 | 同一 mounted workflow 中报告身份变化，或某一 action 正在写时另一 action 尝试打开/提交 | shared Node-only spec 已直接覆盖 reducer 互斥/RESET/BEGIN/FINISH/COMPLETE_ARCHIVE、单 writingRef、execute guard/finally、统一 `onReportUpdated`、route reset 与唯一 beforeunload；B11–B13 代表性 Browser 继续有效 | 同一 `patientId/visitId` 下 `report.id` 改变时完整清理旧 draft/error/receipt/liveMessage，并清空 writingRef 的产品路径与直接测试 | `frontend_static_or_pure` | 产品最小修复后扩展现有 shared spec；不建七 action 全排列 |
+| P0-G3 | 同一 mounted workflow 中发生 unexpected 或本地 correction 产生的 report identity 变化；旧请求仍在途时新 identity 可开始新的写入 | shared Node-only spec 已直接覆盖 reducer 互斥/RESET/BEGIN/FINISH/COMPLETE_ARCHIVE、单 writingRef、统一 `onReportUpdated`、route reset 与唯一 beforeunload；B11–B13 代表性 Browser 继续有效 | coordinator 接收 façade 的稳定 `report?.id ?? null`；route change 始终完整 RESET，unexpected same-route change 完整隔离；服务端 correction receipt 精确声明一次性 A→B transition，reducer 仅在 receipt/sourceReport 完整且完全匹配时保留 correction completion；identity generation 使旧 success/error/finally 失效，旧 finally 不能清除新锁；现有 shared spec 直接覆盖这些合同 | `frontend_static_or_pure` | 已关闭；不建 Hook framework 或七 Action 全排列 |
 
-P0-G1 已由真实双 Session HTTP 并发关闭；P0-G2 已由本轮 Archive Node-only spec 关闭。P0-G3 的 shared reducer/coordinator/façade 可取证部分已通过，但 same-route report identity reset 缺少产品路径，仍是唯一 gap。`B14-P0-contract-evidence` 保持未完成，下一活动项仍是 P0-G3 的最小产品修复与现有 shared spec 扩展；不得提前执行 P1/U01、P2/U02 或 P3，也不得恢复 B14.1 大型 Browser suite。
+P0-G1 已由真实双 Session HTTP 并发关闭，P0-G2 已由 Archive Node-only spec 关闭，P0-G3 已由本轮 shared 产品修复与 Node-only 直接证据关闭。`B14-P0-contract-evidence` 已完成且 `gap=0`，下一活动场景为 `B14-U01`；本轮未执行 P1/U01、P2/U02、P3 或任何 Browser，U01/U02 继续 pending。不得恢复 B14.1 大型 Browser suite。
 
 ### 10.3 B14.1 工作流结构等价性：累计证据索引
 
@@ -619,7 +619,7 @@ B14.1 不是独立业务能力，不拥有独立 Browser 活动 ID，也不再�
 | Edit / Submit / Confirm | B11 | B11 的 edit、concurrency、submission、confirmation、final-readonly 等正式 Browser 证据已完成；继续承担本动作真实行为。 |
 | Lock | B12 | `B12-U01`～`B12-U03` 与 `b12-lock-non-browser.spec.ts` 已覆盖入口/只读、首次 lock、认证/网络/草稿/beforeunload 与 lock recovery。 |
 | Source-freeze | B13 | `B13-U01`～`B13-U03` 与 `b13-source-freeze-non-browser.spec.ts` 已覆盖 start/completed/in_progress、首次真实 freeze、显式恢复、网络不确定与 no replay/polling。 |
-| Archive | B14 | C12/C13 的 Archive pure/static 与 Action recovery 已由 `b14-archive-non-browser.spec.ts` 覆盖；C16 / P0-G3 的 same-route identity reset 仍待最小产品修复。`B14-U01/U02` 继续 pending，之后承担入口/只读与首次真实归档的代表性 Browser 行为。 |
+| Archive | B14 | C12/C13 的 Archive pure/static 与 Action recovery 已由 `b14-archive-non-browser.spec.ts` 覆盖；C16 / P0-G3 已由 shared spec 覆盖 unexpected identity 完整隔离、expected correction replacement 保真与在途 generation 失效。`B14-U01/U02` 继续 pending，之后承担入口/只读与首次真实归档的代表性 Browser 行为。 |
 | Correction | B15 | 仍由 B15 承担，尚未治理和执行；correction 专属行为不是 B14 关闭前提，B15 pending 不得写成 B14.1 失败。 |
 
 共享行为不执行七类动作的全排列组合，而是按最低充分层累计取证：
@@ -627,13 +627,13 @@ B14.1 不是独立业务能力，不拥有独立 Browser 活动 ID，也不再�
 | shared 合同 | 分层证据索引 | 当前处置 |
 |---|---|---|
 | `activeMode` 互斥、`writingAction`/单一 `writingRef` 互斥 | `clinical-report-workflow-shared-non-browser.spec.ts` reducer 直接测试与 coordinator 有界结构证据 + B11～B13 代表性 Browser | 已直接覆盖 OPEN 互斥、BEGIN/FINISH、取消写保护与唯一 writingRef/execute guard；不建七 action 全组合。 |
-| route/report identity reset | shared spec 的 RESET 直接测试与 coordinator/façade 有界结构核对 | patientId/visitId 变化会清 writingRef 并 RESET；same-route `report.id` 未进入 coordinator options/effect，只会触发各 Action 局部 stale，不能清理全部旧状态，故 C16 / P0-G3 保持 gap。 |
+| route/report identity reset | shared spec 的 reducer/pure 直接测试与 coordinator/façade/correction Action 有界结构核对 | patientId/visitId 变化始终完整 RESET；unexpected same-route `report.id` 变化完整清理旧 workflow，expected correction A→B 只在服务端 receipt 与实际 identity 精确匹配时保留当前 correction receipt/sourceReport/liveMessage；其他状态清理，identity generation 废止旧请求且保护新 writingRef。C16 / P0-G3 已关闭。 |
 | 成功报告统一应用 `onReportUpdated` | shared spec 有界证明 coordinator `applyReportUpdate` 仅调用传入的 `onReportUpdated(report)`，B11～B13 成功 Browser 继续有效 | 已获得可定位最低充分结构证据；不复制七类 Browser。 |
 | latest 最多一次 | `b12-lock-non-browser.spec.ts`、`b13-source-freeze-non-browser.spec.ts`、`b14-archive-non-browser.spec.ts` + 对应 Browser | shared helper 与 Archive 特定错误分类均已有直接证据；network 自动 latest 为 0。 |
 | 唯一 beforeunload | shared spec 对 façade 的有界结构核对 + B12-U03/B13-U03 真实 Browser | 只调用一次 `useClinicalReportBeforeUnload` 且包含 archive dirty；代表性归档可用性仍附着 U02，不建独立 Profile。 |
 | 不自动 retry/poll；草稿不持久化 | B12/B13 Node-only + Browser；B14 Archive Node-only 有界 Action 证据 | Archive 无自动 POST replay/retry/poll，手工 latest 独立；刷新后 receipt/summary 仍归 U02，不建 network/Storage 独立 Profile。 |
 
-若后续又发现其他 shared 行为没有最低充分证据，必须进入 B14 P0 合同表，写明最低充分层；不得恢复 B14.1 大型 Browser suite，也不得创建跨七个 Action 的全量组合测试。B14 完成后只可记录“shared workflow through archive 已有累计证据”；correction mode 仍由 B15 负责。
+若后续又发现其他 shared 行为没有最低充分证据，必须进入相应合同表并写明最低充分层；不得恢复 B14.1 大型 Browser suite，也不得创建跨七个 Action 的全量组合测试。当前只记录“shared workflow through archive 已有累计证据”；correction 的真实用户页面证明仍由 B15 负责，B15 pending 不阻断 B14 P0 shared contract。
 
 ### 10.4 B15 版本化更正：10 组
 

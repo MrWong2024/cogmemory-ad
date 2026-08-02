@@ -1,7 +1,24 @@
 import type {
+  ClinicalReportWorkflowIdentityTransition,
   ClinicalReportWorkflowState,
   ClinicalReportWorkflowStateAction,
 } from '@/src/features/assessments/hooks/clinical-report-workflow/clinical-report-workflow.types';
+
+export function isExpectedClinicalReportCorrectionReplacement(
+  previousReportId: string | null,
+  nextReportId: string | null,
+  transition: ClinicalReportWorkflowIdentityTransition | null,
+): boolean {
+  return Boolean(
+    transition &&
+      transition.kind === 'correction_replacement' &&
+      transition.sourceReportId.trim().length > 0 &&
+      transition.replacementReportId.trim().length > 0 &&
+      transition.sourceReportId !== transition.replacementReportId &&
+      previousReportId === transition.sourceReportId &&
+      nextReportId === transition.replacementReportId,
+  );
+}
 
 export function createClinicalReportWorkflowState(): ClinicalReportWorkflowState {
   return {
@@ -70,6 +87,42 @@ function resolveValue<Value>(
     : value;
 }
 
+function resetForReportIdentityChange(
+  state: ClinicalReportWorkflowState,
+  previousReportId: string | null,
+  nextReportId: string | null,
+  expectedTransition: ClinicalReportWorkflowIdentityTransition | null,
+): ClinicalReportWorkflowState {
+  const receipt = state.correction.receipt;
+  const sourceReport = state.correction.sourceReport;
+  if (
+    !isExpectedClinicalReportCorrectionReplacement(
+      previousReportId,
+      nextReportId,
+      expectedTransition,
+    ) ||
+    !expectedTransition ||
+    !receipt ||
+    !sourceReport ||
+    receipt.sourceReportId !== expectedTransition.sourceReportId ||
+    receipt.replacementReportId !== expectedTransition.replacementReportId ||
+    sourceReport.id !== expectedTransition.sourceReportId
+  ) {
+    return createClinicalReportWorkflowState();
+  }
+
+  return {
+    ...createClinicalReportWorkflowState(),
+    correction: {
+      draft: null,
+      error: null,
+      receipt,
+      sourceReport,
+    },
+    liveMessage: state.liveMessage,
+  };
+}
+
 export function clinicalReportWorkflowReducer(
   state: ClinicalReportWorkflowState,
   action: ClinicalReportWorkflowStateAction,
@@ -77,6 +130,13 @@ export function clinicalReportWorkflowReducer(
   switch (action.type) {
     case 'RESET':
       return createClinicalReportWorkflowState();
+    case 'REPORT_IDENTITY_CHANGED':
+      return resetForReportIdentityChange(
+        state,
+        action.previousReportId,
+        action.nextReportId,
+        action.expectedTransition,
+      );
     case 'OPEN_EDIT': {
       const next = prepareOpen(state);
       return {

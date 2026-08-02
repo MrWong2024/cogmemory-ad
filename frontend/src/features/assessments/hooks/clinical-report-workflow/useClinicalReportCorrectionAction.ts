@@ -259,8 +259,14 @@ export function useClinicalReportCorrectionAction({
           buildCreateClinicalReportCorrectionRequest(correctionDraft),
         ),
       onSuccess: (response) => {
-        coordinator.applyReportUpdate(response.replacementReport);
         const receipt = response.correctionReceipt;
+        coordinator.applyReportUpdate(response.replacementReport, {
+          identityTransition: {
+            kind: 'correction_replacement',
+            sourceReportId: receipt.sourceReportId,
+            replacementReportId: receipt.replacementReportId,
+          },
+        });
         coordinator.completeCorrection(
           receipt,
           response.sourceReport,
