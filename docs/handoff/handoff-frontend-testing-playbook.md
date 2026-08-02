@@ -17,7 +17,7 @@
 | Batch D / B12 | 合同前置与防御证据保留；`B12-U01`～`B12-U03` 三个活动用户场景与最终通用门禁均已完成，状态 `passed=3`、`pending=0`、`failed=0`、`blocked=0`、`not_executed=0`；B12 Browser 验收闭环完成 |
 | Batch D / B13 | `B13-P0-contract-evidence` 继续完成且 `gap=0`；`B13-U01`～`B13-U03` 三个活动用户场景与 `B13-P4-final-gates` 均已完成，状态 `passed=3`、`pending=0`、`failed=0`、`blocked=0`、`not_executed=0`；B13 Browser 验收闭环完成 |
 | Batch D / B14（含 B14.1） | `B14-U01`、`B14-U02` 均已完成；活动状态为 `passed=2`、`pending=0`、`failed=0`、`blocked=0`、`not_executed=0`。`B14-P0-contract-evidence` 完成且 `gap=0`，`B14-P1-entry-readonly`、`B14-P2-first-archive`、`B14-P3-final-gates` 均已完成，B14 Browser 验收闭环完成；B14.1 仍是累计证据索引而非独立 Browser 批次 |
-| Batch D / B15 | 当前 A25 合同的活动设计治理已完成，只保留 `B15-U01`、`B15-U02` 两个活动场景；状态 `passed=0`、`pending=2`、`failed=0`、`blocked=0`、`not_executed=0`。C10 已由真实 doctor/admin 双 Session HTTP/DB 并发证据关闭；C08、C13、C14 已由同一份 correction Node-only owner spec 关闭，`B15-P0-contract-evidence` 完成且 P0 `gap=0`。真实 Browser 尚未执行，下一活动场景为 `B15-U01` |
+| Batch D / B15 | 当前 A25 合同只保留 `B15-U01`、`B15-U02` 两个活动场景；`B15-U01` 首次真实版本化更正与当前会话切换已通过，状态 `passed=1`、`pending=1`、`failed=0`、`blocked=0`、`not_executed=0`。C10、C08、C13、C14 与 C16 均已关闭，`B15-P0-contract-evidence` 完成且 P0 `gap=0`，`B15-P1-first-correction` 完成；下一活动场景为 `B15-U02` |
 
 B12 治理前有 17 个混合层级活动场景，汇总为 `passed=4`、`pending=13`；治理后只保留 `B12-U01`～`B12-U03` 三个 `ui_reachable` Browser 场景，初始汇总为 `passed=0`、`pending=3`。U01～U03 完成后最终汇总为 `passed=3`、`pending=0`。这不是历史证据倒退：原已通过事实和当前精确测试继续有效，但迁入不分配 B12 活动 ID 的合同前置证据、非阻断防御证据或最终通用门禁，不再计作活动 Browser 业务场景。
 
@@ -304,7 +304,7 @@ B13 已按当前 A23 合同完成三个活动场景。B14 已以当前 A24 合�
 
 B13 与 B14 均采用“先生成当前最小活动设计，再反向迁移旧编号”的顺序。活动 ID 只分配给真实页面可达、风险不可互换、足以阻断发布且尚需 Browser 验证的用户场景；认证、权限、DTO、ownership、状态机、幂等、合法并发、pure/static、兼容或防御分支和通用门禁分别归入最低充分证据层。原逐条正文由 Git 历史追溯，当前文档只保留紧凑迁移表。
 
-`B13-P0-contract-evidence` 已完成且合同前置证据 `gap=0`；`B13-U01`～`B13-U03` 与 `B13-P4-final-gates` 均已完成，B13 Browser 验收闭环完成。B14 已关闭 P0-G1 真实双 Session HTTP 并发缺口与 P0-G2 的 C12/C13 Archive Node-only 合同。P0-G3 现由 shared Node-only spec 直接证明 route change 与 unexpected same-route report identity change 完整隔离、合法 correction replacement 保真及 identity generation 在途失效；C16 更新为 `covered`，`B14-P0-contract-evidence` 已完成且 `gap=0`。`B14-U01`、`B14-U02` 与 P1/P2/P3 均已完成，B14 Browser 验收闭环完成。B15 的 C10 已关闭，C08/C13/C14 也已由 correction Node-only contract spec 关闭；`B15-P0-contract-evidence` 完成且 P0 `gap=0`。U01/U02 和最终门禁仍尚未执行。
+`B13-P0-contract-evidence` 已完成且合同前置证据 `gap=0`；`B13-U01`～`B13-U03` 与 `B13-P4-final-gates` 均已完成，B13 Browser 验收闭环完成。B14 已关闭 P0-G1 真实双 Session HTTP 并发缺口与 P0-G2 的 C12/C13 Archive Node-only 合同。P0-G3 现由 shared Node-only spec 直接证明 route change 与 unexpected same-route report identity change 完整隔离、合法 correction replacement 保真及 identity generation 在途失效；C16 更新为 `covered`，`B14-P0-contract-evidence` 已完成且 `gap=0`。`B14-U01`、`B14-U02` 与 P1/P2/P3 均已完成，B14 Browser 验收闭环完成。B15 的 C10、C08、C13、C14 已由分层合同证据关闭；`B15-U01` 的真实 Browser 与后置数据库验证进一步关闭 C16，`B15-P0-contract-evidence` 和 `B15-P1-first-correction` 均已完成。U02 与最终门禁仍尚未执行。
 
 ### 10.1 B13 报告来源冻结：重新生成后的活动验收设计
 
@@ -624,7 +624,7 @@ B14.1 不是独立业务能力，不拥有独立 Browser 活动 ID，也不再�
 | Lock | B12 | `B12-U01`～`B12-U03` 与 `b12-lock-non-browser.spec.ts` 已覆盖入口/只读、首次 lock、认证/网络/草稿/beforeunload 与 lock recovery。 |
 | Source-freeze | B13 | `B13-U01`～`B13-U03` 与 `b13-source-freeze-non-browser.spec.ts` 已覆盖 start/completed/in_progress、首次真实 freeze、显式恢复、网络不确定与 no replay/polling。 |
 | Archive | B14 | C12/C13 的 Archive pure/static 与 Action recovery 已由 `b14-archive-non-browser.spec.ts` 覆盖；C16 / P0-G3 已由 shared spec 覆盖 unexpected identity 完整隔离、expected correction replacement 保真与在途 generation 失效。`B14-U01` 已完成入口/代表性角色/归档后只读与零写入 Browser 证据；`B14-U02` 已完成首次真实归档、当前会话回执、刷新后持久摘要及唯一 A24 后置验证。Correction 专属用户行为仍归 B15，不恢复 B14.1 独立 Browser suite。 |
-| Correction | B15 | `b15-correction-non-browser.spec.ts` 已直接覆盖 correction pure/static、Action recovery 与 persisted resume privacy；shared Node-only spec 继续覆盖 expected correction identity transition、same-route 身份隔离、identity generation、旧请求失效、单一 writingRef 与唯一 beforeunload。真实首次页面、显式恢复、网络不确定结果、当前会话切换与刷新边界仍由 `B15-U01`、`B15-U02` 负责；不恢复 B14.1 独立 Browser suite，不得把 Node-only 证据写成 Browser 已通过。 |
+| Correction | B15 | `b15-correction-non-browser.spec.ts` 已直接覆盖 correction pure/static、Action recovery 与 persisted resume privacy；shared Node-only spec 继续覆盖 expected correction identity transition、same-route 身份隔离、identity generation、旧请求失效、单一 writingRef 与唯一 beforeunload。`B15-U01` 已由 `u01-first-correction.spec.ts` 与 `b15-browser-fixtures.ts` 的 `u01-post-correction` verifier 完成首次真实页面、当前会话切换和刷新持久 lineage；显式恢复与网络不确定结果仍由 `B15-U02` 负责。不恢复 B14.1 独立 Browser suite。 |
 
 共享行为不执行七类动作的全排列组合，而是按最低充分层累计取证：
 
@@ -637,7 +637,7 @@ B14.1 不是独立业务能力，不拥有独立 Browser 活动 ID，也不再�
 | 唯一 beforeunload | shared spec 对 façade 的有界结构核对 + B12-U03/B13-U03 真实 Browser | 只调用一次 `useClinicalReportBeforeUnload` 且包含 archive dirty；代表性归档可用性仍附着 U02，不建独立 Profile。 |
 | 不自动 retry/poll；草稿不持久化 | B12/B13 Node-only + Browser；B14 Archive 与 B15 Correction Node-only 有界 Action 证据 | Archive/Correction 均无自动 POST replay/retry/poll，手工 latest 与错误恢复独立；correction 刷新、DOM/Storage/URL 真实边界仍归 `B15-U02`，不建 B14.1 独立 Profile。 |
 
-若后续又发现其他 shared 行为没有最低充分证据，必须进入相应合同表并写明最低充分层；不得恢复 B14.1 大型 Browser suite，也不得创建跨七个 Action 的全量组合测试。当前只记录“shared workflow through archive 已有累计证据”；correction 的真实用户页面证明仍由 B15 负责，B15 pending 不阻断 B14 P0 shared contract。
+若后续又发现其他 shared 行为没有最低充分证据，必须进入相应合同表并写明最低充分层；不得恢复 B14.1 大型 Browser suite，也不得创建跨七个 Action 的全量组合测试。当前累计记录 shared workflow through archive 与 B15-U01 首次 correction Browser 证据；B15-U02 的真实恢复证明仍由 B15 负责，B15 剩余 pending 不阻断 B14 P0 shared contract。
 
 ### 10.4 B15 版本化更正：按当前 A25 合同重新生成
 
@@ -647,10 +647,10 @@ B15 从当前 controller、DTO、workflow、原子更新、mapper、frontend cor
 
 | 活动场景 | 分类 | Profile | 状态 |
 |---|---|---|---|
-| `B15-U01` 首次真实版本化更正与当前会话切换 | `ui_reachable` | `B15-P1-first-correction` | `pending` |
+| `B15-U01` 首次真实版本化更正与当前会话切换 | `ui_reachable` | `B15-P1-first-correction` | `passed` |
 | `B15-U02` 显式恢复与网络不确定结果 | `ui_reachable` | `B15-P2-recovery-uncertain-result` | `pending` |
 
-活动 ID 恰好为 `B15-U01`、`B15-U02`，不创建 `B15-U03`。当前汇总恰好为：`passed=0 / pending=2 / failed=0 / blocked=0 / not_executed=0`。C10 的后端动态证据与 C08/C13/C14 的 correction Node-only 证据均已关闭；没有执行 U01、U02 或 Browser。下一活动场景为 `B15-U01`。
+活动 ID 恰好为 `B15-U01`、`B15-U02`，不创建 `B15-U03`。当前汇总恰好为：`passed=1 / pending=1 / failed=0 / blocked=0 / not_executed=0`。C10 的后端动态证据、C08/C13/C14 的 correction Node-only 证据与 C16 的 U01 Browser/DB 证据均已关闭；U02 与 P3 尚未执行。下一活动场景为 `B15-U02`。
 
 #### 10.4.2 `B15-U01` 首次真实版本化更正与当前会话切换
 
@@ -662,6 +662,8 @@ B15 从当前 controller、DTO、workflow、原子更新、mapper、frontend cor
 - 动作隔离：不自动 edit、submit、confirm、lock、freeze、archive、void、PDF/download 或 AI；页面不显示 metadata、原始 correctionRecords、内部 lineage/correction/source ID。
 - 后置证据：source 唯一 corrected、replacement 唯一创建、无 V3/branch；双向 anchors 一致；受保护报告事实、Patient、Visit、五类来源与 Storage 不变；独立 A25 AuditLog=0，未自动写入 A21～A24。
 - 发布阻断风险：重复/分支版本、错误 actor/anchor、旧报告回执串入新 identity、隐私泄露或自动串联任何后续生命周期都会破坏不可逆临床事实和当前会话可追溯性。
+
+执行结果（2026-08-03）：`passed`。`backend/scripts/b15-browser-fixtures.ts` 以 Profile `B15-P1-first-correction` 和唯一场景 `first-correction-ready` 建立 schemaVersion 1 的安全 runtime descriptor；prepare 与 prepared verifier 证明 latest 为唯一 archived V1，A21/A22/A23/A24 完整，V2/V3 与 completed A25 均为 0。`frontend/test/browser-acceptance/b15/u01-first-correction.spec.ts` discovery 精确为 1 个文件/1 条测试；Chromium headless、workers=1、retries=0 的正式结果为 1/1 passed（5.7s）。nurse 先以独立 Session 只读访问且 correction 入口、报告业务写入和人为 403 均为 0；doctor 随后在 390×844 视口完成真实键盘、label、计数、最小无效输入与 checkbox reset/focus 路径。ControlledRequestGate 对唯一 correction POST 的 matched/continued/aborted 为 `1/1/0`，Body 仅含 `changeSummary`、`confirm`、`correctionReason`、`expectedUpdatedAt`，HTTP 200 且为首次完成；在途期间共享写入口锁定、正文可读，无进度伪装、latest、polling 或重放。页面不刷新、不跳转即切换唯一 V2，并保留当前会话 source、receipt 与 live message；旧 V1 会话回执全部隔离。主动刷新后会话辅助事实消失而持久 `replacementOf` lineage 保留，correctionId 未进入 DOM 或 URL，全部相邻报告写入、PDF/download 与 AI 调用为 0。`verify u01-post-correction` 证明唯一 completed A25、唯一 correction record、V1/V2 各一、V3/branch 为 0，来源保护事实、正式 replacement copy/reset、Patient/Visit/sources/Storage 与独立 AuditLog 边界匹配；两次精确 cleanup 均为 `residualCount=0`，第二次删除计数全为 0。
 
 #### 10.4.3 `B15-U02` 显式恢复与网络不确定结果
 
@@ -680,7 +682,7 @@ B15 从当前 controller、DTO、workflow、原子更新、mapper、frontend cor
 | Profile | 职责 | Browser / 活动 ID |
 |---|---|---|
 | `B15-P0-contract-evidence` | 已完成：后端角色/DTO/ownership/readiness/版本/恢复/幂等/合法并发，frontend correction pure/static、Action recovery、persisted resume privacy，B16 复用和 defensive 审计均已收口；P0 `gap=0` | 不执行 Browser；不拥有活动 ID |
-| `B15-P1-first-correction` | 只执行 U01 首次更正、当前会话切换、刷新与后置事实 | Browser；只拥有 `B15-U01` |
+| `B15-P1-first-correction` | 已完成：U01 首次更正、当前会话切换、刷新与后置事实均通过 | Browser；只拥有 `B15-U01` |
 | `B15-P2-recovery-uncertain-result` | 执行 U02 的 persisted resume 与 network uncertain 两条紧密路径 | Browser；只拥有 `B15-U02` |
 | `B15-P3-final-gates` | 最终代码态只执行一次 discovery、lint、typecheck、production build、依赖/路由/脱敏和轻量跨层 Browser 冒烟 | 不拥有业务活动 ID |
 
@@ -696,7 +698,7 @@ B15 从当前 controller、DTO、workflow、原子更新、mapper、frontend cor
 
 #### 10.4.6 不分配 B15 活动 ID 的合同与非 Browser 证据
 
-状态只描述当前可定位证据。C10 记录后端动态证据；C08/C13/C14 记录同一份 frontend correction Node-only spec 的直接动态证据。P0 `gap=0`，`B15-P0-contract-evidence` 完成。当前 `gap` 只剩 C16/C19 的 mandatory Browser evidence 与 C23 final gate，分别归 U01、U02、P3。
+状态只描述当前可定位证据。C10 记录后端动态证据；C08/C13/C14 记录同一份 frontend correction Node-only spec 的直接动态证据；C16 记录 U01 Browser 与后置数据库动态证据。P0 `gap=0`，`B15-P0-contract-evidence` 完成。当前 `gap` 只剩 C19 的 mandatory Browser evidence 与 C23 final gate，分别归 U02、P3。
 
 | # | 合同或风险 | 可达性分类 | 最低充分证据层 | 当前精确证据文件及测试名称 | 状态 | 后续任务与缺口 | B16 复用结论 |
 |---|---|---|---|---|---|---|---|
@@ -715,7 +717,7 @@ B15 从当前 controller、DTO、workflow、原子更新、mapper、frontend cor
 | C13 | frontend 首次/resume 资格、草稿、校验、dirty/stale、Body、continuation、consistency/lineage pure | `frontend_static_or_pure` | correction 专属 Node-only contract spec | `frontend/test/browser-acceptance/contracts/b15-correction-non-browser.spec.ts`：`C13 preserves representative roles and V1 or V2+ source eligibility`、`C13 enforces correction consistency and safe replacement lineage`、`C13 creates faithful start and persisted resume drafts`、`C13 validates dirty and report matching semantics`、`C13 keeps exact correction request and API client whitelist`、`C13 continues a stale start only with a safe latest source` | `covered` | 否；production pure functions 直接证明 V1/安全 V2+ source、start/resume eligibility、consistency/replacement、draft/validation/dirty/stale/matching、exact request Body 与 latest continuation | B16 Browser 不能替代 pure/static；当前直接证据已关闭 P0-G2 |
 | C14 | Action 单 POST、controlled latest≤1、network latest=0、no replay、统一 update、server receipt identity | `frontend_static_or_pure` | correction 专属 Node-only Action contract | `frontend/test/browser-acceptance/contracts/b15-correction-non-browser.spec.ts`：`C14 limits controlled latest refresh and correction write prohibition`、`C14 keeps one correction POST and applies server replacement identity`、`C14 separates error recovery manual latest and prevents replay or polling`、`C14 keeps input updates and baseline staleness bounded` | `covered` | 否；真实 shared recovery 证明 correction 业务错误 latest≤1、network/unknown=0，audit/replacement corruption 禁止写入；Action 有界核对证明唯一生产 POST、成功应用完整 replacementReport、identity transition 只用 receipt IDs、onError 不 replay，手工 latest 独立 | B16 success 证据仍只作 supporting；当前直接证据已关闭 P0-G3 |
 | C15 | shared coordinator 单写锁、generation、layout barrier、expected transition、旧请求失效、唯一 beforeunload | `frontend_static_or_pure` | current Node-only shared spec | `clinical-report-workflow-shared-non-browser.spec.ts`：`C16 coordinator has one write lock…`、`C16 façade shares one coordinator and one beforeunload…`、`C16 wires stable route/report identity…`、`C16 preserves only a complete expected correction replacement result`、`C16 degrades every invalid…` | `covered` | 否；这是当前基线直接证据，不是 B16 历史推定 | B16 旧 shared flow 已被当前证据取代 |
-| C16 | completed source 无入口；replacement 当前显示；会话/刷新边界 | `ui_reachable` | `browser_micro_profile` + current shared spec | current shared spec 直接覆盖合法 transition 会话保真/非法 reset；历史 B16 有 completed/refresh 记录，但没有持久 Browser spec | `gap` | 已分配 `B15-U01`；不是新增 P0 test | 历史仅 supporting，不能关闭当前 Action 变化后的流程 |
+| C16 | completed source 无入口；replacement 当前显示；会话/刷新边界 | `ui_reachable` | `browser_micro_profile` + current shared spec + DB verifier | `frontend/test/browser-acceptance/b15/u01-first-correction.spec.ts`：`doctor creates one replacement while nurse remains readonly and reload keeps persistent lineage`；`backend/scripts/b15-browser-fixtures.ts`：`verify u01-post-correction`；current shared spec 的合法 transition/非法 reset 证据 | `covered` | 否；`B15-U01` 与 `B15-P1-first-correction` 已完成 | 历史 B16 仅 supporting；当前 Browser/DB 为主证据 |
 | C17 | replacement A21～A24 角色/页面/API 与合法后续生命周期 | `duplicate_or_covered` | A21/A26 HTTP + current B12～B14 + frontend pure | A25 E2E `lets doctor/admin edit, submit and confirm replacement only`；A26 `runs V2 and V3 lifecycles…`；replacement lineage spec；B12/B13/B14 当前累计证据 | `covered_by_layered_evidence` | 否；不为 B15 重复 V2+ 生命周期矩阵 | B16 完整矩阵作 supporting；当前分层证据为主 |
 | C18 | correction 不自动串联 edit/submit/confirm/lock/freeze/archive/void/PDF/AI | `duplicate_or_covered` | current static/action ownership + representative Browser | current Correction Action success 仅 apply replacement + complete correction；shared façade 动作分离；U01 仍核对 Network 零相邻写入 | `covered_by_layered_evidence` | 不创建独立活动 ID | B16 no-auto-chain 在代码变化审查后仍可作 supporting，不单独重跑 |
 | C19 | network uncertain、手工 latest、内存文本、Storage/URL | `ui_reachable` + `frontend_static_or_pure` | Action contract + `browser_micro_profile` | `b15-correction-non-browser.spec.ts` 已直接证明 network/unknown 自动 latest=0、无 POST replay、手工 latest 独立及 stale 结构；B16 Storage 审计为旧代码态且无 spec | `gap` | Action 子合同已 covered；真实 persisted resume、network uncertain、刷新及 DOM/Storage/URL 仍归 `B15-U02` | 历史 Storage 仅 supporting，不能关闭当前 Browser path |
@@ -724,7 +726,7 @@ B15 从当前 controller、DTO、workflow、原子更新、mapper、frontend cor
 | C22 | viewport、label、keyboard/focus、disabled、live/alert | `ui_reachable` | 附着 U01/U02 的代表性 Browser | B12/B13 已有共享模式；B16 记录 resume Tab/Enter/Space，CorrectionPanel 相关展示文件自 9099 evidence 后未变化 | `duplicate_or_covered` | 附着 U01/U02 做最低代表性核对，不新增 ID | 可复用代表性模式，不替代当前业务路径 |
 | C23 | discovery、lint、typecheck、build、依赖、路由、脱敏 | `general_gate` | `static_gate` | B15 P3 尚未执行；本轮定向 backend 门禁只服务 C10，不替代最终代码态 P3 | `gap` | `B15-P3-final-gates` 最终代码态一次执行 | B16 历史 gates 不冒充当前 P3 |
 
-分类汇总：`covered=9`、`covered_by_layered_evidence=8`、`duplicate_or_covered=1`、`gap=3`、`supplemental_defensive=1`、`supplemental_compatibility=0`、`retired_currently_unreachable=1`、`retired_obsolete=0`，共 23 行。`B15-P0-contract-evidence` 完成且 P0 `gap=0`；剩余 gap 仅为 C16→U01、C19→U02、C23→P3。
+分类汇总：`covered=10`、`covered_by_layered_evidence=8`、`duplicate_or_covered=1`、`gap=2`、`supplemental_defensive=1`、`supplemental_compatibility=0`、`retired_currently_unreachable=1`、`retired_obsolete=0`，共 23 行。`B15-P0-contract-evidence` 完成且 P0 `gap=0`，`B15-P1-first-correction` 完成；剩余 gap 仅为 C19→U02、C23→P3。
 
 Node-only 执行结果（2026-08-02）：定向 discovery 只发现 `b15-correction-non-browser.spec.ts` 的 12 条测试；正式运行 `passed=12`、`failed=0`、`skipped=0`，Playwright 仅作为 Node TypeScript runner，未申请 Browser/request fixture、未启动 webServer、未访问 HTTP 或数据库。该 spec 的定向 lint 与 frontend 正式 typecheck 均通过；边界扫描未发现 Browser runtime、fetch、DOM/Storage runtime、数据库 client、环境 Secret、Hook testing framework 或整文件 snapshot。
 
@@ -748,11 +750,10 @@ Git 历史没有 B16 correction Browser spec 文件，也没有可引用的 Play
 
 #### 10.4.8 剩余 gaps 与推荐阶段
 
-C08、C13、C14 已由同一份 `frontend/test/browser-acceptance/contracts/b15-correction-non-browser.spec.ts` 关闭，P0-G2、P0-G3、P0-G4 不再是 confirmed gap；`B15-P0-contract-evidence` 完成。剩余三个 gap 只对应已经分配的后续阶段：
+C08、C13、C14 已由同一份 `frontend/test/browser-acceptance/contracts/b15-correction-non-browser.spec.ts` 关闭，P0-G2、P0-G3、P0-G4 不再是 confirmed gap；C16 已由 `B15-U01` 的当前 Browser/DB 证据关闭，`B15-P0-contract-evidence` 与 `B15-P1-first-correction` 均已完成。剩余两个 gap 只对应已经分配的后续阶段：
 
 | Gap | 真实路径与风险 | 现有证据 | 缺失证据 | 最低充分层 | 后续阶段 |
 |---|---|---|---|---|---|
-| `C16 / U01` | 首次真实更正、同会话切换与刷新边界 | backend first/idempotent、current shared identity、B16 supporting | 当前完整用户页面与 Browser APIs | `browser_micro_profile` | `B15-P1-first-correction` |
 | `C19 / U02` | persisted resume 与首次 POST 网络结果不确定 | backend workflow、当前 correction Node-only Action/recovery/privacy、历史 B16 resume/storage supporting | 当前真实 resume/network/内存/刷新/DOM/Storage/URL | `browser_micro_profile` | `B15-P2-recovery-uncertain-result` |
 | `C23 / P3` | 最终代码态 discovery/build/route/dependency/data gate | 历史 B16/B14 gates | B15 最终代码态一次正式门禁 | `static_gate` | `B15-P3-final-gates`；U01/U02 可兼任唯一 smoke |
 
@@ -767,7 +768,7 @@ C08、C13、C14 已由同一份 `frontend/test/browser-acceptance/contracts/b15-
 
 #### 10.4.11 B15 最终门禁
 
-`B15-P3-final-gates` 不拥有业务活动 ID，只在最终代码态执行一次：test discovery、frontend/backend 适用 lint、正式 typecheck、production build、依赖/路由/测试数据脱敏和一条轻量跨层 Browser 冒烟。U01 或 U02 的最终真实流程可以兼任该 smoke，不额外重跑整个批次。P3 当前仍待执行；本轮为关闭 C10 执行的定向 backend lint/typecheck/build/unit/HTTP E2E 不替代 P3，Browser、fixture 与 verifier 均未执行。
+`B15-P3-final-gates` 不拥有业务活动 ID，只在最终代码态执行一次：test discovery、frontend/backend 适用 lint、正式 typecheck、production build、依赖/路由/测试数据脱敏和一条轻量跨层 Browser 冒烟。U01 或 U02 的最终真实流程可以兼任该 smoke，不额外重跑整个批次。P3 当前仍待执行；本轮 U01 已完成适用 fixture lint/typecheck、test discovery、production build、真实 Browser 与 verifier，但这些 Profile 定向证据不替代 U02 完成后的最终代码态 P3。
 
 #### 10.4.12 原 10 组反向迁移
 
@@ -790,9 +791,8 @@ C08、C13、C14 已由同一份 `frontend/test/browser-acceptance/contracts/b15-
 
 推荐执行顺序更新为：
 
-1. 执行 `B15-P1-first-correction` 的 U01。
-2. 执行 `B15-P2-recovery-uncertain-result` 的 U02。
-3. 最后在最终代码态执行 P3。
+1. 执行 `B15-P2-recovery-uncertain-result` 的 U02。
+2. 最后在最终代码态执行 P3。
 
 任何历史 B16 证据都不得写成本次动态通过。
 
