@@ -86,6 +86,22 @@ function record(value: unknown, label: string): Record<string, unknown> {
   return value;
 }
 
+function reportConcurrentCorrectionFailure(
+  role: 'doctor' | 'admin',
+  response: Response,
+): void {
+  if (response.status === 200) return;
+  const responseCode = isRecord(response.body) ? response.body.code : null;
+  const safeCode =
+    typeof responseCode === 'string' &&
+    /^[A-Z][A-Z0-9_]{0,127}$/.test(responseCode)
+      ? responseCode
+      : 'unavailable';
+  process.stderr.write(
+    `Concurrent correction response: role=${role} status=${String(response.status)} code=${safeCode}\n`,
+  );
+}
+
 describe('clinical report correction API (e2e)', () => {
   let app: INestApplication;
   let connection: Connection;
@@ -1191,6 +1207,8 @@ describe('clinical report correction API (e2e)', () => {
       doctorRequest,
       adminRequest,
     ]);
+    reportConcurrentCorrectionFailure('doctor', doctorResponse);
+    reportConcurrentCorrectionFailure('admin', adminResponse);
     expect(doctorResponse.status).toBe(200);
     expect(adminResponse.status).toBe(200);
 

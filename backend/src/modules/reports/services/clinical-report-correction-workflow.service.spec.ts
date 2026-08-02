@@ -8,6 +8,7 @@ import { Test } from '@nestjs/testing';
 import type { AuthenticatedUserContext } from '../../auth/types/auth-user-context.type';
 import { AssessmentsService } from '../../assessments/services/assessments.service';
 import { PatientsService } from '../../patients/services/patients.service';
+import type { ClinicalReportCorrectionMetadata } from '../types/clinical-report-correction.types';
 import type { ClinicalReportSummary } from './reports.service';
 import { ClinicalReportCorrectionWorkflowService } from './clinical-report-correction-workflow.service';
 import { ClinicalReportPublicMapper } from './clinical-report-public.mapper';
@@ -16,6 +17,7 @@ import { ReportsService } from './reports.service';
 const ids = {
   source: '507f1f77bcf86cd799439011',
   replacement: '507f1f77bcf86cd799439012',
+  otherReplacement: '507f1f77bcf86cd799439019',
   patient: '507f1f77bcf86cd799439013',
   visit: '507f1f77bcf86cd799439014',
   actor: '507f1f77bcf86cd799439015',
@@ -213,8 +215,37 @@ function baseReport(): ClinicalReportSummary {
   };
 }
 
-function completedSource(): ClinicalReportSummary {
+function completedSource(
+  auditOverrides: Partial<ClinicalReportCorrectionMetadata> = {},
+): ClinicalReportSummary {
   const source = baseReport();
+  const audit: ClinicalReportCorrectionMetadata = {
+    version: 1,
+    state: 'completed',
+    correctionId,
+    correctionNo: 1,
+    startedAt: now,
+    startedBy: ids.actor,
+    startedByName: 'A25 Test Doctor',
+    startedByRole: 'doctor',
+    correctionReason: '脱敏更正原因',
+    changeSummary: '脱敏计划变更范围',
+    previousReportCode: sourceCode,
+    previousReportVersion: 1,
+    replacementReportCode: replacementCode,
+    replacementReportVersion: 2,
+    sourceArchiveId: archiveId,
+    sourceArchivedAt: now,
+    sourceFreezeId: freezeId,
+    sourceFreezeCompletedAt: now,
+    replacementReportId: ids.replacement,
+    replacementCreatedAt: now,
+    completedAt: now,
+    completedBy: ids.actor,
+    completedByName: 'A25 Test Doctor',
+    completedByRole: 'doctor',
+    ...auditOverrides,
+  };
   return {
     ...source,
     status: 'corrected',
@@ -233,32 +264,7 @@ function completedSource(): ClinicalReportSummary {
     ],
     metadata: {
       ...source.metadata,
-      a25Correction: {
-        version: 1,
-        state: 'completed',
-        correctionId,
-        correctionNo: 1,
-        startedAt: now,
-        startedBy: ids.actor,
-        startedByName: 'A25 Test Doctor',
-        startedByRole: 'doctor',
-        correctionReason: '脱敏更正原因',
-        changeSummary: '脱敏计划变更范围',
-        previousReportCode: sourceCode,
-        previousReportVersion: 1,
-        replacementReportCode: replacementCode,
-        replacementReportVersion: 2,
-        sourceArchiveId: '33333333-3333-4333-8333-333333333333',
-        sourceArchivedAt: now,
-        sourceFreezeId: '22222222-2222-4222-8222-222222222222',
-        sourceFreezeCompletedAt: now,
-        replacementReportId: ids.replacement,
-        replacementCreatedAt: now,
-        completedAt: now,
-        completedBy: ids.actor,
-        completedByName: 'A25 Test Doctor',
-        completedByRole: 'doctor',
-      },
+      a25Correction: audit,
     },
   };
 }
@@ -705,5 +711,101 @@ describe('ClinicalReportCorrectionWorkflowService', () => {
       reports.recordCorrectionReplacementIfMatching,
     ).not.toHaveBeenCalled();
     expect(reports.completeCorrectionIfMatching).not.toHaveBeenCalled();
+  });
+
+  it('U7 returns completed replay when replacement recording loses to a completed correction', async () => {
+    reports.findReportByOwnership
+      .mockResolvedValueOnce(inProgressSource())
+      .mockResolvedValueOnce(completedSource());
+    reports.recordCorrectionReplacementIfMatching.mockResolvedValueOnce(null);
+
+    const response = await service.createClinicalReportCorrection(
+      ids.patient,
+      ids.visit,
+      ids.source,
+      doctor,
+      correctionInput(),
+    );
+
+    expect(response.correctionReceipt).toEqual(
+      expect.objectContaining({
+        state: 'completed',
+        correctionId,
+        alreadyCreated: true,
+        resumedExisting: false,
+        correctionReason: '脱敏更正原因',
+        changeSummary: '脱敏计划变更范围',
+      }),
+    );
+    expect(reports.completeCorrectionIfMatching).not.toHaveBeenCalled();
+    expect(reports.createCorrectionReplacement).not.toHaveBeenCalled();
+    expect(reports.recordCorrectionReplacementIfMatching).toHaveBeenCalledTimes(
+      1,
+    );
+  });
+
+  it('U8 continues completion when another request records the same replacement', async () => {
+    reports.findReportByOwnership
+      .mockResolvedValueOnce(inProgressSource())
+      .mockResolvedValueOnce(inProgressSource(true));
+    reports.recordCorrectionReplacementIfMatching.mockResolvedValueOnce(null);
+    reports.completeCorrectionIfMatching.mockResolvedValueOnce(
+      completedSource(),
+    );
+
+    const response = await service.createClinicalReportCorrection(
+      ids.patient,
+      ids.visit,
+      ids.source,
+      doctor,
+      correctionInput(),
+    );
+
+    expect(response.correctionReceipt).toEqual(
+      expect.objectContaining({
+        correctionId,
+        alreadyCreated: false,
+        resumedExisting: true,
+      }),
+    );
+    expect(reports.completeCorrectionIfMatching).toHaveBeenCalledTimes(1);
+    expect(reports.completeCorrectionIfMatching).toHaveBeenCalledWith(
+      expect.objectContaining({
+        correctionId,
+        replacementReportId: ids.replacement,
+        replacementReportCode: replacementCode,
+        replacementReportVersion: 2,
+      }),
+    );
+    expect(reports.createCorrectionReplacement).not.toHaveBeenCalled();
+    expect(reports.recordCorrectionReplacementIfMatching).toHaveBeenCalledTimes(
+      1,
+    );
+  });
+
+  it('U9 rejects a completed record-miss result that points to another replacement', async () => {
+    reports.findReportByOwnership
+      .mockResolvedValueOnce(inProgressSource())
+      .mockResolvedValueOnce(
+        completedSource({ replacementReportId: ids.otherReplacement }),
+      );
+    reports.recordCorrectionReplacementIfMatching.mockResolvedValueOnce(null);
+
+    await expectConflictCode(
+      service.createClinicalReportCorrection(
+        ids.patient,
+        ids.visit,
+        ids.source,
+        doctor,
+        correctionInput(),
+      ),
+      'CLINICAL_REPORT_CORRECTION_REPLACEMENT_CONFLICT',
+    );
+
+    expect(reports.completeCorrectionIfMatching).not.toHaveBeenCalled();
+    expect(reports.createCorrectionReplacement).not.toHaveBeenCalled();
+    expect(reports.recordCorrectionReplacementIfMatching).toHaveBeenCalledTimes(
+      1,
+    );
   });
 });

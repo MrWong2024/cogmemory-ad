@@ -39,6 +39,17 @@ type CorrectionContext = {
   sourceReport: ClinicalReportSummary;
 };
 
+type ReplacementRecordMissResolution =
+  | {
+      state: 'completed';
+      response: CreateClinicalReportCorrectionResponse;
+    }
+  | {
+      state: 'in_progress';
+      sourceReport: ClinicalReportSummary;
+      audit: ClinicalReportCorrectionMetadata;
+    };
+
 @Injectable()
 export class ClinicalReportCorrectionWorkflowService {
   constructor(
@@ -336,16 +347,31 @@ export class ClinicalReportCorrectionWorkflowService {
       } catch {
         this.throwFailed();
       }
-      completionSource = recorded ?? (await this.reloadSource(context));
-      const recordedAudit = this.resolveExistingCorrection(completionSource);
-      if (
-        !recordedAudit ||
-        recordedAudit.state !== 'in_progress' ||
-        recordedAudit.replacementReportId !== replacement.id
-      ) {
-        this.throwAuditUnavailable();
+      if (!recorded) {
+        const resolution =
+          await this.resolveCorrectionAfterReplacementRecordMiss(
+            context,
+            audit,
+            replacement,
+          );
+        if (resolution.state === 'completed') {
+          return resolution.response;
+        }
+        completionSource = resolution.sourceReport;
+        completionAudit = resolution.audit;
+      } else {
+        const recordedAudit = this.resolveExistingCorrection(recorded);
+        if (!recordedAudit || recordedAudit.state !== 'in_progress') {
+          this.throwAuditUnavailable();
+        }
+        this.assertMatchingContinuationReplacement(
+          recordedAudit,
+          audit,
+          replacement,
+        );
+        completionSource = recorded;
+        completionAudit = recordedAudit;
       }
-      completionAudit = recordedAudit;
     }
     const completion = this.applyRule(() =>
       buildClinicalReportCorrectionCompletion({
@@ -400,6 +426,52 @@ export class ClinicalReportCorrectionWorkflowService {
       false,
       resumedExisting,
     );
+  }
+
+  private async resolveCorrectionAfterReplacementRecordMiss(
+    context: CorrectionContext,
+    continuationAudit: ClinicalReportCorrectionMetadata,
+    replacement: ClinicalReportSummary,
+  ): Promise<ReplacementRecordMissResolution> {
+    const sourceReport = await this.reloadSource(context);
+    const audit = this.resolveExistingCorrection(sourceReport);
+    if (!audit) {
+      this.throwAuditUnavailable();
+    }
+    this.assertMatchingContinuationReplacement(
+      audit,
+      continuationAudit,
+      replacement,
+    );
+    if (audit.state === 'completed') {
+      return {
+        state: 'completed',
+        response: await this.buildCompletedResponse(
+          { ...context, sourceReport },
+          audit,
+          true,
+          false,
+        ),
+      };
+    }
+    return { state: 'in_progress', sourceReport, audit };
+  }
+
+  private assertMatchingContinuationReplacement(
+    currentAudit: ClinicalReportCorrectionMetadata,
+    continuationAudit: ClinicalReportCorrectionMetadata,
+    replacement: ClinicalReportSummary,
+  ): void {
+    if (
+      currentAudit.correctionId !== continuationAudit.correctionId ||
+      currentAudit.replacementReportId !== replacement.id ||
+      currentAudit.replacementReportCode !==
+        continuationAudit.replacementReportCode ||
+      currentAudit.replacementReportVersion !==
+        continuationAudit.replacementReportVersion
+    ) {
+      this.throwReplacementConflict();
+    }
   }
 
   private async buildCompletedResponse(
