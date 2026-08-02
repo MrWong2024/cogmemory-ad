@@ -15,7 +15,7 @@
 | Batch C / B7–B10 | 已完成；B7、B8、B9、B10 各自既有最终处置不变 |
 | Batch D / B11 | 70 项已完成，状态不变 |
 | Batch D / B12 | 合同前置与防御证据保留；`B12-U01`～`B12-U03` 三个活动用户场景与最终通用门禁均已完成，状态 `passed=3`、`pending=0`、`failed=0`、`blocked=0`、`not_executed=0`；B12 Browser 验收闭环完成 |
-| Batch D / B13 | `B13-U01` 三种持久状态入口与 `B13-U02` 首次真实来源冻结 Browser 验收已完成；`B13-U03` 保持待验，状态 `passed=2`、`pending=1`、`failed=0`、`blocked=0`、`not_executed=0`；`B13-P0-contract-evidence` 继续完成且 `gap=0` |
+| Batch D / B13 | `B13-P0-contract-evidence` 继续完成且 `gap=0`；`B13-U01`～`B13-U03` 三个活动用户场景与 `B13-P4-final-gates` 均已完成，状态 `passed=3`、`pending=0`、`failed=0`、`blocked=0`、`not_executed=0`；B13 Browser 验收闭环完成 |
 | Batch D / B14–B15（含 B14.1） | 候选断言和历史设计输入保留，尚未执行；正式设计活动清单前须先完成可达性、风险与证据复用审查 |
 
 B12 治理前有 17 个混合层级活动场景，汇总为 `passed=4`、`pending=13`；治理后只保留 `B12-U01`～`B12-U03` 三个 `ui_reachable` Browser 场景，初始汇总为 `passed=0`、`pending=3`。U01～U03 完成后最终汇总为 `passed=3`、`pending=0`。这不是历史证据倒退：原已通过事实和当前精确测试继续有效，但迁入不分配 B12 活动 ID 的合同前置证据、非阻断防御证据或最终通用门禁，不再计作活动 Browser 业务场景。
@@ -303,7 +303,7 @@ B13 已按当前 A23 后端合同、当前前端实现、当前测试证据和�
 
 B13 采用“先生成当前最小活动设计，再反向迁移旧编号”的顺序。活动 ID 只分配给真实页面可达、风险不可互换、足以阻断发布且尚需 Browser 验证的用户场景；认证、权限、DTO、ownership、状态机、精确 scope、幂等、合法并发、pure/static、防御分支和通用门禁分别归入最低充分证据层。原逐条正文由 Git 历史追溯，当前文档只保留紧凑迁移表。
 
-`B13-P0-contract-evidence` 已完成，合同前置证据无确认 gap；`B13-U01`、`B13-U02` 已完成最小 Browser 验收，下一活动场景为 `B13-U03`。B14～B15 正式设计时继续遵循第 2～8 节规则。
+`B13-P0-contract-evidence` 已完成且合同前置证据 `gap=0`；`B13-U01`～`B13-U03` 与 `B13-P4-final-gates` 均已完成，B13 Browser 验收闭环完成。B14～B15 正式设计时继续遵循第 2～8 节规则。
 
 ### 10.1 B13 报告来源冻结：重新生成后的活动验收设计
 
@@ -315,9 +315,9 @@ B13 采用“先生成当前最小活动设计，再反向迁移旧编号”的�
 |---|---|---|---|
 | `B13-U01` 页面入口、人工角色与三种来源冻结持久状态 | `ui_reachable` | `B13-P1-entry-persisted-states` | `passed` |
 | `B13-U02` 首次真实来源冻结、精确 scope 与持久摘要 | `ui_reachable` | `B13-P2-first-freeze` | `passed` |
-| `B13-U03` 显式恢复 in_progress 与不确定结果处理 | `ui_reachable` | `B13-P3-resume-uncertain-result` | `pending` |
+| `B13-U03` 显式恢复 in_progress 与不确定结果处理 | `ui_reachable` | `B13-P3-resume-uncertain-result` | `passed` |
 
-活动汇总更新为：`passed=2`、`pending=1`、`failed=0`、`blocked=0`、`not_executed=0`。`B13-U01`、`B13-U02` 已通过；`B13-U03` 的独立显式恢复与不确定结果风险尚未执行，继续保持 `pending`。Node-only contract spec 仍属于不分配活动 ID 的 P0 合同证据。
+活动汇总更新为：`passed=3`、`pending=0`、`failed=0`、`blocked=0`、`not_executed=0`。`B13-U01`、`B13-U02`、`B13-U03` 均已通过；Node-only contract spec 仍属于不分配活动 ID 的 P0 合同证据。
 
 #### 10.1.2 `B13-U01` 页面入口、人工角色与三种来源冻结持久状态
 
@@ -350,13 +350,15 @@ Browser 只取 doctor、nurse、`sourceFreeze=null`、`in_progress`、`completed
 
 #### 10.1.4 `B13-U03` 显式恢复 in_progress 与不确定结果处理
 
-- 分类与 Profile：`ui_reachable`；`B13-P3-resume-uncertain-result`；状态 `pending`。两个路径共同验证不可逆多集合操作的用户恢复能力，仍只使用一个活动 ID。
+- 分类与 Profile：`ui_reachable`；`B13-P3-resume-uncertain-result`；状态 `passed`。两个路径共同验证不可逆多集合操作的用户恢复能力，仍只使用一个活动 ID。
 - 路径 A 起始状态：报告具有 A23 正式合同定义的合法 `in_progress` 持久事实，scope 中允许已有部分来源完成冻结。页面提示部分完成风险，展示原 `freezeId` 但不泄露内部 scope，服务端原 `freezeNote` 只读且不可替换。
-- 路径 A 操作与结果：恢复 checkbox 初始未选中；不自动恢复、不轮询、不自动 POST。用户显式确认后只发送一次真实恢复请求；Body 仍只含合同允许字段，客户端不提交 freezeId 或 scope，由服务端沿用既有说明、`freezeId` 和 scope。成功回执必须为 `resumedExisting=true`、`alreadyFrozen=false`，`freezeId`、原 `freezeNote`、started actor 均不变，completed actor 按当前服务端合同保留原 started actor，最终 `state=completed`，counts 与数据库唯一终态一致。
+- 路径 A 操作与结果：恢复 checkbox 初始未选中；不自动恢复、不轮询、不自动 POST。用户显式确认后只发送一次真实恢复请求；Body 仍只含合同允许字段，客户端不提交 freezeId 或 scope，由服务端沿用既有说明、`freezeId` 和 scope。成功回执必须为 `resumedExisting=true`、`alreadyFrozen=false`，`freezeId`、原 `freezeNote`、started actor 均不变，completed actor 为实际 doctor，最终 `state=completed`，counts 与数据库唯一终态一致。
 - 路径 B 起始状态：doctor 在首次冻结表单输入未提交的脱敏 `freezeNote`。网络层中止一次真实 `freeze-sources` 请求，不伪造响应；当前 React 内存保留说明，不自动 retry、不自动转入恢复，页面只提示手工读取最新状态，不显示已完成或已回滚。
 - 路径 B 刷新边界：刷新后未提交本地说明消失，且不写入 localStorage、sessionStorage 或 IndexedDB。
 - 复用边界：B12 已完成完整 401、beforeunload、Storage、键盘、焦点和 Axe 恢复模式；B13 不复制认证失效和全套可访问性矩阵，只在来源冻结表单附着最低必要 label、代表性小屏及错误反馈验证。
 - 发布阻断风险：自动重放不可逆 POST、覆盖首次事实、误报回滚/完成、丢失不确定结果恢复入口或持久化本地临床说明，都足以阻断发布。
+
+执行结果（2026-08-02）：路径 A 复用正式 `source-freeze-in-progress`，doctor 显式勾选恢复确认后只发送一次真实 `freeze-sources` POST，HTTP 200 且 `resumedExisting=true`、`alreadyFrozen=false`；服务端原 freezeId、首次说明、started actor、startedAt、sourceLockedAt、scope 与计数保真，只形成唯一 completed 事实。当前页面会话 receipt 在刷新后消失，持久 completed summary 与原始安全事实保留，未出现第二次 POST 或相邻生命周期写入。路径 B 复用 `source-freeze-null`，`OneShotRequestAbort` 对精确 POST 的结果为 matched=1、aborted=1、continued=0；正式不确定结果 alert 与手工 latest 入口可见，当前 React 内存说明保留，checkbox 按现有错误合同清除，不自动 POST、latest 或恢复。固定脱敏说明在提交前、中止后、刷新后三个时点均未进入 localStorage、sessionStorage、IndexedDB、URL query 或 hash；真实 reload 接受一次 beforeunload 后本地说明与 checkbox 消失，服务端 `sourceFreeze` 仍为 null。`u03-post-recovery` 验证恢复链、五类来源终态、两个控制场景及报告、Patient/Visit、Storage 保护边界通过；两次 cleanup 均为 `residualCount=0`。
 
 #### 10.1.5 B13 Profile 职责
 
@@ -366,7 +368,7 @@ Browser 只取 doctor、nurse、`sourceFreeze=null`、`in_progress`、`completed
 | `B13-P1-entry-persisted-states` | 执行 `B13-U01` | Browser；只拥有 `B13-U01` |
 | `B13-P2-first-freeze` | 执行 `B13-U02` | Browser；只拥有 `B13-U02` |
 | `B13-P3-resume-uncertain-result` | 执行 `B13-U03` | Browser；只拥有 `B13-U03` |
-| `B13-P4-final-gates` | 在 B13 最终代码态只执行一次通用最终门禁 | 不拥有新的业务活动 ID |
+| `B13-P4-final-gates` | 已完成：在 B13 最终代码态只执行一次通用最终门禁 | 不拥有新的业务活动 ID |
 
 不得恢复原 116 项对应的 Profile 数量；本设计不决定 fixture 文件、Stage、runner、manifest、Browser spec 数量或 selector。
 
@@ -400,7 +402,7 @@ Browser 只取 doctor、nurse、`sourceFreeze=null`、`in_progress`、`completed
 
 #### 10.1.7 合同前置证据收口与下一步
 
-G4 与 G5 已由同一份 `frontend/test/browser-acceptance/contracts/b13-source-freeze-non-browser.spec.ts` 闭合；`B13-P0-contract-evidence` 已完成，当前合同前置证据无确认 gap。`B13-U01`、`B13-U02` 已完成最小 Browser 验收；`B13-U03` 保持 `pending`，活动汇总为 `passed=2`、`pending=1`、`failed=0`、`blocked=0`、`not_executed=0`，下一活动场景为 `B13-U03`。
+G4 与 G5 已由同一份 `frontend/test/browser-acceptance/contracts/b13-source-freeze-non-browser.spec.ts` 闭合；`B13-P0-contract-evidence` 已完成，当前合同前置证据 `gap=0`。`B13-U01`、`B13-U02`、`B13-U03` 均已完成最小 Browser 验收，活动汇总为 `passed=3`、`pending=0`、`failed=0`、`blocked=0`、`not_executed=0`；最终通用门禁亦已完成，B13 Browser 验收闭环完成。
 
 #### 10.1.8 非阻断防御性证据
 
@@ -422,6 +424,8 @@ G4 与 G5 已由同一份 `frontend/test/browser-acceptance/contracts/b13-source
 - 一条轻量跨层 Browser 冒烟。
 
 响应式、label、键盘、焦点与 Axe 附着在 U02 或 U03 的真实流程中，不建立独立 Profile。PDF、下载与 AI 仅作为 A23 非目标及 Network 边界，不分配活动 ID。
+
+`B13-P4-final-gates` 已在 U03 最终代码态完成：U03 是 B13 最终轻量跨层 Browser 冒烟，定向 discovery 恰好发现 1 个文件、2 条测试，正式 Chromium headless 以 workers=1、retries=0 通过 2/2；测试数据全部脱敏，未新增依赖、package/锁文件变化、无合同路由或额外测试基础设施，frontend 全量 lint、正式 typecheck 与 production build 均通过。P0 合同前置证据、U01 页面入口和持久状态、U02 首次真实来源冻结、U03 恢复和不确定结果及最终通用门禁均已完成，B13 Browser 验收闭环完成。
 
 #### 10.1.10 原 B13-01～B13-116 反向迁移
 
