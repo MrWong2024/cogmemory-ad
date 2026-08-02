@@ -424,6 +424,8 @@
 - `ClinicalReportCorrectionWorkflowService` 只依赖 PatientsService、AssessmentsService、ReportsService 与 public mapper；负责 ownership、doctor/admin actor、latest/readiness、start/create-or-resolve/record/complete、in_progress 恢复、completed 幂等与稳定错误。不依赖 Scoring、CognitiveDomains、Media、Storage 或 AI。
 - `clinical-report-correction.ts` 是无 DI / 数据库访问的纯函数：复用 A20 provenance、A21 confirmation、A22 lock、A23 freeze、A24 archive parser；计算线性版本与确定性 code，构建 source / replacement metadata，深复制固定快照，验证 replacement，构建 correction record / completion，且不修改输入。
 - `ReportsService` 增加 startCorrectionIfUnmodified、createCorrectionReplacement、findCorrectionReplacementByCode、listReportsByVisitTypeVersion、recordCorrectionReplacementIfMatching 与 completeCorrectionIfMatching；start / record / complete 各为 source 单文档条件更新，replacement 使用 Model.create + unique reportCode 恢复，不使用 transaction。
+- 合法并发收敛：pre-start latest / next-version 竞态先重读 source，并只收敛到其精确 `in_progress` / `completed` A25 事实；start 原子 miss 同样重读后收敛。replacement 采用确定性 code 的 create-or-resolve；replacement record / complete 交界处只在 correctionId、replacement ID、code 与 version 全部严格匹配时继续同一 `in_progress` 或返回同一 `completed`。start owner 与 completion executor 可以不同；genuine non-latest、branch 和非确定性 collision 继续拒绝。
+- 编排不使用 Mongo transaction、mutex、自动 retry、sleep 或 polling；持久化 miss 只执行有界重读与精确事实校验，不重放 source start 或创建分支 replacement。
 - A20 generation 改为 latest-first；A21 ownership 查询不再固定 V1，三个写 filter 使用已读取 reportVersion。Workflow 验证 a25CorrectionReplacement 后仅 doctor/admin 可写，并只对合法 replacement 豁免 Patient / Visit 后续状态；metadata 保留 lineage。
 - public mapper 纯映射 correction / replacementOf，非法 A25 安全返回 null；A26 在不改变此公开映射的前提下泛化 A22-A24。
 

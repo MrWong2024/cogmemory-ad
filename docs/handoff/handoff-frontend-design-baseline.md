@@ -8,7 +8,9 @@
 - 后续从 ReviewX 迁移前端公共结构时，必须先阅读本文档。
 - 本项目只继承 ReviewX 的工程结构、配置经验和组件治理方法，不继承 ReviewX 的视觉风格。
 - 后续前端页面与组件设计必须以本文档作为设计边界。
-- 当前前端已完成 `frontend\app` / `frontend\src` 最小公共底座首次落地；这不代表完整设计系统或业务 MVP 已实现。
+- 当前前端已形成 Auth、Patients、Assessments、ClinicalReport 与 B17 历史 / 趋势产品页面，并使用 Tailwind CSS 与既有 `Button`、`Card`、`Badge` UI components。
+- 本设计基线不冻结具体 token、class 或组件实现；当前工程结构、组件和页面事实以 frontend snapshot、component map 与实际代码为准。
+- 上述当前实现仍不代表一期完整产品或完整设计系统全部完成。
 
 ## 2. 产品气质
 
@@ -42,7 +44,7 @@ CogMemory AD 更适合：
 - 警示色只用于异常、风险、错误、重要提醒。
 - 不使用强营销感渐变作为主要视觉语言。
 - 色彩必须服务于阅读、分区和状态识别。
-- 当前尚未迁移样式系统，本文档不定义具体 Tailwind token。
+- 当前使用 Tailwind CSS 与既有 UI components；本文档只约束长期视觉原则，不定义或冻结具体 Tailwind token、class 和组件实现。
 
 ## 5. 布局原则
 
@@ -166,7 +168,7 @@ CogMemory AD 更适合：
 ## 15. 后续维护规则
 
 - 新增页面、组件、布局、样式前，应先检查本文档。
-- 本次 app/src 公共底座页面已按本文档进行首次落地。
+- 当前已实现页面与组件继续遵循本文档；具体实现事实由 frontend snapshot、component map 与代码维护。
 - 如后续实际产品风格调整，应先更新本文档，再改页面和组件。
 - `handoff-frontend-component-map.md`、`handoff-frontend-route-map.md`、`handoff-frontend-testing-playbook.md` 应与本文档保持一致。
 - 七个正式 viewport 若调整，必须同步更新 `handoff-frontend-testing-playbook.md`。

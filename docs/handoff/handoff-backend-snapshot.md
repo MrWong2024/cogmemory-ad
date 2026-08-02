@@ -24,7 +24,7 @@
 - 本地默认后端端口为 `5002`。
 - 本地默认前端 origin 为 `http://localhost:3002`。
 - test 数据库用途已分为 `standard_test` → `cogmemory_ad_test` 与 `browser_acceptance` → `cogmemory_ad_browser_test`；未显式指定的 `NODE_ENV=test` 进程默认 `standard_test`。配置 URI 在连接前按固定映射校验，连接后再按 Mongoose `connection.name` 校验。
-- `npm run start:browser-test` 是 Browser test backend 专用入口：仅接受 Browser app 用户及目标库 `readWrite` 角色，通过实际库名与角色门禁后才监听；B123/B16/B456/WP04 CLI 则仅接受 Browser db_admin 用户及目标库 `dbOwner` 角色。
+- `npm run start:browser-test` 是 Browser test backend 专用入口：仅接受 Browser app 用户及目标库 `readWrite` 角色，通过实际库名与角色门禁后才监听；当前所有 Browser fixture CLI 仅接受 Browser db_admin 用户及目标库 `dbOwner` 角色，具体 CLI 与 Profile 以当前代码和 testing playbook 为准。
 - 当前报告接口为十一个，另有患者历史评估与基础随访趋势两个接口；A12-A28 临床接口显式使用 `SessionAuthGuard` + `RolesGuard`。WP-04 四个只读接口允许四个患者工作流角色且不读取 CurrentUser。
 - A27 已实现患者历史评估、完整报告版本链与指定历史详情；A28 已实现 Visit 保留式基础随访趋势、稳定 source/dataStatus 与相邻 exact trace/domain mapping 可比性。
 - D-038 已实施：`standard_test` 与 `browser_acceptance` 双库、Browser app / db_admin 双角色及独立进程隔离结构均已存在，建连前后库名与角色门禁生效。

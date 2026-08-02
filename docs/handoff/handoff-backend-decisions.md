@@ -356,7 +356,7 @@
 - 状态：决策已锁定；代码接入、Browser 专用启动入口、实际库名与用户角色门禁、隔离回归均已实施。
 - 背景：普通 E2E 会删除并重新物化全局 MMSE / MoCA 定义和版本；长期保留的 Browser fixture 则依赖稳定的定义、版本和实例绑定。namespace 只能隔离患者、访视和业务记录，不能隔离全局量表目录；两者共库会造成目录代际漂移和实例绑定失效。
 - 决策：普通自动化测试与 Browser 验收使用不同数据库；Browser fixture CLI 与 Browser test backend 使用同一个 Browser 专用数据库。具体数据库名、用户和操作命令以 `handoff-backend-testing-playbook.md` 为准；通用 Codex 规则只规定抽象用途分类，不保存项目具体映射。
-- 实施：`standard_test` 与 `browser_acceptance` 采用固定项目映射；AppModule 在连接前校验 URI 声明库名并在连接后校验 `connection.name`。四套 Browser fixture CLI 只接受 Browser db_admin + `dbOwner`，test-only Browser backend 只接受 Browser app + `readWrite` 且通过后才监听。
+- 实施：`standard_test` 与 `browser_acceptance` 采用固定项目映射；AppModule 在连接前校验 URI 声明库名并在连接后校验 `connection.name`。当前所有 Browser fixture CLI 只接受 Browser db_admin + `dbOwner`，test-only Browser backend 只接受 Browser app + `readWrite` 且通过后才监听。
 - 验证证据：D-038 的当前门禁结果、Browser 验收状态、verify 与 cleanup 事实统一由 `handoff-backend-testing-playbook.md` 维护，本决策记录不重复保存验收流水。
 - 后果：普通 E2E 可继续重建普通测试库；Browser fixture 可在验收期间跨多轮保留而不受普通 E2E 影响，并在收口时按 namespace 精确清理。未来批次仍须遵循 backend testing playbook 的独立生命周期。
 - 影响范围：实现仅涉及测试数据库用途、配置/连接门禁、fixture CLI、test-only 启动入口与测试；未修改产品 Schema、catalog resolver、readiness、量表规则或业务接口。
