@@ -13,7 +13,8 @@
 | Batch D / B11 | 70 项已完成，状态不变 |
 | Batch D / B12 | 合同前置与防御证据保留；`B12-U01`～`B12-U03` 与最终通用门禁均已完成，活动用户场景状态为 `passed=3`、`pending=0`、`failed=0`、`blocked=0`、`not_executed=0`；合同前置证据仍无确认 `gap`，B12 Browser 验收闭环完成，权威明细见 frontend testing playbook |
 | Batch D / B13 | `B13-P0-contract-evidence` 继续完成且合同前置证据 `gap=0`；`B13-U01`～`B13-U03` 与最终通用门禁均已完成，活动场景状态 `passed=3`、`pending=0`、`failed=0`、`blocked=0`、`not_executed=0`；B13 Browser 验收闭环完成，权威明细见 frontend testing playbook 10.1 |
-| Batch D / B14–B15（含 B14.1） | 候选断言和历史设计输入保留，尚未执行；正式设计活动清单前须先完成可达性、风险与证据复用审查 |
+| Batch D / B14（含 B14.1） | 已按当前 A24 合同设计 `B14-U01`、`B14-U02` 两个活动 Browser 场景，尚未执行；状态 `passed=0`、`pending=2`、`failed=0`、`blocked=0`、`not_executed=0`；P0 gap 以 frontend testing playbook 10.2 为权威；B14.1 是累计证据索引，不是独立 Browser 批次 |
+| Batch D / B15 | 原 10 组仍是未治理候选设计输入，尚未执行，本次不改写 |
 | Batch E | 8 个真实设备或人工项目尚未执行 |
 
 roadmap 继续维护产品范围和工作包状态；testing playbook 治理不得自动改变 roadmap。
@@ -21,6 +22,8 @@ roadmap 继续维护产品范围和工作包状态；testing playbook 治理不�
 当前状态：B12 既有后端 HTTP E2E、unit/pure、mapper 与 frontend pure/static 证据继续作为合同或防御证据保留，不再分配 B12 活动 ID。合同前置证据仍无确认 `gap`；两个合法独立认证 Session 基于同一 expectedUpdatedAt 的真实 HTTP 并发锁定，已由现有 `backend/test/clinical-report-lock.e2e-spec.ts` 覆盖，权威明细仍以 frontend testing playbook 9.2 为准；`internal_corruption_only` 的 S11 迁为非阻断防御证据。U01 已完成真实 Browser 只读入口验证；U02 已完成一次真实 Browser A22 lock 写入并由 `u02-post-lock` 验证唯一锁定事实；U03 已完成正式 logout 后原页面 401 与单次真实网络中止两条零写入恢复路径，post-browser verify 证明 `unlocked-confirmed`、`locked-confirmed`、updatedAt、正文、confirmation、metadata 与来源集合均未变化，两次 cleanup 均为 `residualCount=0`。最终通用门禁已完成，B12 Browser 验收闭环完成。
 
 B13 已按当前 A23 合同重新生成：现有 A23 证据直接或分层覆盖角色边界、DTO、V1/V2+ 资格与 lineage、五类来源转换、首次冻结、completed 幂等、合法 `in_progress` 恢复和 A26 shared-source 兼容等合同；不在本手册复制 frontend testing playbook 10.1 的完整证据表。后端 P0-A 已以真实 HTTP E2E 覆盖 G1 同一实例多 ItemResponse 完整 scope；G2 经只读核对确认 A14/A15/A16/A18 均复用 A23 冻结后的 status/`lockedAt` 门禁与原子过滤，且不存在 A23 专属写入分支，按分层证据覆盖，不新增跨模块串联矩阵。G3 最终修正版已通过 exact test-name pattern 获得一次真实 doctor/admin 双 Session HTTP 并发绿色运行，覆盖唯一首次 start/completed 事实、首次 actor/note/counts 保真、五类来源唯一终态与精确 cleanup。G4 前端资格/草稿/Body/计数/latest continuation 与 G5 source-freeze 错误恢复已由同一份 `frontend/test/browser-acceptance/contracts/b13-source-freeze-non-browser.spec.ts` 绿色覆盖；`B13-P0-contract-evidence` 继续完成且当前合同前置证据 `gap=0`。`B13-U01` 已完成三种持久状态入口，`B13-U02` 已完成首次真实来源冻结，`B13-U03` 已完成正式 `in_progress` 显式恢复与一次网络不确定结果：恢复链保留原 scope、freezeId、freezeNote 与 started actor 并形成唯一 completed 事实，网络中止路径没有产生服务端业务写入。`u03-post-recovery` 证明 counts 与来源终态一致、null 与 completed 控制场景不变、报告与 Patient/Visit/Storage 保护边界匹配；两次 cleanup 均为 `residualCount=0`。最终通用门禁已完成，B13 Browser 验收闭环完成。
+
+B14 已按当前 A24 合同完成文档重新生成：已有 A24 证据覆盖 401/403 与 doctor/admin、DTO/whitelist、ownership，以及 ready 门禁、首次单文档原子 archive、安全 response/mapper、completed 幂等、historical fallback、报告受保护事实和归档后 A20～A23 不恢复可写；A26 E2E 另以 V2/V3 真实生命周期覆盖 replacement lineage 与五类共享来源不被重写。本次只读确认三组 P0 工作：G1 尚无两个独立合法 Session 同时 archive 的真实 HTTP/DB 并发证据；G2 尚无 B14 专属 frontend pure/static 与 Archive Action recovery spec；G3 尚无 report identity reset、central reducer 互斥与统一成功报告应用的可定位最低充分测试。A24 现有 conflict E2E 通过直接修改 `operatorNote` 形成；由于当前没有仍保持 ready 资格的正式 UI/API updatedAt-only 触发链，generic conflict 已分类为 `retired_currently_unreachable`，该 E2E 继续作为防御/原子合同证据。historical fallback 为 `supplemental_compatibility`，非 Browser 主流程；audit/metadata/anchor 损坏为非阻断 `supplemental_defensive`。完整合同表、gap 触发路径、最低充分层与原 115 项迁移仅由 frontend testing playbook 10.2 维护，本手册不复制。
 
 B12-P1 旧实验测试资产仍保持移除；U01～U03 复用一个自包含最小 fixture CLI，各自使用一个 Browser spec，没有恢复旧 fixture/support，也没有引入 manager、contract、manifest、journal、aggregator、runner、verifier 文件或 Stage。B12 当前没有剩余 Browser 活动场景，不再声明旧 P1 canary 为下一阶段。
 
@@ -196,15 +199,15 @@ node -e "process.env.NODE_ENV='test'; process.env.COGMEMORY_DATABASE_PURPOSE='st
 
 适用范围内实际执行的 lint、typecheck、build、unit 和 E2E 必须分别报告，互不替代。删除测试资产后必须额外验证 test discovery、TypeScript 全量范围、import、package script 和文档链接无悬空。禁止通过放宽 TypeScript、扩大 exclude、suppression、跳过测试或吞掉退出码制造通过。
 
-## 10. B12～B15 当前待验范围
+## 10. B12～B15 当前状态与待验范围
 
 - B12：原 88 个 ID 与原 S01～S17 不再作为活动关闭对象；当前唯一活动用户场景 `B12-U01`～`B12-U03` 均已完成，状态为 `passed=3`、`pending=0`、`failed=0`、`blocked=0`、`not_executed=0`。U02 的真实 Browser 写入与后置数据库验证已通过；U03 两条真实恢复路径均未产生报告业务写入，post-browser verify 与两次 `residualCount=0` cleanup 已通过；既有 A22/A23 HTTP E2E、unit/pure、mapper 和 frontend pure/static 证据继续作为不分配活动 ID 的合同前置或防御证据，仍无确认 `gap`。最终通用门禁已通过，B12 Browser 验收闭环完成；逐项权威明细、Browser 结果与迁移仍以 frontend testing playbook 9.1～9.5 为准。
 - B13：已重新生成并完成 `B13-U01`～`B13-U03` 3 个活动用户场景，状态为 `passed=3`、`pending=0`、`failed=0`、`blocked=0`、`not_executed=0`。U02 首次真实 Browser `freeze-sources` 与 U03 正式 `in_progress` 恢复均形成唯一 completed 事实；U03 网络中止路径没有服务端业务写入，post-recovery verify 证明 counts、来源终态、两个控制场景和报告、Patient/Visit/Storage 保护边界正确，两次 cleanup 均为 `residualCount=0`。B13-P0-A、P0-A2、G4 与 G5 既有证据继续有效，`B13-P0-contract-evidence` 继续完成且合同前置证据 `gap=0`；最终通用门禁已完成，B13 Browser 验收闭环完成。后端合同、pure/static、防御证据、P0～P4 职责及原 1～116 迁移的权威明细见 frontend testing playbook 10.1；本手册只维护后端证据分层、数据库、fixture、cleanup 与状态摘要。
-- B14：原 115 项和 B14.1 行为范围属于未经治理的候选断言和历史设计输入，本次不改写具体候选条目；正式设计活动清单前须先分类。
+- B14：原 115 项已从活动候选正文退出，当前只有 `B14-U01` 页面入口/代表性角色/归档后只读与 `B14-U02` 首次真实归档/回执/持久摘要两个已设计、尚未执行场景；状态为 `passed=0`、`pending=2`、`failed=0`、`blocked=0`、`not_executed=0`。`B14-P0-contract-evidence` 先关闭真实双 Session HTTP 并发、B14 frontend pure/static + Action recovery 以及 shared workflow 证据 gap；`B14-P1-entry-readonly` 只承担 U01，`B14-P2-first-archive` 只承担 U02，`B14-P3-final-gates` 只承担最终通用门禁。B14.1 不分配活动 ID，B11/B12/B13/B14/B15 各自承担对应动作行为；correction 专属行为不是 B14 关闭前提。权威明细见 frontend testing playbook 10.2～10.3。
 - B15：原 10 组属于未经治理的候选断言和历史设计输入，本次不改写具体候选条目；正式设计活动清单前须先分类。
 
-B14～B15 正式设计活动清单前，每个候选断言必须先标记 `ui_reachable`、`public_api_reachable`、`legitimate_concurrency`、`internal_corruption_only`、`manual_or_real_device`、`general_gate` 或 `duplicate_or_covered`。场景化审查允许合并重复或已有覆盖的断言、迁移通用门禁、退役失去阶段前提的断言，并重新分配最低充分证据层；审查必须保留核心业务风险、不可替代语义、旧条目映射和已有有效证据，不得冻结历史数量或顺序。
+B14 已完成上述可达性、风险与证据复用审查；B15 正式设计活动清单前，每个候选断言仍必须先标记 `ui_reachable`、`public_api_reachable`、`legitimate_concurrency`、`internal_corruption_only`、`manual_or_real_device`、`general_gate` 或 `duplicate_or_covered`。场景化审查允许合并重复或已有覆盖的断言、迁移通用门禁、退役失去阶段前提的断言，并重新分配最低充分证据层；审查必须保留核心业务风险、不可替代语义、旧条目映射和已有有效证据，不得冻结历史数量或顺序。
 
 场景化审查后仍不创建批次专属大型 fixture、evidence matrix、runner、journal、aggregator 或完整 manifest，也不要求一次原子运行关闭整个批次。先复用或补齐最低充分的非 Browser 证据，再为剩余 `ui_reachable` 风险设计最小 Browser Profile，最后按影响范围执行一次轻量集成冒烟和通用门禁。
 
-本手册不改变 B11 及以前完成状态，不改变 B13～B15 产品范围；本次只同步 B13 已完成的后端证据与状态摘要。B13 当前设计与迁移，以及 B12～B15 的活动场景清单、具体状态和旧 ID 映射，以 frontend testing playbook 为权威来源。
+本手册不改变 B11 及以前完成状态，不改变 B12/B13 已完成结果，不改变 B14/B15 产品范围；本次只同步 B14 新设计、后端分层证据与 gap 摘要。B12～B15 的活动场景清单、具体状态、合同表和旧 ID 映射，以 frontend testing playbook 为权威来源；本手册继续只维护后端证据分层、数据库、fixture、verifier 与 cleanup 规则。
