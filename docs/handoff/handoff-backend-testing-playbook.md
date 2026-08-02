@@ -127,6 +127,15 @@ node -e "process.env.NODE_ENV='test'; process.env.COGMEMORY_DATABASE_PURPOSE='st
 7. 微型 Profile 只验证自己的副作用，不机械执行整个批次的全量 verifier。
 8. fixture 不得用直接改库、mock 响应或运行时篡改创造产品永远无法进入的业务状态；`internal_corruption_only` 的防御测试不得包装成 Browser 业务前置。
 
+### 4.1 fixture 与测试代码复杂度治理
+
+- 最小 fixture 的“最小”指最少必要职责、最少独立状态和最低合理维护成本，不是最少代码行。fixture、HTTP E2E、verifier 和 cleanup 不设物理行、非空行或净新增行的通过、失败或停止门禁，是否拆分取决于职责和生命周期，而不是行数。
+- 不得以行数为由压缩或删除 MongoDB 终态验证、Secret 门禁、cleanup、类型、错误处理、安全检查或必要注释，也不得绕过 formatter、把职责迁到无关文件或创建无实际职责的 helper 规避统计。
+- “一个 CLI、一个 spec”等文件数量限制只用于防止重复建设同类基础设施；不得为维持文件数量把多个独立生命周期塞进同一 CLI、在单文件复制逻辑或放弃合理职责拆分。限制与清晰职责边界冲突时，必须暂停并报告设计冲突，由用户决定。
+- 结构扩张时评估新增进程、数据库用途、状态与恢复分支、环境变量、Secret 传递、依赖、cleanup 责任、耦合和重复实现。若需要新增另一套 runner、fixture、manager、Stage、verifier、manifest 或同类基础设施，必须先停止并说明现有能力为何不能复用；测试基础设施超过被测业务或方案无法安全维护时，继续按第 8 节止损。
+
+通用规则引用 `docs/codex-instruction-spec.md` 3.10；Browser 与前端测试资产的项目级补充见 frontend testing playbook 2.3，本节不重复整套说明。
+
 ## 5. 微型 Profile 的数据库生命周期
 
 每个 Profile 原则上只覆盖 1～4 个紧密相关场景，并独立完成：
