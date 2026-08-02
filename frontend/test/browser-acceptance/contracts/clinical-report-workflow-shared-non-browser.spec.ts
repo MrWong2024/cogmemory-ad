@@ -684,34 +684,73 @@ test.describe('Clinical report shared workflow Node-only contracts', () => {
     const facadeSource = readWorkflowSource(
       'src/features/assessments/hooks/useClinicalReportWorkflow.ts',
     );
-    const identityEffectSource = sourceSection(
-      coordinatorSource,
-      'useEffect(() => {\n    const previousIdentity',
-      '  const setEditDraft',
+    const reactImport = coordinatorSource.match(
+      /import\s*\{([^}]*)\}\s*from\s*'react';/,
     );
+    expect(reactImport?.[1]).toMatch(/\buseLayoutEffect\b/);
+    expect(reactImport?.[1]).toMatch(/\buseEffect\b/);
+
+    const identityEffectStart = coordinatorSource.search(
+      /useLayoutEffect\s*\(\s*\(\)\s*=>\s*\{\s*const\s+[A-Za-z_$][\w$]*\s*=\s*workflowIdentityRef\.current\s*;/,
+    );
+    const identityEffectEnd = coordinatorSource.indexOf(
+      'const setEditDraft',
+      identityEffectStart,
+    );
+    expect(identityEffectStart).toBeGreaterThan(-1);
+    expect(identityEffectEnd).toBeGreaterThan(identityEffectStart);
+    const identityEffectSource = coordinatorSource.slice(
+      identityEffectStart,
+      identityEffectEnd,
+    );
+    expect(identityEffectSource).toMatch(/^useLayoutEffect\s*\(/);
+    expect(identityEffectSource).not.toMatch(/\buseEffect\s*\(/);
     expect(identityEffectSource).toContain(
       'if (!routeChanged && !reportIdentityChanged) return;',
     );
+    const identityUpdate = identityEffectSource.indexOf(
+      'workflowIdentityRef.current = {',
+    );
+    const generationIncrement = identityEffectSource.indexOf(
+      'identityGenerationRef.current += 1',
+    );
+    const writingClear = identityEffectSource.indexOf(
+      'writingRef.current = null',
+    );
+    const expectedTransitionRead = identityEffectSource.indexOf(
+      'expectedIdentityTransitionRef.current',
+    );
+    const expectedTransitionClear = identityEffectSource.lastIndexOf(
+      'expectedIdentityTransitionRef.current',
+    );
     expect(
-      identityEffectSource.indexOf('identityGenerationRef.current += 1'),
-    ).toBeLessThan(identityEffectSource.indexOf('writingRef.current = null'));
-    expect(identityEffectSource).toContain(
-      'expectedIdentityTransitionRef.current = null',
+      identityUpdate,
+    ).toBeLessThan(generationIncrement);
+    expect(generationIncrement).toBeLessThan(writingClear);
+    expect(writingClear).toBeLessThan(expectedTransitionRead);
+    expect(expectedTransitionRead).toBeLessThan(expectedTransitionClear);
+    expect(
+      identityEffectSource.match(
+        /expectedIdentityTransitionRef\.current\s*=\s*null/g,
+      ),
+    ).toHaveLength(1);
+    expect(identityEffectSource).toMatch(
+      /if\s*\(routeChanged\)\s*\{\s*dispatch\s*\(\s*\{\s*type:\s*'RESET'\s*\}\s*\)\s*;\s*return\s*;\s*\}\s*dispatch\s*\(\s*\{\s*type:\s*'REPORT_IDENTITY_CHANGED'/,
     );
-    const routeBranch = sourceSection(
-      identityEffectSource,
-      'if (routeChanged) {',
-      "dispatch({\n      type: 'REPORT_IDENTITY_CHANGED'",
-    );
-    expect(routeBranch).toContain("dispatch({ type: 'RESET' })");
-    expect(routeBranch).toContain('return;');
     expect(identityEffectSource).toContain(
       'previousReportId: previousIdentity.reportId',
     );
     expect(identityEffectSource).toContain('nextReportId: reportId');
     expect(identityEffectSource).toContain('expectedTransition,');
-    expect(identityEffectSource).toContain(
-      '}, [patientId, visitId, reportId]);',
+    expect(identityEffectSource).toMatch(
+      /\},\s*\[\s*patientId\s*,\s*visitId\s*,\s*reportId\s*\]\s*\);/,
+    );
+    expect(identityEffectSource).not.toMatch(/\breport\b/);
+    expect(coordinatorSource).toMatch(
+      /useEffect\s*\(\s*\(\)\s*=>\s*\{\s*stateRef\.current\s*=\s*state\s*;\s*\},\s*\[\s*state\s*\]\s*\);/,
+    );
+    expect(coordinatorSource).toMatch(
+      /useEffect\s*\(\s*\(\)\s*=>\s*\{\s*mountedRef\.current\s*=\s*true\s*;\s*return\s*\(\)\s*=>\s*\{\s*mountedRef\.current\s*=\s*false\s*;\s*\}\s*;\s*\},\s*\[\s*\]\s*\);/,
     );
 
     const coordinatorCall = sourceSection(
@@ -722,7 +761,7 @@ test.describe('Clinical report shared workflow Node-only contracts', () => {
     expect(coordinatorCall).toContain('patientId,');
     expect(coordinatorCall).toContain('visitId,');
     expect(coordinatorCall).toContain('reportId: report?.id ?? null');
-    expect(identityEffectSource).not.toContain('[patientId, visitId, report]');
+    expect(coordinatorCall).not.toMatch(/^\s*report\s*,/m);
 
     for (const actionFile of [
       'useClinicalReportEditAction.ts',

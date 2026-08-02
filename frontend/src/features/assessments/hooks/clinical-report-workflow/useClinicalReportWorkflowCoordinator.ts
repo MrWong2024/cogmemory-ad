@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useReducer, useRef } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useReducer,
+  useRef,
+} from 'react';
 
 import { refreshClinicalReportLatestAtMostOnce, toClinicalReportApiError } from '@/src/features/assessments/hooks/clinical-report-workflow/clinical-report-workflow-recovery';
 import {
@@ -67,7 +73,7 @@ export function useClinicalReportWorkflowCoordinator({
     };
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const previousIdentity = workflowIdentityRef.current;
     const routeChanged =
       previousIdentity.patientId !== patientId ||
