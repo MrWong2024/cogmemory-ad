@@ -17,11 +17,12 @@
 | Batch D / B14 | `B14-U01`～`B14-U02`；`passed=2`、`pending=0`；P0 `gap=0`；最终门禁与 Browser 闭环完成 | “当前证据索引” |
 | B14.1 | 累计证据索引，不是独立 Browser 批次，不拥有独立活动 ID | “B14.1 累计证据索引” |
 | Batch D / B15 | `B15-U01`～`B15-U02`；`passed=2`、`pending=0`；P0 `gap=0`；最终门禁与 Browser 闭环完成 | “当前证据索引” |
-| WP-03 / B18-A | 前端实现与非 Browser 合同阶段完成；B18 / WP-03 未完成 | “B18-A 非 Browser 证据与 B18-B 边界” |
-| WP-03 / B18-B | 待执行真实 Browser 验收 | “B18-A 非 Browser 证据与 B18-B 边界” |
+| WP-03 / B18-A | 前端实现与非 Browser 合同阶段完成；B18 / WP-03 未完成 | “B18-A、B18-B1 证据与 B18-B2 边界” |
+| WP-03 / B18-B1 | 核心真实 Browser 阶段完成；`passed=6`、`pending=0`；P0 `gap=0` | “B18-A、B18-B1 证据与 B18-B2 边界” |
+| WP-03 / B18-B2 | 待执行剩余真实 Browser 验收；B18 / WP-03 未完成 | “B18-A、B18-B1 证据与 B18-B2 边界” |
 | Batch E | 8 个真实设备或人工项目待验 | “Batch E：真实设备或人工验收” |
 
-B11～B15 均已完成。当前没有待执行的 Batch D 场景；B18-B 与 Batch E 是明确保留的后续验证范围。testing playbook 治理不选择、启动或改变 roadmap 工作包。
+B11～B15 均已完成。当前没有待执行的 Batch D 场景；B18-B2 与 Batch E 是明确保留的后续验证范围。testing playbook 治理不选择、启动或改变 roadmap 工作包。
 
 ## 2. 当前测试设计规则
 
@@ -163,6 +164,7 @@ backend unit、HTTP E2E、database verifier、fixture 与 cleanup 的具体规�
 | B13 | `B13-U01`～`B13-U03`；`passed=3`、`pending=0` | P0 `gap=0`；final gates 完成 | `backend/scripts/b13-browser-fixtures.ts`；`frontend/test/browser-acceptance/b13/`；`frontend/test/browser-acceptance/contracts/b13-source-freeze-non-browser.spec.ts`；`backend/test/clinical-report-source-freeze.e2e-spec.ts` | `38b56daea38e53dbada0806863f9e13befac0c41` | `in_progress` 是正式恢复状态；精确 scope 与首次事实保真；网络不确定结果不自动 POST/latest |
 | B14 | `B14-U01`～`B14-U02`；`passed=2`、`pending=0` | P0 `gap=0`；final gates 完成 | `backend/scripts/b14-browser-fixtures.ts`；`frontend/test/browser-acceptance/b14/`；`frontend/test/browser-acceptance/contracts/b14-archive-non-browser.spec.ts`；`backend/test/clinical-report-archive.e2e-spec.ts` | `335090c8ea5cb826c3f93e3419cb0c3980bb70fb` | A24 没有正式 `in_progress`；historical fallback 仅是兼容合同；首次归档与持久摘要闭环 |
 | B15 | `B15-U01`～`B15-U02`；`passed=2`、`pending=0` | P0 `gap=0`；final gates 完成 | `backend/scripts/b15-browser-fixtures.ts`；`frontend/test/browser-acceptance/b15/`；`frontend/test/browser-acceptance/contracts/b15-correction-non-browser.spec.ts`；`backend/test/clinical-report-correction.e2e-spec.ts` | `6a5c55dbc926ddff534d1fb30e936395a531edae` | A25 正式 `in_progress` 恢复；correctionId 是内部标识，correctionNo 是用户可见业务序号；首次、更正恢复、network uncertain 与线性 replacement 均闭环 |
+| B18-B1 | `B18-U01`～`B18-U03`；`passed=6`、`pending=0` | P0 `gap=0`；final gates 完成 | `backend/scripts/b18-browser-fixtures.ts`；`frontend/test/browser-acceptance/b18/`；B18-A 两个 contract spec；A29 / A30 既有 backend 证据 | 当前工作树（未提交） | trailing 自动保存、reload / beforeunload、双 Session 显式冲突选择、submit 生命周期关闭、offline/online 与响应丢失只读核对闭环；B18-B2 仍 pending |
 
 ### 4.1 B14.1 累计证据索引
 
@@ -177,18 +179,22 @@ B14.1 不是独立业务能力，不拥有独立 Browser 活动 ID，也不恢�
 | correction | B15 | B15 Browser、Correction Node-only 与 A25 HTTP E2E |
 | shared façade / coordinator / reducer / identity isolation | 跨 B11～B15 | `frontend/test/browser-acceptance/contracts/clinical-report-workflow-shared-non-browser.spec.ts`；稳定 `reportId`、route RESET、unexpected identity 隔离、expected correction transition 保真、identity generation、layout barrier、单一 writingRef/latest/beforeunload |
 
-## 5. B18-A 非 Browser 证据与 B18-B 边界
+## 5. B18-A、B18-B1 证据与 B18-B2 边界
 
 - 精确 discovery：`b18-item-response-autosave.contract.spec.ts` 与 `b18-item-response-timer.contract.spec.ts`，共 47 项且恰好 2 个目标文件；两个文件不声明 page、context、browser 或 browserName fixture。
 - Autosave contract：`frontend/test/browser-acceptance/contracts/b18-item-response-autosave.contract.spec.ts`，27 项通过。以注入式 fake clock 验证 debounce / max wait / 串行 / trailing / cleanup，以 fake fetch 验证序列化、冲突、AbortError 与 503 分类；没有真实 HTTP。
 - Timer contract：`frontend/test/browser-acceptance/contracts/b18-item-response-timer.contract.spec.ts`，20 项通过。使用普通对象与固定 wall-clock 验证状态转换、elapsed、checkpoint、manual / imported 和同一逐题队列；没有启动 Browser。
-- 静态门禁：`npm run lint`、正式 `npm run typecheck`、正式 `npm run build`、`npm run test:browser:list` 均实际启动并以退出码 0 完成；完整 discovery 为 153 项、30 个文件。typecheck / build 前确认本项目无 Node / Next 进程或监听占用，并以同一沙箱外身份写入 `.next`；最终 `.next` 与 test-results 已清理。
+- 静态门禁：B18-B1 最终代码态的 backend / frontend `npm run lint`、`npm run typecheck`、`npm run build` 与 `npm run test:browser:list` 均实际启动并以退出码 0 完成；完整 discovery 为 159 项、33 个文件。正式 frontend typecheck / build 前确认本项目无 Node / Next 进程及 3002 / 5002 监听，并以同一沙箱外身份写入 `.next`；输出未出现 `EPERM`、未处理拒绝或异常。
 - 数据与运行边界：未启动 Chromium、frontend、backend、Browser fixture 或长期服务；未发送真实网络请求，未连接或写入任何数据库，未修改 Browser live profile / fixture。A29 / A30 后端 unit、HTTP E2E、CAS、媒体隔离、提交屏障与隐私证据直接复用，没有重复运行后端测试。
-- 完成边界：上述证据只关闭 B18-A 前端实现与非 Browser 合同阶段，不证明真实用户流程。双 Session 冲突、断网、刷新、切组、媒体竞态、beforeunload 与实时计时的 Browser 验收归属 B18-B；B18 与 WP-03 均未完成。
+- B18-B1 discovery 与 Profile：三个目标 spec 精确发现 6 项，分布为 P1=1、P2=3、P3=2；三个 Profile 分别使用独立 namespace、production frontend、Browser test backend、真实 HTTP 与 `cogmemory_ad_browser_test`，均完成 prepare、prepared verify、Browser、post verify、cleanup，最终 runtime / namespace / 端口 / 进程 / test-results residual=0。
+- P1 核心自动保存：真实 gate 证明单题最多一个 active PATCH，trailing edit 形成第二个 PATCH，两个请求均只含 `expectedRevision` / `responseText` 且状态 200，revision `0→1→2`；dirty navigation 触发 beforeunload 并 dismiss，clean reload 无对话框，reload 只恢复服务器事实，Storage / Cookie / URL 无草稿持久化。
+- P2 冲突与生命周期：两个真实独立 Session 形成 409 冲突；server choice 不补写，local choice 仅以最新 revision 显式补写一次且无 retry loop。代表性 390×844 冲突 UI 无全局横向溢出，键盘事件可信、focus-visible 生效、alert / 非颜色状态明确，focused Axe serious / critical 为 0。readiness=true 场景中 doctor 只提交一次，nurse 延迟 PATCH 得到 `SCALE_INSTANCE_NOT_EDITABLE`，本地值保留且控件只读；verifier 确认 completed、唯一 doctor submission audit、目标草稿业务状态未变且无评分 / 认知域 / 报告副作用。
+- P3 网络恢复：真实 `BrowserContext` offline/online 各触发一次事件；离线期间 PATCH=0、提交本地阻断，联网后仅 PATCH=1。响应丢失场景通过 `route.fetch()` 让上游 PATCH 真实返回 200 后 abort 浏览器响应，并 abort 首次 reconciliation GET；页面保留本地值与手工“重新核对服务器”入口，第二次只读 GET 成功后接受 revision+1，全程无 PATCH replay 或伪造 business response。
+- 完成边界：B18-B1 只关闭核心自动保存、冲突 / 生命周期关闭与网络恢复真实 Browser 阶段。切组、媒体 generation 竞态和实时计时等剩余用户流程归属 B18-B2；B18 与 WP-03 均未完成。
 
 ## 6. Batch E：真实设备或人工验收
 
-以下稳定 ID 不属于已完成的桌面范围，也不得被桌面 viewport、鼠标 Canvas 或普通 automated 测试替代；它们与 B18-B 是不同的后续验证范围：
+以下稳定 ID 不属于已完成的桌面范围，也不得被桌面 viewport、鼠标 Canvas 或普通 automated 测试替代；它们与 B18-B2 是不同的后续验证范围：
 
 | 验证 ID | 当前状态 | 执行边界 |
 |---|---|---|
@@ -210,4 +216,4 @@ B14.1 不是独立业务能力，不拥有独立 Browser 活动 ID，也不恢�
 - 只有影响性产品代码、接口、配置、测试基础设施或产品合同变化时，才按实际影响重新展开风险与证据设计；未变化事实复用现有精确证据。
 - Browser 活动场景的主证据、必要支持证据、适用 verifier 和 cleanup 均通过后才能关闭；静态存在核对不得冒充动态通过。
 - 数据库用途、fixture、verifier、cleanup、Stage 和后端定向命令以 backend testing playbook 为准。
-- testing playbook 治理不改变 roadmap；当前 WP-03 仍进行中，下一具名阶段是 B18-B。
+- testing playbook 治理不改变 roadmap；当前 WP-03 仍进行中，下一具名阶段是 B18-B2。

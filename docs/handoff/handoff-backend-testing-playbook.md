@@ -16,7 +16,7 @@
 | Batch D / B14 | 完成；`passed=2`、`pending=0`；P0 `gap=0` | A24 HTTP/unit、并发、Archive Node-only 与 verifier 完整 | frontend testing playbook“当前证据索引” |
 | B14.1 | 累计证据索引，不是独立 Browser 批次 | shared Node-only 与分层 backend 证据完整 | frontend testing playbook“B14.1 累计证据索引” |
 | Batch D / B15 | 完成；`passed=2`、`pending=0`；P0 `gap=0` | A25 HTTP/unit、三类并发收敛、Correction Node-only 与 verifier 完整 | frontend testing playbook“当前证据索引” |
-| A29 / A30 / WP-03 backend | 后端范围完成；A29 验证闭合；阻断性 `gap=0` | 父实例 + 固定题目 scope 的可恢复 barrier、A14/A15 原子门禁、fencing/releasing 恢复、完成/释放 CAS 竞争、legacy / invalid / privacy 证据完整 | B18 为下一实施阶段；WP-03 未完成 |
+| A29 / A30 / WP-03 backend | 后端范围完成；A29 验证闭合；阻断性 `gap=0` | 父实例 + 固定题目 scope 的可恢复 barrier、A14/A15 原子门禁、fencing/releasing 恢复、完成/释放 CAS 竞争、legacy / invalid / privacy 证据完整 | B18-B1 Browser verifier 已闭环；B18-B2 为下一阶段，WP-03 未完成 |
 | Batch E | 8 个真实设备或人工项目待验 | 不由后端自动测试冒充 | frontend testing playbook“Batch E：真实设备或人工验收” |
 
 roadmap 独立维护产品范围和工作包状态；testing playbook 治理不启动下一工作包。
@@ -188,6 +188,7 @@ lint、typecheck、build、unit、HTTP E2E、Browser、verifier 和 cleanup 互�
 | B14 | `backend/test/clinical-report-archive.e2e-spec.ts`；`backend/src/modules/reports/services/clinical-report-archive-workflow.service.spec.ts`；`frontend/test/browser-acceptance/contracts/b14-archive-non-browser.spec.ts`；A24 并发、幂等与 protected facts | `backend/scripts/b14-browser-fixtures.ts` 覆盖只读/唯一归档后置核对与精确 cleanup；生命周期已闭环 | backend-specific 证据完整 | frontend testing playbook“当前证据索引” |
 | B15 | `backend/test/clinical-report-correction.e2e-spec.ts`；`backend/src/modules/reports/services/clinical-report-correction-workflow.service.spec.ts`；`frontend/test/browser-acceptance/contracts/b15-correction-non-browser.spec.ts`；A25 pre-start、start miss、record/complete 三类合法并发收敛 | `backend/scripts/b15-browser-fixtures.ts` 覆盖 U01/U02 prepared/post-correction/post-recovery 与精确 cleanup；生命周期已闭环 | backend-specific 证据完整 | frontend testing playbook“当前证据索引” |
 | A29 / A30 / WP-03 backend | 六个精确 unit suite 覆盖纯 barrier、持久化阶段、A14 草稿、A15 workflow、A16 编排与 Assessments 条件写；三个精确 HTTP E2E suite 覆盖 9 个确定性并发 / 恢复 Stage，并保留既有 A14-A16 回归 | HTTP E2E 使用两个真实认证 Session、测试侧一次性 Mongoose query latch 与 fake Storage 调用集；未增加生产 hook、sleep、轮询、Browser 或长期 namespace | 后端范围完成；阻断性 `gap=0`；B18 可进入，WP-03 未完成 | 本行及 roadmap / A30 maps |
+| B18-B1 Browser verifier | 复用 A29 / A30 既有生产合同；本阶段未修改 backend `src` | `backend/scripts/b18-browser-fixtures.ts` 覆盖三个独立 Profile 的 prepared/post-autosave/post-conflict-lifecycle/post-network-reconciliation 与精确 cleanup；实际库为 `cogmemory_ad_browser_test`，每个 Profile cleanup residual=0 | backend-specific verifier 完整；B18-B2 仍 pending | frontend testing playbook“B18-A、B18-B1 证据与 B18-B2 边界” |
 
 B12～B15 的 Browser 操作、页面文案、keyboard、viewport、Storage 和活动场景结果只在 frontend testing playbook 的语义索引中维护；本手册不复制执行流水或历史迁移表。
 
@@ -195,4 +196,4 @@ A30 最终代码态的精确 discovery 与正式定向证据均闭合：六个�
 
 九个 Stage 分别证明：屏障先胜时暂停的 A14 PATCH 零写入；PATCH 先胜时第二次 readiness 包含其结果；上传 attach 屏障先胜时本次 MediaEvidence 与 Storage 对象精确补偿；作废 clear 屏障先胜时零写入；clear 先胜使 readiness 失效、同 token release 后可重传再提交；两个真实 Session 的 submit 竞争保留唯一首次 actor / token；partial fencing 与 partial releasing 可恢复；释放不删除 scope 外其他 token；legacy completed 兼容且损坏父 / 子屏障 fail closed。完成后父屏障为 completed、固定 scope 子屏障保留，公开 response / 错误不泄露 barrier、scope、内部 ID 或 metadata。
 
-最终门禁为：`lint`、`typecheck`、`build` 全部 exit 0；完整 unit 为 92 suites / 853 tests；完整 HTTP E2E 以沙箱外身份运行同一正式命令并通过 26 suites / 158 tests，A25 输出 `databasePurpose=standard_test`、`actualDatabaseName=cogmemory_ad_test`、Storage fake、LLM / SMS stub，A24 / A25 cleanup residualCount 均为 0。未保留 Browser、端口、进程、test-results 或业务 namespace。A29 / A30 阻断性 gap 当前为 0，B18 可进入；前端自动保存与交互仍未实现，因此 WP-03 未完成。
+最终门禁为：`lint`、`typecheck`、`build` 全部 exit 0；完整 unit 为 92 suites / 853 tests；完整 HTTP E2E 以沙箱外身份运行同一正式命令并通过 26 suites / 158 tests，A25 输出 `databasePurpose=standard_test`、`actualDatabaseName=cogmemory_ad_test`、Storage fake、LLM / SMS stub，A24 / A25 cleanup residualCount 均为 0。B18-B1 新增 fixture 在最终代码态通过 backend lint / typecheck / build；三个 Browser Profile 的 prepared/post verifier 与 cleanup 全部通过，最终未保留 Browser、端口、进程、test-results、runtime descriptor 或业务 namespace。A29 / A30 阻断性 gap 当前为 0，B18-B1 已完成；B18-B2 为下一阶段，B18 与 WP-03 均未完成。
