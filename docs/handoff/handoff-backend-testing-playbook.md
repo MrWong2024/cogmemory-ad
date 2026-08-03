@@ -54,7 +54,7 @@ roadmap 独立维护产品范围和工作包状态；testing playbook 治理不�
 
 ### 3.1 后端候选来源补充
 
-新 B# 的后端合同基本锁定后、生成实现 Codex 指令前，后端风险候选至少核对：
+新 A#、涉及后端合同的 B#、工作包子任务或其他实现单元的后端合同基本锁定后、生成实现 Codex 指令前，后端风险候选至少核对：
 
 - Controller / Route / Guard / Pipe 的真实入口、认证顺序和拒绝边界。
 - DTO、whitelist、path/query/body 转换与 Controller 到 Service 的参数传递。
@@ -68,7 +68,11 @@ roadmap 独立维护产品范围和工作包状态；testing playbook 治理不�
 - Browser 写入是否需要后置 database verifier，fixture 是否只制造合法最小前置，cleanup 是否精确、幂等且可核对。
 - 已有 unit / HTTP E2E / verifier 等后端证据，以及证据形成后相关 Controller、DTO、Service、Repository、Schema、mapper 或配置是否变化。
 
-本小节只生成后端特有风险候选；跨层生成、分类、主要归属、即时验收和最终覆盖核对引用 frontend testing playbook“验证候选的系统生成与即时闭环”以及 `docs/codex-instruction-spec.md` 3.9，不复制完整跨层流程。不得为每个 Controller、DTO 字段或 Schema 字段机械建立测试，也不得把只能直接改库形成的数据库损坏状态默认升级为阻断验收。
+A# 默认从 backend unit、HTTP E2E、database verifier 与 static gate 中选择最低充分证据；没有正式 UI 入口时不机械要求 Browser。UI 候选可以归属到同一工作包中的具名 B#，但该归属不表示候选已经关闭：只有 A# 自身锁定的纯后端范围实际关闭后，才可准确写为“A# 后端范围完成”；具名 B# 仍 pending 时，不得宣布完整工作包或产品能力完成。若 A# 的锁定范围本身包含跨层产品闭环，不得把 UI 风险转移到后续 B# 以提前完成。
+
+B# 可以引用当前代码态下仍适用的 A# 精确 unit、HTTP E2E 或 verifier 证据，不重复建设同一风险的主测试；若 B# 改变后端合同或暴露新的公开调用路径，必须重新扫描后端候选，并明确由当前跨层任务或具名 A# 承担。
+
+本小节只生成后端特有风险候选；跨层生成、分类、主要归属、即时验收、阶段/实现单元/工作包完成门禁和最终覆盖核对，引用 frontend testing playbook“验证候选的系统生成与即时闭环”以及 `docs/codex-instruction-spec.md` 3.9，不复制完整跨层流程。不得为每个 Controller、DTO 字段或 Schema 字段机械建立测试，也不得把只能直接改库形成的数据库损坏状态默认升级为阻断验收。
 
 ### 3.2 后端证据层职责
 
