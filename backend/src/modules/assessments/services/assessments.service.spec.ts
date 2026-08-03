@@ -932,6 +932,7 @@ describe('AssessmentsService', () => {
       progress: { completedItemCount: 0 },
       qualityControlSummary: { reviewed: false },
       notes: 'De-identified scale instance note',
+      submissionWriteBarrier: null,
       metadata: { source: 'unit-test' },
       internalMarker: 'not returned',
     };
@@ -971,6 +972,7 @@ describe('AssessmentsService', () => {
       progress: { completedItemCount: 0 },
       qualityControlSummary: { reviewed: false },
       notes: 'De-identified scale instance note',
+      submissionWriteBarrier: null,
       metadata: { source: 'unit-test' },
     });
     expect(result).not.toHaveProperty('_id');
@@ -1047,6 +1049,7 @@ describe('AssessmentsService', () => {
         progress: null,
         qualityControlSummary: null,
         notes: undefined,
+        submissionWriteBarrier: null,
         metadata: null,
       },
     ]);
@@ -1142,6 +1145,11 @@ describe('AssessmentsService', () => {
       },
       qualityControlSummary: { hidden: true },
       notes: 'hidden note',
+      submissionWriteBarrier: {
+        version: 1,
+        barrierId: 'a85ee596-783e-4e86-8803-da321ef1d6d3',
+        state: 'fenced',
+      },
       metadata: { hidden: true },
     });
 
@@ -1159,6 +1167,8 @@ describe('AssessmentsService', () => {
     expect(response).not.toHaveProperty('metadata');
     expect(response).not.toHaveProperty('qualityControlSummary');
     expect(response).not.toHaveProperty('notes');
+    expect(response).not.toHaveProperty('submissionWriteBarrier');
+    expect(response).not.toHaveProperty('barrierId');
     expect(response.progress).not.toHaveProperty('hiddenProgressField');
   });
 
@@ -1397,6 +1407,7 @@ describe('AssessmentsService', () => {
       ],
       operatorNote: 'De-identified operator note',
       qualityControlHints: { needsReview: true },
+      submissionWriteBarrier: null,
       metadata: { source: 'unit-test' },
       lockedAt: null,
       voidedAt: null,
@@ -1511,6 +1522,7 @@ describe('AssessmentsService', () => {
       ],
       operatorNote: 'De-identified operator note',
       qualityControlHints: { needsReview: true },
+      submissionWriteBarrier: null,
       metadata: { source: 'unit-test' },
       lockedAt: null,
       voidedAt: null,
@@ -1652,6 +1664,10 @@ describe('AssessmentsService', () => {
         patientId,
         status: { $in: ['not_started', 'in_progress', 'answered'] },
         lockedAt: null,
+        $or: [
+          { submissionWriteBarrier: null },
+          { submissionWriteBarrier: { $exists: false } },
+        ],
         evidenceRefs: {
           $elemMatch: {
             evidenceType: 'photo',
@@ -1705,6 +1721,10 @@ describe('AssessmentsService', () => {
         patientId,
         status: { $in: ['not_started', 'in_progress', 'answered'] },
         lockedAt: null,
+        $or: [
+          { submissionWriteBarrier: null },
+          { submissionWriteBarrier: { $exists: false } },
+        ],
         evidenceRefs: {
           $elemMatch: {
             evidenceType: 'handwriting',
@@ -1781,133 +1801,7 @@ describe('AssessmentsService', () => {
     );
   });
 
-  it('atomically completes only an editable owned scale instance with point-path submission metadata', async () => {
-    const patientId = new Types.ObjectId();
-    const visitId = new Types.ObjectId();
-    const scaleInstanceId = new Types.ObjectId();
-    const definitionId = new Types.ObjectId();
-    const versionId = new Types.ObjectId();
-    const operatorId = new Types.ObjectId();
-    const completionTime = new Date('2026-07-11T08:00:00.000Z');
-    const startedAt = new Date('2026-07-11T07:00:00.000Z');
-    const completedDocument = {
-      _id: scaleInstanceId,
-      assessmentVisitId: visitId,
-      patientId,
-      subjectCode: 'SUBJ-A16-TEST-001',
-      scaleDefinitionId: definitionId,
-      scaleVersionId: versionId,
-      scaleCode: 'mmse',
-      scaleVersion: '1.0',
-      instanceCode: 'INST-A16-TEST-001',
-      instanceNo: 1,
-      status: 'completed',
-      administrationMode: 'clinician_administered',
-      versionTrace: null,
-      startedAt,
-      completedAt: completionTime,
-      lockedAt: null,
-      voidedAt: null,
-      durationMs: 3600000,
-      operatorSnapshot: null,
-      progress: {
-        totalItemCount: 11,
-        answeredItemCount: 11,
-        source: 'submission',
-        finalizedAt: completionTime,
-      },
-      qualityControlSummary: null,
-      metadata: { initializedFromSeed: true },
-    };
-    scaleInstanceModel.findOneAndUpdate.mockReturnValue(
-      createExecQuery(completedDocument),
-    );
-
-    await expect(
-      service.completeScaleInstanceIfEditable(
-        patientId,
-        visitId,
-        scaleInstanceId,
-        {
-          submissionId: 'submission-a16-test',
-          completionTime,
-          startedAtToSet: startedAt,
-          durationMs: 3600000,
-          submittedBy: operatorId.toString(),
-          submittedByName: 'Test Operator',
-          submittedByRole: 'doctor',
-          readinessSummary: {
-            expectedItemCount: 11,
-            actualItemCount: 11,
-            completedItemCount: 11,
-            blockingIssueCount: 0,
-            warningCount: 0,
-          },
-        },
-      ),
-    ).resolves.toEqual(expect.objectContaining({ status: 'completed' }));
-
-    expect(scaleInstanceModel.findOneAndUpdate).toHaveBeenCalledWith(
-      {
-        _id: scaleInstanceId,
-        patientId,
-        assessmentVisitId: visitId,
-        lockedAt: null,
-        status: { $in: ['draft', 'in_progress'] },
-      },
-      {
-        $set: {
-          status: 'completed',
-          completedAt: completionTime,
-          startedAt,
-          durationMs: 3600000,
-          progress: {
-            totalItemCount: 11,
-            answeredItemCount: 11,
-            source: 'submission',
-            finalizedAt: completionTime,
-          },
-          'metadata.submission.submissionId': 'submission-a16-test',
-          'metadata.submission.submittedAt': completionTime,
-          'metadata.submission.submittedBy': operatorId,
-          'metadata.submission.submittedByName': 'Test Operator',
-          'metadata.submission.submittedByRole': 'doctor',
-          'metadata.submission.readinessSummary.expectedItemCount': 11,
-          'metadata.submission.readinessSummary.actualItemCount': 11,
-          'metadata.submission.readinessSummary.completedItemCount': 11,
-          'metadata.submission.readinessSummary.blockingIssueCount': 0,
-          'metadata.submission.readinessSummary.warningCount': 0,
-        },
-      },
-      { returnDocument: 'after', runValidators: true },
-    );
-  });
-
-  it('returns null on an atomic completion miss and safely reads controlled audit fields', async () => {
-    scaleInstanceModel.findOneAndUpdate.mockReturnValue(createExecQuery(null));
-    await expect(
-      service.completeScaleInstanceIfEditable(
-        new Types.ObjectId(),
-        new Types.ObjectId(),
-        new Types.ObjectId(),
-        {
-          submissionId: 'submission-a16-test',
-          completionTime: new Date(),
-          durationMs: null,
-          submittedBy: new Types.ObjectId().toString(),
-          submittedByName: 'Test Operator',
-          submittedByRole: 'nurse',
-          readinessSummary: {
-            expectedItemCount: 1,
-            actualItemCount: 1,
-            completedItemCount: 1,
-            blockingIssueCount: 0,
-            warningCount: 1,
-          },
-        },
-      ),
-    ).resolves.toBeNull();
-
+  it('safely reads only controlled submission audit fields', () => {
     const submittedAt = new Date('2026-07-11T08:00:00.000Z');
     const submittedBy = new Types.ObjectId();
     expect(

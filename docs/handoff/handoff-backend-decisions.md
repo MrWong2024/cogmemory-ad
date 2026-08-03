@@ -370,6 +370,17 @@
 - 计时持久化：实时计时的 idle / running / paused / completed、`lastResumedAt` 与累计 duration 随 ItemResponse 草稿完整快照保存；legacy timing 只读安全规范化，不在 GET 回写。计时不新建 collection、history 或后台 job，也不自动 answered、提交、评分或修改 Visit / ScaleInstance startedAt。
 - 跨端边界：A29 只完成后端保存合同；当前前端仍为 B17 / 旧 B4 客户端。B18 负责 expectedRevision 适配、自动保存、冲突恢复、网络 / 切组恢复、未保存状态和实时计时交互；B18 未完成前不得宣布 WP-03 完成。
 
+### D-040：A16 采用父实例 + 固定题目 scope 的可恢复 submission write barrier
+
+- 日期：2026-08-03
+- 线性化边界：不用 Mongo transaction、内存 mutex、`lockedAt` 或状态字段冒充互斥锁；在 `ScaleInstance.submissionWriteBarrier` 保存 version=1、UUID `barrierId`、`fencing / fenced / releasing / completed`、首次 actor / 时间与稳定排序且去重的完整 `ItemResponse` scope，并在每个 scope 子项保存同 token 屏障。
+- 写入门禁：A14 草稿 CAS、A15 evidenceRef attach / clear 都要求父、子 submission barrier 为 null / missing；原子 miss 后重读并优先把合法或损坏的父/子屏障归类为 409 `SCALE_INSTANCE_NOT_EDITABLE`，损坏内部屏障不 fail-open。A15 restore 仅作为 clear 后下游作废失败的受控补偿例外，不新增普通业务写入口。
+- 可恢复编排：首次提交在 readiness 后原子建立父 `fencing`，按固定 scope 幂等写入并重读验证所有子屏障，再把父推进 `fenced`；完成前重新读取同一 scope 并执行第二次 readiness。中断请求只沿持久化 state / token / scope 恢复，不重新生成 scope，不轮询或自动重放外部写。
+- 失败释放：readiness 失效时先把父推进 `releasing`，只清理 barrierId 精确相同的子屏障，逐项确认 open 后再清父屏障；外部或其他 token 永不由本次释放删除。释放中断可恢复，完成与释放通过父状态 CAS 竞争且只能有一个方向成功。
+- 完成事实：最终 `submissionId` 复用首次 `barrierId`，submittedBy / startedAt 复用首次 actor / 时间；ScaleInstance 原子变为 completed 并把父屏障置 completed，所有同 token 子屏障继续保留，永久阻断暂停后释放的 A14 / A15 写。completed 幂等不重写首次事实；无 A30 字段的 legacy completed 实例继续按既有 A16 审计兼容读取。
+- 公开与数据边界：屏障是 private persistence state，不新增 index、collection、endpoint、DTO、role、公开 response、配置、队列或后台任务；公开 mapper 不返回屏障、scope、内部 ID 或首次 actor 字段。A17 / A18 / A23 既有来源冻结边界不因 A30 改变。
+- 跨端边界：A30 关闭 A29 的相邻生命周期并发写保护 gap 并使 B18 重新成为下一实施阶段，但 B18 的自动保存、冲突恢复与 Browser 交互尚未实现，WP-03 仍未完成。
+
 ## 4. 后续同步规则
 
 - 新增关键技术选型、接口设计、数据模型、测试策略或部署策略后，应追加决策记录。

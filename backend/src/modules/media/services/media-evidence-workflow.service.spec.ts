@@ -607,6 +607,62 @@ describe('MediaEvidenceWorkflowService', () => {
     expect(media.deleteEvidenceForCompensation).toHaveBeenCalledWith(
       ids.mediaEvidenceId,
     );
+    expect(storage.deleteObject).toHaveBeenCalledTimes(2);
+  });
+
+  it('compensates exact upload artifacts and reclassifies an attach miss won by a barrier', async () => {
+    assessments.findScaleInstanceByPatientVisitAndId
+      .mockResolvedValueOnce({ id: ids.scaleInstanceId, status: 'draft' })
+      .mockResolvedValueOnce({
+        id: ids.scaleInstanceId,
+        status: 'draft',
+        submissionWriteBarrier: { malformed: true },
+      });
+    assessments.attachItemEvidenceReference.mockResolvedValueOnce(null);
+
+    await expectHttpCode(
+      service.uploadEvidence(
+        params,
+        { evidenceType: 'photo', captureMode: 'photo_upload' },
+        { file: [primaryFile()] },
+        user,
+      ),
+      409,
+      'SCALE_INSTANCE_NOT_EDITABLE',
+    );
+
+    expect(media.deleteEvidenceForCompensation).toHaveBeenCalledWith(
+      ids.mediaEvidenceId,
+    );
+    expect(uploadedInputs).toHaveLength(1);
+    expect(storage.deleteObject).toHaveBeenCalledWith(
+      uploadedInputs[0].objectKey,
+    );
+    expect(media.markEvidenceVoided).not.toHaveBeenCalled();
+  });
+
+  it('fails upload and void prechecks closed for malformed item barriers', async () => {
+    assessments.findItemResponseByOwnership.mockResolvedValue(
+      itemResponse({ submissionWriteBarrier: { malformed: true } }),
+    );
+
+    await expectHttpCode(
+      service.uploadEvidence(
+        params,
+        { evidenceType: 'photo', captureMode: 'photo_upload' },
+        { file: [primaryFile()] },
+        user,
+      ),
+      409,
+      'SCALE_INSTANCE_NOT_EDITABLE',
+    );
+    await expectHttpCode(
+      service.voidEvidence(mediaParams, { reason: 'blocked' }, user),
+      409,
+      'SCALE_INSTANCE_NOT_EDITABLE',
+    );
+    expect(storage.uploadFile).not.toHaveBeenCalled();
+    expect(assessments.clearItemEvidenceReference).not.toHaveBeenCalled();
   });
 
   it('creates fixed-expiry primary and trajectory access URLs safely', async () => {
@@ -688,6 +744,37 @@ describe('MediaEvidenceWorkflowService', () => {
       }),
     );
     expect(typeof voidMetadataInputs[0]?.voidedAt).toBe('string');
+    expect(storage.deleteObject).not.toHaveBeenCalled();
+  });
+
+  it('reclassifies a clear miss won by a parent barrier without voiding evidence', async () => {
+    assessments.findScaleInstanceByPatientVisitAndId
+      .mockResolvedValueOnce({ id: ids.scaleInstanceId, status: 'draft' })
+      .mockResolvedValueOnce({
+        id: ids.scaleInstanceId,
+        status: 'draft',
+        submissionWriteBarrier: { malformed: true },
+      });
+    assessments.findItemResponseByOwnership.mockResolvedValue(
+      itemResponse({
+        evidenceRefs: [
+          {
+            evidenceType: 'photo',
+            mediaEvidenceId: ids.mediaEvidenceId,
+            status: 'attached',
+          },
+        ],
+      }),
+    );
+    assessments.clearItemEvidenceReference.mockResolvedValueOnce(null);
+
+    await expectHttpCode(
+      service.voidEvidence(mediaParams, { reason: 'blocked' }, user),
+      409,
+      'SCALE_INSTANCE_NOT_EDITABLE',
+    );
+    expect(media.markEvidenceVoided).not.toHaveBeenCalled();
+    expect(assessments.restoreItemEvidenceReference).not.toHaveBeenCalled();
     expect(storage.deleteObject).not.toHaveBeenCalled();
   });
 

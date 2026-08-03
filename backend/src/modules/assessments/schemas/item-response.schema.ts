@@ -10,6 +10,7 @@ import {
 } from '../../scales/schemas/scale-version.schema';
 import { AssessmentVisit } from './assessment-visit.schema';
 import { ScaleInstance } from './scale-instance.schema';
+import { SCALE_INSTANCE_SUBMISSION_BARRIER_VERSION } from '../lib/scale-instance-submission-write-barrier';
 import {
   ITEM_TIMER_SOURCES,
   ITEM_TIMER_STATES,
@@ -261,6 +262,25 @@ export class ItemEvidenceRef {
 export const ItemEvidenceRefSchema =
   SchemaFactory.createForClass(ItemEvidenceRef);
 
+@Schema({ _id: false })
+export class ItemResponseSubmissionWriteBarrier {
+  @Prop({
+    type: Number,
+    enum: [SCALE_INSTANCE_SUBMISSION_BARRIER_VERSION],
+    required: true,
+  })
+  version!: typeof SCALE_INSTANCE_SUBMISSION_BARRIER_VERSION;
+
+  @Prop({ type: String, required: true, trim: true })
+  barrierId!: string;
+
+  @Prop({ type: Date, required: true })
+  startedAt!: Date;
+}
+
+export const ItemResponseSubmissionWriteBarrierSchema =
+  SchemaFactory.createForClass(ItemResponseSubmissionWriteBarrier);
+
 @Schema({ timestamps: true, collection: 'item_responses' })
 export class ItemResponse {
   @Prop({
@@ -396,6 +416,9 @@ export class ItemResponse {
 
   @Prop({ type: String, trim: true })
   operatorNote?: string;
+
+  @Prop({ type: ItemResponseSubmissionWriteBarrierSchema, default: null })
+  submissionWriteBarrier?: ItemResponseSubmissionWriteBarrier | null;
 
   @Prop({ type: SchemaTypes.Mixed, default: null })
   qualityControlHints?: ItemQualityControlHints;

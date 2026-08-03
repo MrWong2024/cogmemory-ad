@@ -2,7 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { getConnectionToken, getModelToken } from '@nestjs/mongoose';
 import { Test } from '@nestjs/testing';
-import { Connection, Model } from 'mongoose';
+import { Connection, Model, Query, Types } from 'mongoose';
 import request, { type Response } from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
@@ -45,6 +45,7 @@ import { User, UserDocument } from '../src/modules/users/schemas/user.schema';
 jest.setTimeout(30000);
 
 const DOCTOR_ACCOUNT = 'doctor-a16-test';
+const NURSE_ACCOUNT = 'nurse-a16-test';
 const SYSTEM_ACCOUNT = 'system-a16-test';
 const PASSWORD = 'A16-Test-Password!';
 const SUBJECT_PREFIX = 'SUBJ-A16-TEST-';
@@ -101,6 +102,88 @@ function collectKeys(value: unknown, keys = new Set<string>()): Set<string> {
   return keys;
 }
 
+function expectNoSubmissionBarrierFields(value: unknown): void {
+  const keys = collectKeys(value);
+  for (const forbidden of [
+    'submissionWriteBarrier',
+    'barrierId',
+    'itemResponseIds',
+    'fencedAt',
+    'releaseStartedAt',
+    'startedBy',
+    '__v',
+  ]) {
+    expect(keys).not.toContain(forbidden);
+  }
+}
+
+type QueryLatch = {
+  reached: Promise<void>;
+  release: () => void;
+  restore: () => void;
+};
+
+type QueryExecutor = (this: Query<unknown, unknown>) => Promise<unknown>;
+
+function latchNextQuery(
+  label: string,
+  predicate: (query: Query<unknown, unknown>) => boolean,
+): QueryLatch {
+  let resolveReached: (() => void) | undefined;
+  let resolveRelease: (() => void) | undefined;
+  let armed = true;
+  const reached = new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(
+      () => reject(new Error(`Timed out waiting for ${label}`)),
+      5000,
+    );
+    resolveReached = () => {
+      clearTimeout(timeout);
+      resolve();
+    };
+  });
+  const released = new Promise<void>((resolve) => {
+    const timeout = setTimeout(resolve, 10000);
+    resolveRelease = () => {
+      clearTimeout(timeout);
+      resolve();
+    };
+  });
+  // Mongoose exposes the overloaded Query prototype method as an unbound member.
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  const originalExec = Query.prototype.exec as QueryExecutor;
+  const spy = jest.spyOn(Query.prototype, 'exec').mockImplementation(function (
+    this: Query<unknown, unknown>,
+  ) {
+    if (armed && predicate(this)) {
+      armed = false;
+      resolveReached?.();
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+      return released.then(() => originalExec.call(this));
+    }
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+    return originalExec.call(this);
+  });
+
+  return {
+    reached,
+    release: () => resolveRelease?.(),
+    restore: () => spy.mockRestore(),
+  };
+}
+
+function queryCreatesParentBarrier(query: Query<unknown, unknown>): boolean {
+  if (query.model.modelName !== ScaleInstance.name) {
+    return false;
+  }
+  const update = query.getUpdate();
+  if (!isRecord(update) || !isRecord(update.$set)) {
+    return false;
+  }
+  const barrier = update.$set.submissionWriteBarrier;
+  return isRecord(barrier) && barrier.state === 'fencing';
+}
+
 describe('scale instance submission APIs (e2e)', () => {
   let app: INestApplication;
   let connection: Connection;
@@ -115,6 +198,7 @@ describe('scale instance submission APIs (e2e)', () => {
   let definitionModel: Model<ScaleDefinitionDocument>;
   let versionModel: Model<ScaleVersionDocument>;
   let doctorAgent: ReturnType<typeof request.agent>;
+  let nurseAgent: ReturnType<typeof request.agent>;
   let systemAgent: ReturnType<typeof request.agent>;
   let server: SupertestApp;
   let modelsReady = false;
@@ -133,7 +217,11 @@ describe('scale instance submission APIs (e2e)', () => {
 
   async function cleanup(): Promise<void> {
     const users = await userModel
-      .find({ accountName: { $in: [DOCTOR_ACCOUNT, SYSTEM_ACCOUNT] } })
+      .find({
+        accountName: {
+          $in: [DOCTOR_ACCOUNT, NURSE_ACCOUNT, SYSTEM_ACCOUNT],
+        },
+      })
       .select({ _id: 1 })
       .exec();
     const userIds = users.map((user) => user._id);
@@ -168,7 +256,11 @@ describe('scale instance submission APIs (e2e)', () => {
     }
     await patientModel.deleteMany({ subjectCode: /^SUBJ-A16-TEST-/ }).exec();
     await userModel
-      .deleteMany({ accountName: { $in: [DOCTOR_ACCOUNT, SYSTEM_ACCOUNT] } })
+      .deleteMany({
+        accountName: {
+          $in: [DOCTOR_ACCOUNT, NURSE_ACCOUNT, SYSTEM_ACCOUNT],
+        },
+      })
       .exec();
 
     const definitions = await definitionModel
@@ -390,6 +482,59 @@ describe('scale instance submission APIs (e2e)', () => {
     };
   }
 
+  async function readStableItemScope(fixture: Fixture): Promise<string[]> {
+    const items = await itemModel
+      .find({ scaleInstanceId: fixture.scaleInstanceId })
+      .sort({ _id: 1 })
+      .select({ _id: 1 })
+      .lean()
+      .exec();
+    return items.map((item) => item._id.toString());
+  }
+
+  function parentBarrier(input: {
+    barrierId: string;
+    state: 'fencing' | 'fenced' | 'releasing' | 'completed';
+    startedAt: Date;
+    startedBy: string;
+    startedByName: string;
+    startedByRole: 'doctor' | 'nurse';
+    itemResponseIds: string[];
+  }): Record<string, unknown> {
+    return {
+      version: 1,
+      barrierId: input.barrierId,
+      state: input.state,
+      startedAt: input.startedAt,
+      fencedAt:
+        input.state === 'fencing'
+          ? null
+          : new Date(input.startedAt.getTime() + 1000),
+      releaseStartedAt:
+        input.state === 'releasing'
+          ? new Date(input.startedAt.getTime() + 2000)
+          : null,
+      completedAt:
+        input.state === 'completed'
+          ? new Date(input.startedAt.getTime() + 3000)
+          : null,
+      startedBy: new Types.ObjectId(input.startedBy),
+      startedByName: input.startedByName,
+      startedByRole: input.startedByRole,
+      itemResponseIds: input.itemResponseIds.map(
+        (itemResponseId) => new Types.ObjectId(itemResponseId),
+      ),
+      expectedItemCount: input.itemResponseIds.length,
+    };
+  }
+
+  function childBarrier(
+    barrierId: string,
+    startedAt: Date,
+  ): Record<string, unknown> {
+    return { version: 1, barrierId, startedAt };
+  }
+
   beforeAll(async () => {
     if (process.env.NODE_ENV !== 'test') {
       throw new Error('E2E requires NODE_ENV=test');
@@ -403,12 +548,8 @@ describe('scale instance submission APIs (e2e)', () => {
 
     connection = app.get<Connection>(getConnectionToken());
     const databaseName = connection.name.toLowerCase();
-    if (
-      !databaseName.includes('_test') ||
-      databaseName.includes('_dev') ||
-      databaseName.includes('_prod')
-    ) {
-      throw new Error('E2E database isolation is not active');
+    if (databaseName !== 'cogmemory_ad_test') {
+      throw new Error('E2E database name must be cogmemory_ad_test');
     }
     const config = app.get(ConfigService);
     if (
@@ -458,12 +599,25 @@ describe('scale instance submission APIs (e2e)', () => {
       status: 'active',
       metadata: null,
     });
+    await userModel.create({
+      accountName: NURSE_ACCOUNT,
+      displayName: 'A16 Nurse Test Operator',
+      staffCode: 'STAFF-A16-NURSE',
+      email: 'nurse-a16-test@example.test',
+      passwordHash,
+      roles: ['nurse'],
+      permissions: [],
+      userType: 'nurse',
+      status: 'active',
+      metadata: null,
+    });
 
     server = requireInitialized<SupertestApp>(
       app.getHttpServer() as SupertestApp | undefined,
       'HTTP server',
     );
     doctorAgent = request.agent(server);
+    nurseAgent = request.agent(server);
     systemAgent = request.agent(server);
     await doctorAgent
       .post('/auth/login')
@@ -472,6 +626,10 @@ describe('scale instance submission APIs (e2e)', () => {
     await systemAgent
       .post('/auth/login')
       .send({ accountName: SYSTEM_ACCOUNT, password: PASSWORD })
+      .expect(201);
+    await nurseAgent
+      .post('/auth/login')
+      .send({ accountName: NURSE_ACCOUNT, password: PASSWORD })
       .expect(201);
   });
 
@@ -498,6 +656,7 @@ describe('scale instance submission APIs (e2e)', () => {
       .get(readinessPath(fixture))
       .expect(200);
     const readiness = body(readinessResponse);
+    expectNoSubmissionBarrierFields(readiness);
     expect(readiness.ready).toBe(false);
     expect(readiness.canSubmitNow).toBe(false);
     expect(
@@ -622,6 +781,7 @@ describe('scale instance submission APIs (e2e)', () => {
       .send({ confirm: true })
       .expect(200);
     const first = body(firstResponse);
+    expectNoSubmissionBarrierFields(first);
     const firstSubmission = record(first.submission, 'submission');
     expect(firstSubmission.alreadySubmitted).toBe(false);
     const stored = await instanceModel.findById(fixture.scaleInstanceId).exec();
@@ -710,6 +870,7 @@ describe('scale instance submission APIs (e2e)', () => {
     );
     expect(secondSubmission.alreadySubmitted).toBe(true);
     expect(secondSubmission.submissionId).toBe(firstSubmission.submissionId);
+    expectNoSubmissionBarrierFields(body(secondResponse));
     const storedAgain = await instanceModel
       .findById(fixture.scaleInstanceId)
       .exec();
@@ -727,6 +888,393 @@ describe('scale instance submission APIs (e2e)', () => {
         }),
       ).toBe(0);
     }
+  });
+
+  it('Stage 6: makes two real submit sessions converge on one barrier and first successful actor', async () => {
+    const fixture = await createFixture('A30-DUAL-SUBMIT');
+    await completeMmseThroughExistingApis(fixture);
+    const nurse = await userModel
+      .findOne({ accountName: NURSE_ACCOUNT })
+      .exec();
+    if (!nurse) {
+      throw new Error('Expected A30 nurse user');
+    }
+    const parentLatch = latchNextQuery(
+      'Stage 6 parent barrier creation',
+      queryCreatesParentBarrier,
+    );
+
+    try {
+      const doctorPromise = doctorAgent
+        .post(submitPath(fixture))
+        .send({ confirm: true })
+        .then((response) => response);
+      await parentLatch.reached;
+      const nurseResponse = await nurseAgent
+        .post(submitPath(fixture))
+        .send({ confirm: true })
+        .expect(200);
+      parentLatch.release();
+      const doctorResponse = await doctorPromise;
+      expect(doctorResponse.status).toBe(200);
+
+      const doctorSubmission = record(
+        body(doctorResponse).submission,
+        'doctor submission',
+      );
+      const nurseSubmission = record(
+        body(nurseResponse).submission,
+        'nurse submission',
+      );
+      expect(doctorSubmission.submissionId).toBe(nurseSubmission.submissionId);
+      expect(nurseSubmission.alreadySubmitted).toBe(false);
+      expect(doctorSubmission.alreadySubmitted).toBe(true);
+      const stored = await instanceModel
+        .findById(fixture.scaleInstanceId)
+        .lean()
+        .exec();
+      const token = stored?.submissionWriteBarrier?.barrierId;
+      expect(stored?.status).toBe('completed');
+      expect(stored?.submissionWriteBarrier?.state).toBe('completed');
+      expect(token).toBe(nurseSubmission.submissionId);
+      expect(stored?.submissionWriteBarrier?.startedBy).toEqual(nurse._id);
+      const storedSubmission = isRecord(stored?.metadata)
+        ? stored.metadata.submission
+        : null;
+      expect(storedSubmission).toEqual(
+        expect.objectContaining({
+          submissionId: token,
+          submittedBy: nurse._id,
+          submittedByName: 'A16 Nurse Test Operator',
+          submittedByRole: 'nurse',
+        }),
+      );
+      const children = await itemModel
+        .find({ scaleInstanceId: fixture.scaleInstanceId })
+        .lean()
+        .exec();
+      expect(children).toHaveLength(11);
+      expect(
+        children.every(
+          (itemResponse) =>
+            itemResponse.submissionWriteBarrier?.barrierId === token,
+        ),
+      ).toBe(true);
+      expectNoSubmissionBarrierFields(body(doctorResponse));
+      expectNoSubmissionBarrierFields(body(nurseResponse));
+    } finally {
+      parentLatch.release();
+      parentLatch.restore();
+    }
+  });
+
+  it('Stage 7: resumes partial fencing with the original token, scope, and actor', async () => {
+    const fixture = await createFixture('A30-PARTIAL-FENCING');
+    await completeMmseThroughExistingApis(fixture);
+    const nurse = await userModel
+      .findOne({ accountName: NURSE_ACCOUNT })
+      .exec();
+    if (!nurse) {
+      throw new Error('Expected A30 nurse user');
+    }
+    const scope = await readStableItemScope(fixture);
+    const barrierId = '18be42e3-4466-4593-919a-5813b5100112';
+    const startedAt = new Date('2026-08-03T02:00:00.000Z');
+    const seededParent = parentBarrier({
+      barrierId,
+      state: 'fencing',
+      startedAt,
+      startedBy: nurse._id.toString(),
+      startedByName: 'A16 Nurse Test Operator',
+      startedByRole: 'nurse',
+      itemResponseIds: scope,
+    });
+    await instanceModel
+      .updateOne(
+        { _id: fixture.scaleInstanceId },
+        { $set: { submissionWriteBarrier: seededParent } },
+      )
+      .exec();
+    await itemModel
+      .updateMany(
+        { _id: { $in: scope.slice(0, 4) } },
+        {
+          $set: {
+            submissionWriteBarrier: childBarrier(barrierId, startedAt),
+          },
+        },
+      )
+      .exec();
+
+    const response = await doctorAgent
+      .post(submitPath(fixture))
+      .send({ confirm: true })
+      .expect(200);
+    const submission = record(body(response).submission, 'submission');
+    expect(submission.submissionId).toBe(barrierId);
+    expect(record(submission.submittedBy, 'submitted by')).toEqual(
+      expect.objectContaining({
+        operatorId: nurse._id.toString(),
+        operatorName: 'A16 Nurse Test Operator',
+        operatorRole: 'nurse',
+      }),
+    );
+    const stored = await instanceModel
+      .findById(fixture.scaleInstanceId)
+      .lean()
+      .exec();
+    expect(stored?.submissionWriteBarrier?.state).toBe('completed');
+    expect(stored?.submissionWriteBarrier?.barrierId).toBe(barrierId);
+    expect(
+      (
+        await itemModel
+          .find({ scaleInstanceId: fixture.scaleInstanceId })
+          .lean()
+          .exec()
+      ).every(
+        (itemResponse) =>
+          itemResponse.submissionWriteBarrier?.barrierId === barrierId,
+      ),
+    ).toBe(true);
+  });
+
+  it('Stage 8: finishes partial releasing, preserves foreign ownership, and submits a fresh token', async () => {
+    const fixture = await createFixture('A30-PARTIAL-RELEASING');
+    await completeMmseThroughExistingApis(fixture);
+    const foreignFixture = await createFixture('A30-FOREIGN-TOKEN');
+    const doctor = await userModel
+      .findOne({ accountName: DOCTOR_ACCOUNT })
+      .exec();
+    if (!doctor) {
+      throw new Error('Expected A30 doctor user');
+    }
+    const scope = await readStableItemScope(fixture);
+    const oldBarrierId = '09ce3609-051d-428d-859c-dd255d9a69c0';
+    const foreignBarrierId = '89cc6790-a2ec-4964-aec6-c8a7e3ce0450';
+    const startedAt = new Date('2026-08-03T02:10:00.000Z');
+    await instanceModel
+      .updateOne(
+        { _id: fixture.scaleInstanceId },
+        {
+          $set: {
+            submissionWriteBarrier: parentBarrier({
+              barrierId: oldBarrierId,
+              state: 'releasing',
+              startedAt,
+              startedBy: doctor._id.toString(),
+              startedByName: 'A16 Doctor Test Operator',
+              startedByRole: 'doctor',
+              itemResponseIds: scope,
+            }),
+          },
+        },
+      )
+      .exec();
+    await itemModel
+      .updateMany(
+        { _id: { $in: scope.slice(0, 3) } },
+        {
+          $set: {
+            submissionWriteBarrier: childBarrier(oldBarrierId, startedAt),
+          },
+        },
+      )
+      .exec();
+    const foreignItem = await itemModel.findOne({
+      scaleInstanceId: foreignFixture.scaleInstanceId,
+    });
+    if (!foreignItem) {
+      throw new Error('Expected foreign token item');
+    }
+    await itemModel
+      .updateOne(
+        { _id: foreignItem._id },
+        {
+          $set: {
+            submissionWriteBarrier: childBarrier(foreignBarrierId, startedAt),
+          },
+        },
+      )
+      .exec();
+
+    const response = await doctorAgent
+      .post(submitPath(fixture))
+      .send({ confirm: true })
+      .expect(200);
+    const freshBarrierId = stringValue(
+      record(body(response).submission, 'submission').submissionId,
+      'fresh submission id',
+    );
+    expect(freshBarrierId).not.toBe(oldBarrierId);
+    const primaryItems = await itemModel
+      .find({ scaleInstanceId: fixture.scaleInstanceId })
+      .lean()
+      .exec();
+    expect(
+      primaryItems.every(
+        (itemResponse) =>
+          itemResponse.submissionWriteBarrier?.barrierId === freshBarrierId,
+      ),
+    ).toBe(true);
+    expect(
+      primaryItems.some(
+        (itemResponse) =>
+          itemResponse.submissionWriteBarrier?.barrierId === oldBarrierId,
+      ),
+    ).toBe(false);
+    expect(
+      (await itemModel.findById(foreignItem._id).lean().exec())
+        ?.submissionWriteBarrier?.barrierId,
+    ).toBe(foreignBarrierId);
+  });
+
+  it('Stage 9: keeps legacy barriers open and fails invalid parent or child barriers closed', async () => {
+    const legacy = await createFixture('A30-LEGACY');
+    await instanceModel.collection.updateOne(
+      { _id: new Types.ObjectId(legacy.scaleInstanceId) },
+      { $unset: { submissionWriteBarrier: '' } },
+    );
+    await itemModel.collection.updateMany(
+      { scaleInstanceId: new Types.ObjectId(legacy.scaleInstanceId) },
+      { $unset: { submissionWriteBarrier: '' } },
+    );
+    const legacyGet = await doctorAgent.get(instancePath(legacy)).expect(200);
+    expectNoSubmissionBarrierFields(body(legacyGet));
+    expect(
+      Object.prototype.hasOwnProperty.call(
+        await instanceModel.collection.findOne({
+          _id: new Types.ObjectId(legacy.scaleInstanceId),
+        }),
+        'submissionWriteBarrier',
+      ),
+    ).toBe(false);
+    await completeMmseThroughExistingApis(legacy);
+    await doctorAgent
+      .post(submitPath(legacy))
+      .send({ confirm: true })
+      .expect(200);
+
+    const invalid = await createFixture('A30-INVALID');
+    const { drawingItemId, drawingDraftRevision, mediaEvidenceId } =
+      await completeMmseThroughExistingApis(invalid);
+    await instanceModel.collection.updateOne(
+      { _id: new Types.ObjectId(invalid.scaleInstanceId) },
+      { $set: { submissionWriteBarrier: { version: 999 } } },
+    );
+    const beforeInvalidItem = await itemModel
+      .findById(drawingItemId)
+      .lean()
+      .exec();
+    expect(
+      body(
+        await doctorAgent
+          .patch(`${instancePath(invalid)}/item-responses/${drawingItemId}`)
+          .send({
+            expectedRevision: drawingDraftRevision,
+            responseText: 'must remain blocked',
+          })
+          .expect(409),
+      ).code,
+    ).toBe('SCALE_INSTANCE_NOT_EDITABLE');
+    expect(
+      body(
+        await doctorAgent
+          .post(
+            `${instancePath(invalid)}/item-responses/${drawingItemId}/media-evidences`,
+          )
+          .field('evidenceType', 'handwriting')
+          .field('captureMode', 'tablet_handwriting')
+          .field('trajectoryFormat', 'strokes')
+          .attach('file', VALID_PNG, {
+            filename: 'blocked.png',
+            contentType: 'image/png',
+          })
+          .attach('trajectory', Buffer.from('{"strokes":[]}'), {
+            filename: 'blocked.json',
+            contentType: 'application/json',
+          })
+          .expect(409),
+      ).code,
+    ).toBe('SCALE_INSTANCE_NOT_EDITABLE');
+    expect(
+      body(
+        await doctorAgent
+          .post(
+            `${instancePath(invalid)}/item-responses/${drawingItemId}/media-evidences/${mediaEvidenceId}/void`,
+          )
+          .send({ reason: 'must remain blocked' })
+          .expect(409),
+      ).code,
+    ).toBe('SCALE_INSTANCE_NOT_EDITABLE');
+    expect(
+      body(
+        await doctorAgent
+          .post(submitPath(invalid))
+          .send({ confirm: true })
+          .expect(500),
+      ).code,
+    ).toBe('SCALE_INSTANCE_SUBMISSION_FAILED');
+    expect(await itemModel.findById(drawingItemId).lean().exec()).toEqual(
+      beforeInvalidItem,
+    );
+
+    await instanceModel.collection.updateOne(
+      { _id: new Types.ObjectId(invalid.scaleInstanceId) },
+      { $unset: { submissionWriteBarrier: '' } },
+    );
+    await itemModel.collection.updateOne(
+      { _id: new Types.ObjectId(drawingItemId) },
+      { $set: { submissionWriteBarrier: { version: 999 } } },
+    );
+    expect(
+      body(
+        await doctorAgent
+          .patch(`${instancePath(invalid)}/item-responses/${drawingItemId}`)
+          .send({
+            expectedRevision: drawingDraftRevision,
+            responseText: 'must remain blocked by child',
+          })
+          .expect(409),
+      ).code,
+    ).toBe('SCALE_INSTANCE_NOT_EDITABLE');
+    expect(
+      body(
+        await doctorAgent
+          .post(
+            `${instancePath(invalid)}/item-responses/${drawingItemId}/media-evidences`,
+          )
+          .field('evidenceType', 'handwriting')
+          .field('captureMode', 'tablet_handwriting')
+          .field('trajectoryFormat', 'strokes')
+          .attach('file', VALID_PNG, {
+            filename: 'child-barrier-blocked.png',
+            contentType: 'image/png',
+          })
+          .attach('trajectory', Buffer.from('{"strokes":[]}'), {
+            filename: 'child-barrier-blocked.json',
+            contentType: 'application/json',
+          })
+          .expect(409),
+      ).code,
+    ).toBe('SCALE_INSTANCE_NOT_EDITABLE');
+    expect(
+      body(
+        await doctorAgent
+          .post(
+            `${instancePath(invalid)}/item-responses/${drawingItemId}/media-evidences/${mediaEvidenceId}/void`,
+          )
+          .send({ reason: 'must remain blocked by invalid child barrier' })
+          .expect(409),
+      ).code,
+    ).toBe('SCALE_INSTANCE_NOT_EDITABLE');
+    expect(
+      body(
+        await doctorAgent
+          .post(submitPath(invalid))
+          .send({ confirm: true })
+          .expect(500),
+      ).code,
+    ).toBe('SCALE_INSTANCE_SUBMISSION_FAILED');
   });
 
   it('enforces first-submission patient, visit and instance state boundaries', async () => {

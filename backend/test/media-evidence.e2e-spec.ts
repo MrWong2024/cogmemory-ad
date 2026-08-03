@@ -2,7 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { getConnectionToken, getModelToken } from '@nestjs/mongoose';
 import { Test } from '@nestjs/testing';
-import { Connection, Model, Types } from 'mongoose';
+import { Connection, Model, Query, Types } from 'mongoose';
 import request, { type Response, type Test as SupertestTest } from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
@@ -41,6 +41,8 @@ import {
   ScaleVersionDocument,
 } from '../src/modules/scales/schemas/scale-version.schema';
 import { User, UserDocument } from '../src/modules/users/schemas/user.schema';
+import { FakeStorageService } from '../src/modules/storage/fake-storage.service';
+import { STORAGE_SERVICE } from '../src/modules/storage/storage.constants';
 
 jest.setTimeout(30000);
 
@@ -147,6 +149,128 @@ function readErrorCode(response: Response): string {
   return readString(readResponseBody(response), 'code');
 }
 
+type QueryLatch = {
+  reached: Promise<void>;
+  release: () => void;
+  restore: () => void;
+};
+
+type QueryExecutor = (this: Query<unknown, unknown>) => Promise<unknown>;
+
+function latchNextQuery(
+  label: string,
+  predicate: (query: Query<unknown, unknown>) => boolean,
+): QueryLatch {
+  let resolveReached: (() => void) | undefined;
+  let resolveRelease: (() => void) | undefined;
+  let armed = true;
+  const reached = new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(
+      () => reject(new Error(`Timed out waiting for ${label}`)),
+      5000,
+    );
+    resolveReached = () => {
+      clearTimeout(timeout);
+      resolve();
+    };
+  });
+  const released = new Promise<void>((resolve) => {
+    const timeout = setTimeout(resolve, 10000);
+    resolveRelease = () => {
+      clearTimeout(timeout);
+      resolve();
+    };
+  });
+  // Mongoose exposes the overloaded Query prototype method as an unbound member.
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  const originalExec = Query.prototype.exec as QueryExecutor;
+  const spy = jest.spyOn(Query.prototype, 'exec').mockImplementation(function (
+    this: Query<unknown, unknown>,
+  ) {
+    if (armed && predicate(this)) {
+      armed = false;
+      resolveReached?.();
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+      return released.then(() => originalExec.call(this));
+    }
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+    return originalExec.call(this);
+  });
+
+  return {
+    reached,
+    release: () => resolveRelease?.(),
+    restore: () => spy.mockRestore(),
+  };
+}
+
+function querySetsEvidenceStatus(
+  query: Query<unknown, unknown>,
+  status: 'attached' | 'pending',
+): boolean {
+  if (query.model.modelName !== ItemResponse.name) {
+    return false;
+  }
+  const update = query.getUpdate();
+  return (
+    isRecord(update) &&
+    isRecord(update.$set) &&
+    update.$set['evidenceRefs.$[evidenceRef].status'] === status
+  );
+}
+
+function queryIsSubmissionFencing(query: Query<unknown, unknown>): boolean {
+  if (query.model.modelName !== ItemResponse.name) {
+    return false;
+  }
+  const update = query.getUpdate();
+  if (!isRecord(update) || !isRecord(update.$set)) {
+    return false;
+  }
+  const barrier = update.$set.submissionWriteBarrier;
+  return isRecord(barrier) && barrier.version === 1;
+}
+
+type StorageTracker = {
+  readObjectKeys: () => Set<string>;
+  restore: () => void;
+};
+
+function trackFakeStorage(storage: FakeStorageService): StorageTracker {
+  const uploadSpy = jest.spyOn(storage, 'uploadFile');
+  const deleteSpy = jest.spyOn(storage, 'deleteObject');
+
+  return {
+    readObjectKeys: () => {
+      const objectKeys = new Set<string>();
+      const uploadCalls: unknown = uploadSpy.mock.calls;
+      if (Array.isArray(uploadCalls)) {
+        for (const call of uploadCalls) {
+          if (Array.isArray(call) && isRecord(call[0])) {
+            const objectKey = call[0].objectKey;
+            if (typeof objectKey === 'string') {
+              objectKeys.add(objectKey);
+            }
+          }
+        }
+      }
+      const deleteCalls: unknown = deleteSpy.mock.calls;
+      if (Array.isArray(deleteCalls)) {
+        for (const call of deleteCalls) {
+          if (Array.isArray(call) && typeof call[0] === 'string') {
+            objectKeys.delete(call[0]);
+          }
+        }
+      }
+      return objectKeys;
+    },
+    restore: () => {
+      uploadSpy.mockRestore();
+      deleteSpy.mockRestore();
+    },
+  };
+}
+
 describe('media evidence APIs (e2e)', () => {
   let app: INestApplication;
   let connection: Connection;
@@ -160,6 +284,7 @@ describe('media evidence APIs (e2e)', () => {
   let mediaEvidenceModel: Model<MediaEvidenceDocument>;
   let scaleDefinitionModel: Model<ScaleDefinitionDocument>;
   let scaleVersionModel: Model<ScaleVersionDocument>;
+  let storageService: FakeStorageService;
   let doctorAgent: ReturnType<typeof request.agent>;
   let systemAgent: ReturnType<typeof request.agent>;
   let httpServer: SupertestApp;
@@ -315,6 +440,94 @@ describe('media evidence APIs (e2e)', () => {
       });
   }
 
+  function uploadHandwriting(path: string): SupertestTest {
+    return doctorAgent
+      .post(path)
+      .field('evidenceType', 'handwriting')
+      .field('captureMode', 'tablet_handwriting')
+      .field('trajectoryFormat', 'strokes')
+      .field('strokeCount', '1')
+      .field('canvasWidth', '1024')
+      .field('canvasHeight', '768')
+      .attach('file', VALID_PNG, {
+        filename: 'a30-rendered.png',
+        contentType: 'image/png',
+      })
+      .attach('trajectory', Buffer.from('{"strokes":[[{"x":1,"y":2}]]}'), {
+        filename: 'a30-trajectory.json',
+        contentType: 'application/json',
+      });
+  }
+
+  async function prepareAnsweredExecution(
+    fixture: ExecutionFixture,
+    excludedMediaItemId: string,
+  ): Promise<void> {
+    const items = await itemResponseModel
+      .find({ scaleInstanceId: fixture.scaleInstanceId })
+      .exec();
+    for (const item of items) {
+      await itemResponseModel
+        .updateOne(
+          { _id: item._id },
+          {
+            $set: {
+              status: 'answered',
+              rawResponse: false,
+              operatorNote: 'A30 deterministic media concurrency fixture',
+              timing: {
+                timerState: 'completed',
+                startedAt: new Date('2026-07-10T08:00:00.000Z'),
+                lastResumedAt: null,
+                completedAt: new Date('2026-07-10T08:00:01.000Z'),
+                durationMs: 1000,
+                timerSource: 'manual',
+              },
+            },
+          },
+        )
+        .exec();
+      if (item.stepResults.length > 0) {
+        await itemResponseModel
+          .updateOne(
+            { _id: item._id },
+            { $set: { 'stepResults.$[].actualValue': 0 } },
+          )
+          .exec();
+      }
+      if (
+        item._id.toString() !== excludedMediaItemId &&
+        item.evidenceRefs.length > 0
+      ) {
+        await itemResponseModel
+          .updateOne(
+            { _id: item._id },
+            {
+              $set: {
+                'evidenceRefs.0.mediaEvidenceId': new Types.ObjectId(),
+                'evidenceRefs.0.status': 'attached',
+              },
+            },
+          )
+          .exec();
+      }
+    }
+  }
+
+  async function expectReady(fixture: ExecutionFixture): Promise<void> {
+    const response = await doctorAgent
+      .get(`${executionPath(fixture)}/submission-readiness`)
+      .expect(200);
+    const readiness = readResponseBody(response);
+    const issueCodes = readArray(readiness, 'blockingIssues').map((issue) =>
+      isRecord(issue) ? issue.code : 'INVALID_ISSUE',
+    );
+    expect({ ready: readiness.ready, issueCodes }).toEqual({
+      ready: true,
+      issueCodes: [],
+    });
+  }
+
   beforeAll(async () => {
     if (process.env.NODE_ENV !== 'test') {
       throw new Error('E2E requires NODE_ENV=test');
@@ -366,6 +579,7 @@ describe('media evidence APIs (e2e)', () => {
     scaleVersionModel = app.get<Model<ScaleVersionDocument>>(
       getModelToken(ScaleVersion.name),
     );
+    storageService = app.get<FakeStorageService>(STORAGE_SERVICE);
     modelsReady = true;
 
     await cleanupA15Data();
@@ -497,6 +711,11 @@ describe('media evidence APIs (e2e)', () => {
       'patientId',
       'assessmentVisitId',
       'itemResponseId',
+      'submissionWriteBarrier',
+      'barrierId',
+      'itemResponseIds',
+      'expectedItemCount',
+      'startedBy',
       'passwordHash',
       'sessionToken',
     ]) {
@@ -587,6 +806,18 @@ describe('media evidence APIs (e2e)', () => {
       .post(`${path}/${mediaEvidenceId}/void`)
       .send({ reason: 'wrong capture selected' })
       .expect(200);
+    for (const forbidden of [
+      'submissionWriteBarrier',
+      'barrierId',
+      'itemResponseIds',
+      'expectedItemCount',
+      'startedBy',
+      '__v',
+    ]) {
+      expect(collectKeys(readResponseBody(voidResponse))).not.toContain(
+        forbidden,
+      );
+    }
     expect(
       readRecord(readResponseBody(voidResponse), 'mediaEvidence').status,
     ).toBe('voided');
@@ -614,6 +845,16 @@ describe('media evidence APIs (e2e)', () => {
       readResponseBody(await doctorAgent.get(path).expect(200)),
       'items',
     );
+    for (const forbidden of [
+      'submissionWriteBarrier',
+      'barrierId',
+      'itemResponseIds',
+      'expectedItemCount',
+      'startedBy',
+      '__v',
+    ]) {
+      expect(collectKeys(listAfterVoid)).not.toContain(forbidden);
+    }
     expect(listAfterVoid).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: mediaEvidenceId, status: 'voided' }),
@@ -632,6 +873,273 @@ describe('media evidence APIs (e2e)', () => {
       .exec();
     expect(afterReplacement?.draftRevision).toBe(mediaBaselineRevision + 1);
     expect(afterReplacement?.draftSavedAt?.toISOString()).toBe(draftSavedAt);
+  });
+
+  it('Stage 3: compensates upload data and fake objects when A16 wins before attach', async () => {
+    const fixture = await createExecution('A30-UPLOAD-BARRIER');
+    const item = await findExecutionItem(fixture, 'handwriting');
+    const itemResponseId = readString(item, 'id');
+    await prepareAnsweredExecution(fixture, itemResponseId);
+    const path = evidencePath(fixture, itemResponseId);
+    const storageTracker = trackFakeStorage(storageService);
+    let attachLatch: QueryLatch | undefined;
+
+    try {
+      const existingResponse = await uploadHandwriting(path).expect(201);
+      const existingEvidenceId = readString(
+        readRecord(readResponseBody(existingResponse), 'mediaEvidence'),
+        'id',
+      );
+      await expectReady(fixture);
+      const baselineObjectKeys = storageTracker.readObjectKeys();
+      const baselineItem = await itemResponseModel
+        .findById(itemResponseId)
+        .lean()
+        .exec();
+      attachLatch = latchNextQuery('Stage 3 evidence attach', (query) =>
+        querySetsEvidenceStatus(query, 'attached'),
+      );
+      const uploadPromise = uploadPhoto(path).then((response) => response);
+      await attachLatch.reached;
+      const duringUpload = await mediaEvidenceModel
+        .find({
+          scaleInstanceId: fixture.scaleInstanceId,
+          itemResponseId,
+          deletedAt: null,
+        })
+        .lean()
+        .exec();
+      expect(duringUpload).toHaveLength(2);
+      expect(storageTracker.readObjectKeys().size).toBe(
+        baselineObjectKeys.size + 1,
+      );
+
+      await doctorAgent
+        .post(`${executionPath(fixture)}/submit`)
+        .send({ confirm: true })
+        .expect(200);
+      attachLatch.release();
+      const uploadResponse = await uploadPromise;
+      expect(uploadResponse.status).toBe(409);
+      expect(readErrorCode(uploadResponse)).toBe('SCALE_INSTANCE_NOT_EDITABLE');
+
+      const remainingEvidence = await mediaEvidenceModel
+        .find({
+          scaleInstanceId: fixture.scaleInstanceId,
+          itemResponseId,
+          deletedAt: null,
+        })
+        .lean()
+        .exec();
+      expect(remainingEvidence.map((entry) => entry._id.toString())).toEqual([
+        existingEvidenceId,
+      ]);
+      expect(storageTracker.readObjectKeys()).toEqual(baselineObjectKeys);
+      const storedItem = await itemResponseModel
+        .findById(itemResponseId)
+        .lean()
+        .exec();
+      expect(storedItem?.evidenceRefs).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            evidenceType: 'handwriting',
+            mediaEvidenceId: new Types.ObjectId(existingEvidenceId),
+            status: 'attached',
+          }),
+        ]),
+      );
+      expect(storedItem?.draftRevision).toBe(baselineItem?.draftRevision);
+      expect(storedItem?.draftSavedAt).toEqual(baselineItem?.draftSavedAt);
+    } finally {
+      attachLatch?.release();
+      attachLatch?.restore();
+      storageTracker.restore();
+    }
+  });
+
+  it('Stage 4: rejects a paused void clear after A16 completes with attached facts intact', async () => {
+    const fixture = await createExecution('A30-VOID-BARRIER');
+    const item = await findExecutionItem(fixture, 'photo');
+    const itemResponseId = readString(item, 'id');
+    await prepareAnsweredExecution(fixture, itemResponseId);
+    const path = evidencePath(fixture, itemResponseId);
+    const uploadResponse = await uploadPhoto(path).expect(201);
+    const mediaEvidenceId = readString(
+      readRecord(readResponseBody(uploadResponse), 'mediaEvidence'),
+      'id',
+    );
+    await expectReady(fixture);
+    const baselineEvidence = await mediaEvidenceModel
+      .findById(mediaEvidenceId)
+      .lean()
+      .exec();
+    const baselineItem = await itemResponseModel
+      .findById(itemResponseId)
+      .lean()
+      .exec();
+    const clearLatch = latchNextQuery('Stage 4 evidence clear', (query) =>
+      querySetsEvidenceStatus(query, 'pending'),
+    );
+
+    try {
+      const voidPromise = doctorAgent
+        .post(`${path}/${mediaEvidenceId}/void`)
+        .send({ reason: 'must lose to submission barrier' })
+        .then((response) => response);
+      await clearLatch.reached;
+      await doctorAgent
+        .post(`${executionPath(fixture)}/submit`)
+        .send({ confirm: true })
+        .expect(200);
+      const beforeRelease = await itemResponseModel
+        .findById(itemResponseId)
+        .lean()
+        .exec();
+      clearLatch.release();
+      const voidResponse = await voidPromise;
+      expect(voidResponse.status).toBe(409);
+      expect(readErrorCode(voidResponse)).toBe('SCALE_INSTANCE_NOT_EDITABLE');
+
+      expect(
+        await itemResponseModel.findById(itemResponseId).lean().exec(),
+      ).toEqual(beforeRelease);
+      expect(
+        await mediaEvidenceModel.findById(mediaEvidenceId).lean().exec(),
+      ).toEqual(baselineEvidence);
+      expect(beforeRelease?.draftRevision).toBe(baselineItem?.draftRevision);
+      expect(beforeRelease?.draftSavedAt).toEqual(baselineItem?.draftSavedAt);
+      expect(
+        beforeRelease?.evidenceRefs.some(
+          (reference) =>
+            reference.mediaEvidenceId?.toString() === mediaEvidenceId &&
+            reference.status === 'attached',
+        ),
+      ).toBe(true);
+    } finally {
+      clearLatch.release();
+      clearLatch.restore();
+    }
+  });
+
+  it('Stage 5: releases fencing after a winning void invalidates readiness, then permits resubmit', async () => {
+    const fixture = await createExecution('A30-VOID-FIRST');
+    const item = await findExecutionItem(fixture, 'photo');
+    const itemResponseId = readString(item, 'id');
+    await prepareAnsweredExecution(fixture, itemResponseId);
+    const path = evidencePath(fixture, itemResponseId);
+    const uploadResponse = await uploadPhoto(path).expect(201);
+    const mediaEvidenceId = readString(
+      readRecord(readResponseBody(uploadResponse), 'mediaEvidence'),
+      'id',
+    );
+    await expectReady(fixture);
+    const baselineItem = await itemResponseModel
+      .findById(itemResponseId)
+      .lean()
+      .exec();
+    const clearLatch = latchNextQuery('Stage 5 evidence clear', (query) =>
+      querySetsEvidenceStatus(query, 'pending'),
+    );
+    let fencingLatch: QueryLatch | undefined;
+
+    try {
+      const voidPromise = doctorAgent
+        .post(`${path}/${mediaEvidenceId}/void`)
+        .send({ reason: 'A30 deterministic readiness invalidation' })
+        .then((response) => response);
+      await clearLatch.reached;
+      clearLatch.restore();
+
+      fencingLatch = latchNextQuery(
+        'Stage 5 item fencing',
+        queryIsSubmissionFencing,
+      );
+      const submitPromise = doctorAgent
+        .post(`${executionPath(fixture)}/submit`)
+        .send({ confirm: true })
+        .then((response) => response);
+      await fencingLatch.reached;
+      const fencingParent = await scaleInstanceModel
+        .findById(fixture.scaleInstanceId)
+        .lean()
+        .exec();
+      const oldBarrierId = fencingParent?.submissionWriteBarrier?.barrierId;
+      expect(fencingParent?.submissionWriteBarrier?.state).toBe('fencing');
+
+      clearLatch.release();
+      const voidResponse = await voidPromise;
+      expect(voidResponse.status).toBe(200);
+      fencingLatch.release();
+      const submitResponse = await submitPromise;
+      expect(submitResponse.status).toBe(409);
+      expect(readErrorCode(submitResponse)).toBe('SCALE_INSTANCE_NOT_READY');
+
+      const releasedParent = await scaleInstanceModel
+        .findById(fixture.scaleInstanceId)
+        .lean()
+        .exec();
+      const releasedItems = await itemResponseModel
+        .find({ scaleInstanceId: fixture.scaleInstanceId })
+        .lean()
+        .exec();
+      expect(releasedParent?.status).not.toBe('completed');
+      expect(releasedParent?.submissionWriteBarrier ?? null).toBeNull();
+      expect(
+        isRecord(releasedParent?.metadata)
+          ? releasedParent.metadata.submission
+          : undefined,
+      ).toBeUndefined();
+      expect(
+        releasedItems.every(
+          (itemResponse) =>
+            (itemResponse.submissionWriteBarrier ?? null) === null,
+        ),
+      ).toBe(true);
+      expect(
+        releasedItems.some(
+          (itemResponse) =>
+            itemResponse.submissionWriteBarrier?.barrierId === oldBarrierId,
+        ),
+      ).toBe(false);
+      const voidedEvidence = await mediaEvidenceModel
+        .findById(mediaEvidenceId)
+        .lean()
+        .exec();
+      expect(voidedEvidence?.status).toBe('voided');
+      const releasedTarget = releasedItems.find(
+        (itemResponse) => itemResponse._id.toString() === itemResponseId,
+      );
+      expect(releasedTarget?.draftRevision).toBe(baselineItem?.draftRevision);
+      expect(releasedTarget?.draftSavedAt).toEqual(baselineItem?.draftSavedAt);
+      expect(
+        releasedTarget?.evidenceRefs.some(
+          (reference) =>
+            reference.evidenceType === 'photo' &&
+            reference.status === 'pending' &&
+            reference.mediaEvidenceId === null,
+        ),
+      ).toBe(true);
+
+      await uploadPhoto(path).expect(201);
+      await expectReady(fixture);
+      await doctorAgent
+        .post(`${executionPath(fixture)}/submit`)
+        .send({ confirm: true })
+        .expect(200);
+      const completed = await scaleInstanceModel
+        .findById(fixture.scaleInstanceId)
+        .lean()
+        .exec();
+      expect(completed?.status).toBe('completed');
+      expect(completed?.submissionWriteBarrier?.barrierId).not.toBe(
+        oldBarrierId,
+      );
+    } finally {
+      clearLatch.release();
+      clearLatch.restore();
+      fencingLatch?.release();
+      fencingLatch?.restore();
+    }
   });
 
   it('uploads handwriting with normalized JSON trajectory and signs both assets', async () => {

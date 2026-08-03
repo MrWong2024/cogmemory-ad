@@ -17,24 +17,32 @@ import type {
 import { ScalesService } from '../../scales/services/scales.service';
 import type { SubmitScaleInstanceDto } from '../dto/submit-scale-instance.dto';
 import {
+  buildStableItemResponseScope,
+  itemResponseScopesEqual,
+  normalizeItemResponseSubmissionWriteBarrier,
+  normalizeScaleInstanceSubmissionWriteBarrier,
+  type NormalizedScaleInstanceSubmissionWriteBarrier,
+} from '../lib/scale-instance-submission-write-barrier';
+import {
   evaluateScaleInstanceSubmissionReadiness,
   type ScaleSubmissionReadinessEvaluation,
 } from '../lib/scale-instance-submission-readiness';
 import type { AssessmentOperatorRole } from '../schemas/assessment-visit.schema';
+import type {
+  ScaleInstanceSubmissionAuditResponse,
+  ScaleSubmissionReadinessResponse,
+  SubmitScaleInstanceResponse,
+} from '../types/scale-instance-submission-response.types';
 import type {
   AssessmentVisitSummary,
   ItemResponseSummary,
   ScaleInstanceSummary,
 } from './assessments.service';
 import { AssessmentsService } from './assessments.service';
-import type {
-  ScaleInstanceSubmissionAuditResponse,
-  ScaleInstanceSubmissionOperatorResponse,
-  ScaleSubmissionReadinessResponse,
-  SubmitScaleInstanceResponse,
-} from '../types/scale-instance-submission-response.types';
+import { ScaleInstanceSubmissionBarrierService } from './scale-instance-submission-barrier.service';
 
 const EDITABLE_STATUSES = new Set(['draft', 'in_progress']);
+const MAX_SUBMISSION_STATE_TRANSITIONS = 12;
 
 type SubmissionContext = {
   patient: PatientSummary;
@@ -57,6 +65,7 @@ export class ScaleInstanceSubmissionService {
     private readonly patientsService: PatientsService,
     private readonly assessmentsService: AssessmentsService,
     private readonly scalesService: ScalesService,
+    private readonly barrierService: ScaleInstanceSubmissionBarrierService,
   ) {}
 
   async getSubmissionReadiness(
@@ -86,68 +95,160 @@ export class ScaleInstanceSubmissionService {
         message: 'Scale instance submission must be explicitly confirmed',
       });
     }
-
     if (!currentUser) {
       throw new UnauthorizedException();
     }
 
-    const operator = this.buildSubmissionOperator(currentUser);
-    const firstContext = await this.loadSubmissionContext(
-      patientId,
-      visitId,
-      scaleInstanceId,
-    );
+    const currentOperator = this.buildSubmissionOperator(currentUser);
 
-    if (firstContext.scaleInstance.status === 'completed') {
-      return this.buildAlreadySubmittedResponse(firstContext);
-    }
-
-    this.assertFirstSubmissionState(firstContext);
-    const firstEvaluation = this.evaluateContext(firstContext, new Date());
-    this.assertReadyForSubmission(firstEvaluation);
-
-    const completionTime = new Date();
-    const secondContext = await this.loadSubmissionContext(
-      patientId,
-      visitId,
-      scaleInstanceId,
-    );
-
-    if (secondContext.scaleInstance.status === 'completed') {
-      return this.buildAlreadySubmittedResponse(secondContext);
-    }
-
-    this.assertFirstSubmissionState(secondContext);
-    const secondEvaluation = this.evaluateContext(
-      secondContext,
-      completionTime,
-    );
-    this.assertReadyForSubmission(secondEvaluation);
-
-    const existingStartedAt = secondContext.scaleInstance.startedAt;
-    const effectiveStartedAt =
-      existingStartedAt ?? secondEvaluation.earliestValidItemTimingStart;
-    const durationMs = effectiveStartedAt
-      ? Math.max(0, completionTime.getTime() - effectiveStartedAt.getTime())
-      : null;
-    const submissionId = randomUUID();
-    let completed: ScaleInstanceSummary | null;
-
-    try {
-      completed = await this.assessmentsService.completeScaleInstanceIfEditable(
+    for (
+      let transition = 0;
+      transition < MAX_SUBMISSION_STATE_TRANSITIONS;
+      transition += 1
+    ) {
+      const context = await this.loadSubmissionContext(
         patientId,
         visitId,
         scaleInstanceId,
-        {
-          submissionId,
+      );
+      const parsedParent = normalizeScaleInstanceSubmissionWriteBarrier(
+        context.scaleInstance.submissionWriteBarrier,
+      );
+
+      if (context.scaleInstance.status === 'completed') {
+        this.assertCompletedBarrierConsistency(context, parsedParent);
+        return this.buildSubmittedResponse(context, true);
+      }
+
+      if (parsedParent.kind === 'invalid') {
+        this.throwSubmissionFailed();
+      }
+
+      if (parsedParent.kind === 'open') {
+        this.assertNoItemResponseBarriers(context.itemResponses);
+        const lifecycleError = this.getFirstSubmissionStateError(context);
+        if (lifecycleError) {
+          throw lifecycleError;
+        }
+        const firstEvaluation = this.evaluateContext(context, new Date());
+        const readinessError = this.getReadinessError(firstEvaluation);
+        if (readinessError) {
+          throw readinessError;
+        }
+        const scope = buildStableItemResponseScope(
+          context.itemResponses.map((itemResponse) => itemResponse.id),
+        );
+        if (!scope || scope.length !== context.itemResponses.length) {
+          this.throwSubmissionFailed();
+        }
+
+        try {
+          await this.barrierService.createParentBarrierIfOpen({
+            patientId,
+            assessmentVisitId: visitId,
+            scaleInstanceId,
+            barrierId: randomUUID(),
+            startedAt: new Date(),
+            startedBy: currentOperator.operatorId,
+            startedByName: currentOperator.operatorName,
+            startedByRole: currentOperator.operatorRole,
+            itemResponseIds: scope,
+          });
+        } catch {
+          this.throwSubmissionFailed();
+        }
+        continue;
+      }
+
+      const barrier = parsedParent.value;
+      if (barrier.state === 'completed') {
+        this.throwSubmissionFailed();
+      }
+
+      if (barrier.state === 'releasing') {
+        await this.finishBarrierRelease(
+          patientId,
+          visitId,
+          scaleInstanceId,
+          barrier,
+          false,
+        );
+        continue;
+      }
+
+      const lifecycleError = this.getFirstSubmissionStateError(context);
+      if (lifecycleError) {
+        const completed = await this.finishBarrierRelease(
+          patientId,
+          visitId,
+          scaleInstanceId,
+          barrier,
+          true,
+        );
+        if (completed) {
+          continue;
+        }
+        throw lifecycleError;
+      }
+
+      if (barrier.state === 'fencing') {
+        try {
+          await this.barrierService.fenceItemResponses(
+            patientId,
+            visitId,
+            scaleInstanceId,
+            barrier,
+          );
+          await this.barrierService.markParentFenced(
+            patientId,
+            visitId,
+            scaleInstanceId,
+            barrier,
+            new Date(),
+          );
+        } catch {
+          this.throwSubmissionFailed();
+        }
+        continue;
+      }
+
+      this.assertFencedScope(context, barrier);
+      const completionTime = new Date();
+      const secondEvaluation = this.evaluateContext(context, completionTime);
+      const readinessError = this.getReadinessError(secondEvaluation);
+      if (readinessError) {
+        const completed = await this.finishBarrierRelease(
+          patientId,
+          visitId,
+          scaleInstanceId,
+          barrier,
+          true,
+        );
+        if (completed) {
+          continue;
+        }
+        throw readinessError;
+      }
+
+      const existingStartedAt = context.scaleInstance.startedAt;
+      const effectiveStartedAt =
+        existingStartedAt ?? secondEvaluation.earliestValidItemTimingStart;
+      const durationMs = effectiveStartedAt
+        ? Math.max(0, completionTime.getTime() - effectiveStartedAt.getTime())
+        : null;
+      let completed = false;
+
+      try {
+        completed = await this.barrierService.completeScaleInstance({
+          patientId,
+          assessmentVisitId: visitId,
+          scaleInstanceId,
+          barrier,
           completionTime,
           ...(existingStartedAt === null && effectiveStartedAt
             ? { startedAtToSet: effectiveStartedAt }
             : {}),
           durationMs,
-          submittedBy: operator.operatorId,
-          submittedByName: operator.operatorName,
-          submittedByRole: operator.operatorRole,
           readinessSummary: {
             expectedItemCount: secondEvaluation.summary.expectedItemCount,
             actualItemCount: secondEvaluation.summary.actualItemCount,
@@ -155,53 +256,178 @@ export class ScaleInstanceSubmissionService {
             blockingIssueCount: secondEvaluation.summary.blockingIssueCount,
             warningCount: secondEvaluation.summary.warningCount,
           },
-        },
-      );
-    } catch {
-      throw new InternalServerErrorException({
-        code: 'SCALE_INSTANCE_SUBMISSION_FAILED',
-        message: 'Scale instance submission failed',
-      });
-    }
+        });
+      } catch {
+        this.throwSubmissionFailed();
+      }
 
-    if (!completed) {
-      return this.handleAtomicCompletionMiss(
+      if (!completed) {
+        continue;
+      }
+
+      const completedContext = await this.loadSubmissionContext(
         patientId,
         visitId,
         scaleInstanceId,
       );
+      const completedParent = normalizeScaleInstanceSubmissionWriteBarrier(
+        completedContext.scaleInstance.submissionWriteBarrier,
+      );
+      this.assertCompletedBarrierConsistency(completedContext, completedParent);
+      return this.buildSubmittedResponse(completedContext, false);
     }
 
-    const completedEvaluation = evaluateScaleInstanceSubmissionReadiness({
-      patientStatus: secondContext.patient.status,
-      visitStatus: secondContext.visit.status,
-      scaleInstance: completed,
-      versionItems: secondContext.version.items,
-      itemResponses: secondContext.itemResponses,
-      checkedAt: completionTime,
-    });
+    this.throwSubmissionFailed();
+  }
 
-    return {
-      scaleInstance: this.assessmentsService.toPublicScaleInstanceResponse(
-        completed,
-        {
-          totalItemCount: completedEvaluation.summary.actualItemCount,
-          answeredItemCount: completedEvaluation.summary.completedItemCount,
-        },
-      ),
-      submission: {
-        submissionId,
-        submittedAt: completionTime,
-        submittedBy: this.toPublicOperator(operator),
-        alreadySubmitted: false,
-        durationSource: existingStartedAt
-          ? 'existing_instance_start'
-          : effectiveStartedAt
-            ? 'earliest_item_timing'
-            : 'unavailable',
-      },
-      readiness: this.toReadinessResponse(completed, completedEvaluation),
-    };
+  private async finishBarrierRelease(
+    patientId: string,
+    visitId: string,
+    scaleInstanceId: string,
+    barrier: NormalizedScaleInstanceSubmissionWriteBarrier,
+    claimRelease: boolean,
+  ): Promise<boolean> {
+    try {
+      if (claimRelease) {
+        await this.barrierService.claimRelease(
+          patientId,
+          visitId,
+          scaleInstanceId,
+          barrier.barrierId,
+          new Date(),
+        );
+      }
+
+      const current = await this.loadSubmissionContext(
+        patientId,
+        visitId,
+        scaleInstanceId,
+      );
+      if (current.scaleInstance.status === 'completed') {
+        const completedParent = normalizeScaleInstanceSubmissionWriteBarrier(
+          current.scaleInstance.submissionWriteBarrier,
+        );
+        this.assertCompletedBarrierConsistency(current, completedParent);
+        return true;
+      }
+
+      const parsedParent = normalizeScaleInstanceSubmissionWriteBarrier(
+        current.scaleInstance.submissionWriteBarrier,
+      );
+      if (parsedParent.kind === 'open') {
+        return false;
+      }
+      if (parsedParent.kind !== 'valid') {
+        this.throwSubmissionFailed();
+      }
+      if (parsedParent.value.barrierId !== barrier.barrierId) {
+        return false;
+      }
+      if (parsedParent.value.state !== 'releasing') {
+        this.throwSubmissionFailed();
+      }
+
+      await this.barrierService.releaseItemResponses(
+        patientId,
+        visitId,
+        scaleInstanceId,
+        parsedParent.value,
+      );
+      const cleared = await this.barrierService.clearParentBarrier(
+        patientId,
+        visitId,
+        scaleInstanceId,
+        barrier.barrierId,
+      );
+      if (!cleared) {
+        const after = await this.loadSubmissionContext(
+          patientId,
+          visitId,
+          scaleInstanceId,
+        );
+        if (after.scaleInstance.status === 'completed') {
+          const completedParent = normalizeScaleInstanceSubmissionWriteBarrier(
+            after.scaleInstance.submissionWriteBarrier,
+          );
+          this.assertCompletedBarrierConsistency(after, completedParent);
+          return true;
+        }
+        const afterParent = normalizeScaleInstanceSubmissionWriteBarrier(
+          after.scaleInstance.submissionWriteBarrier,
+        );
+        if (
+          afterParent.kind === 'valid' &&
+          afterParent.value.barrierId === barrier.barrierId
+        ) {
+          this.throwSubmissionFailed();
+        }
+      }
+      return false;
+    } catch (error: unknown) {
+      if (error instanceof InternalServerErrorException) {
+        throw error;
+      }
+      this.throwSubmissionFailed();
+    }
+  }
+
+  private assertNoItemResponseBarriers(
+    itemResponses: readonly ItemResponseSummary[],
+  ): void {
+    if (
+      itemResponses.some(
+        (itemResponse) =>
+          normalizeItemResponseSubmissionWriteBarrier(
+            itemResponse.submissionWriteBarrier,
+          ).kind !== 'open',
+      )
+    ) {
+      this.throwSubmissionFailed();
+    }
+  }
+
+  private assertFencedScope(
+    context: SubmissionContext,
+    barrier: NormalizedScaleInstanceSubmissionWriteBarrier,
+  ): void {
+    const actualScope = context.itemResponses.map((itemResponse) =>
+      itemResponse.id.toLowerCase(),
+    );
+
+    if (
+      context.itemResponses.length !== barrier.expectedItemCount ||
+      !itemResponseScopesEqual(actualScope, barrier.itemResponseIds) ||
+      context.itemResponses.some((itemResponse) => {
+        const parsed = normalizeItemResponseSubmissionWriteBarrier(
+          itemResponse.submissionWriteBarrier,
+        );
+        return (
+          parsed.kind !== 'valid' ||
+          parsed.value.barrierId !== barrier.barrierId
+        );
+      })
+    ) {
+      this.throwSubmissionFailed();
+    }
+  }
+
+  private assertCompletedBarrierConsistency(
+    context: SubmissionContext,
+    parsedParent: ReturnType<
+      typeof normalizeScaleInstanceSubmissionWriteBarrier
+    >,
+  ): void {
+    if (parsedParent.kind === 'open') {
+      this.assertNoItemResponseBarriers(context.itemResponses);
+      return;
+    }
+    if (
+      parsedParent.kind !== 'valid' ||
+      parsedParent.value.state !== 'completed'
+    ) {
+      this.throwSubmissionFailed();
+    }
+    this.assertFencedScope(context, parsedParent.value);
   }
 
   private async loadSubmissionContext(
@@ -326,56 +552,60 @@ export class ScaleInstanceSubmissionService {
     };
   }
 
-  private assertFirstSubmissionState(context: SubmissionContext): void {
+  private getFirstSubmissionStateError(
+    context: SubmissionContext,
+  ): ConflictException | null {
     if (
       context.scaleInstance.status === 'locked' ||
       context.scaleInstance.status === 'voided' ||
       context.scaleInstance.lockedAt instanceof Date
     ) {
-      throw new ConflictException({
+      return new ConflictException({
         code: 'SCALE_INSTANCE_NOT_SUBMITTABLE',
         message: 'Scale instance is not submittable',
       });
     }
     if (context.patient.status !== 'active') {
-      throw new ConflictException({
+      return new ConflictException({
         code: 'PATIENT_NOT_ACTIVE',
         message: 'Patient is not active',
       });
     }
     if (!EDITABLE_STATUSES.has(context.visit.status)) {
-      throw new ConflictException({
+      return new ConflictException({
         code: 'VISIT_NOT_EDITABLE',
         message: 'Assessment visit is not editable',
       });
     }
     if (!EDITABLE_STATUSES.has(context.scaleInstance.status)) {
-      throw new ConflictException({
+      return new ConflictException({
         code: 'SCALE_INSTANCE_NOT_SUBMITTABLE',
         message: 'Scale instance is not submittable',
       });
     }
+    return null;
   }
 
-  private assertReadyForSubmission(
+  private getReadinessError(
     evaluation: ScaleSubmissionReadinessEvaluation,
-  ): void {
+  ): ConflictException | null {
     if (
       evaluation.blockingIssues.some(
         (issue) => issue.code === 'SCALE_INSTANCE_START_TIME_INVALID',
       )
     ) {
-      throw new ConflictException({
+      return new ConflictException({
         code: 'SCALE_INSTANCE_START_TIME_INVALID',
         message: 'Scale instance start time is invalid',
       });
     }
     if (!evaluation.ready) {
-      throw new ConflictException({
+      return new ConflictException({
         code: 'SCALE_INSTANCE_NOT_READY',
         message: 'Scale instance is not ready for submission',
       });
     }
+    return null;
   }
 
   private buildSubmissionOperator(
@@ -387,23 +617,15 @@ export class ScaleInstanceSubmissionService {
 
     return {
       operatorId: currentUser.id,
-      operatorName: currentUser.displayName.trim(),
+      operatorName:
+        currentUser.displayName.trim() || currentUser.accountName.trim(),
       operatorRole: operatorRole ?? 'unknown',
     };
   }
 
-  private toPublicOperator(
-    operator: SubmissionOperator,
-  ): ScaleInstanceSubmissionOperatorResponse {
-    return {
-      operatorId: operator.operatorId,
-      operatorName: operator.operatorName,
-      operatorRole: operator.operatorRole,
-    };
-  }
-
-  private buildAlreadySubmittedResponse(
+  private buildSubmittedResponse(
     context: SubmissionContext,
+    alreadySubmitted: boolean,
   ): SubmitScaleInstanceResponse {
     const completedAt = context.scaleInstance.completedAt;
     if (!completedAt) {
@@ -441,7 +663,7 @@ export class ScaleInstanceSubmissionService {
         submissionId: audit?.submissionId ?? null,
         submittedAt: audit?.submittedAt ?? completedAt,
         submittedBy,
-        alreadySubmitted: true,
+        alreadySubmitted,
         durationSource: this.deriveExistingDurationSource(context, evaluation),
       },
       readiness: this.toReadinessResponse(context.scaleInstance, evaluation),
@@ -456,47 +678,16 @@ export class ScaleInstanceSubmissionService {
     if (!startedAt) {
       return 'unavailable';
     }
-
     return evaluation.earliestValidItemTimingStart?.getTime() ===
       startedAt.getTime()
       ? 'earliest_item_timing'
       : 'existing_instance_start';
   }
 
-  private async handleAtomicCompletionMiss(
-    patientId: string,
-    visitId: string,
-    scaleInstanceId: string,
-  ): Promise<SubmitScaleInstanceResponse> {
-    const current =
-      await this.assessmentsService.findScaleInstanceByPatientVisitAndId(
-        patientId,
-        visitId,
-        scaleInstanceId,
-      );
-
-    if (current?.status === 'completed') {
-      const context = await this.loadSubmissionContext(
-        patientId,
-        visitId,
-        scaleInstanceId,
-      );
-      return this.buildAlreadySubmittedResponse(context);
-    }
-    if (
-      current?.status === 'locked' ||
-      current?.status === 'voided' ||
-      current?.lockedAt instanceof Date
-    ) {
-      throw new ConflictException({
-        code: 'SCALE_INSTANCE_NOT_SUBMITTABLE',
-        message: 'Scale instance is not submittable',
-      });
-    }
-
-    throw new ConflictException({
-      code: 'SCALE_INSTANCE_SUBMISSION_CONFLICT',
-      message: 'Scale instance submission conflicted with another update',
+  private throwSubmissionFailed(): never {
+    throw new InternalServerErrorException({
+      code: 'SCALE_INSTANCE_SUBMISSION_FAILED',
+      message: 'Scale instance submission failed',
     });
   }
 }

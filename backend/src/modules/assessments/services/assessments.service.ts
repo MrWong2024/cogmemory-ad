@@ -63,7 +63,6 @@ import type {
   ScaleInstanceListItemResponse,
   ScaleInstanceProgressResponse,
 } from '../types/assessment-execution-response.types';
-import type { ScaleSubmissionReadinessSummaryResponse } from '../types/scale-instance-submission-response.types';
 import type {
   AssessmentVisitDetailResponse,
   AssessmentVisitListItemResponse,
@@ -311,25 +310,8 @@ export type ScaleInstanceSummary = {
   progress: ScaleInstanceProgress;
   qualityControlSummary: ScaleQualityControlSummary;
   notes?: string;
+  submissionWriteBarrier?: unknown;
   metadata: ScaleInstanceMetadata;
-};
-
-export type CompleteScaleInstanceInput = {
-  submissionId: string;
-  completionTime: Date;
-  startedAtToSet?: Date;
-  durationMs: number | null;
-  submittedBy: string;
-  submittedByName: string;
-  submittedByRole: AssessmentOperatorRole;
-  readinessSummary: Pick<
-    ScaleSubmissionReadinessSummaryResponse,
-    | 'expectedItemCount'
-    | 'actualItemCount'
-    | 'completedItemCount'
-    | 'blockingIssueCount'
-    | 'warningCount'
-  >;
 };
 
 export type ScaleInstanceSubmissionAuditSummary = {
@@ -428,6 +410,7 @@ export type ItemResponseSummary = {
   timing: ItemResponseTimingSummary | null;
   evidenceRefs: ItemEvidenceRefSummary[];
   operatorNote?: string;
+  submissionWriteBarrier?: unknown;
   qualityControlHints: ItemQualityControlHints;
   metadata: ItemResponseMetadata;
   lockedAt: Date | null;
@@ -1175,75 +1158,6 @@ export class AssessmentsService {
     };
   }
 
-  async completeScaleInstanceIfEditable(
-    patientId: Types.ObjectId | string,
-    assessmentVisitId: Types.ObjectId | string,
-    scaleInstanceId: Types.ObjectId | string,
-    input: CompleteScaleInstanceInput,
-  ): Promise<ScaleInstanceSummary | null> {
-    const normalizedPatientId = this.normalizeObjectId(patientId);
-    const normalizedVisitId = this.normalizeObjectId(assessmentVisitId);
-    const normalizedScaleInstanceId = this.normalizeObjectId(scaleInstanceId);
-    const submittedBy = this.normalizeObjectId(input.submittedBy);
-
-    if (
-      !normalizedPatientId ||
-      !normalizedVisitId ||
-      !normalizedScaleInstanceId ||
-      !submittedBy
-    ) {
-      return null;
-    }
-
-    const progress = {
-      totalItemCount: input.readinessSummary.actualItemCount,
-      answeredItemCount: input.readinessSummary.completedItemCount,
-      source: 'submission',
-      finalizedAt: input.completionTime,
-    };
-    const updateFields: Record<string, unknown> = {
-      status: 'completed',
-      completedAt: input.completionTime,
-      durationMs: input.durationMs,
-      progress,
-      'metadata.submission.submissionId': input.submissionId,
-      'metadata.submission.submittedAt': input.completionTime,
-      'metadata.submission.submittedBy': submittedBy,
-      'metadata.submission.submittedByName': input.submittedByName,
-      'metadata.submission.submittedByRole': input.submittedByRole,
-      'metadata.submission.readinessSummary.expectedItemCount':
-        input.readinessSummary.expectedItemCount,
-      'metadata.submission.readinessSummary.actualItemCount':
-        input.readinessSummary.actualItemCount,
-      'metadata.submission.readinessSummary.completedItemCount':
-        input.readinessSummary.completedItemCount,
-      'metadata.submission.readinessSummary.blockingIssueCount':
-        input.readinessSummary.blockingIssueCount,
-      'metadata.submission.readinessSummary.warningCount':
-        input.readinessSummary.warningCount,
-    };
-
-    if (input.startedAtToSet) {
-      updateFields.startedAt = input.startedAtToSet;
-    }
-
-    const completed = await this.scaleInstanceModel
-      .findOneAndUpdate(
-        {
-          _id: normalizedScaleInstanceId,
-          patientId: normalizedPatientId,
-          assessmentVisitId: normalizedVisitId,
-          status: { $in: ['draft', 'in_progress'] },
-          lockedAt: null,
-        },
-        { $set: updateFields },
-        { returnDocument: 'after', runValidators: true },
-      )
-      .exec();
-
-    return completed ? this.mapScaleInstance(completed) : null;
-  }
-
   readScaleInstanceSubmissionAudit(
     scaleInstance: ScaleInstanceSummary,
   ): ScaleInstanceSubmissionAuditSummary | null {
@@ -1397,6 +1311,10 @@ export class AssessmentsService {
           ...ownership,
           status: { $in: ['not_started', 'in_progress', 'answered'] },
           lockedAt: null,
+          $or: [
+            { submissionWriteBarrier: null },
+            { submissionWriteBarrier: { $exists: false } },
+          ],
           evidenceRefs: {
             $elemMatch: {
               evidenceType,
@@ -1455,6 +1373,10 @@ export class AssessmentsService {
           ...ownership,
           status: { $in: ['not_started', 'in_progress', 'answered'] },
           lockedAt: null,
+          $or: [
+            { submissionWriteBarrier: null },
+            { submissionWriteBarrier: { $exists: false } },
+          ],
           evidenceRefs: {
             $elemMatch: {
               evidenceType,
@@ -1986,6 +1908,7 @@ export class AssessmentsService {
       progress: scaleInstance.progress ?? null,
       qualityControlSummary: scaleInstance.qualityControlSummary ?? null,
       notes: scaleInstance.notes,
+      submissionWriteBarrier: scaleInstance.submissionWriteBarrier ?? null,
       metadata: scaleInstance.metadata ?? null,
     };
   }
@@ -2036,6 +1959,7 @@ export class AssessmentsService {
         this.mapItemEvidenceRef(evidenceRef),
       ),
       operatorNote: itemResponse.operatorNote,
+      submissionWriteBarrier: itemResponse.submissionWriteBarrier ?? null,
       qualityControlHints: itemResponse.qualityControlHints ?? null,
       metadata: itemResponse.metadata ?? null,
       lockedAt: itemResponse.lockedAt ?? null,

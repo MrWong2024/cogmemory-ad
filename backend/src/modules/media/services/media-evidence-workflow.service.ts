@@ -15,6 +15,10 @@ import {
 import { randomUUID } from 'crypto';
 import { Types } from 'mongoose';
 import type { AuthenticatedUserContext } from '../../auth/types/auth-user-context.type';
+import {
+  itemResponseSubmissionBarrierBlocksWrites,
+  scaleInstanceSubmissionBarrierBlocksWrites,
+} from '../../assessments/lib/scale-instance-submission-write-barrier';
 import { PatientsService } from '../../patients/services/patients.service';
 import {
   AssessmentsService,
@@ -260,7 +264,7 @@ export class MediaEvidenceWorkflowService {
         uploadedObjectKeys,
         evidenceCode,
       );
-      this.throwAlreadyAttached();
+      return this.classifyAttachMiss(params);
     }
 
     return {
@@ -380,10 +384,7 @@ export class MediaEvidenceWorkflowService {
     }
 
     if (!cleared) {
-      throw new ConflictException({
-        code: 'MEDIA_EVIDENCE_NOT_VOIDABLE',
-        message: 'Media evidence cannot be voided',
-      });
+      return this.classifyClearMiss(params);
     }
 
     const voidedAt = new Date();
@@ -509,18 +510,28 @@ export class MediaEvidenceWorkflowService {
 
     if (
       !EDITABLE_STATUSES.has(chain.scaleInstance.status) ||
-      chain.scaleInstance.lockedAt instanceof Date
+      chain.scaleInstance.lockedAt instanceof Date ||
+      scaleInstanceSubmissionBarrierBlocksWrites(
+        chain.scaleInstance.submissionWriteBarrier,
+      )
     ) {
-      throw new ConflictException({
-        code: 'SCALE_INSTANCE_NOT_EDITABLE',
-        message: 'Scale instance is not editable',
-      });
+      this.throwScaleInstanceNotEditable();
     }
 
     if (
       !EDITABLE_ITEM_RESPONSE_STATUSES.has(chain.itemResponse.status) ||
-      chain.itemResponse.lockedAt instanceof Date
+      chain.itemResponse.lockedAt instanceof Date ||
+      itemResponseSubmissionBarrierBlocksWrites(
+        chain.itemResponse.submissionWriteBarrier,
+      )
     ) {
+      if (
+        itemResponseSubmissionBarrierBlocksWrites(
+          chain.itemResponse.submissionWriteBarrier,
+        )
+      ) {
+        this.throwScaleInstanceNotEditable();
+      }
       throw new ConflictException({
         code: 'ITEM_RESPONSE_NOT_EDITABLE',
         message: 'Item response is not editable',
@@ -810,6 +821,47 @@ export class MediaEvidenceWorkflowService {
     await this.cleanupStorage(objectKeys, evidenceCode, evidenceDeleted);
   }
 
+  private async classifyAttachMiss(
+    params: MediaEvidenceItemParamDto,
+  ): Promise<never> {
+    try {
+      const chain = await this.requireOwnershipChain(params);
+      this.assertEditableChain(chain);
+    } catch (error: unknown) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new InternalServerErrorException({
+        code: 'MEDIA_EVIDENCE_ATTACH_FAILED',
+        message: 'Media evidence reference could not be attached',
+      });
+    }
+
+    this.throwAlreadyAttached();
+  }
+
+  private async classifyClearMiss(
+    params: MediaEvidenceItemParamDto,
+  ): Promise<never> {
+    try {
+      const chain = await this.requireOwnershipChain(params);
+      this.assertEditableChain(chain);
+    } catch (error: unknown) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new InternalServerErrorException({
+        code: 'MEDIA_EVIDENCE_VOID_FAILED',
+        message: 'Media evidence could not be voided',
+      });
+    }
+
+    throw new ConflictException({
+      code: 'MEDIA_EVIDENCE_NOT_VOIDABLE',
+      message: 'Media evidence cannot be voided',
+    });
+  }
+
   private async cleanupStorage(
     objectKeys: string[],
     evidenceCode: string,
@@ -880,6 +932,13 @@ export class MediaEvidenceWorkflowService {
     throw new ConflictException({
       code: 'MEDIA_EVIDENCE_ALREADY_ATTACHED',
       message: 'Media evidence is already attached',
+    });
+  }
+
+  private throwScaleInstanceNotEditable(): never {
+    throw new ConflictException({
+      code: 'SCALE_INSTANCE_NOT_EDITABLE',
+      message: 'Scale instance is not editable',
     });
   }
 

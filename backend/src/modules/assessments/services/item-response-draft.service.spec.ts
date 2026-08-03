@@ -307,6 +307,35 @@ describe('ItemResponseDraftService', () => {
     },
   );
 
+  it('fails closed when the parent or item has a submission barrier', async () => {
+    assessmentsService.findScaleInstanceByPatientVisitAndId.mockResolvedValueOnce(
+      {
+        id: SCALE_INSTANCE_ID,
+        status: 'draft',
+        submissionWriteBarrier: { malformed: true },
+      },
+    );
+    await expectHttpExceptionCode(
+      save({ responseText: 'blocked by parent' }),
+      409,
+      'SCALE_INSTANCE_NOT_EDITABLE',
+    );
+
+    currentItemResponse = createItemResponseSummary({
+      submissionWriteBarrier: {
+        version: 1,
+        barrierId: '15443e65-6098-4ca4-b4a2-e16c1e066279',
+        startedAt: new Date(),
+      },
+    });
+    await expectHttpExceptionCode(
+      save({ responseText: 'blocked by item' }),
+      409,
+      'SCALE_INSTANCE_NOT_EDITABLE',
+    );
+    expect(itemResponseModel.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
   it.each(['completed', 'locked', 'voided'])(
     'rejects a %s scale instance',
     async (status) => {
@@ -381,7 +410,17 @@ describe('ItemResponseDraftService', () => {
         patientId: PATIENT_ID,
         status: { $in: ['not_started', 'in_progress', 'answered'] },
         lockedAt: null,
-        $or: [{ draftRevision: 0 }, { draftRevision: { $exists: false } }],
+        $and: [
+          {
+            $or: [
+              { submissionWriteBarrier: null },
+              { submissionWriteBarrier: { $exists: false } },
+            ],
+          },
+          {
+            $or: [{ draftRevision: 0 }, { draftRevision: { $exists: false } }],
+          },
+        ],
       }),
       expect.objectContaining({
         $inc: { draftRevision: 1 },
@@ -452,10 +491,32 @@ describe('ItemResponseDraftService', () => {
 
     expect(firstFilter).toEqual(
       expect.objectContaining({
-        $or: [{ draftRevision: 0 }, { draftRevision: { $exists: false } }],
+        $and: [
+          {
+            $or: [
+              { submissionWriteBarrier: null },
+              { submissionWriteBarrier: { $exists: false } },
+            ],
+          },
+          {
+            $or: [{ draftRevision: 0 }, { draftRevision: { $exists: false } }],
+          },
+        ],
       }),
     );
-    expect(secondFilter).toEqual(expect.objectContaining({ draftRevision: 1 }));
+    expect(secondFilter).toEqual(
+      expect.objectContaining({
+        draftRevision: 1,
+        $and: [
+          {
+            $or: [
+              { submissionWriteBarrier: null },
+              { submissionWriteBarrier: { $exists: false } },
+            ],
+          },
+        ],
+      }),
+    );
     expect(readUpdateSet(itemResponseModel.findOneAndUpdate, 0)).toEqual(
       expect.objectContaining({
         responseText: 'same explicit answer',
@@ -488,7 +549,17 @@ describe('ItemResponseDraftService', () => {
 
     expect(readMockCallArgument(itemResponseModel.findOneAndUpdate, 0)).toEqual(
       expect.objectContaining({
-        $or: [{ draftRevision: 0 }, { draftRevision: { $exists: false } }],
+        $and: [
+          {
+            $or: [
+              { submissionWriteBarrier: null },
+              { submissionWriteBarrier: { $exists: false } },
+            ],
+          },
+          {
+            $or: [{ draftRevision: 0 }, { draftRevision: { $exists: false } }],
+          },
+        ],
       }),
     );
     expect(readMockCallArgument(itemResponseModel.findOneAndUpdate, 1)).toEqual(
@@ -545,6 +616,49 @@ describe('ItemResponseDraftService', () => {
       save({ responseText: 'answer' }),
       409,
       'ITEM_RESPONSE_NOT_EDITABLE',
+    );
+  });
+
+  it('classifies a parent or item barrier that wins the CAS race as not editable', async () => {
+    const initial = createItemResponseSummary({ draftRevision: 1 });
+    currentItemResponse = initial;
+    itemResponseModel.findOneAndUpdate.mockReturnValue({
+      exec: jest.fn().mockResolvedValue(null),
+    });
+    assessmentsService.findScaleInstanceByPatientVisitAndId
+      .mockResolvedValueOnce({ id: SCALE_INSTANCE_ID, status: 'draft' })
+      .mockResolvedValueOnce({
+        id: SCALE_INSTANCE_ID,
+        status: 'draft',
+        submissionWriteBarrier: { malformed: true },
+      });
+
+    await expectHttpExceptionCode(
+      save({ responseText: 'lost to parent barrier' }),
+      409,
+      'SCALE_INSTANCE_NOT_EDITABLE',
+    );
+
+    assessmentsService.findScaleInstanceByPatientVisitAndId.mockResolvedValue({
+      id: SCALE_INSTANCE_ID,
+      status: 'draft',
+    });
+    assessmentsService.findItemResponseByOwnership
+      .mockResolvedValueOnce(initial)
+      .mockResolvedValueOnce(
+        createItemResponseSummary({
+          draftRevision: 1,
+          submissionWriteBarrier: { malformed: true },
+        }),
+      );
+    itemResponseModel.findOneAndUpdate.mockReturnValueOnce({
+      exec: jest.fn().mockResolvedValue(null),
+    });
+
+    await expectHttpExceptionCode(
+      save({ responseText: 'lost to item barrier' }),
+      409,
+      'SCALE_INSTANCE_NOT_EDITABLE',
     );
   });
 

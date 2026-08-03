@@ -25,6 +25,7 @@ import { AssessmentScaleWorkflowService } from './services/assessment-scale-work
 import { AssessmentsService } from './services/assessments.service';
 import { ItemResponseDraftService } from './services/item-response-draft.service';
 import { ScaleInstanceSubmissionService } from './services/scale-instance-submission.service';
+import { ScaleInstanceSubmissionBarrierService } from './services/scale-instance-submission-barrier.service';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { ScaleInstanceSubmissionService } from './services/scale-instance-submis
     AssessmentScaleWorkflowService,
     AssessmentExecutionDetailService,
     ItemResponseDraftService,
+    ScaleInstanceSubmissionBarrierService,
     ScaleInstanceSubmissionService,
   ],
   exports: [

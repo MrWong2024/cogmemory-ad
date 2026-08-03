@@ -25,6 +25,10 @@ import {
   hasMeaningfulJsonValue,
 } from '../lib/item-response-answer-content';
 import {
+  itemResponseSubmissionBarrierBlocksWrites,
+  scaleInstanceSubmissionBarrierBlocksWrites,
+} from '../lib/scale-instance-submission-write-barrier';
+import {
   ItemResponseTimingValidationError,
   validateItemResponseTimingUpdate,
 } from '../lib/item-response-timing';
@@ -139,12 +143,12 @@ export class ItemResponseDraftService {
 
     if (
       !EDITABLE_SCALE_INSTANCE_STATUSES.has(scaleInstance.status) ||
-      scaleInstance.lockedAt instanceof Date
+      scaleInstance.lockedAt instanceof Date ||
+      scaleInstanceSubmissionBarrierBlocksWrites(
+        scaleInstance.submissionWriteBarrier,
+      )
     ) {
-      throw new ConflictException({
-        code: 'SCALE_INSTANCE_NOT_EDITABLE',
-        message: 'Scale instance is not editable',
-      });
+      this.throwScaleInstanceNotEditable();
     }
 
     const itemResponse =
@@ -164,8 +168,18 @@ export class ItemResponseDraftService {
 
     if (
       !EDITABLE_ITEM_RESPONSE_STATUSES.has(itemResponse.status) ||
-      itemResponse.lockedAt instanceof Date
+      itemResponse.lockedAt instanceof Date ||
+      itemResponseSubmissionBarrierBlocksWrites(
+        itemResponse.submissionWriteBarrier,
+      )
     ) {
+      if (
+        itemResponseSubmissionBarrierBlocksWrites(
+          itemResponse.submissionWriteBarrier,
+        )
+      ) {
+        this.throwScaleInstanceNotEditable();
+      }
       throw new ConflictException({
         code: 'ITEM_RESPONSE_NOT_EDITABLE',
         message: 'Item response is not editable',
@@ -201,13 +215,26 @@ export class ItemResponseDraftService {
               $in: ['not_started', 'in_progress', 'answered'],
             },
             lockedAt: null,
+            $and: [
+              {
+                $or: [
+                  { submissionWriteBarrier: null },
+                  { submissionWriteBarrier: { $exists: false } },
+                ],
+              },
+              ...(input.expectedRevision === 0
+                ? [
+                    {
+                      $or: [
+                        { draftRevision: 0 },
+                        { draftRevision: { $exists: false } },
+                      ],
+                    },
+                  ]
+                : []),
+            ],
             ...(input.expectedRevision === 0
-              ? {
-                  $or: [
-                    { draftRevision: 0 },
-                    { draftRevision: { $exists: false } },
-                  ],
-                }
+              ? {}
               : { draftRevision: input.expectedRevision }),
           },
           update,
@@ -696,12 +723,12 @@ export class ItemResponseDraftService {
 
       if (
         !EDITABLE_SCALE_INSTANCE_STATUSES.has(scaleInstance.status) ||
-        scaleInstance.lockedAt instanceof Date
+        scaleInstance.lockedAt instanceof Date ||
+        scaleInstanceSubmissionBarrierBlocksWrites(
+          scaleInstance.submissionWriteBarrier,
+        )
       ) {
-        throw new ConflictException({
-          code: 'SCALE_INSTANCE_NOT_EDITABLE',
-          message: 'Scale instance is not editable',
-        });
+        this.throwScaleInstanceNotEditable();
       }
 
       const itemResponse =
@@ -721,8 +748,18 @@ export class ItemResponseDraftService {
 
       if (
         !EDITABLE_ITEM_RESPONSE_STATUSES.has(itemResponse.status) ||
-        itemResponse.lockedAt instanceof Date
+        itemResponse.lockedAt instanceof Date ||
+        itemResponseSubmissionBarrierBlocksWrites(
+          itemResponse.submissionWriteBarrier,
+        )
       ) {
+        if (
+          itemResponseSubmissionBarrierBlocksWrites(
+            itemResponse.submissionWriteBarrier,
+          )
+        ) {
+          this.throwScaleInstanceNotEditable();
+        }
         throw new ConflictException({
           code: 'ITEM_RESPONSE_NOT_EDITABLE',
           message: 'Item response is not editable',
@@ -823,6 +860,13 @@ export class ItemResponseDraftService {
     throw new InternalServerErrorException({
       code: 'ITEM_RESPONSE_SAVE_FAILED',
       message: 'Item response draft could not be saved',
+    });
+  }
+
+  private throwScaleInstanceNotEditable(): never {
+    throw new ConflictException({
+      code: 'SCALE_INSTANCE_NOT_EDITABLE',
+      message: 'Scale instance is not editable',
     });
   }
 }

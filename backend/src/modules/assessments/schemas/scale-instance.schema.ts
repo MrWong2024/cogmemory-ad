@@ -5,12 +5,21 @@ import { Patient } from '../../patients/schemas/patient.schema';
 import { ScaleDefinition } from '../../scales/schemas/scale-definition.schema';
 import { ScaleVersion } from '../../scales/schemas/scale-version.schema';
 import {
+  ASSESSMENT_OPERATOR_ROLES,
   AssessmentOperatorSnapshot,
   AssessmentOperatorSnapshotSchema,
   ASSESSMENT_STATUSES,
 } from './assessment-visit.schema';
-import type { AssessmentStatus } from './assessment-visit.schema';
+import type {
+  AssessmentOperatorRole,
+  AssessmentStatus,
+} from './assessment-visit.schema';
 import { AssessmentVisit } from './assessment-visit.schema';
+import {
+  SCALE_INSTANCE_SUBMISSION_BARRIER_STATES,
+  SCALE_INSTANCE_SUBMISSION_BARRIER_VERSION,
+  type ScaleInstanceSubmissionBarrierState,
+} from '../lib/scale-instance-submission-write-barrier';
 
 export const SCALE_ADMINISTRATION_MODES = [
   'clinician_administered',
@@ -41,6 +50,68 @@ export class ScaleVersionTrace {
 
 export const ScaleVersionTraceSchema =
   SchemaFactory.createForClass(ScaleVersionTrace);
+
+@Schema({ _id: false })
+export class ScaleInstanceSubmissionWriteBarrier {
+  @Prop({
+    type: Number,
+    enum: [SCALE_INSTANCE_SUBMISSION_BARRIER_VERSION],
+    required: true,
+  })
+  version!: typeof SCALE_INSTANCE_SUBMISSION_BARRIER_VERSION;
+
+  @Prop({ type: String, required: true, trim: true })
+  barrierId!: string;
+
+  @Prop({
+    type: String,
+    enum: SCALE_INSTANCE_SUBMISSION_BARRIER_STATES,
+    required: true,
+  })
+  state!: ScaleInstanceSubmissionBarrierState;
+
+  @Prop({ type: Date, required: true })
+  startedAt!: Date;
+
+  @Prop({ type: Date, default: null })
+  fencedAt!: Date | null;
+
+  @Prop({ type: Date, default: null })
+  releaseStartedAt!: Date | null;
+
+  @Prop({ type: Date, default: null })
+  completedAt!: Date | null;
+
+  @Prop({ type: SchemaTypes.ObjectId, required: true })
+  startedBy!: Types.ObjectId;
+
+  @Prop({ type: String, required: true, trim: true })
+  startedByName!: string;
+
+  @Prop({
+    type: String,
+    enum: ASSESSMENT_OPERATOR_ROLES,
+    required: true,
+  })
+  startedByRole!: AssessmentOperatorRole;
+
+  @Prop({ type: [{ type: SchemaTypes.ObjectId }], required: true })
+  itemResponseIds!: Types.ObjectId[];
+
+  @Prop({
+    type: Number,
+    required: true,
+    min: 0,
+    validate: {
+      validator: (value: number) => Number.isSafeInteger(value),
+      message: 'expectedItemCount must be a safe integer',
+    },
+  })
+  expectedItemCount!: number;
+}
+
+export const ScaleInstanceSubmissionWriteBarrierSchema =
+  SchemaFactory.createForClass(ScaleInstanceSubmissionWriteBarrier);
 
 @Schema({ timestamps: true, collection: 'scale_instances' })
 export class ScaleInstance {
@@ -124,6 +195,9 @@ export class ScaleInstance {
 
   @Prop({ type: String, trim: true })
   notes?: string;
+
+  @Prop({ type: ScaleInstanceSubmissionWriteBarrierSchema, default: null })
+  submissionWriteBarrier?: ScaleInstanceSubmissionWriteBarrier | null;
 
   @Prop({ type: SchemaTypes.Mixed, default: null })
   metadata?: ScaleInstanceMetadata;

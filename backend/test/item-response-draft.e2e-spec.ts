@@ -2,7 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { getConnectionToken, getModelToken } from '@nestjs/mongoose';
 import { Test } from '@nestjs/testing';
-import { Connection, Model } from 'mongoose';
+import { Connection, Model, Query, Types } from 'mongoose';
 import request, { type Response, type Test as SupertestTest } from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
@@ -134,6 +134,90 @@ function collectKeys(value: unknown, keys = new Set<string>()): Set<string> {
   }
 
   return keys;
+}
+
+type QueryLatch = {
+  reached: Promise<void>;
+  release: () => void;
+  restore: () => void;
+};
+
+type QueryExecutor = (this: Query<unknown, unknown>) => Promise<unknown>;
+
+function latchNextQuery(
+  label: string,
+  predicate: (query: Query<unknown, unknown>) => boolean,
+): QueryLatch {
+  let resolveReached: (() => void) | undefined;
+  let resolveRelease: (() => void) | undefined;
+  let armed = true;
+  const reached = new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(
+      () => reject(new Error(`Timed out waiting for ${label}`)),
+      5000,
+    );
+    resolveReached = () => {
+      clearTimeout(timeout);
+      resolve();
+    };
+  });
+  const released = new Promise<void>((resolve) => {
+    const timeout = setTimeout(resolve, 10000);
+    resolveRelease = () => {
+      clearTimeout(timeout);
+      resolve();
+    };
+  });
+  // Mongoose exposes the overloaded Query prototype method as an unbound member.
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  const originalExec = Query.prototype.exec as QueryExecutor;
+  const spy = jest.spyOn(Query.prototype, 'exec').mockImplementation(function (
+    this: Query<unknown, unknown>,
+  ) {
+    if (armed && predicate(this)) {
+      armed = false;
+      resolveReached?.();
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+      return released.then(() => originalExec.call(this));
+    }
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+    return originalExec.call(this);
+  });
+
+  return {
+    reached,
+    release: () => resolveRelease?.(),
+    restore: () => spy.mockRestore(),
+  };
+}
+
+function queryTargetsDraftCas(
+  query: Query<unknown, unknown>,
+  itemResponseId: string,
+): boolean {
+  if (query.model.modelName !== ItemResponse.name) {
+    return false;
+  }
+  const filter = query.getFilter();
+  const update = query.getUpdate();
+  return (
+    String(filter._id) === itemResponseId &&
+    isRecord(update) &&
+    isRecord(update.$inc) &&
+    update.$inc.draftRevision === 1
+  );
+}
+
+function queryIsSubmissionFencing(query: Query<unknown, unknown>): boolean {
+  if (query.model.modelName !== ItemResponse.name) {
+    return false;
+  }
+  const update = query.getUpdate();
+  if (!isRecord(update) || !isRecord(update.$set)) {
+    return false;
+  }
+  const barrier = update.$set.submissionWriteBarrier;
+  return isRecord(barrier) && barrier.version === 1;
 }
 
 describe('item response execution detail and draft APIs (e2e)', () => {
@@ -283,6 +367,63 @@ describe('item response execution detail and draft APIs (e2e)', () => {
     }
 
     return itemResponse;
+  }
+
+  async function prepareReadyExecution(
+    fixture: ExecutionFixture,
+  ): Promise<ItemResponseDocument[]> {
+    const items = await itemResponseModel
+      .find({ scaleInstanceId: fixture.scaleInstanceId })
+      .sort({ itemOrder: 1 })
+      .exec();
+
+    for (const item of items) {
+      await itemResponseModel
+        .updateOne(
+          { _id: item._id },
+          {
+            $set: {
+              status: 'answered',
+              rawResponse: false,
+              operatorNote: 'A30 deterministic concurrency fixture',
+            },
+          },
+        )
+        .exec();
+      if (item.stepResults.length > 0) {
+        await itemResponseModel
+          .updateOne(
+            { _id: item._id },
+            { $set: { 'stepResults.$[].actualValue': 0 } },
+          )
+          .exec();
+      }
+      if (
+        item.evidenceRefs.some(
+          (evidenceRef) => evidenceRef.evidenceType === 'photo',
+        )
+      ) {
+        await itemResponseModel
+          .updateOne(
+            { _id: item._id },
+            {
+              $set: {
+                'evidenceRefs.$[evidenceRef].mediaEvidenceId':
+                  new Types.ObjectId(),
+                'evidenceRefs.$[evidenceRef].status': 'attached',
+              },
+            },
+            { arrayFilters: [{ 'evidenceRef.evidenceType': 'photo' }] },
+          )
+          .exec();
+      }
+    }
+
+    const readinessResponse = await doctorAgent
+      .get(`${executionPath(fixture)}/submission-readiness`)
+      .expect(200);
+    expect(readResponseBody(readinessResponse).ready).toBe(true);
+    return items;
   }
 
   async function readExecutionItem(
@@ -504,6 +645,11 @@ describe('item response execution detail and draft APIs (e2e)', () => {
       'scaleDefinitionId',
       'scaleVersionId',
       'mediaEvidenceId',
+      'submissionWriteBarrier',
+      'barrierId',
+      'itemResponseIds',
+      'expectedItemCount',
+      'startedBy',
       '__v',
       'passwordHash',
       'sessionToken',
@@ -531,6 +677,17 @@ describe('item response execution detail and draft APIs (e2e)', () => {
       })
       .expect(200);
     const draftBody = readResponseBody(draftResponse);
+    const draftKeys = collectKeys(draftBody);
+    for (const forbidden of [
+      'submissionWriteBarrier',
+      'barrierId',
+      'itemResponseIds',
+      'expectedItemCount',
+      'startedBy',
+      '__v',
+    ]) {
+      expect(draftKeys).not.toContain(forbidden);
+    }
     const draftItem = readRecord(draftBody, 'itemResponse');
     expect(draftItem).toEqual(
       expect.objectContaining({
@@ -800,6 +957,133 @@ describe('item response execution detail and draft APIs (e2e)', () => {
     );
     const afterStale = await itemResponseModel.findById(item._id).lean().exec();
     expect(afterStale).toEqual(beforeStale);
+  });
+
+  it('Stage 1: rejects a paused A14 CAS after A16 fencing completes with zero delayed write', async () => {
+    const fixture = await createExecution('A30-BARRIER-FIRST', 'mmse');
+    const items = await prepareReadyExecution(fixture);
+    const target = items[0];
+    const beforePatch = await itemResponseModel
+      .findById(target._id)
+      .lean()
+      .exec();
+    if (!beforePatch) {
+      throw new Error('Expected Stage 1 target item');
+    }
+    const latch = latchNextQuery('Stage 1 draft CAS', (query) =>
+      queryTargetsDraftCas(query, target._id.toString()),
+    );
+
+    try {
+      const patchPromise = doctorAgent
+        .patch(itemPath(fixture, target._id.toString()))
+        .send({
+          expectedRevision: beforePatch.draftRevision ?? 0,
+          responseText: 'must not cross completed barrier',
+        })
+        .then((response) => response);
+      await latch.reached;
+
+      const submitResponse = await doctorAgent
+        .post(`${executionPath(fixture)}/submit`)
+        .send({ confirm: true })
+        .expect(200);
+      expect(
+        readRecord(readResponseBody(submitResponse), 'scaleInstance').status,
+      ).toBe('completed');
+      const beforeRelease = await itemResponseModel
+        .findById(target._id)
+        .lean()
+        .exec();
+      expect(beforeRelease?.submissionWriteBarrier).toEqual(
+        expect.objectContaining({ version: 1 }),
+      );
+
+      latch.release();
+      const patchResponse = await patchPromise;
+      expect(patchResponse.status).toBe(409);
+      expect(readResponseBody(patchResponse).code).toBe(
+        'SCALE_INSTANCE_NOT_EDITABLE',
+      );
+      const afterRelease = await itemResponseModel
+        .findById(target._id)
+        .lean()
+        .exec();
+      expect(afterRelease).toEqual(beforeRelease);
+      expect(afterRelease?.draftRevision).toBe(beforePatch.draftRevision);
+      expect(afterRelease?.draftSavedAt).toEqual(beforePatch.draftSavedAt);
+      expect(afterRelease?.score).toEqual(beforePatch.score);
+      expect(afterRelease?.evidenceRefs).toEqual(beforeRelease?.evidenceRefs);
+    } finally {
+      latch.release();
+      latch.restore();
+    }
+  });
+
+  it('Stage 2: includes an A14 CAS that wins before item fencing in second readiness', async () => {
+    const fixture = await createExecution('A30-WRITE-FIRST', 'mmse');
+    const items = await prepareReadyExecution(fixture);
+    const target = items[0];
+    const before = await itemResponseModel.findById(target._id).lean().exec();
+    if (!before) {
+      throw new Error('Expected Stage 2 target item');
+    }
+    const patchLatch = latchNextQuery('Stage 2 draft CAS', (query) =>
+      queryTargetsDraftCas(query, target._id.toString()),
+    );
+    let fencingLatch: QueryLatch | undefined;
+
+    try {
+      const patchPromise = doctorAgent
+        .patch(itemPath(fixture, target._id.toString()))
+        .send({
+          expectedRevision: before.draftRevision ?? 0,
+          responseText: 'A30 write-first safe revision',
+        })
+        .then((response) => response);
+      await patchLatch.reached;
+      patchLatch.restore();
+
+      fencingLatch = latchNextQuery(
+        'Stage 2 item fencing',
+        queryIsSubmissionFencing,
+      );
+      const submitPromise = doctorAgent
+        .post(`${executionPath(fixture)}/submit`)
+        .send({ confirm: true })
+        .then((response) => response);
+      await fencingLatch.reached;
+
+      patchLatch.release();
+      const patchResponse = await patchPromise;
+      expect(patchResponse.status).toBe(200);
+      const savedItem = readRecord(
+        readResponseBody(patchResponse),
+        'itemResponse',
+      );
+      expect(savedItem.responseText).toBe('A30 write-first safe revision');
+      const savedRevision = readSafeInteger(savedItem, 'draftRevision');
+      const savedDraftAt = savedItem.draftSavedAt;
+
+      fencingLatch.release();
+      const submitResponse = await submitPromise;
+      expect(submitResponse.status).toBe(200);
+      expect(
+        readRecord(readResponseBody(submitResponse), 'scaleInstance').status,
+      ).toBe('completed');
+      const stored = await itemResponseModel.findById(target._id).lean().exec();
+      expect(stored?.draftRevision).toBe(savedRevision);
+      expect(stored?.draftSavedAt?.toISOString()).toBe(savedDraftAt);
+      expect(stored?.responseText).toBe('A30 write-first safe revision');
+      expect(stored?.submissionWriteBarrier).toEqual(
+        expect.objectContaining({ version: 1 }),
+      );
+    } finally {
+      patchLatch.release();
+      patchLatch.restore();
+      fencingLatch?.release();
+      fencingLatch?.restore();
+    }
   });
 
   it('upgrades a legacy item with no persisted draft revision from zero to one', async () => {

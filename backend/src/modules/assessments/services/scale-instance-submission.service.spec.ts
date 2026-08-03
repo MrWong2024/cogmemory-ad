@@ -3,11 +3,11 @@ import { Test } from '@nestjs/testing';
 import { PatientsService } from '../../patients/services/patients.service';
 import { ScalesService } from '../../scales/services/scales.service';
 import type {
-  CompleteScaleInstanceInput,
   ItemResponseSummary,
   ScaleInstanceSummary,
 } from './assessments.service';
 import { AssessmentsService } from './assessments.service';
+import { ScaleInstanceSubmissionBarrierService } from './scale-instance-submission-barrier.service';
 import { ScaleInstanceSubmissionService } from './scale-instance-submission.service';
 
 async function expectCode(
@@ -27,6 +27,29 @@ async function expectCode(
   }
   expect(caught.getStatus()).toBe(status);
   expect(caught.getResponse()).toEqual(expect.objectContaining({ code }));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function requireRecord(value: unknown, label: string): Record<string, unknown> {
+  if (!isRecord(value)) {
+    throw new Error(`Expected ${label} to be an object`);
+  }
+  return value;
+}
+
+function readMockCallArgument(
+  mock: jest.Mock,
+  argumentIndex: number,
+  callIndex = 0,
+): unknown {
+  const calls: unknown = mock.mock.calls;
+  if (!Array.isArray(calls) || !Array.isArray(calls[callIndex])) {
+    throw new Error(`Expected mock call ${callIndex + 1}`);
+  }
+  return calls[callIndex][argumentIndex] as unknown;
 }
 
 function createInstance(
@@ -54,16 +77,18 @@ function createInstance(
     operatorSnapshot: null,
     progress: null,
     qualityControlSummary: null,
+    submissionWriteBarrier: null,
     metadata: { initializedFromSeed: true },
     ...overrides,
   };
 }
 
 function createItem(
+  id = '507f1f77bcf86cd799439016',
   overrides: Partial<ItemResponseSummary> = {},
 ): ItemResponseSummary {
   return {
-    id: '507f1f77bcf86cd799439016',
+    id,
     assessmentVisitId: '507f1f77bcf86cd799439012',
     scaleInstanceId: '507f1f77bcf86cd799439013',
     patientId: '507f1f77bcf86cd799439011',
@@ -73,9 +98,9 @@ function createItem(
     scaleCode: 'scale',
     scaleVersion: '1.0',
     instanceCode: 'INST-A16-TEST-001',
-    itemCode: 'scale.item.1',
+    itemCode: `scale.item.${id.endsWith('16') ? '1' : '2'}`,
     itemTitle: 'Safe item',
-    itemOrder: 1,
+    itemOrder: id.endsWith('16') ? 1 : 2,
     responseType: 'text',
     countsTowardTotal: true,
     cognitiveDomainCodes: [],
@@ -102,6 +127,7 @@ function createItem(
     evidenceRefs: [],
     operatorNote: 'safe note',
     qualityControlHints: null,
+    submissionWriteBarrier: null,
     metadata: null,
     lockedAt: null,
     voidedAt: null,
@@ -109,37 +135,99 @@ function createItem(
   };
 }
 
+type BarrierInput = {
+  barrierId: string;
+  startedAt: Date;
+  startedBy: string;
+  startedByName: string;
+  startedByRole: string;
+  itemResponseIds: string[];
+};
+
 describe('ScaleInstanceSubmissionService', () => {
   const patientId = '507f1f77bcf86cd799439011';
   const visitId = '507f1f77bcf86cd799439012';
   const instanceId = '507f1f77bcf86cd799439013';
+  const operator = {
+    id: '507f1f77bcf86cd799439019',
+    accountName: 'operator-a16-test',
+    displayName: 'First Operator',
+    roles: ['doctor'],
+    permissions: [],
+  };
+  let currentInstance: ScaleInstanceSummary;
+  let currentItems: ItemResponseSummary[];
+  let audit: {
+    submissionId: string;
+    submittedAt: Date;
+    submittedBy: string;
+    submittedByName: string;
+    submittedByRole: 'doctor';
+  } | null;
   let patientsService: { findPatientById: jest.Mock };
   let assessmentsService: {
     findVisitByPatientAndId: jest.Mock;
     findScaleInstanceByPatientVisitAndId: jest.Mock;
     listItemResponsesByScaleInstanceId: jest.Mock;
-    toPublicScaleInstanceResponse: jest.Mock<
-      { id: string; status: string; progress: unknown },
-      [ScaleInstanceSummary, unknown]
-    >;
-    completeScaleInstanceIfEditable: jest.Mock<
-      Promise<ScaleInstanceSummary | null>,
-      [string, string, string, CompleteScaleInstanceInput]
-    >;
+    toPublicScaleInstanceResponse: jest.Mock;
     readScaleInstanceSubmissionAudit: jest.Mock;
   };
   let scalesService: {
     findDefinitionByCode: jest.Mock;
     findVersionByScaleCodeAndVersion: jest.Mock;
   };
+  let barrierService: {
+    createParentBarrierIfOpen: jest.Mock;
+    fenceItemResponses: jest.Mock;
+    markParentFenced: jest.Mock;
+    claimRelease: jest.Mock;
+    releaseItemResponses: jest.Mock;
+    clearParentBarrier: jest.Mock;
+    completeScaleInstance: jest.Mock;
+  };
   let service: ScaleInstanceSubmissionService;
 
+  function parentBarrier(
+    input: BarrierInput,
+    state: 'fencing' | 'fenced' | 'releasing' | 'completed',
+  ): Record<string, unknown> {
+    return {
+      version: 1,
+      barrierId: input.barrierId,
+      state,
+      startedAt: input.startedAt,
+      fencedAt: state === 'fencing' ? null : new Date(),
+      releaseStartedAt: state === 'releasing' ? new Date() : null,
+      completedAt: state === 'completed' ? new Date() : null,
+      startedBy: input.startedBy,
+      startedByName: input.startedByName,
+      startedByRole: input.startedByRole,
+      itemResponseIds: input.itemResponseIds,
+      expectedItemCount: input.itemResponseIds.length,
+    };
+  }
+
+  function childBarrier(input: BarrierInput): Record<string, unknown> {
+    return {
+      version: 1,
+      barrierId: input.barrierId,
+      startedAt: input.startedAt,
+    };
+  }
+
   beforeEach(async () => {
+    currentInstance = createInstance();
+    currentItems = [createItem()];
+    audit = null;
     patientsService = { findPatientById: jest.fn() };
     assessmentsService = {
       findVisitByPatientAndId: jest.fn(),
-      findScaleInstanceByPatientVisitAndId: jest.fn(),
-      listItemResponsesByScaleInstanceId: jest.fn(),
+      findScaleInstanceByPatientVisitAndId: jest.fn(() =>
+        Promise.resolve(currentInstance),
+      ),
+      listItemResponsesByScaleInstanceId: jest.fn(() =>
+        Promise.resolve(currentItems),
+      ),
       toPublicScaleInstanceResponse: jest.fn(
         (instance: ScaleInstanceSummary, progress: unknown) => ({
           id: instance.id,
@@ -147,22 +235,101 @@ describe('ScaleInstanceSubmissionService', () => {
           progress,
         }),
       ),
-      completeScaleInstanceIfEditable: jest.fn<
-        Promise<ScaleInstanceSummary | null>,
-        [string, string, string, CompleteScaleInstanceInput]
-      >(),
-      readScaleInstanceSubmissionAudit: jest.fn(),
+      readScaleInstanceSubmissionAudit: jest.fn(() => audit),
     };
     scalesService = {
       findDefinitionByCode: jest.fn(),
       findVersionByScaleCodeAndVersion: jest.fn(),
     };
+    barrierService = {
+      createParentBarrierIfOpen: jest.fn((input: BarrierInput) => {
+        if (currentInstance.submissionWriteBarrier !== null) {
+          return Promise.resolve(false);
+        }
+        currentInstance = {
+          ...currentInstance,
+          submissionWriteBarrier: parentBarrier(input, 'fencing'),
+        };
+        return Promise.resolve(true);
+      }),
+      fenceItemResponses: jest.fn((_a, _b, _c, input: BarrierInput) => {
+        currentItems = currentItems.map((item) => ({
+          ...item,
+          submissionWriteBarrier: childBarrier(input),
+        }));
+        return Promise.resolve();
+      }),
+      markParentFenced: jest.fn((_a, _b, _c, input: BarrierInput) => {
+        currentInstance = {
+          ...currentInstance,
+          submissionWriteBarrier: parentBarrier(input, 'fenced'),
+        };
+        return Promise.resolve(true);
+      }),
+      claimRelease: jest.fn((_a, _b, _c, barrierId: string) => {
+        const input = currentInstance.submissionWriteBarrier as BarrierInput;
+        if (input.barrierId !== barrierId) {
+          return Promise.resolve(false);
+        }
+        currentInstance = {
+          ...currentInstance,
+          submissionWriteBarrier: parentBarrier(input, 'releasing'),
+        };
+        return Promise.resolve(true);
+      }),
+      releaseItemResponses: jest.fn((_a, _b, _c, input: BarrierInput) => {
+        currentItems = currentItems.map((item) => ({
+          ...item,
+          submissionWriteBarrier: null,
+        }));
+        return Promise.resolve(input.itemResponseIds.length);
+      }),
+      clearParentBarrier: jest.fn(() => {
+        currentInstance = {
+          ...currentInstance,
+          submissionWriteBarrier: null,
+        };
+        return Promise.resolve(true);
+      }),
+      completeScaleInstance: jest.fn(
+        (input: {
+          barrier: BarrierInput;
+          completionTime: Date;
+          durationMs: number | null;
+        }) => {
+          if (currentInstance.status === 'completed') {
+            return Promise.resolve(false);
+          }
+          audit = {
+            submissionId: input.barrier.barrierId,
+            submittedAt: input.completionTime,
+            submittedBy: input.barrier.startedBy,
+            submittedByName: input.barrier.startedByName,
+            submittedByRole: 'doctor',
+          };
+          currentInstance = {
+            ...currentInstance,
+            status: 'completed',
+            startedAt: new Date('2026-07-10T06:00:00.000Z'),
+            completedAt: input.completionTime,
+            durationMs: input.durationMs,
+            submissionWriteBarrier: parentBarrier(input.barrier, 'completed'),
+          };
+          return Promise.resolve(true);
+        },
+      ),
+    };
+
     const moduleRef = await Test.createTestingModule({
       providers: [
         ScaleInstanceSubmissionService,
         { provide: PatientsService, useValue: patientsService },
         { provide: AssessmentsService, useValue: assessmentsService },
         { provide: ScalesService, useValue: scalesService },
+        {
+          provide: ScaleInstanceSubmissionBarrierService,
+          useValue: barrierService,
+        },
       ],
     }).compile();
     service = moduleRef.get(ScaleInstanceSubmissionService);
@@ -175,26 +342,20 @@ describe('ScaleInstanceSubmissionService', () => {
       id: visitId,
       status: 'draft',
     });
-    assessmentsService.findScaleInstanceByPatientVisitAndId.mockResolvedValue(
-      createInstance(),
-    );
-    assessmentsService.listItemResponsesByScaleInstanceId.mockResolvedValue([
-      createItem(),
-    ]);
     scalesService.findDefinitionByCode.mockResolvedValue({
       id: '507f1f77bcf86cd799439014',
       code: 'scale',
     });
-    scalesService.findVersionByScaleCodeAndVersion.mockResolvedValue({
-      id: '507f1f77bcf86cd799439015',
-      scaleDefinitionId: '507f1f77bcf86cd799439014',
-      scaleCode: 'scale',
-      version: '1.0',
-      items: [
-        {
-          code: 'scale.item.1',
-          title: 'Safe item',
-          order: 1,
+    scalesService.findVersionByScaleCodeAndVersion.mockImplementation(() =>
+      Promise.resolve({
+        id: '507f1f77bcf86cd799439015',
+        scaleDefinitionId: '507f1f77bcf86cd799439014',
+        scaleCode: 'scale',
+        version: '1.0',
+        items: currentItems.map((item) => ({
+          code: item.itemCode,
+          title: item.itemTitle,
+          order: item.itemOrder,
           responseType: 'text',
           scoreRange: { min: 0, max: 1 },
           countsTowardTotal: true,
@@ -207,9 +368,9 @@ describe('ScaleInstanceSubmissionService', () => {
           scoringRule: null,
           qualityControlRule: null,
           reportingRule: null,
-        },
-      ],
-    });
+        })),
+      }),
+    );
   });
 
   it('requires explicit confirmation and an authenticated user', async () => {
@@ -227,198 +388,214 @@ describe('ScaleInstanceSubmissionService', () => {
     ).rejects.toMatchObject({ status: 401 });
   });
 
-  it('validates ownership and configuration without leaking cross-chain resources', async () => {
-    patientsService.findPatientById.mockResolvedValueOnce(null);
-    await expectCode(
-      service.getSubmissionReadiness(patientId, visitId, instanceId),
-      404,
-      'PATIENT_NOT_FOUND',
-    );
+  it('blocks incomplete submission before creating a parent barrier', async () => {
+    currentItems = [
+      createItem('507f1f77bcf86cd799439016', {
+        status: 'in_progress',
+        rawResponse: null,
+      }),
+    ];
 
-    scalesService.findVersionByScaleCodeAndVersion.mockResolvedValueOnce(null);
     await expectCode(
-      service.getSubmissionReadiness(patientId, visitId, instanceId),
+      service.submitScaleInstance(patientId, visitId, instanceId, operator, {
+        confirm: true,
+      }),
       409,
-      'SCALE_INSTANCE_CONFIGURATION_UNAVAILABLE',
+      'SCALE_INSTANCE_NOT_READY',
     );
+    expect(barrierService.createParentBarrierIfOpen).not.toHaveBeenCalled();
   });
 
-  it('returns safe readiness and blocks incomplete submission', async () => {
-    assessmentsService.listItemResponsesByScaleInstanceId.mockResolvedValue([
-      createItem({ status: 'in_progress', rawResponse: null }),
-    ]);
-    const readiness = await service.getSubmissionReadiness(
+  it('reuses the first token and actor across fencing and completion', async () => {
+    const response = await service.submitScaleInstance(
       patientId,
       visitId,
       instanceId,
-    );
-    expect(readiness.ready).toBe(false);
-    expect(readiness.blockingIssues.map((issue) => issue.code)).toEqual(
-      expect.arrayContaining([
-        'ITEM_NOT_COMPLETED',
-        'ITEM_ANSWER_CONTENT_MISSING',
-      ]),
+      operator,
+      { confirm: true },
     );
 
-    await expectCode(
+    const created = requireRecord(
+      readMockCallArgument(barrierService.createParentBarrierIfOpen, 0),
+      'created barrier input',
+    );
+    expect(created.startedBy).toBe(operator.id);
+    expect(created.startedByName).toBe(operator.displayName);
+    expect(barrierService.fenceItemResponses).toHaveBeenCalledWith(
+      patientId,
+      visitId,
+      instanceId,
+      expect.objectContaining({ barrierId: created.barrierId }),
+    );
+    expect(barrierService.completeScaleInstance).toHaveBeenCalledTimes(1);
+    const completionInput = requireRecord(
+      readMockCallArgument(barrierService.completeScaleInstance, 0),
+      'completion input',
+    );
+    expect(
+      requireRecord(completionInput.barrier, 'completion barrier').barrierId,
+    ).toBe(created.barrierId);
+    expect(response.submission.submissionId).toBe(created.barrierId);
+    expect(response.submission.alreadySubmitted).toBe(false);
+    expect(response.submission.submittedBy?.operatorId).toBe(operator.id);
+    expect(response.submission.submittedBy?.operatorName).toBe(
+      operator.displayName,
+    );
+  });
+
+  it('makes dual submits join the first barrier and preserves its audit actor', async () => {
+    const secondOperator = {
+      ...operator,
+      id: '507f1f77bcf86cd799439020',
+      accountName: 'operator-two',
+      displayName: 'Second Operator',
+    };
+    const [first, second] = await Promise.all([
+      service.submitScaleInstance(patientId, visitId, instanceId, operator, {
+        confirm: true,
+      }),
       service.submitScaleInstance(
         patientId,
         visitId,
         instanceId,
-        {
-          id: '507f1f77bcf86cd799439019',
-          accountName: 'doctor-a16-test',
-          displayName: 'Test Operator',
-          roles: ['doctor'],
-          permissions: [],
-        },
+        secondOperator,
         { confirm: true },
       ),
-      409,
-      'SCALE_INSTANCE_NOT_READY',
-    );
+    ]);
+
+    expect(first.submission.submissionId).toBe(second.submission.submissionId);
+    expect(first.submission.submittedBy?.operatorId).toBe(operator.id);
+    expect(second.submission.submittedBy?.operatorId).toBe(operator.id);
+    expect([
+      first.submission.alreadySubmitted,
+      second.submission.alreadySubmitted,
+    ]).toContain(false);
   });
 
-  it('performs a second readiness read and atomically completes with derived timing', async () => {
-    const completed = createInstance({
-      status: 'completed',
+  it('resumes partial fencing with the same token', async () => {
+    const seeded: BarrierInput = {
+      barrierId: 'd6e8cc3a-5fea-47ac-a5f7-7f53fd47fa17',
       startedAt: new Date('2026-07-10T06:00:00.000Z'),
-      completedAt: new Date(),
-      durationMs: 1000,
+      startedBy: operator.id,
+      startedByName: operator.displayName,
+      startedByRole: 'doctor',
+      itemResponseIds: ['507f1f77bcf86cd799439016', '507f1f77bcf86cd799439017'],
+    };
+    currentInstance = createInstance({
+      submissionWriteBarrier: parentBarrier(seeded, 'fencing'),
     });
-    assessmentsService.completeScaleInstanceIfEditable.mockResolvedValue(
-      completed,
-    );
+    currentItems = [
+      createItem(seeded.itemResponseIds[0], {
+        submissionWriteBarrier: childBarrier(seeded),
+      }),
+      createItem(seeded.itemResponseIds[1]),
+    ];
 
     const response = await service.submitScaleInstance(
       patientId,
       visitId,
       instanceId,
-      {
-        id: '507f1f77bcf86cd799439019',
-        accountName: 'operator-a16-test',
-        displayName: 'Test Operator',
-        roles: ['admin', 'nurse', 'doctor'],
-        permissions: [],
-      },
+      operator,
       { confirm: true },
     );
 
-    expect(
-      assessmentsService.listItemResponsesByScaleInstanceId,
-    ).toHaveBeenCalledTimes(2);
-    expect(
-      assessmentsService.completeScaleInstanceIfEditable,
-    ).toHaveBeenCalledWith(
+    expect(barrierService.createParentBarrierIfOpen).not.toHaveBeenCalled();
+    expect(barrierService.fenceItemResponses).toHaveBeenCalledWith(
       patientId,
       visitId,
       instanceId,
-      expect.objectContaining({
-        startedAtToSet: new Date('2026-07-10T06:00:00.000Z'),
-        submittedByRole: 'doctor',
-      }),
+      expect.objectContaining({ barrierId: seeded.barrierId }),
     );
-    const completionInput =
-      assessmentsService.completeScaleInstanceIfEditable.mock.calls[0][3];
-    expect(completionInput.readinessSummary.blockingIssueCount).toBe(0);
-    expect(completionInput.readinessSummary.completedItemCount).toBe(1);
-    expect(response.submission.alreadySubmitted).toBe(false);
-    expect(response.submission.durationSource).toBe('earliest_item_timing');
-    expect(response.readiness.submissionState).toBe('completed');
+    expect(response.submission.submissionId).toBe(seeded.barrierId);
   });
 
-  it('returns completed instances idempotently without rewriting audit or timing', async () => {
+  it('finishes releasing an old token before starting a fresh attempt', async () => {
+    const seeded: BarrierInput = {
+      barrierId: '5d095091-784f-4eea-bb2b-a0f23796a1ca',
+      startedAt: new Date('2026-07-10T06:00:00.000Z'),
+      startedBy: operator.id,
+      startedByName: operator.displayName,
+      startedByRole: 'doctor',
+      itemResponseIds: ['507f1f77bcf86cd799439016'],
+    };
+    currentInstance = createInstance({
+      submissionWriteBarrier: parentBarrier(seeded, 'releasing'),
+    });
+    currentItems = [
+      createItem(seeded.itemResponseIds[0], {
+        submissionWriteBarrier: childBarrier(seeded),
+      }),
+    ];
+
+    const response = await service.submitScaleInstance(
+      patientId,
+      visitId,
+      instanceId,
+      operator,
+      { confirm: true },
+    );
+
+    expect(barrierService.releaseItemResponses).toHaveBeenCalledWith(
+      patientId,
+      visitId,
+      instanceId,
+      expect.objectContaining({ barrierId: seeded.barrierId }),
+    );
+    const fresh = requireRecord(
+      readMockCallArgument(barrierService.createParentBarrierIfOpen, 0),
+      'fresh barrier input',
+    );
+    expect(fresh.barrierId).not.toBe(seeded.barrierId);
+    expect(response.submission.submissionId).toBe(fresh.barrierId);
+  });
+
+  it('fails closed for malformed parent barrier state', async () => {
+    currentInstance = createInstance({
+      submissionWriteBarrier: { version: 999, state: 'fenced' },
+    });
+
+    await expectCode(
+      service.submitScaleInstance(patientId, visitId, instanceId, operator, {
+        confirm: true,
+      }),
+      500,
+      'SCALE_INSTANCE_SUBMISSION_FAILED',
+    );
+    expect(barrierService.fenceItemResponses).not.toHaveBeenCalled();
+  });
+
+  it('returns legacy completed instances idempotently without adding barriers', async () => {
     const completedAt = new Date('2026-07-11T07:00:00.000Z');
-    const completed = createInstance({
+    currentInstance = createInstance({
       status: 'completed',
       completedAt,
       startedAt: new Date('2026-07-10T06:00:00.000Z'),
       durationMs: 3600000,
+      submissionWriteBarrier: null,
     });
-    assessmentsService.findScaleInstanceByPatientVisitAndId.mockResolvedValue(
-      completed,
-    );
-    assessmentsService.readScaleInstanceSubmissionAudit.mockReturnValue({
+    audit = {
       submissionId: 'submission-a16-existing',
       submittedAt: completedAt,
-      submittedBy: '507f1f77bcf86cd799439019',
-      submittedByName: 'Test Operator',
+      submittedBy: operator.id,
+      submittedByName: operator.displayName,
       submittedByRole: 'doctor',
-    });
+    };
 
     const response = await service.submitScaleInstance(
       patientId,
       visitId,
       instanceId,
-      {
-        id: '507f1f77bcf86cd799439019',
-        accountName: 'doctor-a16-test',
-        displayName: 'Test Operator',
-        roles: ['doctor'],
-        permissions: [],
-      },
+      operator,
       { confirm: true },
     );
 
     expect(response.submission).toEqual(
       expect.objectContaining({
         submissionId: 'submission-a16-existing',
-        submittedAt: completedAt,
         alreadySubmitted: true,
       }),
     );
-    expect(
-      assessmentsService.completeScaleInstanceIfEditable,
-    ).not.toHaveBeenCalled();
-  });
-
-  it('enforces patient, visit, locked and voided first-submission states', async () => {
-    patientsService.findPatientById.mockResolvedValue({
-      id: patientId,
-      status: 'inactive',
-    });
-    await expectCode(
-      service.submitScaleInstance(
-        patientId,
-        visitId,
-        instanceId,
-        {
-          id: '507f1f77bcf86cd799439019',
-          accountName: 'doctor-a16-test',
-          displayName: 'Test Operator',
-          roles: ['doctor'],
-          permissions: [],
-        },
-        { confirm: true },
-      ),
-      409,
-      'PATIENT_NOT_ACTIVE',
-    );
-
-    patientsService.findPatientById.mockResolvedValue({
-      id: patientId,
-      status: 'active',
-    });
-    assessmentsService.findVisitByPatientAndId.mockResolvedValue({
-      id: visitId,
-      status: 'completed',
-    });
-    await expectCode(
-      service.submitScaleInstance(
-        patientId,
-        visitId,
-        instanceId,
-        {
-          id: '507f1f77bcf86cd799439019',
-          accountName: 'doctor-a16-test',
-          displayName: 'Test Operator',
-          roles: ['doctor'],
-          permissions: [],
-        },
-        { confirm: true },
-      ),
-      409,
-      'VISIT_NOT_EDITABLE',
-    );
+    expect(barrierService.createParentBarrierIfOpen).not.toHaveBeenCalled();
+    expect(barrierService.completeScaleInstance).not.toHaveBeenCalled();
   });
 });

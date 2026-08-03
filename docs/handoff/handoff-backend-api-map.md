@@ -187,7 +187,7 @@
 - 状态约束：Patient 必须 active；Visit 与 ScaleInstance 必须 draft / in_progress；ItemResponse 必须 not_started / in_progress / answered。有效草稿使 not_started 进入 in_progress；markAsAnswered=true 且存在有效作答后进入 answered；answered 后编辑不回退；不产生 scored
 - 规则边界：expectedRevision 仅作并发控制，单独提交或只再带 `markAsAnswered=false` 仍为 `ITEM_RESPONSE_EMPTY_PATCH`；isMissing=true 必须提供原因并清除实际作答；stepCode 与 promptType + order 必须命中既有且本次唯一槽位；JSON 值递归校验并克隆
 - timing 合同：非 null 时必须完整提交 `timerState`、`startedAt`、`lastResumedAt`、`completedAt`、`durationMs`、`timerSource`；支持 idle / running / paused / completed 的状态不变量和锁定转换，`timing=null` 显式复位。manual / imported 只能 completed，system 承担 running / paused / completed，none 只能 idle；计时不自动完成题目、提交或评分
-- 并发与错误：ownership、可编辑 status、`lockedAt: null` 和 revision 组成单文档 CAS；expectedRevision=0 兼容 revision 缺失或 0。初始 stale 或合法竞争 miss 统一 409 / `ITEM_RESPONSE_DRAFT_CONFLICT`，零写入且不合并 / 重试；原子 miss 后若资源生命周期已变化，返回既有更准确 not-editable。其他 code 保持 `PATIENT_NOT_FOUND`、`PATIENT_NOT_ACTIVE`、`VISIT_NOT_FOUND`、`VISIT_NOT_EDITABLE`、`SCALE_INSTANCE_NOT_FOUND`、`SCALE_INSTANCE_NOT_EDITABLE`、`ITEM_RESPONSE_NOT_FOUND`、`ITEM_RESPONSE_NOT_EDITABLE`、`ITEM_RESPONSE_EMPTY_PATCH`、`ITEM_RESPONSE_PAYLOAD_INVALID`、`ITEM_RESPONSE_MISSING_REASON_REQUIRED`、`ITEM_RESPONSE_CANNOT_MARK_ANSWERED`、`ITEM_RESPONSE_STEP_NOT_FOUND`、`ITEM_RESPONSE_DUPLICATE_STEP`、`ITEM_RESPONSE_PROMPT_NOT_FOUND`、`ITEM_RESPONSE_DUPLICATE_PROMPT`、`ITEM_RESPONSE_TIMING_NOT_ALLOWED`、`ITEM_RESPONSE_INVALID_TIMING`、`ITEM_RESPONSE_SAVE_FAILED`
+- 并发与错误：ownership、可编辑 status、`lockedAt: null`、父 / 子 `submissionWriteBarrier` 为 null / missing 和 revision 组成单文档 CAS；expectedRevision=0 兼容 revision 缺失或 0。初始 stale 或普通合法竞争 miss 统一 409 / `ITEM_RESPONSE_DRAFT_CONFLICT`，零写入且不合并 / 重试；原子 miss 后若资源生命周期变化或任一合法 / 损坏屏障存在，优先返回 409 `SCALE_INSTANCE_NOT_EDITABLE`。其他 code 保持 `PATIENT_NOT_FOUND`、`PATIENT_NOT_ACTIVE`、`VISIT_NOT_FOUND`、`VISIT_NOT_EDITABLE`、`SCALE_INSTANCE_NOT_FOUND`、`SCALE_INSTANCE_NOT_EDITABLE`、`ITEM_RESPONSE_NOT_FOUND`、`ITEM_RESPONSE_NOT_EDITABLE`、`ITEM_RESPONSE_EMPTY_PATCH`、`ITEM_RESPONSE_PAYLOAD_INVALID`、`ITEM_RESPONSE_MISSING_REASON_REQUIRED`、`ITEM_RESPONSE_CANNOT_MARK_ANSWERED`、`ITEM_RESPONSE_STEP_NOT_FOUND`、`ITEM_RESPONSE_DUPLICATE_STEP`、`ITEM_RESPONSE_PROMPT_NOT_FOUND`、`ITEM_RESPONSE_DUPLICATE_PROMPT`、`ITEM_RESPONSE_TIMING_NOT_ALLOWED`、`ITEM_RESPONSE_INVALID_TIMING`、`ITEM_RESPONSE_SAVE_FAILED`
 - 写库与安全边界：成功 CAS 在同一次更新中写草稿字段、`$inc draftRevision: 1` 与服务端 `draftSavedAt`；不修改 evidenceRefs、Visit / ScaleInstance 状态或 startedAt，不回写 ScaleInstance.progress，不执行评分，不修改 expectedValue / isCorrect / scoreValue / countsTowardItemScore / countsTowardScore，不记录作答内容到日志
 
 ### A15 媒体证据 API
@@ -209,9 +209,9 @@
 - Param / Body DTO：`MediaEvidenceItemParamDto`；`UploadMediaEvidenceDto`
 - Body 摘要：evidenceType 仅 photo / handwriting；captureMode 矩阵为 photo -> photo_upload / paper_scan、handwriting -> tablet_handwriting；允许受控采集、图片和手写轨迹元数据字段，multipart 数字 / boolean 显式安全转换
 - 文件限制：主图最大 10 MiB且仅 JPEG / PNG / WebP；trajectory 最大 2 MiB、MIME application/json、trajectoryFormat json / strokes。校验非空、魔数、MIME / 签名一致、JPEG EXIF / XMP、PNG eXIf / tEXt / zTXt / iTXt、WebP EXIF / XMP；不接受 SVG / PDF / HEIC / HEIF
-- 状态约束：Patient active；Visit / ScaleInstance draft 或 in_progress；ItemResponse not_started / in_progress / answered；evidenceRefs 必须存在同类型 pending / missing 要求且无当前 attached / locked 证据
+- 状态约束：Patient active；Visit / ScaleInstance draft 或 in_progress；ItemResponse not_started / in_progress / answered；父 / 子 submission barrier 必须 open；evidenceRefs 必须存在同类型 pending / missing 要求且无当前 attached / locked 证据
 - 响应：201，`UploadMediaEvidenceResponse { mediaEvidence, evidenceRequirement }`；绑定后 requirement 为 attached / true，不修改 ItemResponse / ScaleInstance / Visit status，不评分，也不递增 `draftRevision` 或修改 `draftSavedAt`
-- 一致性：Storage -> MediaEvidence -> evidenceRef 条件原子绑定；失败只补偿本次 MediaEvidence 和对象，不使用 transaction
+- 一致性：Storage -> MediaEvidence -> evidenceRef 条件原子绑定；最终 attach CAS 同时要求父 / 子 barrier open。attach miss 后重读并将屏障竞争归类为 409 `SCALE_INSTANCE_NOT_EDITABLE`，且先精确补偿本次 MediaEvidence 和对象；不使用 transaction
 - 错误：400 `MEDIA_PRIMARY_FILE_REQUIRED`、`MEDIA_FILE_EMPTY`、`MEDIA_FILE_TYPE_NOT_ALLOWED`、`MEDIA_FILE_SIGNATURE_INVALID`、`MEDIA_FILE_EMBEDDED_METADATA_NOT_ALLOWED`、`MEDIA_TRAJECTORY_INVALID`、`MEDIA_CAPTURE_MODE_INVALID`；413 `MEDIA_FILE_TOO_LARGE`；404 完整归属错误；409 `PATIENT_NOT_ACTIVE`、`VISIT_NOT_EDITABLE`、`SCALE_INSTANCE_NOT_EDITABLE`、`ITEM_RESPONSE_NOT_EDITABLE`、`ITEM_EVIDENCE_TYPE_NOT_REQUIRED`、`MEDIA_EVIDENCE_ALREADY_ATTACHED`；500 `MEDIA_EVIDENCE_CREATE_FAILED` / `MEDIA_EVIDENCE_ATTACH_FAILED`；503 `MEDIA_STORAGE_UNAVAILABLE`
 - 服务端所有权与隐私：关联字段、evidenceCode、status、storage、checksum、operatorSnapshot、itemSnapshot、versionTrace 和 metadata 均由服务端生成；不保存或响应原始文件名，objectKey 不包含患者姓名 / 编号 / 病历号 / 联系方式 / 备注
 
@@ -228,7 +228,7 @@
 - Method / Path：`POST /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/item-responses/:itemResponseId/media-evidences/:mediaEvidenceId/void`
 - Guard / Roles：`SessionAuthGuard` + `RolesGuard`；`admin`、`doctor`、`nurse`、`research_assistant`
 - Param / Body DTO：`MediaEvidenceParamDto`；`VoidMediaEvidenceDto { reason }`，reason trim 后 3-1000；不接受 status、voidedAt、metadata、operatorId、objectKey 或 deleteObject
-- 状态与一致性：同上传可编辑状态；仅 attached 且仍由当前 evidenceRef 引用的证据可作废。先条件清除 evidenceRef 为 pending / null，再标记 MediaEvidence voided；后者失败尝试恢复 attached 引用
+- 状态与一致性：同上传可编辑状态且父 / 子 barrier open；仅 attached 且仍由当前 evidenceRef 引用的证据可作废。clear CAS 包含父 / 子 barrier open；miss 后屏障竞争精确返回 409 `SCALE_INSTANCE_NOT_EDITABLE`。先清除 evidenceRef 为 pending / null，再标记 MediaEvidence voided；后者失败只在该空 pending 引用上尝试恢复 attached 引用，restore 是补偿例外，不受普通屏障门禁开放
 - 响应：200，`VoidMediaEvidenceResponse { mediaEvidence, evidenceRequirement }`；metadata 仅写 voidReason / voidedBy / voidedAt；A15 作废不递增 `draftRevision` 或修改 `draftSavedAt`
 - 错误：404 完整归属或 `MEDIA_EVIDENCE_NOT_FOUND`；409 可编辑错误 / `MEDIA_EVIDENCE_NOT_VOIDABLE`；500 `MEDIA_EVIDENCE_VOID_FAILED`
 - 删除边界：正常作废不调用 Storage.deleteObject、不物理删除对象；作废记录保留在列表中且不可签名访问，随后允许重新上传；没有原子替换接口
@@ -252,12 +252,12 @@
 - Method / Path：`POST /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/submit`
 - Controller / Guard / Roles：同 readiness；HTTP 200
 - Param / Body DTO：`ScaleInstanceExecutionParamDto`；`SubmitScaleInstanceDto { confirm }`，只接受 boolean，业务层要求严格 `confirm === true`；其他字段由 whitelist + forbidNonWhitelisted 拒绝
-- 首次提交：要求 active Patient、draft / in_progress Visit、draft / in_progress ScaleInstance 与无 blocking issue；执行两次实时 readiness 后，以单条条件 `findOneAndUpdate` 完成 ScaleInstance
-- 写入：status=completed、服务端 completedAt、受控 startedAt / durationMs、最终 progress、点路径 `metadata.submission`；保留 operatorSnapshot 与其他 metadata，不设置 lockedAt，不修改 Visit / ItemResponse，不执行评分
+- 首次提交：要求 active Patient、draft / in_progress Visit、draft / in_progress ScaleInstance 与无 blocking issue；第一次 readiness 后固化完整、稳定排序且无重复的 ItemResponse scope，以 UUID barrierId、首次 actor / 时间原子建立父 `fencing`，再幂等写入并重读验证同 token 子屏障，推进父 `fenced`
+- 完成写入：在固定 scope 上再次实时 readiness 后，以父 `fenced` + 同 barrierId / scope 为 CAS 条件，把 status、completedAt、受控 startedAt / durationMs、最终 progress、点路径 `metadata.submission` 与父 `completed` 同次写入；submissionId、submittedBy、submittedAt 复用首次 barrier 事实。保留 operatorSnapshot 与其他 metadata，不设置 lockedAt，不修改 Visit 或 ItemResponse 业务字段，不执行评分
 - 响应：`SubmitScaleInstanceResponse { scaleInstance, submission, readiness }`；submission 包含 submissionId、submittedAt、安全 submittedBy、alreadySubmitted、durationSource，不直接返回 metadata
-- 幂等 / 并发：completed 重复提交返回 alreadySubmitted=true，不重写 submissionId / completedAt / durationMs；历史 completed 无 A16 metadata 时使用 completedAt 且 submittedBy=null；原子 miss 重读状态。不使用 Mongo transaction 或分布式锁
-- 错误：400 `SCALE_INSTANCE_SUBMISSION_CONFIRMATION_REQUIRED`；404 归属错误；409 `PATIENT_NOT_ACTIVE`、`VISIT_NOT_EDITABLE`、`SCALE_INSTANCE_NOT_SUBMITTABLE`、`SCALE_INSTANCE_NOT_READY`、`SCALE_INSTANCE_START_TIME_INVALID`、`SCALE_INSTANCE_SUBMISSION_CONFLICT`、`SCALE_INSTANCE_SUBMISSION_AUDIT_UNAVAILABLE`；500 `SCALE_INSTANCE_SUBMISSION_FAILED`
-- 非目标：无撤销、reopen、lock、force / ignore issues、访视完成、评分、认知域、报告或 AI
+- 幂等 / 并发：completed 重复提交返回 alreadySubmitted=true，不重写 submissionId / completedAt / durationMs / actor；历史 completed 无 A16 / A30 字段时使用既有 completedAt fallback。第二次 readiness 失效时父进入 `releasing`，只清理同 token 子屏障并在全部 open 后清父；中断可按持久化 state 恢复，其他 token 不删除。完成后同 token 子屏障保留，暂停的 A14 / A15 写释放后仍为 409。完成与释放以父状态 CAS 竞争；不使用 Mongo transaction、内存 mutex、分布式锁、轮询或后台任务
+- 错误：400 `SCALE_INSTANCE_SUBMISSION_CONFIRMATION_REQUIRED`；404 归属错误；409 `PATIENT_NOT_ACTIVE`、`VISIT_NOT_EDITABLE`、`SCALE_INSTANCE_NOT_SUBMITTABLE`、`SCALE_INSTANCE_NOT_READY`、`SCALE_INSTANCE_START_TIME_INVALID`、`SCALE_INSTANCE_SUBMISSION_CONFLICT`、`SCALE_INSTANCE_SUBMISSION_AUDIT_UNAVAILABLE`；损坏 / scope 不一致的内部屏障或未知持久化失败为 500 `SCALE_INSTANCE_SUBMISSION_FAILED`，不得按 open 继续
+- 隐私 / 非目标：公开 response 不返回父 / 子 barrier、scope、内部 ItemResponse ID、屏障 state 或首次 actor 字段；无新 endpoint / DTO / role / index / collection，也无撤销、reopen、lock、force / ignore issues、访视完成、评分、认知域、报告或 AI
 
 ### A17 阶段性评分 API
 

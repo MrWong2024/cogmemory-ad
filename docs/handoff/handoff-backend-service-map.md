@@ -95,8 +95,8 @@
 
 - Service 名称：`AssessmentsService`
 - 文件路径：`backend\src\modules\assessments\services\assessments.service.ts`
-- 职责边界：保留访视、量表实例和题目作答内部读取底座，并承担 A12 患者访视分页、访视创建、安全公开响应映射、A14 联合归属读取和实际进度统计。
-- 当前方法：保留既有所有方法；A14 新增 `findScaleInstanceByPatientVisitAndId()`、`findItemResponseByOwnership()`、`countItemResponseProgress()` 与公开内部 mapper 入口，A13 `getVisitExecutionDetail()` 改用实际 ItemResponse 计数而非 ScaleInstance.progress Mixed 快照。
+- 职责边界：保留访视、量表实例和题目作答内部读取底座，并承担 A12 患者访视分页、访视创建、安全公开响应映射、A14 联合归属读取和实际进度统计；A30 内部 summary 携带原始 submission barrier 供 workflow fail-closed 判断，但公开 mapper 不透传。
+- 当前方法：保留既有所有方法；A14 提供 `findScaleInstanceByPatientVisitAndId()`、`findItemResponseByOwnership()`、`countItemResponseProgress()` 与公开内部 mapper 入口，A15 attach / clear 条件写入增加父 / 子 barrier open，A13 `getVisitExecutionDetail()` 使用实际 ItemResponse 计数而非 ScaleInstance.progress Mixed 快照。
 - 上游调用方：`AssessmentVisitsController`；既有内部调用方可继续复用旧方法。
 - 下游依赖：`AssessmentVisit`、`ScaleInstance`、`ItemResponse` Mongoose Model 和 `PatientsService`；`AssessmentsModule` 导入 `PatientsModule`、`AuthModule`、`ScalesModule`。
 - 规则与异常：先确认患者存在；非 active 返回 409 / `PATIENT_NOT_ACTIVE`；visitCode trim + uppercase；重复编号预检查并捕获 MongoDB 11000，统一为 `VISIT_CODE_CONFLICT`；dateFrom 晚于 dateTo 返回 400 / `INVALID_DATE_RANGE`。
@@ -131,9 +131,9 @@
 
 - Service 名称：`ItemResponseDraftService`
 - 文件路径：`backend\src\modules\assessments\services\item-response-draft.service.ts`
-- 职责边界：依次校验 Patient / Visit / ScaleInstance / ItemResponse 归属与可编辑状态，校验 expectedRevision、草稿 JSON、完整 timing 快照与状态转换，精确合并既有 step / prompt 槽位，处理 missing / answered 语义，并以单条 `findOneAndUpdate` CAS 原子保存 ItemResponse。
+- 职责边界：依次校验 Patient / Visit / ScaleInstance / ItemResponse 归属、可编辑状态与父 / 子 submission barrier open，校验 expectedRevision、草稿 JSON、完整 timing 快照与状态转换，精确合并既有 step / prompt 槽位，处理 missing / answered 语义，并以单条 `findOneAndUpdate` CAS 原子保存 ItemResponse。
 - 下游依赖：`PatientsService`、`AssessmentsService`、`ItemResponse` Model；不依赖 Scoring / Media / Reports / Storage。
-- 写库与并发边界：CAS filter 同时包含完整 ownership、可编辑 status、`lockedAt: null` 与 expected revision；expectedRevision=0 兼容字段缺失或 0。成功更新同写字段级草稿、`$inc draftRevision: 1` 与服务端 `draftSavedAt`；初始 stale 或竞争 miss 返回 `ITEM_RESPONSE_DRAFT_CONFLICT`，不合并、不自动重试。原子 miss 后重读优先分类生命周期错误，其他数据库失败为 `ITEM_RESPONSE_SAVE_FAILED`。
+- 写库与并发边界：CAS filter 同时包含完整 ownership、可编辑 status、`lockedAt: null`、父 / 子 barrier null / missing 与 expected revision；expectedRevision=0 兼容字段缺失或 0。成功更新同写字段级草稿、`$inc draftRevision: 1` 与服务端 `draftSavedAt`；初始 stale 或普通竞争 miss 返回 `ITEM_RESPONSE_DRAFT_CONFLICT`，不合并、不自动重试。原子 miss 后重读优先把生命周期变化或合法 / 损坏屏障分类为 `SCALE_INSTANCE_NOT_EDITABLE`，其他数据库失败为 `ITEM_RESPONSE_SAVE_FAILED`。
 - 隔离边界：不覆盖 evidenceRefs，不修改 score、expectedValue、正确性、counts 标记、Visit / ScaleInstance 状态或 startedAt，不使用 transaction。A15 媒体点更新不推进草稿版本，因此不使同版本 A14 保存失效。
 - 测试覆盖口径：draft service spec 覆盖空 PATCH、完整归属、状态、JSON、missing、markAsAnswered、step / prompt 精确合并、timing、不变量 / 转换、legacy revision、初始 stale、CAS miss、原子 filter / update、冲突零写入与安全保存失败；Model / Service 均为 mock，不连接真实 MongoDB。
 
@@ -259,10 +259,10 @@
 - 文件路径：`backend\src\modules\media\services\media-evidence-workflow.service.ts`
 - 当前方法：`listEvidence()`、`uploadEvidence()`、`createAccessUrl()`、`voidEvidence()`。
 - 下游依赖：`PatientsService`、`AssessmentsService`、`MediaEvidenceService`、`STORAGE_SERVICE`、`StorageConfigService`。
-- 归属 / 状态：统一验证 Patient -> Visit -> ScaleInstance -> ItemResponse -> MediaEvidence 完整链；只读允许历史状态，上传 / 作废要求 Patient active、Visit / ScaleInstance draft 或 in_progress、ItemResponse not_started / in_progress / answered。
-- 上传编排：校验证据要求、captureMode、主文件和可选轨迹；生成不含患者隐私与原始文件名的 UUID objectKey；依次上传 Storage、创建 MediaEvidence、条件绑定 evidenceRef。绑定仅允许同 evidenceType、mediaEvidenceId 空且状态 pending / missing 的数组元素，形成并发边界。
-- 补偿边界：轨迹上传失败删除主对象；创建失败删除本次对象；绑定异常 / 冲突删除本次 MediaEvidence 与对象。补偿只使用本次 ID / key，不使用 transaction，不修改或删除其他业务数据；补偿日志仅记录固定类型、evidenceCode、driver 和成功标记。
-- 访问 / 作废：签名访问固定使用 `DEFAULT_SIGNED_URL_EXPIRES_SECONDS`；作废先清除 evidenceRef，再标记 MediaEvidence voided，失败尝试恢复引用。正常作废不调用 deleteObject。
+- 归属 / 状态：统一验证 Patient -> Visit -> ScaleInstance -> ItemResponse -> MediaEvidence 完整链；只读允许历史状态，上传 / 作废要求 Patient active、Visit / ScaleInstance draft 或 in_progress、ItemResponse not_started / in_progress / answered，并要求父 / 子 submission barrier open。
+- 上传编排：校验证据要求、captureMode、主文件和可选轨迹；生成不含患者隐私与原始文件名的 UUID objectKey；依次上传 Storage、创建 MediaEvidence、条件绑定 evidenceRef。绑定仅允许父 / 子 barrier open、同 evidenceType、mediaEvidenceId 空且状态 pending / missing 的数组元素，形成并发边界；miss 后重读屏障并精确归类。
+- 补偿边界：轨迹上传失败删除主对象；创建失败删除本次对象；绑定异常 / 冲突先删除本次 MediaEvidence 与对象再抛稳定错误。补偿只使用本次 ID / key，不使用 transaction，不修改或删除其他业务数据；补偿日志仅记录固定类型、evidenceCode、driver 和成功标记。
+- 访问 / 作废：签名访问固定使用 `DEFAULT_SIGNED_URL_EXPIRES_SECONDS`；作废 clear CAS 要求父 / 子 barrier open，miss 后精确重读分类；再标记 MediaEvidence voided，失败尝试恢复引用。restore 仅针对本次 clear 留下的空 pending 引用，是受控补偿例外，不受普通 barrier 门禁开放；正常作废不调用 deleteObject。
 - 边界：不改变 ItemResponse / ScaleInstance / AssessmentVisit status，不评分，不实现前端采集、物理删除、原子替换、批量 / 分片 / 客户端直传、OCR / AI、报告或最终提交。
 
 - Service 名称：`MediaEvidenceService`（A15 扩展）
@@ -276,7 +276,7 @@
 
 - Service 名称：`AssessmentsService`（A15 证据引用扩展）
 - 新增方法：`attachItemEvidenceReference()`、`clearItemEvidenceReference()`、`restoreItemEvidenceReference()`。
-- 职责边界：使用既有 ItemResponse Model 和完整 patient / visit / instance / item 条件原子更新匹配 evidenceRefs 元素；绑定 / 清除同时限制可编辑 ItemResponse 状态，恢复仅在空 pending 引用上执行。方法不修改 ItemResponse status、作答、评分、step、prompt、timing、operatorNote、Visit 或 ScaleInstance。
+- 职责边界：使用既有 ScaleInstance / ItemResponse Model 和完整 patient / visit / instance / item 条件原子更新匹配 evidenceRefs 元素；绑定 / 清除同时限制可编辑 ItemResponse 状态与父 / 子 barrier open，恢复仅在空 pending 引用上执行且刻意不增加 barrier 条件。方法不修改 ItemResponse status、作答、评分、step、prompt、timing、operatorNote、Visit 或 ScaleInstance。
 
 ### A16 submission 编排
 
@@ -284,9 +284,18 @@
 - 职责：绑定两个嵌套资源路径、复用路径 DTO、接收 Submit DTO / `@CurrentUser()`，显式 Session / Roles Guard；不注入 Model，不解析 Mixed，不计算 readiness。
 
 - 名称：`ScaleInstanceSubmissionService`
-- 依赖：`PatientsService`、`AssessmentsService`、`ScalesService`。
-- 职责：依次读取 Patient / Visit / ScaleInstance，校验 definition / version 与 ItemResponse 归属和追溯；编排 readiness、首次提交状态、二次实时读取、操作者优先级、startedAt / duration、原子完成、幂等与并发 miss 重读；组装安全公开响应。
-- 边界：不依赖 `MediaModule`，媒体事实只读 ItemResponse.evidenceRefs；不修改 Visit / ItemResponse，不评分，不生成报告或 AI 内容。
+- 依赖：`PatientsService`、`AssessmentsService`、`ScalesService`、`ScaleInstanceSubmissionBarrierService`。
+- 职责：依次读取 Patient / Visit / ScaleInstance，校验 definition / version 与 ItemResponse 归属和追溯；编排 readiness、固定 scope、父 / 子屏障 fencing、二次实时读取、fenced completion、失败 release、阶段恢复、操作者优先级、startedAt / duration、幂等与并发 miss 重读；组装安全公开响应。单请求最多执行 12 次有界状态转换，不 polling / sleep。
+- 边界：不依赖 `MediaModule`，媒体事实只读 ItemResponse.evidenceRefs；除 A30 private barrier 外不修改 ItemResponse 业务字段，也不修改 Visit、不评分、不生成报告或 AI 内容。
+
+- 名称：`ScaleInstanceSubmissionBarrierService`
+- 依赖：`ScaleInstance`、`ItemResponse` Mongoose Model；不依赖 Patients、Scales、Media、Storage、Scoring、Reports 或网络。
+- 职责：提供 `createParentBarrierIfOpen()`、`fenceItemResponses()`、`markParentFenced()`、`claimRelease()`、`releaseItemResponses()`、`clearParentBarrier()` 与 `completeScaleInstance()`；每步都精确匹配 ownership、稳定固定 scope、version、barrierId 和允许父状态，写后重读验证实际状态。
+- 一致性：子 fencing 可幂等收敛到同 token，遇到其他 token / 损坏子屏障 fail closed；release 只 `$unset` 同 token 子屏障并验证全部 open；completion 只从同 token `fenced` 进入 completed，并保留同 token 子屏障。完成 / release CAS 只有一个方向可胜出，不使用 transaction、mutex、lockedAt、save、后台 job 或自动重试。
+
+- 纯函数：`normalizeScaleInstanceSubmissionWriteBarrier()` / `normalizeItemResponseSubmissionWriteBarrier()` / scope helpers
+- 文件路径：`backend\src\modules\assessments\lib\scale-instance-submission-write-barrier.ts`
+- 职责：严格解析 version、UUID、阶段时间、首次 actor、稳定唯一 ObjectId scope 与 count；null / missing 才是 open，任何损坏值均 blocks writes。纯函数不访问数据库、网络或时钟。
 
 - 名称：`evaluateScaleInstanceSubmissionReadiness()`
 - 类型：无 DI、无数据库访问的纯函数。
@@ -294,8 +303,8 @@
 - 复用：A14 与 A16 共享 `hasMeaningfulItemResponseAnswer()`，false / 0 有效，空字符串 / 数组 / 对象无效，避免两套完成语义。
 
 - 名称：`AssessmentsService`（A16 扩展）
-- 职责：`completeScaleInstanceIfEditable()` 用完整 ownership + editable status 单条 `findOneAndUpdate`，设置 completed / timing / progress 和受控 metadata 点路径；`readScaleInstanceSubmissionAudit()` 只解析允许字段。
-- 一致性：提交前两次读取 ItemResponse，再原子迁移单个 ScaleInstance；不使用 Mongo transaction、跨集合锁或分布式锁，因此不是跨集合严格线性化事务。
+- 职责：提供 A16 精确 ownership / scope 读取与 `readScaleInstanceSubmissionAudit()` 安全解析；原先无屏障的 `completeScaleInstanceIfEditable()` 已移除，最终迁移只由 barrier Service 完成。
+- 一致性：首次 readiness 后固化 scope，父 `fencing` → 子同 token → 父 `fenced` → 二次 readiness → 父 completed；失败走 `releasing` → token-only 子清理 → 父 open。跨集合不使用 Mongo transaction，但持久化 barrier 使暂停的 A14 / A15 写在释放后仍不能越过 completed。
 - 配置：`ScalesService` 仅作为只读 definition / version 依赖；不修改 scales 或 media 模块。
 
 ### A17 阶段性评分编排
