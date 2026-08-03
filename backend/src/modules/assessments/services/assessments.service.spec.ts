@@ -216,6 +216,8 @@ describe('Assessment schemas', () => {
     );
     expect(ItemResponseSchema.path('status')?.instance).toBe('String');
     expect(ItemResponseSchema.path('answerSource')?.instance).toBe('String');
+    expect(ItemResponseSchema.path('draftRevision')?.instance).toBe('Number');
+    expect(ItemResponseSchema.path('draftSavedAt')?.instance).toBe('Date');
     expect(ItemResponseSchema.path('rawResponse')?.instance).toBe('Mixed');
     expect(ItemResponseSchema.path('structuredResponse')?.instance).toBe(
       'Mixed',
@@ -258,7 +260,13 @@ describe('Assessment schemas', () => {
     expect(PromptResponseRecordSchema.path('countsTowardScore')?.instance).toBe(
       'Boolean',
     );
+    expect(ItemTimingSnapshotSchema.path('timerState')?.instance).toBe(
+      'String',
+    );
     expect(ItemTimingSnapshotSchema.path('startedAt')?.instance).toBe('Date');
+    expect(ItemTimingSnapshotSchema.path('lastResumedAt')?.instance).toBe(
+      'Date',
+    );
     expect(ItemTimingSnapshotSchema.path('completedAt')?.instance).toBe('Date');
     expect(ItemTimingSnapshotSchema.path('durationMs')?.instance).toBe(
       'Number',
@@ -1318,6 +1326,8 @@ describe('AssessmentsService', () => {
       },
       status: 'scored',
       answerSource: 'clinician_recorded',
+      draftRevision: 5,
+      draftSavedAt: startedAt,
       rawResponse: { spokenAnswer: '94, 86' },
       structuredResponse: { calculationSteps: ['94', '86'] },
       responseText: '94, 86',
@@ -1428,6 +1438,8 @@ describe('AssessmentsService', () => {
       },
       status: 'scored',
       answerSource: 'clinician_recorded',
+      draftRevision: 5,
+      draftSavedAt: startedAt,
       rawResponse: { spokenAnswer: '94, 86' },
       structuredResponse: { calculationSteps: ['94', '86'] },
       responseText: '94, 86',
@@ -1482,7 +1494,9 @@ describe('AssessmentsService', () => {
         },
       ],
       timing: {
+        timerState: 'completed',
         startedAt,
+        lastResumedAt: null,
         completedAt,
         durationMs: 120000,
         timerSource: 'manual',

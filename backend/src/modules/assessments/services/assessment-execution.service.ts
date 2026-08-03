@@ -603,7 +603,9 @@ export class AssessmentExecutionService {
     }
 
     return {
+      timerState: 'idle' as const,
       startedAt: null,
+      lastResumedAt: null,
       completedAt: null,
       durationMs: null,
       timerSource: 'none' as const,
@@ -1023,7 +1025,9 @@ export class AssessmentExecutionService {
     }
 
     return {
+      timerState: timing.timerState ?? 'idle',
       startedAt: timing.startedAt ?? null,
+      lastResumedAt: timing.lastResumedAt ?? null,
       completedAt: timing.completedAt ?? null,
       durationMs: timing.durationMs ?? null,
       timerSource: timing.timerSource ?? 'none',

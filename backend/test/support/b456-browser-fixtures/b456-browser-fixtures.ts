@@ -1349,7 +1349,10 @@ export class B456BrowserFixtureManager {
       serial.visitId.toString(),
       serial.scaleInstanceId.toString(),
       serialItem._id.toString(),
-      { stepResponses: [{ stepCode: step.stepCode, actualValue: 0 }] },
+      {
+        expectedRevision: serialItem.draftRevision,
+        stepResponses: [{ stepCode: step.stepCode, actualValue: 0 }],
+      },
     );
     const delayed = await this.requireRoot(
       namespace,
@@ -1368,6 +1371,7 @@ export class B456BrowserFixtureManager {
       delayed.scaleInstanceId.toString(),
       delayedItem._id.toString(),
       {
+        expectedRevision: delayedItem.draftRevision,
         promptResponses: [
           {
             promptType: prompt.promptType,
@@ -1388,6 +1392,7 @@ export class B456BrowserFixtureManager {
       missing.scaleInstanceId.toString(),
       missingItem._id.toString(),
       {
+        expectedRevision: missingItem.draftRevision,
         isMissing: true,
         missingReason: 'Synthetic missing reason',
         markAsAnswered: true,
@@ -1408,9 +1413,12 @@ export class B456BrowserFixtureManager {
       timing.scaleInstanceId.toString(),
       timingItem._id.toString(),
       {
+        expectedRevision: timingItem.draftRevision,
         rawResponse: false,
         timing: {
+          timerState: 'completed',
           startedAt: '2026-07-20T08:00:00.000Z',
+          lastResumedAt: null,
           completedAt: '2026-07-20T08:00:01.000Z',
           durationMs: 1000,
           timerSource: 'manual',
@@ -1429,6 +1437,7 @@ export class B456BrowserFixtureManager {
       progress.scaleInstanceId.toString(),
       progressItem._id.toString(),
       {
+        expectedRevision: progressItem.draftRevision,
         rawResponse: false,
         operatorNote: 'Synthetic saved draft',
         markAsAnswered: true,
@@ -1526,7 +1535,11 @@ export class B456BrowserFixtureManager {
       dirty.visitId.toString(),
       dirty.scaleInstanceId.toString(),
       dirtyItem._id.toString(),
-      { rawResponse: false, operatorNote: 'Synthetic dirty write' },
+      {
+        expectedRevision: dirtyItem.draftRevision,
+        rawResponse: false,
+        operatorNote: 'Synthetic dirty write',
+      },
     );
     const dirtyMediaItem = (await this.eligibleItems(dirty, 'photo'))[0];
     await this.uploadEvidence(

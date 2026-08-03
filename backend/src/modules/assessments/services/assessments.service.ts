@@ -39,12 +39,15 @@ import {
   ItemStepResult,
   ItemStepValue,
   ItemStructuredResponse,
-  ItemTimerSource,
   ItemTimingSnapshot,
   PromptResponseRecord,
   PromptResponseType,
   PromptResponseValue,
 } from '../schemas/item-response.schema';
+import {
+  normalizeItemResponseTiming,
+  type NormalizedItemResponseTiming,
+} from '../lib/item-response-timing';
 import {
   ScaleAdministrationMode,
   ScaleInstance,
@@ -379,12 +382,7 @@ export type PromptResponseRecordSummary = {
   note?: string;
 };
 
-export type ItemResponseTimingSummary = {
-  startedAt: Date | null;
-  completedAt: Date | null;
-  durationMs: number | null;
-  timerSource: ItemTimerSource;
-};
+export type ItemResponseTimingSummary = NormalizedItemResponseTiming;
 
 export type ItemEvidenceRefSummary = {
   evidenceType: ItemEvidenceType;
@@ -416,6 +414,8 @@ export type ItemResponseSummary = {
   versionTrace: ItemResponseVersionTraceSummary | null;
   status: ItemResponseStatus;
   answerSource: ItemResponseAnswerSource;
+  draftRevision?: unknown;
+  draftSavedAt?: unknown;
   rawResponse: ItemRawResponse;
   structuredResponse: ItemStructuredResponse;
   responseText?: string;
@@ -2016,6 +2016,8 @@ export class AssessmentsService {
       versionTrace: this.mapItemResponseVersionTrace(itemResponse.versionTrace),
       status: itemResponse.status,
       answerSource: itemResponse.answerSource,
+      draftRevision: itemResponse.draftRevision,
+      draftSavedAt: itemResponse.draftSavedAt,
       rawResponse: itemResponse.rawResponse ?? null,
       structuredResponse: itemResponse.structuredResponse ?? null,
       responseText: itemResponse.responseText,
@@ -2137,16 +2139,7 @@ export class AssessmentsService {
   private mapItemTiming(
     timing?: ItemTimingSnapshot | null,
   ): ItemResponseTimingSummary | null {
-    if (!timing) {
-      return null;
-    }
-
-    return {
-      startedAt: timing.startedAt ?? null,
-      completedAt: timing.completedAt ?? null,
-      durationMs: timing.durationMs ?? null,
-      timerSource: timing.timerSource,
-    };
+    return normalizeItemResponseTiming(timing);
   }
 
   private mapItemEvidenceRef(

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -24,7 +25,10 @@ import {
   hasMeaningfulJsonValue,
 } from '../lib/item-response-answer-content';
 import {
-  ITEM_TIMER_SOURCES,
+  ItemResponseTimingValidationError,
+  validateItemResponseTimingUpdate,
+} from '../lib/item-response-timing';
+import {
   ItemResponse,
   type ItemResponseDocument,
 } from '../schemas/item-response.schema';
@@ -36,7 +40,10 @@ import {
   type ItemStepResultSummary,
   type PromptResponseRecordSummary,
 } from './assessments.service';
-import { toItemResponseExecutionResponse } from './item-response-execution.mapper';
+import {
+  normalizeItemResponseDraftRevision,
+  toItemResponseExecutionResponse,
+} from './item-response-execution.mapper';
 
 const EDITABLE_VISIT_STATUSES = new Set(['draft', 'in_progress']);
 const EDITABLE_SCALE_INSTANCE_STATUSES = new Set(['draft', 'in_progress']);
@@ -49,6 +56,7 @@ const EDITABLE_ITEM_RESPONSE_STATUSES = new Set([
 type DraftUpdateDocument = {
   $set?: Record<string, unknown>;
   $unset?: Record<string, 1>;
+  $inc?: { draftRevision: 1 };
 };
 
 function hasOwn(value: object, propertyName: string): boolean {
@@ -167,16 +175,17 @@ export class ItemResponseDraftService {
     this.assertNonEmptyPatch(input);
 
     const update = this.buildUpdate(itemResponse, input);
+    const currentRevision = normalizeItemResponseDraftRevision(
+      itemResponse.draftRevision,
+    );
 
-    if (!update.$set && !update.$unset) {
-      return {
-        itemResponse: toItemResponseExecutionResponse(itemResponse),
-        progress:
-          await this.assessmentsService.countItemResponseProgress(
-            scaleInstanceId,
-          ),
-      };
+    if (currentRevision !== input.expectedRevision) {
+      this.throwDraftConflict();
     }
+
+    const draftSavedAt = new Date();
+    update.$set = { ...(update.$set ?? {}), draftSavedAt };
+    update.$inc = { draftRevision: 1 };
 
     let updatedItemResponse: ItemResponseDocument | null;
 
@@ -188,8 +197,18 @@ export class ItemResponseDraftService {
             assessmentVisitId: visitId,
             scaleInstanceId,
             patientId,
-            status: itemResponse.status,
+            status: {
+              $in: ['not_started', 'in_progress', 'answered'],
+            },
             lockedAt: null,
+            ...(input.expectedRevision === 0
+              ? {
+                  $or: [
+                    { draftRevision: 0 },
+                    { draftRevision: { $exists: false } },
+                  ],
+                }
+              : { draftRevision: input.expectedRevision }),
           },
           update,
           { returnDocument: 'after', runValidators: true },
@@ -203,10 +222,13 @@ export class ItemResponseDraftService {
     }
 
     if (!updatedItemResponse) {
-      throw new InternalServerErrorException({
-        code: 'ITEM_RESPONSE_SAVE_FAILED',
-        message: 'Item response draft could not be saved',
-      });
+      return this.throwAtomicUpdateMiss(
+        patientId,
+        visitId,
+        scaleInstanceId,
+        itemResponseId,
+        input.expectedRevision,
+      );
     }
 
     const summary =
@@ -269,10 +291,10 @@ export class ItemResponseDraftService {
       submittedMeaningfulAnswer ||= Boolean(responseText?.trim());
     }
 
-    if (input.stepResponses && input.stepResponses.length > 0) {
+    if (this.isProvided(input, 'stepResponses')) {
       const stepUpdate = this.applyStepUpdates(
         stepResults,
-        input.stepResponses,
+        input.stepResponses ?? [],
       );
       stepResults = stepUpdate.stepResults;
       setFields.stepResults = stepResults;
@@ -280,10 +302,10 @@ export class ItemResponseDraftService {
       submittedMeaningfulAnswer ||= stepUpdate.submittedMeaningfulAnswer;
     }
 
-    if (input.promptResponses && input.promptResponses.length > 0) {
+    if (this.isProvided(input, 'promptResponses')) {
       const promptUpdate = this.applyPromptUpdates(
         promptResponses,
-        input.promptResponses,
+        input.promptResponses ?? [],
       );
       promptResponses = promptUpdate.promptResponses;
       setFields.promptResponses = promptResponses;
@@ -543,60 +565,15 @@ export class ItemResponseDraftService {
     currentTiming: ItemResponseTimingSummary | null,
     update: UpdateItemTimingDraftDto | null | undefined,
   ): ItemResponseTimingSummary | null {
-    if (update === null) {
-      return null;
-    }
-
-    const timing: ItemResponseTimingSummary = {
-      startedAt: currentTiming?.startedAt ?? null,
-      completedAt: currentTiming?.completedAt ?? null,
-      durationMs: currentTiming?.durationMs ?? null,
-      timerSource: currentTiming?.timerSource ?? 'none',
-    };
-
-    if (update && this.isProvided(update, 'startedAt')) {
-      timing.startedAt = this.parseTimingDate(update.startedAt);
-    }
-
-    if (update && this.isProvided(update, 'completedAt')) {
-      timing.completedAt = this.parseTimingDate(update.completedAt);
-    }
-
-    if (update && this.isProvided(update, 'durationMs')) {
-      const durationMs = update.durationMs ?? null;
-
-      if (
-        durationMs !== null &&
-        (!Number.isFinite(durationMs) ||
-          !Number.isInteger(durationMs) ||
-          durationMs < 0)
-      ) {
+    try {
+      return validateItemResponseTimingUpdate(currentTiming, update);
+    } catch (error: unknown) {
+      if (error instanceof ItemResponseTimingValidationError) {
         this.throwInvalidTiming();
       }
 
-      timing.durationMs = durationMs;
+      throw error;
     }
-
-    if (update && this.isProvided(update, 'timerSource')) {
-      if (
-        !update.timerSource ||
-        !(ITEM_TIMER_SOURCES as readonly string[]).includes(update.timerSource)
-      ) {
-        this.throwInvalidTiming();
-      }
-
-      timing.timerSource = update.timerSource;
-    }
-
-    if (
-      timing.startedAt &&
-      timing.completedAt &&
-      timing.completedAt.getTime() < timing.startedAt.getTime()
-    ) {
-      this.throwInvalidTiming();
-    }
-
-    return timing;
   }
 
   private assertTimingAllowed(itemResponse: ItemResponseSummary): void {
@@ -614,24 +591,6 @@ export class ItemResponseDraftService {
         message: 'Timing is not enabled for this item response',
       });
     }
-  }
-
-  private parseTimingDate(value: string | null | undefined): Date | null {
-    if (value === null) {
-      return null;
-    }
-
-    if (typeof value !== 'string' || !value.trim()) {
-      this.throwInvalidTiming();
-    }
-
-    const parsed = new Date(value);
-
-    if (!Number.isFinite(parsed.getTime())) {
-      this.throwInvalidTiming();
-    }
-
-    return parsed;
   }
 
   private hasMeaningfulAnswer(input: {
@@ -665,15 +624,126 @@ export class ItemResponseDraftService {
       'promptResponses',
       'timing',
       'operatorNote',
-      'markAsAnswered',
     ];
 
-    if (!allowedFields.some((field) => this.isProvided(input, field))) {
+    if (
+      !allowedFields.some((field) => this.isProvided(input, field)) &&
+      input.markAsAnswered !== true
+    ) {
       throw new BadRequestException({
         code: 'ITEM_RESPONSE_EMPTY_PATCH',
         message: 'At least one item response draft field is required',
       });
     }
+  }
+
+  private async throwAtomicUpdateMiss(
+    patientId: string,
+    visitId: string,
+    scaleInstanceId: string,
+    itemResponseId: string,
+    expectedRevision: number,
+  ): Promise<never> {
+    try {
+      const patient = await this.patientsService.findPatientById(patientId);
+
+      if (!patient) {
+        throw new NotFoundException({
+          code: 'PATIENT_NOT_FOUND',
+          message: 'Patient not found',
+        });
+      }
+
+      if (patient.status !== 'active') {
+        throw new ConflictException({
+          code: 'PATIENT_NOT_ACTIVE',
+          message: 'Patient is not active',
+        });
+      }
+
+      const visit = await this.assessmentsService.findVisitByPatientAndId(
+        patientId,
+        visitId,
+      );
+
+      if (!visit) {
+        throw new NotFoundException({
+          code: 'VISIT_NOT_FOUND',
+          message: 'Assessment visit not found',
+        });
+      }
+
+      if (!EDITABLE_VISIT_STATUSES.has(visit.status)) {
+        throw new ConflictException({
+          code: 'VISIT_NOT_EDITABLE',
+          message: 'Assessment visit is not editable',
+        });
+      }
+
+      const scaleInstance =
+        await this.assessmentsService.findScaleInstanceByPatientVisitAndId(
+          patientId,
+          visitId,
+          scaleInstanceId,
+        );
+
+      if (!scaleInstance) {
+        throw new NotFoundException({
+          code: 'SCALE_INSTANCE_NOT_FOUND',
+          message: 'Scale instance not found',
+        });
+      }
+
+      if (
+        !EDITABLE_SCALE_INSTANCE_STATUSES.has(scaleInstance.status) ||
+        scaleInstance.lockedAt instanceof Date
+      ) {
+        throw new ConflictException({
+          code: 'SCALE_INSTANCE_NOT_EDITABLE',
+          message: 'Scale instance is not editable',
+        });
+      }
+
+      const itemResponse =
+        await this.assessmentsService.findItemResponseByOwnership(
+          patientId,
+          visitId,
+          scaleInstanceId,
+          itemResponseId,
+        );
+
+      if (!itemResponse) {
+        throw new NotFoundException({
+          code: 'ITEM_RESPONSE_NOT_FOUND',
+          message: 'Item response not found',
+        });
+      }
+
+      if (
+        !EDITABLE_ITEM_RESPONSE_STATUSES.has(itemResponse.status) ||
+        itemResponse.lockedAt instanceof Date
+      ) {
+        throw new ConflictException({
+          code: 'ITEM_RESPONSE_NOT_EDITABLE',
+          message: 'Item response is not editable',
+        });
+      }
+
+      if (
+        normalizeItemResponseDraftRevision(itemResponse.draftRevision) !==
+        expectedRevision
+      ) {
+        this.throwDraftConflict();
+      }
+    } catch (error: unknown) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      this.throwSaveFailed();
+    }
+
+    this.throwSaveFailed();
   }
 
   private cloneDraftJson(value: unknown) {
@@ -739,6 +809,20 @@ export class ItemResponseDraftService {
     throw new BadRequestException({
       code: 'ITEM_RESPONSE_INVALID_TIMING',
       message: 'Item response timing is invalid',
+    });
+  }
+
+  private throwDraftConflict(): never {
+    throw new ConflictException({
+      code: 'ITEM_RESPONSE_DRAFT_CONFLICT',
+      message: 'Item response draft has changed; reload before saving',
+    });
+  }
+
+  private throwSaveFailed(): never {
+    throw new InternalServerErrorException({
+      code: 'ITEM_RESPONSE_SAVE_FAILED',
+      message: 'Item response draft could not be saved',
     });
   }
 }

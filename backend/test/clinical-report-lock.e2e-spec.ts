@@ -565,6 +565,14 @@ describe('clinical report lock API (e2e)', () => {
       const item = record(value, 'item response');
       const itemId = stringValue(item.id, 'item id');
       const config = record(item.config, 'item config');
+      const expectedRevision = item.draftRevision;
+      if (
+        typeof expectedRevision !== 'number' ||
+        !Number.isSafeInteger(expectedRevision) ||
+        expectedRevision < 0
+      ) {
+        throw new Error('Expected a safe item draft revision');
+      }
       const stepResponses = arrayValue(
         item.stepResponses,
         'step responses',
@@ -575,11 +583,21 @@ describe('clinical report lock API (e2e)', () => {
       await doctorAgent
         .patch(`${instancePath(fixture)}/item-responses/${itemId}`)
         .send({
+          expectedRevision,
           rawResponse: false,
           operatorNote: 'A22 de-identified HTTP operator note',
           ...(stepResponses.length > 0 ? { stepResponses } : {}),
           ...(config.requiresTimer === true
-            ? { timing: { durationMs: 1000, timerSource: 'manual' } }
+            ? {
+                timing: {
+                  timerState: 'completed',
+                  startedAt: null,
+                  lastResumedAt: null,
+                  completedAt: null,
+                  durationMs: 1000,
+                  timerSource: 'manual',
+                },
+              }
             : {}),
           markAsAnswered: true,
         })

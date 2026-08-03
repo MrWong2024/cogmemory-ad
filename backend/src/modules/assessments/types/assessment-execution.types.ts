@@ -11,6 +11,7 @@ import type {
   ItemResponseStatus,
   ItemScoreSource,
   ItemScoreStatus,
+  ItemTimerState,
   ItemTimerSource,
   PromptResponseType,
 } from '../schemas/item-response.schema';
@@ -120,7 +121,9 @@ export type PromptResponseDraft = {
 };
 
 export type ItemTimingDraft = {
+  timerState: ItemTimerState;
   startedAt: Date | null;
+  lastResumedAt: Date | null;
   completedAt: Date | null;
   durationMs: number | null;
   timerSource: ItemTimerSource;

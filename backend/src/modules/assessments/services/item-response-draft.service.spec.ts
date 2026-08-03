@@ -2,6 +2,7 @@ import { HttpException } from '@nestjs/common';
 import { getModelToken } from '@nestjs/mongoose';
 import { Test } from '@nestjs/testing';
 import { PatientsService } from '../../patients/services/patients.service';
+import type { UpdateItemResponseDraftDto } from '../dto/update-item-response-draft.dto';
 import { ItemResponse } from '../schemas/item-response.schema';
 import {
   AssessmentsService,
@@ -45,6 +46,8 @@ function createItemResponseSummary(
     versionTrace: { scaleVersion: '1.0' },
     status: 'not_started',
     answerSource: 'clinician_recorded',
+    draftRevision: 0,
+    draftSavedAt: null,
     rawResponse: null,
     structuredResponse: null,
     isMissing: false,
@@ -222,18 +225,37 @@ describe('ItemResponseDraftService', () => {
     });
   });
 
-  function save(input: Parameters<ItemResponseDraftService['saveDraft']>[4]) {
+  type SaveInput = Omit<UpdateItemResponseDraftDto, 'expectedRevision'> & {
+    expectedRevision?: number;
+  };
+
+  function save(input: SaveInput) {
+    const { expectedRevision, ...draft } = input;
+    const currentRevision =
+      Number.isSafeInteger(currentItemResponse.draftRevision) &&
+      Number(currentItemResponse.draftRevision) >= 0
+        ? Number(currentItemResponse.draftRevision)
+        : 0;
+
     return service.saveDraft(
       PATIENT_ID,
       VISIT_ID,
       SCALE_INSTANCE_ID,
       ITEM_RESPONSE_ID,
-      input,
+      {
+        expectedRevision: expectedRevision ?? currentRevision,
+        ...draft,
+      },
     );
   }
 
   it('rejects an empty PATCH after the complete ownership check', async () => {
     await expectHttpExceptionCode(save({}), 400, 'ITEM_RESPONSE_EMPTY_PATCH');
+    await expectHttpExceptionCode(
+      save({ markAsAnswered: false }),
+      400,
+      'ITEM_RESPONSE_EMPTY_PATCH',
+    );
     expect(assessmentsService.findItemResponseByOwnership).toHaveBeenCalledWith(
       PATIENT_ID,
       VISIT_ID,
@@ -350,10 +372,106 @@ describe('ItemResponseDraftService', () => {
         assessmentVisitId: VISIT_ID,
         scaleInstanceId: SCALE_INSTANCE_ID,
         patientId: PATIENT_ID,
-        status: 'not_started',
+        status: { $in: ['not_started', 'in_progress', 'answered'] },
+        lockedAt: null,
+        $or: [{ draftRevision: 0 }, { draftRevision: { $exists: false } }],
       }),
-      expect.any(Object),
+      expect.objectContaining({
+        $inc: { draftRevision: 1 },
+      }),
       { returnDocument: 'after', runValidators: true },
+    );
+    const update = readMockCallArgument(itemResponseModel.findOneAndUpdate, 1);
+
+    if (!isRecord(update) || !isRecord(update.$set)) {
+      throw new Error('Expected an atomic draft update');
+    }
+
+    expect(update.$set.draftSavedAt).toBeInstanceOf(Date);
+  });
+
+  it('treats a missing legacy revision as zero and upgrades it atomically', async () => {
+    currentItemResponse = createItemResponseSummary({
+      draftRevision: undefined,
+      draftSavedAt: undefined,
+    });
+
+    await save({ expectedRevision: 0, responseText: 'legacy answer' });
+
+    expect(readMockCallArgument(itemResponseModel.findOneAndUpdate, 0)).toEqual(
+      expect.objectContaining({
+        $or: [{ draftRevision: 0 }, { draftRevision: { $exists: false } }],
+      }),
+    );
+    expect(readMockCallArgument(itemResponseModel.findOneAndUpdate, 1)).toEqual(
+      expect.objectContaining({ $inc: { draftRevision: 1 } }),
+    );
+  });
+
+  it('rejects an initially stale revision before attempting the atomic write', async () => {
+    currentItemResponse = createItemResponseSummary({ draftRevision: 2 });
+
+    await expectHttpExceptionCode(
+      save({ expectedRevision: 1, responseText: 'stale answer' }),
+      409,
+      'ITEM_RESPONSE_DRAFT_CONFLICT',
+    );
+    expect(itemResponseModel.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('classifies a CAS miss with a changed revision as a draft conflict', async () => {
+    const initial = createItemResponseSummary({ draftRevision: 3 });
+    const competing = createItemResponseSummary({
+      draftRevision: 4,
+      responseText: 'winning answer',
+    });
+    currentItemResponse = initial;
+    assessmentsService.findItemResponseByOwnership
+      .mockResolvedValueOnce(initial)
+      .mockResolvedValueOnce(competing);
+    itemResponseModel.findOneAndUpdate.mockReturnValueOnce({
+      exec: jest.fn().mockResolvedValue(null),
+    });
+
+    await expectHttpExceptionCode(
+      save({ expectedRevision: 3, responseText: 'losing answer' }),
+      409,
+      'ITEM_RESPONSE_DRAFT_CONFLICT',
+    );
+    expect(itemResponseModel.findOneAndUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('prefers a lifecycle error when an atomic miss is no longer editable', async () => {
+    const initial = createItemResponseSummary({ draftRevision: 1 });
+    currentItemResponse = initial;
+    assessmentsService.findItemResponseByOwnership
+      .mockResolvedValueOnce(initial)
+      .mockResolvedValueOnce(
+        createItemResponseSummary({ status: 'scored', draftRevision: 1 }),
+      );
+    itemResponseModel.findOneAndUpdate.mockReturnValueOnce({
+      exec: jest.fn().mockResolvedValue(null),
+    });
+
+    await expectHttpExceptionCode(
+      save({ responseText: 'answer' }),
+      409,
+      'ITEM_RESPONSE_NOT_EDITABLE',
+    );
+  });
+
+  it('maps an unexplained atomic miss to the stable save failure', async () => {
+    const initial = createItemResponseSummary({ draftRevision: 1 });
+    currentItemResponse = initial;
+    assessmentsService.findItemResponseByOwnership.mockResolvedValue(initial);
+    itemResponseModel.findOneAndUpdate.mockReturnValueOnce({
+      exec: jest.fn().mockResolvedValue(null),
+    });
+
+    await expectHttpExceptionCode(
+      save({ responseText: 'answer' }),
+      500,
+      'ITEM_RESPONSE_SAVE_FAILED',
     );
   });
 
@@ -581,7 +699,16 @@ describe('ItemResponseDraftService', () => {
 
   it('allows timing only for configured items and validates chronology', async () => {
     await expectHttpExceptionCode(
-      save({ timing: { durationMs: 1000 } }),
+      save({
+        timing: {
+          timerState: 'completed',
+          startedAt: null,
+          lastResumedAt: null,
+          completedAt: null,
+          durationMs: 1000,
+          timerSource: 'manual',
+        },
+      }),
       400,
       'ITEM_RESPONSE_TIMING_NOT_ALLOWED',
     );
@@ -595,8 +722,12 @@ describe('ItemResponseDraftService', () => {
     await expectHttpExceptionCode(
       save({
         timing: {
+          timerState: 'completed',
           startedAt: '2026-07-01T09:00:00.000Z',
+          lastResumedAt: null,
           completedAt: '2026-07-01T08:00:00.000Z',
+          durationMs: 1000,
+          timerSource: 'manual',
         },
       }),
       400,
@@ -605,14 +736,18 @@ describe('ItemResponseDraftService', () => {
 
     await save({
       timing: {
+        timerState: 'completed',
         startedAt: '2026-07-01T08:00:00.000Z',
+        lastResumedAt: null,
         completedAt: '2026-07-01T08:00:01.000Z',
         durationMs: 1000,
         timerSource: 'manual',
       },
     });
     expect(readUpdateSet(itemResponseModel.findOneAndUpdate).timing).toEqual({
+      timerState: 'completed',
       startedAt: new Date('2026-07-01T08:00:00.000Z'),
+      lastResumedAt: null,
       completedAt: new Date('2026-07-01T08:00:01.000Z'),
       durationMs: 1000,
       timerSource: 'manual',

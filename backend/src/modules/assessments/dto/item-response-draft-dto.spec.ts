@@ -33,6 +33,7 @@ describe('item response draft DTO validation', () => {
 
   it('transforms nested draft fields and accepts nullable values', async () => {
     const dto = plainToInstance(UpdateItemResponseDraftDto, {
+      expectedRevision: 7,
       rawResponse: false,
       structuredResponse: { recalled: true },
       responseText: ' answer text ',
@@ -49,7 +50,10 @@ describe('item response draft DTO validation', () => {
         },
       ],
       timing: {
+        timerState: 'completed',
         startedAt: '2026-07-01T08:00:00.000Z',
+        lastResumedAt: null,
+        completedAt: null,
         durationMs: 1000,
         timerSource: 'manual',
       },
@@ -67,11 +71,15 @@ describe('item response draft DTO validation', () => {
 
   it('rejects invalid nested prompt and timing fields', async () => {
     const dto = plainToInstance(UpdateItemResponseDraftDto, {
+      expectedRevision: 0,
       promptResponses: [
         { promptType: 'invented', order: 0, responseAfterPrompt: true },
       ],
       timing: {
+        timerState: 'running',
         startedAt: 'not-a-date',
+        lastResumedAt: null,
+        completedAt: null,
         durationMs: -1,
         timerSource: 'browser',
       },
@@ -82,6 +90,20 @@ describe('item response draft DTO validation', () => {
       expect.arrayContaining(['promptResponses', 'timing']),
     );
   });
+
+  it.each([undefined, -1, 0.5, '0', Number.MAX_SAFE_INTEGER + 1])(
+    'rejects invalid expectedRevision %p without implicit conversion',
+    async (expectedRevision) => {
+      const dto = plainToInstance(UpdateItemResponseDraftDto, {
+        expectedRevision,
+        responseText: 'safe',
+      });
+
+      expect((await validate(dto)).map((error) => error.property)).toContain(
+        'expectedRevision',
+      );
+    },
+  );
 
   it('rejects server-controlled fields through the global pipe contract', async () => {
     const pipe = new ValidationPipe({
@@ -102,6 +124,8 @@ describe('item response draft DTO validation', () => {
       'itemConfigSnapshot',
       'versionTrace',
       'answerSource',
+      'draftRevision',
+      'draftSavedAt',
       'score',
       'scoreValue',
       'scoreStatus',
@@ -118,7 +142,7 @@ describe('item response draft DTO validation', () => {
     ]) {
       await expect(
         pipe.transform(
-          { responseText: 'safe', [field]: 'forged' },
+          { expectedRevision: 0, responseText: 'safe', [field]: 'forged' },
           { type: 'body', metatype: UpdateItemResponseDraftDto },
         ),
       ).rejects.toBeInstanceOf(BadRequestException);
@@ -135,6 +159,7 @@ describe('item response draft DTO validation', () => {
     await expect(
       pipe.transform(
         {
+          expectedRevision: 0,
           stepResponses: [
             {
               stepCode: 'step_1',
@@ -153,6 +178,7 @@ describe('item response draft DTO validation', () => {
     await expect(
       pipe.transform(
         {
+          expectedRevision: 0,
           promptResponses: [
             {
               promptType: 'semantic_category',

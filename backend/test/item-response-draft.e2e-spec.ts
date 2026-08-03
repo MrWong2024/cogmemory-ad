@@ -41,6 +41,7 @@ import { User, UserDocument } from '../src/modules/users/schemas/user.schema';
 jest.setTimeout(30000);
 
 const DOCTOR_ACCOUNT = 'doctor-a14-test';
+const NURSE_ACCOUNT = 'nurse-a14-test';
 const SYSTEM_ACCOUNT = 'system-a14-test';
 const TEST_PATIENT_PREFIX = 'SUBJ-A14-TEST-';
 const TEST_VISIT_PREFIX = 'VISIT-A14-TEST-';
@@ -79,6 +80,21 @@ function readString(
   }
 
   return value;
+}
+
+function readSafeInteger(
+  record: Record<string, unknown>,
+  propertyName: string,
+): number {
+  const value = record[propertyName];
+
+  if (!Number.isSafeInteger(value) || Number(value) < 0) {
+    throw new Error(
+      `Expected ${propertyName} to be a safe non-negative integer`,
+    );
+  }
+
+  return Number(value);
 }
 
 function readRecord(
@@ -133,13 +149,18 @@ describe('item response execution detail and draft APIs (e2e)', () => {
   let scaleDefinitionModel: Model<ScaleDefinitionDocument>;
   let scaleVersionModel: Model<ScaleVersionDocument>;
   let doctorAgent: ReturnType<typeof request.agent>;
+  let nurseAgent: ReturnType<typeof request.agent>;
   let systemAgent: ReturnType<typeof request.agent>;
   let httpServer: SupertestApp;
   let modelsReady = false;
 
   async function cleanupA14Data(): Promise<void> {
     const testUsers = await userModel
-      .find({ accountName: { $in: [DOCTOR_ACCOUNT, SYSTEM_ACCOUNT] } })
+      .find({
+        accountName: {
+          $in: [DOCTOR_ACCOUNT, NURSE_ACCOUNT, SYSTEM_ACCOUNT],
+        },
+      })
       .select({ _id: 1 })
       .exec();
     const userIds = testUsers.map((user) => user._id);
@@ -177,7 +198,11 @@ describe('item response execution detail and draft APIs (e2e)', () => {
 
     await patientModel.deleteMany({ subjectCode: /^SUBJ-A14-TEST-/ }).exec();
     await userModel
-      .deleteMany({ accountName: { $in: [DOCTOR_ACCOUNT, SYSTEM_ACCOUNT] } })
+      .deleteMany({
+        accountName: {
+          $in: [DOCTOR_ACCOUNT, NURSE_ACCOUNT, SYSTEM_ACCOUNT],
+        },
+      })
       .exec();
 
     const definitions = await scaleDefinitionModel
@@ -260,6 +285,22 @@ describe('item response execution detail and draft APIs (e2e)', () => {
     return itemResponse;
   }
 
+  async function readExecutionItem(
+    fixture: ExecutionFixture,
+    itemResponseId: string,
+  ): Promise<Record<string, unknown>> {
+    const response = await doctorAgent.get(executionPath(fixture)).expect(200);
+    const item = readArray(readResponseBody(response), 'itemResponses').find(
+      (candidate) => isRecord(candidate) && candidate.id === itemResponseId,
+    );
+
+    if (!isRecord(item)) {
+      throw new Error(`Expected public item response ${itemResponseId}`);
+    }
+
+    return item;
+  }
+
   beforeAll(async () => {
     if (process.env.NODE_ENV !== 'test') {
       throw new Error('E2E requires NODE_ENV=test');
@@ -275,12 +316,8 @@ describe('item response execution detail and draft APIs (e2e)', () => {
     connection = app.get<Connection>(getConnectionToken());
     const databaseName = connection.name.toLowerCase();
 
-    if (!databaseName.includes('_test')) {
-      throw new Error('E2E database name must follow the test naming rule');
-    }
-
-    if (databaseName.includes('_dev') || databaseName.includes('_prod')) {
-      throw new Error('E2E must not connect to development or production');
+    if (databaseName !== 'cogmemory_ad_test') {
+      throw new Error('E2E database name must be cogmemory_ad_test');
     }
 
     const configService = app.get(ConfigService);
@@ -330,6 +367,18 @@ describe('item response execution detail and draft APIs (e2e)', () => {
       metadata: null,
     });
     await userModel.create({
+      accountName: NURSE_ACCOUNT,
+      displayName: 'A14 Nurse Test Operator',
+      staffCode: 'STAFF-A14-NURSE',
+      email: 'nurse-a14-test@example.test',
+      passwordHash,
+      roles: ['nurse'],
+      permissions: [],
+      userType: 'nurse',
+      status: 'active',
+      metadata: null,
+    });
+    await userModel.create({
       accountName: SYSTEM_ACCOUNT,
       displayName: 'A14 System Test Operator',
       staffCode: 'SYSTEM-A14-TEST',
@@ -347,6 +396,7 @@ describe('item response execution detail and draft APIs (e2e)', () => {
       'HTTP server',
     );
     doctorAgent = request.agent(httpServer);
+    nurseAgent = request.agent(httpServer);
     systemAgent = request.agent(httpServer);
 
     await doctorAgent
@@ -356,6 +406,10 @@ describe('item response execution detail and draft APIs (e2e)', () => {
     await systemAgent
       .post('/auth/login')
       .send({ accountName: SYSTEM_ACCOUNT, password: 'A14-Test-Password!' })
+      .expect(201);
+    await nurseAgent
+      .post('/auth/login')
+      .send({ accountName: NURSE_ACCOUNT, password: 'A14-Test-Password!' })
       .expect(201);
   });
 
@@ -383,9 +437,12 @@ describe('item response execution detail and draft APIs (e2e)', () => {
     await systemAgent.get(detailPath).expect(403);
     await request(httpServer)
       .patch(draftPath)
-      .send({ responseText: 'x' })
+      .send({ expectedRevision: 0, responseText: 'x' })
       .expect(401);
-    await systemAgent.patch(draftPath).send({ responseText: 'x' }).expect(403);
+    await systemAgent
+      .patch(draftPath)
+      .send({ expectedRevision: 0, responseText: 'x' })
+      .expect(403);
   });
 
   it('returns safe MMSE execution detail and derives progress from ItemResponse', async () => {
@@ -419,6 +476,8 @@ describe('item response execution detail and draft APIs (e2e)', () => {
     expect(typeof firstItem.itemOrder).toBe('number');
     expect(typeof firstItem.responseType).toBe('string');
     expect(firstItem.status).toBe('not_started');
+    expect(firstItem.draftRevision).toBe(0);
+    expect(firstItem.draftSavedAt).toBeNull();
     expect(typeof config.prompt).toBe('string');
     expect(typeof config.instruction).toBe('string');
     expect(typeof scoreRange.min).toBe('number');
@@ -457,30 +516,51 @@ describe('item response execution detail and draft APIs (e2e)', () => {
     const fixture = await createExecution('DRAFT', 'mmse');
     const item = await findItem(fixture, 'mmse.memory.immediate_recall');
     const path = itemPath(fixture, item._id.toString());
+    const initialPublicItem = await readExecutionItem(
+      fixture,
+      item._id.toString(),
+    );
+    const initialRevision = readSafeInteger(initialPublicItem, 'draftRevision');
 
     const draftResponse = await doctorAgent
       .patch(path)
       .send({
+        expectedRevision: initialRevision,
         rawResponse: { recalledWords: ['de-identified-word'] },
         responseText: 'de-identified response',
       })
       .expect(200);
     const draftBody = readResponseBody(draftResponse);
-    expect(readRecord(draftBody, 'itemResponse')).toEqual(
+    const draftItem = readRecord(draftBody, 'itemResponse');
+    expect(draftItem).toEqual(
       expect.objectContaining({
         status: 'in_progress',
+        draftRevision: initialRevision + 1,
         rawResponse: { recalledWords: ['de-identified-word'] },
         responseText: 'de-identified response',
       }),
     );
+    expect(
+      Number.isFinite(Date.parse(readString(draftItem, 'draftSavedAt'))),
+    ).toBe(true);
 
     const answeredResponse = await doctorAgent
       .patch(path)
-      .send({ markAsAnswered: true })
+      .send({
+        expectedRevision: readSafeInteger(draftItem, 'draftRevision'),
+        markAsAnswered: true,
+      })
       .expect(200);
-    expect(
-      readRecord(readResponseBody(answeredResponse), 'itemResponse'),
-    ).toEqual(expect.objectContaining({ status: 'answered' }));
+    const answeredItem = readRecord(
+      readResponseBody(answeredResponse),
+      'itemResponse',
+    );
+    expect(answeredItem).toEqual(
+      expect.objectContaining({
+        status: 'answered',
+        draftRevision: initialRevision + 2,
+      }),
+    );
     expect(readRecord(readResponseBody(answeredResponse), 'progress')).toEqual({
       totalItemCount: 11,
       answeredItemCount: 1,
@@ -488,11 +568,21 @@ describe('item response execution detail and draft APIs (e2e)', () => {
 
     const revisedResponse = await doctorAgent
       .patch(path)
-      .send({ operatorNote: 'revised de-identified note' })
+      .send({
+        expectedRevision: readSafeInteger(answeredItem, 'draftRevision'),
+        operatorNote: 'revised de-identified note',
+      })
       .expect(200);
-    expect(
-      readRecord(readResponseBody(revisedResponse), 'itemResponse'),
-    ).toEqual(expect.objectContaining({ status: 'answered' }));
+    const revisedItem = readRecord(
+      readResponseBody(revisedResponse),
+      'itemResponse',
+    );
+    expect(revisedItem).toEqual(
+      expect.objectContaining({
+        status: 'answered',
+        draftRevision: initialRevision + 3,
+      }),
+    );
 
     const visitDetailResponse = await doctorAgent
       .get(`/patients/${fixture.patientId}/visits/${fixture.visitId}`)
@@ -510,7 +600,10 @@ describe('item response execution detail and draft APIs (e2e)', () => {
 
     await doctorAgent
       .patch(path)
-      .send({ isMissing: true })
+      .send({
+        expectedRevision: readSafeInteger(revisedItem, 'draftRevision'),
+        isMissing: true,
+      })
       .expect(400)
       .expect((response: Response) => {
         expect(readString(readResponseBody(response), 'code')).toBe(
@@ -520,7 +613,11 @@ describe('item response execution detail and draft APIs (e2e)', () => {
 
     const missingResponse = await doctorAgent
       .patch(path)
-      .send({ isMissing: true, missingReason: 'unable to assess' })
+      .send({
+        expectedRevision: readSafeInteger(revisedItem, 'draftRevision'),
+        isMissing: true,
+        missingReason: 'unable to assess',
+      })
       .expect(200);
     expect(
       readRecord(readResponseBody(missingResponse), 'itemResponse'),
@@ -538,6 +635,118 @@ describe('item response execution detail and draft APIs (e2e)', () => {
     ).not.toHaveProperty('responseText');
   });
 
+  it('allows exactly one of two legal concurrent saves and leaves the loser zero-write', async () => {
+    const fixture = await createExecution('CONCURRENT', 'mmse');
+    const item = await findItem(fixture, 'mmse.memory.immediate_recall');
+    const path = itemPath(fixture, item._id.toString());
+    const publicItem = await readExecutionItem(fixture, item._id.toString());
+    const expectedRevision = readSafeInteger(publicItem, 'draftRevision');
+    const before = await itemResponseModel.findById(item._id).lean().exec();
+
+    if (!before) {
+      throw new Error('Expected concurrent item before snapshot');
+    }
+
+    const [doctorResponse, nurseResponse] = await Promise.all([
+      doctorAgent.patch(path).send({
+        expectedRevision,
+        rawResponse: { candidate: 'doctor' },
+        responseText: 'doctor candidate',
+        operatorNote: 'doctor note',
+      }),
+      nurseAgent.patch(path).send({
+        expectedRevision,
+        rawResponse: { candidate: 'nurse' },
+        responseText: 'nurse candidate',
+        operatorNote: 'nurse note',
+      }),
+    ]);
+    const responses = [doctorResponse, nurseResponse];
+    expect(responses.map((response) => response.status).sort()).toEqual([
+      200, 409,
+    ]);
+    const winner = responses.find((response) => response.status === 200);
+    const loser = responses.find((response) => response.status === 409);
+
+    if (!winner || !loser) {
+      throw new Error('Expected one concurrent winner and one loser');
+    }
+
+    expect(readString(readResponseBody(loser), 'code')).toBe(
+      'ITEM_RESPONSE_DRAFT_CONFLICT',
+    );
+    const winnerItem = readRecord(readResponseBody(winner), 'itemResponse');
+    const winningCandidate =
+      readRecord(winnerItem, 'rawResponse').candidate === 'doctor'
+        ? 'doctor'
+        : 'nurse';
+    const after = await itemResponseModel.findById(item._id).lean().exec();
+
+    if (!after) {
+      throw new Error('Expected concurrent item after snapshot');
+    }
+
+    expect(after.draftRevision).toBe(expectedRevision + 1);
+    expect(after.draftSavedAt).toBeInstanceOf(Date);
+    expect(after.rawResponse).toEqual({ candidate: winningCandidate });
+    expect(after.responseText).toBe(`${winningCandidate} candidate`);
+    expect(after.operatorNote).toBe(`${winningCandidate} note`);
+    expect(after.patientId.toString()).toBe(before.patientId.toString());
+    expect(after.assessmentVisitId.toString()).toBe(
+      before.assessmentVisitId.toString(),
+    );
+    expect(after.scaleInstanceId.toString()).toBe(
+      before.scaleInstanceId.toString(),
+    );
+    expect(after.score).toEqual(before.score);
+    expect(after.evidenceRefs).toEqual(before.evidenceRefs);
+    expect(after.countsTowardTotal).toBe(before.countsTowardTotal);
+
+    const beforeStale = await itemResponseModel
+      .findById(item._id)
+      .lean()
+      .exec();
+    const stale = await doctorAgent
+      .patch(path)
+      .send({ expectedRevision, responseText: 'must not overwrite' })
+      .expect(409);
+    expect(readString(readResponseBody(stale), 'code')).toBe(
+      'ITEM_RESPONSE_DRAFT_CONFLICT',
+    );
+    const afterStale = await itemResponseModel.findById(item._id).lean().exec();
+    expect(afterStale).toEqual(beforeStale);
+  });
+
+  it('upgrades a legacy item with no persisted draft revision from zero to one', async () => {
+    const fixture = await createExecution('LEGACY', 'mmse');
+    const item = await findItem(fixture, 'mmse.memory.immediate_recall');
+    await itemResponseModel
+      .updateOne(
+        { _id: item._id },
+        { $unset: { draftRevision: 1, draftSavedAt: 1 } },
+      )
+      .exec();
+    const publicItem = await readExecutionItem(fixture, item._id.toString());
+    expect(publicItem.draftRevision).toBe(0);
+    expect(publicItem.draftSavedAt).toBeNull();
+
+    const response = await doctorAgent
+      .patch(itemPath(fixture, item._id.toString()))
+      .send({
+        expectedRevision: readSafeInteger(publicItem, 'draftRevision'),
+        responseText: 'legacy upgraded answer',
+      })
+      .expect(200);
+    const responseItem = readRecord(readResponseBody(response), 'itemResponse');
+    expect(responseItem.draftRevision).toBe(1);
+    expect(
+      Number.isFinite(Date.parse(readString(responseItem, 'draftSavedAt'))),
+    ).toBe(true);
+    const stored = await itemResponseModel.findById(item._id).exec();
+    expect(stored?.draftRevision).toBe(1);
+    expect(stored?.draftSavedAt).toBeInstanceOf(Date);
+  });
+
   it('updates only existing serial-seven step slots and preserves expected values', async () => {
     const fixture = await createExecution('STEPS', 'mmse');
     const item = await findItem(fixture, 'mmse.attention.serial_sevens');
@@ -548,10 +757,15 @@ describe('item response execution detail and draft APIs (e2e)', () => {
     if (!stepCode) {
       throw new Error('Expected a serial-seven step');
     }
+    const initialPublicItem = await readExecutionItem(
+      fixture,
+      item._id.toString(),
+    );
 
     const response = await doctorAgent
       .patch(path)
       .send({
+        expectedRevision: readSafeInteger(initialPublicItem, 'draftRevision'),
         stepResponses: [
           { stepCode, actualValue: 93, note: 'de-identified step note' },
         ],
@@ -577,7 +791,10 @@ describe('item response execution detail and draft APIs (e2e)', () => {
 
     const unknownResponse = await doctorAgent
       .patch(path)
-      .send({ stepResponses: [{ stepCode: 'unknown', actualValue: 1 }] })
+      .send({
+        expectedRevision: readSafeInteger(responseItem, 'draftRevision'),
+        stepResponses: [{ stepCode: 'unknown', actualValue: 1 }],
+      })
       .expect(400);
     expect(readString(readResponseBody(unknownResponse), 'code')).toBe(
       'ITEM_RESPONSE_STEP_NOT_FOUND',
@@ -594,9 +811,14 @@ describe('item response execution detail and draft APIs (e2e)', () => {
     }
 
     const path = itemPath(fixture, item._id.toString());
+    const initialPublicItem = await readExecutionItem(
+      fixture,
+      item._id.toString(),
+    );
     const response = await doctorAgent
       .patch(path)
       .send({
+        expectedRevision: readSafeInteger(initialPublicItem, 'draftRevision'),
         promptResponses: [
           {
             promptType: prompt.promptType,
@@ -610,6 +832,7 @@ describe('item response execution detail and draft APIs (e2e)', () => {
       readRecord(readResponseBody(response), 'itemResponse'),
       'promptResponses',
     );
+    const responseItem = readRecord(readResponseBody(response), 'itemResponse');
     expect(responsePrompts[0]).toEqual(
       expect.objectContaining({
         promptType: prompt.promptType,
@@ -626,6 +849,7 @@ describe('item response execution detail and draft APIs (e2e)', () => {
     const unknownResponse = await doctorAgent
       .patch(path)
       .send({
+        expectedRevision: readSafeInteger(responseItem, 'draftRevision'),
         promptResponses: [
           {
             promptType: 'operator_clarification',
@@ -640,7 +864,7 @@ describe('item response execution detail and draft APIs (e2e)', () => {
     );
   });
 
-  it('enforces timing configuration and validates timing drafts', async () => {
+  it('enforces timing configuration, invariants, and persisted transitions', async () => {
     const fixture = await createExecution('TIMING', 'moca');
     const ordinaryItem = await findItem(
       fixture,
@@ -650,44 +874,180 @@ describe('item response execution detail and draft APIs (e2e)', () => {
       fixture,
       'moca.language.verbal_fluency_animals',
     );
+    const ordinaryPublicItem = await readExecutionItem(
+      fixture,
+      ordinaryItem._id.toString(),
+    );
+    const initialTimedPublicItem = await readExecutionItem(
+      fixture,
+      timedItem._id.toString(),
+    );
+    const initialTimedRevision = readSafeInteger(
+      initialTimedPublicItem,
+      'draftRevision',
+    );
 
     const notAllowed = await doctorAgent
       .patch(itemPath(fixture, ordinaryItem._id.toString()))
-      .send({ timing: { durationMs: 1000 } })
+      .send({
+        expectedRevision: readSafeInteger(ordinaryPublicItem, 'draftRevision'),
+        timing: {
+          timerState: 'completed',
+          startedAt: null,
+          lastResumedAt: null,
+          completedAt: null,
+          durationMs: 1000,
+          timerSource: 'manual',
+        },
+      })
       .expect(400);
     expect(readString(readResponseBody(notAllowed), 'code')).toBe(
       'ITEM_RESPONSE_TIMING_NOT_ALLOWED',
     );
 
-    const invalid = await doctorAgent
+    const invalidCombination = await doctorAgent
       .patch(itemPath(fixture, timedItem._id.toString()))
       .send({
+        expectedRevision: initialTimedRevision,
         timing: {
-          startedAt: '2026-07-01T09:00:00.000Z',
-          completedAt: '2026-07-01T08:00:00.000Z',
-        },
-      })
-      .expect(400);
-    expect(readString(readResponseBody(invalid), 'code')).toBe(
-      'ITEM_RESPONSE_INVALID_TIMING',
-    );
-
-    const saved = await doctorAgent
-      .patch(itemPath(fixture, timedItem._id.toString()))
-      .send({
-        timing: {
+          timerState: 'running',
           startedAt: '2026-07-01T08:00:00.000Z',
-          completedAt: '2026-07-01T08:00:01.000Z',
-          durationMs: 1000,
+          lastResumedAt: '2026-07-01T08:00:01.000Z',
+          completedAt: null,
+          durationMs: 0,
           timerSource: 'manual',
         },
       })
-      .expect(200);
-    expect(
-      readRecord(readRecord(readResponseBody(saved), 'itemResponse'), 'timing'),
-    ).toEqual(
-      expect.objectContaining({ durationMs: 1000, timerSource: 'manual' }),
+      .expect(400);
+    expect(readString(readResponseBody(invalidCombination), 'code')).toBe(
+      'ITEM_RESPONSE_INVALID_TIMING',
     );
+
+    const invalidTransition = await doctorAgent
+      .patch(itemPath(fixture, timedItem._id.toString()))
+      .send({
+        expectedRevision: initialTimedRevision,
+        timing: {
+          timerState: 'paused',
+          startedAt: '2026-07-01T08:00:00.000Z',
+          lastResumedAt: null,
+          completedAt: null,
+          durationMs: 1000,
+          timerSource: 'system',
+        },
+      })
+      .expect(400);
+    expect(readString(readResponseBody(invalidTransition), 'code')).toBe(
+      'ITEM_RESPONSE_INVALID_TIMING',
+    );
+
+    const runningResponse = await doctorAgent
+      .patch(itemPath(fixture, timedItem._id.toString()))
+      .send({
+        expectedRevision: initialTimedRevision,
+        timing: {
+          timerState: 'running',
+          startedAt: '2026-07-01T08:00:00.000Z',
+          lastResumedAt: '2026-07-01T08:00:00.000Z',
+          completedAt: null,
+          durationMs: 0,
+          timerSource: 'system',
+        },
+      })
+      .expect(200);
+    const runningItem = readRecord(
+      readResponseBody(runningResponse),
+      'itemResponse',
+    );
+    expect(readRecord(runningItem, 'timing')).toEqual(
+      expect.objectContaining({
+        timerState: 'running',
+        durationMs: 0,
+        timerSource: 'system',
+      }),
+    );
+
+    const pausedResponse = await doctorAgent
+      .patch(itemPath(fixture, timedItem._id.toString()))
+      .send({
+        expectedRevision: readSafeInteger(runningItem, 'draftRevision'),
+        timing: {
+          timerState: 'paused',
+          startedAt: '2026-07-01T08:00:00.000Z',
+          lastResumedAt: null,
+          completedAt: null,
+          durationMs: 1000,
+          timerSource: 'system',
+        },
+      })
+      .expect(200);
+    const pausedItem = readRecord(
+      readResponseBody(pausedResponse),
+      'itemResponse',
+    );
+    expect(readRecord(pausedItem, 'timing').timerState).toBe('paused');
+
+    const resumedResponse = await doctorAgent
+      .patch(itemPath(fixture, timedItem._id.toString()))
+      .send({
+        expectedRevision: readSafeInteger(pausedItem, 'draftRevision'),
+        timing: {
+          timerState: 'running',
+          startedAt: '2026-07-01T08:00:00.000Z',
+          lastResumedAt: '2026-07-01T08:00:02.000Z',
+          completedAt: null,
+          durationMs: 1000,
+          timerSource: 'system',
+        },
+      })
+      .expect(200);
+    const resumedItem = readRecord(
+      readResponseBody(resumedResponse),
+      'itemResponse',
+    );
+
+    const completedResponse = await doctorAgent
+      .patch(itemPath(fixture, timedItem._id.toString()))
+      .send({
+        expectedRevision: readSafeInteger(resumedItem, 'draftRevision'),
+        timing: {
+          timerState: 'completed',
+          startedAt: '2026-07-01T08:00:00.000Z',
+          lastResumedAt: null,
+          completedAt: '2026-07-01T08:00:04.000Z',
+          durationMs: 3000,
+          timerSource: 'system',
+        },
+      })
+      .expect(200);
+    const completedItem = readRecord(
+      readResponseBody(completedResponse),
+      'itemResponse',
+    );
+    expect(readRecord(completedItem, 'timing')).toEqual(
+      expect.objectContaining({
+        timerState: 'completed',
+        lastResumedAt: null,
+        durationMs: 3000,
+      }),
+    );
+
+    const storedItem = await itemResponseModel.findById(timedItem._id).exec();
+    const storedInstance = await scaleInstanceModel
+      .findById(fixture.scaleInstanceId)
+      .exec();
+    const storedVisit = await assessmentVisitModel
+      .findById(fixture.visitId)
+      .exec();
+    expect(storedItem).toEqual(
+      expect.objectContaining({
+        status: 'in_progress',
+        draftRevision: initialTimedRevision + 4,
+      }),
+    );
+    expect(storedItem?.score?.scoreStatus).toBe('not_scored');
+    expect(storedInstance?.status).toBe('draft');
+    expect(storedVisit?.status).toBe('draft');
   });
 
   it('rejects cross-ownership resources without revealing their existence', async () => {
@@ -695,6 +1055,14 @@ describe('item response execution detail and draft APIs (e2e)', () => {
     const other = await createExecution('OTHER', 'mmse');
     const ownerItem = await findItem(owner, 'mmse.memory.immediate_recall');
     const otherItem = await findItem(other, 'mmse.memory.immediate_recall');
+    const ownerPublicItem = await readExecutionItem(
+      owner,
+      ownerItem._id.toString(),
+    );
+    const otherPublicItem = await readExecutionItem(
+      other,
+      otherItem._id.toString(),
+    );
 
     const instanceMismatch = await doctorAgent
       .get(
@@ -707,7 +1075,10 @@ describe('item response execution detail and draft APIs (e2e)', () => {
 
     const itemMismatch = await doctorAgent
       .patch(itemPath(owner, otherItem._id.toString()))
-      .send({ responseText: 'must not cross ownership' })
+      .send({
+        expectedRevision: readSafeInteger(otherPublicItem, 'draftRevision'),
+        responseText: 'must not cross ownership',
+      })
       .expect(404);
     expect(readString(readResponseBody(itemMismatch), 'code')).toBe(
       'ITEM_RESPONSE_NOT_FOUND',
@@ -715,7 +1086,10 @@ describe('item response execution detail and draft APIs (e2e)', () => {
 
     await doctorAgent
       .patch(itemPath(owner, ownerItem._id.toString()))
-      .send({ responseText: 'owner response' })
+      .send({
+        expectedRevision: readSafeInteger(ownerPublicItem, 'draftRevision'),
+        responseText: 'owner response',
+      })
       .expect(200);
   });
 
@@ -723,6 +1097,8 @@ describe('item response execution detail and draft APIs (e2e)', () => {
     const fixture = await createExecution('STATES', 'mmse');
     const item = await findItem(fixture, 'mmse.memory.immediate_recall');
     const path = itemPath(fixture, item._id.toString());
+    const publicItem = await readExecutionItem(fixture, item._id.toString());
+    const expectedRevision = readSafeInteger(publicItem, 'draftRevision');
 
     await patientModel.updateOne(
       { _id: fixture.patientId },
@@ -730,7 +1106,7 @@ describe('item response execution detail and draft APIs (e2e)', () => {
     );
     const inactive = await doctorAgent
       .patch(path)
-      .send({ responseText: 'blocked' })
+      .send({ expectedRevision, responseText: 'blocked' })
       .expect(409);
     expect(readString(readResponseBody(inactive), 'code')).toBe(
       'PATIENT_NOT_ACTIVE',
@@ -747,7 +1123,7 @@ describe('item response execution detail and draft APIs (e2e)', () => {
       );
       const response = await doctorAgent
         .patch(path)
-        .send({ responseText: 'blocked' })
+        .send({ expectedRevision, responseText: 'blocked' })
         .expect(409);
       expect(readString(readResponseBody(response), 'code')).toBe(
         'VISIT_NOT_EDITABLE',
@@ -765,7 +1141,7 @@ describe('item response execution detail and draft APIs (e2e)', () => {
       );
       const response = await doctorAgent
         .patch(path)
-        .send({ responseText: 'blocked' })
+        .send({ expectedRevision, responseText: 'blocked' })
         .expect(409);
       expect(readString(readResponseBody(response), 'code')).toBe(
         'SCALE_INSTANCE_NOT_EDITABLE',
@@ -780,7 +1156,7 @@ describe('item response execution detail and draft APIs (e2e)', () => {
       await itemResponseModel.updateOne({ _id: item._id }, { status });
       const response = await doctorAgent
         .patch(path)
-        .send({ responseText: 'blocked' })
+        .send({ expectedRevision, responseText: 'blocked' })
         .expect(409);
       expect(readString(readResponseBody(response), 'code')).toBe(
         'ITEM_RESPONSE_NOT_EDITABLE',
@@ -792,25 +1168,64 @@ describe('item response execution detail and draft APIs (e2e)', () => {
     const fixture = await createExecution('VALIDATION', 'mmse');
     const item = await findItem(fixture, 'mmse.memory.immediate_recall');
     const path = itemPath(fixture, item._id.toString());
+    const publicItem = await readExecutionItem(fixture, item._id.toString());
+    const expectedRevision = readSafeInteger(publicItem, 'draftRevision');
 
-    const empty = await doctorAgent.patch(path).send({}).expect(400);
+    await doctorAgent
+      .patch(path)
+      .send({ responseText: 'missing token' })
+      .expect(400);
+    for (const invalidRevision of [-1, 0.5, '0', Number.MAX_SAFE_INTEGER + 1]) {
+      await doctorAgent
+        .patch(path)
+        .send({
+          expectedRevision: invalidRevision,
+          responseText: 'invalid token',
+        })
+        .expect(400);
+    }
+
+    const empty = await doctorAgent
+      .patch(path)
+      .send({ expectedRevision })
+      .expect(400);
     expect(readString(readResponseBody(empty), 'code')).toBe(
+      'ITEM_RESPONSE_EMPTY_PATCH',
+    );
+    const falseOnly = await doctorAgent
+      .patch(path)
+      .send({ expectedRevision, markAsAnswered: false })
+      .expect(400);
+    expect(readString(readResponseBody(falseOnly), 'code')).toBe(
       'ITEM_RESPONSE_EMPTY_PATCH',
     );
 
     const cannotAnswer = await doctorAgent
       .patch(path)
-      .send({ operatorNote: 'note only', markAsAnswered: true })
+      .send({
+        expectedRevision,
+        operatorNote: 'note only',
+        markAsAnswered: true,
+      })
       .expect(409);
     expect(readString(readResponseBody(cannotAnswer), 'code')).toBe(
       'ITEM_RESPONSE_CANNOT_MARK_ANSWERED',
     );
 
     for (const payload of [
-      { responseText: 'answer', score: { scoreValue: 1 } },
-      { responseText: 'answer', status: 'scored' },
-      { responseText: 'answer', metadata: { hidden: true } },
       {
+        expectedRevision,
+        responseText: 'answer',
+        score: { scoreValue: 1 },
+      },
+      { expectedRevision, responseText: 'answer', status: 'scored' },
+      {
+        expectedRevision,
+        responseText: 'answer',
+        metadata: { hidden: true },
+      },
+      {
+        expectedRevision,
         stepResponses: [
           {
             stepCode: 'mmse.attention.serial_sevens.step_1',

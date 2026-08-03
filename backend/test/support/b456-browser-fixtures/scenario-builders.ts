@@ -582,6 +582,7 @@ export class B456ScenarioBuilder {
       root.scaleInstanceId.toString(),
       answeredTarget._id.toString(),
       {
+        expectedRevision: answeredTarget.draftRevision,
         rawResponse: false,
         operatorNote: 'Synthetic non-scoring fixture response',
         markAsAnswered: true,
@@ -805,12 +806,13 @@ export class B456ScenarioBuilder {
   ): Promise<void> {
     const items = await this.itemsFor(root);
     for (const item of items) {
-      await this.workflows.itemDraft.saveDraft(
+      const saved = await this.workflows.itemDraft.saveDraft(
         root.patientId.toString(),
         root.visitId.toString(),
         root.scaleInstanceId.toString(),
         item._id.toString(),
         {
+          expectedRevision: item.draftRevision,
           rawResponse: false,
           operatorNote: 'Synthetic readiness fixture note',
           markAsAnswered: true,
@@ -823,6 +825,7 @@ export class B456ScenarioBuilder {
           root.scaleInstanceId.toString(),
           item._id.toString(),
           {
+            expectedRevision: saved.itemResponse.draftRevision,
             stepResponses: item.stepResults.map((step) => ({
               stepCode: step.stepCode,
               actualValue: 0,

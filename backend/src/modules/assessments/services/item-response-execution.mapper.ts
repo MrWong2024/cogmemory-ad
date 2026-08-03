@@ -7,6 +7,7 @@ import {
   validateAndCloneDraftJsonValue,
   validateAndCloneStructuredDraft,
 } from '../lib/item-response-draft-json';
+import { normalizeItemResponseTiming } from '../lib/item-response-timing';
 import type { ItemResponseSummary } from './assessments.service';
 import type {
   ItemExecutionConfigResponse,
@@ -133,9 +134,21 @@ function toSafeStructuredValue(
   }
 }
 
+export function normalizeItemResponseDraftRevision(value: unknown): number {
+  return Number.isSafeInteger(value) && Number(value) >= 0 ? Number(value) : 0;
+}
+
+function normalizeItemResponseDraftSavedAt(value: unknown): Date | null {
+  return value instanceof Date && Number.isFinite(value.getTime())
+    ? new Date(value.getTime())
+    : null;
+}
+
 export function toItemResponseExecutionResponse(
   itemResponse: ItemResponseSummary,
 ): ItemResponseExecutionResponse {
+  const timing = normalizeItemResponseTiming(itemResponse.timing);
+
   return {
     id: itemResponse.id,
     scaleInstanceId: itemResponse.scaleInstanceId,
@@ -159,6 +172,10 @@ export function toItemResponseExecutionResponse(
     config: toExecutionConfig(itemResponse),
     status: itemResponse.status,
     answerSource: itemResponse.answerSource,
+    draftRevision: normalizeItemResponseDraftRevision(
+      itemResponse.draftRevision,
+    ),
+    draftSavedAt: normalizeItemResponseDraftSavedAt(itemResponse.draftSavedAt),
     rawResponse: toSafeJsonValue(itemResponse.rawResponse),
     structuredResponse: toSafeStructuredValue(itemResponse.structuredResponse),
     responseText: itemResponse.responseText,
@@ -181,12 +198,14 @@ export function toItemResponseExecutionResponse(
       order: promptResponse.order,
       note: promptResponse.note,
     })),
-    timing: itemResponse.timing
+    timing: timing
       ? {
-          startedAt: itemResponse.timing.startedAt,
-          completedAt: itemResponse.timing.completedAt,
-          durationMs: itemResponse.timing.durationMs,
-          timerSource: itemResponse.timing.timerSource,
+          timerState: timing.timerState,
+          startedAt: timing.startedAt,
+          lastResumedAt: timing.lastResumedAt,
+          completedAt: timing.completedAt,
+          durationMs: timing.durationMs,
+          timerSource: timing.timerSource,
         }
       : null,
     evidenceRequirements: itemResponse.evidenceRefs.map((evidenceRef) => ({

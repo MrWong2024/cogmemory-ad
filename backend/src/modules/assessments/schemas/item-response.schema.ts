@@ -10,6 +10,19 @@ import {
 } from '../../scales/schemas/scale-version.schema';
 import { AssessmentVisit } from './assessment-visit.schema';
 import { ScaleInstance } from './scale-instance.schema';
+import {
+  ITEM_TIMER_SOURCES,
+  ITEM_TIMER_STATES,
+  type ItemTimerSource,
+  type ItemTimerState,
+} from '../lib/item-response-timing';
+
+export {
+  ITEM_TIMER_SOURCES,
+  ITEM_TIMER_STATES,
+  type ItemTimerSource,
+  type ItemTimerState,
+} from '../lib/item-response-timing';
 
 export const ITEM_RESPONSE_STATUSES = [
   'not_started',
@@ -55,14 +68,6 @@ export const PROMPT_RESPONSE_TYPES = [
   'other',
 ] as const;
 export type PromptResponseType = (typeof PROMPT_RESPONSE_TYPES)[number];
-
-export const ITEM_TIMER_SOURCES = [
-  'none',
-  'system',
-  'manual',
-  'imported',
-] as const;
-export type ItemTimerSource = (typeof ITEM_TIMER_SOURCES)[number];
 
 export const ITEM_EVIDENCE_TYPES = [
   'photo',
@@ -216,8 +221,14 @@ export const PromptResponseRecordSchema =
 
 @Schema({ _id: false })
 export class ItemTimingSnapshot {
+  @Prop({ type: String, enum: ITEM_TIMER_STATES, default: 'idle' })
+  timerState!: ItemTimerState;
+
   @Prop({ type: Date, default: null })
   startedAt?: Date | null;
+
+  @Prop({ type: Date, default: null })
+  lastResumedAt?: Date | null;
 
   @Prop({ type: Date, default: null })
   completedAt?: Date | null;
@@ -334,6 +345,21 @@ export class ItemResponse {
     default: 'clinician_recorded',
   })
   answerSource!: ItemResponseAnswerSource;
+
+  @Prop({
+    type: Number,
+    default: 0,
+    min: 0,
+    max: Number.MAX_SAFE_INTEGER,
+    validate: {
+      validator: (value: number) => Number.isSafeInteger(value),
+      message: 'draftRevision must be a safe integer',
+    },
+  })
+  draftRevision!: number;
+
+  @Prop({ type: Date, default: null })
+  draftSavedAt?: Date | null;
 
   @Prop({ type: SchemaTypes.Mixed, default: null })
   rawResponse?: ItemRawResponse;

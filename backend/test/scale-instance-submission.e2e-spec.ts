@@ -222,12 +222,21 @@ describe('scale instance submission APIs (e2e)', () => {
       'item responses',
     );
     let drawingItemId = '';
+    let drawingDraftRevision = 0;
     const mediaItemIds: string[] = [];
 
     for (const value of itemResponses) {
       const item = record(value, 'item response');
       const itemId = stringValue(item.id, 'item response id');
       const itemCode = stringValue(item.itemCode, 'item code');
+      const initialRevision = item.draftRevision;
+      if (
+        typeof initialRevision !== 'number' ||
+        !Number.isSafeInteger(initialRevision) ||
+        initialRevision < 0
+      ) {
+        throw new Error('Expected a safe item draft revision');
+      }
       const stepResponses = arrayValue(
         item.stepResponses,
         'step responses',
@@ -239,15 +248,30 @@ describe('scale instance submission APIs (e2e)', () => {
         };
       });
       const itemPath = `${instancePath(fixture)}/item-responses/${itemId}`;
+      let savedRevision = initialRevision;
       if (stepResponses.length > 0) {
-        await doctorAgent
+        const answerResponse = await doctorAgent
           .patch(itemPath)
           .send({
+            expectedRevision: savedRevision,
             rawResponse: false,
             operatorNote: 'A16 de-identified operator note',
             markAsAnswered: true,
           })
           .expect(200);
+        const answeredItem = record(
+          body(answerResponse).itemResponse,
+          'answered item response',
+        );
+        const answeredRevision = answeredItem.draftRevision;
+        if (
+          typeof answeredRevision !== 'number' ||
+          !Number.isSafeInteger(answeredRevision) ||
+          answeredRevision < 0
+        ) {
+          throw new Error('Expected a safe answered item draft revision');
+        }
+        savedRevision = answeredRevision;
         const stepReadiness = body(
           await doctorAgent.get(readinessPath(fixture)).expect(200),
         );
@@ -257,19 +281,50 @@ describe('scale instance submission APIs (e2e)', () => {
               isRecord(issue) && issue.code === 'ITEM_REQUIRED_STEP_MISSING',
           ),
         ).toBe(true);
-        await doctorAgent.patch(itemPath).send({ stepResponses }).expect(200);
+        const stepResponse = await doctorAgent
+          .patch(itemPath)
+          .send({ expectedRevision: savedRevision, stepResponses })
+          .expect(200);
+        const steppedItem = record(
+          body(stepResponse).itemResponse,
+          'stepped item response',
+        );
+        const steppedRevision = steppedItem.draftRevision;
+        if (
+          typeof steppedRevision !== 'number' ||
+          !Number.isSafeInteger(steppedRevision) ||
+          steppedRevision < 0
+        ) {
+          throw new Error('Expected a safe stepped item draft revision');
+        }
+        savedRevision = steppedRevision;
       } else {
-        await doctorAgent
+        const answerResponse = await doctorAgent
           .patch(itemPath)
           .send({
+            expectedRevision: savedRevision,
             rawResponse: false,
             operatorNote: 'A16 de-identified operator note',
             markAsAnswered: true,
           })
           .expect(200);
+        const answeredItem = record(
+          body(answerResponse).itemResponse,
+          'answered item response',
+        );
+        const answeredRevision = answeredItem.draftRevision;
+        if (
+          typeof answeredRevision !== 'number' ||
+          !Number.isSafeInteger(answeredRevision) ||
+          answeredRevision < 0
+        ) {
+          throw new Error('Expected a safe answered item draft revision');
+        }
+        savedRevision = answeredRevision;
       }
       if (itemCode === 'mmse.visuospatial.copy_drawing') {
         drawingItemId = itemId;
+        drawingDraftRevision = savedRevision;
       }
       const config = record(item.config, 'item config');
       if (config.supportsPhotoUpload === true) {
@@ -330,6 +385,7 @@ describe('scale instance submission APIs (e2e)', () => {
     }
     return {
       drawingItemId,
+      drawingDraftRevision,
       mediaEvidenceId: drawingMediaEvidenceId,
     };
   }
@@ -476,9 +532,21 @@ describe('scale instance submission APIs (e2e)', () => {
       firstItem.id,
       'first item id',
     )}`;
+    const firstItemRevision = firstItem.draftRevision;
+    if (
+      typeof firstItemRevision !== 'number' ||
+      !Number.isSafeInteger(firstItemRevision) ||
+      firstItemRevision < 0
+    ) {
+      throw new Error('Expected a safe first item draft revision');
+    }
     const missingReasonRequired = await doctorAgent
       .patch(firstItemPath)
-      .send({ isMissing: true, markAsAnswered: true })
+      .send({
+        expectedRevision: firstItemRevision,
+        isMissing: true,
+        markAsAnswered: true,
+      })
       .expect(400);
     expect(body(missingReasonRequired).code).toBe(
       'ITEM_RESPONSE_MISSING_REASON_REQUIRED',
@@ -486,6 +554,7 @@ describe('scale instance submission APIs (e2e)', () => {
     await doctorAgent
       .patch(firstItemPath)
       .send({
+        expectedRevision: firstItemRevision,
         isMissing: true,
         missingReason: 'A16 de-identified missing reason',
         markAsAnswered: true,
@@ -525,7 +594,7 @@ describe('scale instance submission APIs (e2e)', () => {
 
   it('completes through A14/A15, freezes edits and repeats idempotently', async () => {
     const fixture = await createFixture('SUCCESS');
-    const { drawingItemId, mediaEvidenceId } =
+    const { drawingItemId, drawingDraftRevision, mediaEvidenceId } =
       await completeMmseThroughExistingApis(fixture);
     const beforeVisit = await visitModel
       .findById(fixture.visitId)
@@ -600,7 +669,7 @@ describe('scale instance submission APIs (e2e)', () => {
 
     await doctorAgent
       .patch(`${instancePath(fixture)}/item-responses/${drawingItemId}`)
-      .send({ rawResponse: true })
+      .send({ expectedRevision: drawingDraftRevision, rawResponse: true })
       .expect(409);
     await doctorAgent
       .post(

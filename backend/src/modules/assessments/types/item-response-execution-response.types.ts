@@ -4,6 +4,7 @@ import type {
   ItemEvidenceType,
   ItemResponseAnswerSource,
   ItemResponseStatus,
+  ItemTimerState,
   ItemTimerSource,
   PromptResponseType,
 } from '../schemas/item-response.schema';
@@ -85,7 +86,9 @@ export type ItemPromptDraftResponse = {
 };
 
 export type ItemTimingDraftResponse = {
+  timerState: ItemTimerState;
   startedAt: Date | null;
+  lastResumedAt: Date | null;
   completedAt: Date | null;
   durationMs: number | null;
   timerSource: ItemTimerSource;
@@ -112,6 +115,8 @@ export type ItemResponseExecutionResponse = {
   config: ItemExecutionConfigResponse;
   status: ItemResponseStatus;
   answerSource: ItemResponseAnswerSource;
+  draftRevision: number;
+  draftSavedAt: Date | null;
   rawResponse: ItemResponseDraftJsonValue;
   structuredResponse: { [key: string]: ItemResponseDraftJsonValue } | null;
   responseText?: string;

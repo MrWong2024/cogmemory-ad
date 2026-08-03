@@ -45,6 +45,8 @@ function createItemResponseSummary(): ItemResponseSummary {
     },
     status: 'in_progress',
     answerSource: 'clinician_recorded',
+    draftRevision: 3,
+    draftSavedAt: new Date('2026-07-01T08:00:02.000Z'),
     rawResponse: { spoken: [93, 86] },
     structuredResponse: { completedSteps: 2 },
     responseText: '93, 86',
@@ -86,7 +88,9 @@ function createItemResponseSummary(): ItemResponseSummary {
       },
     ],
     timing: {
+      timerState: 'completed',
       startedAt: new Date('2026-07-01T08:00:00.000Z'),
+      lastResumedAt: null,
       completedAt: null,
       durationMs: 1000,
       timerSource: 'manual',
@@ -131,6 +135,8 @@ describe('item response execution mapper', () => {
         id: source.id,
         scaleInstanceId: source.scaleInstanceId,
         itemCode: source.itemCode,
+        draftRevision: 3,
+        draftSavedAt: new Date('2026-07-01T08:00:02.000Z'),
         config: {
           prompt: 'Safe prompt',
           instruction: 'Safe instruction',
@@ -203,5 +209,26 @@ describe('item response execution mapper', () => {
     expect(response.config.scoreRange).toEqual({ min: 0, max: 5 });
     expect(response.rawResponse).toBeNull();
     expect(response.structuredResponse).toBeNull();
+  });
+
+  it('normalizes unsafe legacy draft metadata and timing', () => {
+    const source = createItemResponseSummary();
+    source.draftRevision = -1;
+    source.draftSavedAt = new Date(Number.NaN);
+    source.timing = {
+      timerState: 'running',
+      startedAt: new Date('2026-07-01T08:00:00.000Z'),
+      lastResumedAt: null,
+      completedAt: null,
+      durationMs: 1000,
+      timerSource: 'system',
+    };
+
+    const response = toItemResponseExecutionResponse(source);
+
+    expect(response.draftRevision).toBe(0);
+    expect(response.draftSavedAt).toBeNull();
+    expect(response.timing?.timerState).toBe('paused');
+    expect(response.timing?.lastResumedAt).toBeNull();
   });
 });

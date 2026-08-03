@@ -131,18 +131,23 @@
 
 - Service 名称：`ItemResponseDraftService`
 - 文件路径：`backend\src\modules\assessments\services\item-response-draft.service.ts`
-- 职责边界：依次校验 Patient / Visit / ScaleInstance / ItemResponse 归属与可编辑状态，校验并克隆草稿 JSON，精确合并既有 step / prompt 槽位，处理 missing / timing / answered 语义，并以单条 `findOneAndUpdate` 原子保存 ItemResponse。
+- 职责边界：依次校验 Patient / Visit / ScaleInstance / ItemResponse 归属与可编辑状态，校验 expectedRevision、草稿 JSON、完整 timing 快照与状态转换，精确合并既有 step / prompt 槽位，处理 missing / answered 语义，并以单条 `findOneAndUpdate` CAS 原子保存 ItemResponse。
 - 下游依赖：`PatientsService`、`AssessmentsService`、`ItemResponse` Model；不依赖 Scoring / Media / Reports / Storage。
-- 写库边界：只写允许的 ItemResponse 草稿字段与 status；不修改 score、expectedValue、正确性、counts 标记、Visit / ScaleInstance 状态或 startedAt，不使用 transaction，不实现 revision / If-Match / 多操作者冲突控制。
-- 测试覆盖口径：draft service spec 覆盖空 PATCH、完整归属、状态、JSON、missing、markAsAnswered、step / prompt 精确合并、timing、原子更新与安全保存失败；Model / Service 均为 mock，不连接真实 MongoDB。
+- 写库与并发边界：CAS filter 同时包含完整 ownership、可编辑 status、`lockedAt: null` 与 expected revision；expectedRevision=0 兼容字段缺失或 0。成功更新同写字段级草稿、`$inc draftRevision: 1` 与服务端 `draftSavedAt`；初始 stale 或竞争 miss 返回 `ITEM_RESPONSE_DRAFT_CONFLICT`，不合并、不自动重试。原子 miss 后重读优先分类生命周期错误，其他数据库失败为 `ITEM_RESPONSE_SAVE_FAILED`。
+- 隔离边界：不覆盖 evidenceRefs，不修改 score、expectedValue、正确性、counts 标记、Visit / ScaleInstance 状态或 startedAt，不使用 transaction。A15 媒体点更新不推进草稿版本，因此不使同版本 A14 保存失效。
+- 测试覆盖口径：draft service spec 覆盖空 PATCH、完整归属、状态、JSON、missing、markAsAnswered、step / prompt 精确合并、timing、不变量 / 转换、legacy revision、初始 stale、CAS miss、原子 filter / update、冲突零写入与安全保存失败；Model / Service 均为 mock，不连接真实 MongoDB。
 
 - 纯函数：`validateAndCloneDraftJsonValue()` / `validateAndCloneStructuredDraft()`
 - 文件路径：`backend\src\modules\assessments\lib\item-response-draft-json.ts`
 - 职责边界：递归验证 JSON 类型、普通对象原型、危险 key、深度 / 长度 / 字节限制并生成新对象引用；不读取数据库或环境，不记录原始作答。
 
+- 纯函数：`normalizeItemResponseTiming()` / `validateItemResponseTimingUpdate()`
+- 文件路径：`backend\src\modules\assessments\lib\item-response-timing.ts`
+- 职责边界：规范化 legacy timing、校验 idle / running / paused / completed 完整快照与允许转换；不依赖 Nest、Mongoose、网络、数据库或时钟，GET 规范化不回写。
+
 - Mapper：`toItemResponseExecutionResponse()`
 - 文件路径：`backend\src\modules\assessments\services\item-response-execution.mapper.ts`
-- 职责边界：从内部 ItemResponse summary 和 itemConfigSnapshot 中逐字段提取允许的执行配置与草稿；invalid legacy Mixed 草稿回退 null；不透传 scoringRule、expectedValue、评分结果、metadata 或媒体对象标识。
+- 职责边界：从内部 ItemResponse summary 和 itemConfigSnapshot 中逐字段提取允许的执行配置与草稿；安全规范化 `draftRevision` / `draftSavedAt` 与 legacy timing，invalid legacy Mixed 草稿回退 null；不透传 scoringRule、expectedValue、评分结果、metadata、`__v` 或媒体对象标识。
 
 - Controller 名称：`AssessmentExecutionController`
 - 文件路径：`backend\src\modules\assessments\controllers\assessment-execution.controller.ts`

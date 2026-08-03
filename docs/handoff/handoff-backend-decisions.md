@@ -361,6 +361,15 @@
 - 后果：普通 E2E 可继续重建普通测试库；Browser fixture 可在验收期间跨多轮保留而不受普通 E2E 影响，并在收口时按 namespace 精确清理。未来批次仍须遵循 backend testing playbook 的独立生命周期。
 - 影响范围：实现仅涉及测试数据库用途、配置/连接门禁、fixture CLI、test-only 启动入口与测试；未修改产品 Schema、catalog resolver、readiness、量表规则或业务接口。
 
+### D-039：A14 采用独立草稿版本 CAS，并将实时计时状态持久化在 ItemResponse 草稿
+
+- 日期：2026-08-03
+- 草稿版本：A14 使用每条 ItemResponse 独立的 `draftRevision` 与 `draftSavedAt`，而不是通用 `updatedAt` 或 Mongoose `__v`。历史缺失字段按 0 / null 读取；首次合法保存可通过 expectedRevision=0 原子升级，不做迁移、批量回填或新增索引。
+- 并发语义：所有实际草稿 PATCH 必须携带客户端已读 `expectedRevision`；ownership、可编辑状态、锁状态和 revision 共同进入单文档 `findOneAndUpdate` 条件。初始 stale 与合法竞争 miss 都返回 409 `ITEM_RESPONSE_DRAFT_CONFLICT`；冲突不覆盖、不合并、不自动重试，B18 通过既有 GET 重新读取服务端事实。
+- 媒体边界：A15 上传与作废可以改变 evidenceRefs 和通用 `updatedAt`，但不递增 `draftRevision`、不修改 `draftSavedAt`；A14 草稿 PATCH 不覆盖或重建 evidenceRefs。草稿版本只代表 A14 作答、备注和计时，不是 ItemResponse 全局版本。
+- 计时持久化：实时计时的 idle / running / paused / completed、`lastResumedAt` 与累计 duration 随 ItemResponse 草稿完整快照保存；legacy timing 只读安全规范化，不在 GET 回写。计时不新建 collection、history 或后台 job，也不自动 answered、提交、评分或修改 Visit / ScaleInstance startedAt。
+- 跨端边界：A29 只完成后端保存合同；当前前端仍为 B17 / 旧 B4 客户端。B18 负责 expectedRevision 适配、自动保存、冲突恢复、网络 / 切组恢复、未保存状态和实时计时交互；B18 未完成前不得宣布 WP-03 完成。
+
 ## 4. 后续同步规则
 
 - 新增关键技术选型、接口设计、数据模型、测试策略或部署策略后，应追加决策记录。

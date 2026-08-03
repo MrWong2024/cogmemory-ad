@@ -364,17 +364,27 @@ export class B8ScenarioBuilder {
       .sort({ itemOrder: 1 })
       .exec();
     for (const item of items) {
-      await this.workflows.itemDraft.saveDraft(
+      const saved = await this.workflows.itemDraft.saveDraft(
         root.patientId.toString(),
         root.visitId.toString(),
         root.scaleInstanceId.toString(),
         item._id.toString(),
         {
+          expectedRevision: item.draftRevision,
           rawResponse: false,
           operatorNote: 'B8 synthetic supervised assessment note',
           markAsAnswered: true,
           ...(item.itemConfigSnapshot?.requiresTimer === true
-            ? { timing: { durationMs: 1000, timerSource: 'manual' as const } }
+            ? {
+                timing: {
+                  timerState: 'completed' as const,
+                  startedAt: null,
+                  lastResumedAt: null,
+                  completedAt: null,
+                  durationMs: 1000,
+                  timerSource: 'manual' as const,
+                },
+              }
             : {}),
         },
       );
@@ -385,6 +395,7 @@ export class B8ScenarioBuilder {
           root.scaleInstanceId.toString(),
           item._id.toString(),
           {
+            expectedRevision: saved.itemResponse.draftRevision,
             stepResponses: item.stepResults.map((step, index) => ({
               stepCode: step.stepCode,
               actualValue: index < 2,

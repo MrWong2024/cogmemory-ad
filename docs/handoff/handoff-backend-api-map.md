@@ -167,7 +167,7 @@
 - Roles：`admin`、`doctor`、`nurse`、`research_assistant`
 - Param DTO：`ScaleInstanceExecutionParamDto`；patientId / visitId / scaleInstanceId 均使用 `@IsMongoId()`
 - Query / Body DTO：无
-- 响应：200，`ScaleInstanceExecutionDetailResponse`，结构为 `{ visit, scale, scaleInstance, groups, itemResponses }`；scaleInstance.progress 为实际派生进度
+- 响应：200，`ScaleInstanceExecutionDetailResponse`，结构为 `{ visit, scale, scaleInstance, groups, itemResponses }`；scaleInstance.progress 为实际派生进度，每个 itemResponse 安全公开 `draftRevision`、`draftSavedAt` 与规范化 timing
 - 归属与配置：依次确认 Patient、patientId + visitId、patientId + visitId + scaleInstanceId；实例不匹配统一 404，不泄露跨患者 / 跨访视存在性；按实例 scaleCode / scaleVersion 读取已物化 ScaleVersion，缺失或引用不匹配返回 409 / `SCALE_INSTANCE_CONFIGURATION_UNAVAILABLE`
 - 读取状态：允许 draft / in_progress / completed / locked / voided；只读历史不因患者 inactive / archived 被拒绝
 - 题目安全配置：仅返回 itemCode / CRF / title / order / group / responseType / countsTowardTotal / cognitiveDomainCodes、prompt、instruction、scoreRange、evidenceTypes、requiresTimer、photo / handwriting / operator-note flags、草稿、step / prompt 槽位、timing 与 evidenceRequirements
@@ -181,13 +181,14 @@
 - Guard：`SessionAuthGuard` + `RolesGuard`
 - Roles：`admin`、`doctor`、`nurse`、`research_assistant`
 - Param DTO：`ItemResponseDraftParamDto`；四个路径 ID 均使用 `@IsMongoId()`
-- Body DTO：`UpdateItemResponseDraftDto`；允许 rawResponse、structuredResponse、responseText、isMissing、missingReason、stepResponses、promptResponses、timing、operatorNote、markAsAnswered
+- Body DTO：`UpdateItemResponseDraftDto`；必填 `expectedRevision`（0 到 `Number.MAX_SAFE_INTEGER` 的安全非负整数，不接受字符串转换）；另允许 rawResponse、structuredResponse、responseText、isMissing、missingReason、stepResponses、promptResponses、timing、operatorNote、markAsAnswered
 - 禁止字段：item / CRF / group / title / order / responseType / counts / domain / config / version / answerSource / status / score / 正确性 / evidence / metadata / 锁定与作废 / 所有权 ID / timestamps 等服务器字段由全局 whitelist + forbidNonWhitelisted 拒绝；step / prompt 也只能提交定位键与草稿值 / note
-- 响应：200，`UpdateItemResponseDraftResponse`，结构为 `{ itemResponse, progress }`；itemResponse 使用与 GET 相同安全 mapper，progress 实时派生
+- 响应：200，`UpdateItemResponseDraftResponse`，结构为 `{ itemResponse, progress }`；itemResponse 使用与 GET 相同安全 mapper，公开递增后的 `draftRevision`、服务端 `draftSavedAt` 与规范化 timing，progress 实时派生
 - 状态约束：Patient 必须 active；Visit 与 ScaleInstance 必须 draft / in_progress；ItemResponse 必须 not_started / in_progress / answered。有效草稿使 not_started 进入 in_progress；markAsAnswered=true 且存在有效作答后进入 answered；answered 后编辑不回退；不产生 scored
-- 规则边界：isMissing=true 必须提供原因并清除实际作答；stepCode 与 promptType + order 必须命中既有且本次唯一槽位；timing 只允许 requiresTimer 或 duration evidence 题目，durationMs 为有限非负整数且 completedAt 不早于 startedAt；JSON 值递归校验并克隆
-- 错误 code：`PATIENT_NOT_FOUND`、`PATIENT_NOT_ACTIVE`、`VISIT_NOT_FOUND`、`VISIT_NOT_EDITABLE`、`SCALE_INSTANCE_NOT_FOUND`、`SCALE_INSTANCE_NOT_EDITABLE`、`ITEM_RESPONSE_NOT_FOUND`、`ITEM_RESPONSE_NOT_EDITABLE`、`ITEM_RESPONSE_EMPTY_PATCH`、`ITEM_RESPONSE_PAYLOAD_INVALID`、`ITEM_RESPONSE_MISSING_REASON_REQUIRED`、`ITEM_RESPONSE_CANNOT_MARK_ANSWERED`、`ITEM_RESPONSE_STEP_NOT_FOUND`、`ITEM_RESPONSE_DUPLICATE_STEP`、`ITEM_RESPONSE_PROMPT_NOT_FOUND`、`ITEM_RESPONSE_DUPLICATE_PROMPT`、`ITEM_RESPONSE_TIMING_NOT_ALLOWED`、`ITEM_RESPONSE_INVALID_TIMING`、`ITEM_RESPONSE_SAVE_FAILED`
-- 写库与安全边界：使用单条 ItemResponse 原子更新；不修改 Visit / ScaleInstance 状态或 startedAt，不回写 ScaleInstance.progress，不执行评分，不修改 expectedValue / isCorrect / scoreValue / countsTowardItemScore / countsTowardScore，不记录作答内容到日志
+- 规则边界：expectedRevision 仅作并发控制，单独提交或只再带 `markAsAnswered=false` 仍为 `ITEM_RESPONSE_EMPTY_PATCH`；isMissing=true 必须提供原因并清除实际作答；stepCode 与 promptType + order 必须命中既有且本次唯一槽位；JSON 值递归校验并克隆
+- timing 合同：非 null 时必须完整提交 `timerState`、`startedAt`、`lastResumedAt`、`completedAt`、`durationMs`、`timerSource`；支持 idle / running / paused / completed 的状态不变量和锁定转换，`timing=null` 显式复位。manual / imported 只能 completed，system 承担 running / paused / completed，none 只能 idle；计时不自动完成题目、提交或评分
+- 并发与错误：ownership、可编辑 status、`lockedAt: null` 和 revision 组成单文档 CAS；expectedRevision=0 兼容 revision 缺失或 0。初始 stale 或合法竞争 miss 统一 409 / `ITEM_RESPONSE_DRAFT_CONFLICT`，零写入且不合并 / 重试；原子 miss 后若资源生命周期已变化，返回既有更准确 not-editable。其他 code 保持 `PATIENT_NOT_FOUND`、`PATIENT_NOT_ACTIVE`、`VISIT_NOT_FOUND`、`VISIT_NOT_EDITABLE`、`SCALE_INSTANCE_NOT_FOUND`、`SCALE_INSTANCE_NOT_EDITABLE`、`ITEM_RESPONSE_NOT_FOUND`、`ITEM_RESPONSE_NOT_EDITABLE`、`ITEM_RESPONSE_EMPTY_PATCH`、`ITEM_RESPONSE_PAYLOAD_INVALID`、`ITEM_RESPONSE_MISSING_REASON_REQUIRED`、`ITEM_RESPONSE_CANNOT_MARK_ANSWERED`、`ITEM_RESPONSE_STEP_NOT_FOUND`、`ITEM_RESPONSE_DUPLICATE_STEP`、`ITEM_RESPONSE_PROMPT_NOT_FOUND`、`ITEM_RESPONSE_DUPLICATE_PROMPT`、`ITEM_RESPONSE_TIMING_NOT_ALLOWED`、`ITEM_RESPONSE_INVALID_TIMING`、`ITEM_RESPONSE_SAVE_FAILED`
+- 写库与安全边界：成功 CAS 在同一次更新中写草稿字段、`$inc draftRevision: 1` 与服务端 `draftSavedAt`；不修改 evidenceRefs、Visit / ScaleInstance 状态或 startedAt，不回写 ScaleInstance.progress，不执行评分，不修改 expectedValue / isCorrect / scoreValue / countsTowardItemScore / countsTowardScore，不记录作答内容到日志
 
 ### A15 媒体证据 API
 
@@ -209,7 +210,7 @@
 - Body 摘要：evidenceType 仅 photo / handwriting；captureMode 矩阵为 photo -> photo_upload / paper_scan、handwriting -> tablet_handwriting；允许受控采集、图片和手写轨迹元数据字段，multipart 数字 / boolean 显式安全转换
 - 文件限制：主图最大 10 MiB且仅 JPEG / PNG / WebP；trajectory 最大 2 MiB、MIME application/json、trajectoryFormat json / strokes。校验非空、魔数、MIME / 签名一致、JPEG EXIF / XMP、PNG eXIf / tEXt / zTXt / iTXt、WebP EXIF / XMP；不接受 SVG / PDF / HEIC / HEIF
 - 状态约束：Patient active；Visit / ScaleInstance draft 或 in_progress；ItemResponse not_started / in_progress / answered；evidenceRefs 必须存在同类型 pending / missing 要求且无当前 attached / locked 证据
-- 响应：201，`UploadMediaEvidenceResponse { mediaEvidence, evidenceRequirement }`；绑定后 requirement 为 attached / true，不修改 ItemResponse / ScaleInstance / Visit status，不评分
+- 响应：201，`UploadMediaEvidenceResponse { mediaEvidence, evidenceRequirement }`；绑定后 requirement 为 attached / true，不修改 ItemResponse / ScaleInstance / Visit status，不评分，也不递增 `draftRevision` 或修改 `draftSavedAt`
 - 一致性：Storage -> MediaEvidence -> evidenceRef 条件原子绑定；失败只补偿本次 MediaEvidence 和对象，不使用 transaction
 - 错误：400 `MEDIA_PRIMARY_FILE_REQUIRED`、`MEDIA_FILE_EMPTY`、`MEDIA_FILE_TYPE_NOT_ALLOWED`、`MEDIA_FILE_SIGNATURE_INVALID`、`MEDIA_FILE_EMBEDDED_METADATA_NOT_ALLOWED`、`MEDIA_TRAJECTORY_INVALID`、`MEDIA_CAPTURE_MODE_INVALID`；413 `MEDIA_FILE_TOO_LARGE`；404 完整归属错误；409 `PATIENT_NOT_ACTIVE`、`VISIT_NOT_EDITABLE`、`SCALE_INSTANCE_NOT_EDITABLE`、`ITEM_RESPONSE_NOT_EDITABLE`、`ITEM_EVIDENCE_TYPE_NOT_REQUIRED`、`MEDIA_EVIDENCE_ALREADY_ATTACHED`；500 `MEDIA_EVIDENCE_CREATE_FAILED` / `MEDIA_EVIDENCE_ATTACH_FAILED`；503 `MEDIA_STORAGE_UNAVAILABLE`
 - 服务端所有权与隐私：关联字段、evidenceCode、status、storage、checksum、operatorSnapshot、itemSnapshot、versionTrace 和 metadata 均由服务端生成；不保存或响应原始文件名，objectKey 不包含患者姓名 / 编号 / 病历号 / 联系方式 / 备注
@@ -228,7 +229,7 @@
 - Guard / Roles：`SessionAuthGuard` + `RolesGuard`；`admin`、`doctor`、`nurse`、`research_assistant`
 - Param / Body DTO：`MediaEvidenceParamDto`；`VoidMediaEvidenceDto { reason }`，reason trim 后 3-1000；不接受 status、voidedAt、metadata、operatorId、objectKey 或 deleteObject
 - 状态与一致性：同上传可编辑状态；仅 attached 且仍由当前 evidenceRef 引用的证据可作废。先条件清除 evidenceRef 为 pending / null，再标记 MediaEvidence voided；后者失败尝试恢复 attached 引用
-- 响应：200，`VoidMediaEvidenceResponse { mediaEvidence, evidenceRequirement }`；metadata 仅写 voidReason / voidedBy / voidedAt
+- 响应：200，`VoidMediaEvidenceResponse { mediaEvidence, evidenceRequirement }`；metadata 仅写 voidReason / voidedBy / voidedAt；A15 作废不递增 `draftRevision` 或修改 `draftSavedAt`
 - 错误：404 完整归属或 `MEDIA_EVIDENCE_NOT_FOUND`；409 可编辑错误 / `MEDIA_EVIDENCE_NOT_VOIDABLE`；500 `MEDIA_EVIDENCE_VOID_FAILED`
 - 删除边界：正常作废不调用 Storage.deleteObject、不物理删除对象；作废记录保留在列表中且不可签名访问，随后允许重新上传；没有原子替换接口
 

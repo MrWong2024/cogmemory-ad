@@ -68,7 +68,10 @@ describe('AssessmentExecutionController', () => {
       scaleInstanceId: '507f1f77bcf86cd799439013',
       itemResponseId: '507f1f77bcf86cd799439014',
     };
-    const input = { responseText: 'de-identified response' };
+    const input = {
+      expectedRevision: 0,
+      responseText: 'de-identified response',
+    };
     draftService.saveDraft.mockResolvedValue({ progress: {} });
 
     await controller.saveItemResponseDraft(params, input);

@@ -83,6 +83,8 @@ function createItem(
     versionTrace: null,
     status: 'answered',
     answerSource: 'clinician_recorded',
+    draftRevision: 0,
+    draftSavedAt: null,
     rawResponse: 0,
     structuredResponse: null,
     isMissing: false,
@@ -90,7 +92,9 @@ function createItem(
     stepResults: [],
     promptResponses: [],
     timing: {
+      timerState: 'completed',
       startedAt: new Date('2026-07-10T06:00:00.000Z'),
+      lastResumedAt: null,
       completedAt: null,
       durationMs: null,
       timerSource: 'manual',

@@ -89,6 +89,21 @@ function readString(
   return value;
 }
 
+function readSafeInteger(
+  record: Record<string, unknown>,
+  propertyName: string,
+): number {
+  const value = record[propertyName];
+
+  if (!Number.isSafeInteger(value) || Number(value) < 0) {
+    throw new Error(
+      `Expected ${propertyName} to be a safe non-negative integer`,
+    );
+  }
+
+  return Number(value);
+}
+
 function readRecord(
   record: Record<string, unknown>,
   propertyName: string,
@@ -315,12 +330,8 @@ describe('media evidence APIs (e2e)', () => {
     connection = app.get<Connection>(getConnectionToken());
     const databaseName = connection.name.toLowerCase();
 
-    if (!databaseName.includes('_test')) {
-      throw new Error('E2E database name must follow the test naming rule');
-    }
-
-    if (databaseName.includes('_dev') || databaseName.includes('_prod')) {
-      throw new Error('E2E must not connect to development or production');
+    if (databaseName !== 'cogmemory_ad_test') {
+      throw new Error('E2E database name must be cogmemory_ad_test');
     }
 
     const configService = app.get(ConfigService);
@@ -442,6 +453,11 @@ describe('media evidence APIs (e2e)', () => {
     const item = await findExecutionItem(fixture, 'photo');
     const itemResponseId = readString(item, 'id');
     const path = evidencePath(fixture, itemResponseId);
+    const draftPath = `${executionPath(fixture)}/item-responses/${itemResponseId}`;
+    const mediaBaselineRevision = readSafeInteger(item, 'draftRevision');
+    const mediaBaselineSavedAt = item.draftSavedAt;
+    expect(mediaBaselineRevision).toBe(0);
+    expect(mediaBaselineSavedAt).toBeNull();
 
     expect(
       readArray(
@@ -503,6 +519,8 @@ describe('media evidence APIs (e2e)', () => {
     expect(photoReference?.status).toBe('attached');
     expect(photoReference?.mediaEvidenceId?.toString()).toBe(mediaEvidenceId);
     expect(storedItem?.status).toBe('not_started');
+    expect(storedItem?.draftRevision).toBe(mediaBaselineRevision);
+    expect(storedItem?.draftSavedAt ?? null).toBe(mediaBaselineSavedAt);
 
     const detail = readResponseBody(
       await doctorAgent.get(executionPath(fixture)).expect(200),
@@ -521,6 +539,32 @@ describe('media evidence APIs (e2e)', () => {
     );
     expect(attachedRequirement).toEqual(
       expect.objectContaining({ status: 'attached', attached: true }),
+    );
+    expect(updatedItem.draftRevision).toBe(mediaBaselineRevision);
+    expect(updatedItem.draftSavedAt).toBe(mediaBaselineSavedAt);
+
+    const savedDraftResponse = await doctorAgent
+      .patch(draftPath)
+      .send({
+        expectedRevision: mediaBaselineRevision,
+        responseText: 'answer saved after media upload',
+      })
+      .expect(200);
+    const savedDraftItem = readRecord(
+      readResponseBody(savedDraftResponse),
+      'itemResponse',
+    );
+    expect(savedDraftItem.draftRevision).toBe(mediaBaselineRevision + 1);
+    const draftSavedAt = readString(savedDraftItem, 'draftSavedAt');
+    expect(Number.isFinite(Date.parse(draftSavedAt))).toBe(true);
+    expect(readArray(savedDraftItem, 'evidenceRequirements')).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          evidenceType: 'photo',
+          status: 'attached',
+          attached: true,
+        }),
+      ]),
     );
 
     const accessPath = `${path}/${mediaEvidenceId}/access-url`;
@@ -564,6 +608,8 @@ describe('media evidence APIs (e2e)', () => {
     );
     expect(clearedReference?.status).toBe('pending');
     expect(clearedReference?.mediaEvidenceId).toBeNull();
+    expect(clearedItem?.draftRevision).toBe(mediaBaselineRevision + 1);
+    expect(clearedItem?.draftSavedAt?.toISOString()).toBe(draftSavedAt);
     const listAfterVoid = readArray(
       readResponseBody(await doctorAgent.get(path).expect(200)),
       'items',
@@ -581,6 +627,11 @@ describe('media evidence APIs (e2e)', () => {
       'mediaEvidence',
     );
     expect(readString(replacement, 'id')).not.toBe(mediaEvidenceId);
+    const afterReplacement = await itemResponseModel
+      .findById(itemResponseId)
+      .exec();
+    expect(afterReplacement?.draftRevision).toBe(mediaBaselineRevision + 1);
+    expect(afterReplacement?.draftSavedAt?.toISOString()).toBe(draftSavedAt);
   });
 
   it('uploads handwriting with normalized JSON trajectory and signs both assets', async () => {

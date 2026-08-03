@@ -160,7 +160,8 @@
 - 名称：`UpdateItemResponseDraftDto`
 - 文件：`backend\src\modules\assessments\dto\update-item-response-draft.dto.ts`
 - 用途：A14 单题草稿 PATCH body DTO。
-- 允许字段：rawResponse、structuredResponse、responseText（nullable，最大 10000）、isMissing、missingReason（nullable，最大 1000）、stepResponses、promptResponses、timing（nullable）、operatorNote（nullable，最大 4000）、markAsAnswered。
+- 控制字段：`expectedRevision` 必填，必须是 0 到 `Number.MAX_SAFE_INTEGER` 的安全非负整数，不允许字符串隐式转换；仅用于 CAS，不写入草稿 Mixed 字段，单独提交不构成有效草稿变更。
+- 允许业务字段：rawResponse、structuredResponse、responseText（nullable，最大 10000）、isMissing、missingReason（nullable，最大 1000）、stepResponses、promptResponses、timing（nullable）、operatorNote（nullable，最大 4000）、markAsAnswered。
 - 白名单边界：不声明 item 身份 / 配置 / 版本、status、answerSource、score / 正确性、evidence、metadata、锁定 / 作废、所有权 ID 或 timestamps；非白名单字段由全局 ValidationPipe 拒绝。
 
 - 名称：`UpdateItemStepDraftDto`
@@ -173,7 +174,8 @@
 
 - 名称：`UpdateItemTimingDraftDto`
 - 文件：`backend\src\modules\assessments\dto\update-item-response-draft.dto.ts`
-- 字段：nullable ISO startedAt / completedAt、nullable 非负整数 durationMs、timerSource（system / manual / imported / none）；跨字段先后关系由 Service 校验。
+- 字段：timing 非 null 时为完整快照，必须显式提交 timerState（idle / running / paused / completed）、nullable ISO startedAt / lastResumedAt / completedAt、nullable 非负整数 durationMs、timerSource（system / manual / imported / none）；字段可按状态为 null，但不能缺失。`timing=null` 表示显式复位。
+- 约束：idle 只能 none 且无时间事实；running / paused 只能 system；completed 可为 system / manual / imported；纯函数校验各状态锚点、日期顺序、duration 与允许转换，非法统一 `ITEM_RESPONSE_INVALID_TIMING`。
 
 - 名称：`ItemResponseDraftJsonValue`
 - 文件：`backend\src\modules\assessments\types\item-response-execution-response.types.ts`
@@ -182,7 +184,7 @@
 - 名称：`ScaleExecutionIdentityResponse`、`ScaleExecutionGroupResponse`、`ItemExecutionConfigResponse`、`ItemResponseExecutionResponse`
 - 文件：`backend\src\modules\assessments\types\item-response-execution-response.types.ts`
 - 用途：A14 执行详情与 PATCH 成功响应的安全公开结构。
-- 字段摘要：安全量表身份与分组；题目身份、作答类型、计分参与 / 认知域、显式 config、版本追溯、草稿值、step / prompt 槽位、timing、证据要求和 operatorNote。
+- 字段摘要：安全量表身份与分组；题目身份、作答类型、计分参与 / 认知域、显式 config、版本追溯、`draftRevision` / `draftSavedAt`、草稿值、step / prompt 槽位、含 timerState / lastResumedAt 的 timing、证据要求和 operatorNote。legacy revision / 保存时间安全归一为 0 / null，legacy timing 只读规范化。
 - 安全边界：不包含完整 Mixed 配置、scoringRule、expectedValue、正确答案、score / isCorrect / scoreValue、metadata、qualityControlHints、内部 ObjectId 或 Mongoose document。
 
 - 名称：`ScaleInstanceExecutionDetailResponse`、`UpdateItemResponseDraftResponse`

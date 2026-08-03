@@ -239,7 +239,9 @@ describe('scale instance submission readiness', () => {
       [
         createItemResponse({
           timing: {
+            timerState: 'completed',
             startedAt: new Date('2026-07-11T07:10:00.000Z'),
+            lastResumedAt: null,
             completedAt: new Date('2026-07-11T07:09:00.000Z'),
             durationMs: 1000,
             timerSource: 'manual',
@@ -256,7 +258,9 @@ describe('scale instance submission readiness', () => {
       [
         createItemResponse({
           timing: {
+            timerState: 'completed',
             startedAt: new Date('2026-07-11T07:10:00.000Z'),
+            lastResumedAt: null,
             completedAt: null,
             durationMs: 1000,
             timerSource: 'manual',
@@ -339,7 +343,9 @@ describe('scale instance submission readiness', () => {
           itemOrder: 2,
           operatorNote: ' ',
           timing: {
+            timerState: 'completed',
             startedAt: new Date('2026-07-11T06:30:00.000Z'),
+            lastResumedAt: null,
             completedAt: null,
             durationMs: null,
             timerSource: 'manual',

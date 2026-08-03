@@ -3,19 +3,24 @@ import {
   ArrayMaxSize,
   IsArray,
   IsBoolean,
+  IsDefined,
   IsIn,
   IsInt,
   IsISO8601,
   IsNotEmpty,
   IsOptional,
   IsString,
+  Max,
   MaxLength,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import {
+  ITEM_TIMER_STATES,
   ITEM_TIMER_SOURCES,
   PROMPT_RESPONSE_TYPES,
+  type ItemTimerState,
   type ItemTimerSource,
   type PromptResponseType,
 } from '../schemas/item-response.schema';
@@ -64,25 +69,44 @@ export class UpdatePromptResponseDraftDto {
 }
 
 export class UpdateItemTimingDraftDto {
-  @IsOptional()
+  @IsDefined()
+  @ValidateIf((_object, value: unknown) => value !== null)
   @IsISO8601({ strict: true })
-  startedAt?: string | null;
+  startedAt!: string | null;
 
-  @IsOptional()
+  @IsDefined()
+  @ValidateIf((_object, value: unknown) => value !== null)
   @IsISO8601({ strict: true })
-  completedAt?: string | null;
+  lastResumedAt!: string | null;
 
-  @IsOptional()
+  @IsDefined()
+  @ValidateIf((_object, value: unknown) => value !== null)
+  @IsISO8601({ strict: true })
+  completedAt!: string | null;
+
+  @IsDefined()
+  @ValidateIf((_object, value: unknown) => value !== null)
   @IsInt()
   @Min(0)
-  durationMs?: number | null;
+  @Max(Number.MAX_SAFE_INTEGER)
+  durationMs!: number | null;
 
-  @IsOptional()
+  @IsDefined()
+  @IsIn(ITEM_TIMER_STATES)
+  timerState!: ItemTimerState;
+
+  @IsDefined()
   @IsIn(ITEM_TIMER_SOURCES)
-  timerSource?: ItemTimerSource;
+  timerSource!: ItemTimerSource;
 }
 
 export class UpdateItemResponseDraftDto {
+  @IsDefined()
+  @IsInt()
+  @Min(0)
+  @Max(Number.MAX_SAFE_INTEGER)
+  expectedRevision!: number;
+
   @IsOptional()
   rawResponse?: unknown;
 

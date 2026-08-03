@@ -82,7 +82,7 @@
 
 - Auth：login、logout、me。
 - Patients：A12 患者/访视列表、创建与详情。
-- Assessment execution：A13 量表目录/初始化、A14 实例详情/逐题草稿、A16 readiness/submit。
+- Assessment execution：A13 量表目录/初始化、旧 B4 对 A14 实例详情/逐题草稿的消费、A16 readiness/submit。A29 后端合同已落地，但当前客户端尚未适配。
 - Media evidence：A15 list/upload/access-url/void。
 - Provisional scoring：A17 latest/compute、A18 manual-review/confirm。
 - Cognitive domain：A19 latest/compute。
@@ -102,7 +102,7 @@ A21–A25 写请求从当前服务端 `report.updatedAt` 取得 `expectedUpdated
 - 后端 Session + HttpOnly Cookie 是主登录态；前端不读取 Cookie，不使用 JWT。
 - 401 返回登录流程，403 保留可安全读取的页面事实并显示权限状态；后端 Guard 始终是最终权限边界。
 
-## 6. B16 / B17 当前实现事实
+## 6. B16 / B17 当前实现与 A29 兼容状态
 
 ### 6.1 B16 replacement V2+ 生命周期
 
@@ -120,9 +120,15 @@ A21–A25 写请求从当前服务端 `report.updatedAt` 取得 `expectedUpdated
 - 历史报告详情是只读路由，不调用 latest 或 A21–A25；current report 与 historical report 只共用安全只读内容组件。
 - WP-04 的前端 B17 与后端 A27/A28 均已实施并验收。
 
+### 6.3 A29 后端合同与 B18 pending
+
+- 后端 A29 已让 A14 GET / PATCH 安全公开 `draftRevision` / `draftSavedAt`，并要求每次实际草稿 PATCH 必填客户端已读 `expectedRevision`；计时改为含 `timerState` / `lastResumedAt` 的完整快照。
+- 当前前端代码仍是 B17 / 旧 B4 保存客户端：类型未声明或消费新增字段，PATCH 未发送 `expectedRevision`，timing 仍按旧部分字段构造。因此当前保存客户端与 A29 新合同暂不兼容，不能描述为已实现自动保存或冲突恢复。
+- B18 将负责合同适配、自动保存调度、409 后保留本地草稿并 GET 恢复、刷新 / 切组 / 网络恢复、未保存状态和实时计时交互；这些均未在 A29 执行或验收，WP-03 仍进行中。
+
 ## 7. 当前实现结论与验证入口
 
-- B16 replacement V2+ 生命周期与 B17 history、versions、detail、trends 产品实现均已完成。
+- B16 replacement V2+ 生命周期与 B17 history、versions、detail、trends 产品实现均已完成；A29 后端范围已完成但 B18 pending，WP-03 未完成。
 - Playwright、Chromium 与 Axe 通用 Browser acceptance 基础设施已完成。B10-89 后续已由 B10-C2 定向通过；B10 `generation-workflow` 48 pass、`public-surface-security` 47 pass，共 95 项完成，Batch C / B7–B10 已完成。Batch D 的 B11～B15 均已完成；B14.1 已治理为累计证据索引而非独立 Browser 批次，具体状态以 `handoff-frontend-testing-playbook.md` 为准。
 - 当前静态门禁、Batch 状态、Browser/automated 数量、权限/错误、响应式、键盘、Network、Runtime Storage、evidence commit、verify 与 cleanup 统一见 `handoff-frontend-testing-playbook.md`；本 snapshot 不维护测试终态。
 
@@ -130,7 +136,7 @@ A21–A25 写请求从当前服务端 `report.updatedAt` 取得 `expectedUpdated
 
 - 患者：编辑、删除、归档、合并。
 - 访视：编辑、删除、完整状态流转。
-- 施测：批量或自动保存、完整实时计时动作。
+- 施测：B18 对 A29 `expectedRevision` / 新 timing 合同的适配、批量或自动保存、冲突恢复、网络 / 切组恢复、未保存状态和完整实时计时动作。
 - 评分：独立锁定、作废、撤销确认、reopen、rerun、批量人工评分和独立历史列表。
 - 认知域：人工修改、确认、锁定、作废、重算和跨量表合并。
 - 报告：reject、reopen、withdraw、签名、unlock、unfreeze、unarchive、作废、重生成、PDF、打印、下载。

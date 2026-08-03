@@ -321,7 +321,9 @@ describe('AssessmentExecutionService', () => {
       expect.objectContaining({ requiresTimer: true }),
     );
     expect(trailMaking.timing).toEqual({
+      timerState: 'idle',
       startedAt: null,
+      lastResumedAt: null,
       completedAt: null,
       durationMs: null,
       timerSource: 'none',
