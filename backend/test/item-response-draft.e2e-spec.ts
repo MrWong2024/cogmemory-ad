@@ -635,6 +635,91 @@ describe('item response execution detail and draft APIs (e2e)', () => {
     ).not.toHaveProperty('responseText');
   });
 
+  it('persists an explicit same-value save as a new draft revision', async () => {
+    const fixture = await createExecution('SAME-VALUE', 'mmse');
+    const item = await findItem(fixture, 'mmse.memory.immediate_recall');
+    const itemResponseId = item._id.toString();
+    const path = itemPath(fixture, itemResponseId);
+    const initialPublicItem = await readExecutionItem(fixture, itemResponseId);
+    const initialRevision = readSafeInteger(initialPublicItem, 'draftRevision');
+    const before = await itemResponseModel.findById(item._id).lean().exec();
+
+    if (!before) {
+      throw new Error('Expected same-value item before snapshot');
+    }
+
+    const firstResponse = await doctorAgent
+      .patch(path)
+      .send({
+        expectedRevision: initialRevision,
+        responseText: 'same de-identified response',
+      })
+      .expect(200);
+    const firstItem = readRecord(
+      readResponseBody(firstResponse),
+      'itemResponse',
+    );
+    const firstRevision = readSafeInteger(firstItem, 'draftRevision');
+    const firstSavedAt = readString(firstItem, 'draftSavedAt');
+    const firstStored = await itemResponseModel
+      .findById(item._id)
+      .lean()
+      .exec();
+
+    if (!firstStored) {
+      throw new Error('Expected same-value item after first save');
+    }
+
+    expect(firstRevision).toBe(initialRevision + 1);
+    expect(firstStored.draftRevision).toBe(firstRevision);
+    expect(firstStored.draftSavedAt?.toISOString()).toBe(firstSavedAt);
+
+    const secondResponse = await doctorAgent
+      .patch(path)
+      .send({
+        expectedRevision: firstRevision,
+        responseText: 'same de-identified response',
+      })
+      .expect(200);
+    const secondItem = readRecord(
+      readResponseBody(secondResponse),
+      'itemResponse',
+    );
+    const secondRevision = readSafeInteger(secondItem, 'draftRevision');
+    const secondSavedAt = readString(secondItem, 'draftSavedAt');
+    const secondStored = await itemResponseModel
+      .findById(item._id)
+      .lean()
+      .exec();
+
+    if (!secondStored) {
+      throw new Error('Expected same-value item after second save');
+    }
+
+    const subsequentGet = await readExecutionItem(fixture, itemResponseId);
+    expect(secondItem.responseText).toBe('same de-identified response');
+    expect(secondRevision).toBe(initialRevision + 2);
+    expect(Date.parse(secondSavedAt)).toBeGreaterThanOrEqual(
+      Date.parse(firstSavedAt),
+    );
+    expect(secondStored.responseText).toBe('same de-identified response');
+    expect(secondStored.draftRevision).toBe(secondRevision);
+    expect(secondStored.draftSavedAt?.toISOString()).toBe(secondSavedAt);
+    expect(subsequentGet.responseText).toBe('same de-identified response');
+    expect(subsequentGet.draftRevision).toBe(secondRevision);
+    expect(subsequentGet.draftSavedAt).toBe(secondSavedAt);
+    expect(secondStored.patientId.toString()).toBe(before.patientId.toString());
+    expect(secondStored.assessmentVisitId.toString()).toBe(
+      before.assessmentVisitId.toString(),
+    );
+    expect(secondStored.scaleInstanceId.toString()).toBe(
+      before.scaleInstanceId.toString(),
+    );
+    expect(secondStored.score).toEqual(before.score);
+    expect(secondStored.evidenceRefs).toEqual(before.evidenceRefs);
+    expect(secondStored.countsTowardTotal).toBe(before.countsTowardTotal);
+  });
+
   it('allows exactly one of two legal concurrent saves and leaves the loser zero-write', async () => {
     const fixture = await createExecution('CONCURRENT', 'mmse');
     const item = await findItem(fixture, 'mmse.memory.immediate_recall');
@@ -1048,6 +1133,190 @@ describe('item response execution detail and draft APIs (e2e)', () => {
     expect(storedItem?.score?.scoreStatus).toBe('not_scored');
     expect(storedInstance?.status).toBe('draft');
     expect(storedVisit?.status).toBe('draft');
+  });
+
+  it('persists timing null as an explicit reset without changing lifecycle or scoring facts', async () => {
+    const fixture = await createExecution('TIMING-RESET', 'moca');
+    const timedItem = await findItem(
+      fixture,
+      'moca.language.verbal_fluency_animals',
+    );
+    const itemResponseId = timedItem._id.toString();
+    const path = itemPath(fixture, itemResponseId);
+    const initialPublicItem = await readExecutionItem(fixture, itemResponseId);
+    const initialRevision = readSafeInteger(initialPublicItem, 'draftRevision');
+    const beforeItem = await itemResponseModel
+      .findById(timedItem._id)
+      .lean()
+      .exec();
+    const beforeInstance = await scaleInstanceModel
+      .findById(fixture.scaleInstanceId)
+      .lean()
+      .exec();
+    const beforeVisit = await assessmentVisitModel
+      .findById(fixture.visitId)
+      .lean()
+      .exec();
+
+    if (!beforeItem || !beforeInstance || !beforeVisit) {
+      throw new Error('Expected timing reset before snapshots');
+    }
+
+    const runningResponse = await doctorAgent
+      .patch(path)
+      .send({
+        expectedRevision: initialRevision,
+        timing: {
+          timerState: 'running',
+          startedAt: '2026-07-01T08:00:00.000Z',
+          lastResumedAt: '2026-07-01T08:00:00.000Z',
+          completedAt: null,
+          durationMs: 0,
+          timerSource: 'system',
+        },
+      })
+      .expect(200);
+    const runningItem = readRecord(
+      readResponseBody(runningResponse),
+      'itemResponse',
+    );
+    expect(runningItem.status).toBe('in_progress');
+    expect(runningItem.draftRevision).toBe(initialRevision + 1);
+    expect(readRecord(runningItem, 'timing')).toEqual({
+      timerState: 'running',
+      startedAt: '2026-07-01T08:00:00.000Z',
+      lastResumedAt: '2026-07-01T08:00:00.000Z',
+      completedAt: null,
+      durationMs: 0,
+      timerSource: 'system',
+    });
+
+    const resetResponse = await doctorAgent
+      .patch(path)
+      .send({
+        expectedRevision: readSafeInteger(runningItem, 'draftRevision'),
+        timing: null,
+      })
+      .expect(200);
+    const resetItem = readRecord(
+      readResponseBody(resetResponse),
+      'itemResponse',
+    );
+    const resetRevision = readSafeInteger(resetItem, 'draftRevision');
+    const resetSavedAt = readString(resetItem, 'draftSavedAt');
+    const storedItem = await itemResponseModel
+      .findById(timedItem._id)
+      .lean()
+      .exec();
+    const storedInstance = await scaleInstanceModel
+      .findById(fixture.scaleInstanceId)
+      .lean()
+      .exec();
+    const storedVisit = await assessmentVisitModel
+      .findById(fixture.visitId)
+      .lean()
+      .exec();
+    const subsequentGet = await readExecutionItem(fixture, itemResponseId);
+
+    if (!storedItem || !storedInstance || !storedVisit) {
+      throw new Error('Expected timing reset after snapshots');
+    }
+
+    expect(resetItem.status).toBe('in_progress');
+    expect(resetRevision).toBe(initialRevision + 2);
+    expect(resetItem.timing).toBeNull();
+    expect(storedItem.status).toBe('in_progress');
+    expect(storedItem.draftRevision).toBe(resetRevision);
+    expect(storedItem.draftSavedAt?.toISOString()).toBe(resetSavedAt);
+    expect(storedItem.timing).toBeNull();
+    expect(subsequentGet.status).toBe('in_progress');
+    expect(subsequentGet.draftRevision).toBe(resetRevision);
+    expect(subsequentGet.draftSavedAt).toBe(resetSavedAt);
+    expect(subsequentGet.timing).toBeNull();
+    expect(storedItem.score).toEqual(beforeItem.score);
+    expect(storedItem.evidenceRefs).toEqual(beforeItem.evidenceRefs);
+    expect(storedItem.patientId.toString()).toBe(
+      beforeItem.patientId.toString(),
+    );
+    expect(storedItem.assessmentVisitId.toString()).toBe(
+      beforeItem.assessmentVisitId.toString(),
+    );
+    expect(storedItem.scaleInstanceId.toString()).toBe(
+      beforeItem.scaleInstanceId.toString(),
+    );
+    expect(storedItem.countsTowardTotal).toBe(beforeItem.countsTowardTotal);
+    expect(storedInstance).toEqual(beforeInstance);
+    expect(storedVisit).toEqual(beforeVisit);
+  });
+
+  it('normalizes a legacy timing snapshot through GET without writing defaults', async () => {
+    const fixture = await createExecution('LEGACY-TIMING', 'moca');
+    const timedItem = await findItem(
+      fixture,
+      'moca.language.verbal_fluency_animals',
+    );
+    const itemResponseId = timedItem._id.toString();
+    const legacyStartedAt = new Date('2026-07-01T08:00:00.000Z');
+    const itemCollection = connection.collection('item_responses');
+    const legacyUpdate = await itemCollection.updateOne(
+      { _id: timedItem._id },
+      {
+        $set: {
+          'timing.startedAt': legacyStartedAt,
+          'timing.completedAt': null,
+          'timing.durationMs': 12_000,
+          'timing.timerSource': 'system',
+        },
+        $unset: {
+          'timing.timerState': '',
+          'timing.lastResumedAt': '',
+        },
+      },
+    );
+    expect(legacyUpdate.matchedCount).toBe(1);
+    expect(legacyUpdate.modifiedCount).toBe(1);
+
+    const projection = {
+      timing: 1,
+      updatedAt: 1,
+      draftRevision: 1,
+      draftSavedAt: 1,
+    };
+    const beforeRaw = await itemCollection.findOne(
+      { _id: timedItem._id },
+      { projection },
+    );
+
+    if (!beforeRaw) {
+      throw new Error('Expected legacy timing raw snapshot before GET');
+    }
+
+    const beforeTiming = readRecord(beforeRaw, 'timing');
+    expect(beforeTiming.startedAt).toEqual(legacyStartedAt);
+    expect(beforeTiming.completedAt).toBeNull();
+    expect(beforeTiming.durationMs).toBe(12_000);
+    expect(beforeTiming.timerSource).toBe('system');
+    expect(beforeTiming).not.toHaveProperty('timerState');
+    expect(beforeTiming).not.toHaveProperty('lastResumedAt');
+
+    const publicItem = await readExecutionItem(fixture, itemResponseId);
+    expect(readRecord(publicItem, 'timing')).toEqual({
+      timerState: 'paused',
+      startedAt: legacyStartedAt.toISOString(),
+      lastResumedAt: null,
+      completedAt: null,
+      durationMs: 12_000,
+      timerSource: 'system',
+    });
+
+    const afterRaw = await itemCollection.findOne(
+      { _id: timedItem._id },
+      { projection },
+    );
+    expect(afterRaw).toEqual(beforeRaw);
+    const afterTiming = afterRaw ? readRecord(afterRaw, 'timing') : null;
+    expect(afterTiming).not.toHaveProperty('timerState');
+    expect(afterTiming).not.toHaveProperty('lastResumedAt');
   });
 
   it('rejects cross-ownership resources without revealing their existence', async () => {

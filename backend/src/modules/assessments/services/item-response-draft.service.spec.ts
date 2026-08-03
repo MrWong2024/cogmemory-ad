@@ -133,25 +133,32 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function readMockCallArgument(mock: jest.Mock, argumentIndex: number): unknown {
+function readMockCallArgument(
+  mock: jest.Mock,
+  argumentIndex: number,
+  callIndex = 0,
+): unknown {
   const calls: unknown = mock.mock.calls;
 
   if (!Array.isArray(calls)) {
     throw new Error('Expected mock calls');
   }
 
-  const firstCall: unknown = calls[0];
+  const selectedCall: unknown = calls[callIndex];
 
-  if (!Array.isArray(firstCall)) {
-    throw new Error('Expected a first mock call');
+  if (!Array.isArray(selectedCall)) {
+    throw new Error(`Expected mock call ${callIndex + 1}`);
   }
 
-  const argument: unknown = firstCall[argumentIndex];
+  const argument: unknown = selectedCall[argumentIndex];
   return argument;
 }
 
-function readUpdateSet(mock: jest.Mock): Record<string, unknown> {
-  const update = readMockCallArgument(mock, 1);
+function readUpdateSet(
+  mock: jest.Mock,
+  callIndex = 0,
+): Record<string, unknown> {
+  const update = readMockCallArgument(mock, 1, callIndex);
 
   if (!isRecord(update) || !isRecord(update.$set)) {
     throw new Error('Expected an atomic $set update');
@@ -388,6 +395,87 @@ describe('ItemResponseDraftService', () => {
     }
 
     expect(update.$set.draftSavedAt).toBeInstanceOf(Date);
+  });
+
+  it('saves the same explicit value twice with a new server time and revision each time', async () => {
+    const firstServerTime = new Date('2026-08-03T08:00:00.000Z');
+    const secondServerTime = new Date('2026-08-03T08:00:01.000Z');
+    const clientAttemptedTime = '2036-01-01T00:00:00.000Z';
+
+    jest.useFakeTimers();
+
+    try {
+      jest.setSystemTime(firstServerTime);
+      const firstClientInput = {
+        responseText: 'same explicit answer',
+        draftSavedAt: clientAttemptedTime,
+      };
+      await save(firstClientInput);
+
+      currentItemResponse = createItemResponseSummary({
+        status: 'in_progress',
+        draftRevision: 1,
+        draftSavedAt: firstServerTime,
+        responseText: 'same explicit answer',
+      });
+      jest.setSystemTime(secondServerTime);
+      const secondClientInput = {
+        expectedRevision: 1,
+        responseText: 'same explicit answer',
+        draftSavedAt: clientAttemptedTime,
+      };
+      await save(secondClientInput);
+    } finally {
+      jest.useRealTimers();
+    }
+
+    const firstFilter = readMockCallArgument(
+      itemResponseModel.findOneAndUpdate,
+      0,
+      0,
+    );
+    const secondFilter = readMockCallArgument(
+      itemResponseModel.findOneAndUpdate,
+      0,
+      1,
+    );
+    const firstUpdate = readMockCallArgument(
+      itemResponseModel.findOneAndUpdate,
+      1,
+      0,
+    );
+    const secondUpdate = readMockCallArgument(
+      itemResponseModel.findOneAndUpdate,
+      1,
+      1,
+    );
+
+    expect(firstFilter).toEqual(
+      expect.objectContaining({
+        $or: [{ draftRevision: 0 }, { draftRevision: { $exists: false } }],
+      }),
+    );
+    expect(secondFilter).toEqual(expect.objectContaining({ draftRevision: 1 }));
+    expect(readUpdateSet(itemResponseModel.findOneAndUpdate, 0)).toEqual(
+      expect.objectContaining({
+        responseText: 'same explicit answer',
+        draftSavedAt: firstServerTime,
+      }),
+    );
+    expect(readUpdateSet(itemResponseModel.findOneAndUpdate, 1)).toEqual(
+      expect.objectContaining({
+        responseText: 'same explicit answer',
+        draftSavedAt: secondServerTime,
+      }),
+    );
+    expect(isRecord(firstUpdate) ? firstUpdate.$inc : null).toEqual({
+      draftRevision: 1,
+    });
+    expect(isRecord(secondUpdate) ? secondUpdate.$inc : null).toEqual({
+      draftRevision: 1,
+    });
+    expect(firstServerTime.toISOString()).not.toBe(clientAttemptedTime);
+    expect(secondServerTime.toISOString()).not.toBe(clientAttemptedTime);
   });
 
   it('treats a missing legacy revision as zero and upgrades it atomically', async () => {
