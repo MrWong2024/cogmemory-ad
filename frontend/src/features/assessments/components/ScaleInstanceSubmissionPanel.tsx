@@ -100,7 +100,6 @@ export function ScaleInstanceSubmissionPanel({
   const localBlockCount =
     localUnsavedAnswerCount +
     pendingMediaCount +
-    activeAnswerWriteCount +
     activeMediaWriteCount;
   const isHistoricalState =
     readiness?.submissionState === 'completed' ||
@@ -249,9 +248,10 @@ export function ScaleInstanceSubmissionPanel({
               存在尚未持久化的本地内容，不能正式提交。
             </p>
             <p className="mt-1 text-sm leading-6">
-              未保存作答 {localUnsavedAnswerCount} 题、未上传证据 {pendingMediaCount}
-              题、题目保存请求 {activeAnswerWriteCount} 个、媒体写请求
-              {activeMediaWriteCount} 个。服务器检查不包含这些本地内容，请先完成保存或上传。
+              未收口作答 {localUnsavedAnswerCount} 题（其中正在保存
+              {activeAnswerWriteCount} 题）、未上传证据 {pendingMediaCount}
+              题、媒体写请求 {activeMediaWriteCount}
+              个。服务器检查不包含这些本地状态，请先完成保存、核对、冲突处理或上传。
             </p>
           </div>
         ) : null}

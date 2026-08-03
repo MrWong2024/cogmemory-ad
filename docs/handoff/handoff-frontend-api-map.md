@@ -163,33 +163,34 @@
 - 调用方：`ScaleInstanceExecutionPage`。
 - Path：patientId、visitId、scaleInstanceId 均来自 Next 16 动态路由并使用 `encodeURIComponent()`；任一值不符合 24 位 MongoId 时页面不发送 GET。
 - 请求体：无；支持 `AbortSignal`，重试或组件卸载时取消旧请求；取消请求不展示服务错误。
-- 响应：后端 A29 的 `ScaleInstanceExecutionDetailResponse` 已为每题增加 `draftRevision`、`draftSavedAt` 和含 `timerState` / `lastResumedAt` 的 timing；当前 B17 / 旧 B4 前端类型仍只建模旧结构，尚未声明或消费这些新增字段。
+- 响应：`ScaleInstanceExecutionDetailResponse` 的每题 `draftRevision`、`draftSavedAt` 与含 `timerState` / `lastResumedAt` 的完整 timing 已由 B18-A 类型和页面消费；running 计时按服务器锚点恢复显示。
 - 凭证 / 缓存：`frontendEnv.apiBaseUrl`、`credentials: 'include'`、`cache: 'no-store'`。
 - loading / 401 / 403：loading 使用文字状态；401 返回 `/login`；403 显示无权限，并提供返回访视、患者列表、工作台与退出登录入口。
 - 400 / 404 / 409：400 映射量表实例链接无效；`PATIENT_NOT_FOUND`、`VISIT_NOT_FOUND`、`SCALE_INSTANCE_NOT_FOUND` 分别显示稳定资源不存在状态；409 + `SCALE_INSTANCE_CONFIGURATION_UNAVAILABLE` 显示版本配置不可用，不渲染空白题目页。
 - 网络 / 500：网络错误显示评估服务暂时不可用并提供手工重试；未知错误不展示后端 message、path、堆栈或数据库信息。
 - 安全字段边界：只读取 A14 安全身份、分组、题目配置、草稿、槽位、计时、证据要求和进度；前端类型不定义 itemConfigSnapshot、scoringRule、expectedValue、score、isCorrect、scoreValue、metadata 或 qualityControlHints。
-- 兼容状态：GET 本身仍可读取，但当前页面不会保留 A29 revision / 保存时间或恢复 running / paused 锚点；B18 pending。
+- 协调用途：首次加载建立逐题服务器基线；冲突、结果不确定与 `SCALE_INSTANCE_NOT_EDITABLE` 恢复时按题只读核对。GET 失败不触发写重放，旧页面草稿仍保留在内存。
 
 ### 4.13 `saveItemResponseDraft()` -> `PATCH /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/item-responses/:itemResponseId`
 
-- 当前兼容结论：后端 A29 已要求每次实际草稿 PATCH 必填安全整数 `expectedRevision`，且 timing 非 null 时必须是完整快照；当前 B17 / 旧 B4 Client 尚未适配，所以下述现有客户端请求会被新后端 400 拒绝。该已知 open 项归属 B18，不通过 optional 字段或后端降级绕过。
+- 当前兼容结论：B18-A 已适配 A29；每次实际草稿 PATCH 必填当前服务端 ItemResponse 基线的安全非负整数 `expectedRevision`，timing 非 null 时为完整六字段快照。公开路径、方法和后端响应形状没有变化。
 
 - Client：`frontend\src\features\assessments\api\assessment-execution-api.ts`
-- 调用方：`ScaleInstanceExecutionPage`；单题交互由 `ItemResponseEditor` 及其 step / prompt / timing 子组件提供。
+- 调用方：`useItemResponseAutosaveCoordinator`；页面、`ItemResponseEditor`、step / prompt / timing 子组件只把逐题变更与显式动作交给同一协调器。
 - Path：patientId、visitId、scaleInstanceId、itemResponseId 全部使用 `encodeURIComponent()`，不进入请求体。
-- 当前客户端请求白名单：只允许 `rawResponse`、`structuredResponse`、`responseText`、`isMissing`、`missingReason`、`stepResponses`、`promptResponses`、`timing`、`operatorNote`、`markAsAnswered`；尚未包含 A29 必填 `expectedRevision`。API Client 再次逐字段重建 body，不提交 undefined，不透传 React 状态或完整 ItemResponse。
+- 客户端请求白名单：必填 `expectedRevision`；可选 `rawResponse`、`structuredResponse`、`responseText`、`isMissing`、`missingReason`、`stepResponses`、`promptResponses`、`timing`、`operatorNote`、`markAsAnswered`。API Client 逐字段重建 body，不提交 undefined，不允许 `draftRevision`、`draftSavedAt`、score、evidence、metadata、attempt / generation 或 A30 内部 barrier 字段进入请求。
 - 结构化草稿边界：B4 UI 不提供任意 JSON 编辑器；服务端已有非空 structuredResponse 时只显示存在性提示，普通保存不提交该字段并保留服务端值。
 - step / prompt：step 仅重建 stepCode、变化的 actualValue / note；prompt 仅重建 promptType、order、变化的 responseAfterPrompt / note；不提交 expectedValue、isCorrect、scoreValue、counts 标识或服务器字段。
-- 当前 timing：仅重建变化的 startedAt、completedAt、durationMs、timerSource；UI 用秒编辑 duration，提交前转换为非负整数毫秒并校验完成时间不早于开始时间。它尚未构造 A29 要求的 timerState / lastResumedAt / 六字段完整快照。
-- 凭证 / 缓存 / 重试：JSON PATCH，使用 `frontendEnv.apiBaseUrl`、`credentials: 'include'`、`cache: 'no-store'`；PATCH 不自动重试，不乐观更新，不批量保存。同一题保存中不并发发送第二个 PATCH。
-- 成功响应：后端 A29 的 `UpdateItemResponseDraftResponse` 仍为 `{ itemResponse, progress }`，itemResponse 新增 revision / 保存时间与完整 timing；当前客户端尚未消费这些字段。B18 适配后才可依据服务端 revision 更新基线并安全清除 dirty。
+- timing：非 null 时原样重建 `timerState`、`startedAt`、`lastResumedAt`、`completedAt`、`durationMs`、`timerSource` 六字段完整快照；`timing=null` 是显式复位。manual / imported 只能形成 completed，system 动作与 checkpoint 也从同一 PATCH 通道保存。
+- 凭证 / 缓存 /重试：JSON PATCH，使用 `frontendEnv.apiBaseUrl`、`credentials: 'include'`、`cache: 'no-store'`；API Client 不自动重试。协调器保证同题最多一个 active PATCH，不批量保存；不同题可独立保存。
+- 成功响应：`UpdateItemResponseDraftResponse` 保持 `{ itemResponse, progress }`；响应中的 `draftRevision`、`draftSavedAt`、timing、status 与其他公开 ItemResponse 字段成为新服务器基线。前端不自行递增 revision；字段级 rebase 保留请求后的新编辑并在仍有差异时安排 trailing save。
 - 400：普通 DTO 校验映射 validation；A14 业务 code 映射 `ITEM_RESPONSE_EMPTY_PATCH`、`ITEM_RESPONSE_PAYLOAD_INVALID`、`ITEM_RESPONSE_MISSING_REASON_REQUIRED`、`ITEM_RESPONSE_STEP_NOT_FOUND`、`ITEM_RESPONSE_DUPLICATE_STEP`、`ITEM_RESPONSE_PROMPT_NOT_FOUND`、`ITEM_RESPONSE_DUPLICATE_PROMPT`、`ITEM_RESPONSE_TIMING_NOT_ALLOWED`、`ITEM_RESPONSE_INVALID_TIMING`。
 - 401 / 403：401 返回 `/login`；403 显示稳定无权限保存提示，后端 Guard 仍是最终权限边界。
 - 404：`PATIENT_NOT_FOUND`、`VISIT_NOT_FOUND`、`SCALE_INSTANCE_NOT_FOUND`、`ITEM_RESPONSE_NOT_FOUND` 使用稳定资源不存在 / 重新加载提示，不泄露跨归属资源存在性。
-- 409：当前仅映射 `PATIENT_NOT_ACTIVE`、`VISIT_NOT_EDITABLE`、`SCALE_INSTANCE_NOT_EDITABLE`、`ITEM_RESPONSE_NOT_EDITABLE`、`ITEM_RESPONSE_CANNOT_MARK_ANSWERED`；尚未处理 A29 `ITEM_RESPONSE_DRAFT_CONFLICT` 的保留本地草稿 + GET 恢复交互。
-- 500 / 网络：`ITEM_RESPONSE_SAVE_FAILED` 映射稳定保存失败文案；网络错误映射 service_unavailable；PATCH 不自动重试。
-- 当前保存语义：保存草稿只发送变化字段；无变化不发 PATCH 并显示“没有需要保存的更改”。标记完成仅增加 `markAsAnswered: true`，不提交 status；answered 后可继续修改且不会回退。本接口不触发最终提交、评分、媒体、认知域、报告或 AI。因缺少 expectedRevision，该行为需由 B18 适配后才恢复可用。
+- 409：`ITEM_RESPONSE_DRAFT_CONFLICT` 独立映射为 `item_response_draft_conflict`，不降级为 validation；协调器保留本地草稿、GET 一次最新事实并等待用户明确选择。`SCALE_INSTANCE_NOT_EDITABLE` 保持独立分类，停止新自动保存和 checkpoint，并只读刷新当前实例一次。
+- 网络结果不确定：PATCH fetch 抛出的网络异常 / AbortError，以及 HTTP 500 / 502 / 503 / 504，映射为 `request_outcome_uncertain`；先 GET 核对 revision 和本次实际发送字段。revision 未变才确认未提交，revision + 1 且字段匹配才确认已提交，其他进入 conflict；GET 失败保持 reconciling，不发新 PATCH。
+- 确定性错误：400、401、403、404、直接 draft conflict 与 lifecycle 关闭不进入不确定恢复。API Client 与协调器均不盲目重放原 PATCH。
+- 保存语义：自动保存只发送实际变化字段且不设置 `markAsAnswered=true`；无变化不发 PATCH。立即保存和标记完成取消 debounce 并共用逐题队列，后者才增加 `markAsAnswered: true`，不提交 status。本接口不触发最终提交、评分、媒体、认知域、报告或 AI。
 - A14 资源 / 状态 code UI：`PATIENT_NOT_FOUND` -> 患者不存在；`PATIENT_NOT_ACTIVE` -> 当前患者不是活动状态；`VISIT_NOT_FOUND` -> 访视不存在或不属于患者；`VISIT_NOT_EDITABLE` -> 当前访视状态不允许修改；`SCALE_INSTANCE_NOT_FOUND` -> 实例不存在或不属于当前访视；`SCALE_INSTANCE_NOT_EDITABLE` -> 实例状态不允许修改；`SCALE_INSTANCE_CONFIGURATION_UNAVAILABLE` -> 版本配置暂时不可用；`ITEM_RESPONSE_NOT_FOUND` -> 题目记录不存在并提示重新加载；`ITEM_RESPONSE_NOT_EDITABLE` -> 当前题目不可修改。
 - A14 草稿 code UI：`ITEM_RESPONSE_EMPTY_PATCH` -> 没有需要保存的修改；`ITEM_RESPONSE_PAYLOAD_INVALID` -> 作答格式无效；`ITEM_RESPONSE_MISSING_REASON_REQUIRED` -> 缺失原因必填；`ITEM_RESPONSE_CANNOT_MARK_ANSWERED` -> 先记录有效作答或缺失原因；`ITEM_RESPONSE_STEP_NOT_FOUND` / `ITEM_RESPONSE_PROMPT_NOT_FOUND` -> 槽位已变化并提示重新加载；`ITEM_RESPONSE_DUPLICATE_STEP` / `ITEM_RESPONSE_DUPLICATE_PROMPT` -> 槽位重复并提示检查；`ITEM_RESPONSE_TIMING_NOT_ALLOWED` -> 本题不允许计时草稿；`ITEM_RESPONSE_INVALID_TIMING` -> 检查开始、完成时间与用时；`ITEM_RESPONSE_SAVE_FAILED` -> 保存失败稍后重试。
 
@@ -216,7 +217,7 @@
 - 401 / 403 / 404：401 返回登录；403 显示无媒体权限；`PATIENT_NOT_FOUND`、`VISIT_NOT_FOUND`、`SCALE_INSTANCE_NOT_FOUND`、`ITEM_RESPONSE_NOT_FOUND` 映射安全资源提示。
 - 409 code UI：`PATIENT_NOT_ACTIVE`、`VISIT_NOT_EDITABLE`、`SCALE_INSTANCE_NOT_EDITABLE`、`ITEM_RESPONSE_NOT_EDITABLE` 显示稳定只读原因；`ITEM_EVIDENCE_TYPE_NOT_REQUIRED` 提示要求已变化；`MEDIA_EVIDENCE_ALREADY_ATTACHED` 提示先作废，并重新加载媒体列表、按 attached / locked 事实更新 requirement，不自动重复上传。
 - 413 / 500 / 503：`MEDIA_FILE_TOO_LARGE` -> 处理后仍超限；`MEDIA_EVIDENCE_CREATE_FAILED` / `MEDIA_EVIDENCE_ATTACH_FAILED` -> 创建 / 关联失败；`MEDIA_STORAGE_UNAVAILABLE` -> 存储暂不可用并保留本地 Blob / strokes；网络错误 -> 手工稍后重试。
-- 隔离边界：上传不触发 A14 PATCH，不修改 answer dirty、progress、题目完成状态、ItemResponse / ScaleInstance / Visit 状态或评分；后端 A29 还保证上传不修改 `draftRevision` / `draftSavedAt`，当前前端尚未消费这两个字段。
+- 隔离边界：上传不触发 A14 PATCH，不修改 answer dirty、progress、题目完成状态、ItemResponse / ScaleInstance / Visit 状态或评分；A15 成功不修改 `draftRevision` / `draftSavedAt`。B18-A 只推进内存媒体 generation 并合并 requirement，使较早发出的 A14 响应不能回滚较新的 A15 媒体事实。
 
 ### 4.16 `getMediaEvidenceAccessUrl()` -> `GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/item-responses/:itemResponseId/media-evidences/:mediaEvidenceId/access-url`
 
@@ -477,10 +478,10 @@ B17 四个 GET 的共同边界：全部使用 `frontendEnv.apiBaseUrl`、`creden
 - `PatientsApiError.kind` 覆盖 `unauthenticated`、`forbidden`、`validation`、`patient_not_found`、`patient_code_conflict`、`patient_not_active`、`visit_code_conflict`、`invalid_date_range`、`service_unavailable`、`unknown`。
 - 业务 code 映射：`PATIENT_NOT_FOUND`、`PATIENT_SUBJECT_CODE_CONFLICT`、`PATIENT_NOT_ACTIVE`、`VISIT_CODE_CONFLICT`、`INVALID_DATE_RANGE`。
 - 后端英文 message、path、堆栈和内部错误对象不作为 UI 主文案或页面输出。
-- `AssessmentExecutionApiError.kind` 覆盖 unauthenticated、forbidden、validation、patient / visit 状态与不存在、scale / version 不可用或停用、catalog 非法或版本冲突、实例重复、初始化失败、网络错误和 unknown。
-- B4 扩展错误 kind：`scale_instance_not_found`、`scale_instance_not_editable`、`scale_instance_configuration_unavailable`、`visit_not_editable`、`item_response_not_found`、`item_response_not_editable`、`item_response_empty_patch`、`item_response_payload_invalid`、`item_response_missing_reason_required`、`item_response_cannot_mark_answered`、`item_response_step_not_found`、`item_response_duplicate_step`、`item_response_prompt_not_found`、`item_response_duplicate_prompt`、`item_response_timing_not_allowed`、`item_response_invalid_timing`、`item_response_save_failed`。
+- `AssessmentExecutionApiError.kind` 覆盖 unauthenticated、forbidden、validation、patient / visit 状态与不存在、scale / version 不可用或停用、catalog 非法或版本冲突、实例重复、初始化失败、网络错误和 unknown；B18-A 另有独立 `item_response_draft_conflict` 与 `request_outcome_uncertain`。
+- A14 错误 kind：`scale_instance_not_found`、`scale_instance_not_editable`、`scale_instance_configuration_unavailable`、`visit_not_editable`、`item_response_not_found`、`item_response_not_editable`、`item_response_draft_conflict`、`item_response_empty_patch`、`item_response_payload_invalid`、`item_response_missing_reason_required`、`item_response_cannot_mark_answered`、`item_response_step_not_found`、`item_response_duplicate_step`、`item_response_prompt_not_found`、`item_response_duplicate_prompt`、`item_response_timing_not_allowed`、`item_response_invalid_timing`、`item_response_save_failed`、`request_outcome_uncertain`。
 - `ScaleInstanceListItem` 的时间字段按 JSON 传输事实定义为 `string | null`；`InitializeScaleInstanceRequest` 只包含三个允许字段，不定义任何服务器控制字段。
-- `item-response-execution.ts` 定义 A14 安全响应和 PATCH 白名单类型；所有 Date JSON 字段使用 `string | null`，不定义 scoringRule、expectedValue、score、isCorrect、scoreValue、metadata、qualityControlHints 或内部配置引用。
+- `item-response-execution.ts` 定义 A14 安全响应、`ItemTimerState`、公开 revision / 保存时间、完整 timing 和 PATCH 白名单；`expectedRevision` 必填，Date JSON 使用 `string | null`。不定义 scoringRule、expectedValue、score、isCorrect、scoreValue、metadata、qualityControlHints、A30 `submissionWriteBarrier` / `barrierId` 或其他内部配置引用。
 - `media-evidence.ts` 定义 A15 安全公开响应、access asset、requirement 状态和上传白名单；所有 Date JSON 字段使用 `string` / `string | null`。该类型没有内部患者 / 访视 / 实例 / 题目关联、对象定位、Storage credential、源文件名、校验和、任意 metadata 或删除时间字段。
 - `MediaEvidenceApiError.kind` 覆盖 unauthenticated / forbidden / validation、完整资源 / 状态 code、文件 / 轨迹 / captureMode code、重复 / 不可访问 / 不可作废、Storage、创建 / 关联 / 作废内部失败、网络错误和 unknown；UI 不直接显示后端英文 message。
 - B6 新增 `scale-instance-submission.ts`：Date JSON 字段均为 string / string | null；类型定义 15 个 issue code、8 个 submissionState、summary、安全提交操作者和严格 `{ confirm: true }`。不定义作答原文、评分、expectedValue、mediaEvidenceId 或 metadata。

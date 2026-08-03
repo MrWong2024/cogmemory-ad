@@ -48,6 +48,7 @@ export type AssessmentExecutionApiErrorKind =
   | 'visit_not_editable'
   | 'item_response_not_found'
   | 'item_response_not_editable'
+  | 'item_response_draft_conflict'
   | 'item_response_empty_patch'
   | 'item_response_payload_invalid'
   | 'item_response_missing_reason_required'
@@ -59,6 +60,7 @@ export type AssessmentExecutionApiErrorKind =
   | 'item_response_timing_not_allowed'
   | 'item_response_invalid_timing'
   | 'item_response_save_failed'
+  | 'request_outcome_uncertain'
   | 'scale_execution_initialization_failed'
   | 'service_unavailable'
   | 'unknown';
@@ -140,6 +142,7 @@ function mapHttpError(
     SCALE_INSTANCE_SUBMISSION_FAILED: 'scale_instance_submission_failed',
     ITEM_RESPONSE_NOT_FOUND: 'item_response_not_found',
     ITEM_RESPONSE_NOT_EDITABLE: 'item_response_not_editable',
+    ITEM_RESPONSE_DRAFT_CONFLICT: 'item_response_draft_conflict',
     ITEM_RESPONSE_EMPTY_PATCH: 'item_response_empty_patch',
     ITEM_RESPONSE_PAYLOAD_INVALID: 'item_response_payload_invalid',
     ITEM_RESPONSE_MISSING_REASON_REQUIRED:
@@ -175,6 +178,7 @@ function mapHttpError(
 async function assessmentExecutionFetch(
   path: string,
   init: RequestInit,
+  options: { uncertainWrite?: boolean } = {},
 ): Promise<Response> {
   try {
     const response = await fetch(buildApiUrl(path), {
@@ -188,13 +192,30 @@ async function assessmentExecutionFetch(
     });
 
     if (!response.ok) {
-      throw mapHttpError(response.status, await readBackendCode(response));
+      const backendCode = await readBackendCode(response);
+
+      if (
+        options.uncertainWrite &&
+        [500, 502, 503, 504].includes(response.status)
+      ) {
+        throw new AssessmentExecutionApiError(
+          'request_outcome_uncertain',
+          response.status,
+          backendCode,
+        );
+      }
+
+      throw mapHttpError(response.status, backendCode);
     }
 
     return response;
   } catch (error: unknown) {
     if (error instanceof AssessmentExecutionApiError || init.signal?.aborted) {
       throw error;
+    }
+
+    if (options.uncertainWrite) {
+      throw new AssessmentExecutionApiError('request_outcome_uncertain');
     }
 
     throw new AssessmentExecutionApiError('service_unavailable');
@@ -346,23 +367,27 @@ function buildTimingRequest(
   timing: UpdateItemTimingDraftRequest,
 ): UpdateItemTimingDraftRequest {
   return {
-    ...(timing.startedAt !== undefined ? { startedAt: timing.startedAt } : {}),
-    ...(timing.completedAt !== undefined
-      ? { completedAt: timing.completedAt }
-      : {}),
-    ...(timing.durationMs !== undefined
-      ? { durationMs: timing.durationMs }
-      : {}),
-    ...(timing.timerSource !== undefined
-      ? { timerSource: timing.timerSource }
-      : {}),
+    timerState: timing.timerState,
+    startedAt: timing.startedAt,
+    lastResumedAt: timing.lastResumedAt,
+    completedAt: timing.completedAt,
+    durationMs: timing.durationMs,
+    timerSource: timing.timerSource,
   };
 }
 
-function buildItemResponseDraftRequest(
+export function serializeItemResponseDraftRequest(
   input: UpdateItemResponseDraftRequest,
 ): UpdateItemResponseDraftRequest {
+  if (
+    !Number.isSafeInteger(input.expectedRevision) ||
+    input.expectedRevision < 0
+  ) {
+    throw new AssessmentExecutionApiError('validation');
+  }
+
   return {
+    expectedRevision: input.expectedRevision,
     ...(input.rawResponse !== undefined
       ? { rawResponse: input.rawResponse }
       : {}),
@@ -411,8 +436,9 @@ export async function saveItemResponseDraft(
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(buildItemResponseDraftRequest(input)),
+      body: JSON.stringify(serializeItemResponseDraftRequest(input)),
     },
+    { uncertainWrite: true },
   );
 
   return readJson<UpdateItemResponseDraftResponse>(response);

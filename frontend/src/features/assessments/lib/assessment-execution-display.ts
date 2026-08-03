@@ -295,6 +295,8 @@ export function getItemResponseSaveErrorMessage(
       '该量表实例的版本配置暂时不可用。',
     item_response_not_found: '未找到该题目记录，请重新加载量表。',
     item_response_not_editable: '当前题目状态不允许修改。',
+    item_response_draft_conflict:
+      '服务器版本已发生变化，本地修改仍被保留，请明确选择保留哪一版。',
     item_response_empty_patch: '当前没有需要保存的修改。',
     item_response_payload_invalid: '作答内容格式无效，请检查后重试。',
     item_response_missing_reason_required:
@@ -309,6 +311,8 @@ export function getItemResponseSaveErrorMessage(
     item_response_invalid_timing:
       '计时信息无效，请检查开始时间、完成时间和用时。',
     item_response_save_failed: '作答草稿保存失败，请稍后重试。',
+    request_outcome_uncertain:
+      '保存结果尚未确认，系统将先核对服务器，不会盲目重发。',
     forbidden: '当前账号没有保存作答草稿的权限。',
     service_unavailable: '评估服务暂时不可用，请稍后重试。',
   };

@@ -17,9 +17,11 @@
 | Batch D / B14 | `B14-U01`～`B14-U02`；`passed=2`、`pending=0`；P0 `gap=0`；最终门禁与 Browser 闭环完成 | “当前证据索引” |
 | B14.1 | 累计证据索引，不是独立 Browser 批次，不拥有独立活动 ID | “B14.1 累计证据索引” |
 | Batch D / B15 | `B15-U01`～`B15-U02`；`passed=2`、`pending=0`；P0 `gap=0`；最终门禁与 Browser 闭环完成 | “当前证据索引” |
-| Batch E | 8 个真实设备或人工项目待验；当前唯一待验测试范围 | “Batch E：真实设备或人工验收” |
+| WP-03 / B18-A | 前端实现与非 Browser 合同阶段完成；B18 / WP-03 未完成 | “B18-A 非 Browser 证据与 B18-B 边界” |
+| WP-03 / B18-B | 待执行真实 Browser 验收 | “B18-A 非 Browser 证据与 B18-B 边界” |
+| Batch E | 8 个真实设备或人工项目待验 | “Batch E：真实设备或人工验收” |
 
-B11～B15 均已完成。当前没有待执行的 Batch D 场景；testing playbook 治理不选择、启动或改变 roadmap 工作包。
+B11～B15 均已完成。当前没有待执行的 Batch D 场景；B18-B 与 Batch E 是明确保留的后续验证范围。testing playbook 治理不选择、启动或改变 roadmap 工作包。
 
 ## 2. 当前测试设计规则
 
@@ -175,9 +177,18 @@ B14.1 不是独立业务能力，不拥有独立 Browser 活动 ID，也不恢�
 | correction | B15 | B15 Browser、Correction Node-only 与 A25 HTTP E2E |
 | shared façade / coordinator / reducer / identity isolation | 跨 B11～B15 | `frontend/test/browser-acceptance/contracts/clinical-report-workflow-shared-non-browser.spec.ts`；稳定 `reportId`、route RESET、unexpected identity 隔离、expected correction transition 保真、identity generation、layout barrier、单一 writingRef/latest/beforeunload |
 
-## 5. Batch E：真实设备或人工验收
+## 5. B18-A 非 Browser 证据与 B18-B 边界
 
-Batch E 是当前唯一待验测试范围。以下稳定 ID 不属于已完成的桌面范围，也不得被桌面 viewport、鼠标 Canvas 或普通 automated 测试替代：
+- 精确 discovery：`b18-item-response-autosave.contract.spec.ts` 与 `b18-item-response-timer.contract.spec.ts`，共 47 项且恰好 2 个目标文件；两个文件不声明 page、context、browser 或 browserName fixture。
+- Autosave contract：`frontend/test/browser-acceptance/contracts/b18-item-response-autosave.contract.spec.ts`，27 项通过。以注入式 fake clock 验证 debounce / max wait / 串行 / trailing / cleanup，以 fake fetch 验证序列化、冲突、AbortError 与 503 分类；没有真实 HTTP。
+- Timer contract：`frontend/test/browser-acceptance/contracts/b18-item-response-timer.contract.spec.ts`，20 项通过。使用普通对象与固定 wall-clock 验证状态转换、elapsed、checkpoint、manual / imported 和同一逐题队列；没有启动 Browser。
+- 静态门禁：`npm run lint`、正式 `npm run typecheck`、正式 `npm run build`、`npm run test:browser:list` 均实际启动并以退出码 0 完成；完整 discovery 为 153 项、30 个文件。typecheck / build 前确认本项目无 Node / Next 进程或监听占用，并以同一沙箱外身份写入 `.next`；最终 `.next` 与 test-results 已清理。
+- 数据与运行边界：未启动 Chromium、frontend、backend、Browser fixture 或长期服务；未发送真实网络请求，未连接或写入任何数据库，未修改 Browser live profile / fixture。A29 / A30 后端 unit、HTTP E2E、CAS、媒体隔离、提交屏障与隐私证据直接复用，没有重复运行后端测试。
+- 完成边界：上述证据只关闭 B18-A 前端实现与非 Browser 合同阶段，不证明真实用户流程。双 Session 冲突、断网、刷新、切组、媒体竞态、beforeunload 与实时计时的 Browser 验收归属 B18-B；B18 与 WP-03 均未完成。
+
+## 6. Batch E：真实设备或人工验收
+
+以下稳定 ID 不属于已完成的桌面范围，也不得被桌面 viewport、鼠标 Canvas 或普通 automated 测试替代；它们与 B18-B 是不同的后续验证范围：
 
 | 验证 ID | 当前状态 | 执行边界 |
 |---|---|---|
@@ -192,11 +203,11 @@ Batch E 是当前唯一待验测试范围。以下稳定 ID 不属于已完成�
 
 后续执行必须明确真实设备或人工条件、步骤、签收人和证据。不得更换 ID、静默合并，或补写当前合同没有支持的细分要求。
 
-## 6. 后续维护规则
+## 7. 后续维护规则
 
 - 只有 active / pending 批次保留详细场景设计；批次完成后收缩为当前状态、证据资产、evidence commit 与持久合同摘要。
 - 逐轮命令、精确耗时、失败过程、旧编号全文、迁移表和完整合同表由 Git 历史承担，不搬入新文档。
 - 只有影响性产品代码、接口、配置、测试基础设施或产品合同变化时，才按实际影响重新展开风险与证据设计；未变化事实复用现有精确证据。
 - Browser 活动场景的主证据、必要支持证据、适用 verifier 和 cleanup 均通过后才能关闭；静态存在核对不得冒充动态通过。
 - 数据库用途、fixture、verifier、cleanup、Stage 和后端定向命令以 backend testing playbook 为准。
-- testing playbook 治理不改变 roadmap；当前没有进行中工作包，下一产品工作包尚未选择。
+- testing playbook 治理不改变 roadmap；当前 WP-03 仍进行中，下一具名阶段是 B18-B。

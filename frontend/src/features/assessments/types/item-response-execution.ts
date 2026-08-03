@@ -48,6 +48,8 @@ export type PromptResponseType =
 
 export type ItemTimerSource = 'none' | 'system' | 'manual' | 'imported';
 
+export type ItemTimerState = 'idle' | 'running' | 'paused' | 'completed';
+
 export type ItemEvidenceType =
   | 'photo'
   | 'handwriting'
@@ -127,7 +129,9 @@ export type ItemPromptDraft = {
 };
 
 export type ItemTimingDraft = {
+  timerState: ItemTimerState;
   startedAt: string | null;
+  lastResumedAt: string | null;
   completedAt: string | null;
   durationMs: number | null;
   timerSource: ItemTimerSource;
@@ -153,6 +157,8 @@ export type ItemResponseExecution = {
   versionTrace: ItemResponseVersionTrace | null;
   config: ItemExecutionConfig;
   status: ItemResponseStatus;
+  draftRevision: number;
+  draftSavedAt: string | null;
   answerSource: ItemResponseAnswerSource;
   rawResponse: ItemResponseDraftJsonValue;
   structuredResponse: {
@@ -189,14 +195,10 @@ export type UpdatePromptResponseDraftRequest = {
   note?: string | null;
 };
 
-export type UpdateItemTimingDraftRequest = {
-  startedAt?: string | null;
-  completedAt?: string | null;
-  durationMs?: number | null;
-  timerSource?: ItemTimerSource;
-};
+export type UpdateItemTimingDraftRequest = ItemTimingDraft;
 
 export type UpdateItemResponseDraftRequest = {
+  expectedRevision: number;
   rawResponse?: ItemResponseDraftJsonValue;
   structuredResponse?: {
     [key: string]: ItemResponseDraftJsonValue;

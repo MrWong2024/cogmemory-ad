@@ -1,3 +1,5 @@
+import { useId } from 'react';
+
 import { hasNonPrimitiveDraftValue } from '@/src/features/assessments/lib/item-response-draft';
 import type {
   ItemDraftState,
@@ -21,6 +23,8 @@ export function ItemStepEditor({
   item: ItemResponseExecution;
   onChange: (draft: ItemDraftState) => void;
 }) {
+  const fieldIdPrefix = useId();
+
   if (item.stepResponses.length === 0) {
     return null;
   }
@@ -43,13 +47,13 @@ export function ItemStepEditor({
 
   return (
     <section
-      aria-labelledby={`${item.id}-steps-title`}
+      aria-labelledby={`${fieldIdPrefix}-steps-title`}
       className="grid gap-4 rounded-md border border-[var(--cma-line)] p-4"
     >
       <div>
         <h4
           className="text-lg font-semibold text-[var(--cma-text-strong)]"
-          id={`${item.id}-steps-title`}
+          id={`${fieldIdPrefix}-steps-title`}
         >
           分步回答
         </h4>
@@ -72,8 +76,8 @@ export function ItemStepEditor({
             return null;
           }
 
-          const valueId = `${item.id}-step-${index}-value`;
-          const noteId = `${item.id}-step-${index}-note`;
+          const valueId = `${fieldIdPrefix}-step-${index}-value`;
+          const noteId = `${fieldIdPrefix}-step-${index}-note`;
 
           return (
             <div

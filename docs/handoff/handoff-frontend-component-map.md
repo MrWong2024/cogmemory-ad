@@ -173,13 +173,13 @@
 - 职责：展示真实 MMSE / MoCA 安全目录、每张卡片的施测方式选择、已初始化 / 访视状态禁用、提交中与 success / conflict / error 状态
 - 输入：目录 loading / error / retry、既有 scaleCode、当前初始化 code、反馈、访视状态与初始化回调
 - 可访问性：select 有可见 label；错误使用 alert，成功使用 polite live region；按钮禁用时保留明确文字
-- 边界：用户不能输入 scaleCode / version；只提供三种确认施测方式；能力摘要不替代实例执行页的真实能力判断。当前 photo / handwriting requirement 已由 B5 支持媒体采集，实时计时器仍未实现
+- 边界：用户不能输入 scaleCode / version；只提供三种确认施测方式；能力摘要不替代实例执行页的真实能力判断。photo / handwriting requirement 由 B5 支持媒体采集，B18-A 的实时计时只在实际执行题目内提供
 
 ### 6.4 Assessment Execution API Client
 
 - 路径：`frontend\src\features\assessments\api\assessment-execution-api.ts`
-- 职责：提供 `listAvailableScales()`、`getAssessmentVisitExecutionDetail()`、`initializeScaleInstance()`、`getScaleInstanceExecutionDetail()`、`saveItemResponseDraft()`、`getScaleInstanceSubmissionReadiness()`、`submitScaleInstance()` 与稳定 `AssessmentExecutionApiError`
-- 边界：只调用 A13 三个、A14 两个与 A16 两个 API；统一 `frontendEnv.apiBaseUrl`、credentials、no-store，GET 支持 AbortSignal，POST / PATCH 重建白名单且不自动重试；submit 严格只接受 `{ confirm: true }`，不记录请求 / 响应或泛化为完整 SDK
+- 职责：提供 `listAvailableScales()`、`getAssessmentVisitExecutionDetail()`、`initializeScaleInstance()`、`getScaleInstanceExecutionDetail()`、`saveItemResponseDraft()`、`getScaleInstanceSubmissionReadiness()`、`submitScaleInstance()` 与稳定 `AssessmentExecutionApiError`；A14 serializer 必传 `expectedRevision` 并重建完整 timing
+- 边界：只调用 A13 三个、A14 两个与 A16 两个 API；统一 `frontendEnv.apiBaseUrl`、credentials、no-store，GET 支持 AbortSignal，POST / PATCH 重建白名单且不自动重试；draft conflict 与请求结果不确定是独立错误 kind，submit 严格只接受 `{ confirm: true }`，不记录请求 / 响应或泛化为完整 SDK
 
 ### 6.5 Assessment Execution 类型
 
@@ -196,16 +196,16 @@
 ### 6.7 `ScaleInstanceExecutionPage`
 
 - 路径：`frontend\src\features\assessments\components\ScaleInstanceExecutionPage.tsx`
-- 职责：接收 patientId / visitId / scaleInstanceId，加载 A14 安全执行详情，管理 invalid / loading / 401 / 403 / not-found / configuration-unavailable / retry、动态分组、itemResponseId 作答草稿、`${itemResponseId}:${evidenceType}` 媒体草稿、两类待处理计数、beforeunload、逐题 PATCH、实时 progress，以及 B6 独立 readiness / stale / error、题目定位、本地阻断、提交确认、submit 写锁和当前会话 receipt
-- 保存：同一题保存期间禁止并发；成功后以响应 itemResponse 覆盖当前题、清除 dirty，并用响应 progress 更新实例摘要，不重新加载整个页面
-- 媒体父级职责：分组切换不清除 JPEG Blob / strokes；持有跨分组媒体写锁；只合并 A15 返回的同题同类型 requirement，不改作答 draft / dirty / progress；上传成功或主动清除后减少未上传证据题目数
+- 职责：接收 patientId / visitId / scaleInstanceId，加载 A14 安全执行详情，管理 invalid / loading / 401 / 403 / not-found / configuration-unavailable / retry、动态分组、逐题 autosave snapshot、`${itemResponseId}:${evidenceType}` 媒体草稿、未收口统计、beforeunload、页面级显示 tick、实时 progress，以及 B6 独立 readiness / stale / error、题目定位、本地阻断、提交确认、submit 写锁和当前会话 receipt
+- 保存：所有作答、立即保存、标记完成、计时动作与 checkpoint 进入 `useItemResponseAutosaveCoordinator`；页面不再用单一 saving 集合表达保存状态。切组立即 flush 离开组内合法 queued 项但不等待完成，也不清除其他组状态。
+- 媒体父级职责：分组切换不清除 JPEG Blob / strokes；持有跨分组媒体写锁；A15 返回 requirement 时通知协调器推进媒体 generation，旧 A14 响应仅在 generation 未变化时采用自身 evidenceRequirements；A15 不改作答 draft / revision / progress
 - B6 合并边界：readiness 成功只替换 ScaleInstance；submit 成功只替换 ScaleInstance、readiness 与 receipt，不修改 Visit、itemResponses 或 drafts。completed 由服务端响应驱动；历史操作者不从 operatorSnapshot 推断
 - B7 评分职责：仅在 completed / locked / voided 自动查询 latest；管理独立 AbortController、no_result / forbidden / error、compute 确认 / 写锁 / 幂等回执和稳定错误。submit 成功只触发 latest，不自动 compute
 - B7 合并边界：latest / compute 成功使用服务端 ScoreResult 并只同步 ScaleInstance；不修改 Visit、ItemResponse、answer / media drafts、progress 或 readiness，不调用 A14 / A15 写接口
 - B9 有限编排：向独立 `useCognitiveDomainResult` 传递来源 ScoreResult、实例 / 访视状态、全部 dirty / writing 阻断、401 回调与评分 latest 刷新回调；在评分面板之后渲染认知域面板。
 - B9 合并边界：认知域 Hook 保存完整 A19 detail 与 alreadyComputed 回执；主页面不覆盖 Visit、ItemResponse、ScoreResult、作答 / 媒体 / 人工评分 / 确认草稿，不调用 A14-A18 写接口。
 - 通用题目定位：B6 submission issue 与 B7 reviewQueue 共用 itemResponseId -> 分组切换 -> `scrollIntoView()` -> focus 流程；不改 URL 或清理其他分组内存草稿
-- 边界：GET 使用独立 AbortController，PATCH 与媒体 / submit POST 不重试；组件卸载后不 setState；不使用 SWR、React Query、Redux、Zustand、localStorage 或 sessionStorage
+- 边界：GET 使用独立 AbortController，PATCH 与媒体 / submit POST 不盲目重试；协调器和页面卸载时清理 timeout、interval、online/offline listener 与只读核对 AbortController；不使用 SWR、React Query、Redux、Zustand、localStorage、sessionStorage、IndexedDB 或 Cache Storage
 
 ### 6.8 `ScaleExecutionGroupNavigation`
 
@@ -216,7 +216,7 @@
 ### 6.9 `ItemResponseEditor`
 
 - 路径：`frontend\src\features\assessments\components\ItemResponseEditor.tsx`
-- 职责：展示题目标题、CRF、指导语、操作说明、认知域编码、计入总分标识、状态、证据要求与已有草稿；提供类型对应编辑、missing、operatorNote、保存草稿和标记本题完成
+- 职责：展示题目标题、CRF、指导语、操作说明、认知域编码、计入总分标识、状态、证据要求与已有草稿；提供类型对应编辑、missing、operatorNote、保存草稿和标记本题完成，并组合 `ItemResponseSaveStatus` 的低干扰状态 / 冲突恢复 UI
 - 普通类型：boolean 保存 null / boolean；number 保存有限 number；text 与 single / multi choice 保存 responseText；single / multi choice 只提供原始回答转录，不生成选项或判分
 - 媒体类型：继续保留 drawing / photo_upload / handwriting 的原始文字说明；另将归属 ID、只读状态、媒体草稿、写锁和回调传给 `ItemEvidenceRequirements`，媒体操作不触发 `onChange(draft)` 或 A14 保存
 - 安全边界：不显示 scoringRule、expectedValue、正确答案、score、isCorrect、scoreValue；已有 structuredResponse 仅显示存在性提示，不提供 JSON 编辑器
@@ -236,8 +236,8 @@
 ### 6.12 `ItemTimingEditor`
 
 - 路径：`frontend\src\features\assessments\components\ItemTimingEditor.tsx`
-- 职责：为 timed_task、requiresTimer 或 duration evidence 题目编辑 startedAt、completedAt、秒口径 duration 和 timerSource 草稿
-- 边界：不是实时计时器，不提供开始 / 暂停 / 继续 / 结束；提交前由纯函数转非负整数毫秒并校验时间先后
+- 职责：为 timed_task、requiresTimer 或 duration evidence 题目提供 system 开始 / 暂停 / 继续 / 完成 / 确认复位，以及 manual / imported completed 录入；显示使用页面级 `displayNow` 与服务器锚点
+- 边界：组件自身不创建 1 秒 interval；显式动作立即进入逐题 autosave，普通人工字段变更走同一调度。manual / imported 不得进入 running / paused，system active 时必须先完成或复位；计时不自动标记题目完成、提交或评分
 
 ### 6.13 `ItemEvidenceRequirements`
 
@@ -248,9 +248,9 @@
 ### 6.14 A14 类型与草稿纯函数
 
 - 类型路径：`frontend\src\features\assessments\types\item-response-execution.ts`
-- 类型职责：严格定义 A14 安全执行响应、JsonValue、response / status / prompt / timer / evidence 枚举和 PATCH 白名单；Date JSON 使用 string / null
+- 类型职责：严格定义 A14 安全执行响应、JsonValue、response / status / prompt / `ItemTimerState` / evidence 枚举、`draftRevision` / `draftSavedAt` 和 PATCH 白名单；`expectedRevision` 必填，timing 非 null 为六字段完整快照，Date JSON 使用 string / null
 - 纯函数路径：`frontend\src\features\assessments\lib\item-response-draft.ts`
-- 纯函数职责：服务端 ItemResponse 到本地 draft、missing 清空、字段级和递归值 dirty 比较、数值 / datetime-local / duration 转换、基础有效作答判断、step / prompt / timing 差异与 PATCH 构建
+- 纯函数职责：服务端 ItemResponse 到本地 draft、missing 清空、字段级和递归值 dirty 比较、数值转换、基础有效作答判断、step / prompt / 完整 timing 差异与基于服务器 revision 的 PATCH 构建
 - 边界：不修改原响应对象，不使用 any，不以整对象 JSON.stringify 作为 dirty 策略，不定义评分规则、答案或任意 JSON 编辑能力
 
 ### 6.15 `MediaEvidencePanel`
@@ -295,7 +295,7 @@
 ### 6.20 `ScaleInstanceSubmissionPanel`
 
 - 路径：`frontend\src\features\assessments\components\ScaleInstanceSubmissionPanel.tsx`
-- 职责：展示 submissionState、ready / canSubmitNow、checkedAt、九项 summary、独立 loading / error / retry、readiness stale、本地未保存 / 写请求计数、阻断问题、可展开 warning、内联二次确认、提交中状态与当前会话回执
+- 职责：展示 submissionState、ready / canSubmitNow、checkedAt、九项 summary、独立 loading / error / retry、readiness stale、全部非 clean 作答状态 / 媒体写入的未收口计数、阻断问题、可展开 warning、内联二次确认、提交中状态与当前会话回执
 - 确认：readiness / dirty / 写请求 / 页面状态 / submitting 变化时重置 checkbox；只有最新服务器条件和本地条件同时满足才允许确认按钮，warning 数量明确显示但不阻断
 - 历史边界：completed 无当前会话回执时只展示 ScaleInstance.completedAt，并说明只读 API 未提供历史提交操作者；不自动调用 submit POST 获取审计
 
@@ -316,8 +316,8 @@
 
 ### 6.23 B6 媒体写成功回调链
 
-- `ItemResponseEditor` -> `ItemEvidenceRequirements` -> `MediaEvidencePanel` 最小新增 `onEvidencePersisted` 回调，只在 A15 上传或作废成功后通知父级标记 readiness stale
-- 媒体列表 GET、access URL GET 和 requirement 只读对齐不会触发该回调；A14 / A15 请求体、媒体草稿、写锁和既有保存语义不变
+- `ItemResponseEditor` -> `ItemEvidenceRequirements` -> `MediaEvidencePanel` 的 `onEvidencePersisted(requirement)` 在 A15 上传、作废或服务器确认已 attached 后通知父级标记 readiness stale，并让逐题协调器推进媒体 generation
+- 媒体列表 GET 与 access URL GET 不触发 generation；A14 / A15 继续使用独立公开接口，媒体草稿与同类型写锁保持，A14 自动保存不上传、作废或重传媒体
 
 ### 6.24 `ProvisionalScoringPanel`
 
@@ -683,6 +683,27 @@
 
 - history、trend、version list、historical detail 各自维护 loading/error/AbortController；只有可重试服务错误显示手工重载，没有自动 retry 或 polling。
 - B17 / WP-04 产品实现已完成；当前验证状态、角色/错误、响应式、键盘、Network、Runtime Storage、cleanup 与 evidence commit 统一见 `handoff-frontend-testing-playbook.md`，本地图不保存 Browser 操作流水。
+
+### 6.76 B18-A 逐题自动保存协调器
+
+- `lib/item-response-autosave.ts` 提供调度、attempt、字段匹配、网络核对分类、成功 rebase、稳定 step / prompt key 合并、媒体 generation 合并、提交 / beforeunload blockers 与可清理的逐题状态机；同题只有一个 active PATCH，不同题互不共用写锁。
+- `hooks/useItemResponseAutosaveCoordinator.ts` 将纯协调器接入 A14 save / execution GET、online / offline、一个页面级 1000ms tick 与 15 秒 running checkpoint；卸载停止内存定时器、监听器和只读核对 AbortController。
+- 冲突保留本地草稿并等待用户选择；网络结果不确定先 GET，再以 revision 和本次字段确认未提交 / 已提交 / conflict。attemptId、generation 与草稿快照不发送后端、不进入 DOM 或浏览器持久存储。
+
+### 6.77 B18-A 保存状态与冲突选择
+
+- `ItemResponseSaveStatus.tsx` 显示未保存、等待、保存中、服务端已保存时间、invalid、离线、核对中、冲突和不可编辑状态；普通状态使用 polite live region，冲突 / blocked 使用 alert，不只依赖颜色。
+- 采用服务器版本和本地版本重存均要求用户勾选明确确认；服务器版本不发 PATCH，本地版本以最新服务器 revision 仅显式写一次，再次冲突仍停止。
+
+### 6.78 B18-A 计时纯函数
+
+- `lib/item-response-timer.ts` 负责 system 状态转换、manual / imported completed 构造、完整快照校验、安全 elapsed、时钟回拨 / 无效日期 / 非有限数 / 溢出归一与 15 秒 wall-clock checkpoint。
+- 显示 tick 只计算展示，不修改草稿或每秒发送请求；强制重载后只依赖后端保存的 `lastResumedAt` 恢复 running 展示。
+
+### 6.79 B18-A 完成边界
+
+- 本阶段已完成前端代码、纯合同和静态构建；真实 Browser、双 Session、断网、刷新、切组、媒体竞态和实时计时验收归属 B18-B。
+- B18-A 不等于 B18 或 WP-03 完成；验证事实统一见 `handoff-frontend-testing-playbook.md`。
 
 ## 7. 后续同步规则
 

@@ -1,3 +1,5 @@
+import { useId } from 'react';
+
 import { Badge } from '@/src/components/ui/Badge';
 import { MediaEvidencePanel } from '@/src/features/assessments/components/MediaEvidencePanel';
 import {
@@ -38,7 +40,7 @@ export function ItemEvidenceRequirements({
     draft: ItemMediaDrafts[SupportedMediaEvidenceType] | null,
   ) => void;
   onEndWrite: (evidenceType: SupportedMediaEvidenceType) => void;
-  onEvidencePersisted: () => void;
+  onEvidencePersisted: (requirement: EvidenceRequirementState) => void;
   onRequirementChange: (requirement: EvidenceRequirementState) => void;
   onTryBeginWrite: (evidenceType: SupportedMediaEvidenceType) => boolean;
   pageReadOnlyReason: string | null;
@@ -47,6 +49,7 @@ export function ItemEvidenceRequirements({
   visitId: string;
   writingTypes: ReadonlySet<SupportedMediaEvidenceType>;
 }) {
+  const sectionTitleId = useId();
   const hasMediaRequirement =
     mediaResponseTypes.has(item.responseType) ||
     item.evidenceRequirements.some(
@@ -58,12 +61,12 @@ export function ItemEvidenceRequirements({
 
   return (
     <section
-      aria-labelledby={`${item.id}-evidence-title`}
+      aria-labelledby={sectionTitleId}
       className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] p-4"
     >
       <h4
         className="font-semibold text-[var(--cma-text-strong)]"
-        id={`${item.id}-evidence-title`}
+        id={sectionTitleId}
       >
         证据要求
       </h4>

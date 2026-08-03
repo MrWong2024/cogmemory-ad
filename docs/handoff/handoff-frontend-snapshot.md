@@ -82,7 +82,7 @@
 
 - Auth：login、logout、me。
 - Patients：A12 患者/访视列表、创建与详情。
-- Assessment execution：A13 量表目录/初始化、旧 B4 对 A14 实例详情/逐题草稿的消费、A16 readiness/submit。A29 后端合同已落地，但当前客户端尚未适配。
+- Assessment execution：A13 量表目录/初始化、B18-A 对 A14 revision / 完整 timing / 逐题自动保存与恢复合同的消费、A15 媒体 generation 协调、A16 readiness/submit。
 - Media evidence：A15 list/upload/access-url/void。
 - Provisional scoring：A17 latest/compute、A18 manual-review/confirm。
 - Cognitive domain：A19 latest/compute。
@@ -99,10 +99,11 @@ A21–A25 写请求从当前服务端 `report.updatedAt` 取得 `expectedUpdated
 - 认证、页面数据、工作流草稿、媒体 Blob/strokes、短期 URL、updatedAt 基线和当前会话 receipt 保存在 React 内存。
 - B17 history/trends 可把非敏感筛选、分页与查询上限写入 URL query；浏览器前进/后退恢复这类可分享状态。
 - 页面不把临床写工作流草稿、客户端可读凭据、敏感业务对象或不可逆操作的待提交状态写入 URL、localStorage、sessionStorage 或 IndexedDB；这些状态只保存在 React 内存。主登录态仍由服务端 Session + HttpOnly Cookie 维护，前端不读取 Cookie。
+- B18-A 的作答、备注、计时、冲突快照、attempt 与媒体 generation 同样只在当前页面内存；不使用 Cache Storage 或其他离线持久化。强制重载会丢失未发送或未确认的内存草稿，`beforeunload` 是本阶段的明确保护边界，页面只从后端恢复已保存事实。
 - 后端 Session + HttpOnly Cookie 是主登录态；前端不读取 Cookie，不使用 JWT。
 - 401 返回登录流程，403 保留可安全读取的页面事实并显示权限状态；后端 Guard 始终是最终权限边界。
 
-## 6. B16 / B17 当前实现与 A29 兼容状态
+## 6. B16 / B17 与 B18-A 当前实现
 
 ### 6.1 B16 replacement V2+ 生命周期
 
@@ -120,15 +121,19 @@ A21–A25 写请求从当前服务端 `report.updatedAt` 取得 `expectedUpdated
 - 历史报告详情是只读路由，不调用 latest 或 A21–A25；current report 与 historical report 只共用安全只读内容组件。
 - WP-04 的前端 B17 与后端 A27/A28 均已实施并验收。
 
-### 6.3 A29 后端合同与 B18 pending
+### 6.3 B18-A 对 A29 / A30 的前端消费
 
-- 后端 A29 已让 A14 GET / PATCH 安全公开 `draftRevision` / `draftSavedAt`，并要求每次实际草稿 PATCH 必填客户端已读 `expectedRevision`；计时改为含 `timerState` / `lastResumedAt` 的完整快照。
-- 当前前端代码仍是 B17 / 旧 B4 保存客户端：类型未声明或消费新增字段，PATCH 未发送 `expectedRevision`，timing 仍按旧部分字段构造。因此当前保存客户端与 A29 新合同暂不兼容，不能描述为已实现自动保存或冲突恢复。
-- B18 将负责合同适配、自动保存调度、409 后保留本地草稿并 GET 恢复、刷新 / 切组 / 网络恢复、未保存状态和实时计时交互；这些均未在 A29 执行或验收，WP-03 仍进行中。
+- A14 GET / PATCH 前端类型已声明并消费 `draftRevision`、`draftSavedAt`、`timerState` 与 `lastResumedAt`；每次实际 PATCH 从当前服务端 ItemResponse 基线取得安全 `expectedRevision`，timing 非 null 时发送六字段完整快照，revision 不由客户端生成、预增或猜测。
+- 逐题协调器维护 clean / dirty / invalid / queued / saving / waiting_for_network / reconciling / conflict / blocked；有效变更采用 800ms debounce、首次变脏后 5000ms max wait、单题单 active PATCH 和 trailing save。自动保存只保存草稿；立即保存、标记完成、计时动作与 15 秒 checkpoint 共用同一通道。
+- 保存成功使用字段级 rebase 保留请求发出后的本地编辑，step / prompt 按稳定业务键处理；A14 attempt 记录媒体 generation，A15 在保存期间形成较新 requirement 时不会被旧 A14 响应回滚。A15 成功不推进 `draftRevision` / `draftSavedAt`。
+- `ITEM_RESPONSE_DRAFT_CONFLICT` 会停止自动写、保留本地草稿、读取最新服务器事实，并要求用户明确确认采用服务器版本或以最新 revision 显式重存本地版本；再次冲突仍停止，不自动合并或循环重试。
+- 网络异常、AbortError 与 500 / 502 / 503 / 504 进入结果不确定核对：只读 GET 依据 revision 与本次实际发送字段区分未提交、已提交或冲突，不盲目重放。已知离线不发 PATCH；恢复 online 时，无不确定 attempt 的草稿重新排队，有不确定 attempt 的题目先核对。
+- 页面级只有一个 1000ms 显示 tick，并按服务器 `lastResumedAt` 计算 running 显示；system 支持开始、暂停、继续、完成、复位，manual / imported 只构造 completed。运行计时每 15 秒按实际 wall-clock 形成完整 checkpoint，切组不会停止其他题组的计时数学。
+- B18-A 只完成前端实现与非 Browser 合同。真实双 Session 冲突、断网、刷新、切组、媒体竞态和计时用户流程归属 B18-B；B18 与 WP-03 均未完成。
 
 ## 7. 当前实现结论与验证入口
 
-- B16 replacement V2+ 生命周期与 B17 history、versions、detail、trends 产品实现均已完成；A29 后端范围已完成但 B18 pending，WP-03 未完成。
+- B16 replacement V2+ 生命周期与 B17 history、versions、detail、trends 产品实现均已完成；B18-A 前端实现与非 Browser 合同阶段已完成，B18-B 尚未执行，WP-03 未完成。
 - Playwright、Chromium 与 Axe 通用 Browser acceptance 基础设施已完成。B10-89 后续已由 B10-C2 定向通过；B10 `generation-workflow` 48 pass、`public-surface-security` 47 pass，共 95 项完成，Batch C / B7–B10 已完成。Batch D 的 B11～B15 均已完成；B14.1 已治理为累计证据索引而非独立 Browser 批次，具体状态以 `handoff-frontend-testing-playbook.md` 为准。
 - 当前静态门禁、Batch 状态、Browser/automated 数量、权限/错误、响应式、键盘、Network、Runtime Storage、evidence commit、verify 与 cleanup 统一见 `handoff-frontend-testing-playbook.md`；本 snapshot 不维护测试终态。
 
@@ -136,7 +141,7 @@ A21–A25 写请求从当前服务端 `report.updatedAt` 取得 `expectedUpdated
 
 - 患者：编辑、删除、归档、合并。
 - 访视：编辑、删除、完整状态流转。
-- 施测：B18 对 A29 `expectedRevision` / 新 timing 合同的适配、批量或自动保存、冲突恢复、网络 / 切组恢复、未保存状态和完整实时计时动作。
+- 施测：B18-B 对 B18-A 自动保存、双 Session 冲突、断网 / 网络不确定、刷新、切组、媒体竞态和实时计时执行真实 Browser 验收；不实现批量 PATCH。
 - 评分：独立锁定、作废、撤销确认、reopen、rerun、批量人工评分和独立历史列表。
 - 认知域：人工修改、确认、锁定、作废、重算和跨量表合并。
 - 报告：reject、reopen、withdraw、签名、unlock、unfreeze、unarchive、作废、重生成、PDF、打印、下载。

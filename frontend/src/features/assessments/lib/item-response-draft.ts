@@ -3,12 +3,12 @@ import type {
   ItemResponseDraftJsonValue,
   ItemResponseExecution,
   ItemStepDraft,
-  ItemTimerSource,
+  ItemTimingDraft,
   UpdateItemResponseDraftRequest,
   UpdateItemStepDraftRequest,
-  UpdateItemTimingDraftRequest,
   UpdatePromptResponseDraftRequest,
 } from '@/src/features/assessments/types/item-response-execution';
+import { validateItemTimingSnapshot } from '@/src/features/assessments/lib/item-response-timer';
 
 export type ItemStepDraftState = {
   stepCode: string;
@@ -25,13 +25,6 @@ export type ItemPromptDraftState = {
   note: string;
 };
 
-export type ItemTimingDraftState = {
-  startedAt: string;
-  completedAt: string;
-  durationSeconds: string;
-  timerSource: ItemTimerSource;
-};
-
 export type ItemDraftState = {
   rawResponse: ItemResponseDraftJsonValue;
   rawResponseInput: string;
@@ -41,7 +34,7 @@ export type ItemDraftState = {
   missingReason: string;
   stepResponses: ItemStepDraftState[];
   promptResponses: ItemPromptDraftState[];
-  timing: ItemTimingDraftState;
+  timing: ItemTimingDraft | null;
   operatorNote: string;
 };
 
@@ -60,15 +53,6 @@ type ValueConversionResult =
   | { ok: true; value: ItemResponseDraftJsonValue }
   | { ok: false; message: string };
 
-type TimingConversionResult =
-  | {
-      ok: true;
-      startedAt: string | null;
-      completedAt: string | null;
-      durationMs: number | null;
-    }
-  | { ok: false; message: string };
-
 function draftValueToInput(value: ItemResponseDraftJsonValue): string {
   if (value === null || typeof value === 'object') {
     return '';
@@ -81,34 +65,6 @@ export function hasNonPrimitiveDraftValue(
   value: ItemResponseDraftJsonValue,
 ): boolean {
   return value !== null && typeof value === 'object';
-}
-
-function toDateTimeLocalInput(value: string | null): string {
-  if (!value) {
-    return '';
-  }
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return '';
-  }
-
-  const pad = (part: number) => String(part).padStart(2, '0');
-
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
-    date.getDate(),
-  )}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(
-    date.getSeconds(),
-  )}`;
-}
-
-function durationMsToSecondsInput(value: number | null): string {
-  if (value === null || !Number.isFinite(value) || value < 0) {
-    return '';
-  }
-
-  return String(value / 1000);
 }
 
 export function createItemDraftState(
@@ -136,14 +92,7 @@ export function createItemDraftState(
       responseAfterPromptTouched: false,
       note: prompt.note ?? '',
     })),
-    timing: {
-      startedAt: toDateTimeLocalInput(item.timing?.startedAt ?? null),
-      completedAt: toDateTimeLocalInput(item.timing?.completedAt ?? null),
-      durationSeconds: durationMsToSecondsInput(
-        item.timing?.durationMs ?? null,
-      ),
-      timerSource: item.timing?.timerSource ?? 'none',
-    },
+    timing: item.timing ? { ...item.timing } : null,
     operatorNote: item.operatorNote ?? '',
   };
 }
@@ -261,77 +210,6 @@ function findOriginalPrompt(
   return item.promptResponses.find(
     (prompt) => prompt.promptType === promptType && prompt.order === order,
   );
-}
-
-function convertDateTimeLocal(
-  value: string,
-  fieldLabel: string,
-): { ok: true; value: string | null } | { ok: false; message: string } {
-  if (!value) {
-    return { ok: true, value: null };
-  }
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return { ok: false, message: `${fieldLabel}不是有效时间。` };
-  }
-
-  return { ok: true, value: date.toISOString() };
-}
-
-function convertTiming(
-  timing: ItemTimingDraftState,
-): TimingConversionResult {
-  const startedAt = convertDateTimeLocal(timing.startedAt, '开始时间');
-
-  if (!startedAt.ok) {
-    return startedAt;
-  }
-
-  const completedAt = convertDateTimeLocal(timing.completedAt, '完成时间');
-
-  if (!completedAt.ok) {
-    return completedAt;
-  }
-
-  let durationMs: number | null = null;
-
-  if (timing.durationSeconds !== '') {
-    const durationSeconds = Number(timing.durationSeconds);
-    const convertedDurationMs = Math.round(durationSeconds * 1000);
-
-    if (
-      !Number.isFinite(durationSeconds) ||
-      durationSeconds < 0 ||
-      !Number.isSafeInteger(convertedDurationMs)
-    ) {
-      return {
-        ok: false,
-        message: '用时必须是可转换为非负整数毫秒的有效秒数。',
-      };
-    }
-
-    durationMs = convertedDurationMs;
-  }
-
-  if (
-    startedAt.value !== null &&
-    completedAt.value !== null &&
-    new Date(completedAt.value).getTime() < new Date(startedAt.value).getTime()
-  ) {
-    return {
-      ok: false,
-      message: '完成时间不得早于开始时间。',
-    };
-  }
-
-  return {
-    ok: true,
-    startedAt: startedAt.value,
-    completedAt: completedAt.value,
-    durationMs,
-  };
 }
 
 function getCurrentStepValue(
@@ -555,48 +433,42 @@ function buildTimingRequest(
   item: ItemResponseExecution,
   draft: ItemDraftState,
 ):
-  | { ok: true; request: UpdateItemTimingDraftRequest | undefined }
+  | { ok: true; request: ItemTimingDraft | null | undefined }
   | { ok: false; message: string } {
   if (!itemAllowsTiming(item)) {
     return { ok: true, request: undefined };
   }
 
-  const converted = convertTiming(draft.timing);
-
-  if (!converted.ok) {
-    return converted;
+  if (areItemTimingsEqual(item.timing, draft.timing)) {
+    return { ok: true, request: undefined };
   }
 
-  const original = {
-    startedAt: toDateTimeLocalInput(item.timing?.startedAt ?? null),
-    completedAt: toDateTimeLocalInput(item.timing?.completedAt ?? null),
-    durationSeconds: durationMsToSecondsInput(
-      item.timing?.durationMs ?? null,
-    ),
-    timerSource: item.timing?.timerSource ?? 'none',
-  };
-  const request: UpdateItemTimingDraftRequest = {};
-
-  if (draft.timing.startedAt !== original.startedAt) {
-    request.startedAt = converted.startedAt;
+  if (draft.timing === null) {
+    return { ok: true, request: null };
   }
 
-  if (draft.timing.completedAt !== original.completedAt) {
-    request.completedAt = converted.completedAt;
-  }
+  const validationError = validateItemTimingSnapshot(draft.timing);
 
-  if (draft.timing.durationSeconds !== original.durationSeconds) {
-    request.durationMs = converted.durationMs;
-  }
+  return validationError
+    ? { ok: false, message: validationError }
+    : { ok: true, request: { ...draft.timing } };
+}
 
-  if (draft.timing.timerSource !== original.timerSource) {
-    request.timerSource = draft.timing.timerSource;
-  }
-
-  return {
-    ok: true,
-    request: Object.keys(request).length > 0 ? request : undefined,
-  };
+function areItemTimingsEqual(
+  left: ItemTimingDraft | null,
+  right: ItemTimingDraft | null,
+): boolean {
+  return (
+    left === right ||
+    (left !== null &&
+      right !== null &&
+      left.timerState === right.timerState &&
+      left.startedAt === right.startedAt &&
+      left.lastResumedAt === right.lastResumedAt &&
+      left.completedAt === right.completedAt &&
+      left.durationMs === right.durationMs &&
+      left.timerSource === right.timerSource)
+  );
 }
 
 export function buildItemResponseDraftRequest(
@@ -617,7 +489,19 @@ export function buildItemResponseDraftRequest(
     };
   }
 
-  const input: UpdateItemResponseDraftRequest = {};
+  if (
+    !Number.isSafeInteger(item.draftRevision) ||
+    item.draftRevision < 0
+  ) {
+    return {
+      ok: false,
+      message: '服务器草稿版本无效，请重新加载量表。',
+    };
+  }
+
+  const input: UpdateItemResponseDraftRequest = {
+    expectedRevision: item.draftRevision,
+  };
 
   if (item.responseType === 'number' && draft.rawResponseTouched) {
     const rawResponse = convertInputValue(
@@ -676,7 +560,7 @@ export function buildItemResponseDraftRequest(
     return timing;
   }
 
-  if (timing.request) {
+  if (timing.request !== undefined) {
     input.timing = timing.request;
   }
 
@@ -697,7 +581,9 @@ export function buildItemResponseDraftRequest(
 
   return {
     ok: true,
-    hasChanges: Object.keys(input).length > 0,
+    hasChanges: Object.keys(input).some(
+      (key) => key !== 'expectedRevision',
+    ),
     input,
   };
 }

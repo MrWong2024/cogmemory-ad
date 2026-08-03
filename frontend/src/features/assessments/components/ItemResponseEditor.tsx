@@ -1,7 +1,10 @@
+import { useId } from 'react';
+
 import { Badge, type BadgeTone } from '@/src/components/ui/Badge';
 import { Button } from '@/src/components/ui/Button';
 import { ItemEvidenceRequirements } from '@/src/features/assessments/components/ItemEvidenceRequirements';
 import { ItemPromptEditor } from '@/src/features/assessments/components/ItemPromptEditor';
+import { ItemResponseSaveStatus } from '@/src/features/assessments/components/ItemResponseSaveStatus';
 import { ItemStepEditor } from '@/src/features/assessments/components/ItemStepEditor';
 import { ItemTimingEditor } from '@/src/features/assessments/components/ItemTimingEditor';
 import {
@@ -15,6 +18,7 @@ import {
   setItemDraftMissing,
   type ItemDraftState,
 } from '@/src/features/assessments/lib/item-response-draft';
+import type { ItemResponseAutosaveSnapshot } from '@/src/features/assessments/lib/item-response-autosave';
 import type {
   ItemResponseExecution,
   ItemResponseStatus,
@@ -24,11 +28,6 @@ import type {
   EvidenceRequirementState,
   SupportedMediaEvidenceType,
 } from '@/src/features/assessments/types/media-evidence';
-
-export type ItemSaveFeedback = {
-  kind: 'success' | 'error' | 'info';
-  message: string;
-};
 
 const inputClassName =
   'min-h-11 w-full rounded-md border border-[var(--cma-line-strong)] bg-white px-3 py-2 text-base text-[var(--cma-text-strong)] outline-none transition-colors placeholder:text-[var(--cma-subtle)] focus:border-[var(--cma-primary)] focus:ring-2 focus:ring-[var(--cma-ring)] disabled:bg-[var(--cma-surface-muted)] disabled:text-[var(--cma-muted)]';
@@ -91,8 +90,9 @@ function getBooleanSelectValue(
 }
 
 export function ItemResponseEditor({
+  autosaveSnapshot,
+  displayNow,
   draft,
-  feedback,
   isDirty,
   isSaving,
   item,
@@ -103,42 +103,55 @@ export function ItemResponseEditor({
   onEvidenceRequirementChange,
   onEvidencePersisted,
   onMediaDraftChange,
+  onRetryServerCheck,
   onSave,
   onTryBeginMediaWrite,
+  onUseLocalVersion,
+  onUseServerVersion,
   pageReadOnlyReason,
   patientId,
   scaleInstanceId,
   visitId,
 }: {
+  autosaveSnapshot: ItemResponseAutosaveSnapshot;
+  displayNow: number;
   draft: ItemDraftState;
-  feedback: ItemSaveFeedback | null;
   isDirty: boolean;
   isSaving: boolean;
   item: ItemResponseExecution;
   mediaDrafts: ItemMediaDrafts;
   mediaWritingTypes: ReadonlySet<SupportedMediaEvidenceType>;
-  onChange: (draft: ItemDraftState) => void;
+  onChange: (draft: ItemDraftState, immediate?: boolean) => void;
   onEndMediaWrite: (evidenceType: SupportedMediaEvidenceType) => void;
   onEvidenceRequirementChange: (
     requirement: EvidenceRequirementState,
   ) => void;
-  onEvidencePersisted: () => void;
+  onEvidencePersisted: (requirement: EvidenceRequirementState) => void;
   onMediaDraftChange: (
     evidenceType: SupportedMediaEvidenceType,
     draft: ItemMediaDrafts[SupportedMediaEvidenceType] | null,
   ) => void;
-  onSave: (markAsAnswered: boolean) => Promise<void>;
+  onRetryServerCheck: () => void;
+  onSave: (markAsAnswered: boolean) => void;
   onTryBeginMediaWrite: (
     evidenceType: SupportedMediaEvidenceType,
   ) => boolean;
+  onUseLocalVersion: () => void;
+  onUseServerVersion: () => void;
   pageReadOnlyReason: string | null;
   patientId: string;
   scaleInstanceId: string;
   visitId: string;
 }) {
+  const fieldIdPrefix = useId();
   const itemReadOnlyReason = getItemResponseReadOnlyReason(item.status);
   const readOnlyReason = pageReadOnlyReason ?? itemReadOnlyReason;
-  const controlsDisabled = Boolean(readOnlyReason) || isSaving;
+  const controlsDisabled = Boolean(readOnlyReason);
+  const saveActionsDisabled =
+    controlsDisabled ||
+    autosaveSnapshot.state === 'conflict' ||
+    autosaveSnapshot.state === 'reconciling' ||
+    autosaveSnapshot.state === 'blocked';
   const answerInputsDisabled = controlsDisabled || draft.isMissing;
   const hasStructuredResponse =
     item.structuredResponse !== null &&
@@ -153,14 +166,13 @@ export function ItemResponseEditor({
       ? '保存并保持本题完成'
       : '保存并标记本题完成';
 
-  function updateDraft(nextDraft: ItemDraftState) {
-    onChange(nextDraft);
+  function updateDraft(nextDraft: ItemDraftState, immediate = false) {
+    onChange(nextDraft, immediate);
   }
 
   return (
     <article
       className="grid min-w-0 gap-5 rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface)] p-5 shadow-[var(--cma-shadow-soft)]"
-      id={`item-${item.id}`}
     >
       <header className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--cma-line)] pb-4">
         <div className="min-w-0">
@@ -277,13 +289,13 @@ export function ItemResponseEditor({
       ) : null}
 
       <section
-        aria-labelledby={`${item.id}-answer-title`}
+        aria-labelledby={`${fieldIdPrefix}-answer-title`}
         className="grid gap-4"
       >
         <div>
           <h4
             className="text-lg font-semibold text-[var(--cma-text-strong)]"
-            id={`${item.id}-answer-title`}
+            id={`${fieldIdPrefix}-answer-title`}
           >
             原始作答记录
           </h4>
@@ -296,14 +308,14 @@ export function ItemResponseEditor({
           <div className="grid max-w-xl gap-2">
             <label
               className="font-semibold text-[var(--cma-text-strong)]"
-              htmlFor={`${item.id}-boolean-response`}
+              htmlFor={`${fieldIdPrefix}-boolean-response`}
             >
               原始布尔记录
             </label>
             <select
               className={inputClassName}
               disabled={answerInputsDisabled}
-              id={`${item.id}-boolean-response`}
+              id={`${fieldIdPrefix}-boolean-response`}
               onChange={(event) =>
                 updateDraft({
                   ...draft,
@@ -329,14 +341,14 @@ export function ItemResponseEditor({
           <div className="grid max-w-xl gap-2">
             <label
               className="font-semibold text-[var(--cma-text-strong)]"
-              htmlFor={`${item.id}-number-response`}
+              htmlFor={`${fieldIdPrefix}-number-response`}
             >
               原始数值记录
             </label>
             <input
               className={inputClassName}
               disabled={answerInputsDisabled}
-              id={`${item.id}-number-response`}
+              id={`${fieldIdPrefix}-number-response`}
               inputMode="decimal"
               onChange={(event) =>
                 updateDraft({
@@ -358,14 +370,14 @@ export function ItemResponseEditor({
         <div className="grid gap-2">
           <label
             className="font-semibold text-[var(--cma-text-strong)]"
-            htmlFor={`${item.id}-response-text`}
+            htmlFor={`${fieldIdPrefix}-response-text`}
           >
             {getResponseTextLabel(item)}
           </label>
           <textarea
             className={`${inputClassName} min-h-32 resize-y`}
             disabled={answerInputsDisabled}
-            id={`${item.id}-response-text`}
+            id={`${fieldIdPrefix}-response-text`}
             maxLength={10000}
             onChange={(event) =>
               updateDraft({ ...draft, responseText: event.target.value })
@@ -400,8 +412,8 @@ export function ItemResponseEditor({
       {itemAllowsTiming(item) ? (
         <ItemTimingEditor
           disabled={controlsDisabled}
+          displayNow={displayNow}
           draft={draft}
-          item={item}
           onChange={updateDraft}
         />
       ) : null}
@@ -412,7 +424,7 @@ export function ItemResponseEditor({
             checked={draft.isMissing}
             className="mt-1 h-5 w-5 shrink-0 accent-[var(--cma-primary)]"
             disabled={controlsDisabled}
-            id={`${item.id}-is-missing`}
+            id={`${fieldIdPrefix}-is-missing`}
             onChange={(event) =>
               updateDraft(setItemDraftMissing(draft, event.target.checked))
             }
@@ -421,7 +433,7 @@ export function ItemResponseEditor({
           <div>
             <label
               className="font-semibold text-[var(--cma-text-strong)]"
-              htmlFor={`${item.id}-is-missing`}
+              htmlFor={`${fieldIdPrefix}-is-missing`}
             >
               本题无法完成 / 缺失记录
             </label>
@@ -433,14 +445,14 @@ export function ItemResponseEditor({
         <div className="grid gap-2">
           <label
             className="font-semibold text-[var(--cma-text-strong)]"
-            htmlFor={`${item.id}-missing-reason`}
+            htmlFor={`${fieldIdPrefix}-missing-reason`}
           >
             缺失原因{draft.isMissing ? '（必填）' : ''}
           </label>
           <textarea
             className={`${inputClassName} min-h-24 resize-y`}
             disabled={controlsDisabled || !draft.isMissing}
-            id={`${item.id}-missing-reason`}
+            id={`${fieldIdPrefix}-missing-reason`}
             maxLength={1000}
             onChange={(event) =>
               updateDraft({ ...draft, missingReason: event.target.value })
@@ -453,7 +465,7 @@ export function ItemResponseEditor({
       <section className="grid gap-2">
         <label
           className="font-semibold text-[var(--cma-text-strong)]"
-          htmlFor={`${item.id}-operator-note`}
+          htmlFor={`${fieldIdPrefix}-operator-note`}
         >
           操作者备注
           {item.config.requiresOperatorNote ? '（量表配置要求记录）' : ''}
@@ -461,7 +473,7 @@ export function ItemResponseEditor({
         <textarea
           className={`${inputClassName} min-h-28 resize-y`}
           disabled={controlsDisabled}
-          id={`${item.id}-operator-note`}
+          id={`${fieldIdPrefix}-operator-note`}
           maxLength={4000}
           onChange={(event) =>
             updateDraft({ ...draft, operatorNote: event.target.value })
@@ -475,33 +487,24 @@ export function ItemResponseEditor({
         </p>
       </section>
 
-      {feedback ? (
-        <p
-          aria-live={feedback.kind === 'success' ? 'polite' : undefined}
-          className={
-            feedback.kind === 'success'
-              ? 'rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-success-soft)] px-4 py-3 text-base leading-7 text-[var(--cma-success)]'
-              : feedback.kind === 'info'
-                ? 'rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-info-soft)] px-4 py-3 text-base leading-7 text-[var(--cma-info)]'
-                : 'rounded-md border border-[var(--cma-danger)] bg-[var(--cma-danger-soft)] px-4 py-3 text-base leading-7 text-[var(--cma-danger)]'
-          }
-          role={feedback.kind === 'error' ? 'alert' : 'status'}
-        >
-          {feedback.message}
-        </p>
-      ) : null}
+      <ItemResponseSaveStatus
+        onRetryServerCheck={onRetryServerCheck}
+        onUseLocalVersion={onUseLocalVersion}
+        onUseServerVersion={onUseServerVersion}
+        snapshot={autosaveSnapshot}
+      />
 
       <footer className="flex flex-wrap gap-3 border-t border-[var(--cma-line)] pt-4">
         <Button
-          disabled={controlsDisabled}
-          onClick={() => void onSave(false)}
+          disabled={saveActionsDisabled}
+          onClick={() => onSave(false)}
           variant="secondary"
         >
           {isSaving ? '正在保存...' : saveDraftLabel}
         </Button>
         <Button
-          disabled={controlsDisabled}
-          onClick={() => void onSave(true)}
+          disabled={saveActionsDisabled}
+          onClick={() => onSave(true)}
         >
           {isSaving ? '正在保存...' : markAnsweredLabel}
         </Button>

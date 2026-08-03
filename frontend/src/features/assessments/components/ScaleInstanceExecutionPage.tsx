@@ -17,7 +17,6 @@ import {
   AssessmentExecutionApiError,
   getScaleInstanceExecutionDetail,
   getScaleInstanceSubmissionReadiness,
-  saveItemResponseDraft,
   submitScaleInstance,
 } from '@/src/features/assessments/api/assessment-execution-api';
 import {
@@ -29,7 +28,6 @@ import {
 } from '@/src/features/assessments/api/provisional-scoring-api';
 import {
   ItemResponseEditor,
-  type ItemSaveFeedback,
 } from '@/src/features/assessments/components/ItemResponseEditor';
 import {
   ProvisionalScoringPanel,
@@ -39,20 +37,15 @@ import { CognitiveDomainResultPanel } from '@/src/features/assessments/component
 import { ScaleExecutionGroupNavigation } from '@/src/features/assessments/components/ScaleExecutionGroupNavigation';
 import { ScaleInstanceSubmissionPanel } from '@/src/features/assessments/components/ScaleInstanceSubmissionPanel';
 import { useCognitiveDomainResult } from '@/src/features/assessments/hooks/useCognitiveDomainResult';
+import { useItemResponseAutosaveCoordinator } from '@/src/features/assessments/hooks/useItemResponseAutosaveCoordinator';
 import {
   assessmentOperatorRoleLabels,
   buildScaleExecutionGroupSections,
-  getItemResponseSaveErrorMessage,
   getScaleExecutionReadOnlyReason,
   scaleAdministrationModeLabels,
   scaleInstanceStatusLabels,
 } from '@/src/features/assessments/lib/assessment-execution-display';
-import {
-  buildItemResponseDraftRequest,
-  createItemDraftState,
-  itemDraftHasChanges,
-  type ItemDraftState,
-} from '@/src/features/assessments/lib/item-response-draft';
+import type { ItemDraftState } from '@/src/features/assessments/lib/item-response-draft';
 import {
   mediaDraftHasPendingContent,
   type ItemMediaDrafts,
@@ -62,7 +55,11 @@ import type {
   EvidenceRequirementState,
   SupportedMediaEvidenceType,
 } from '@/src/features/assessments/types/media-evidence';
-import type { ScaleInstanceExecutionDetailResponse } from '@/src/features/assessments/types/item-response-execution';
+import type {
+  ItemResponseExecution,
+  ScaleInstanceExecutionDetailResponse,
+  UpdateItemResponseDraftResponse,
+} from '@/src/features/assessments/types/item-response-execution';
 import { getProvisionalScoringApiErrorMessage } from '@/src/features/assessments/lib/provisional-scoring-display';
 import {
   buildManualScoreReviewRequest,
@@ -201,14 +198,6 @@ function getExecutionDetailErrorState(
   };
 }
 
-function createDraftMap(
-  detail: ScaleInstanceExecutionDetailResponse,
-): Record<string, ItemDraftState> {
-  return Object.fromEntries(
-    detail.itemResponses.map((item) => [item.id, createItemDraftState(item)]),
-  );
-}
-
 function buildMediaDraftKey(
   itemResponseId: string,
   evidenceType: SupportedMediaEvidenceType,
@@ -258,13 +247,12 @@ export function ScaleInstanceExecutionPage({
 }) {
   const router = useRouter();
   const mountedRef = useRef(true);
-  const savingItemIdsRef = useRef(new Set<string>());
   const mediaWritingKeysRef = useRef(new Set<string>());
   const readinessControllerRef = useRef<AbortController | null>(null);
   const scoreResultControllerRef = useRef<AbortController | null>(null);
   const readinessRef = useRef<ScaleSubmissionReadinessResponse | null>(null);
   const localBlockersRef = useRef({
-    unsavedAnswerItemCount: 0,
+    unsettledAnswerItemCount: 0,
     pendingMediaItemCount: 0,
   });
   const submittingRef = useRef(false);
@@ -278,19 +266,12 @@ export function ScaleInstanceExecutionPage({
     mongoIdPattern.test(scaleInstanceId);
   const [detail, setDetail] =
     useState<ScaleInstanceExecutionDetailResponse | null>(null);
-  const [drafts, setDrafts] = useState<Record<string, ItemDraftState>>({});
   const [mediaDrafts, setMediaDrafts] = useState<
     Record<string, MediaEvidenceDraft | undefined>
   >({});
   const [mediaWritingKeys, setMediaWritingKeys] = useState<
     ReadonlySet<string>
   >(() => new Set());
-  const [feedbacks, setFeedbacks] = useState<
-    Record<string, ItemSaveFeedback | undefined>
-  >({});
-  const [savingItemIds, setSavingItemIds] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
   const [detailError, setDetailError] =
     useState<AssessmentExecutionApiError | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -358,6 +339,94 @@ export function ScaleInstanceExecutionPage({
   const [confirmationSafetyBlock, setConfirmationSafetyBlock] = useState<
     'warnings' | 'audit_unavailable' | null
   >(null);
+
+  const handleAutosaveItemAccepted = useCallback(
+    (
+      item: ItemResponseExecution,
+      response: UpdateItemResponseDraftResponse | null,
+    ) => {
+      setDetail((current) => {
+        if (!current) {
+          return current;
+        }
+
+        return {
+          ...current,
+          ...(response
+            ? {
+                scaleInstance: {
+                  ...current.scaleInstance,
+                  progress: {
+                    totalItemCount: response.progress.totalItemCount,
+                    answeredItemCount: Math.max(
+                      current.scaleInstance.progress.answeredItemCount,
+                      response.progress.answeredItemCount,
+                    ),
+                  },
+                },
+              }
+            : {}),
+          itemResponses: current.itemResponses.map((currentItem) =>
+            currentItem.id === item.id ? item : currentItem,
+          ),
+        };
+      });
+
+      if (response) {
+        if (readinessRef.current) {
+          setReadinessStale(true);
+        }
+        setConfirmationVisible(false);
+        setSubmissionError(null);
+      }
+    },
+    [],
+  );
+
+  const handleAutosaveExecutionSummaryRefreshed = useCallback(
+    (response: ScaleInstanceExecutionDetailResponse) => {
+      setDetail((current) =>
+        current
+          ? {
+              ...current,
+              visit: response.visit,
+              scale: response.scale,
+              scaleInstance: response.scaleInstance,
+              groups: response.groups,
+            }
+          : current,
+      );
+    },
+    [],
+  );
+
+  const autosave = useItemResponseAutosaveCoordinator({
+    patientId,
+    visitId,
+    scaleInstanceId,
+    onItemResponseAccepted: handleAutosaveItemAccepted,
+    onExecutionSummaryRefreshed: handleAutosaveExecutionSummaryRefreshed,
+    onUnauthorized: () => router.replace('/login'),
+  });
+  const drafts = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(autosave.snapshots).map(([itemResponseId, snapshot]) => [
+          itemResponseId,
+          snapshot.draft,
+        ]),
+      ) as Record<string, ItemDraftState>,
+    [autosave.snapshots],
+  );
+  const savingItemIds = useMemo(
+    () =>
+      new Set(
+        Object.entries(autosave.snapshots)
+          .filter(([, snapshot]) => snapshot.state === 'saving')
+          .map(([itemResponseId]) => itemResponseId),
+      ),
+    [autosave.snapshots],
+  );
 
   const applyScoreResultDetail = useCallback(
     (response: ScoreResultDetailResponse) => {
@@ -524,7 +593,7 @@ export function ScaleInstanceExecutionPage({
       scoreResultControllerRef.current?.abort();
       readinessRef.current = null;
       setDetail(null);
-      setDrafts({});
+      autosave.initialize([]);
       setMediaDrafts({});
       setReadiness(null);
       setReadinessError(null);
@@ -602,9 +671,8 @@ export function ScaleInstanceExecutionPage({
           response.itemResponses,
         );
         setDetail(response);
-        setDrafts(createDraftMap(response));
+        autosave.initialize(response.itemResponses);
         setMediaDrafts({});
-        setFeedbacks({});
         setActiveGroupCode(sections[0]?.code ?? '');
         void loadSubmissionReadiness();
         if (scoreQueryableInstanceStatuses.has(response.scaleInstance.status)) {
@@ -625,7 +693,7 @@ export function ScaleInstanceExecutionPage({
         }
 
         setDetail(null);
-        setDrafts({});
+        autosave.initialize([]);
         setMediaDrafts({});
         setDetailError(
           requestError instanceof AssessmentExecutionApiError
@@ -642,6 +710,7 @@ export function ScaleInstanceExecutionPage({
     return () => controller.abort();
   }, [
     idsAreValid,
+    autosave.initialize,
     loadLatestScoreResult,
     loadSubmissionReadiness,
     patientId,
@@ -661,16 +730,7 @@ export function ScaleInstanceExecutionPage({
   const activeSection =
     sections.find((section) => section.code === activeGroupCode) ?? sections[0];
   const effectiveActiveGroupCode = activeSection?.code ?? '';
-  const unsavedAnswerItemCount = useMemo(() => {
-    if (!detail) {
-      return 0;
-    }
-
-    return detail.itemResponses.filter((item) => {
-      const draft = drafts[item.id];
-      return draft ? itemDraftHasChanges(item, draft) : false;
-    }).length;
-  }, [detail, drafts]);
+  const unsavedAnswerItemCount = autosave.summary.unsettledCount;
   const pendingMediaItemCount = useMemo(() => {
     if (!detail) {
       return 0;
@@ -686,8 +746,23 @@ export function ScaleInstanceExecutionPage({
   }, [detail, mediaDrafts]);
 
   useEffect(() => {
+    autosave.setWritesEnabled(
+      Boolean(detail) &&
+        getScaleExecutionReadOnlyReason(
+          detail?.visit.status ?? 'voided',
+          detail?.scaleInstance.status ?? 'voided',
+        ) === null,
+    );
+  }, [
+    autosave.setWritesEnabled,
+    detail,
+    detail?.scaleInstance.status,
+    detail?.visit.status,
+  ]);
+
+  useEffect(() => {
     localBlockersRef.current = {
-      unsavedAnswerItemCount,
+      unsettledAnswerItemCount: unsavedAnswerItemCount,
       pendingMediaItemCount,
     };
   }, [pendingMediaItemCount, unsavedAnswerItemCount]);
@@ -833,8 +908,9 @@ export function ScaleInstanceExecutionPage({
 
   useEffect(() => {
     if (
-      unsavedAnswerItemCount === 0 &&
+      !autosave.summary.shouldBlockUnload &&
       pendingMediaItemCount === 0 &&
+      mediaWritingKeys.size === 0 &&
       !manualReviewDraftDirty &&
       !confirmationDraftDirty
     ) {
@@ -851,9 +927,10 @@ export function ScaleInstanceExecutionPage({
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [
     confirmationDraftDirty,
+    autosave.summary.shouldBlockUnload,
     manualReviewDraftDirty,
+    mediaWritingKeys.size,
     pendingMediaItemCount,
-    unsavedAnswerItemCount,
   ]);
 
   async function handleSignOut() {
@@ -878,16 +955,16 @@ export function ScaleInstanceExecutionPage({
     setSubmissionError(null);
   }
 
-  function handleDraftChange(itemResponseId: string, draft: ItemDraftState) {
+  function handleDraftChange(
+    itemResponseId: string,
+    draft: ItemDraftState,
+    immediate = false,
+  ) {
     if (submittingRef.current) {
       return;
     }
 
-    setDrafts((current) => ({ ...current, [itemResponseId]: draft }));
-    setFeedbacks((current) => ({
-      ...current,
-      [itemResponseId]: undefined,
-    }));
+    autosave.updateDraft(itemResponseId, draft, { immediate });
   }
 
   function handleMediaDraftChange(
@@ -917,6 +994,7 @@ export function ScaleInstanceExecutionPage({
     itemResponseId: string,
     requirement: EvidenceRequirementState,
   ) {
+    autosave.notifyMediaRequirement(itemResponseId, requirement, false);
     setDetail((current) => {
       if (!current) {
         return current;
@@ -946,11 +1024,15 @@ export function ScaleInstanceExecutionPage({
     });
   }
 
-  function handleEvidencePersisted() {
+  function handleEvidencePersisted(
+    itemResponseId: string,
+    requirement: EvidenceRequirementState,
+  ) {
     if (!mountedRef.current) {
       return;
     }
 
+    autosave.notifyMediaRequirement(itemResponseId, requirement, true);
     markReadinessStale();
   }
 
@@ -981,147 +1063,23 @@ export function ScaleInstanceExecutionPage({
     }
   }
 
-  async function handleSaveItem(
-    itemResponseId: string,
-    markAsAnswered: boolean,
-  ) {
-    if (
-      !detail ||
-      submittingRef.current ||
-      savingItemIdsRef.current.has(itemResponseId)
-    ) {
+  function handleSaveItem(itemResponseId: string, markAsAnswered: boolean) {
+    if (markAsAnswered) {
+      autosave.markAsAnswered(itemResponseId);
       return;
     }
 
-    const item = detail.itemResponses.find(
-      (candidate) => candidate.id === itemResponseId,
-    );
-    const draft = drafts[itemResponseId];
+    autosave.saveNow(itemResponseId);
+  }
 
-    if (!item || !draft) {
-      return;
-    }
-
-    const buildResult = buildItemResponseDraftRequest(
-      item,
-      draft,
-      markAsAnswered,
-    );
-
-    if (!buildResult.ok) {
-      setFeedbacks((current) => ({
-        ...current,
-        [itemResponseId]: { kind: 'error', message: buildResult.message },
-      }));
-      return;
-    }
-
-    if (!buildResult.hasChanges) {
-      setDrafts((current) => ({
-        ...current,
-        [itemResponseId]: createItemDraftState(item),
-      }));
-      setFeedbacks((current) => ({
-        ...current,
-        [itemResponseId]: {
-          kind: 'info',
-          message: '没有需要保存的更改。',
-        },
-      }));
-      return;
-    }
-
-    savingItemIdsRef.current.add(itemResponseId);
-    setSavingItemIds((current) => new Set([...current, itemResponseId]));
-    setFeedbacks((current) => ({
-      ...current,
-      [itemResponseId]: undefined,
-    }));
-
-    try {
-      const response = await saveItemResponseDraft(
-        patientId,
-        visitId,
-        scaleInstanceId,
-        itemResponseId,
-        buildResult.input,
+  function handleSelectGroup(groupCode: string) {
+    if (activeSection && activeSection.code !== groupCode) {
+      autosave.flushQueued(
+        activeSection.itemResponses.map((itemResponse) => itemResponse.id),
       );
-
-      if (!mountedRef.current) {
-        return;
-      }
-
-      setDetail((current) => {
-        if (!current) {
-          return current;
-        }
-
-        return {
-          ...current,
-          scaleInstance: {
-            ...current.scaleInstance,
-            progress: {
-              totalItemCount: response.progress.totalItemCount,
-              answeredItemCount: Math.max(
-                current.scaleInstance.progress.answeredItemCount,
-                response.progress.answeredItemCount,
-              ),
-            },
-          },
-          itemResponses: current.itemResponses.map((currentItem) =>
-            currentItem.id === itemResponseId
-              ? response.itemResponse
-              : currentItem,
-          ),
-        };
-      });
-      setDrafts((current) => ({
-        ...current,
-        [itemResponseId]: createItemDraftState(response.itemResponse),
-      }));
-      setFeedbacks((current) => ({
-        ...current,
-        [itemResponseId]: {
-          kind: 'success',
-          message: markAsAnswered
-            ? '本题草稿已保存，并由服务端标记为本题完成。'
-            : '本题草稿已保存。',
-        },
-      }));
-      markReadinessStale();
-    } catch (requestError: unknown) {
-      if (!mountedRef.current) {
-        return;
-      }
-
-      const error =
-        requestError instanceof AssessmentExecutionApiError
-          ? requestError
-          : new AssessmentExecutionApiError('unknown');
-
-      if (error.kind === 'unauthenticated') {
-        router.replace('/login');
-        return;
-      }
-
-      setFeedbacks((current) => ({
-        ...current,
-        [itemResponseId]: {
-          kind: 'error',
-          message: getItemResponseSaveErrorMessage(error.kind),
-        },
-      }));
-    } finally {
-      savingItemIdsRef.current.delete(itemResponseId);
-
-      if (mountedRef.current) {
-        setSavingItemIds((current) => {
-          const next = new Set(current);
-          next.delete(itemResponseId);
-          return next;
-        });
-      }
     }
+
+    setActiveGroupCode(groupCode);
   }
 
   function locateItemResponse(
@@ -1146,7 +1104,7 @@ export function ScaleInstanceExecutionPage({
     } else {
       setSubmissionStatus(null);
     }
-    setActiveGroupCode(section.code);
+    handleSelectGroup(section.code);
     setPendingFocusSource(source);
     setPendingFocusItemId(itemResponseId);
   }
@@ -1159,9 +1117,8 @@ export function ScaleInstanceExecutionPage({
 
   function hasLocalSubmissionBlockers(): boolean {
     return (
-      localBlockersRef.current.unsavedAnswerItemCount > 0 ||
+      localBlockersRef.current.unsettledAnswerItemCount > 0 ||
       localBlockersRef.current.pendingMediaItemCount > 0 ||
-      savingItemIdsRef.current.size > 0 ||
       mediaWritingKeysRef.current.size > 0
     );
   }
@@ -1905,7 +1862,7 @@ export function ScaleInstanceExecutionPage({
             {readOnlyReason ? <Badge tone="warning">只读查看</Badge> : null}
             {isSubmitting ? <Badge tone="warning">正在正式提交</Badge> : null}
             <Badge tone={unsavedAnswerItemCount > 0 ? 'warning' : 'success'}>
-              未保存作答：{unsavedAnswerItemCount} 题
+              未收口作答：{unsavedAnswerItemCount} 题
             </Badge>
             <Badge tone={pendingMediaItemCount > 0 ? 'warning' : 'success'}>
               未上传证据：{pendingMediaItemCount} 题
@@ -2222,7 +2179,7 @@ export function ScaleInstanceExecutionPage({
               <Badge
                 tone={unsavedAnswerItemCount > 0 ? 'warning' : 'success'}
               >
-                未保存作答：{unsavedAnswerItemCount}
+                未收口作答：{unsavedAnswerItemCount}
               </Badge>
               <Badge tone={pendingMediaItemCount > 0 ? 'warning' : 'success'}>
                 未上传证据：{pendingMediaItemCount}
@@ -2232,9 +2189,9 @@ export function ScaleInstanceExecutionPage({
         </CardHeader>
         <CardContent className="pt-5">
           {sections.length > 0 ? (
-            <ScaleExecutionGroupNavigation
-              activeGroupCode={effectiveActiveGroupCode}
-              onSelectGroup={setActiveGroupCode}
+              <ScaleExecutionGroupNavigation
+                activeGroupCode={effectiveActiveGroupCode}
+                onSelectGroup={handleSelectGroup}
               sections={sections}
             />
           ) : (
@@ -2279,8 +2236,9 @@ export function ScaleInstanceExecutionPage({
           {activeSection.itemResponses.length > 0 ? (
             activeSection.itemResponses.map((item) => {
               const draft = drafts[item.id];
+              const autosaveSnapshot = autosave.snapshots[item.id];
 
-              if (!draft) {
+              if (!draft || !autosaveSnapshot) {
                 return null;
               }
 
@@ -2293,9 +2251,10 @@ export function ScaleInstanceExecutionPage({
                   tabIndex={-1}
                 >
                   <ItemResponseEditor
+                    autosaveSnapshot={autosaveSnapshot}
+                    displayNow={autosave.displayNow}
                     draft={draft}
-                    feedback={feedbacks[item.id] ?? null}
-                    isDirty={itemDraftHasChanges(item, draft)}
+                    isDirty={autosaveSnapshot.hasLocalChanges}
                     isSaving={savingItemIds.has(item.id)}
                     item={item}
                     mediaDrafts={getItemMediaDrafts(mediaDrafts, item.id)}
@@ -2303,13 +2262,15 @@ export function ScaleInstanceExecutionPage({
                       mediaWritingKeys,
                       item.id,
                     )}
-                    onChange={(nextDraft) =>
-                      handleDraftChange(item.id, nextDraft)
+                    onChange={(nextDraft, immediate) =>
+                      handleDraftChange(item.id, nextDraft, immediate)
                     }
                     onEvidenceRequirementChange={(requirement) =>
                       handleEvidenceRequirementChange(item.id, requirement)
                     }
-                    onEvidencePersisted={handleEvidencePersisted}
+                    onEvidencePersisted={(requirement) =>
+                      handleEvidencePersisted(item.id, requirement)
+                    }
                     onEndMediaWrite={(evidenceType) =>
                       handleEndMediaWrite(item.id, evidenceType)
                     }
@@ -2325,6 +2286,15 @@ export function ScaleInstanceExecutionPage({
                     }
                     onSave={(markAsAnswered) =>
                       handleSaveItem(item.id, markAsAnswered)
+                    }
+                    onRetryServerCheck={() =>
+                      autosave.retryServerCheck(item.id)
+                    }
+                    onUseLocalVersion={() =>
+                      autosave.useLocalConflictVersion(item.id)
+                    }
+                    onUseServerVersion={() =>
+                      autosave.useServerConflictVersion(item.id)
                     }
                     pageReadOnlyReason={effectiveReadOnlyReason}
                     patientId={patientId}

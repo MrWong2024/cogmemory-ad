@@ -82,7 +82,7 @@ export function MediaEvidencePanel({
     draft: ItemMediaDrafts[SupportedMediaEvidenceType] | null,
   ) => void;
   onEndWrite: (evidenceType: SupportedMediaEvidenceType) => void;
-  onEvidencePersisted: () => void;
+  onEvidencePersisted: (requirement: EvidenceRequirementState) => void;
   onRequirementChange: (requirement: EvidenceRequirementState) => void;
   onTryBeginWrite: (evidenceType: SupportedMediaEvidenceType) => boolean;
   pageReadOnlyReason: string | null;
@@ -238,7 +238,7 @@ export function MediaEvidencePanel({
 
       onRequirementChange(response.evidenceRequirement);
       onDraftChange(evidenceType, null);
-      onEvidencePersisted();
+      onEvidencePersisted(response.evidenceRequirement);
 
       if (mountedRef.current) {
         setItems((current) => mergeEvidence(current, response.mediaEvidence));
@@ -271,11 +271,13 @@ export function MediaEvidencePanel({
       });
 
       if (error.kind === 'media_evidence_already_attached') {
-        onRequirementChange({
+        const attachedRequirement: EvidenceRequirementState = {
           evidenceType,
           status: 'attached',
           attached: true,
-        });
+        };
+        onRequirementChange(attachedRequirement);
+        onEvidencePersisted(attachedRequirement);
         setListRetryKey((value) => value + 1);
       }
     } finally {
@@ -328,7 +330,7 @@ export function MediaEvidencePanel({
       );
 
       onRequirementChange(response.evidenceRequirement);
-      onEvidencePersisted();
+      onEvidencePersisted(response.evidenceRequirement);
 
       if (mountedRef.current) {
         setItems((current) => mergeEvidence(current, response.mediaEvidence));

@@ -1,3 +1,5 @@
+import { useId } from 'react';
+
 import { promptResponseTypeLabels } from '@/src/features/assessments/lib/assessment-execution-display';
 import { hasNonPrimitiveDraftValue } from '@/src/features/assessments/lib/item-response-draft';
 import type {
@@ -22,6 +24,8 @@ export function ItemPromptEditor({
   item: ItemResponseExecution;
   onChange: (draft: ItemDraftState) => void;
 }) {
+  const fieldIdPrefix = useId();
+
   if (item.promptResponses.length === 0) {
     return null;
   }
@@ -43,13 +47,13 @@ export function ItemPromptEditor({
 
   return (
     <section
-      aria-labelledby={`${item.id}-prompts-title`}
+      aria-labelledby={`${fieldIdPrefix}-prompts-title`}
       className="grid gap-4 rounded-md border border-[var(--cma-line)] p-4"
     >
       <div>
         <h4
           className="text-lg font-semibold text-[var(--cma-text-strong)]"
-          id={`${item.id}-prompts-title`}
+          id={`${fieldIdPrefix}-prompts-title`}
         >
           提示后表现
         </h4>
@@ -74,8 +78,8 @@ export function ItemPromptEditor({
             return null;
           }
 
-          const responseId = `${item.id}-prompt-${index}-response`;
-          const noteId = `${item.id}-prompt-${index}-note`;
+          const responseId = `${fieldIdPrefix}-prompt-${index}-response`;
+          const noteId = `${fieldIdPrefix}-prompt-${index}-note`;
 
           return (
             <div
