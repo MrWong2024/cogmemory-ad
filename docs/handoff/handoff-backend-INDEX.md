@@ -11,7 +11,7 @@
 - 后端采用 NestJS、Mongoose 与 HttpOnly Session Cookie 认证底座。
 - 后端业务能力已实施至 A30，覆盖患者、访视与量表执行、单题草稿独立版本 / CAS / 持久化计时、提交写屏障、媒体证据、评分、认知域、临床报告生命周期、历史读取和基础随访趋势。
 - A26 让任意合法线性 replacement V2+ 复用 A21–A24 的既有生命周期。
-- A29 / A30 后端范围完成，父实例 + 固定题目 scope 的可恢复 submission write barrier 已关闭相邻生命周期写保护 gap；B18 与 WP-03 已按当前 roadmap 锁定范围完成。
+- A29 / A30 后端范围完成，父实例 + 固定题目 scope 的可恢复 submission write barrier 已关闭相邻生命周期写保护 gap；B18 补充验证仍有 frontend single-flight 与 P9 Browser gap，WP-03 进行中。
 - 详细后端门禁与跨端 Browser 验收状态分别见 backend / frontend testing playbook。
 
 ## 3. Handoff 文档导航与职责

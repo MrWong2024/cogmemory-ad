@@ -129,11 +129,11 @@ A21–A25 写请求从当前服务端 `report.updatedAt` 取得 `expectedUpdated
 - `ITEM_RESPONSE_DRAFT_CONFLICT` 会停止自动写、保留本地草稿、读取最新服务器事实，并要求用户明确确认采用服务器版本或以最新 revision 显式重存本地版本；再次冲突仍停止，不自动合并或循环重试。
 - 网络异常、AbortError 与 500 / 502 / 503 / 504 进入结果不确定核对：只读 GET 依据 revision 与本次实际发送字段区分未提交、已提交或冲突，不盲目重放。已知离线不发 PATCH；恢复 online 时，无不确定 attempt 的草稿重新排队，有不确定 attempt 的题目先核对。
 - 页面级只有一个 1000ms 显示 tick，并按服务器 `lastResumedAt` 计算 running 显示；system 支持开始、暂停、继续、完成、复位，manual / imported 只构造 completed。运行计时每 15 秒按实际 wall-clock 形成完整 checkpoint，切组不会停止其他题组的计时数学。
-- B18-A 的 47 项非 Browser 合同、B18-B1 的 6 个核心 Browser 场景和 B18-B2 的 P4/P5/P6 共 6 个剩余 Browser 场景均已关闭；自动保存、双 Session 冲突、断网 / 网络不确定、刷新、切组、媒体竞态和 system/external 计时形成桌面 Browser 闭环。B18 与 WP-03 已按当前 roadmap 锁定范围完成。
+- B18-A 的既有 47 项非 Browser 合同、B18-B1 的 6 个核心 Browser 场景和 B18-B2 P4/P5/P6 的 6 个 Browser 场景继续成立；补充验证已关闭 P7 显式保存与 P8 running 重载，但确认同题 reconciliation GET 缺少 single-flight，P9 媒体失败草稿保全也未形成完整 Browser 证据。B18 实现已存在，验证闭合 pending。
 
 ## 7. 当前实现结论与验证入口
 
-- B16 replacement V2+ 生命周期、B17 history/versions/detail/trends 与 B18 自动保存、切组、媒体 generation、实时计时桌面 Browser 闭环均已完成；WP-03 已按当前锁定范围完成。
+- B16 replacement V2+ 生命周期与 B17 history/versions/detail/trends 已完成；B18 自动保存、切组、媒体 generation 与实时计时实现已落地，但补充验证 pending，WP-03 进行中。
 - Playwright、Chromium 与 Axe 通用 Browser acceptance 基础设施已完成。B10-89 后续已由 B10-C2 定向通过；B10 `generation-workflow` 48 pass、`public-surface-security` 47 pass，共 95 项完成，Batch C / B7–B10 已完成。Batch D 的 B11～B15 均已完成；B14.1 已治理为累计证据索引而非独立 Browser 批次，具体状态以 `handoff-frontend-testing-playbook.md` 为准。
 - 当前静态门禁、Batch 状态、Browser/automated 数量、权限/错误、响应式、键盘、Network、Runtime Storage、evidence commit、verify 与 cleanup 统一见 `handoff-frontend-testing-playbook.md`；本 snapshot 不维护测试终态。
 
@@ -161,4 +161,4 @@ A21–A25 写请求从当前服务端 `report.updatedAt` 取得 `expectedUpdated
 
 - B16 replacement 生命周期实现可从 `eabb9b3` 及缺陷修复 `066ee87` 追溯。
 - B17 产品实现可从 `4ba9106` 追溯；WP-04 与其他前端验证证据统一由 frontend testing playbook 索引。
-- B18-B2 收口基线为 `5479181da3840504fe0ddeeb15406e2e9b3e8010`。旧逐阶段命令、首轮 Browser 缺口、fixture/端口/账号过程和完整源码清单通过 Git 历史追溯，不再保留在 active snapshot。
+- B18-B2 既有收口基线为 `5479181da3840504fe0ddeeb15406e2e9b3e8010`；本次补充验证基线为 `c59f7dc36a5a24e6fa5a3eefa403522051e987e7`，活动 gap 及执行证据由 frontend testing playbook 维护。

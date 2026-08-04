@@ -49,7 +49,10 @@ type Profile =
   | 'B18-P3-network-reconciliation'
   | 'B18-P4-group-switch'
   | 'B18-P5-media-generation'
-  | 'B18-P6-realtime-timing';
+  | 'B18-P6-realtime-timing'
+  | 'B18-P7-explicit-actions'
+  | 'B18-P8-running-reload'
+  | 'B18-P9-media-failure';
 type Phase =
   | 'prepared'
   | 'u01-post-autosave'
@@ -57,7 +60,10 @@ type Phase =
   | 'u03-post-network-reconciliation'
   | 'u04-post-group-switch'
   | 'u05-post-media-generation'
-  | 'u06-post-realtime-timing';
+  | 'u06-post-realtime-timing'
+  | 'u07-post-explicit-actions'
+  | 'u08-post-running-reload'
+  | 'u09-post-media-failure';
 type ScenarioKey =
   | 'autosave-reload'
   | 'conflict-server'
@@ -70,7 +76,11 @@ type ScenarioKey =
   | 'media-upload-response-race'
   | 'media-void-reupload-response-race'
   | 'system-timer-lifecycle'
-  | 'external-timing-reset';
+  | 'external-timing-reset'
+  | 'explicit-save-draft'
+  | 'explicit-mark-answered'
+  | 'running-reload-checkpoint'
+  | 'media-upload-failure-preserve';
 
 type PreparedSummary = {
   targetRevision: number;
@@ -90,6 +100,7 @@ type PreparedSummary = {
   targetMediaCount: number;
   targetAttachedMediaCount: number;
   targetVoidedMediaCount: number;
+  targetEvidenceRefsHash: string;
 };
 
 type ScenarioDescriptor = {
@@ -161,6 +172,9 @@ const P3 = 'B18-P3-network-reconciliation' as const;
 const P4 = 'B18-P4-group-switch' as const;
 const P5 = 'B18-P5-media-generation' as const;
 const P6 = 'B18-P6-realtime-timing' as const;
+const P7 = 'B18-P7-explicit-actions' as const;
+const P8 = 'B18-P8-running-reload' as const;
+const P9 = 'B18-P9-media-failure' as const;
 const PROFILE_KEYS: Record<Profile, readonly ScenarioKey[]> = {
   [P1]: ['autosave-reload'],
   [P2]: ['conflict-server', 'conflict-local', 'lifecycle-close'],
@@ -168,10 +182,21 @@ const PROFILE_KEYS: Record<Profile, readonly ScenarioKey[]> = {
   [P4]: ['group-switch-valid-flush', 'group-switch-invalid-preserve'],
   [P5]: ['media-upload-response-race', 'media-void-reupload-response-race'],
   [P6]: ['system-timer-lifecycle', 'external-timing-reset'],
+  [P7]: ['explicit-save-draft', 'explicit-mark-answered'],
+  [P8]: ['running-reload-checkpoint'],
+  [P9]: ['media-upload-failure-preserve'],
 };
 const PROFILE_PREFIX: Record<
   Profile,
-  'B18_U01' | 'B18_U02' | 'B18_U03' | 'B18_U04' | 'B18_U05' | 'B18_U06'
+  | 'B18_U01'
+  | 'B18_U02'
+  | 'B18_U03'
+  | 'B18_U04'
+  | 'B18_U05'
+  | 'B18_U06'
+  | 'B18_U07'
+  | 'B18_U08'
+  | 'B18_U09'
 > = {
   [P1]: 'B18_U01',
   [P2]: 'B18_U02',
@@ -179,6 +204,9 @@ const PROFILE_PREFIX: Record<
   [P4]: 'B18_U04',
   [P5]: 'B18_U05',
   [P6]: 'B18_U06',
+  [P7]: 'B18_U07',
+  [P8]: 'B18_U08',
+  [P9]: 'B18_U09',
 };
 const FINAL_TEXT: Record<ScenarioKey, string | null> = {
   'autosave-reload': 'B18 U01 autosave trailing version B',
@@ -193,6 +221,10 @@ const FINAL_TEXT: Record<ScenarioKey, string | null> = {
   'media-void-reupload-response-race': 'B18 U05 void reupload race answer',
   'system-timer-lifecycle': null,
   'external-timing-reset': null,
+  'explicit-save-draft': 'B18 U07 explicit draft version',
+  'explicit-mark-answered': 'B18 U07 prepared completion draft',
+  'running-reload-checkpoint': null,
+  'media-upload-failure-preserve': 'B18 U09 retained text draft',
 };
 const SECONDARY_FINAL_TEXT: Partial<Record<ScenarioKey, string>> = {
   'group-switch-valid-flush': 'B18 U04 group B version',
@@ -228,7 +260,10 @@ function parseProfile(): Profile {
     value !== P3 &&
     value !== P4 &&
     value !== P5 &&
-    value !== P6
+    value !== P6 &&
+    value !== P7 &&
+    value !== P8 &&
+    value !== P9
   ) {
     fail(
       'B18_PROFILE_INVALID',
@@ -256,6 +291,9 @@ function parseCommand(
     [P4]: 'u04-post-group-switch',
     [P5]: 'u05-post-media-generation',
     [P6]: 'u06-post-realtime-timing',
+    [P7]: 'u07-post-explicit-actions',
+    [P8]: 'u08-post-running-reload',
+    [P9]: 'u09-post-media-failure',
   };
   if (
     command === 'verify' &&
@@ -321,7 +359,9 @@ function memoryFile(buffer: Buffer): UploadedMemoryFile {
 }
 
 function scenarioScaleCode(key: ScenarioKey): 'mmse' | 'moca' {
-  return key === 'system-timer-lifecycle' || key === 'external-timing-reset'
+  return key === 'system-timer-lifecycle' ||
+    key === 'external-timing-reset' ||
+    key === 'running-reload-checkpoint'
     ? 'moca'
     : 'mmse';
 }
@@ -357,7 +397,11 @@ function targetProtectedFacts(
   ) {
     mutableKeys.push('evidenceRefs');
   }
-  if (key === 'system-timer-lifecycle' || key === 'external-timing-reset') {
+  if (
+    key === 'system-timer-lifecycle' ||
+    key === 'external-timing-reset' ||
+    key === 'running-reload-checkpoint'
+  ) {
     mutableKeys.push('timing');
   }
   for (const mutableKey of mutableKeys) {
@@ -494,8 +538,8 @@ async function readDescriptor(
       fail('B18_RUNTIME_INVALID', 'Runtime scenario is invalid');
     }
     if (
-      (profile === P6 && scenario.scaleCode !== 'moca') ||
-      (profile !== P6 && scenario.scaleCode !== 'mmse')
+      ((profile === P6 || profile === P8) && scenario.scaleCode !== 'moca') ||
+      (profile !== P6 && profile !== P8 && scenario.scaleCode !== 'mmse')
     ) {
       fail('B18_RUNTIME_INVALID', 'Runtime scenario scale is invalid');
     }
@@ -703,14 +747,16 @@ function findScenarioTargets(
   let target: ItemResponseDocument | undefined = items[0];
   if (
     key === 'media-upload-response-race' ||
-    key === 'media-void-reupload-response-race'
+    key === 'media-void-reupload-response-race' ||
+    key === 'media-upload-failure-preserve'
   ) {
     target = items.find((item) =>
       item.evidenceRefs.some((reference) => reference.evidenceType === 'photo'),
     );
   } else if (
     key === 'system-timer-lifecycle' ||
-    key === 'external-timing-reset'
+    key === 'external-timing-reset' ||
+    key === 'running-reload-checkpoint'
   ) {
     target = items.find(
       (item) => item.itemConfigSnapshot?.requiresTimer === true,
@@ -834,6 +880,7 @@ async function snapshotScenario(
       targetVoidedMediaCount: targetMedia.filter(
         (entry) => entry.status === 'voided',
       ).length,
+      targetEvidenceRefsHash: hash(target.evidenceRefs),
     },
   };
 }
@@ -973,6 +1020,153 @@ async function assertPostScenario(
 
   if (instance.status === 'completed' || instance.completedAt) {
     fail('B18_INSTANCE_CLOSED', 'A draft scenario closed its instance');
+  }
+
+  const answeredItemCount = items.filter((item) =>
+    ['answered', 'scored'].includes(item.status),
+  ).length;
+  const expectedDraftStatus =
+    scenario.prepared.targetStatus === 'not_started'
+      ? 'in_progress'
+      : scenario.prepared.targetStatus;
+
+  if (key === 'explicit-save-draft') {
+    if (
+      actualTarget.draftRevision !== scenario.prepared.targetRevision + 1 ||
+      actualTarget.responseText !== FINAL_TEXT[key] ||
+      actualTarget.status !== expectedDraftStatus ||
+      answeredItemCount !== scenario.prepared.answeredItemCount ||
+      !actualTarget.draftSavedAt ||
+      hash(actualTarget.evidenceRefs) !==
+        scenario.prepared.targetEvidenceRefsHash ||
+      media.length !== scenario.prepared.targetMediaCount
+    ) {
+      fail(
+        'B18_EXPLICIT_ACTION_POST_INVALID',
+        'Explicit draft save facts are invalid',
+      );
+    }
+    return {
+      action: 'save_draft',
+      revisionDelta: 1,
+      targetStatus: actualTarget.status,
+      answeredItemCountDelta: 0,
+      instanceStatus: instance.status,
+      scoreCount: scores,
+      domainCount: domains,
+      reportCount: reports,
+      mediaCount: media.length,
+      protectedFacts: 'matched',
+      adjacentItemFacts: 'matched',
+    };
+  }
+
+  if (key === 'explicit-mark-answered') {
+    if (
+      scenario.prepared.targetStatus !== 'in_progress' ||
+      actualTarget.draftRevision !== scenario.prepared.targetRevision + 1 ||
+      actualTarget.responseText !== FINAL_TEXT[key] ||
+      actualTarget.status !== 'answered' ||
+      answeredItemCount !== scenario.prepared.answeredItemCount + 1 ||
+      !actualTarget.draftSavedAt ||
+      hash(actualTarget.evidenceRefs) !==
+        scenario.prepared.targetEvidenceRefsHash ||
+      media.length !== scenario.prepared.targetMediaCount
+    ) {
+      fail(
+        'B18_EXPLICIT_ACTION_POST_INVALID',
+        'Explicit completion facts are invalid',
+      );
+    }
+    return {
+      action: 'mark_answered',
+      revisionDelta: 1,
+      targetStatus: 'answered',
+      answeredItemCountDelta: 1,
+      instanceStatus: instance.status,
+      scoreCount: scores,
+      domainCount: domains,
+      reportCount: reports,
+      mediaCount: media.length,
+      protectedFacts: 'matched',
+      adjacentItemFacts: 'matched',
+    };
+  }
+
+  if (key === 'running-reload-checkpoint') {
+    const timing = actualTarget.timing;
+    if (
+      actualTarget.draftRevision !== scenario.prepared.targetRevision + 3 ||
+      actualTarget.status !== expectedDraftStatus ||
+      answeredItemCount !== scenario.prepared.answeredItemCount ||
+      !actualTarget.draftSavedAt ||
+      timing?.timerState !== 'paused' ||
+      timing.timerSource !== 'system' ||
+      !timing.startedAt ||
+      timing.lastResumedAt ||
+      timing.completedAt ||
+      (timing.durationMs ?? 0) < 15_000 ||
+      hash(actualTarget.evidenceRefs) !==
+        scenario.prepared.targetEvidenceRefsHash ||
+      media.length !== scenario.prepared.targetMediaCount
+    ) {
+      fail(
+        'B18_RUNNING_RELOAD_POST_INVALID',
+        'Running reload timing facts are invalid',
+      );
+    }
+    return {
+      revisionDelta: 3,
+      timerState: 'paused',
+      timerSource: 'system',
+      durationCheckpoint: 'at_least_15_seconds',
+      answeredItemCountDelta: 0,
+      instanceStatus: instance.status,
+      scoreCount: scores,
+      domainCount: domains,
+      reportCount: reports,
+      mediaCount: media.length,
+      protectedFacts: 'matched',
+      adjacentItemFacts: 'matched',
+    };
+  }
+
+  if (key === 'media-upload-failure-preserve') {
+    const photoReference = actualTarget.evidenceRefs.find(
+      (reference) => reference.evidenceType === 'photo',
+    );
+    if (
+      scenario.prepared.targetMediaCount !== 0 ||
+      actualTarget.draftRevision !== scenario.prepared.targetRevision + 1 ||
+      actualTarget.responseText !== FINAL_TEXT[key] ||
+      actualTarget.status !== expectedDraftStatus ||
+      answeredItemCount !== scenario.prepared.answeredItemCount ||
+      !actualTarget.draftSavedAt ||
+      hash(actualTarget.evidenceRefs) !==
+        scenario.prepared.targetEvidenceRefsHash ||
+      photoReference?.status !== 'pending' ||
+      photoReference.mediaEvidenceId ||
+      media.length !== 0
+    ) {
+      fail(
+        'B18_MEDIA_FAILURE_POST_INVALID',
+        'Media failure preservation facts are invalid',
+      );
+    }
+    return {
+      revisionDelta: 1,
+      mediaCountDelta: 0,
+      activeMediaCount: 0,
+      photoRequirement: 'pending',
+      evidenceRefs: 'unchanged',
+      answeredItemCountDelta: 0,
+      instanceStatus: instance.status,
+      scoreCount: scores,
+      domainCount: domains,
+      reportCount: reports,
+      protectedFacts: 'matched',
+      adjacentItemFacts: 'matched',
+    };
   }
 
   if (key === 'group-switch-valid-flush') {
@@ -1181,7 +1375,8 @@ async function prepare(input: {
       input.auth,
     );
     const doctor = actor(users.doctor);
-    const scaleCode = input.profile === P6 ? 'moca' : 'mmse';
+    const scaleCode =
+      input.profile === P6 || input.profile === P8 ? 'moca' : 'mmse';
     await input.workflows.scaleCatalog.ensureSeedScaleVersionMaterialized(
       scaleCode,
     );
@@ -1197,6 +1392,23 @@ async function prepare(input: {
       });
       if (key === 'lifecycle-close') {
         await makeReady(root, input.models, input.workflows.itemDraft);
+      }
+      if (key === 'explicit-mark-answered') {
+        const items = await input.models.items
+          .find({ scaleInstanceId: root.scaleInstanceId })
+          .sort({ itemOrder: 1 })
+          .exec();
+        const { target } = findScenarioTargets(items, key);
+        await input.workflows.itemDraft.saveDraft(
+          root.patientId.toString(),
+          root.visitId.toString(),
+          root.scaleInstanceId.toString(),
+          target._id.toString(),
+          {
+            expectedRevision: target.draftRevision,
+            responseText: FINAL_TEXT[key]!,
+          },
+        );
       }
       if (key === 'media-void-reupload-response-race') {
         const items = await input.models.items
