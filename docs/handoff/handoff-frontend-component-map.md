@@ -9,10 +9,10 @@
 - `frontend\src\components\ui` 提供 `Button`、`Card`、`Badge` 三个无业务语义公共组件。
 - `frontend\src\features\auth` 提供 B1 最小认证接入能力。
 - `frontend\src\features\patients` 提供患者档案、评估访视与 B17 患者历史/基础趋势。
-- `frontend\src\features\assessments` 已推进至 B17；在既有报告 workflow 外新增独立版本面板、历史报告只读详情与共享安全只读内容。
-- B16 / WP-02 与 B17 / WP-04 均已完成；当前验证矩阵、统计、cleanup 和 evidence commit 统一引用 `handoff-frontend-testing-playbook.md`，本组件地图不保存阶段性 Browser 过程。
+- `frontend\src\features\assessments` 已推进至 B18；在既有报告 workflow 外包含独立版本面板、历史报告只读详情、共享安全只读内容，以及逐题自动保存、媒体协调与实时计时闭环。
+- B16 / WP-02、B17 / WP-04 与 B18 / WP-03 均已完成；当前验证矩阵、统计、cleanup 和 evidence commit 统一引用 `handoff-frontend-testing-playbook.md`，本组件地图不保存阶段性 Browser 过程。
 - 当前组件遵循医疗系统 / 临床评估 / 低干扰 / 高可读性 / 冷静可信视觉基线。
-- B2-B17 未新增公共 Input 组件、第三方 UI 库、状态管理库、数据请求库或权限菜单组件。
+- B2-B18 未新增公共 Input 组件、第三方 UI 库、状态管理库、数据请求库或权限菜单组件。
 
 ## 3. 公共 UI 组件
 
@@ -702,8 +702,8 @@
 
 ### 6.79 B18-A 完成边界
 
-- 本阶段前端代码、纯合同和静态构建已完成，P3 网络核对 Browser 回归也已通过；既有双 Session、断网、刷新、切组、媒体竞态和实时计时证据继续复用。
-- P9 媒体失败草稿保全 Browser 证据仍 pending，因此 B18 / WP-03 尚未完成；验证事实统一见 `handoff-frontend-testing-playbook.md`。
+- 前端代码、纯合同和静态构建已完成，P3 网络核对 Browser 回归与 P9 媒体上传失败草稿保全均已通过；既有双 Session、断网、刷新、切组、媒体竞态和实时计时证据继续复用。
+- P9 证明上传网络中止后当前 React 会话中的文字草稿、已处理图片草稿和预览仍保留，上传错误可见且重试入口恢复；B18 补充验证闭合、自动化 `gap=0`，WP-03 已完成。验证事实统一见 `handoff-frontend-testing-playbook.md`。
 
 ## 7. 后续同步规则
 

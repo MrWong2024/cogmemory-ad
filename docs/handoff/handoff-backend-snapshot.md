@@ -45,7 +45,7 @@
 - development / test 默认 `STORAGE_DRIVER=fake`，production 默认 `STORAGE_DRIVER=oss`。
 - OSS、SMS、LLM 配置均为占位或示例口径，不包含真实密钥。
 - SMS Service 与 LLM Service 仍未实现；A15 媒体业务上传接口已通过既有 fake / OSS Storage abstraction 实现，且未新增 Storage interface、driver 或配置。
-- 当前 A12-A30 已开放既有评估闭环、单题草稿 CAS 与持久化计时合同、父实例 + 固定题目 scope 的提交写屏障、报告 generate / latest / edit / submit / confirm / lock / freeze-sources / archive / corrections、合法 V2+ replacement 的 A21-A24 生命周期复用，以及历史读取与基础随访趋势。前端 B18 实现已具备逐题自动保存、显式冲突 / 网络核对、逐 ItemResponse/attempt reconciliation single-flight、切组 flush、React 会话状态保留、媒体 generation 竞态协调及实时计时；single-flight contract 与 P3 Browser 回归已闭合，P9 Browser 证据仍未闭合。当前仍未实现用户管理、患者 / 访视编辑、评分 lock / void / 重跑、认知域人工修改 / 确认 / 锁定 / 重算、报告 unlock / unfreeze / unarchive、correction cancel / branch、PDF、疾病诊断或 AI。
+- 当前 A12-A30 已开放既有评估闭环、单题草稿 CAS 与持久化计时合同、父实例 + 固定题目 scope 的提交写屏障、报告 generate / latest / edit / submit / confirm / lock / freeze-sources / archive / corrections、合法 V2+ replacement 的 A21-A24 生命周期复用，以及历史读取与基础随访趋势。前端 B18 已完成逐题自动保存、显式冲突 / 网络核对、逐 ItemResponse/attempt reconciliation single-flight、切组 flush、React 会话状态保留、媒体 generation 竞态协调、实时计时及媒体上传失败草稿保全验证；B18 补充验证自动化 `gap=0`，WP-03 已完成。当前仍未实现用户管理、患者 / 访视编辑、评分 lock / void / 重跑、认知域人工修改 / 确认 / 锁定 / 重算、报告 unlock / unfreeze / unarchive、correction cancel / branch、PDF、疾病诊断或 AI。
 - 当前 `start:prod` 与 TypeScript build 主入口产物路径均指向 `dist/src/main.js`，并已完成本地启动验证。
 - 本次仅使用指定外部 GitHub commit `b302b8af7b7ac9cc558939dc1b38ace0976c65b3` 作为后端公共底座来源，不继承其业务事实。
 
@@ -111,7 +111,7 @@
 - PATCH 要求 Patient active、Visit / ScaleInstance 为 draft 或 in_progress、ItemResponse 为 not_started / in_progress / answered；资源归属不匹配统一按对应资源不存在处理。not_started 在有效草稿更新后进入 in_progress，markAsAnswered 需存在有效作答并进入 answered，answered 后继续编辑不回退；缺失记录清除实际作答值但保留 timing / operatorNote 与 step / prompt note。
 - `AssessmentsService.countItemResponseProgress()` 以实例下实际 ItemResponse 数量作为 totalItemCount，以 answered / scored 状态数量作为 answeredItemCount；A13 访视详情、A14 执行详情与 PATCH 响应均使用实时派生值，不回写 `ScaleInstance.progress` Mixed 快照。
 - A30 submission 使用父实例 + 固定题目 scope 的持久化可恢复屏障，而非 Mongo transaction、内存锁、`lockedAt` 或后台轮询。父 / 子每次变化均为精确条件原子更新；部分阶段失败保留可恢复事实或执行同 token 释放。
-- A14 / A29 / A30 是后端逐题草稿、并发控制与提交屏障能力，本身不等于完整患者管理；草稿 PATCH 不自动修改访视 / 实例 status、不设置实例 startedAt、不批量保存，也不触发媒体、计分、认知域、报告或 AI。前端 B18 已适配 `expectedRevision`、`draftRevision` / `draftSavedAt` 和完整 timing 合同，并关闭 reconciliation single-flight 产品 gap；补充验证仅余 P9 Browser gap，WP-03 进行中。Batch E 的 8 项真实设备或人工验收仍独立待验。
+- A14 / A29 / A30 是后端逐题草稿、并发控制与提交屏障能力，本身不等于完整患者管理；草稿 PATCH 不自动修改访视 / 实例 status、不设置实例 startedAt、不批量保存，也不触发媒体、计分、认知域、报告或 AI。前端 B18 已适配 `expectedRevision`、`draftRevision` / `draftSavedAt` 和完整 timing 合同，并关闭 reconciliation single-flight 与 P9 媒体失败 Browser gap；B18 补充验证闭合，WP-03 已完成。Batch E 的 8 项真实设备或人工验收仍独立待验。
 
 ### A16 submission readiness 与实例完成
 

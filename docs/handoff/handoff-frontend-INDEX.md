@@ -9,11 +9,11 @@
 ## 2. 当前实现摘要
 
 - 前端采用 Next.js App Router、React、TypeScript 与 Tailwind CSS。
-- Auth、Patients、Assessments 已落地；B18-A、B18-B1 与 B18-B2 既有实现均已完成，但 B18 补充验证闭合 pending。
+- Auth、Patients、Assessments 已落地；B18-A、B18-B1、B18-B2 与补充验证均已完成。
 - B16 已完成 replacement V2+ 生命周期，B17 已完成患者历史、报告版本导航、指定历史详情与基础随访趋势。
 - 主登录态使用后端 Session 与 HttpOnly Cookie，浏览器不持久化凭据。
-- 施测页已消费 A29 revision / 完整 timing，具备逐题自动保存、显式冲突 / 网络核对、逐 ItemResponse/attempt reconciliation single-flight、切组 flush、媒体 generation 协调和实时计时；既有 B18-B1/B2、P7/P8 证据与本次 P3 回归成立，仅 P9 Browser gap 未关闭。
-- 当前验证状态与精确证据见 frontend testing playbook；B18 实现已存在但补充验证 pending，自动化 `gap=1`、WP-03 进行中，下一具名阶段仅处理 P9 Browser 测试资产与验收，其他工作包尚未选择。
+- 施测页已消费 A29 revision / 完整 timing，具备逐题自动保存、显式冲突 / 网络核对、逐 ItemResponse/attempt reconciliation single-flight、切组 flush、媒体 generation 协调和实时计时；B18-B1/B2、P7/P8、P3 回归与 P9 媒体上传失败草稿保全证据均成立。
+- 当前验证状态与精确证据见 frontend testing playbook；B18 补充验证已闭合、自动化 `gap=0`，WP-03 已完成。当前无活动工作包，下一业务工作包尚未选择。
 
 关键边界：
 - Dashboard 是轻量临床入口，不等同完整医生工作台。

@@ -20,10 +20,10 @@
 | WP-03 / B18-A | 前端实现、原 47 项与新增 3 项 single-flight 非 Browser 合同完成 | “B18-A、B18-B1、B18-B2 与补充验证证据” |
 | WP-03 / B18-B1 | 核心真实 Browser 阶段完成；`passed=6`、`pending=0`；证据复用 | “B18-A、B18-B1 与 B18-B2 证据” |
 | WP-03 / B18-B2 | 剩余真实 Browser 阶段完成；P4/P5/P6 `passed=6`、`pending=0`；P0 `gap=0` | “B18-A、B18-B1 与 B18-B2 证据” |
-| WP-03 / B18 补充验证 | P7 `passed=2`、P8 `passed=1`；single-flight contract 与 P3 `passed`；P9 locator/test-asset `failed` | “B18-A、B18-B1、B18-B2 与补充验证证据” |
+| WP-03 / B18 补充验证 | P7 `passed=2`、P8 `passed=1`；single-flight contract、P3 与 P9 `passed`；自动化 `gap=0` | “B18-A、B18-B1、B18-B2 与补充验证证据” |
 | Batch E | 8 个真实设备或人工项目待验 | “Batch E：真实设备或人工验收” |
 
-B11～B15 保持完成；B18 实现已存在，single-flight 产品 gap 已关闭，但 P9 补充验证仍 pending，自动化剩余 `gap=1`。WP-03 保持进行中，下一具名阶段仅处理 P9 Browser 精确 locator/test-asset 与同次验收；Batch E 的 8 项真实设备或人工项目继续独立待验。
+B11～B15 保持完成；B18 补充验证已闭合，自动化 `gap=0`，WP-03 已完成。当前无活动工作包，下一业务工作包尚未选择；Batch E 的 8 项真实设备或人工项目继续独立待验。
 
 ## 2. 当前测试设计规则
 
@@ -167,7 +167,7 @@ backend unit、HTTP E2E、database verifier、fixture 与 cleanup 的具体规�
 | B15 | `B15-U01`～`B15-U02`；`passed=2`、`pending=0` | P0 `gap=0`；final gates 完成 | `backend/scripts/b15-browser-fixtures.ts`；`frontend/test/browser-acceptance/b15/`；`frontend/test/browser-acceptance/contracts/b15-correction-non-browser.spec.ts`；`backend/test/clinical-report-correction.e2e-spec.ts` | `6a5c55dbc926ddff534d1fb30e936395a531edae` | A25 正式 `in_progress` 恢复；correctionId 是内部标识，correctionNo 是用户可见业务序号；首次、更正恢复、network uncertain 与线性 replacement 均闭环 |
 | B18-B1 | `B18-U01`～`B18-U03`；`passed=6`、`pending=0` | P0 `gap=0`；证据复用 | `backend/scripts/b18-browser-fixtures.ts`；`frontend/test/browser-acceptance/b18/`；B18-A 两个 contract spec；A29 / A30 既有 backend 证据 | 当前工作树（未提交） | trailing 自动保存、reload / beforeunload、双 Session 显式冲突选择、submit 生命周期关闭、offline/online 与响应丢失只读核对闭环 |
 | B18-B2 | P4 / P5 / P6；`passed=6`、`pending=0` | P0 `gap=0`；final gates 完成 | `frontend/test/browser-acceptance/b18/p04-group-switch.spec.ts`、`p05-media-generation.spec.ts`、`p06-realtime-timing.spec.ts`；B18 局部精确 Gate；既有 fixture/verifier | 当前工作树（未提交）；P5 证据基线 `5479181da3840504fe0ddeeb15406e2e9b3e8010` | 切组 flush/无效草稿保留、媒体 generation 竞态、system/external timing 均闭环；B18 桌面自动化 `gap=0` |
-| B18 补充验证 | P7 `passed=2`、P8 `passed=1`；single-flight contract `passed=3`；P3 `passed=2`；P9 `failed=1` | `gap=1`；验证闭合 pending | B18-A 两个 contract、P3/P9 spec、精确上传 abort support、既有 fixture/verifier；A29/A30 与 P1–P8 证据复用 | 基线 `191669f6ac7e636bbe1339d9acae226e243b3278` 上的当前工作树 | reconciliation 已采用逐题/attempt operation-level single-flight，P3 回归闭合；P9 在业务写入前因嵌套 section locator 不唯一停止，上传中止核心与 post verifier 未执行 |
+| B18 补充验证 | P7 `passed=2`、P8 `passed=1`；single-flight contract `passed=3`；P3 `passed=2`；P9 `passed=1` | `gap=0`；验证闭合 | B18-A 两个 contract、P3/P9 spec、精确上传 abort support、既有 fixture/verifier；A29/A30 与 P1–P8 证据复用 | P9 基线 `e99c4a6dceab69aa2ab274dc99270a20a0797d39` 上的当前工作树 | reconciliation 采用逐题/attempt operation-level single-flight；P3 回归闭合；P9 证明上传网络中止后当前 React 会话文字与图片草稿保留，A14 独立保存且 A15 无副作用 |
 
 ### 4.1 B14.1 累计证据索引
 
@@ -187,7 +187,7 @@ B14.1 不是独立业务能力，不拥有独立 Browser 活动 ID，也不恢�
 - 精确 contract discovery：`b18-item-response-autosave.contract.spec.ts` 为 30 项，原 27 项没有删除或弱化；与 20 项 `b18-item-response-timer.contract.spec.ts` 合计 50 项。两个文件不声明 page、context、browser 或 browserName fixture。
 - Autosave contract：`frontend/test/browser-acceptance/contracts/b18-item-response-autosave.contract.spec.ts`，30/30 通过。除既有 debounce / max wait / 串行 / trailing / cleanup、序列化、冲突与网络分类外，新增 3 项正式证明 pending single-flight、读取失败后的显式重试释放和 initialize stale run 失效；没有真实 HTTP。
 - Timer contract：`frontend/test/browser-acceptance/contracts/b18-item-response-timer.contract.spec.ts`，20 项通过。使用普通对象与固定 wall-clock 验证状态转换、elapsed、checkpoint、manual / imported 和同一逐题队列；没有启动 Browser。
-- 本次静态门禁：frontend `npm run lint`、正式 `npm run typecheck`、固定 API Base 的 production `npm run build` 均 exit 0；P3/P9 精确 discovery 为 2 files / 3 tests，完整 Browser discovery 为 172 tests / 39 files。正式 typecheck / build 前确认本项目 Node / Next 与 3002 / 5002 listener 均为 0，并以同一沙箱外身份写入 `.next`；输出未出现 `EPERM`、未处理拒绝或异常。backend `src`、fixture、P3/support 均未修改，因此未机械重跑 backend 静态、unit 或 HTTP E2E。
+- 本次静态门禁：frontend `npm run lint`、正式 `npm run typecheck`、固定 API Base 的 production `npm run build` 均 exit 0；P9 精确 discovery 为 1 file / 1 test，完整 Browser discovery 为 172 tests / 39 files。正式 typecheck / build 前确认系统 Node / Next 与 3002 / 5002 listener 均为 0，并以同一沙箱外身份写入 `.next`；输出未出现 `EPERM`、未处理拒绝或异常。backend `src`、fixture、P1–P8/support 均未修改，因此未机械重跑 backend 静态、unit 或 HTTP E2E。
 - 数据与运行边界：P3/P9 使用 production frontend、真实 Browser backend、Chromium、公开 HTTP 与 `cogmemory_ad_browser_test`；runner/frontend 未继承数据库变量或 fixture Secret。A29 / A30 后端 unit、HTTP E2E、CAS、媒体隔离、提交屏障与隐私证据直接复用。托管服务单元终止后遗留的本任务 Node 子进程均先按 PID、启动时间、命令和端口核对归属，再精确停止；最终端口、进程、runtime 与 namespace residual 为 0。
 - B18-B1 discovery 与 Profile：三个目标 spec 精确发现 6 项，分布为 P1=1、P2=3、P3=2；三个 Profile 分别使用独立 namespace、production frontend、Browser test backend、真实 HTTP 与 `cogmemory_ad_browser_test`，均完成 prepare、prepared verify、Browser、post verify、cleanup，最终 runtime / namespace / 端口 / 进程 / test-results residual=0。
 - P1 核心自动保存：真实 gate 证明单题最多一个 active PATCH，trailing edit 形成第二个 PATCH，两个请求均只含 `expectedRevision` / `responseText` 且状态 200，revision `0→1→2`；dirty navigation 触发 beforeunload 并 dismiss，clean reload 无对话框，reload 只恢复服务器事实，Storage / Cookie / URL 无草稿持久化。
@@ -199,9 +199,9 @@ B14.1 不是独立业务能力，不拥有独立 Browser 活动 ID，也不恢�
 - Reconciliation single-flight：`AutosaveEntry` 以内存 `{attemptId,promise}` 标识活动 run，同 attempt 的自动核对、两次 retry 与一次 online 复用同一操作。正式 contract 证明 pending 期间 `readLatest=1`、PATCH=1、committed 接受=1，最终 clean 且服务器 revision=5；首次读取已失败后一次显式 retry 启动第二次读取，第二次 pending 的重复 retry/online 不启动第三次；initialize 会 abort 旧 Controller，旧结果不调用 summary/accept，也不覆盖 revision=20 的新基线，新 entry 随后可正常完成新 run。single-flight 产品 gap 已关闭。
 - P7 显式操作：2/2 通过且未使用资产修复轮。“保存草稿”在 debounce 前仅发送一次 A14 PATCH，Body keys 为 `expectedRevision,responseText`，revision+1，status 仅从 not_started 进入 in_progress，answered/progress 不变，重载恢复服务端事实且无第二次 PATCH。“保存并标记本题完成”直接使用合法预保存草稿，仅发送一次 `expectedRevision,markAsAnswered`，revision+1、status=answered、answeredItemCount+1，无 trailing、submit、score、domain 或 report。两个独立业务根的 post verifier 均通过，cleanup `residualCount=0`。
 - P8 running 重载：首次执行因公开 API 将数据库 timing=null 规范化为 idle/none 对象而在首写前失败；使用唯一一次测试资产修复轮后 1/1 通过。start/reload/checkpoint/pause 的 PATCH 数为 3，`expectedRevision=[R,R+1,R+2]`，重载保持服务器 startedAt/lastResumedAt 且不二次 start，显示继续增加；checkpoint wall-clock=15,214ms，最终 paused/system、revision+3、最大 active PATCH=1。post verifier 证明 answered 不变、实例 draft、衍生产物为 0，cleanup `residualCount=0`。
-- P9 媒体失败：两次均使用全新 namespace/runtime 与通过的 prepared verifier，且都在 `answer.fill()`、文件选择、abort 安装和上传点击之前停止。首轮把已带 article 前缀的 heading locator 用作相对 `has`，section count=0；唯一一次测试资产修复改为同一 exact level-5 heading 的相对 locator 后，嵌套 section 使 count=2。按止损约束不使用 `.first()`、`.nth()`、模糊文本或第三套 locator。两轮 cleanup 均 `residualCount=0`、runtime absent；修复轮 prepared 复核仍为 revision=0、实例 draft、protected facts matched，证明未产生 A14/A15 业务写入。P9 Browser 场景分类为测试资产 `failed`，上传 abort、草稿保留、错误反馈、重试入口和 `u09-post-media-failure` verifier 为 `not_executed`；主要归属 frontend Browser locator/test orchestration，不是已确认产品缺陷。
+- P9 媒体失败：1/1 Browser 通过。图片采集区从目标题目内 exact 可访问文件输入“选择已有图片”开始，断言输入 count=1，再以 `xpath=ancestor::section[1]` 取得最近祖先 section 并断言 count=1；exact level-5 heading、待上传预览和上传按钮均限定在该 section。证据要求继续从当前 article 内 exact region“证据要求”取得唯一 photo listitem，并核对 exact“图片”“待记录”“服务端标识：未关联”。真实上传 POST=1，精确 abort matched=1 / aborted=1 / continued=0，Browser backend upload response=0，requestfailed=1；错误 alert 可见，文字值、已处理图片草稿与预览保留，上传按钮恢复 enabled。A14 PATCH=1、status=200、Body keys 仅为 `expectedRevision,responseText`、revisionDelta=1，超过 debounce 后无第二次 PATCH。prepared/post verifier 均通过：MediaEvidence=0、evidenceRefs 不变、photo requirement=pending、answeredItemCount 不变、实例保持 draft，score/domain/report=0，protected/adjacent facts matched；cleanup `residualCount=0`、runtime absent。
 - 最低充分 Storage 证据：development / Browser fake Storage 是进程内测试 Driver，产品没有公开 Storage 管理或对象计数 API；A30 HTTP E2E 已提供 fake Storage 调用集与补偿证据，P5 Browser 已提供真实上传、MediaEvidence、evidenceRef 与终态证据。因此不增加 test-only endpoint、生产 hook、Driver introspection 或跨进程对象计数；该候选按已有精确证据复用关闭，不构成独立剩余产品 gap。
-- 完成边界：A29/A30、B18-A 原 47 项、B18-B1 P1/P2、B18-B2 P4–P6、P7 2 项与 P8 1 项继续复用；新增 single-flight 3 项和本次 P3 2 项已关闭，P9 未关闭，自动化剩余 `gap=1`。B18 实现已存在但补充验证闭合 pending，WP-03 保持进行中；下一具名阶段仅修复/验收 P9 Browser locator/test-asset gap，不进入其他工作包。Batch E 的 8 项真实设备或人工项目保持原 ID 和待验状态。
+- 完成边界：A29/A30、B18-A 原 47 项、B18-B1 P1/P2、B18-B2 P4–P6、P7 2 项与 P8 1 项继续复用；single-flight 3 项、P3 2 项与本次 P9 1 项均已关闭，自动化 `gap=0`。B18 补充验证闭合，WP-03 按当前 roadmap 锁定范围完成；Batch E 的 8 项真实设备或人工项目保持原 ID 和待验状态，下一业务工作包尚未选择。
 
 ## 6. Batch E：真实设备或人工验收
 
@@ -227,4 +227,4 @@ B14.1 不是独立业务能力，不拥有独立 Browser 活动 ID，也不恢�
 - 只有影响性产品代码、接口、配置、测试基础设施或产品合同变化时，才按实际影响重新展开风险与证据设计；未变化事实复用现有精确证据。
 - Browser 活动场景的主证据、必要支持证据、适用 verifier 和 cleanup 均通过后才能关闭；静态存在核对不得冒充动态通过。
 - 数据库用途、fixture、verifier、cleanup、Stage 和后端定向命令以 backend testing playbook 为准。
-- testing playbook 与 roadmap 已同步：WP-03 进行中，下一具名阶段仅为 B18 P9 Browser 精确 locator 与验收资产收口；其他下一工作包尚未选择。
+- testing playbook 与 roadmap 已同步：B18 补充验证闭合、自动化 `gap=0`，WP-03 已完成；当前无活动工作包，下一业务工作包尚未选择。
