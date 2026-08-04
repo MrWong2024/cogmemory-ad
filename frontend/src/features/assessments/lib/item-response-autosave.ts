@@ -96,6 +96,11 @@ type PendingExplicitMode =
   | 'conflict_local'
   | null;
 
+type ActiveReconciliationRun = {
+  attemptId: string;
+  promise: Promise<void>;
+};
+
 type AutosaveEntry = {
   serverItem: ItemResponseExecution;
   draft: ItemDraftState;
@@ -109,6 +114,7 @@ type AutosaveEntry = {
   timerHandle: unknown | null;
   activeAttempt: ItemResponseSaveAttempt | null;
   uncertainAttempt: ItemResponseSaveAttempt | null;
+  activeReconciliation: ActiveReconciliationRun | null;
   conflictServerItem: ItemResponseExecution | null;
   pendingExplicitMode: PendingExplicitMode;
 };
@@ -564,6 +570,7 @@ export class ItemResponseAutosaveCoordinator {
         timerHandle: null,
         activeAttempt: null,
         uncertainAttempt: null,
+        activeReconciliation: null,
         conflictServerItem: null,
         pendingExplicitMode: null,
       });
@@ -1016,17 +1023,109 @@ export class ItemResponseAutosaveCoordinator {
     this.evaluateEntry(entry, entry.pendingExplicitMode);
   }
 
-  private async reconcileUncertain(entry: AutosaveEntry): Promise<void> {
+  private reconcileUncertain(entry: AutosaveEntry): Promise<void> {
     const attempt = entry.uncertainAttempt;
 
     if (!attempt || this.stopped || !this.options.isOnline()) {
+      return Promise.resolve();
+    }
+
+    if (entry.activeReconciliation?.attemptId === attempt.attemptId) {
+      return entry.activeReconciliation.promise;
+    }
+
+    const runEpoch = this.epoch;
+    const itemResponseId = entry.serverItem.id;
+    const run: ActiveReconciliationRun = {
+      attemptId: attempt.attemptId,
+      promise: Promise.resolve(),
+    };
+    entry.activeReconciliation = run;
+    run.promise = Promise.resolve()
+      .then(() =>
+        this.runUncertainReconciliation({
+          entry,
+          attempt,
+          run,
+          runEpoch,
+          itemResponseId,
+        }),
+      )
+      .finally(() => {
+        if (entry.activeReconciliation === run) {
+          entry.activeReconciliation = null;
+        }
+      });
+    return run.promise;
+  }
+
+  private async runUncertainReconciliation(input: {
+    entry: AutosaveEntry;
+    attempt: ItemResponseSaveAttempt;
+    run: ActiveReconciliationRun;
+    runEpoch: number;
+    itemResponseId: string;
+  }): Promise<void> {
+    const { entry, attempt, run, runEpoch, itemResponseId } = input;
+    entry.state = 'reconciling';
+    this.emit();
+    const detail = await this.readLatestDetail();
+
+    if (
+      !this.isCurrentReconciliationRun({
+        entry,
+        attempt,
+        run,
+        runEpoch,
+        itemResponseId,
+      })
+    ) {
       return;
     }
 
-    entry.state = 'reconciling';
-    this.emit();
-    const latest = await this.readLatestItem(entry.serverItem.id);
+    if (!detail) {
+      entry.state = 'reconciling';
+      entry.message = '暂时无法核对服务器；不会发送新的保存请求。';
+      this.emit();
+      return;
+    }
 
+    this.options.onExecutionSummaryRefreshed(detail);
+    if (
+      !this.isCurrentReconciliationRun({
+        entry,
+        attempt,
+        run,
+        runEpoch,
+        itemResponseId,
+      })
+    ) {
+      return;
+    }
+
+    this.integrateCleanItems(detail, itemResponseId, () =>
+      this.isCurrentReconciliationRun({
+        entry,
+        attempt,
+        run,
+        runEpoch,
+        itemResponseId,
+      }),
+    );
+    if (
+      !this.isCurrentReconciliationRun({
+        entry,
+        attempt,
+        run,
+        runEpoch,
+        itemResponseId,
+      })
+    ) {
+      return;
+    }
+
+    const latest =
+      detail.itemResponses.find((item) => item.id === itemResponseId) ?? null;
     if (!latest) {
       entry.state = 'reconciling';
       entry.message = '暂时无法核对服务器；不会发送新的保存请求。';
@@ -1068,6 +1167,23 @@ export class ItemResponseAutosaveCoordinator {
     this.emit();
   }
 
+  private isCurrentReconciliationRun(input: {
+    entry: AutosaveEntry;
+    attempt: ItemResponseSaveAttempt;
+    run: ActiveReconciliationRun;
+    runEpoch: number;
+    itemResponseId: string;
+  }): boolean {
+    const { entry, attempt, run, runEpoch, itemResponseId } = input;
+    return (
+      !this.stopped &&
+      this.epoch === runEpoch &&
+      this.entries.get(itemResponseId) === entry &&
+      entry.uncertainAttempt?.attemptId === attempt.attemptId &&
+      entry.activeReconciliation === run
+    );
+  }
+
   private async refreshConflict(entry: AutosaveEntry): Promise<void> {
     const latest = await this.readLatestItem(entry.serverItem.id);
 
@@ -1106,6 +1222,20 @@ export class ItemResponseAutosaveCoordinator {
   private async readLatestItem(
     itemResponseId: string,
   ): Promise<ItemResponseExecution | null> {
+    const detail = await this.readLatestDetail();
+
+    if (!detail) {
+      return null;
+    }
+
+    this.options.onExecutionSummaryRefreshed(detail);
+    this.integrateCleanItems(detail, itemResponseId);
+    return (
+      detail.itemResponses.find((item) => item.id === itemResponseId) ?? null
+    );
+  }
+
+  private async readLatestDetail(): Promise<ScaleInstanceExecutionDetailResponse | null> {
     const controller = new AbortController();
     this.readControllers.add(controller);
 
@@ -1116,11 +1246,7 @@ export class ItemResponseAutosaveCoordinator {
         return null;
       }
 
-      this.options.onExecutionSummaryRefreshed(detail);
-      this.integrateCleanItems(detail, itemResponseId);
-      return (
-        detail.itemResponses.find((item) => item.id === itemResponseId) ?? null
-      );
+      return detail;
     } catch {
       return null;
     } finally {
@@ -1131,8 +1257,13 @@ export class ItemResponseAutosaveCoordinator {
   private integrateCleanItems(
     detail: ScaleInstanceExecutionDetailResponse,
     excludedItemResponseId: string,
+    shouldContinue: () => boolean = () => true,
   ): void {
     detail.itemResponses.forEach((item) => {
+      if (!shouldContinue()) {
+        return;
+      }
+
       const entry = this.entries.get(item.id);
 
       if (

@@ -318,6 +318,13 @@ function createHarness(input: {
     callIndex: number,
   ) => Promise<UpdateItemResponseDraftResponse>;
   readLatest?: (signal: AbortSignal) => Promise<ScaleInstanceExecutionDetailResponse>;
+  onServerItemAccepted?: (
+    item: ItemResponseExecution,
+    response: UpdateItemResponseDraftResponse | null,
+  ) => void;
+  onExecutionSummaryRefreshed?: (
+    detail: ScaleInstanceExecutionDetailResponse,
+  ) => void;
 } = {}): Harness {
   const clock = new FakeClock();
   const initialItem = input.item ?? createItem();
@@ -345,8 +352,9 @@ function createHarness(input: {
     onChange: (snapshots) => {
       currentSnapshots = snapshots;
     },
-    onServerItemAccepted: () => undefined,
-    onExecutionSummaryRefreshed: () => undefined,
+    onServerItemAccepted: input.onServerItemAccepted ?? (() => undefined),
+    onExecutionSummaryRefreshed:
+      input.onExecutionSummaryRefreshed ?? (() => undefined),
     onUnauthorized: () => undefined,
   });
   coordinator.initialize([initialItem]);
@@ -766,6 +774,145 @@ test('a confirmed committed uncertain write is accepted without resending', asyn
   expect(harness.requests).toHaveLength(1);
   expect(harness.snapshots()[committed.id].state).toBe('clean');
   expect(harness.snapshots()[committed.id].serverItem.draftRevision).toBe(5);
+});
+
+test('an uncertain reconciliation remains operation-level single-flight while its read is pending', async () => {
+  const pendingRead = deferred<ScaleInstanceExecutionDetailResponse>();
+  const committed = createItem({ draftRevision: 5, responseText: 'sent' });
+  let acceptedCount = 0;
+  const harness = createHarness({
+    save: async () => {
+      throw new AssessmentExecutionApiError('request_outcome_uncertain');
+    },
+    readLatest: async () => pendingRead.promise,
+    onServerItemAccepted: () => {
+      acceptedCount += 1;
+    },
+  });
+
+  updateText(harness, 'sent', true);
+  await settleAsyncWork();
+  expect(harness.readCount()).toBe(1);
+  expect(harness.requests).toHaveLength(1);
+  expect(harness.snapshots()['item-response-a'].state).toBe('reconciling');
+
+  harness.coordinator.retryServerCheck('item-response-a');
+  harness.coordinator.retryServerCheck('item-response-a');
+  harness.coordinator.onNetworkChange(true);
+  await settleAsyncWork();
+  expect(harness.readCount()).toBe(1);
+
+  pendingRead.resolve(createDetail(committed));
+  await expectState(harness, 'clean');
+  expect(harness.readCount()).toBe(1);
+  expect(harness.requests).toHaveLength(1);
+  expect(acceptedCount).toBe(1);
+  expect(
+    harness.snapshots()['item-response-a'].serverItem.draftRevision,
+  ).toBe(5);
+});
+
+test('a completed failed reconciliation releases single-flight for one later retry', async () => {
+  const retryRead = deferred<ScaleInstanceExecutionDetailResponse>();
+  const committed = createItem({ draftRevision: 5, responseText: 'sent' });
+  let readAttempt = 0;
+  let acceptedCount = 0;
+  const harness = createHarness({
+    save: async () => {
+      throw new AssessmentExecutionApiError('request_outcome_uncertain');
+    },
+    readLatest: async () => {
+      readAttempt += 1;
+      if (readAttempt === 1) {
+        throw new Error('read unavailable');
+      }
+      return retryRead.promise;
+    },
+    onServerItemAccepted: () => {
+      acceptedCount += 1;
+    },
+  });
+
+  updateText(harness, 'sent', true);
+  await settleAsyncWork();
+  expect(harness.readCount()).toBe(1);
+  expect(harness.snapshots()['item-response-a'].state).toBe('reconciling');
+
+  harness.coordinator.retryServerCheck('item-response-a');
+  await settleAsyncWork();
+  expect(harness.readCount()).toBe(2);
+
+  harness.coordinator.retryServerCheck('item-response-a');
+  harness.coordinator.retryServerCheck('item-response-a');
+  harness.coordinator.onNetworkChange(true);
+  await settleAsyncWork();
+  expect(harness.readCount()).toBe(2);
+
+  retryRead.resolve(createDetail(committed));
+  await expectState(harness, 'clean');
+  expect(harness.readCount()).toBe(2);
+  expect(harness.requests).toHaveLength(1);
+  expect(acceptedCount).toBe(1);
+});
+
+test('initialize invalidates a stale reconciliation result and permits a new run', async () => {
+  const staleRead = deferred<ScaleInstanceExecutionDetailResponse>();
+  const ownedSignals: AbortSignal[] = [];
+  let readAttempt = 0;
+  let acceptedCount = 0;
+  let refreshedCount = 0;
+  const replacement = createItem({
+    draftRevision: 20,
+    responseText: 'replacement baseline',
+  });
+  const harness = createHarness({
+    save: async () => {
+      throw new AssessmentExecutionApiError('request_outcome_uncertain');
+    },
+    readLatest: async (signal) => {
+      ownedSignals.push(signal);
+      readAttempt += 1;
+      if (readAttempt === 1) {
+        return staleRead.promise;
+      }
+      return createDetail(
+        createItem({ draftRevision: 21, responseText: 'current edit' }),
+      );
+    },
+    onServerItemAccepted: () => {
+      acceptedCount += 1;
+    },
+    onExecutionSummaryRefreshed: () => {
+      refreshedCount += 1;
+    },
+  });
+
+  updateText(harness, 'stale edit', true);
+  await settleAsyncWork();
+  expect(harness.readCount()).toBe(1);
+  harness.coordinator.initialize([replacement]);
+  expect(ownedSignals[0].aborted).toBe(true);
+
+  staleRead.resolve(
+    createDetail(createItem({ draftRevision: 5, responseText: 'stale edit' })),
+  );
+  await settleAsyncWork();
+  expect(acceptedCount).toBe(0);
+  expect(refreshedCount).toBe(0);
+  expect(harness.snapshots()['item-response-a'].state).toBe('clean');
+  expect(
+    harness.snapshots()['item-response-a'].serverItem.draftRevision,
+  ).toBe(20);
+
+  updateText(harness, 'current edit', true);
+  await expectState(harness, 'clean');
+  expect(harness.readCount()).toBe(2);
+  expect(harness.requests).toHaveLength(2);
+  expect(acceptedCount).toBe(1);
+  expect(refreshedCount).toBe(1);
+  expect(
+    harness.snapshots()['item-response-a'].serverItem.draftRevision,
+  ).toBe(21);
 });
 
 test('a confirmed uncommitted uncertain write schedules a new normal save only after the read', async () => {

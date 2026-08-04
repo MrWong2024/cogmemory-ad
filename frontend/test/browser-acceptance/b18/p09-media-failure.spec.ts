@@ -383,13 +383,50 @@ test.describe('B18 U09 media upload failure preservation', () => {
     let aborter: B18ExactRequestAbort | null = null;
     try {
       const answer = article.locator('textarea[id$="-response-text"]');
-      await answer.fill(RETAINED_TEXT);
-      await article.locator('input[type="file"]').first().setInputFiles({
-        name: 'synthetic-photo.png',
-        mimeType: 'image/png',
-        buffer: VALID_PNG,
+      const photoCaptureHeading = article.getByRole('heading', {
+        level: 5,
+        name: '图片证据采集',
+        exact: true,
       });
-      await expect(article.getByAltText('待上传图片证据预览')).toBeVisible();
+      await expect(photoCaptureHeading).toBeVisible();
+      const photoCaptureSection = article
+        .locator('section')
+        .filter({
+          has: page.getByRole('heading', {
+            level: 5,
+            name: '图片证据采集',
+            exact: true,
+          }),
+        });
+      await expect(photoCaptureSection).toHaveCount(1);
+      const evidenceRequirements = article.getByRole('region', {
+        name: '证据要求',
+        exact: true,
+      });
+      const photoRequirementItem = evidenceRequirements
+        .getByRole('listitem')
+        .filter({
+          has: evidenceRequirements.getByText('图片', { exact: true }),
+        });
+      await expect(photoRequirementItem).toHaveCount(1);
+
+      await answer.fill(RETAINED_TEXT);
+      await photoCaptureSection
+        .getByLabel('选择已有图片', { exact: true })
+        .setInputFiles({
+          name: 'synthetic-photo.png',
+          mimeType: 'image/png',
+          buffer: VALID_PNG,
+        });
+      const preview = photoCaptureSection.getByAltText(
+        '待上传图片证据预览',
+        { exact: true },
+      );
+      const uploadButton = photoCaptureSection.getByRole('button', {
+        name: '上传图片证据',
+        exact: true,
+      });
+      await expect(preview).toBeVisible();
       await expect(answer).toHaveValue(RETAINED_TEXT);
 
       aborter = new B18ExactRequestAbort(
@@ -397,9 +434,7 @@ test.describe('B18 U09 media upload failure preservation', () => {
         `${env.backendOrigin}${mediaPath}`,
       );
       await aborter.install();
-      await article
-        .getByRole('button', { name: '上传图片证据', exact: true })
-        .click();
+      await uploadButton.click();
       await aborter.waitForAbort();
       await expect(
         article.getByRole('alert').filter({
@@ -407,13 +442,15 @@ test.describe('B18 U09 media upload failure preservation', () => {
         }),
       ).toBeVisible();
       await expect(answer).toHaveValue(RETAINED_TEXT);
-      await expect(article.getByAltText('待上传图片证据预览')).toBeVisible();
+      await expect(preview).toBeVisible();
+      await expect(uploadButton).toBeEnabled();
       await expect(
-        article.getByRole('button', { name: '上传图片证据', exact: true }),
-      ).toBeEnabled();
-      await expect(article.getByText('待记录', { exact: true }).first()).toBeVisible();
+        photoRequirementItem.getByText('待记录', { exact: true }),
+      ).toBeVisible();
       await expect(
-        article.getByText('服务端标识：未关联', { exact: true }).first(),
+        photoRequirementItem.getByText('服务端标识：未关联', {
+          exact: true,
+        }),
       ).toBeVisible();
 
       await expect

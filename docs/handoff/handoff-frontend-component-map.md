@@ -688,7 +688,7 @@
 
 - `lib/item-response-autosave.ts` 提供调度、attempt、字段匹配、网络核对分类、成功 rebase、稳定 step / prompt key 合并、媒体 generation 合并、提交 / beforeunload blockers 与可清理的逐题状态机；同题只有一个 active PATCH，不同题互不共用写锁。
 - `hooks/useItemResponseAutosaveCoordinator.ts` 将纯协调器接入 A14 save / execution GET、online / offline、一个页面级 1000ms tick 与 15 秒 running checkpoint；卸载停止内存定时器、监听器和只读核对 AbortController。
-- 冲突保留本地草稿并等待用户选择；网络结果不确定先 GET，再以 revision 和本次字段确认未提交 / 已提交 / conflict。attemptId、generation 与草稿快照不发送后端、不进入 DOM 或浏览器持久存储。
+- 冲突保留本地草稿并等待用户选择；网络结果不确定先 GET，再以 revision 和本次字段确认未提交 / 已提交 / conflict。同一 ItemResponse 与 uncertain attempt 的完整 reconciliation 使用内存 `{attemptId,promise}` operation-level single-flight；重复 retry / online 复用当前 run，失败完成后释放以允许下一次人工重试。读取结果处理前同时核验 epoch、entry 引用、attempt 与 run 身份，initialize / stop 后的 stale run 不改写新基线或触发过时回调。attemptId、generation、活动 run 与草稿快照不发送后端、不进入 DOM 或浏览器持久存储。
 
 ### 6.77 B18-A 保存状态与冲突选择
 
@@ -702,8 +702,8 @@
 
 ### 6.79 B18-A 完成边界
 
-- 本阶段已完成前端代码、纯合同和静态构建；真实 Browser、双 Session、断网、刷新、切组、媒体竞态和实时计时验收归属 B18-B。
-- B18-A 不等于 B18 或 WP-03 完成；验证事实统一见 `handoff-frontend-testing-playbook.md`。
+- 本阶段前端代码、纯合同和静态构建已完成，P3 网络核对 Browser 回归也已通过；既有双 Session、断网、刷新、切组、媒体竞态和实时计时证据继续复用。
+- P9 媒体失败草稿保全 Browser 证据仍 pending，因此 B18 / WP-03 尚未完成；验证事实统一见 `handoff-frontend-testing-playbook.md`。
 
 ## 7. 后续同步规则
 
