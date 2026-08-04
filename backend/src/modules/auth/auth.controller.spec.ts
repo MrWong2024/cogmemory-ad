@@ -1,5 +1,6 @@
 // backend/src/modules/auth/auth.controller.spec.ts
 import { UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { DEFAULT_SESSION_TTL_MS, SESSION_COOKIE_NAME } from './auth.constants';
 import { AuthController } from './auth.controller';
@@ -51,6 +52,7 @@ function createCookieResponse(): jest.Mocked<SessionCookieResponse> {
 }
 
 describe('AuthController', () => {
+  const originalNodeEnv = process.env.NODE_ENV;
   let controller: AuthController;
   let authService: jest.Mocked<
     Pick<
@@ -58,12 +60,18 @@ describe('AuthController', () => {
       'authenticateWithPassword' | 'revokeSessionByToken' | 'toAuthUserResponse'
     >
   >;
+  let configService: {
+    getOrThrow: jest.Mock<boolean, [string]>;
+  };
 
   beforeEach(async () => {
     authService = {
       authenticateWithPassword: jest.fn(),
       revokeSessionByToken: jest.fn(),
       toAuthUserResponse: jest.fn(),
+    };
+    configService = {
+      getOrThrow: jest.fn<boolean, [string]>().mockReturnValue(false),
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -73,6 +81,10 @@ describe('AuthController', () => {
           provide: AuthService,
           useValue: authService,
         },
+        {
+          provide: ConfigService,
+          useValue: configService,
+        },
       ],
     }).compile();
 
@@ -81,10 +93,17 @@ describe('AuthController', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
-    process.env.NODE_ENV = 'test';
+
+    if (originalNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = originalNodeEnv;
+    }
   });
 
-  it('logs in, sets HttpOnly session cookie, and returns public user response', async () => {
+  it('uses configured false for the login cookie in production and returns the public user response', async () => {
+    process.env.NODE_ENV = 'production';
+    configService.getOrThrow.mockReturnValue(false);
     const user = createAuthenticatedUser();
     const userResponse = createAuthUserResponse();
     authService.authenticateWithPassword.mockResolvedValue({
@@ -117,6 +136,9 @@ describe('AuthController', () => {
       ipAddress: '127.0.0.1',
     });
     expect(response.cookie.mock.calls).toHaveLength(1);
+    expect(configService.getOrThrow).toHaveBeenCalledWith(
+      'session.cookieSecure',
+    );
     expect(response.cookie.mock.calls[0]).toEqual([
       SESSION_COOKIE_NAME,
       'SESSION-TEST-LOGIN',
@@ -161,7 +183,9 @@ describe('AuthController', () => {
     expect(response.cookie.mock.calls).toHaveLength(0);
   });
 
-  it('revokes session from cookie and clears cookie on logout', async () => {
+  it('uses configured false to clear the logout cookie in production', async () => {
+    process.env.NODE_ENV = 'production';
+    configService.getOrThrow.mockReturnValue(false);
     authService.revokeSessionByToken.mockResolvedValue(true);
     const response = createCookieResponse();
 
@@ -179,6 +203,9 @@ describe('AuthController', () => {
       'SESSION-TEST-LOGOUT',
     );
     expect(response.clearCookie.mock.calls).toHaveLength(1);
+    expect(configService.getOrThrow).toHaveBeenCalledWith(
+      'session.cookieSecure',
+    );
     expect(response.clearCookie.mock.calls[0]).toEqual([
       SESSION_COOKIE_NAME,
       {
@@ -189,6 +216,54 @@ describe('AuthController', () => {
       },
     ]);
     expect(result).toEqual({ ok: true, authenticated: false });
+  });
+
+  it('uses configured true for the login cookie in production', async () => {
+    process.env.NODE_ENV = 'production';
+    configService.getOrThrow.mockReturnValue(true);
+    const user = createAuthenticatedUser();
+    const userResponse = createAuthUserResponse();
+    authService.authenticateWithPassword.mockResolvedValue({
+      user,
+      rawSessionToken: 'SESSION-TEST-SECURE-LOGIN',
+      expiresAt: new Date(Date.now() + DEFAULT_SESSION_TTL_MS),
+    });
+    authService.toAuthUserResponse.mockReturnValue(userResponse);
+    const response = createCookieResponse();
+
+    await controller.login(
+      {
+        accountName: 'doctor-test-001',
+        password: 'password-test-001',
+      },
+      { headers: {} },
+      response,
+    );
+
+    expect(configService.getOrThrow).toHaveBeenCalledWith(
+      'session.cookieSecure',
+    );
+    expect(response.cookie.mock.calls[0]).toEqual([
+      SESSION_COOKIE_NAME,
+      'SESSION-TEST-SECURE-LOGIN',
+      expect.objectContaining({ secure: true }),
+    ]);
+  });
+
+  it('uses configured true to clear the logout cookie in production', async () => {
+    process.env.NODE_ENV = 'production';
+    configService.getOrThrow.mockReturnValue(true);
+    const response = createCookieResponse();
+
+    await controller.logout({ headers: {} }, response);
+
+    expect(configService.getOrThrow).toHaveBeenCalledWith(
+      'session.cookieSecure',
+    );
+    expect(response.clearCookie.mock.calls[0]).toEqual([
+      SESSION_COOKIE_NAME,
+      expect.objectContaining({ secure: true }),
+    ]);
   });
 
   it('clears cookie and returns success when logout has no cookie', async () => {

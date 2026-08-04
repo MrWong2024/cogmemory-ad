@@ -9,6 +9,7 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { DEFAULT_SESSION_TTL_MS, SESSION_COOKIE_NAME } from './auth.constants';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { Public } from './decorators/public.decorator';
@@ -33,7 +34,10 @@ import type {
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly configService: ConfigService,
+  ) {}
 
   @Public()
   @Post('login')
@@ -57,7 +61,7 @@ export class AuthController {
       SESSION_COOKIE_NAME,
       authResult.rawSessionToken,
       buildSessionCookieOptions(
-        this.isProductionRuntime(),
+        this.configService.getOrThrow<boolean>('session.cookieSecure'),
         DEFAULT_SESSION_TTL_MS,
       ),
     );
@@ -82,7 +86,9 @@ export class AuthController {
 
     response.clearCookie(
       SESSION_COOKIE_NAME,
-      buildClearSessionCookieOptions(this.isProductionRuntime()),
+      buildClearSessionCookieOptions(
+        this.configService.getOrThrow<boolean>('session.cookieSecure'),
+      ),
     );
 
     return {
@@ -112,9 +118,5 @@ export class AuthController {
     }
 
     return value;
-  }
-
-  private isProductionRuntime(): boolean {
-    return process.env.NODE_ENV === 'production';
   }
 }
