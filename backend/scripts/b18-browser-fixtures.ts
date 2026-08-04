@@ -30,6 +30,8 @@ import type { AuthenticatedUserContext } from '../src/modules/auth/types/auth-us
 import { CognitiveDomainResult, type CognitiveDomainResultDocument } from '../src/modules/cognitive-domains/schemas/cognitive-domain-result.schema';
 // prettier-ignore
 import { MediaEvidence, type MediaEvidenceDocument } from '../src/modules/media/schemas/media-evidence.schema';
+import { MediaEvidenceWorkflowService } from '../src/modules/media/services/media-evidence-workflow.service';
+import type { UploadedMemoryFile } from '../src/modules/media/types/uploaded-memory-file.types';
 // prettier-ignore
 import { Patient, type PatientDocument } from '../src/modules/patients/schemas/patient.schema';
 // prettier-ignore
@@ -44,19 +46,31 @@ type Command = 'prepare' | 'verify' | 'cleanup';
 type Profile =
   | 'B18-P1-autosave-reload'
   | 'B18-P2-conflict-lifecycle'
-  | 'B18-P3-network-reconciliation';
+  | 'B18-P3-network-reconciliation'
+  | 'B18-P4-group-switch'
+  | 'B18-P5-media-generation'
+  | 'B18-P6-realtime-timing';
 type Phase =
   | 'prepared'
   | 'u01-post-autosave'
   | 'u02-post-conflict-lifecycle'
-  | 'u03-post-network-reconciliation';
+  | 'u03-post-network-reconciliation'
+  | 'u04-post-group-switch'
+  | 'u05-post-media-generation'
+  | 'u06-post-realtime-timing';
 type ScenarioKey =
   | 'autosave-reload'
   | 'conflict-server'
   | 'conflict-local'
   | 'lifecycle-close'
   | 'offline-recovery'
-  | 'response-loss';
+  | 'response-loss'
+  | 'group-switch-valid-flush'
+  | 'group-switch-invalid-preserve'
+  | 'media-upload-response-race'
+  | 'media-void-reupload-response-race'
+  | 'system-timer-lifecycle'
+  | 'external-timing-reset';
 
 type PreparedSummary = {
   targetRevision: number;
@@ -64,10 +78,18 @@ type PreparedSummary = {
   instanceStatus: string;
   totalItemCount: number;
   answeredItemCount: number;
+  secondaryRevision: number | null;
+  secondaryStatus: string | null;
   targetProtectedFactsHash: string;
+  secondaryProtectedFactsHash: string | null;
   targetStateHash: string;
+  secondaryStateHash: string | null;
   itemAnswerFactsHash: string;
+  nonTargetItemAnswerFactsHash: string;
   resourceCountsHash: string;
+  targetMediaCount: number;
+  targetAttachedMediaCount: number;
+  targetVoidedMediaCount: number;
 };
 
 type ScenarioDescriptor = {
@@ -78,6 +100,9 @@ type ScenarioDescriptor = {
   scaleCode: string;
   itemCode: string;
   crfCode: string | null;
+  groupCode: string | null;
+  secondaryItemCode: string | null;
+  secondaryGroupCode: string | null;
   prepared: PreparedSummary;
 };
 
@@ -108,6 +133,7 @@ type Workflows = {
   scaleWorkflow: AssessmentScaleWorkflowService;
   itemDraft: ItemResponseDraftService;
   submission: ScaleInstanceSubmissionService;
+  mediaWorkflow: MediaEvidenceWorkflowService;
 };
 
 type ScenarioRoot = {
@@ -132,15 +158,27 @@ const DB = 'cogmemory_ad_browser_test';
 const P1 = 'B18-P1-autosave-reload' as const;
 const P2 = 'B18-P2-conflict-lifecycle' as const;
 const P3 = 'B18-P3-network-reconciliation' as const;
+const P4 = 'B18-P4-group-switch' as const;
+const P5 = 'B18-P5-media-generation' as const;
+const P6 = 'B18-P6-realtime-timing' as const;
 const PROFILE_KEYS: Record<Profile, readonly ScenarioKey[]> = {
   [P1]: ['autosave-reload'],
   [P2]: ['conflict-server', 'conflict-local', 'lifecycle-close'],
   [P3]: ['offline-recovery', 'response-loss'],
+  [P4]: ['group-switch-valid-flush', 'group-switch-invalid-preserve'],
+  [P5]: ['media-upload-response-race', 'media-void-reupload-response-race'],
+  [P6]: ['system-timer-lifecycle', 'external-timing-reset'],
 };
-const PROFILE_PREFIX: Record<Profile, 'B18_U01' | 'B18_U02' | 'B18_U03'> = {
+const PROFILE_PREFIX: Record<
+  Profile,
+  'B18_U01' | 'B18_U02' | 'B18_U03' | 'B18_U04' | 'B18_U05' | 'B18_U06'
+> = {
   [P1]: 'B18_U01',
   [P2]: 'B18_U02',
   [P3]: 'B18_U03',
+  [P4]: 'B18_U04',
+  [P5]: 'B18_U05',
+  [P6]: 'B18_U06',
 };
 const FINAL_TEXT: Record<ScenarioKey, string | null> = {
   'autosave-reload': 'B18 U01 autosave trailing version B',
@@ -149,7 +187,21 @@ const FINAL_TEXT: Record<ScenarioKey, string | null> = {
   'lifecycle-close': null,
   'offline-recovery': 'B18 U03 offline recovered version',
   'response-loss': 'B18 U03 committed response loss version',
+  'group-switch-valid-flush': 'B18 U04 group A version',
+  'group-switch-invalid-preserve': null,
+  'media-upload-response-race': 'B18 U05 upload race answer',
+  'media-void-reupload-response-race': 'B18 U05 void reupload race answer',
+  'system-timer-lifecycle': null,
+  'external-timing-reset': null,
 };
+const SECONDARY_FINAL_TEXT: Partial<Record<ScenarioKey, string>> = {
+  'group-switch-valid-flush': 'B18 U04 group B version',
+};
+const GROUP_SWITCH_MISSING_REASON = 'B18 U04 synthetic missing reason';
+const VALID_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+  'base64',
+);
 const BASE_DATE = new Date('2026-08-04T00:00:00.000Z');
 
 function fail(code: string, message: string): never {
@@ -170,7 +222,14 @@ function required(name: string, minimum = 1): string {
 
 function parseProfile(): Profile {
   const value = process.env.B18_PROFILE;
-  if (value !== P1 && value !== P2 && value !== P3) {
+  if (
+    value !== P1 &&
+    value !== P2 &&
+    value !== P3 &&
+    value !== P4 &&
+    value !== P5 &&
+    value !== P6
+  ) {
     fail(
       'B18_PROFILE_INVALID',
       'B18_PROFILE must be an exact supported profile',
@@ -194,6 +253,9 @@ function parseCommand(
     [P1]: 'u01-post-autosave',
     [P2]: 'u02-post-conflict-lifecycle',
     [P3]: 'u03-post-network-reconciliation',
+    [P4]: 'u04-post-group-switch',
+    [P5]: 'u05-post-media-generation',
+    [P6]: 'u06-post-realtime-timing',
   };
   if (
     command === 'verify' &&
@@ -247,6 +309,23 @@ function actor(user: UserDocument): AuthenticatedUserContext {
   };
 }
 
+function memoryFile(buffer: Buffer): UploadedMemoryFile {
+  return {
+    fieldname: 'file',
+    originalname: 'synthetic-photo',
+    encoding: '7bit',
+    mimetype: 'image/png',
+    size: buffer.length,
+    buffer,
+  };
+}
+
+function scenarioScaleCode(key: ScenarioKey): 'mmse' | 'moca' {
+  return key === 'system-timer-lifecycle' || key === 'external-timing-reset'
+    ? 'moca'
+    : 'mmse';
+}
+
 function asObject(document: unknown): Record<string, unknown> {
   return (document as { toObject(): unknown }).toObject() as Record<
     string,
@@ -254,9 +333,12 @@ function asObject(document: unknown): Record<string, unknown> {
   >;
 }
 
-function targetProtectedFacts(item: ItemResponseDocument): unknown {
+function targetProtectedFacts(
+  item: ItemResponseDocument,
+  key: ScenarioKey,
+): unknown {
   const value = asObject(item);
-  for (const key of [
+  const mutableKeys = [
     '__v',
     'createdAt',
     'updatedAt',
@@ -265,8 +347,21 @@ function targetProtectedFacts(item: ItemResponseDocument): unknown {
     'responseText',
     'status',
     'submissionWriteBarrier',
-  ]) {
-    delete value[key];
+  ];
+  if (key === 'group-switch-invalid-preserve') {
+    mutableKeys.push('isMissing', 'missingReason');
+  }
+  if (
+    key === 'media-upload-response-race' ||
+    key === 'media-void-reupload-response-race'
+  ) {
+    mutableKeys.push('evidenceRefs');
+  }
+  if (key === 'system-timer-lifecycle' || key === 'external-timing-reset') {
+    mutableKeys.push('timing');
+  }
+  for (const mutableKey of mutableKeys) {
+    delete value[mutableKey];
   }
   return value;
 }
@@ -387,11 +482,22 @@ async function readDescriptor(
       !/^\/patients\/[a-f\d]{24}\/visits\/[a-f\d]{24}\/scale-instances\/[a-f\d]{24}$/i.test(
         scenario.navigationPath,
       ) ||
-      scenario.scaleCode !== 'mmse' ||
+      (scenario.scaleCode !== 'mmse' && scenario.scaleCode !== 'moca') ||
       !scenario.itemCode ||
-      !scenario.prepared
+      !scenario.prepared ||
+      (scenario.groupCode !== null && typeof scenario.groupCode !== 'string') ||
+      (scenario.secondaryItemCode !== null &&
+        typeof scenario.secondaryItemCode !== 'string') ||
+      (scenario.secondaryGroupCode !== null &&
+        typeof scenario.secondaryGroupCode !== 'string')
     ) {
       fail('B18_RUNTIME_INVALID', 'Runtime scenario is invalid');
+    }
+    if (
+      (profile === P6 && scenario.scaleCode !== 'moca') ||
+      (profile !== P6 && scenario.scaleCode !== 'mmse')
+    ) {
+      fail('B18_RUNTIME_INVALID', 'Runtime scenario scale is invalid');
     }
   }
   return descriptor as Descriptor;
@@ -468,6 +574,7 @@ async function assertUnused(
 async function createRoot(input: {
   namespace: string;
   ordinal: number;
+  scaleCode: 'mmse' | 'moca';
   actor: AuthenticatedUserContext;
   models: Models;
   workflows: Workflows;
@@ -509,7 +616,10 @@ async function createRoot(input: {
   const response = await input.workflows.scaleWorkflow.initializeScaleInstance(
     patient._id.toString(),
     visit._id.toString(),
-    { scaleCode: 'mmse', administrationMode: 'clinician_administered' },
+    {
+      scaleCode: input.scaleCode,
+      administrationMode: 'clinician_administered',
+    },
     {
       operatorId: input.actor.id,
       operatorName: input.actor.displayName,
@@ -586,8 +696,72 @@ async function makeReady(
   }
 }
 
+function findScenarioTargets(
+  items: ItemResponseDocument[],
+  key: ScenarioKey,
+): { target: ItemResponseDocument; secondary: ItemResponseDocument | null } {
+  let target: ItemResponseDocument | undefined = items[0];
+  if (
+    key === 'media-upload-response-race' ||
+    key === 'media-void-reupload-response-race'
+  ) {
+    target = items.find((item) =>
+      item.evidenceRefs.some((reference) => reference.evidenceType === 'photo'),
+    );
+  } else if (
+    key === 'system-timer-lifecycle' ||
+    key === 'external-timing-reset'
+  ) {
+    target = items.find(
+      (item) => item.itemConfigSnapshot?.requiresTimer === true,
+    );
+  }
+  if (!target) {
+    fail('B18_SCENARIO_TARGET_MISSING', 'Scenario target item is missing');
+  }
+  const secondary = key.startsWith('group-switch-')
+    ? (items.find(
+        (item) =>
+          item._id.toString() !== target._id.toString() &&
+          item.groupCode !== target.groupCode,
+      ) ?? null)
+    : null;
+  if (key.startsWith('group-switch-') && !secondary) {
+    fail(
+      'B18_SCENARIO_SECONDARY_MISSING',
+      'Group-switch secondary item is missing',
+    );
+  }
+  return { target, secondary };
+}
+
+async function uploadPreparedPhoto(input: {
+  root: ScenarioRoot;
+  item: ItemResponseDocument;
+  actor: AuthenticatedUserContext;
+  mediaWorkflow: MediaEvidenceWorkflowService;
+}): Promise<void> {
+  await input.mediaWorkflow.uploadEvidence(
+    {
+      patientId: input.root.patientId.toString(),
+      visitId: input.root.visitId.toString(),
+      scaleInstanceId: input.root.scaleInstanceId.toString(),
+      itemResponseId: input.item._id.toString(),
+    },
+    {
+      evidenceType: 'photo',
+      captureMode: 'photo_upload',
+      imageWidth: 1,
+      imageHeight: 1,
+    },
+    { file: [memoryFile(VALID_PNG)] },
+    input.actor,
+  );
+}
+
 async function snapshotScenario(
   root: ScenarioRoot,
+  key: ScenarioKey,
   models: Models,
 ): Promise<ScenarioDescriptor> {
   const [instance, items, scores, domains, media, reports] = await Promise.all([
@@ -598,16 +772,24 @@ async function snapshotScenario(
       .exec(),
     models.scores.countDocuments({ scaleInstanceId: root.scaleInstanceId }),
     models.domains.countDocuments({ scaleInstanceId: root.scaleInstanceId }),
-    models.media.countDocuments({ scaleInstanceId: root.scaleInstanceId }),
+    models.media.find({ scaleInstanceId: root.scaleInstanceId }).exec(),
     models.reports.countDocuments({ scaleInstanceId: root.scaleInstanceId }),
   ]);
-  const target = items[0];
-  if (!instance || !target) {
+  if (!instance || items.length === 0) {
     fail('B18_SCENARIO_MISSING', 'Prepared B18 scenario is incomplete');
   }
+  const { target, secondary } = findScenarioTargets(items, key);
   const answeredItemCount = items.filter((item) =>
     ['answered', 'scored', 'locked'].includes(item.status),
   ).length;
+  const targetMedia = media.filter(
+    (entry) => entry.itemResponseId.toString() === target._id.toString(),
+  );
+  const excludedIds = new Set(
+    [target, secondary]
+      .filter((item): item is ItemResponseDocument => item !== null)
+      .map((item) => item._id.toString()),
+  );
   return {
     patientId: root.patientId.toString(),
     visitId: root.visitId.toString(),
@@ -616,16 +798,42 @@ async function snapshotScenario(
     scaleCode: instance.scaleCode,
     itemCode: target.itemCode,
     crfCode: target.crfCode ?? null,
+    groupCode: target.groupCode ?? null,
+    secondaryItemCode: secondary?.itemCode ?? null,
+    secondaryGroupCode: secondary?.groupCode ?? null,
     prepared: {
       targetRevision: target.draftRevision,
       targetStatus: target.status,
       instanceStatus: instance.status,
       totalItemCount: items.length,
       answeredItemCount,
-      targetProtectedFactsHash: hash(targetProtectedFacts(target)),
+      secondaryRevision: secondary?.draftRevision ?? null,
+      secondaryStatus: secondary?.status ?? null,
+      targetProtectedFactsHash: hash(targetProtectedFacts(target, key)),
+      secondaryProtectedFactsHash: secondary
+        ? hash(targetProtectedFacts(secondary, key))
+        : null,
       targetStateHash: hash(targetStateFacts(target)),
+      secondaryStateHash: secondary ? hash(targetStateFacts(secondary)) : null,
       itemAnswerFactsHash: hash(items.map(answerFacts)),
-      resourceCountsHash: hash({ scores, domains, media, reports }),
+      nonTargetItemAnswerFactsHash: hash(
+        items
+          .filter((item) => !excludedIds.has(item._id.toString()))
+          .map(answerFacts),
+      ),
+      resourceCountsHash: hash({
+        scores,
+        domains,
+        media: media.length,
+        reports,
+      }),
+      targetMediaCount: targetMedia.length,
+      targetAttachedMediaCount: targetMedia.filter(
+        (entry) => entry.status === 'attached',
+      ).length,
+      targetVoidedMediaCount: targetMedia.filter(
+        (entry) => entry.status === 'voided',
+      ).length,
     },
   };
 }
@@ -641,7 +849,7 @@ async function assertPreparedScenario(
     visitId: new Types.ObjectId(scenario.visitId),
     scaleInstanceId: new Types.ObjectId(scenario.scaleInstanceId),
   };
-  const current = await snapshotScenario(root, models);
+  const current = await snapshotScenario(root, key, models);
   if (hash(current.prepared) !== hash(scenario.prepared)) {
     fail('B18_PREPARED_FACTS_CHANGED', 'Prepared B18 facts changed');
   }
@@ -666,7 +874,7 @@ async function assertPostScenario(
   key: ScenarioKey,
   models: Models,
 ): Promise<Record<string, unknown>> {
-  const [instance, items, scores, domains, reports] = await Promise.all([
+  const [instance, items, scores, domains, media, reports] = await Promise.all([
     models.instances.findById(scenario.scaleInstanceId),
     models.items
       .find({ scaleInstanceId: scenario.scaleInstanceId })
@@ -676,6 +884,10 @@ async function assertPostScenario(
     models.domains.countDocuments({
       scaleInstanceId: scenario.scaleInstanceId,
     }),
+    models.media
+      .find({ scaleInstanceId: scenario.scaleInstanceId })
+      .sort({ createdAt: 1 })
+      .exec(),
     models.reports.countDocuments({
       scaleInstanceId: scenario.scaleInstanceId,
     }),
@@ -683,6 +895,9 @@ async function assertPostScenario(
   const actualTarget = items.find(
     (item) => item.itemCode === scenario.itemCode,
   );
+  const actualSecondary = scenario.secondaryItemCode
+    ? items.find((item) => item.itemCode === scenario.secondaryItemCode)
+    : null;
   if (
     !instance ||
     !actualTarget ||
@@ -691,16 +906,37 @@ async function assertPostScenario(
     fail('B18_POST_ROOT_INVALID', 'Post-Browser root facts are invalid');
   }
   if (
-    hash(targetProtectedFacts(actualTarget)) !==
+    hash(targetProtectedFacts(actualTarget, key)) !==
     scenario.prepared.targetProtectedFactsHash
   ) {
     fail('B18_PROTECTED_FACTS_CHANGED', 'Protected target facts changed');
+  }
+  if (
+    scenario.secondaryItemCode &&
+    (!actualSecondary ||
+      hash(targetProtectedFacts(actualSecondary, key)) !==
+        scenario.prepared.secondaryProtectedFactsHash)
+  ) {
+    fail('B18_PROTECTED_FACTS_CHANGED', 'Protected secondary facts changed');
   }
   if (scores + domains + reports !== 0) {
     fail(
       'B18_ADJACENT_OUTPUT_CREATED',
       'Scoring, domain, or report facts were created',
     );
+  }
+  const excludedIds = new Set<string>([
+    actualTarget._id.toString(),
+    ...(actualSecondary ? [actualSecondary._id.toString()] : []),
+  ]);
+  if (
+    hash(
+      items
+        .filter((item) => !excludedIds.has(item._id.toString()))
+        .map(answerFacts),
+    ) !== scenario.prepared.nonTargetItemAnswerFactsHash
+  ) {
+    fail('B18_ADJACENT_ITEM_CHANGED', 'An adjacent item changed unexpectedly');
   }
 
   if (key === 'lifecycle-close') {
@@ -731,6 +967,169 @@ async function assertPostScenario(
       scoreCount: scores,
       domainCount: domains,
       reportCount: reports,
+      mediaCount: media.length,
+    };
+  }
+
+  if (instance.status === 'completed' || instance.completedAt) {
+    fail('B18_INSTANCE_CLOSED', 'A draft scenario closed its instance');
+  }
+
+  if (key === 'group-switch-valid-flush') {
+    if (
+      !actualSecondary ||
+      actualTarget.draftRevision !== scenario.prepared.targetRevision + 1 ||
+      actualSecondary.draftRevision !==
+        (scenario.prepared.secondaryRevision ?? -1) + 1 ||
+      actualTarget.responseText !== FINAL_TEXT[key] ||
+      actualSecondary.responseText !== SECONDARY_FINAL_TEXT[key] ||
+      !actualTarget.draftSavedAt ||
+      !actualSecondary.draftSavedAt ||
+      media.length !== scenario.prepared.targetMediaCount
+    ) {
+      fail(
+        'B18_GROUP_SWITCH_POST_INVALID',
+        'Valid group-switch facts are invalid',
+      );
+    }
+    return {
+      targetRevisionDelta: 1,
+      secondaryRevisionDelta: 1,
+      independentItemPatchCount: 2,
+      instanceStatus: instance.status,
+      protectedFacts: 'matched',
+      adjacentItemFacts: 'matched',
+    };
+  }
+
+  if (key === 'group-switch-invalid-preserve') {
+    if (
+      actualTarget.draftRevision !== scenario.prepared.targetRevision + 1 ||
+      actualTarget.isMissing !== true ||
+      actualTarget.missingReason !== GROUP_SWITCH_MISSING_REASON ||
+      (actualTarget.responseText ?? null) !== null ||
+      !actualTarget.draftSavedAt ||
+      !actualSecondary ||
+      hash(targetStateFacts(actualSecondary)) !==
+        scenario.prepared.secondaryStateHash ||
+      media.length !== scenario.prepared.targetMediaCount
+    ) {
+      fail(
+        'B18_GROUP_SWITCH_POST_INVALID',
+        'Invalid group-switch recovery facts are invalid',
+      );
+    }
+    return {
+      targetRevisionDelta: 1,
+      invalidSwitchPatchCount: 0,
+      recoveredSwitchPatchCount: 1,
+      missingState: 'persisted',
+      instanceStatus: instance.status,
+      protectedFacts: 'matched',
+      adjacentItemFacts: 'matched',
+    };
+  }
+
+  const targetMedia = media.filter(
+    (entry) => entry.itemResponseId.toString() === actualTarget._id.toString(),
+  );
+  const attachedMedia = targetMedia.filter(
+    (entry) => entry.status === 'attached',
+  );
+  const voidedMedia = targetMedia.filter((entry) => entry.status === 'voided');
+  const photoReference = actualTarget.evidenceRefs.find(
+    (reference) => reference.evidenceType === 'photo',
+  );
+  const activeMediaId = attachedMedia[0]?._id.toString() ?? null;
+  const referenceMediaId = photoReference?.mediaEvidenceId?.toString() ?? null;
+
+  if (
+    key === 'media-upload-response-race' ||
+    key === 'media-void-reupload-response-race'
+  ) {
+    const expectedMediaCount =
+      key === 'media-upload-response-race'
+        ? scenario.prepared.targetMediaCount + 1
+        : scenario.prepared.targetMediaCount + 1;
+    const expectedVoidedCount = key === 'media-upload-response-race' ? 0 : 1;
+    if (
+      actualTarget.draftRevision !== scenario.prepared.targetRevision + 1 ||
+      actualTarget.responseText !== FINAL_TEXT[key] ||
+      !actualTarget.draftSavedAt ||
+      targetMedia.length !== expectedMediaCount ||
+      attachedMedia.length !== 1 ||
+      voidedMedia.length !== expectedVoidedCount ||
+      photoReference?.status !== 'attached' ||
+      referenceMediaId !== activeMediaId
+    ) {
+      fail(
+        'B18_MEDIA_POST_INVALID',
+        'Media generation merge facts are invalid',
+      );
+    }
+    return {
+      revisionDelta: 1,
+      mediaCountDelta: 1,
+      attachedMediaCount: 1,
+      voidedMediaCount: expectedVoidedCount,
+      photoReference: 'attached_to_active_media',
+      draftSavedAt: 'present',
+      instanceStatus: instance.status,
+      protectedFacts: 'matched',
+      adjacentItemFacts: 'matched',
+    };
+  }
+
+  if (key === 'system-timer-lifecycle') {
+    const timing = actualTarget.timing;
+    if (
+      actualTarget.draftRevision !== scenario.prepared.targetRevision + 5 ||
+      !actualTarget.draftSavedAt ||
+      timing?.timerState !== 'completed' ||
+      timing.timerSource !== 'system' ||
+      !timing.startedAt ||
+      !timing.completedAt ||
+      timing.lastResumedAt ||
+      (timing.durationMs ?? 0) < 15_000 ||
+      media.length !== 0
+    ) {
+      fail(
+        'B18_TIMER_POST_INVALID',
+        'System timer lifecycle facts are invalid',
+      );
+    }
+    return {
+      revisionDelta: 5,
+      timerState: 'completed',
+      timerSource: 'system',
+      durationCheckpoint: 'at_least_15_seconds',
+      instanceStatus: instance.status,
+      protectedFacts: 'matched',
+      adjacentItemFacts: 'matched',
+    };
+  }
+
+  if (key === 'external-timing-reset') {
+    const timing = actualTarget.timing;
+    if (
+      actualTarget.draftRevision !== scenario.prepared.targetRevision + 5 ||
+      !actualTarget.draftSavedAt ||
+      timing?.timerState !== 'completed' ||
+      timing.timerSource !== 'imported' ||
+      timing.lastResumedAt ||
+      timing.durationMs !== 0 ||
+      media.length !== 0
+    ) {
+      fail('B18_TIMER_POST_INVALID', 'External timing reset facts are invalid');
+    }
+    return {
+      revisionDelta: 5,
+      finalTimerState: 'completed',
+      finalTimerSource: 'imported',
+      resetCount: 2,
+      instanceStatus: instance.status,
+      protectedFacts: 'matched',
+      adjacentItemFacts: 'matched',
     };
   }
 
@@ -740,8 +1139,8 @@ async function assertPostScenario(
     actualTarget.draftRevision !== scenario.prepared.targetRevision + delta ||
     hash(actualTarget.responseText ?? null) !== hash(expectedText) ||
     !actualTarget.draftSavedAt ||
-    instance.status === 'completed' ||
-    instance.completedAt
+    instance.completedAt ||
+    media.length !== 0
   ) {
     fail('B18_POST_SAVE_INVALID', 'Post-Browser save facts are invalid');
   }
@@ -753,6 +1152,7 @@ async function assertPostScenario(
     scoreCount: scores,
     domainCount: domains,
     reportCount: reports,
+    mediaCount: media.length,
     protectedFacts: 'matched',
   };
 }
@@ -781,14 +1181,16 @@ async function prepare(input: {
       input.auth,
     );
     const doctor = actor(users.doctor);
+    const scaleCode = input.profile === P6 ? 'moca' : 'mmse';
     await input.workflows.scaleCatalog.ensureSeedScaleVersionMaterialized(
-      'mmse',
+      scaleCode,
     );
     const scenarios: Partial<Record<ScenarioKey, ScenarioDescriptor>> = {};
     for (const [index, key] of PROFILE_KEYS[input.profile].entries()) {
       const root = await createRoot({
         namespace: input.namespace,
         ordinal: index + 1,
+        scaleCode: scenarioScaleCode(key),
         actor: doctor,
         models: input.models,
         workflows: input.workflows,
@@ -796,7 +1198,20 @@ async function prepare(input: {
       if (key === 'lifecycle-close') {
         await makeReady(root, input.models, input.workflows.itemDraft);
       }
-      scenarios[key] = await snapshotScenario(root, input.models);
+      if (key === 'media-void-reupload-response-race') {
+        const items = await input.models.items
+          .find({ scaleInstanceId: root.scaleInstanceId })
+          .sort({ itemOrder: 1 })
+          .exec();
+        const { target } = findScenarioTargets(items, key);
+        await uploadPreparedPhoto({
+          root,
+          item: target,
+          actor: doctor,
+          mediaWorkflow: input.workflows.mediaWorkflow,
+        });
+      }
+      scenarios[key] = await snapshotScenario(root, key, input.models);
     }
     const descriptor: Descriptor = {
       schemaVersion: 1,
@@ -1074,6 +1489,7 @@ async function run(): Promise<void> {
       scaleWorkflow: app.get(AssessmentScaleWorkflowService),
       itemDraft: app.get(ItemResponseDraftService),
       submission: app.get(ScaleInstanceSubmissionService),
+      mediaWorkflow: app.get(MediaEvidenceWorkflowService),
     };
     const result =
       parsed.command === 'prepare'
