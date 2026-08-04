@@ -8,10 +8,10 @@ import {
   resolveLiveAcceptanceEnvironment,
 } from '../support/acceptance-env';
 import { expect, test } from '../support/acceptance-test';
-import { ControlledRequestGate } from '../support/network-control';
 import { NetworkLedger } from '../support/network-ledger';
 import type { RoleContext } from '../support/role-context-factory';
 import { safeJsonStringify } from '../support/safe-output';
+import { B18ExactRequestGate } from './support/b18-exact-request-gate';
 
 type ScenarioKey =
   | 'group-switch-valid-flush'
@@ -62,6 +62,7 @@ type ExecutionItem = {
   responseText?: string;
   isMissing: boolean;
   missingReason?: string;
+  status: string;
 };
 
 type ExecutionGroup = { code: string; title: string };
@@ -227,11 +228,38 @@ function itemArticle(page: Page, itemCode: string) {
     .filter({ hasText: `题目编码：${itemCode}` });
 }
 
-function groupButton(page: Page, title: string) {
+function groupButton(page: Page, body: ExecutionBody, group: ExecutionGroup) {
+  const groupItems = body.itemResponses.filter(
+    (item) => item.groupCode === group.code,
+  );
+  const completedCount = groupItems.filter((item) =>
+    ['answered', 'scored'].includes(item.status),
+  ).length;
+  invariant(groupItems.length > 0, 'B18 U04 group has no execution items');
   return page
-    .getByRole('navigation', { name: '量表分组导航' })
-    .getByRole('button')
-    .filter({ hasText: title });
+    .getByRole('navigation', { name: '量表分组导航', exact: true })
+    .getByRole('button', {
+      name: `${group.title} 已完成 ${completedCount} / ${groupItems.length} 题`,
+      exact: true,
+    });
+}
+
+function groupHeading(page: Page, title: string) {
+  return page.getByRole('heading', { name: title, level: 2, exact: true });
+}
+
+function matchesValidTargetPatch(
+  body: unknown,
+  expectedRevision: number,
+): boolean {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return false;
+  const record = body as Record<string, unknown>;
+  return (
+    Object.keys(record).sort().join(',') ===
+      'expectedRevision,responseText' &&
+    record.expectedRevision === expectedRevision &&
+    record.responseText === GROUP_A_TEXT
+  );
 }
 
 function scenarioFacts(body: ExecutionBody, scenario: Scenario) {
@@ -256,9 +284,13 @@ function scenarioFacts(body: ExecutionBody, scenario: Scenario) {
 
 function installPatchCapture(page: Page): {
   patches: CapturedPatch[];
+  maxActiveCount: (itemResponseId: string) => number;
   dispose: () => void;
 } {
   const patches: CapturedPatch[] = [];
+  const activeRequests = new Map<Request, string>();
+  const activeCounts = new Map<string, number>();
+  const maxActiveCounts = new Map<string, number>();
   const handler = (request: Request): void => {
     if (
       request.method() !== 'PATCH' ||
@@ -267,17 +299,45 @@ function installPatchCapture(page: Page): {
       return;
     }
     const body = request.postDataJSON() as Record<string, unknown>;
+    const itemResponseId =
+      new URL(request.url()).pathname.split('/').at(-1) ?? '';
     patches.push({
-      itemResponseId: new URL(request.url()).pathname.split('/').at(-1) ?? '',
+      itemResponseId,
       expectedRevision: body.expectedRevision,
       responseText: body.responseText,
       isMissing: body.isMissing,
       missingReason: body.missingReason,
       keys: Object.keys(body).sort(),
     });
+    activeRequests.set(request, itemResponseId);
+    const activeCount = (activeCounts.get(itemResponseId) ?? 0) + 1;
+    activeCounts.set(itemResponseId, activeCount);
+    maxActiveCounts.set(
+      itemResponseId,
+      Math.max(maxActiveCounts.get(itemResponseId) ?? 0, activeCount),
+    );
+  };
+  const settled = (request: Request): void => {
+    const itemResponseId = activeRequests.get(request);
+    if (!itemResponseId) return;
+    activeRequests.delete(request);
+    activeCounts.set(
+      itemResponseId,
+      Math.max(0, (activeCounts.get(itemResponseId) ?? 1) - 1),
+    );
   };
   page.on('request', handler);
-  return { patches, dispose: () => page.off('request', handler) };
+  page.on('requestfinished', settled);
+  page.on('requestfailed', settled);
+  return {
+    patches,
+    maxActiveCount: (itemResponseId) => maxActiveCounts.get(itemResponseId) ?? 0,
+    dispose: () => {
+      page.off('request', handler);
+      page.off('requestfinished', settled);
+      page.off('requestfailed', settled);
+    },
+  };
 }
 
 async function auditStorage(
@@ -357,11 +417,14 @@ test.describe('B18 U04 group switch autosave', () => {
     const targetPath = `${scenario.navigationPath}/item-responses/${target.id}`;
     const secondaryPath = `${scenario.navigationPath}/item-responses/${secondary.id}`;
     const capture = installPatchCapture(page);
-    const gate = new ControlledRequestGate(
+    const gate = new B18ExactRequestGate(
       page,
-      (request) =>
-        request.method() === 'PATCH' &&
-        new URL(request.url()).pathname === targetPath,
+      `${env.backendOrigin}${targetPath}`,
+      (requestBody) =>
+        matchesValidTargetPatch(
+          requestBody,
+          scenario.prepared.targetRevision,
+        ),
       15_000,
     );
     await gate.install();
@@ -372,9 +435,9 @@ test.describe('B18 U04 group switch autosave', () => {
       await expect(
         targetArticle.getByText('等待自动保存', { exact: true }),
       ).toBeVisible();
-      await groupButton(page, secondaryGroup.title).click();
+      await groupButton(page, body, secondaryGroup).click();
       await gate.waitForStarted(5_000);
-      await expect(page.getByRole('heading', { name: secondaryGroup.title })).toBeVisible();
+      await expect(groupHeading(page, secondaryGroup.title)).toBeVisible();
       await expect(targetArticle).toHaveCount(0);
       expect(gate.summary().matchedRequestCount).toBe(1);
 
@@ -392,7 +455,8 @@ test.describe('B18 U04 group switch autosave', () => {
       await expect(secondaryArticle.getByText(/^已保存：/)).toBeVisible();
       expect(gate.summary().matchedRequestCount).toBe(1);
 
-      await groupButton(page, targetGroup.title).click();
+      await groupButton(page, body, targetGroup).click();
+      await expect(groupHeading(page, targetGroup.title)).toBeVisible();
       const returnedTarget = itemArticle(page, scenario.itemCode);
       await expect(returnedTarget.locator('textarea').first()).toHaveValue(
         GROUP_A_TEXT,
@@ -431,6 +495,15 @@ test.describe('B18 U04 group switch autosave', () => {
           }),
         ]),
       );
+      expect(
+        capture.patches.find((patch) => patch.itemResponseId === target.id)?.keys,
+      ).toEqual(['expectedRevision', 'responseText']);
+      expect(
+        capture.patches.find((patch) => patch.itemResponseId === secondary.id)
+          ?.keys,
+      ).toEqual(['expectedRevision', 'responseText']);
+      expect(capture.maxActiveCount(target.id)).toBe(1);
+      expect(capture.maxActiveCount(secondary.id)).toBe(1);
       const reloaded = await openExecution({ page, scenario, env, reload: true });
       const reloadedFacts = scenarioFacts(reloaded, scenario);
       expect(reloadedFacts.target).toMatchObject({
@@ -465,6 +538,7 @@ test.describe('B18 U04 group switch autosave', () => {
             targetDraftHash: hash(GROUP_A_TEXT),
             secondaryDraftHash: hash(GROUP_B_TEXT),
             targetSavingWhileSecondarySaved: true,
+            maxSameItemActivePatchCounts: [1, 1],
             gate: gateSummary,
             storage,
             failedRequestCount: network.failedRequestCount,
@@ -513,13 +587,15 @@ test.describe('B18 U04 group switch autosave', () => {
     await expect(
       article.getByText('内容不完整，尚未保存', { exact: true }),
     ).toBeVisible();
-    await groupButton(page, secondaryGroup.title).click();
-    await expect(page.getByRole('heading', { name: secondaryGroup.title })).toBeVisible();
+    await groupButton(page, body, secondaryGroup).click();
+    await expect(groupHeading(page, secondaryGroup.title)).toBeVisible();
+    expect(capture.patches).toHaveLength(0);
     expect(
       session.ledger.count({ method: 'PATCH', safeUrlPattern: PATCH_PATTERN }),
     ).toBe(0);
 
-    await groupButton(page, targetGroup.title).click();
+    await groupButton(page, body, targetGroup).click();
+    await expect(groupHeading(page, targetGroup.title)).toBeVisible();
     const returned = itemArticle(page, scenario.itemCode);
     await expect(returned.getByLabel('本题无法完成 / 缺失记录')).toBeChecked();
     await expect(returned.getByLabel('缺失原因（必填）')).toHaveValue('');
@@ -529,7 +605,8 @@ test.describe('B18 U04 group switch autosave', () => {
         responsePath(response) === targetPath &&
         response.request().method() === 'PATCH',
     );
-    await groupButton(page, secondaryGroup.title).click();
+    await groupButton(page, body, secondaryGroup).click();
+    await expect(groupHeading(page, secondaryGroup.title)).toBeVisible();
     expect((await saveResponse).status()).toBe(200);
     expect(capture.patches).toHaveLength(1);
     expect(capture.patches[0]).toMatchObject({
@@ -558,6 +635,9 @@ test.describe('B18 U04 group switch autosave', () => {
       isMissing: true,
       missingReason: MISSING_REASON,
     });
+    expect(reloadedTarget?.status).not.toBe('answered');
+    expect(reloadedTarget?.status).not.toBe('scored');
+    expect(capture.maxActiveCount(target.id)).toBe(1);
     const storage = await auditStorage(page, context, [MISSING_REASON]);
     const patches = session.ledger.entries().filter(
       (entry) =>
@@ -579,6 +659,7 @@ test.describe('B18 U04 group switch autosave', () => {
           revisionDelta: 1,
           missingReasonHash: hash(MISSING_REASON),
           localInvalidDraftRetainedAcrossGroups: true,
+          maxSameItemActivePatchCount: 1,
           storage,
           failedRequestCount: network.failedRequestCount,
           contextsClosed: true,

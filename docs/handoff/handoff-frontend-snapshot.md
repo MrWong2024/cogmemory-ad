@@ -60,7 +60,7 @@
 ### 4.3 Assessments
 
 - 访视详情支持安全量表目录、MMSE/MoCA 实例初始化、实例列表与报告区域。
-- 量表实例页支持按服务端分组逐题手工保存、step/prompt/timing 草稿、题目定位和 beforeunload。
+- 量表实例页支持按服务端分组逐题自动保存与显式立即保存、step/prompt/timing 草稿、切组 flush、题目定位和 beforeunload。
 - A15 媒体链路支持 photo 文件处理、handwriting Canvas、题目级列表、上传、短期预览、逻辑作废和重传；Blob、strokes 与短期 URL 仅在 React 内存。
 - A16 提交面板支持 readiness、阻断/警告、stale、本地 dirty 阻断、显式确认、幂等回执和 completed 只读。
 - A17/A18 支持阶段性评分、人工单题复核、乐观并发和显式确认；前端不重新计算总分、分组、比例或队列。
@@ -103,7 +103,7 @@ A21–A25 写请求从当前服务端 `report.updatedAt` 取得 `expectedUpdated
 - 后端 Session + HttpOnly Cookie 是主登录态；前端不读取 Cookie，不使用 JWT。
 - 401 返回登录流程，403 保留可安全读取的页面事实并显示权限状态；后端 Guard 始终是最终权限边界。
 
-## 6. B16 / B17 与 B18-A 当前实现
+## 6. B16 / B17 与 B18 当前实现
 
 ### 6.1 B16 replacement V2+ 生命周期
 
@@ -121,7 +121,7 @@ A21–A25 写请求从当前服务端 `report.updatedAt` 取得 `expectedUpdated
 - 历史报告详情是只读路由，不调用 latest 或 A21–A25；current report 与 historical report 只共用安全只读内容组件。
 - WP-04 的前端 B17 与后端 A27/A28 均已实施并验收。
 
-### 6.3 B18-A 对 A29 / A30 的前端消费
+### 6.3 B18 对 A29 / A30 的前端消费与桌面闭环
 
 - A14 GET / PATCH 前端类型已声明并消费 `draftRevision`、`draftSavedAt`、`timerState` 与 `lastResumedAt`；每次实际 PATCH 从当前服务端 ItemResponse 基线取得安全 `expectedRevision`，timing 非 null 时发送六字段完整快照，revision 不由客户端生成、预增或猜测。
 - 逐题协调器维护 clean / dirty / invalid / queued / saving / waiting_for_network / reconciling / conflict / blocked；有效变更采用 800ms debounce、首次变脏后 5000ms max wait、单题单 active PATCH 和 trailing save。自动保存只保存草稿；立即保存、标记完成、计时动作与 15 秒 checkpoint 共用同一通道。
@@ -129,11 +129,11 @@ A21–A25 写请求从当前服务端 `report.updatedAt` 取得 `expectedUpdated
 - `ITEM_RESPONSE_DRAFT_CONFLICT` 会停止自动写、保留本地草稿、读取最新服务器事实，并要求用户明确确认采用服务器版本或以最新 revision 显式重存本地版本；再次冲突仍停止，不自动合并或循环重试。
 - 网络异常、AbortError 与 500 / 502 / 503 / 504 进入结果不确定核对：只读 GET 依据 revision 与本次实际发送字段区分未提交、已提交或冲突，不盲目重放。已知离线不发 PATCH；恢复 online 时，无不确定 attempt 的草稿重新排队，有不确定 attempt 的题目先核对。
 - 页面级只有一个 1000ms 显示 tick，并按服务器 `lastResumedAt` 计算 running 显示；system 支持开始、暂停、继续、完成、复位，manual / imported 只构造 completed。运行计时每 15 秒按实际 wall-clock 形成完整 checkpoint，切组不会停止其他题组的计时数学。
-- B18-A 只完成前端实现与非 Browser 合同。真实双 Session 冲突、断网、刷新、切组、媒体竞态和计时用户流程归属 B18-B；B18 与 WP-03 均未完成。
+- B18-A 的 47 项非 Browser 合同、B18-B1 的 6 个核心 Browser 场景和 B18-B2 的 P4/P5/P6 共 6 个剩余 Browser 场景均已关闭；自动保存、双 Session 冲突、断网 / 网络不确定、刷新、切组、媒体竞态和 system/external 计时形成桌面 Browser 闭环。B18 与 WP-03 已按当前 roadmap 锁定范围完成。
 
 ## 7. 当前实现结论与验证入口
 
-- B16 replacement V2+ 生命周期与 B17 history、versions、detail、trends 产品实现均已完成；B18-A 前端实现与非 Browser 合同阶段已完成，B18-B 尚未执行，WP-03 未完成。
+- B16 replacement V2+ 生命周期、B17 history/versions/detail/trends 与 B18 自动保存、切组、媒体 generation、实时计时桌面 Browser 闭环均已完成；WP-03 已按当前锁定范围完成。
 - Playwright、Chromium 与 Axe 通用 Browser acceptance 基础设施已完成。B10-89 后续已由 B10-C2 定向通过；B10 `generation-workflow` 48 pass、`public-surface-security` 47 pass，共 95 项完成，Batch C / B7–B10 已完成。Batch D 的 B11～B15 均已完成；B14.1 已治理为累计证据索引而非独立 Browser 批次，具体状态以 `handoff-frontend-testing-playbook.md` 为准。
 - 当前静态门禁、Batch 状态、Browser/automated 数量、权限/错误、响应式、键盘、Network、Runtime Storage、evidence commit、verify 与 cleanup 统一见 `handoff-frontend-testing-playbook.md`；本 snapshot 不维护测试终态。
 
@@ -141,7 +141,7 @@ A21–A25 写请求从当前服务端 `report.updatedAt` 取得 `expectedUpdated
 
 - 患者：编辑、删除、归档、合并。
 - 访视：编辑、删除、完整状态流转。
-- 施测：B18-B 对 B18-A 自动保存、双 Session 冲突、断网 / 网络不确定、刷新、切组、媒体竞态和实时计时执行真实 Browser 验收；不实现批量 PATCH。
+- 施测：不实现永久离线草稿或批量 PATCH；Batch E 的 8 项真实设备或人工项目仍独立待验。
 - 评分：独立锁定、作废、撤销确认、reopen、rerun、批量人工评分和独立历史列表。
 - 认知域：人工修改、确认、锁定、作废、重算和跨量表合并。
 - 报告：reject、reopen、withdraw、签名、unlock、unfreeze、unarchive、作废、重生成、PDF、打印、下载。
@@ -161,4 +161,4 @@ A21–A25 写请求从当前服务端 `report.updatedAt` 取得 `expectedUpdated
 
 - B16 replacement 生命周期实现可从 `eabb9b3` 及缺陷修复 `066ee87` 追溯。
 - B17 产品实现可从 `4ba9106` 追溯；WP-04 与其他前端验证证据统一由 frontend testing playbook 索引。
-- 本轮治理基线为 `ac92107fb586ff732465dec392228c89a3cc862b`。旧逐阶段命令、首轮 Browser 缺口、fixture/端口/账号过程和完整源码清单通过 Git 历史追溯，不再保留在 active snapshot。
+- B18-B2 收口基线为 `5479181da3840504fe0ddeeb15406e2e9b3e8010`。旧逐阶段命令、首轮 Browser 缺口、fixture/端口/账号过程和完整源码清单通过 Git 历史追溯，不再保留在 active snapshot。

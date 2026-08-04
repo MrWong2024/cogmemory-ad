@@ -1,6 +1,12 @@
 import { readFile } from 'node:fs/promises';
 
-import type { BrowserContext, Page, Request, Response } from '@playwright/test';
+import type {
+  BrowserContext,
+  Locator,
+  Page,
+  Request,
+  Response,
+} from '@playwright/test';
 
 import {
   assertDatabaseBoundaryIsClear,
@@ -17,7 +23,6 @@ import {
   readKeyboardEvidence,
   tabToLocator,
 } from '../support/keyboard-evidence';
-import { ControlledRequestGate } from '../support/network-control';
 import { NetworkLedger } from '../support/network-ledger';
 import type { RoleContext } from '../support/role-context-factory';
 import { safeJsonStringify } from '../support/safe-output';
@@ -25,6 +30,7 @@ import {
   assertNoGlobalHorizontalOverflow,
   auditViewport,
 } from '../support/viewport-audit';
+import { B18ExactRequestGate } from './support/b18-exact-request-gate';
 
 type ScenarioKey = 'system-timer-lifecycle' | 'external-timing-reset';
 
@@ -319,6 +325,54 @@ function expectTimingPatch(
   expect(patch.keys).toEqual(['expectedRevision', 'timing']);
 }
 
+function matchesSystemCheckpoint(
+  body: unknown,
+  expectedRevision: number,
+): boolean {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return false;
+  const record = body as Record<string, unknown>;
+  if (
+    Object.keys(record).sort().join(',') !== 'expectedRevision,timing' ||
+    record.expectedRevision !== expectedRevision ||
+    !record.timing ||
+    typeof record.timing !== 'object' ||
+    Array.isArray(record.timing)
+  ) {
+    return false;
+  }
+  const timing = record.timing as Record<string, unknown>;
+  return (
+    timing.timerState === 'running' &&
+    timing.timerSource === 'system' &&
+    typeof timing.durationMs === 'number' &&
+    Number.isSafeInteger(timing.durationMs) &&
+    timing.durationMs >= 15_000 &&
+    typeof timing.startedAt === 'string' &&
+    timing.startedAt.length > 0 &&
+    typeof timing.lastResumedAt === 'string' &&
+    timing.lastResumedAt.length > 0 &&
+    timing.completedAt === null
+  );
+}
+
+async function displayedDurationSeconds(itemArticle: Locator): Promise<number> {
+  const text = await itemArticle
+    .getByText('当前显示用时', { exact: true })
+    .locator('..')
+    .locator('dd')
+    .textContent();
+  const match =
+    text
+      ?.trim()
+      .match(/^(?:(\d+) 小时 )?(?:(\d+) 分 )?(\d+) 秒$/) ?? null;
+  invariant(match, 'B18 U06 displayed duration is invalid');
+  return (
+    Number(match[1] ?? 0) * 3_600 +
+    Number(match[2] ?? 0) * 60 +
+    Number(match[3])
+  );
+}
+
 async function auditStorage(
   page: Page,
   context: BrowserContext,
@@ -403,12 +457,16 @@ test.describe('B18 U06 real-time timing', () => {
       'running',
       'system',
     );
+    const initialDisplaySeconds = await displayedDurationSeconds(targetArticle);
 
-    const checkpointGate = new ControlledRequestGate(
+    const checkpointGate = new B18ExactRequestGate(
       page,
-      (request) =>
-        request.method() === 'PATCH' &&
-        new URL(request.url()).pathname === targetPath,
+      `${env.backendOrigin}${targetPath}`,
+      (requestBody) =>
+        matchesSystemCheckpoint(
+          requestBody,
+          scenario.prepared.targetRevision + 1,
+        ),
       30_000,
     );
     await checkpointGate.install();
@@ -416,7 +474,11 @@ test.describe('B18 U06 real-time timing', () => {
     try {
       await groupButton(page, adjacentGroup.title).click();
       await expect(
-        page.getByRole('heading', { name: adjacentGroup.title, level: 2 }),
+        page.getByRole('heading', {
+          name: adjacentGroup.title,
+          level: 2,
+          exact: true,
+        }),
       ).toBeVisible();
       await checkpointGate.waitForStarted(30_000);
       const checkpointElapsedMs = Date.now() - startedAtWallClock;
@@ -433,11 +495,16 @@ test.describe('B18 U06 real-time timing', () => {
       await groupButton(page, group.title).click();
       const returnedTarget = article(page, scenario.itemCode);
       await expect(returnedTarget.getByText('运行中', { exact: true })).toBeVisible();
+      expect(await displayedDurationSeconds(returnedTarget)).toBeGreaterThan(
+        initialDisplaySeconds,
+      );
       await returnedTarget
         .getByRole('button', { name: '暂停计时', exact: true })
         .click();
       await expect(returnedTarget.getByText('已暂停', { exact: true })).toBeVisible();
       expect(monitor.patches).toHaveLength(2);
+      expect(checkpointGate.summary().matchedRequestCount).toBe(1);
+      expect(checkpointGate.summary().continuedRequestCount).toBe(0);
       checkpointGate.resume();
       await waitForCompleted(monitor, 3);
       expect(monitor.patches).toHaveLength(3);
