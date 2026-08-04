@@ -111,7 +111,7 @@
 - PATCH 要求 Patient active、Visit / ScaleInstance 为 draft 或 in_progress、ItemResponse 为 not_started / in_progress / answered；资源归属不匹配统一按对应资源不存在处理。not_started 在有效草稿更新后进入 in_progress，markAsAnswered 需存在有效作答并进入 answered，answered 后继续编辑不回退；缺失记录清除实际作答值但保留 timing / operatorNote 与 step / prompt note。
 - `AssessmentsService.countItemResponseProgress()` 以实例下实际 ItemResponse 数量作为 totalItemCount，以 answered / scored 状态数量作为 answeredItemCount；A13 访视详情、A14 执行详情与 PATCH 响应均使用实时派生值，不回写 `ScaleInstance.progress` Mixed 快照。
 - A30 submission 使用父实例 + 固定题目 scope 的持久化可恢复屏障，而非 Mongo transaction、内存锁、`lockedAt` 或后台轮询。父 / 子每次变化均为精确条件原子更新；部分阶段失败保留可恢复事实或执行同 token 释放。
-- A14/A29/A30 不等于完整患者管理或前端自动保存流程；草稿 PATCH 不自动修改访视 / 实例 status、不设置实例 startedAt、不批量保存，也不触发媒体、计分、认知域、报告或 AI。B18 尚未适配新请求 / 响应与计时交互，WP-03 未完成。
+- A14 / A29 / A30 是后端逐题草稿、并发控制与提交屏障能力，本身不等于完整患者管理；草稿 PATCH 不自动修改访视 / 实例 status、不设置实例 startedAt、不批量保存，也不触发媒体、计分、认知域、报告或 AI。前端 B18 已适配 `expectedRevision`、`draftRevision` / `draftSavedAt` 和完整 timing 合同，并完成逐题自动保存、显式冲突 / 网络核对、切组 flush、媒体 generation 协调与实时计时的桌面 Browser 闭环；WP-03 已按当前 roadmap 锁定范围完成，Batch E 的 8 项真实设备或人工验收仍独立待验。
 
 ### A16 submission readiness 与实例完成
 
