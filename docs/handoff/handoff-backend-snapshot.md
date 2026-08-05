@@ -111,7 +111,7 @@
 - PATCH 要求 Patient active、Visit / ScaleInstance 为 draft 或 in_progress、ItemResponse 为 not_started / in_progress / answered；资源归属不匹配统一按对应资源不存在处理。not_started 在有效草稿更新后进入 in_progress，markAsAnswered 需存在有效作答并进入 answered，answered 后继续编辑不回退；缺失记录清除实际作答值但保留 timing / operatorNote 与 step / prompt note。
 - `AssessmentsService.countItemResponseProgress()` 以实例下实际 ItemResponse 数量作为 totalItemCount，以 answered / scored 状态数量作为 answeredItemCount；A13 访视详情、A14 执行详情与 PATCH 响应均使用实时派生值，不回写 `ScaleInstance.progress` Mixed 快照。
 - A30 submission 使用父实例 + 固定题目 scope 的持久化可恢复屏障，而非 Mongo transaction、内存锁、`lockedAt` 或后台轮询。父 / 子每次变化均为精确条件原子更新；部分阶段失败保留可恢复事实或执行同 token 释放。
-- A14 / A29 / A30 是后端逐题草稿、并发控制与提交屏障能力，本身不等于完整患者管理；草稿 PATCH 不自动修改访视 / 实例 status、不设置实例 startedAt、不批量保存，也不触发媒体、计分、认知域、报告或 AI。前端 B18 已适配 `expectedRevision`、`draftRevision` / `draftSavedAt` 和完整 timing 合同，并关闭 reconciliation single-flight 与 P9 媒体失败 Browser gap；B18 补充验证闭合，WP-03 已完成。Batch E 的 8 项真实设备或人工验收仍为 `pending`，最终主要归属为 WP-08。
+- A14 / A29 / A30 是后端逐题草稿、并发控制与提交屏障能力，本身不等于完整患者管理；草稿 PATCH 不自动修改访视 / 实例 status、不设置实例 startedAt、不批量保存，也不触发媒体、计分、认知域、报告或 AI。前端 B18 已适配 `expectedRevision`、`draftRevision` / `draftSavedAt` 和完整 timing 合同，并关闭 reconciliation single-flight 与 P9 媒体失败 Browser gap；B18 补充验证闭合，WP-03 已完成。Batch E 的 8 项历史真实设备或人工候选仍为 `pending`，当前主要归属为 WP-08；WP-08 启动时须按最终患者施测合同重新治理适用候选。
 
 ### A16 submission readiness 与实例完成
 
@@ -292,8 +292,9 @@
 ## 16. 当前尚未实现
 
 - 尚无公开用户管理接口、角色权限管理接口、短信验证码接口、OAuth / SSO 接口或密码重置接口。
-- 医生侧工作台与临床工作流底座已经实现；尚未实现院内受监督患者施测所需的患者短期身份与配对会话、施测步骤和医生控制权合同、患者语音及转写候选、点击、书写与绘图等原始作答尝试、医生接管与复核后形成正式 `ItemResponse` 的投影链，以及患者端安全响应和会话恢复合同。
-- 上述缺口是能力边界，不代表未来数据实体、集合数量、接口形态或传输协议已经确定；现有 staff `Session`、`administrationMode` 值、`ItemResponse`、`MediaEvidence` 和提交屏障不能等同于受监督患者施测会话及其完整闭环。
+- 医生侧工作台与临床工作流底座已经实现；尚未实现院内受监督患者施测所需的患者短期受控施测会话与安全进入、患者端和医护监管端步骤分工、医生及时状态查看和控制权合同、患者语音及转写候选、点击、书写与绘图等原始作答尝试、医生接管与复核后形成正式 `ItemResponse` 的投影链，以及基于服务端权威状态的患者端安全响应和会话恢复合同。
+- 上述缺口是能力边界，不代表未来数据实体、集合数量、接口形态或传输协议已经确定；同设备交接不等同必须跨设备配对，跨设备安全进入也不预设二维码。现有 staff `Session`、`administrationMode` 值、`ItemResponse`、`MediaEvidence` 和提交屏障不能等同于受监督患者施测会话及其完整闭环，也不能推出强实时同步或特定事件平台。
+- 患者原始录音、绘图和中间媒体的复核可用性、保留、删除及正式备份范围尚无患者施测专用合同；未来只需按 WP-10.0 锁定的最低充分数据保留合同支持医生复核、错误恢复和必要追溯，不预设永久保存全部录音、完整绘图事件历史或自动分析评分。
 - A12-A28 已覆盖评分计算/复核/确认、认知域计算、报告生成/编辑/确认/锁定/来源冻结/归档/版本化更正、replacement 后续生命周期、历史读取与基础随访趋势；仍无评分独立 lock / void / reopen / 重跑、认知域人工修改 / 确认 / 作废 / 重算、报告签名 / unfreeze / unarchive、correction cancel / branch 或 PDF 接口。
 - 尚无批量作答、自动保存调度、计时动作、提交撤销 / reopen / lock / force submit 或访视状态流转接口。
 - 媒体当前仅有题目下列表、服务端 multipart 上传、短期签名访问与逻辑作废；尚无全患者 / 访视 / 实例媒体列表、直接 objectKey 下载、永久 URL、物理删除、替换、批量、分片或客户端直传接口。
