@@ -13,7 +13,7 @@
 - B16 已完成 replacement V2+ 生命周期，B17 已完成患者历史、报告版本导航、指定历史详情与基础随访趋势。
 - 主登录态使用后端 Session 与 HttpOnly Cookie，浏览器不持久化凭据。
 - 施测页已消费 A29 revision / 完整 timing，具备逐题自动保存、显式冲突 / 网络核对、逐 ItemResponse/attempt reconciliation single-flight、切组 flush、媒体 generation 协调和实时计时；B18-B1/B2、P7/P8、P3 回归与 P9 媒体上传失败草稿保全证据均成立。
-- 当前验证状态与精确证据见 frontend testing playbook；B18 补充验证已闭合、自动化 `gap=0`，WP-03 已完成。当前无生产实现活动工作包；下一阶段已锁定为 WP-10.0“受监督患者施测产品与数据合同”，尚未开始，范围与状态以 roadmap 为准。
+- 当前验证状态与精确证据见 frontend testing playbook；B18 补充验证已闭合、自动化 `gap=0`，WP-03 已完成。产品范围、工作包状态和当前主线继续以 roadmap 为准。
 
 关键边界：
 - 现有医生侧工作台与量表执行工作流已经落地，是统一临床工作端的代码底座；`AuthDashboard` 本身仍是轻量入口。未来临床工作端在同一应用和工作流内区分医护施测模式与医生复核报告模式，不强制两套应用、两个账号或新增互斥角色。WP-12 继续只要求可复用既有页面或受控工具形成最小临床入口和账号运营能力，不预设全新 Dashboard 或完整用户管理 UI。
@@ -26,6 +26,7 @@
 
 ## 3. Handoff 文档导航与职责
 
+- [受监督患者施测合同](./handoff-patient-administration-contract.md)：WP-10.0 跨端业务、逐题呈现、题目媒体、会话、安全退出与医生复核边界的唯一详细入口；不预设前端路由或页面结构。
 - [Frontend snapshot](./handoff-frontend-snapshot.md)：当前前端工程结构、能力范围与真实未实现边界。
 - [Frontend route map](./handoff-frontend-route-map.md)：路由、页面职责、访问边界与数据来源。
 - [Frontend API map](./handoff-frontend-api-map.md)：API Client 对接、请求、响应、错误处理与 UI 映射。

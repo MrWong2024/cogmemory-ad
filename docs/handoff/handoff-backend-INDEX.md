@@ -16,6 +16,7 @@
 
 ## 3. Handoff 文档导航与职责
 
+- [受监督患者施测合同](./handoff-patient-administration-contract.md)：WP-10.0 跨端业务、题目媒体、数据、安全与医生复核边界的唯一详细入口；不预设后端 Schema、DTO 或 endpoint。
 - [Backend snapshot](./handoff-backend-snapshot.md)：当前后端工程结构、能力范围与真实未实现边界。
 - [Backend API map](./handoff-backend-api-map.md)：endpoint、请求、响应、权限与错误。
 - [Backend DTO cheatsheet](./handoff-backend-dto-cheatsheet.md)：DTO、response、字段形状与校验摘要。
