@@ -133,15 +133,16 @@ A21–A25 写请求从当前服务端 `report.updatedAt` 取得 `expectedUpdated
 
 ## 7. 当前实现结论与验证入口
 
-- B16 replacement V2+ 生命周期、B17 history/versions/detail/trends 与 B18 自动保存、single-flight 网络核对、切组、媒体 generation、实时计时及失败草稿保全均已完成；WP-03 已完成，Batch E 的 8 项真实设备或人工验收继续独立待验。
+- B16 replacement V2+ 生命周期、B17 history/versions/detail/trends 与 B18 自动保存、single-flight 网络核对、切组、媒体 generation、实时计时及失败草稿保全均已完成；WP-03 已完成。Batch E 的 8 项真实设备或人工验收仍为 `pending`，最终主要归属为 WP-08。
 - Playwright、Chromium 与 Axe 通用 Browser acceptance 基础设施已完成。B10-89 后续已由 B10-C2 定向通过；B10 `generation-workflow` 48 pass、`public-surface-security` 47 pass，共 95 项完成，Batch C / B7–B10 已完成。Batch D 的 B11～B15 均已完成；B14.1 已治理为累计证据索引而非独立 Browser 批次，具体状态以 `handoff-frontend-testing-playbook.md` 为准。
 - 当前静态门禁、Batch 状态、Browser/automated 数量、权限/错误、响应式、键盘、Network、Runtime Storage、evidence commit、verify 与 cleanup 统一见 `handoff-frontend-testing-playbook.md`；本 snapshot 不维护测试终态。
 
 ## 8. 当前未实现边界
 
+- 受监督患者施测端：尚无面向患者的一步一屏施测页面、患者短期配对会话、系统指导语和量表刺激音频、患者录音与 ASR、医生同步监管与控制权接管、患者端会话恢复，以及患者原始采集经医生复核后形成正式 `ItemResponse` 的专用流程；完整患者端 MMSE / MoCA 多模态编排尚未实现。现有量表执行页属于医护侧工作流，不能表述为上述患者端已经落地。
 - 患者：编辑、删除、归档、合并。
 - 访视：编辑、删除、完整状态流转。
-- 施测：不实现永久离线草稿或批量 PATCH；Batch E 的 8 项真实设备或人工项目仍独立待验。
+- 施测：不实现永久离线草稿或批量 PATCH；Batch E 的 8 项真实设备或人工项目仍为 `pending`，由 WP-08 负责真实设备与人工验收、执行和关闭。
 - 评分：独立锁定、作废、撤销确认、reopen、rerun、批量人工评分和独立历史列表。
 - 认知域：人工修改、确认、锁定、作废、重算和跨量表合并。
 - 报告：reject、reopen、withdraw、签名、unlock、unfreeze、unarchive、作废、重生成、PDF、打印、下载。
