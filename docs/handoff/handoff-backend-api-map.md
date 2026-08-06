@@ -11,7 +11,7 @@
 - AuthModule 内部 session cookie 名称已统一为 `cogmemory_ad_session`，登录成功下发 HttpOnly Cookie，`SameSite=Lax`，`Path=/`，production 环境启用 `Secure`。
 - 当前没有 users controller，没有公开用户管理 API，没有注册、密码重置、角色权限管理、短信验证码、OAuth / SSO 或 JWT 登录 API。
 - A12 已新增 `PatientsController` 与 `AssessmentVisitsController`，形成第一组受保护临床业务 API；所有五个接口均显式绑定 `SessionAuthGuard`、`RolesGuard` 和 `@Roles('admin', 'doctor', 'nurse', 'research_assistant')`。
-- 当前已有实例 submission、评分、认知域，以及报告 generate / latest / edit / submit / confirm / lock / freeze-sources / archive / corrections 闭环；A26 允许合法 V2+ replacement 复用 A21-A24，A27/A28 提供四个只读历史与趋势接口。仍没有认知域人工修改 / 确认 / 锁定 / 重算、报告退回 / 签名 / unlock / unfreeze / unarchive / correction cancel / branch / 作废 / PDF、SMS 或 AI / LLM 公开接口。
+- 当前已有实例 submission、评分、认知域、报告与历史趋势接口；WP-10-B1 另提供八个 staff 会话控制接口和两个 patient 接口。B1 不提供步骤推进、资产二进制、患者回答、录音 / ASR、ItemResponse 写入或患者 UI。
 - 当前 API 事实以实际 Controller、DTO、response type 和对应单元 / E2E 测试为准。
 
 ## 3. 当前 API 清单
@@ -453,6 +453,27 @@
 - response：`{ sourceReport, replacementReport, correctionReceipt }`；source 安全摘要在 `correction`，replacement 关系在 `replacementOf`。metadata、原始 correctionRecords、来源 ID 与 AuditLog ID 不公开。
 - A20 / A21 / A26：generate 与 latest 使用当前 latest；合法 replacement 的 edit / submit / confirm / lock / freeze-sources / archive 仅 doctor/admin，Patient inactive / Visit locked / voided 不阻断。V1 的 A21-A23 资格不放宽；公开 endpoint、DTO 与 response 未变化。
 - errors：400 confirmation / DTO；401；403；404 ownership；409 not-correctable / not-latest / conflict / audit-unavailable / replacement-conflict / incomplete；未知持久化失败 500。
+
+## WP-10-B1 患者短期会话与控制权 API
+
+### Staff 会话接口
+
+- 共同根路径：`/patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/patient-administration`；共同 Guard 为 `SessionAuthGuard` + `RolesGuard`，角色固定 admin / doctor / nurse / research_assistant，三个路径 ID 均由 `ScaleInstanceExecutionParamDto` 校验。
+- `POST /`：Body 使用空白名单 DTO；创建 `prepared` 会话，revision=0、绝对有效期两小时、进入码十分钟，201 返回 staff session summary 加仅本次可见的六位 `entryCode`。只允许 active Patient、可编辑 Visit / ScaleInstance、开放 submission barrier、`supervised_patient_input`、可解析步骤与 released package 全步骤 assetKey；同实例开放会话为 409 conflict。
+- `GET /`：返回该实例最新 staff session summary；不存在为 404 `PATIENT_ADMINISTRATION_SESSION_NOT_FOUND`。读取时惰性关闭已过期开放会话，不物理删除。
+- `POST /handoff`：Body `{ expectedRevision }`；只允许 prepared / paused。先只读核验，再撤销当前 staff Session 并立即 clear staff Cookie，之后以 CAS 签发患者 Token、清除进入码并设置患者 Cookie；后段竞争失败不恢复 staff 身份且不设置新患者 Cookie。
+- `POST /preparation/confirm`：Body `{ expectedRevision, impactFactorCodes, impactFactorNote? }`；只允许已有患者凭证且未确认的 prepared，会话转 active，记录操作者、八类固定影响因素、startedAt 和单一 revision。
+- `POST /pause` / `POST /resume`：Body `{ expectedRevision, reason? }`。pause 只允许 active 且不清除患者 Token；resume 要求 paused、准备已确认、患者凭证存在且底层仍可继续，不延长绝对过期时间。
+- `POST /entry-code/reissue`：Body `{ expectedRevision, reason }`；prepared 保持 prepared，active / paused 统一变 paused；旧患者 Token 立即失效，新六位码最长十分钟且不超过绝对有效期。
+- `POST /terminate`：Body `{ expectedRevision, reason }`；开放会话转 terminated，清除全部凭证且不删除记录、不修改 ScaleInstance / ItemResponse。pause / terminate 即使底层后来锁定仍允许在 route ownership、revision、状态和有效期匹配时执行。
+- Staff summary 严格为 id、status、currentStepKey、revision、expiresAt、entryCodeExpiresAt、hasPatientCredential、准备 / 影响因素 / createdBy、生命周期时间及 timestamps；不含 credential hash、raw Token、controlEvents、步骤配置或资产路径。
+
+### Patient 会话接口
+
+- `POST /patient-administration/enter`：无 staff Guard；Body 仅 `{ code }`（trim 后精确六位数字）。若请求带仍有效 staff Cookie，409 `PATIENT_ADMINISTRATION_SESSION_CONFLICT` 且不消费 code；陈旧 staff Cookie 可清除。进入码按 hash、状态、双有效期、无现存患者 Token及底层可继续条件原子消费，成功只设置患者 HttpOnly Cookie并返回 `{ status, revision, expiresAt }`；无效 / 过期 / 已用 / 不存在统一 401 `PATIENT_ADMINISTRATION_ENTRY_INVALID`，同 IP + User-Agent client key 固定窗口失败限流为 429 且使用同 code。
+- `GET /patient-administration/current`：`PatientAdministrationSessionGuard` 只读 `cogmemory_ad_patient_session`，拒绝过期 / 被轮换 / 底层失效 / 同请求有效 staff 身份。最终读取再次匹配 session id + token hash + 开放状态。响应仅 `{ status, revision, expiresAt, currentStep }`；prepared / paused 的 currentStep=null，active 仅返回当前 stepKey、order、patientText、responseMode、advanceBy、assetKeys。
+- Cookie：患者 Cookie 固定 HttpOnly、SameSite=Lax、Path=`/patient-administration`，Secure 取 `session.cookieSecure`，maxAge 不大于两小时且不进入 URL / JSON / localStorage。B1 没有题目资产或回答 Route。
+- 新增稳定错误仅为 `PATIENT_ADMINISTRATION_SESSION_NOT_FOUND`、`PATIENT_ADMINISTRATION_SESSION_CONFLICT`、`PATIENT_ADMINISTRATION_ENTRY_INVALID`、`PATIENT_ADMINISTRATION_STEP_INVALID`；继续复用既有 Patient / Visit / ScaleInstance / presentation asset 错误。
 
 ## A27 WP-04 后端阶段一历史读取
 

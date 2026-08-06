@@ -6,7 +6,7 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 Service / Provider 与 A12-A28 业务能力；A27 在既有写入工作流外新增无 Schema 的只读历史编排，A28 在同一模块增加 catalog 校验、Visit 保留式趋势编排、共享 source evaluator、纯 comparability 与显式安全 mapper。
+- 当前存在公共底座 Service / Provider、A12-A28 与 WP-10-B1 业务能力；B1 在 AssessmentsModule 内增加独立患者会话 Service / Guard / Cookie 与双 Controller，不改变 Auth、ItemResponse 或 presentation asset 服务实现。
 - 当前没有独立医生、SMS 或 LLM Service；A21 不调用来源计分 / 认知域 / 媒体 Service、Storage、PDF 或 AI 能力。
 
 ## 3. 当前 Service / Provider 清单
@@ -111,6 +111,24 @@
 - 创建所有权：patientId 来自路径，subjectCode 来自 Patient，status 固定 draft，operatorSnapshot 由 Controller 认证上下文生成；不接受客户端状态时间、clinicalContext 或 metadata。
 - 边界：自身不更新、删除访视或流转状态；A13 初始化与 A14 草稿写入均由独立 Service 编排。访视详情先确认患者，再联合 patientId + visitId 查询；ScaleInstance 公开 mapper 不返回 definition / version ID、metadata、qualityControlSummary 或 Mixed 原始字段；实际进度不持久化回写。
 - 测试覆盖口径：service spec 覆盖联合归属、详情、实例查重、排序、安全 mapper，以及实际 total / answered 计数与 A13 进度修正；不连接真实 MongoDB。
+
+- Service 名称：`PatientAdministrationSessionService`
+- 文件路径：`backend\src\modules\assessments\services\patient-administration-session.service.ts`
+- 职责边界：集中编排创建 / 查询、同设备签发、跨设备一次性兑换、准备确认、暂停 / 恢复、换设备重签、终止、患者凭证校验、当前步骤最小响应与惰性过期；不写 `ItemResponse`、`ScaleInstance` 状态、媒体、评分或报告。
+- 下游依赖：`PatientAdministrationSession` 与只读 `ScaleInstance` identity Model、`PatientsService`、`AssessmentsService`、`ScalesService`、`PresentationAssetsService`、`AuthService`。只复用现有 submission barrier 规范化函数和 Auth token 生成 / SHA-256，不复制平行认证或屏障逻辑。
+- 状态与并发：开放状态 prepared / active / paused；B1 不产生 completed。全部 credential / control 状态写以 `_id + scaleInstanceId + 合法状态 + expected revision + expiresAt` CAS，单一 revision 每次加一；同实例 partial unique 索引封住并发创建。进入码 unique collision 有限重试，公开兑换按 client key 固定窗口限流。
+- 过期与失效：各入口惰性检查绝对两小时有效期，以状态 + revision 原子写 expired、清空全部凭证并追加一次事件；患者 Guard / current 遇到底层不可继续时 fail closed、原子终止开放会话并不泄露原因。无 TTL、cron、queue、transaction、retry loop 或物理删除。
+- 业务检查：active Patient、可编辑 ownership Visit / ScaleInstance、无 lock / void、submission barrier open、`supervised_patient_input`、精确 ScaleVersion / currentStep、released package 和 step assetKey。pause / terminate 只做 route ownership 和会话 CAS，保证底层锁定后仍可停止访问。
+- 响应与凭证：staff mapper 不返回 hash / Token / controlEvents；patient current 只返回单一当前步骤白名单。六位码只在创建 / 重签响应出现；32 字节 patient Token 只进入 Path=`/patient-administration` 的 HttpOnly Cookie。
+- 测试覆盖口径：service spec 覆盖 schema 三索引 / hidden credential、创建、配置失败、碰撞重试、失败限流、安全暂停与惰性过期 CAS；Guard / Cookie 独立 unit 覆盖双身份拒绝、最小 request context、失效清理和精确 Cookie 选项；standard_test E2E 覆盖真实角色、Cookie、生命周期、合法并发、CAS、ownership、底层阻断、隐私和实际索引。
+
+- Guard 名称：`PatientAdministrationSessionGuard`
+- 文件路径：`backend\src\modules\assessments\guards\patient-administration-session.guard.ts`
+- 职责边界：只读患者 Cookie，拒绝有效 staff + patient 双身份，委派 Service 验证 hash / 生命周期 / 底层继续资格，只挂载 sessionId、sessionTokenHash、revision；失败清患者 Cookie。它不复用 staff `SessionAuthGuard`，也不把患者身份映射为系统 User。
+
+- Controller：`PatientAdministrationStaffController` / `PatientAdministrationController`
+- 文件路径：`backend\src\modules\assessments\controllers\patient-administration-*.controller.ts`
+- 职责边界：staff Controller 绑定四个既有临床角色、DTO 和服务端 actor；handoff 严格执行只读核验 → revoke staff token → clear staff Cookie → patient CAS → set patient Cookie。patient Controller 处理 staff Cookie 冲突 / 陈旧清理、client key 和 Cookie，不复制状态机或业务资格。
 
 - Service 名称：`AssessmentExecutionService`
 - 文件路径：`backend\src\modules\assessments\services\assessment-execution.service.ts`
