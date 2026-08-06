@@ -21,6 +21,8 @@
 
 roadmap 独立维护产品范围和工作包状态；testing playbook 治理不启动下一工作包。
 
+2026-08-07 首次 development 隔离 OSS smoke 暴露 HTTP signed URL 并正确失败；`OssStorageService` 修复统一 `secure: true` 与 HTTPS fail-closed 后，以 none 进程重新完成真实合成对象 upload、HTTPS signed GET 200 且字节一致、未签名 GET 403、精确删除及删除后 / finally signed GET 404，`residualObject=false`。全程未连接数据库、未使用患者数据或真实录音；该证据仅覆盖底层真实 OSS driver，不代表患者 HTTP 上传、真实设备、真实 ASR 或生产部署验收。
+
 ## 2. 数据库用途和隔离
 
 ### 2.1 五类用途与固定映射

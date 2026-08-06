@@ -41,10 +41,11 @@
 
 - Service 名称：`OssStorageService`
 - 文件路径：`backend\src\modules\storage\oss-storage.service.ts`
-- 职责边界：提供 Alibaba Cloud OSS 底层适配，包括 put、delete 和 signed URL。
+- 职责边界：提供 Alibaba Cloud OSS 底层适配，包括 put、delete 和 signed URL；所有 ali-oss client 固定 `secure: true`，签名 URL 返回前只接受合法 HTTPS，否则 fail closed。
 - 上游调用方：`STORAGE_SERVICE` token。
 - 下游依赖：`StorageConfigService`、`ali-oss`。
-- 测试覆盖口径：`backend\src\modules\storage\storage.service.spec.ts` 仅验证缺少配置时的错误，不调用真实 OSS。
+- 接口与配置边界：`StorageService` 接口和现有 OSS 配置合同未变化。
+- 测试覆盖口径：`backend\src\modules\storage\storage.service.spec.ts` 使用 ali-oss mock 覆盖 secure client、HTTPS 接受、非 HTTPS / 无效 URL 拒绝和错误隐私，不调用真实 OSS。
 
 - Provider token：`STORAGE_SERVICE`
 - 文件路径：`backend\src\modules\storage\storage.constants.ts`

@@ -20,6 +20,7 @@ type AliOssClientOptions = {
   endpoint: string;
   accessKeyId: string;
   accessKeySecret: string;
+  secure: boolean;
 };
 
 type AliOssClient = {
@@ -76,12 +77,20 @@ export class OssStorageService implements StorageService {
         const expiresAt = new Date(
           Date.now() + options.expiresInSeconds * 1000,
         );
+        const signedUrl = client.signatureUrl(objectKey, {
+          expires: options.expiresInSeconds,
+          method: 'GET',
+        });
+        const parsedUrl = new URL(signedUrl);
+
+        if (parsedUrl.protocol !== 'https:') {
+          throw new ServiceUnavailableException(
+            'Failed to generate secure OSS signed URL',
+          );
+        }
 
         return {
-          url: client.signatureUrl(objectKey, {
-            expires: options.expiresInSeconds,
-            method: 'GET',
-          }),
+          url: signedUrl,
           expiresAt,
         };
       })
@@ -108,6 +117,7 @@ export class OssStorageService implements StorageService {
       endpoint,
       accessKeyId: config.accessKeyId,
       accessKeySecret: config.accessKeySecret,
+      secure: true,
     });
   }
 
