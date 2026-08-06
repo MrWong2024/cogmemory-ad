@@ -386,13 +386,20 @@ export class PatientAdministrationSessionService {
     scaleInstanceId: string,
     expectedRevision: number,
   ): Promise<void> {
-    await this.requireMutableSession(
+    const session = await this.requireMutableSession(
       patientId,
       visitId,
       scaleInstanceId,
       expectedRevision,
       ['prepared', 'paused'],
-      true,
+      false,
+    );
+    this.assertSameDeviceHandoffPrerequisites(session);
+    await this.requireBusinessContinuation(
+      patientId,
+      visitId,
+      scaleInstanceId,
+      session.currentStepKey,
     );
   }
 
@@ -411,21 +418,32 @@ export class PatientAdministrationSessionService {
       ['prepared', 'paused'],
       true,
     );
+    this.assertSameDeviceHandoffPrerequisites(session);
     const rawToken = this.authService.generateSessionToken();
     const now = new Date();
+    const setValues: Record<string, unknown> = {
+      sessionTokenHash: this.authService.hashSessionToken(rawToken),
+    };
+    if (session.status === 'prepared') {
+      setValues.status = 'active';
+      setValues.startedAt = session.startedAt ?? now;
+    }
     const updated = await this.patientAdministrationSessionModel
       .findOneAndUpdate(
         {
           _id: session._id,
           scaleInstanceId: session.scaleInstanceId,
-          status: { $in: ['prepared', 'paused'] },
+          status: session.status,
           revision: expectedRevision,
           expiresAt: { $gt: now },
+          preparationConfirmedAt: { $exists: true },
+          preparationConfirmedBy: { $exists: true },
+          ...(session.status === 'prepared'
+            ? { sessionTokenHash: { $exists: false } }
+            : {}),
         },
         {
-          $set: {
-            sessionTokenHash: this.authService.hashSessionToken(rawToken),
-          },
+          $set: setValues,
           $unset: { entryCodeHash: 1, entryCodeExpiresAt: 1 },
           $inc: { revision: 1 },
           $push: {
@@ -470,17 +488,20 @@ export class PatientAdministrationSessionService {
       ['prepared'],
       true,
     );
-    if (session.preparationConfirmedAt || !session.sessionTokenHash) {
+    if (session.preparationConfirmedAt) {
       this.throwSessionConflict();
     }
     const now = new Date();
+    const activatesSession = Boolean(session.sessionTokenHash);
     const setValues: Record<string, unknown> = {
       preparationConfirmedAt: now,
       preparationConfirmedBy: operatorSnapshot,
       impactFactorCodes: [...impactFactorCodes],
-      status: 'active',
-      startedAt: session.startedAt ?? now,
     };
+    if (activatesSession) {
+      setValues.status = 'active';
+      setValues.startedAt = session.startedAt ?? now;
+    }
     if (impactFactorNote !== undefined) {
       setValues.impactFactorNote = impactFactorNote;
     }
@@ -493,7 +514,7 @@ export class PatientAdministrationSessionService {
           status: 'prepared',
           revision: expectedRevision,
           expiresAt: { $gt: now },
-          sessionTokenHash: { $exists: true },
+          sessionTokenHash: { $exists: activatesSession },
           preparationConfirmedAt: { $exists: false },
         },
         {
@@ -1966,6 +1987,21 @@ export class PatientAdministrationSessionService {
       );
     }
     return current;
+  }
+
+  private assertSameDeviceHandoffPrerequisites(
+    session: PatientAdministrationSessionDocument,
+  ): void {
+    if (
+      !session.preparationConfirmedAt ||
+      !session.preparationConfirmedBy ||
+      (session.status === 'prepared' && session.sessionTokenHash) ||
+      (session.status === 'paused' &&
+        !session.sessionTokenHash &&
+        !session.entryCodeHash)
+    ) {
+      this.throwSessionConflict();
+    }
   }
 
   private async requireRouteOwnership(

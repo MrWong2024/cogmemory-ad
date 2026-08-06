@@ -445,6 +445,359 @@ describe('PatientAdministrationSessionService', () => {
     }
   });
 
+  it('confirms preparation before patient credential issuance without activating the session', async () => {
+    const prepared = sessionDocument({ revision: 0 });
+    const confirmedAt = new Date('2026-08-07T01:00:00.000Z');
+    const updated = sessionDocument({
+      revision: 1,
+      preparationConfirmedAt: confirmedAt,
+      preparationConfirmedBy: operator,
+      impactFactorCodes: ['sensory', 'device_network'],
+    });
+    arrangeEditableBusiness();
+    sessionModel.findOne.mockReturnValue(createQuery(prepared));
+    sessionModel.findOneAndUpdate.mockReturnValue(createQuery(updated));
+
+    const response = await service.confirmPreparation(
+      patientId,
+      visitId,
+      scaleInstanceId,
+      0,
+      ['sensory', 'device_network'],
+      undefined,
+      operator,
+    );
+
+    expect(response).toEqual(
+      expect.objectContaining({
+        status: 'prepared',
+        revision: 1,
+        hasPatientCredential: false,
+        startedAt: null,
+        impactFactorCodes: ['sensory', 'device_network'],
+      }),
+    );
+    expect(authService.generateSessionToken).not.toHaveBeenCalled();
+    const filter = requireRecord(
+      readMockCallArgument(sessionModel.findOneAndUpdate, 0),
+      'preparation filter',
+    );
+    expect(filter).toEqual(
+      expect.objectContaining({
+        status: 'prepared',
+        revision: 0,
+        sessionTokenHash: { $exists: false },
+        preparationConfirmedAt: { $exists: false },
+      }),
+    );
+    const update = requireRecord(
+      readMockCallArgument(sessionModel.findOneAndUpdate, 1),
+      'preparation update',
+    );
+    const set = requireRecord(update.$set, 'preparation set');
+    expect(set).toEqual(
+      expect.objectContaining({
+        preparationConfirmedBy: operator,
+        impactFactorCodes: ['sensory', 'device_network'],
+      }),
+    );
+    expect(set.preparationConfirmedAt).toBeInstanceOf(Date);
+    expect(set).not.toHaveProperty('status');
+    expect(set).not.toHaveProperty('startedAt');
+    expect(set).not.toHaveProperty('sessionTokenHash');
+    expect(update.$unset).toEqual({ impactFactorNote: 1 });
+    expect(update.$inc).toEqual({ revision: 1 });
+    expect(
+      requireRecord(update.$push, 'preparation push').controlEvents,
+    ).toEqual(
+      expect.objectContaining({
+        action: 'preparation_confirmed',
+        operatorSnapshot: operator,
+      }),
+    );
+  });
+
+  it('activates a cross-device prepared session after its credential is issued', async () => {
+    const prepared = sessionDocument({
+      revision: 1,
+      sessionTokenHash: 'existing-patient-token-hash',
+      entryCodeHash: undefined,
+      entryCodeExpiresAt: undefined,
+    });
+    const confirmedAt = new Date('2026-08-07T01:00:00.000Z');
+    const startedAt = new Date('2026-08-07T01:00:00.000Z');
+    const updated = sessionDocument({
+      status: 'active',
+      revision: 2,
+      sessionTokenHash: 'existing-patient-token-hash',
+      entryCodeHash: undefined,
+      entryCodeExpiresAt: undefined,
+      preparationConfirmedAt: confirmedAt,
+      preparationConfirmedBy: operator,
+      impactFactorCodes: ['environment'],
+      impactFactorNote: 'quiet room',
+      startedAt,
+    });
+    arrangeEditableBusiness();
+    sessionModel.findOne.mockReturnValue(createQuery(prepared));
+    sessionModel.findOneAndUpdate.mockReturnValue(createQuery(updated));
+
+    const response = await service.confirmPreparation(
+      patientId,
+      visitId,
+      scaleInstanceId,
+      1,
+      ['environment'],
+      'quiet room',
+      operator,
+    );
+
+    expect(response).toEqual(
+      expect.objectContaining({
+        status: 'active',
+        revision: 2,
+        hasPatientCredential: true,
+        startedAt,
+      }),
+    );
+    const filter = requireRecord(
+      readMockCallArgument(sessionModel.findOneAndUpdate, 0),
+      'cross-device preparation filter',
+    );
+    expect(filter.sessionTokenHash).toEqual({ $exists: true });
+    const update = requireRecord(
+      readMockCallArgument(sessionModel.findOneAndUpdate, 1),
+      'cross-device preparation update',
+    );
+    expect(requireRecord(update.$set, 'cross-device preparation set')).toEqual(
+      expect.objectContaining({
+        status: 'active',
+        preparationConfirmedBy: operator,
+      }),
+    );
+    expect(
+      requireRecord(update.$set, 'cross-device preparation set').startedAt,
+    ).toBeInstanceOf(Date);
+    expect(
+      requireRecord(update.$set, 'cross-device preparation set'),
+    ).not.toHaveProperty('sessionTokenHash');
+  });
+
+  it('rejects repeated or stale preparation confirmation without writing', async () => {
+    arrangeEditableBusiness();
+    sessionModel.findOne.mockReturnValueOnce(
+      createQuery(
+        sessionDocument({
+          preparationConfirmedAt: new Date(),
+          preparationConfirmedBy: operator,
+        }),
+      ),
+    );
+
+    await expectHttpException(
+      service.confirmPreparation(
+        patientId,
+        visitId,
+        scaleInstanceId,
+        0,
+        [],
+        undefined,
+        operator,
+      ),
+      409,
+      'PATIENT_ADMINISTRATION_SESSION_CONFLICT',
+    );
+
+    sessionModel.findOne.mockReturnValueOnce(
+      createQuery(sessionDocument({ revision: 1 })),
+    );
+    await expectHttpException(
+      service.confirmPreparation(
+        patientId,
+        visitId,
+        scaleInstanceId,
+        0,
+        [],
+        undefined,
+        operator,
+      ),
+      409,
+      'PATIENT_ADMINISTRATION_SESSION_CONFLICT',
+    );
+    expect(sessionModel.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unprepared same-device handoff during read-only validation', async () => {
+    arrangeEditableBusiness();
+    sessionModel.findOne.mockReturnValue(createQuery(sessionDocument()));
+
+    await expectHttpException(
+      service.validateSameDeviceHandoff(patientId, visitId, scaleInstanceId, 0),
+      409,
+      'PATIENT_ADMINISTRATION_SESSION_CONFLICT',
+    );
+
+    expect(authService.generateSessionToken).not.toHaveBeenCalled();
+    expect(sessionModel.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(
+      scalesService.findVersionByScaleCodeAndVersion,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('activates a prepared session when issuing its same-device credential', async () => {
+    const preparationConfirmedAt = new Date('2026-08-07T01:00:00.000Z');
+    const prepared = sessionDocument({
+      revision: 1,
+      preparationConfirmedAt,
+      preparationConfirmedBy: operator,
+      impactFactorCodes: ['upper_limb'],
+      impactFactorNote: 'practice completed',
+    });
+    const updated = sessionDocument({
+      status: 'active',
+      revision: 2,
+      sessionTokenHash: 'hash:raw-patient-token',
+      entryCodeHash: undefined,
+      entryCodeExpiresAt: undefined,
+      preparationConfirmedAt,
+      preparationConfirmedBy: operator,
+      impactFactorCodes: ['upper_limb'],
+      impactFactorNote: 'practice completed',
+      startedAt: new Date('2026-08-07T01:01:00.000Z'),
+    });
+    arrangeEditableBusiness();
+    sessionModel.findOne.mockReturnValue(createQuery(prepared));
+    sessionModel.findOneAndUpdate.mockReturnValue(createQuery(updated));
+
+    const issued = await service.issueSameDeviceCredential(
+      patientId,
+      visitId,
+      scaleInstanceId,
+      1,
+      operator,
+    );
+
+    expect(issued.rawToken).toBe('raw-patient-token');
+    expect(issued.response).toEqual(
+      expect.objectContaining({
+        status: 'active',
+        revision: 2,
+        hasPatientCredential: true,
+      }),
+    );
+    const filter = requireRecord(
+      readMockCallArgument(sessionModel.findOneAndUpdate, 0),
+      'same-device filter',
+    );
+    expect(filter).toEqual(
+      expect.objectContaining({
+        status: 'prepared',
+        revision: 1,
+        preparationConfirmedAt: { $exists: true },
+        preparationConfirmedBy: { $exists: true },
+        sessionTokenHash: { $exists: false },
+      }),
+    );
+    const update = requireRecord(
+      readMockCallArgument(sessionModel.findOneAndUpdate, 1),
+      'same-device update',
+    );
+    const set = requireRecord(update.$set, 'same-device set');
+    expect(set).toEqual(
+      expect.objectContaining({
+        sessionTokenHash: 'hash:raw-patient-token',
+        status: 'active',
+      }),
+    );
+    expect(Object.keys(set).sort()).toEqual(
+      ['sessionTokenHash', 'startedAt', 'status'].sort(),
+    );
+    expect(set.startedAt).toBeInstanceOf(Date);
+    expect(update.$unset).toEqual({
+      entryCodeHash: 1,
+      entryCodeExpiresAt: 1,
+    });
+    expect(update.$inc).toEqual({ revision: 1 });
+    expect(
+      requireRecord(update.$push, 'same-device push').controlEvents,
+    ).toEqual(expect.objectContaining({ action: 'same_device_handoff' }));
+  });
+
+  it('keeps a paused session paused when replacing its same-device credential', async () => {
+    const preparationConfirmedAt = new Date('2026-08-07T01:00:00.000Z');
+    const startedAt = new Date('2026-08-07T00:55:00.000Z');
+    const paused = sessionDocument({
+      status: 'paused',
+      revision: 3,
+      sessionTokenHash: 'old-patient-token-hash',
+      entryCodeHash: undefined,
+      entryCodeExpiresAt: undefined,
+      preparationConfirmedAt,
+      preparationConfirmedBy: operator,
+      impactFactorCodes: ['other'],
+      impactFactorNote: 'preserve me',
+      startedAt,
+      pausedAt: new Date('2026-08-07T01:05:00.000Z'),
+    });
+    const updated = sessionDocument({
+      ...paused,
+      status: 'paused',
+      revision: 4,
+      sessionTokenHash: 'hash:raw-patient-token',
+    });
+    arrangeEditableBusiness();
+    sessionModel.findOne.mockReturnValue(createQuery(paused));
+    sessionModel.findOneAndUpdate.mockReturnValue(createQuery(updated));
+
+    const issued = await service.issueSameDeviceCredential(
+      patientId,
+      visitId,
+      scaleInstanceId,
+      3,
+      operator,
+    );
+
+    expect(issued.response).toEqual(
+      expect.objectContaining({
+        status: 'paused',
+        revision: 4,
+        startedAt,
+      }),
+    );
+    const update = requireRecord(
+      readMockCallArgument(sessionModel.findOneAndUpdate, 1),
+      'paused handoff update',
+    );
+    expect(update.$set).toEqual({
+      sessionTokenHash: 'hash:raw-patient-token',
+    });
+    expect(
+      requireRecord(update.$push, 'paused handoff push').controlEvents,
+    ).toEqual(expect.objectContaining({ action: 'same_device_handoff' }));
+  });
+
+  it('rejects stale same-device handoff validation without writing', async () => {
+    arrangeEditableBusiness();
+    sessionModel.findOne.mockReturnValue(
+      createQuery(
+        sessionDocument({
+          revision: 1,
+          preparationConfirmedAt: new Date(),
+          preparationConfirmedBy: operator,
+        }),
+      ),
+    );
+
+    await expectHttpException(
+      service.validateSameDeviceHandoff(patientId, visitId, scaleInstanceId, 0),
+      409,
+      'PATIENT_ADMINISTRATION_SESSION_CONFLICT',
+    );
+
+    expect(authService.generateSessionToken).not.toHaveBeenCalled();
+    expect(sessionModel.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
   it('prepares an authoritative current-run upload context without writing', async () => {
     const version = scaleVersion([{}, { advanceBy: 'patient' }]);
     const active = sessionDocument({

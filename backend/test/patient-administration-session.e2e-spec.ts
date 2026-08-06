@@ -11,6 +11,10 @@ import {
   type AssessmentVisitDocument,
 } from '../src/modules/assessments/schemas/assessment-visit.schema';
 import {
+  ItemResponse,
+  type ItemResponseDocument,
+} from '../src/modules/assessments/schemas/item-response.schema';
+import {
   PatientAdministrationSession,
   type PatientAdministrationSessionDocument,
 } from '../src/modules/assessments/schemas/patient-administration-session.schema';
@@ -23,6 +27,10 @@ import {
   type SessionDocument,
 } from '../src/modules/auth/schemas/session.schema';
 import { AuthService } from '../src/modules/auth/services/auth.service';
+import {
+  MediaEvidence,
+  type MediaEvidenceDocument,
+} from '../src/modules/media/schemas/media-evidence.schema';
 import {
   Patient,
   type PatientDocument,
@@ -112,6 +120,8 @@ describe('patient administration session APIs (e2e)', () => {
   let patientModel: Model<PatientDocument>;
   let visitModel: Model<AssessmentVisitDocument>;
   let scaleInstanceModel: Model<ScaleInstanceDocument>;
+  let itemResponseModel: Model<ItemResponseDocument>;
+  let mediaEvidenceModel: Model<MediaEvidenceDocument>;
   let administrationSessionModel: Model<PatientAdministrationSessionDocument>;
   let scaleDefinitionModel: Model<ScaleDefinitionDocument>;
   let scaleVersionModel: Model<ScaleVersionDocument>;
@@ -121,6 +131,7 @@ describe('patient administration session APIs (e2e)', () => {
   let ownsMmseVersion = false;
   let modelsReady = false;
   const agents = new Map<string, TestAgent>();
+  const ownedUserIds = new Set<string>();
   const ownedScaleInstanceIds = new Set<string>();
 
   async function cleanupOwnedData(): Promise<void> {
@@ -129,6 +140,9 @@ describe('patient administration session APIs (e2e)', () => {
       .select({ _id: 1 })
       .exec();
     const userIds = users.map((user) => user._id);
+    for (const userId of userIds) {
+      ownedUserIds.add(userId.toString());
+    }
     if (userIds.length > 0) {
       await authSessionModel.deleteMany({ userId: { $in: userIds } }).exec();
     }
@@ -139,6 +153,12 @@ describe('patient administration session APIs (e2e)', () => {
       .exec();
     const instanceIds = instances.map((instance) => instance._id);
     if (instanceIds.length > 0) {
+      await mediaEvidenceModel
+        .deleteMany({ scaleInstanceId: { $in: instanceIds } })
+        .exec();
+      await itemResponseModel
+        .deleteMany({ scaleInstanceId: { $in: instanceIds } })
+        .exec();
       await administrationSessionModel
         .deleteMany({ scaleInstanceId: { $in: instanceIds } })
         .exec();
@@ -218,37 +238,65 @@ describe('patient administration session APIs (e2e)', () => {
     const ownedIds = [...ownedScaleInstanceIds].map(
       (id) => new Types.ObjectId(id),
     );
-    const [users, patients, visits, instances, administrationSessions] =
-      await Promise.all([
-        userModel.countDocuments({
-          accountName: { $in: Object.values(ACCOUNTS) },
-        }),
-        patientModel.countDocuments({
-          subjectCode: { $regex: `^${PATIENT_PREFIX}` },
-        }),
-        visitModel.countDocuments({
-          visitCode: { $regex: `^${VISIT_PREFIX}` },
-        }),
-        scaleInstanceModel.countDocuments({
-          instanceCode: { $regex: `^${INSTANCE_PREFIX}` },
-        }),
-        ownedIds.length > 0
-          ? administrationSessionModel.countDocuments({
-              scaleInstanceId: { $in: ownedIds },
-            })
-          : Promise.resolve(0),
-      ]);
-    expect({
+    const userIds = [...ownedUserIds].map((id) => new Types.ObjectId(id));
+    const [
       users,
+      authSessions,
       patients,
       visits,
       instances,
+      itemResponses,
+      mediaEvidence,
+      administrationSessions,
+    ] = await Promise.all([
+      userModel.countDocuments({
+        accountName: { $in: Object.values(ACCOUNTS) },
+      }),
+      userIds.length > 0
+        ? authSessionModel.countDocuments({ userId: { $in: userIds } })
+        : Promise.resolve(0),
+      patientModel.countDocuments({
+        subjectCode: { $regex: `^${PATIENT_PREFIX}` },
+      }),
+      visitModel.countDocuments({
+        visitCode: { $regex: `^${VISIT_PREFIX}` },
+      }),
+      scaleInstanceModel.countDocuments({
+        instanceCode: { $regex: `^${INSTANCE_PREFIX}` },
+      }),
+      ownedIds.length > 0
+        ? itemResponseModel.countDocuments({
+            scaleInstanceId: { $in: ownedIds },
+          })
+        : Promise.resolve(0),
+      ownedIds.length > 0
+        ? mediaEvidenceModel.countDocuments({
+            scaleInstanceId: { $in: ownedIds },
+          })
+        : Promise.resolve(0),
+      ownedIds.length > 0
+        ? administrationSessionModel.countDocuments({
+            scaleInstanceId: { $in: ownedIds },
+          })
+        : Promise.resolve(0),
+    ]);
+    expect({
+      users,
+      authSessions,
+      patients,
+      visits,
+      instances,
+      itemResponses,
+      mediaEvidence,
       administrationSessions,
     }).toEqual({
       users: 0,
+      authSessions: 0,
       patients: 0,
       visits: 0,
       instances: 0,
+      itemResponses: 0,
+      mediaEvidence: 0,
       administrationSessions: 0,
     });
   }
@@ -361,6 +409,8 @@ describe('patient administration session APIs (e2e)', () => {
     patientModel = app.get(getModelToken(Patient.name));
     visitModel = app.get(getModelToken(AssessmentVisit.name));
     scaleInstanceModel = app.get(getModelToken(ScaleInstance.name));
+    itemResponseModel = app.get(getModelToken(ItemResponse.name));
+    mediaEvidenceModel = app.get(getModelToken(MediaEvidence.name));
     administrationSessionModel = app.get(
       getModelToken(PatientAdministrationSession.name),
     );
@@ -607,7 +657,8 @@ describe('patient administration session APIs (e2e)', () => {
         impactFactorNote: '  corrected vision  ',
       })
       .expect(200);
-    expect(readBody(confirmResponse)).toEqual(
+    const confirmBody = readBody(confirmResponse);
+    expect(confirmBody).toEqual(
       expect.objectContaining({
         status: 'active',
         revision: 2,
@@ -615,6 +666,39 @@ describe('patient administration session APIs (e2e)', () => {
         impactFactorNote: 'corrected vision',
       }),
     );
+    expect(readString(confirmBody, 'startedAt')).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    const storedAfterCrossDeviceConfirmation = await administrationSessionModel
+      .findById(sessionId)
+      .select('+entryCodeHash +sessionTokenHash')
+      .exec();
+    expect(storedAfterCrossDeviceConfirmation?.startedAt).toBeInstanceOf(Date);
+    expect(storedAfterCrossDeviceConfirmation?.sessionTokenHash).toBeDefined();
+    expect(
+      storedAfterCrossDeviceConfirmation?.controlEvents.map(
+        (event) => event.action,
+      ),
+    ).toEqual(['entry_redeemed', 'preparation_confirmed']);
+
+    await doctor
+      .post(`${base}/preparation/confirm`)
+      .send({ expectedRevision: 2, impactFactorCodes: [] })
+      .expect(409)
+      .expect((response: Response) => {
+        expect(readBody(response)).toEqual(
+          expect.objectContaining({
+            code: 'PATIENT_ADMINISTRATION_SESSION_CONFLICT',
+          }),
+        );
+      });
+    const storedAfterRepeatedConfirmation = await administrationSessionModel
+      .findById(sessionId)
+      .exec();
+    expect(storedAfterRepeatedConfirmation?.revision).toBe(2);
+    expect(
+      storedAfterRepeatedConfirmation?.controlEvents.map(
+        (event) => event.action,
+      ),
+    ).toEqual(['entry_redeemed', 'preparation_confirmed']);
 
     const activeCurrent = await patient
       .get('/patient-administration/current')
@@ -761,32 +845,151 @@ describe('patient administration session APIs (e2e)', () => {
   });
 
   it('enforces staff/patient identity separation for handoff and cross-device entry', async () => {
+    const doctor = requireAgent(ACCOUNTS.doctor);
+    const unpreparedFixture = await createFixture('UNPREPARED-HANDOFF');
+    const unpreparedBase = staffBase(unpreparedFixture);
+    const unpreparedCreated = readBody(
+      await doctor.post(unpreparedBase).send({}).expect(201),
+    );
+    const unpreparedSessionId = readString(unpreparedCreated, 'id');
+    const unpreparedBefore = await administrationSessionModel
+      .findById(unpreparedSessionId)
+      .select('+entryCodeHash +sessionTokenHash')
+      .lean()
+      .exec();
+    const rejectedHandoff = await doctor
+      .post(`${unpreparedBase}/handoff`)
+      .send({ expectedRevision: 0 })
+      .expect(409);
+    expect(readBody(rejectedHandoff)).toEqual(
+      expect.objectContaining({
+        code: 'PATIENT_ADMINISTRATION_SESSION_CONFLICT',
+      }),
+    );
+    expect(rejectedHandoff.headers['set-cookie']).toBeUndefined();
+    await doctor.get('/auth/me').expect(200);
+    const unpreparedAfter = await administrationSessionModel
+      .findById(unpreparedSessionId)
+      .select('+entryCodeHash +sessionTokenHash')
+      .lean()
+      .exec();
+    expect(unpreparedAfter).toEqual(unpreparedBefore);
+
     const handoffFixture = await createFixture('HANDOFF');
     const handoffBase = staffBase(handoffFixture);
     const handoffDoctor = requireAgent(ACCOUNTS.handoffDoctor);
+    const scaleInstanceBefore = await scaleInstanceModel
+      .findById(handoffFixture.scaleInstance._id)
+      .lean()
+      .exec();
     const created = readBody(
       await handoffDoctor.post(handoffBase).send({}).expect(201),
     );
+    expect(created).toEqual(
+      expect.objectContaining({
+        status: 'prepared',
+        revision: 0,
+        hasPatientCredential: false,
+      }),
+    );
+    const confirmed = readBody(
+      await handoffDoctor
+        .post(`${handoffBase}/preparation/confirm`)
+        .send({
+          expectedRevision: 0,
+          impactFactorCodes: ['device_network'],
+          impactFactorNote: 'practice completed',
+        })
+        .expect(200),
+    );
+    expect(confirmed).toEqual(
+      expect.objectContaining({
+        status: 'prepared',
+        revision: 1,
+        hasPatientCredential: false,
+        startedAt: null,
+        impactFactorCodes: ['device_network'],
+        impactFactorNote: 'practice completed',
+      }),
+    );
+    await handoffDoctor.get('/auth/me').expect(200);
+    const storedBeforeHandoff = await administrationSessionModel
+      .findById(readString(created, 'id'))
+      .select('+entryCodeHash +sessionTokenHash')
+      .exec();
+    expect(storedBeforeHandoff?.status).toBe('prepared');
+    expect(storedBeforeHandoff?.revision).toBe(1);
+    expect(storedBeforeHandoff?.startedAt).toBeUndefined();
+    expect(storedBeforeHandoff?.entryCodeHash).toBeDefined();
+    expect(storedBeforeHandoff?.sessionTokenHash).toBeUndefined();
+    expect(
+      storedBeforeHandoff?.controlEvents.map((event) => event.action),
+    ).toEqual(['preparation_confirmed']);
+
     const handoffResponse = await handoffDoctor
       .post(`${handoffBase}/handoff`)
-      .send({ expectedRevision: readNumber(created, 'revision') })
+      .send({ expectedRevision: readNumber(confirmed, 'revision') })
       .expect(200);
-    expect(readBody(handoffResponse)).toEqual(
-      expect.objectContaining({ status: 'prepared', revision: 1 }),
+    const handoffBody = readBody(handoffResponse);
+    expect(handoffBody).toEqual(
+      expect.objectContaining({
+        status: 'active',
+        revision: 2,
+        hasPatientCredential: true,
+      }),
     );
-    expect(JSON.stringify(readBody(handoffResponse))).not.toContain('token');
+    expect(readString(handoffBody, 'startedAt')).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(JSON.stringify(handoffBody)).not.toContain('token');
     await handoffDoctor.get('/auth/me').expect(401);
-    expect(
-      readBody(
-        await handoffDoctor.get('/patient-administration/current').expect(200),
-      ),
-    ).toEqual(
-      expect.objectContaining({ status: 'prepared', currentStep: null }),
+    const sameDeviceCurrent = readBody(
+      await handoffDoctor.get('/patient-administration/current').expect(200),
     );
+    expect(sameDeviceCurrent).toEqual(
+      expect.objectContaining({ status: 'active', revision: 2 }),
+    );
+    if (!isRecord(sameDeviceCurrent.currentStep)) {
+      throw new Error('Expected same-device handoff to expose a current step');
+    }
+    expect(readString(sameDeviceCurrent.currentStep, 'stepKey')).not.toBe('');
+    const storedAfterHandoff = await administrationSessionModel
+      .findById(readString(created, 'id'))
+      .select('+entryCodeHash +sessionTokenHash')
+      .exec();
+    expect(storedAfterHandoff).toEqual(
+      expect.objectContaining({
+        status: 'active',
+        revision: 2,
+        preparationConfirmedAt: storedBeforeHandoff?.preparationConfirmedAt,
+        impactFactorCodes: ['device_network'],
+        impactFactorNote: 'practice completed',
+      }),
+    );
+    expect(storedAfterHandoff?.startedAt).toBeInstanceOf(Date);
+    expect(storedAfterHandoff?.sessionTokenHash).toBeDefined();
+    expect(storedAfterHandoff?.entryCodeHash).toBeUndefined();
+    expect(storedAfterHandoff?.entryCodeExpiresAt).toBeUndefined();
+    expect(
+      storedAfterHandoff?.controlEvents.map((event) => event.action),
+    ).toEqual(['preparation_confirmed', 'same_device_handoff']);
+    expect(
+      await scaleInstanceModel
+        .findById(handoffFixture.scaleInstance._id)
+        .lean()
+        .exec(),
+    ).toEqual(scaleInstanceBefore);
+    expect(
+      await itemResponseModel.countDocuments({
+        scaleInstanceId: handoffFixture.scaleInstance._id,
+      }),
+    ).toBe(0);
+    expect(
+      await mediaEvidenceModel.countDocuments({
+        scaleInstanceId: handoffFixture.scaleInstance._id,
+      }),
+    ).toBe(0);
 
     const conflictFixture = await createFixture('STAFF-CONFLICT');
     const conflictBase = staffBase(conflictFixture);
-    const doctor = requireAgent(ACCOUNTS.doctor);
     const conflictCreated = readBody(
       await doctor.post(conflictBase).send({}).expect(201),
     );
@@ -815,6 +1018,113 @@ describe('patient administration session APIs (e2e)', () => {
       .post('/patient-administration/enter')
       .send({ code: conflictCode })
       .expect(200);
+  });
+
+  it('keeps paused handoff paused and resumes the same step without rewriting startedAt', async () => {
+    const fixture = await createFixture('PAUSED-HANDOFF');
+    const base = staffBase(fixture);
+    const nurse = requireAgent(ACCOUNTS.nurse);
+    const doctor = requireAgent(ACCOUNTS.doctor);
+    const created = readBody(await nurse.post(base).send({}).expect(201));
+    const patient = request.agent(httpServer);
+    await patient
+      .post('/patient-administration/enter')
+      .send({ code: readString(created, 'entryCode') })
+      .expect(200);
+    await nurse
+      .post(`${base}/preparation/confirm`)
+      .send({
+        expectedRevision: 1,
+        impactFactorCodes: ['environment'],
+        impactFactorNote: 'quiet room',
+      })
+      .expect(200);
+    const activeCurrent = readBody(
+      await patient.get('/patient-administration/current').expect(200),
+    );
+    if (!isRecord(activeCurrent.currentStep)) {
+      throw new Error('Expected an active step before paused handoff');
+    }
+    const activeStepKey = readString(activeCurrent.currentStep, 'stepKey');
+    const activeSession = await administrationSessionModel
+      .findById(readString(created, 'id'))
+      .exec();
+    const originalStartedAt = activeSession?.startedAt;
+    const originalPreparationConfirmedAt =
+      activeSession?.preparationConfirmedAt;
+    expect(originalStartedAt).toBeInstanceOf(Date);
+
+    await nurse
+      .post(`${base}/pause`)
+      .send({ expectedRevision: 2, reason: 'device transfer' })
+      .expect(200)
+      .expect((response: Response) => {
+        expect(readBody(response)).toEqual(
+          expect.objectContaining({ status: 'paused', revision: 3 }),
+        );
+      });
+    const handoffResponse = await nurse
+      .post(`${base}/handoff`)
+      .send({ expectedRevision: 3 })
+      .expect(200);
+    expect(readBody(handoffResponse)).toEqual(
+      expect.objectContaining({
+        status: 'paused',
+        revision: 4,
+        startedAt: originalStartedAt?.toISOString(),
+      }),
+    );
+    await nurse.get('/auth/me').expect(401);
+    await patient.get('/patient-administration/current').expect(401);
+    expect(
+      readBody(await nurse.get('/patient-administration/current').expect(200)),
+    ).toEqual(
+      expect.objectContaining({
+        status: 'paused',
+        revision: 4,
+        currentStep: null,
+      }),
+    );
+    const storedAfterHandoff = await administrationSessionModel
+      .findById(readString(created, 'id'))
+      .exec();
+    expect(storedAfterHandoff?.status).toBe('paused');
+    expect(storedAfterHandoff?.startedAt).toEqual(originalStartedAt);
+    expect(storedAfterHandoff?.preparationConfirmedAt).toEqual(
+      originalPreparationConfirmedAt,
+    );
+    expect(storedAfterHandoff?.impactFactorCodes).toEqual(['environment']);
+    expect(storedAfterHandoff?.impactFactorNote).toBe('quiet room');
+
+    await doctor
+      .post(`${base}/resume`)
+      .send({ expectedRevision: 4, reason: 'continue after transfer' })
+      .expect(200)
+      .expect((response: Response) => {
+        expect(readBody(response)).toEqual(
+          expect.objectContaining({ status: 'active', revision: 5 }),
+        );
+      });
+    const resumedCurrent = readBody(
+      await nurse.get('/patient-administration/current').expect(200),
+    );
+    if (!isRecord(resumedCurrent.currentStep)) {
+      throw new Error('Expected the same active step after resume');
+    }
+    expect(readString(resumedCurrent.currentStep, 'stepKey')).toBe(
+      activeStepKey,
+    );
+    const resumedSession = await administrationSessionModel
+      .findById(readString(created, 'id'))
+      .exec();
+    expect(resumedSession?.startedAt).toEqual(originalStartedAt);
+    expect(resumedSession?.controlEvents.map((event) => event.action)).toEqual([
+      'entry_redeemed',
+      'preparation_confirmed',
+      'paused',
+      'same_device_handoff',
+      'resumed',
+    ]);
   });
 
   it('fails closed for mode, lock, barrier, ownership, DTO, and still permits safety pause/terminate', async () => {
