@@ -8,6 +8,7 @@ import {
   HandwritingTrajectoryFormat,
   MediaCaptureContext,
   MediaCaptureMode,
+  MediaAudioMetadata,
   MediaEvidence,
   MediaEvidenceDocument,
   MediaEvidenceMetadata,
@@ -18,6 +19,7 @@ import {
   MediaItemSnapshot,
   MediaOperatorRole,
   MediaOperatorSnapshot,
+  MediaPatientAdministrationContext,
   MediaQualityHints,
   MediaQualityStatus,
   MediaResponseType,
@@ -84,6 +86,16 @@ export type MediaOperatorSnapshotSummary = {
   operatorRole?: MediaOperatorRole;
 };
 
+export type MediaPatientAdministrationContextSummary = {
+  sessionId: string;
+  stepKey: string;
+  stepRun: number;
+};
+
+export type MediaAudioMetadataSummary = {
+  durationMs: number | null;
+};
+
 export type MediaEvidenceSummary = {
   id: string;
   patientId: string;
@@ -99,7 +111,7 @@ export type MediaEvidenceSummary = {
   itemCode: string;
   evidenceCode: string;
   evidenceType: MediaEvidenceType;
-  captureMode: MediaCaptureMode;
+  captureMode: Exclude<MediaCaptureMode, 'browser_audio_recording'>;
   status: MediaEvidenceStatus;
   storageStatus: MediaStorageStatus;
   crfCode?: string;
@@ -115,6 +127,8 @@ export type MediaEvidenceSummary = {
   handwritingTrace: HandwritingTraceSummary | null;
   captureContext: MediaCaptureContextSummary | null;
   operatorSnapshot: MediaOperatorSnapshotSummary | null;
+  patientAdministrationContext?: MediaPatientAdministrationContextSummary | null;
+  audioMetadata?: MediaAudioMetadataSummary | null;
   qualityStatus: MediaQualityStatus;
   qualityHints: MediaQualityHints;
   operatorNote?: string;
@@ -182,10 +196,12 @@ export type CreateMediaEvidenceInput = {
   itemSnapshot: MediaItemSnapshot;
   versionTrace: MediaEvidenceVersionTrace | null;
   storage: MediaStorageSnapshot;
-  imageMetadata: MediaImageMetadata;
+  imageMetadata: MediaImageMetadata | null;
   handwritingTrace: HandwritingTraceSnapshot | null;
   captureContext: MediaCaptureContext;
-  operatorSnapshot: MediaOperatorSnapshot;
+  operatorSnapshot: MediaOperatorSnapshot | null;
+  patientAdministrationContext?: MediaPatientAdministrationContext | null;
+  audioMetadata?: MediaAudioMetadata | null;
   qualityStatus: MediaQualityStatus;
   qualityHints: MediaQualityHints;
   operatorNote?: string;
@@ -644,7 +660,10 @@ export class MediaEvidenceService {
       itemCode: evidence.itemCode,
       evidenceCode: evidence.evidenceCode,
       evidenceType: evidence.evidenceType,
-      captureMode: evidence.captureMode,
+      captureMode: evidence.captureMode as Exclude<
+        MediaCaptureMode,
+        'browser_audio_recording'
+      >,
       status: evidence.status,
       storageStatus: evidence.storageStatus,
       crfCode: evidence.crfCode,
@@ -660,6 +679,10 @@ export class MediaEvidenceService {
       handwritingTrace: this.mapHandwritingTrace(evidence.handwritingTrace),
       captureContext: this.mapCaptureContext(evidence.captureContext),
       operatorSnapshot: this.mapOperatorSnapshot(evidence.operatorSnapshot),
+      patientAdministrationContext: this.mapPatientAdministrationContext(
+        evidence.patientAdministrationContext,
+      ),
+      audioMetadata: this.mapAudioMetadata(evidence.audioMetadata),
       qualityStatus: evidence.qualityStatus,
       qualityHints: evidence.qualityHints ?? null,
       operatorNote: evidence.operatorNote,
@@ -788,5 +811,29 @@ export class MediaEvidenceService {
       operatorName: operatorSnapshot.operatorName,
       operatorRole: operatorSnapshot.operatorRole,
     };
+  }
+
+  private mapPatientAdministrationContext(
+    context?: MediaPatientAdministrationContext | null,
+  ): MediaPatientAdministrationContextSummary | null {
+    if (!context) {
+      return null;
+    }
+
+    return {
+      sessionId: context.sessionId.toString(),
+      stepKey: context.stepKey,
+      stepRun: context.stepRun,
+    };
+  }
+
+  private mapAudioMetadata(
+    metadata?: MediaAudioMetadata | null,
+  ): MediaAudioMetadataSummary | null {
+    if (!metadata) {
+      return null;
+    }
+
+    return { durationMs: metadata.durationMs ?? null };
   }
 }

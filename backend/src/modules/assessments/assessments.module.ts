@@ -73,6 +73,8 @@ import { ScaleInstanceSubmissionBarrierService } from './services/scale-instance
     AssessmentExecutionService,
     AssessmentExecutionDetailService,
     ItemResponseDraftService,
+    PatientAdministrationSessionService,
+    PatientAdministrationSessionGuard,
   ],
 })
 export class AssessmentsModule {}

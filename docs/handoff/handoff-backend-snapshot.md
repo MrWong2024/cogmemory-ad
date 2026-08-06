@@ -12,9 +12,9 @@
 - `StorageModule` 当前只提供 fake / OSS 底层 driver 结构和 `STORAGE_SERVICE` token，不提供独立、通用的 Storage 管理或上传 API；题目媒体业务上传链路由 `MediaModule` 基于该抽象提供。
 - `ScalesModule` 当前提供量表定义 / 量表版本 Schema、内部 `ScalesService`、MMSE / MoCA seed、只读 `ScaleSeedDataService`、`ScaleCatalogService`、内部只读 `PresentationAssetsService` 和公开只读 `ScalesController`。`GET /scales/available` 只返回安全摘要且不写数据库；量表初始化时才按需幂等物化对应 seed 版本。没有公共题目资产接口或静态目录挂载。
 - `PatientsModule` 当前提供患者 / 受试者基础档案 Schema、内部读取底座，以及 `GET /patients`、`POST /patients`、`GET /patients/:patientId` 三个患者最小公开 API。
-- `AssessmentsModule` 当前除访视 / 量表实例 / 题目作答底座外，已注册 WP-10-B `PatientAdministrationSession`、会话 Service、患者专用 Guard、staff / patient Controller 与 Cookie 工具。患者会话独立于既有 staff `Session`；B2 已开放权威步骤推进和当前题目受控二进制，但不写 `ItemResponse`。
+- `AssessmentsModule` 当前除访视 / 量表实例 / 题目作答底座外，已注册 WP-10 `PatientAdministrationSession`、会话 Service、患者专用 Guard、staff / patient Controller 与 Cookie 工具。患者会话独立于既有 staff `Session`；C1 在既有会话内增加当前 run 的 `stepEvidenceRefs` 和完成媒体门禁，仍不写 `ItemResponse`。
 - A16 在 `AssessmentsModule` 提供 `ScaleInstanceSubmissionController`、`ScaleInstanceSubmissionService`、`ScaleInstanceSubmissionBarrierService`、纯 readiness / barrier 函数、提交 DTO 与安全公开响应类型；开放 readiness GET 与 submit POST，并由 A30 的可恢复屏障协议完成跨父子集合线性化保护。
-- `MediaModule` 当前在既有媒体证据 Schema / Service 上新增 A15 公开 `MediaEvidenceController`、工作流 Service、安全 mapper、图片与轨迹纯校验；提供题目下列表、multipart 上传、短期签名访问和作废四个接口。
+- `MediaModule` 当前同时承载既有 A15 staff 媒体链和 WP-10-C1 患者当前步骤媒体链：staff 四接口合同保持不变；患者专用 Controller / Service 复用同一 `MediaEvidenceService`、私有 Storage、图片校验、SHA-256 与精确补偿，并新增受控音频校验。
 - `ScoringModule` 当前在计分结果快照 Schema、`ScoringService` 与 `summarizeItemScores()` 通用汇总基础上，提供 A17 阶段性 workflow、A18 `ScoreReviewWorkflowService`、纯评分 / 人工复核函数与安全 public mapper；公开 compute / latest / manual-review / confirm，不提供 lock、void、重跑、认知域或报告接口。
 - `CognitiveDomainsModule` 当前在认知域结果 Schema、内部读取和 `summarizeDomainScores()` 基础上，新增 A19 Controller、Workflow、确认评分纯映射 / 校验、安全 public mapper 与 runNo=1 创建能力；公开认知域 compute / latest，不提供人工修改、确认、锁定、作废、重算或报告接口。
 - `ReportsModule` 当前提供 A20 generation / latest、A21 review、A22 lock、A23 source freeze、A24 archive、A25 corrections、A26 replacement lifecycle，以及 A27 报告版本列表与指定历史详情。无 Schema 的 `ClinicalHistoryModule` 提供患者 assessment-history 与 A28 follow-up-trends；WP-04 后端范围已完成。
@@ -25,7 +25,7 @@
 - 本地默认前端 origin 为 `http://localhost:3002`。
 - test 数据库用途已分为 `standard_test` → `cogmemory_ad_test` 与 `browser_acceptance` → `cogmemory_ad_browser_test`；未显式指定的 `NODE_ENV=test` 进程默认 `standard_test`。配置 URI 在连接前按固定映射校验，连接后再按 Mongoose `connection.name` 校验。
 - `npm run start:browser-test` 是 Browser test backend 专用入口：仅接受 Browser app 用户及目标库 `readWrite` 角色，通过实际库名与角色门禁后才监听；当前所有 Browser fixture CLI 仅接受 Browser db_admin 用户及目标库 `dbOwner` 角色，具体 CLI 与 Profile 以当前代码和 testing playbook 为准。
-- 当前报告接口为十一个，另有患者历史评估与基础随访趋势两个接口；WP-10-B 提供十二个 staff 会话 / 步骤控制接口和五个 patient 会话 / 步骤 / 资产接口。staff 入口继续显式使用 `SessionAuthGuard` + `RolesGuard`，patient 入口使用独立患者 Cookie Guard。
+- 当前报告接口为十一个，另有患者历史评估与基础随访趋势两个接口；WP-10 提供十二个 staff 会话 / 步骤控制接口和六个 patient 会话 / 步骤 / 资产 / evidence 接口。staff 入口继续显式使用 `SessionAuthGuard` + `RolesGuard`，patient 入口使用独立患者 Cookie Guard。
 - A27 已实现患者历史评估、完整报告版本链与指定历史详情；A28 已实现 Visit 保留式基础随访趋势、稳定 source/dataStatus 与相邻 exact trace/domain mapping 可比性。
 - D-038 已实施：`standard_test` 与 `browser_acceptance` 双库、Browser app / db_admin 双角色及独立进程隔离结构均已存在，建连前后库名与角色门禁生效。
 - 当前 lint、typecheck、build、unit、E2E、数据库隔离和 Browser 批次的最终结果与数量统一以 `handoff-backend-testing-playbook.md` 为准；本文不重复保存逐阶段测试流水。
@@ -130,9 +130,11 @@
 - `MediaEvidence` collection 为 `media_evidences`，使用 `timestamps: true`，不在 class 中重复声明 `createdAt` / `updatedAt`。
 - `MediaEvidence` 当前覆盖患者、访视、量表实例、题目作答、量表定义和量表版本引用；同时保存受试者编码、量表 code / version、实例编码和题目编码快照。
 - 当前已通过 `MediaEvidence.patientId`、`assessmentVisitId`、`scaleInstanceId` 与 `itemResponseId` 建立 `Patient` -> `AssessmentVisit` -> `ScaleInstance` -> `ItemResponse` -> `MediaEvidence` 的证据链 ObjectId 引用关系。
-- `MediaEvidence` 当前覆盖证据稳定编码、证据类型、采集方式、证据状态、存储状态、CRF 编码、题目组、题目标题、作答类型、是否计入总分、认知域编码、题目快照、版本追溯、存储对象元数据、图片元数据、平板手写轨迹元数据、采集上下文、操作者快照、质量状态、质量提示占位、操作者备注、描述、扩展 metadata、锁定 / 作废 / 删除时间。
-- `MediaEvidence` 当前内嵌 `MediaEvidenceVersionTrace`、`MediaStorageSnapshot`、`MediaImageMetadata`、`HandwritingTraceSnapshot`、`MediaCaptureContext` 与 `MediaOperatorSnapshot` 子文档，均使用 `_id: false`。
+- `MediaEvidence` 当前覆盖证据稳定编码、证据类型、采集方式、证据状态、存储状态、CRF 编码、题目组、题目标题、作答类型、是否计入总分、认知域编码、题目快照、版本追溯、存储对象元数据、图片元数据、平板手写轨迹元数据、采集上下文、操作者快照、患者施测来源上下文、音频时长辅助元数据、质量状态、质量提示占位、操作者备注、描述、扩展 metadata、锁定 / 作废 / 删除时间。`captureMode` 新增 `browser_audio_recording`，既有值语义不变。
+- `MediaEvidence` 当前内嵌 `MediaEvidenceVersionTrace`、`MediaStorageSnapshot`、`MediaImageMetadata`、`HandwritingTraceSnapshot`、`MediaCaptureContext`、`MediaOperatorSnapshot`、`MediaPatientAdministrationContext` 与 `MediaAudioMetadata` 子文档，均使用 `_id: false`。C1 没有 transcription / ASR / confidence / diagnosis 字段。
 - `MediaEvidence` 当前索引为 `{ evidenceCode: 1 }` unique、`{ itemResponseId: 1, evidenceType: 1, status: 1 }`、`{ scaleInstanceId: 1, itemCode: 1, evidenceType: 1 }`、`{ assessmentVisitId: 1, createdAt: -1 }`、`{ patientId: 1, createdAt: -1 }`、`{ status: 1, updatedAt: -1 }`、`{ 'storage.objectKey': 1 }` sparse、`{ scaleCode: 1, itemCode: 1, evidenceType: 1 }`。
+- WP-10-C1 的 `PatientAdministrationSession.stepEvidenceRefs` 只保存 stepKey、stepRun、audio / photo / handwriting evidenceType、MediaEvidence ObjectId 与 uploadedAt；子文档 `_id:false`，未新增 collection 或 index。speech 要求当前 run audio，writing / drawing 要求当前 run photo 或 handwriting，staff_observation 不要求媒体，paused staff takeover 可绕过；redo 保留旧 run 引用但旧引用不能满足新 run。
+- 患者上传顺序固定为重新读取会话与权威步骤、只读解析唯一 `ItemResponse`、校验文件、写私有 Storage、创建 `MediaEvidence`、以同一会话 revision CAS 追加引用。CAS / 后续失败只删除本次 Evidence 与本次 objectKey；患者链不调用 A15 的 ItemResponse evidenceRef attach / clear / restore，不修改 `ItemResponse` 或 `ScaleInstance`。
 - `MediaEvidenceService` 在既有读取方法上新增完整 patient / visit / instance / item 归属查询、题目下未删除记录列表、当前 attached / locked 证据查询、创建、条件作废与仅供补偿的按 ID 删除；内部 Summary 不直接作为 HTTP 响应。
 - A15 四个接口统一位于 `/patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/item-responses/:itemResponseId/media-evidences`：GET 列表、POST multipart 上传、GET `:mediaEvidenceId/access-url`、POST `:mediaEvidenceId/void`。
 - 上传主文件最大 10 MiB，仅允许 JPEG / PNG / WebP；校验 MIME 白名单、JPEG / PNG / WebP 魔数和 MIME / 实际格式一致性，并拒绝 JPEG EXIF / XMP、PNG eXIf / tEXt / zTXt / iTXt、WebP EXIF / XMP。主文件由服务端计算 SHA-256；不保存客户端原始文件名。

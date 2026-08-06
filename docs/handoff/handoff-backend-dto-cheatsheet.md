@@ -6,7 +6,7 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 DTO、响应 type、Storage interface，以及 A12-A28 和 WP-10-B 业务契约；B1 锁定患者会话控制，B2 补齐步骤推进、受控资产与播放事实边界。
+- 当前存在公共底座 DTO、响应 type、Storage interface，以及 A12-A28 和 WP-10 业务契约；B1/B2 锁定患者会话、步骤与受控资产，C1 增加患者当前步骤原始媒体 evidence 上传白名单。
 - 当前新增公开认证请求 DTO：`LoginDto`。
 - 当前新增公开患者 / 访视 DTO：`CreatePatientDto`、`ListPatientsQueryDto`、`PatientIdParamDto`、`CreateAssessmentVisitDto`、`ListAssessmentVisitsQueryDto`、`PatientVisitsParamDto`。
 - 当前仍没有用户管理、注册、密码重置、撤销 / reopen / force submit、批量 / 分片 / 客户端直传、认知域人工修改 / 确认 / 锁定 / 重算或报告退回 / 签名 / unlock / unfreeze / unarchive / correction cancel / 作废 / PDF 请求 DTO；A25 已新增受控 correction DTO。
@@ -64,6 +64,16 @@
 - `PatientAdministrationCurrentResponse`：仅 status、revision、expiresAt、currentStep；非 active 为 null，active step 只含 stepKey、order、可选 patientText、responseMode、advanceBy、assets。每个 asset 仅含 assetKey、kind、role（guidance / stimulus / null）与 mimeType，不含 file / filePath / size / sha256 / spokenText / manifest / packageKey；旧 `assetKeys` 响应字段已移除。
 - `PatientAdministrationOpenedAsset` / `PatientAdministrationPlayedAudio`：仅为 Controller 与 Service 之间的内部流 type，携带已授权 assetKey / kind / mimeType / size / Readable；音频结果额外带写后 revision。它们不是 JSON 公开 DTO，不允许把路径、manifest 或 hash 映射到响应。
 - `PatientAdministrationRequestContext`：Guard 内部仅含 sessionId、sessionTokenHash、revision；不得挂载 raw Token、患者档案、完整 ScaleVersion 或步骤集合。
+
+### WP-10-C1 patient evidence DTO / response
+
+- 文件：`backend\src\modules\media\dto\upload-patient-administration-evidence.dto.ts`、`types\patient-administration-evidence-response.types.ts`，内部上传上下文位于 assessments 的 `patient-administration-response.types.ts`。
+- `UploadPatientAdministrationEvidenceDto`：multipart Body 必填 `expectedRevision` 与 `evidenceType`；expectedRevision 转 number 后必须为 0 到 `Number.MAX_SAFE_INTEGER` 的整数，evidenceType 只允许 audio / photo / handwriting。
+- 可选 `capturedAt` 必须是严格 ISO 8601，且 Service 拒绝超过服务器时间合理容差的未来值；可选 `durationMs` 转 number 后必须为 1–600000 的整数，且只允许 evidenceType=audio。
+- 白名单：不声明 captureMode、stepKey、stepRun、patientId、visitId、scaleInstanceId、itemResponseId、itemCode、sessionId、objectKey、originalFilename、sourceDevice、sourceApp、metadata、operator、status 或 responseMode；全局 whitelist + `forbidNonWhitelisted` 拒绝。
+- 文件字段固定 `file`，最多一个、10 MiB；不接受 trajectory。audio 允许规范化后的 audio/webm、audio/ogg、audio/mp4、audio/mpeg，photo / handwriting 继续使用既有图片白名单。
+- `PatientAdministrationEvidenceResponse` 只含 mediaEvidenceId、evidenceType、revision、uploadedAt；不含 ownership ID、step / run、Storage 信息、文件名、签名 URL、checksum、Token 或完整 `MediaEvidence`。
+- `PatientAdministrationEvidenceUploadContext` / `AttachPatientAdministrationEvidenceInput` 仅在 Service 间内部使用：上下文来自重新读取后的患者会话、权威 ScaleInstance / ScaleVersion 与当前步骤，不接收客户端业务 ID，也不携带 raw Token。
 
 - 名称：`PaginationQueryDto`
 - 文件：`backend\src\common\dto\pagination-query.dto.ts`

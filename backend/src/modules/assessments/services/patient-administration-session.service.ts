@@ -32,11 +32,13 @@ import {
   PATIENT_ADMINISTRATION_ENTRY_CODE_TTL_MS,
   PATIENT_ADMINISTRATION_ENTRY_RATE_LIMIT_MAX_FAILURES,
   PATIENT_ADMINISTRATION_ENTRY_RATE_LIMIT_WINDOW_MS,
+  PATIENT_ADMINISTRATION_EVIDENCE_TYPES,
   PATIENT_ADMINISTRATION_OPEN_STATUSES,
   PATIENT_ADMINISTRATION_SESSION_TTL_MS,
 } from '../patient-administration.constants';
 import type {
   PatientAdministrationControlEventAction,
+  PatientAdministrationEvidenceType,
   PatientAdministrationImpactFactorCode,
   PatientAdministrationOpenStatus,
 } from '../patient-administration.constants';
@@ -44,6 +46,7 @@ import type { AssessmentOperatorSnapshot } from '../schemas/assessment-visit.sch
 import {
   PatientAdministrationPlaybackFact,
   PatientAdministrationSession,
+  PatientAdministrationStepEvidenceRef,
   PatientAdministrationStepCapture,
   type PatientAdministrationSessionDocument,
 } from '../schemas/patient-administration-session.schema';
@@ -59,6 +62,8 @@ import { AssessmentsService } from './assessments.service';
 import type {
   PatientAdministrationCredentialResponse,
   PatientAdministrationCurrentResponse,
+  AttachPatientAdministrationEvidenceInput,
+  PatientAdministrationEvidenceUploadContext,
   PatientAdministrationEntryCodeResponse,
   PatientAdministrationOpenedAsset,
   PatientAdministrationOperatorResponse,
@@ -803,6 +808,136 @@ export class PatientAdministrationSessionService {
     return this.toCurrentResponse(current, business);
   }
 
+  async prepareCurrentEvidenceUpload(
+    context: PatientAdministrationRequestContext,
+    expectedRevision: number,
+    evidenceType: PatientAdministrationEvidenceType,
+  ): Promise<PatientAdministrationEvidenceUploadContext> {
+    if (
+      !Types.ObjectId.isValid(context.sessionId) ||
+      !PATIENT_ADMINISTRATION_EVIDENCE_TYPES.includes(evidenceType)
+    ) {
+      throw new UnauthorizedException();
+    }
+
+    const session = await this.patientAdministrationSessionModel
+      .findOne({
+        _id: new Types.ObjectId(context.sessionId),
+        sessionTokenHash: context.sessionTokenHash,
+      })
+      .select('+sessionTokenHash')
+      .exec();
+    if (!session) {
+      throw new UnauthorizedException();
+    }
+
+    const current = await this.expireIfNeeded(session, new Date());
+    if (
+      current.status !== 'active' ||
+      current.sessionTokenHash !== context.sessionTokenHash ||
+      current.revision !== context.revision ||
+      current.revision !== expectedRevision
+    ) {
+      this.throwSessionConflict();
+    }
+
+    const business = await this.requireBusinessContinuationForSession(current);
+    this.assertEvidenceTypeAllowed(
+      business.currentStep.responseMode,
+      evidenceType,
+    );
+    const stepRun = this.getCurrentStepRun(current, current.currentStepKey);
+    this.assertNoEquivalentStepEvidence(
+      current.stepEvidenceRefs ?? [],
+      current.currentStepKey,
+      stepRun,
+      business.currentStep.responseMode,
+    );
+
+    return {
+      sessionId: current._id.toString(),
+      sessionTokenHash: context.sessionTokenHash,
+      scaleInstanceId: business.scaleInstance.id,
+      patientId: business.scaleInstance.patientId,
+      assessmentVisitId: business.scaleInstance.assessmentVisitId,
+      subjectCode: business.scaleInstance.subjectCode,
+      scaleDefinitionId: business.scaleInstance.scaleDefinitionId,
+      scaleVersionId: business.scaleInstance.scaleVersionId,
+      scaleCode: business.scaleInstance.scaleCode,
+      scaleVersion: business.scaleInstance.scaleVersion,
+      instanceCode: business.scaleInstance.instanceCode,
+      currentStepKey: current.currentStepKey,
+      stepRun,
+      itemCode: business.currentStep.itemCode,
+      responseMode: business.currentStep.responseMode,
+      expectedRevision,
+    };
+  }
+
+  async attachCurrentStepEvidence(
+    input: AttachPatientAdministrationEvidenceInput,
+  ): Promise<number> {
+    const { uploadContext } = input;
+    if (
+      !Types.ObjectId.isValid(uploadContext.sessionId) ||
+      !Types.ObjectId.isValid(input.mediaEvidenceId)
+    ) {
+      this.throwSessionConflict();
+    }
+    this.assertEvidenceTypeAllowed(
+      uploadContext.responseMode,
+      input.evidenceType,
+    );
+
+    const equivalentTypes =
+      uploadContext.responseMode === 'speech'
+        ? ['audio']
+        : ['photo', 'handwriting'];
+    const updated = await this.patientAdministrationSessionModel
+      .findOneAndUpdate(
+        {
+          _id: new Types.ObjectId(uploadContext.sessionId),
+          sessionTokenHash: uploadContext.sessionTokenHash,
+          status: 'active',
+          currentStepKey: uploadContext.currentStepKey,
+          revision: uploadContext.expectedRevision,
+          expiresAt: { $gt: input.uploadedAt },
+          stepEvidenceRefs: {
+            $not: {
+              $elemMatch: {
+                stepKey: uploadContext.currentStepKey,
+                stepRun: uploadContext.stepRun,
+                evidenceType: { $in: equivalentTypes },
+              },
+            },
+          },
+        },
+        {
+          $push: {
+            stepEvidenceRefs: {
+              stepKey: uploadContext.currentStepKey,
+              stepRun: uploadContext.stepRun,
+              evidenceType: input.evidenceType,
+              mediaEvidenceId: new Types.ObjectId(input.mediaEvidenceId),
+              uploadedAt: input.uploadedAt,
+            },
+          },
+          $inc: { revision: 1 },
+        },
+        { returnDocument: 'after', runValidators: true },
+      )
+      .select('+sessionTokenHash')
+      .exec();
+    if (!updated) {
+      return this.throwAfterPatientAtomicMiss({
+        sessionId: uploadContext.sessionId,
+        sessionTokenHash: uploadContext.sessionTokenHash,
+        revision: uploadContext.expectedRevision,
+      });
+    }
+    return updated.revision;
+  }
+
   async completePatientStep(
     context: PatientAdministrationRequestContext,
     expectedRevision: number,
@@ -815,6 +950,7 @@ export class PatientAdministrationSessionService {
       this.throwStepConflict();
     }
     this.assertCurrentStepAudioPlayed(session, business);
+    this.assertCurrentStepEvidencePresent(session, business);
 
     const updated = await this.completeCurrentStep(
       session,
@@ -857,6 +993,7 @@ export class PatientAdministrationSessionService {
       this.throwStepConflict();
     }
     this.assertCurrentStepAudioPlayed(session, business);
+    this.assertCurrentStepEvidencePresent(session, business);
 
     return this.toSessionSummary(
       await this.completeCurrentStep(
@@ -1511,6 +1648,65 @@ export class PatientAdministrationSessionService {
         reason: authorization.reason,
       })),
     }));
+  }
+
+  private assertEvidenceTypeAllowed(
+    responseMode: PatientAdministrationStepConfigSummary['responseMode'],
+    evidenceType: PatientAdministrationEvidenceType,
+  ): void {
+    const allowed =
+      (responseMode === 'speech' && evidenceType === 'audio') ||
+      ((responseMode === 'writing' || responseMode === 'drawing') &&
+        (evidenceType === 'photo' || evidenceType === 'handwriting'));
+    if (!allowed) {
+      throw new ForbiddenException({
+        code: 'PATIENT_ADMINISTRATION_EVIDENCE_NOT_ALLOWED',
+        message: 'Evidence is not allowed for the current step',
+      });
+    }
+  }
+
+  private assertNoEquivalentStepEvidence(
+    evidenceRefs: PatientAdministrationStepEvidenceRef[],
+    stepKey: string,
+    stepRun: number,
+    responseMode: PatientAdministrationStepConfigSummary['responseMode'],
+  ): void {
+    const matches = evidenceRefs.filter(
+      (reference) =>
+        reference.stepKey === stepKey &&
+        reference.stepRun === stepRun &&
+        (responseMode === 'speech'
+          ? reference.evidenceType === 'audio'
+          : reference.evidenceType === 'photo' ||
+            reference.evidenceType === 'handwriting'),
+    );
+    if (matches.length > 0) {
+      this.throwSessionConflict();
+    }
+  }
+
+  private assertCurrentStepEvidencePresent(
+    session: PatientAdministrationSessionDocument,
+    business: AdministrationBusinessContext,
+  ): void {
+    if (business.currentStep.responseMode === 'staff_observation') {
+      return;
+    }
+
+    const stepRun = this.getCurrentStepRun(session, session.currentStepKey);
+    const matches = (session.stepEvidenceRefs ?? []).filter(
+      (reference) =>
+        reference.stepKey === session.currentStepKey &&
+        reference.stepRun === stepRun &&
+        (business.currentStep.responseMode === 'speech'
+          ? reference.evidenceType === 'audio'
+          : reference.evidenceType === 'photo' ||
+            reference.evidenceType === 'handwriting'),
+    );
+    if (matches.length !== 1) {
+      this.throwStepConflict();
+    }
   }
 
   private assertNoActiveStepCapture(

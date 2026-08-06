@@ -6,7 +6,7 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 Service / Provider、A12-A28 与 WP-10-B 业务能力；B1/B2 在 AssessmentsModule 内复用同一患者会话 Service / Guard / Cookie 与双 Controller，完成权威步骤推进和受控资产访问，不改变 Auth、ItemResponse 或 presentation asset 服务实现。
+- 当前存在公共底座 Service / Provider、A12-A28 与 WP-10 业务能力；B1/B2 在 AssessmentsModule 内完成患者会话、权威步骤与受控资产，C1 由 MediaModule 单一患者 evidence 编排 Service 复用该会话 Service、既有 MediaEvidence 与 Storage，不改变 Auth、ItemResponse 或 presentation asset 服务实现。
 - 当前没有独立医生、SMS 或 LLM Service；A21 不调用来源计分 / 认知域 / 媒体 Service、Storage、PDF 或 AI 能力。
 
 ## 3. 当前 Service / Provider 清单
@@ -114,12 +114,12 @@
 
 - Service 名称：`PatientAdministrationSessionService`
 - 文件路径：`backend\src\modules\assessments\services\patient-administration-session.service.ts`
-- 职责边界：集中编排创建 / 查询、同设备签发、跨设备一次性兑换、准备确认、暂停 / 恢复、换设备重签、终止、患者凭证校验、当前步骤最小响应、patient / staff 完成、paused staff 接管、直接前一步重做、当前图片流、顺序音频播放、技术重播授权与惰性过期；不写 `ItemResponse`、`ScaleInstance` 状态、媒体、评分或报告。
+- 职责边界：集中编排创建 / 查询、同设备签发、跨设备一次性兑换、准备确认、暂停 / 恢复、换设备重签、终止、患者凭证校验、当前步骤最小响应、patient / staff 完成、paused staff 接管、直接前一步重做、当前图片流、顺序音频播放、技术重播授权、C1 evidence prepare / attach CAS 与完成媒体门禁、惰性过期；自身不上传对象、不创建 MediaEvidence，也不写 `ItemResponse`、`ScaleInstance` 状态、评分或报告。
 - 下游依赖：`PatientAdministrationSession` 与只读 `ScaleInstance` identity Model、`PatientsService`、`AssessmentsService`、`ScalesService`、`PresentationAssetsService`、`AuthService`。只复用现有 submission barrier 规范化函数和 Auth token 生成 / SHA-256，不复制平行认证或屏障逻辑。
 - 状态与并发：开放状态 prepared / active / paused；顺序推进最后一步产生 completed 并清除全部凭证。全部 credential / control / capture / playback 写共享单一 revision CAS，每次恰加一；patient 写额外匹配 sessionTokenHash 和 currentStepKey。并发完成或播放同 revision 最多一个成功；音频流在 CAS 前打开，失败立即 destroy，不返回未获授权二进制。同实例 partial unique 索引封住并发创建，进入码 unique collision 有限重试，公开兑换按 client key 固定窗口限流。
 - 过期与失效：各入口惰性检查绝对两小时有效期，以状态 + revision 原子写 expired、清空全部凭证并追加一次事件；患者 Guard / current 遇到底层不可继续时 fail closed、原子终止开放会话并不泄露原因。无 TTL、cron、queue、transaction、retry loop 或物理删除。
-- 步骤事实：`stepCaptures` 与 `playbackFacts` 均为 `PatientAdministrationSession` 内嵌 `_id:false` 数组，不增加 collection / index。capture 保存 stepKey、stepRun、capturedBy、可选 staff observation / operator、capturedAt 与逻辑 invalidation；stepRun 严格等于 1 + 同 stepKey 已 invalidated capture 数。playback fact 按 stepKey + stepRun + assetKey 唯一保存 playCount、remainingAuthorizedReplays、lastPlayedAt 与技术授权审计。
-- 业务检查：active Patient、可编辑 ownership Visit / ScaleInstance、无 lock / void、submission barrier open、`supervised_patient_input`、精确 ScaleVersion / currentStep、released package，以及当前步骤 assetKey / stepKey / kind / role / mimeType 一致性。patient / staff 只能完成各自 advanceBy；普通完成要求当前 run 全部 audio 至少播放一次；音频严格按 asset 顺序，guidance 可重播，stimulus 仅首次或消费一个 paused staff 技术授权。pause / terminate 只做 route ownership 和会话 CAS，保证底层锁定后仍可停止访问。
+- 步骤事实：`stepCaptures`、`playbackFacts` 与 C1 `stepEvidenceRefs` 均为 `PatientAdministrationSession` 内嵌 `_id:false` 数组，不增加 collection / index。evidence ref 只保存 stepKey、stepRun、audio / photo / handwriting type、MediaEvidence ObjectId 与 uploadedAt；redo 保留旧 run 引用，但完成门禁只匹配当前 run。
+- 业务检查：active Patient、可编辑 ownership Visit / ScaleInstance、无 lock / void、submission barrier open、`supervised_patient_input`、精确 ScaleVersion / currentStep、released package，以及当前步骤 assetKey / stepKey / kind / role / mimeType 一致性。`prepareCurrentEvidenceUpload()` 重新读取会话并返回最小权威上下文，拒绝 responseMode/type 不匹配和当前 run 重复；`attachCurrentStepEvidence()` 以 token、active、currentStepKey、revision、expiry 和无等价 ref 组成单条 CAS，成功 revision+1。普通完成除播放前置外，speech 要求当前 run audio，writing / drawing 要求 photo 或 handwriting，staff_observation 无媒体要求；paused staff takeover 保留人工降级绕过。
 - 资产与响应：staff mapper 不返回 hash / Token / controlEvents；patient current 只返回单一当前步骤及 assetKey / kind / role / mimeType 白名单。图片流在打开后执行最终只读授权复核；音频流与 playback CAS 绑定。六位码只在创建 / 重签响应出现；32 字节 patient Token 只进入 Path=`/patient-administration` 的 HttpOnly Cookie。
 - 测试覆盖口径：service spec 覆盖 schema 三索引 / 内嵌事实 / hidden credential、创建、配置失败、碰撞重试、失败限流、步骤归属、完成前置、捕获、接管、redo / stepRun、顺序播放、重播授权、图片复核、CAS 流关闭、安全暂停与惰性过期；Guard / Cookie 独立 unit 覆盖双身份拒绝、最小 request context、失效清理和精确 Cookie 选项；standard_test E2E 以 AppModule 和只读内存资产 stub 覆盖 19 步 HTTP 流、binary、DTO、Mongo CAS、完成清理及 B1 / 初始化回归。
 
@@ -130,6 +130,18 @@
 - Controller：`PatientAdministrationStaffController` / `PatientAdministrationController`
 - 文件路径：`backend\src\modules\assessments\controllers\patient-administration-*.controller.ts`
 - 职责边界：staff Controller 绑定四个既有临床角色、DTO 和服务端 actor；handoff 严格执行只读核验 → revoke staff token → clear staff Cookie → patient CAS → set patient Cookie，并公开 staff complete / takeover / redo / replay-authorize。patient Controller 处理 staff Cookie 冲突 / 陈旧清理、client key、完成态 Cookie 清理和安全二进制 headers，并公开 patient complete / image GET / audio POST；两者均不复制状态机或业务资格。
+
+- Service 名称：`PatientAdministrationEvidenceService`
+- 文件路径：`backend\src\modules\media\services\patient-administration-evidence.service.ts`
+- 职责边界：接收 Guard context、C1 DTO 与单个内存文件；调用 SessionService prepare，使用 `AssessmentsService.findItemResponseByScaleInstanceAndItemCode()` 只读解析并复核 ownership / answerSource / lock / void / barrier；按 responseMode 选择 audio 或既有图片纯校验；写私有 Storage、创建权威 `MediaEvidence`、再调用 SessionService attach CAS，最后只返回四字段安全响应。
+- 权威映射：speech audio → `browser_audio_recording`，writing / drawing handwriting → `tablet_handwriting`，photo → `photo_upload`；`patientAdministrationContext` 保存 sessionId / stepKey / stepRun，audioMetadata 只保存可选 durationMs。患者原始文件名、Token、IP、User-Agent、客户端 captureMode 与任意 metadata 均不持久化。
+- 补偿与非职责：Storage 成功后 MediaEvidence 创建失败删除精确 objectKey；MediaEvidence 成功后 Session CAS 失败删除精确 Evidence ID 与 objectKey。不得调用 ItemResponse evidenceRef attach / clear / restore，不修改 ItemResponse / ScaleInstance，不完成步骤、不实现替换 / void / delete API、ASR、转写、评分、报告、队列或 worker。
+- 下游依赖：`PatientAdministrationSessionService`、`AssessmentsService` 只读查询、`MediaEvidenceService`、`STORAGE_SERVICE`、`StorageConfigService`；没有 Repository、第二患者媒体 Service 或反向模块依赖。
+- 测试覆盖口径：纯 audio validator unit、患者 evidence 编排 unit、会话 gate / CAS unit、MediaEvidence nullable mapper unit，以及 AppModule + standard_test + 可追踪 fake Storage 的 C1 E2E；真实 OSS、Browser 和真实设备不在 C1 自动化范围。
+
+- Controller 名称：`PatientAdministrationEvidenceController`
+- 文件路径：`backend\src\modules\media\controllers\patient-administration-evidence.controller.ts`
+- 职责边界：仅绑定 `POST /patient-administration/current/evidence`、患者 Guard、multipart 单一 `file`、10 MiB / 四个字段上限、DTO 与现有上传异常拦截器；不推导 item、不生成 objectKey、不操作 Storage / Model / Session。
 
 - Service 名称：`AssessmentExecutionService`
 - 文件路径：`backend\src\modules\assessments\services\assessment-execution.service.ts`

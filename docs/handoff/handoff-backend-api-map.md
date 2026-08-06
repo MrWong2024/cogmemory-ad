@@ -454,7 +454,7 @@
 - A20 / A21 / A26：generate 与 latest 使用当前 latest；合法 replacement 的 edit / submit / confirm / lock / freeze-sources / archive 仅 doctor/admin，Patient inactive / Visit locked / voided 不阻断。V1 的 A21-A23 资格不放宽；公开 endpoint、DTO 与 response 未变化。
 - errors：400 confirmation / DTO；401；403；404 ownership；409 not-correctable / not-latest / conflict / audit-unavailable / replacement-conflict / incomplete；未知持久化失败 500。
 
-## WP-10-B 患者短期会话、步骤推进与受控资产 API
+## WP-10 患者短期会话、步骤推进、受控资产与 C1 evidence API
 
 ### Staff 会话接口
 
@@ -466,9 +466,9 @@
 - `POST /pause` / `POST /resume`：Body `{ expectedRevision, reason? }`。pause 只允许 active 且不清除患者 Token；resume 要求 paused、准备已确认、患者凭证存在且底层仍可继续，不延长绝对过期时间。
 - `POST /entry-code/reissue`：Body `{ expectedRevision, reason }`；prepared 保持 prepared，active / paused 统一变 paused；旧患者 Token 立即失效，新六位码最长十分钟且不超过绝对有效期。
 - `POST /terminate`：Body `{ expectedRevision, reason }`；开放会话转 terminated，清除全部凭证且不删除记录、不修改 ScaleInstance / ItemResponse。pause / terminate 即使底层后来锁定仍允许在 route ownership、revision、状态和有效期匹配时执行。
-- `POST /current/complete`：Body `{ expectedRevision, staffObservation }`；仅 active 且当前步骤 `advanceBy=staff`，要求当前 run 的全部音频已按顺序至少播放一次，写入 staff capture 后推进。最后一步则转 completed 并清除全部凭证。
+- `POST /current/complete`：Body `{ expectedRevision, staffObservation }`；仅 active 且当前步骤 `advanceBy=staff`，要求当前 run 的全部音频已按顺序至少播放一次，并满足 C1 媒体门禁：speech 为 audio，writing / drawing 为 photo 或 handwriting，staff_observation 无媒体要求。写入 staff capture 后推进；最后一步则转 completed 并清除全部凭证。
 - `POST /current/takeover`：Body `{ expectedRevision, reason, staffObservation }`；仅 paused 且当前步骤 `advanceBy=patient`，不要求患者先完成播放，写入 staff capture、`staff_takeover` control event 并推进；保持 paused，若无下一步则 completed。
-- `POST /redo-last`：Body `{ expectedRevision, reason }`；仅 paused，只允许当前步骤的直接前一步且必须恰有一个 active capture；原 capture 只写 invalidatedAt / invalidatedReason，不删除，currentStepKey 回退，下一 capture 的 stepRun 为该步骤无效 capture 数 + 1。
+- `POST /redo-last`：Body `{ expectedRevision, reason }`；仅 paused，只允许当前步骤的直接前一步且必须恰有一个 active capture；原 capture 只写 invalidatedAt / invalidatedReason，不删除，currentStepKey 回退，下一 capture 的 stepRun 为该步骤无效 capture 数 + 1。旧 run 的 C1 evidence ref 保留，但不满足新 run 完成门禁。
 - `POST /current/audio/:assetKey/replay-authorize`：Body `{ expectedRevision, reason }`；仅 paused、当前步骤、audio stimulus 且本 run 已播放一次并无未消费授权。成功只增加一个 `remainingAuthorizedReplays` 与授权审计；重复堆叠为 409。
 - Staff summary 严格为 id、status、currentStepKey、revision、expiresAt、entryCodeExpiresAt、hasPatientCredential、准备 / 影响因素 / createdBy、生命周期时间及 timestamps；不含 credential hash、raw Token、controlEvents、步骤配置或资产路径。
 
@@ -476,11 +476,14 @@
 
 - `POST /patient-administration/enter`：无 staff Guard；Body 仅 `{ code }`（trim 后精确六位数字）。若请求带仍有效 staff Cookie，409 `PATIENT_ADMINISTRATION_SESSION_CONFLICT` 且不消费 code；陈旧 staff Cookie 可清除。进入码按 hash、状态、双有效期、无现存患者 Token及底层可继续条件原子消费，成功只设置患者 HttpOnly Cookie并返回 `{ status, revision, expiresAt }`；无效 / 过期 / 已用 / 不存在统一 401 `PATIENT_ADMINISTRATION_ENTRY_INVALID`，同 IP + User-Agent client key 固定窗口失败限流为 429 且使用同 code。
 - `GET /patient-administration/current`：`PatientAdministrationSessionGuard` 只读 `cogmemory_ad_patient_session`，拒绝过期 / 被轮换 / 底层失效 / 同请求有效 staff 身份。最终读取再次匹配 session id + token hash + 开放状态。响应仅 `{ status, revision, expiresAt, currentStep }`；prepared / paused 的 currentStep=null，active 仅返回当前 stepKey、order、patientText、responseMode、advanceBy、`assets[{ assetKey, kind, role, mimeType }]`。
-- `POST /patient-administration/current/complete`：Body 只含 `{ expectedRevision }`；仅 active 且当前步骤 `advanceBy=patient`，要求当前 run 的全部 audio 已按配置顺序至少播放一次。成功写入 patient capture 并推进；最后一步转 completed、清除全部服务端凭证与患者 Cookie，返回 currentStep=null。
+- `POST /patient-administration/current/complete`：Body 只含 `{ expectedRevision }`；仅 active 且当前步骤 `advanceBy=patient`，要求当前 run 的全部 audio 已按配置顺序至少播放一次，并满足 C1 媒体门禁：speech 为 audio，writing / drawing 为 photo 或 handwriting，staff_observation 无媒体要求。成功写入 patient capture 并推进；最后一步转 completed、清除全部服务端凭证与患者 Cookie，返回 currentStep=null。
 - `GET /patient-administration/current/assets/:assetKey`：只允许 active 当前步骤已配置的 image；读取不改 revision。打开流后在首字节返回前再次匹配 session id、token hash、active、currentStepKey、revision 与未过期，失败销毁流。成功返回原始二进制与 Content-Type / Length、`Cache-Control: private, no-store, max-age=0`、`X-Content-Type-Options: nosniff`。
 - `POST /patient-administration/current/audio/:assetKey/play`：Body 只含 `{ expectedRevision }`；仅 active 当前步骤已配置的 guidance / stimulus audio。按步骤 asset 顺序要求前序 audio 已播放；guidance 可重播，stimulus 默认每 run 一次，只有 paused staff 授权后可再播放一次。先打开流、再以 token + currentStepKey + expectedRevision CAS 写 playback fact，成功通过 `X-Patient-Administration-Revision` 返回新 revision；CAS 失败销毁流且不返回二进制。
+- `POST /patient-administration/current/evidence`：`PatientAdministrationSessionGuard`；`multipart/form-data`，文件字段固定 `file`、最多一个、最大 10 MiB，不接受 trajectory。Body 只允许 expectedRevision、evidenceType（audio / photo / handwriting）、可选严格 ISO capturedAt 与仅 audio 可用的 durationMs（1–600000）；未知 stepKey、stepRun、patient / visit / instance / item ID、captureMode、objectKey、文件名或 metadata 由白名单拒绝。
+- evidence 规则由服务端当前 `ScaleVersion` 步骤推导：speech 仅 audio，且 MIME 规范化后只允许 WebM / Ogg / MP4(M4A) / MPEG(MP3) 并验证对应签名；writing / drawing 允许 photo 或 handwriting，继续复用 JPEG / PNG / WebP 校验；staff_observation 返回 403 `PATIENT_ADMINISTRATION_EVIDENCE_NOT_ALLOWED`。接口不信任客户端 captureMode、stepKey 或 itemResponseId。
+- evidence 响应固定 `{ mediaEvidenceId, evidenceType, revision, uploadedAt }`；不返回 patient / visit / instance / item / session / step / run、objectKey、bucket、URL、checksum、原始文件名或 Token。上传不自动完成步骤、不推进 currentStepKey、不写 `ItemResponse.evidenceRefs`，只以会话 revision CAS 追加当前 run 的内嵌引用；重复或竞争使用既有 `PATIENT_ADMINISTRATION_SESSION_CONFLICT`，CAS 失败精确补偿本次 Evidence 与对象。
 - Cookie：患者 Cookie 固定 HttpOnly、SameSite=Lax、Path=`/patient-administration`，Secure 取 `session.cookieSecure`，maxAge 不大于两小时且不进入 URL / JSON / localStorage；完成、终止或失效后不再可用。
-- 稳定错误包括 `PATIENT_ADMINISTRATION_SESSION_NOT_FOUND`、`PATIENT_ADMINISTRATION_SESSION_CONFLICT`、`PATIENT_ADMINISTRATION_ENTRY_INVALID`、`PATIENT_ADMINISTRATION_STEP_INVALID` 与 403 `PATIENT_ADMINISTRATION_ASSET_NOT_ALLOWED`；继续复用既有 Patient / Visit / ScaleInstance / presentation package/file 错误。业务步骤归属、播放前置条件和 redo 条件失败为 409 step invalid；revision / 状态竞争为 409 session conflict。
+- 稳定错误包括 `PATIENT_ADMINISTRATION_SESSION_NOT_FOUND`、`PATIENT_ADMINISTRATION_SESSION_CONFLICT`、`PATIENT_ADMINISTRATION_ENTRY_INVALID`、`PATIENT_ADMINISTRATION_STEP_INVALID`、403 `PATIENT_ADMINISTRATION_ASSET_NOT_ALLOWED` 与 C1 唯一新增的 403 `PATIENT_ADMINISTRATION_EVIDENCE_NOT_ALLOWED`；媒体校验 / 存储 / 创建继续复用既有 `MEDIA_*` 错误。业务步骤归属、播放 / 媒体前置条件和 redo 条件失败为 409 step invalid；revision / 状态 / 重复上传竞争为 409 session conflict。
 
 ## A27 WP-04 后端阶段一历史读取
 

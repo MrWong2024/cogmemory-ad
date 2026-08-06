@@ -29,6 +29,10 @@ import {
 } from '../src/modules/auth/schemas/session.schema';
 import { AuthService } from '../src/modules/auth/services/auth.service';
 import {
+  MediaEvidence,
+  type MediaEvidenceDocument,
+} from '../src/modules/media/schemas/media-evidence.schema';
+import {
   Patient,
   type PatientDocument,
 } from '../src/modules/patients/schemas/patient.schema';
@@ -114,6 +118,7 @@ describe('patient administration 19-step flow APIs (e2e)', () => {
   let scaleInstanceModel: Model<ScaleInstanceDocument>;
   let itemResponseModel: Model<ItemResponseDocument>;
   let administrationSessionModel: Model<PatientAdministrationSessionDocument>;
+  let mediaEvidenceModel: Model<MediaEvidenceDocument>;
   let scaleDefinitionModel: Model<ScaleDefinitionDocument>;
   let scaleVersionModel: Model<ScaleVersionDocument>;
   let mmseDefinition: ScaleDefinitionDocument;
@@ -146,6 +151,9 @@ describe('patient administration 19-step flow APIs (e2e)', () => {
         .exec();
       const instanceIds = instances.map((instance) => instance._id);
       if (instanceIds.length > 0) {
+        await mediaEvidenceModel
+          .deleteMany({ scaleInstanceId: { $in: instanceIds } })
+          .exec();
         await administrationSessionModel
           .deleteMany({ scaleInstanceId: { $in: instanceIds } })
           .exec();
@@ -183,12 +191,17 @@ describe('patient administration 19-step flow APIs (e2e)', () => {
           })
         : Promise.resolve(0),
       instanceIds.length > 0
+        ? mediaEvidenceModel.countDocuments({
+            scaleInstanceId: { $in: instanceIds },
+          })
+        : Promise.resolve(0),
+      instanceIds.length > 0
         ? administrationSessionModel.countDocuments({
             scaleInstanceId: { $in: instanceIds },
           })
         : Promise.resolve(0),
     ]);
-    expect(counts).toEqual([0, 0, 0, 0, 0, 0, 0]);
+    expect(counts).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
   }
 
   beforeAll(async () => {
@@ -295,6 +308,7 @@ describe('patient administration 19-step flow APIs (e2e)', () => {
     administrationSessionModel = app.get(
       getModelToken(PatientAdministrationSession.name),
     );
+    mediaEvidenceModel = app.get(getModelToken(MediaEvidence.name));
     scaleDefinitionModel = app.get(getModelToken(ScaleDefinition.name));
     scaleVersionModel = app.get(getModelToken(ScaleVersion.name));
     modelsReady = true;
@@ -493,6 +507,57 @@ describe('patient administration 19-step flow APIs (e2e)', () => {
       }
     }
 
+    async function uploadCurrentEvidence(
+      step: Record<string, unknown>,
+    ): Promise<void> {
+      const responseMode = stringOf(step, 'responseMode');
+      if (responseMode === 'staff_observation') {
+        return;
+      }
+      const evidenceType =
+        responseMode === 'speech'
+          ? 'audio'
+          : responseMode === 'writing'
+            ? 'handwriting'
+            : 'photo';
+      const file =
+        evidenceType === 'audio'
+          ? {
+              buffer: Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0x01]),
+              filename: 'patient-private-name-must-not-leak.webm',
+              contentType: 'audio/webm;codecs=opus',
+            }
+          : {
+              buffer: Buffer.from([
+                0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00,
+              ]),
+              filename: 'patient-private-name-must-not-leak.png',
+              contentType: 'image/png',
+            };
+      let uploadRequest = patientAgent
+        .post('/patient-administration/current/evidence')
+        .field('expectedRevision', revision.toString())
+        .field('evidenceType', evidenceType);
+      if (evidenceType === 'audio') {
+        uploadRequest = uploadRequest.field('durationMs', '1200');
+      }
+      const response = await uploadRequest
+        .attach('file', file.buffer, {
+          filename: file.filename,
+          contentType: file.contentType,
+        })
+        .expect(201);
+      const body = bodyOf(response);
+      expect(Object.keys(body).sort()).toEqual([
+        'evidenceType',
+        'mediaEvidenceId',
+        'revision',
+        'uploadedAt',
+      ]);
+      expect(stringOf(body, 'evidenceType')).toBe(evidenceType);
+      revision = numberOf(body, 'revision');
+    }
+
     async function patientComplete(): Promise<Record<string, unknown>> {
       const response = await patientAgent
         .post('/patient-administration/current/complete')
@@ -518,6 +583,7 @@ describe('patient administration 19-step flow APIs (e2e)', () => {
     async function advanceNormally(order: number): Promise<void> {
       const step = await currentStep(order);
       await playCurrentAudioAssets(step);
+      await uploadCurrentEvidence(step);
       if (step.advanceBy === 'patient') {
         await patientComplete();
       } else if (step.advanceBy === 'staff') {
@@ -623,10 +689,12 @@ describe('patient administration 19-step flow APIs (e2e)', () => {
       )?.playCount,
     ).toBe(1);
     await playAudio('mmse-orientation-year-guidance');
+    await uploadCurrentEvidence(first);
     await patientComplete();
 
     const second = await currentStep(2);
     await playCurrentAudioAssets(second);
+    await uploadCurrentEvidence(second);
     const concurrentCompletion = await Promise.all([
       patientAgent
         .post('/patient-administration/current/complete')
@@ -766,6 +834,7 @@ describe('patient administration 19-step flow APIs (e2e)', () => {
       .post(`/patient-administration/current/audio/${stimulusKey}/play`)
       .send({ expectedRevision: revision })
       .expect(403);
+    await uploadCurrentEvidence(immediateRecall);
     await patientComplete();
 
     const step12 = await currentStep(12);
@@ -820,6 +889,7 @@ describe('patient administration 19-step flow APIs (e2e)', () => {
     if (!step12Fact) {
       await playAudio(step12AudioKey);
     }
+    await uploadCurrentEvidence(step12);
     await patientComplete();
     await advanceNormally(13);
 
@@ -829,10 +899,12 @@ describe('patient administration 19-step flow APIs (e2e)', () => {
       .post('/patient-administration/current/complete')
       .send({ expectedRevision: revision })
       .expect(409);
+    await uploadCurrentEvidence(staffStep14);
     await staffComplete('Named objects observed by staff');
 
     const firstRunStep15 = await currentStep(15);
     await playCurrentAudioAssets(firstRunStep15);
+    await uploadCurrentEvidence(firstRunStep15);
     await patientComplete();
     await currentStep(16);
     const pausedForRedo = await staff
@@ -881,6 +953,11 @@ describe('patient administration 19-step flow APIs (e2e)', () => {
     revision = numberOf(bodyOf(resumedForRedo), 'revision');
     const secondRunStep15 = await currentStep(15);
     await playCurrentAudioAssets(secondRunStep15);
+    await patientAgent
+      .post('/patient-administration/current/complete')
+      .send({ expectedRevision: revision })
+      .expect(409);
+    await uploadCurrentEvidence(secondRunStep15);
     await patientComplete();
     const afterSecondRun = await administrationSessionModel
       .findById(sessionId)
@@ -962,6 +1039,7 @@ describe('patient administration 19-step flow APIs (e2e)', () => {
         ?.revision,
     ).toBe(beforeImageRevision);
     await playAudio(finalAudioKey);
+    await uploadCurrentEvidence(finalStep);
     const finalResponse = await patientAgent
       .post('/patient-administration/current/complete')
       .send({ expectedRevision: revision })
@@ -1004,6 +1082,26 @@ describe('patient administration 19-step flow APIs (e2e)', () => {
     expect(
       storedFinal?.stepCaptures.filter((capture) => !capture.invalidatedAt),
     ).toHaveLength(19);
+    expect(storedFinal?.stepEvidenceRefs).toHaveLength(17);
+    const step15EvidenceRefs = storedFinal?.stepEvidenceRefs.filter(
+      (reference) => reference.stepKey === stringOf(firstRunStep15, 'stepKey'),
+    );
+    expect(
+      step15EvidenceRefs?.map((reference) => reference.stepRun).sort(),
+    ).toEqual([1, 2]);
+    const storedEvidence = await mediaEvidenceModel
+      .find({ scaleInstanceId: new Types.ObjectId(scaleInstanceId) })
+      .sort({ createdAt: 1 })
+      .lean()
+      .exec();
+    expect(storedEvidence).toHaveLength(17);
+    expect(
+      storedEvidence.every(
+        (evidence) =>
+          evidence.operatorSnapshot === null &&
+          evidence.storage?.originalFilename === undefined,
+      ),
+    ).toBe(true);
     expect(storedFinal?.controlEvents.map((event) => event.action)).toEqual(
       expect.arrayContaining([
         'paused',

@@ -7,6 +7,7 @@ import type {
 } from '../../scales/schemas/scale-version.schema';
 import type { AssessmentOperatorRole } from '../schemas/assessment-visit.schema';
 import type {
+  PatientAdministrationEvidenceType,
   PatientAdministrationImpactFactorCode,
   PatientAdministrationStatus,
 } from '../patient-administration.constants';
@@ -78,6 +79,32 @@ export type PatientAdministrationRequestContext = {
   sessionId: string;
   sessionTokenHash: string;
   revision: number;
+};
+
+export type PatientAdministrationEvidenceUploadContext = {
+  sessionId: string;
+  sessionTokenHash: string;
+  scaleInstanceId: string;
+  patientId: string;
+  assessmentVisitId: string;
+  subjectCode: string;
+  scaleDefinitionId: string;
+  scaleVersionId: string;
+  scaleCode: string;
+  scaleVersion: string;
+  instanceCode: string;
+  currentStepKey: string;
+  stepRun: number;
+  itemCode: string;
+  responseMode: PatientAdministrationResponseMode;
+  expectedRevision: number;
+};
+
+export type AttachPatientAdministrationEvidenceInput = {
+  uploadContext: PatientAdministrationEvidenceUploadContext;
+  mediaEvidenceId: string;
+  evidenceType: PatientAdministrationEvidenceType;
+  uploadedAt: Date;
 };
 
 export type PatientAdministrationOpenedAsset = {

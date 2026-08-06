@@ -22,6 +22,7 @@ export const MEDIA_CAPTURE_MODES = [
   'photo_upload',
   'tablet_handwriting',
   'paper_scan',
+  'browser_audio_recording',
   'system_generated',
   'imported',
   'other',
@@ -277,6 +278,50 @@ export const MediaOperatorSnapshotSchema = SchemaFactory.createForClass(
   MediaOperatorSnapshot,
 );
 
+@Schema({ _id: false })
+export class MediaPatientAdministrationContext {
+  @Prop({ type: SchemaTypes.ObjectId, required: true })
+  sessionId!: Types.ObjectId;
+
+  @Prop({ type: String, required: true, trim: true, minlength: 1 })
+  stepKey!: string;
+
+  @Prop({
+    type: Number,
+    required: true,
+    min: 1,
+    validate: {
+      validator: (value: number) => Number.isSafeInteger(value) && value > 0,
+      message: 'stepRun must be a positive safe integer',
+    },
+  })
+  stepRun!: number;
+}
+
+export const MediaPatientAdministrationContextSchema =
+  SchemaFactory.createForClass(MediaPatientAdministrationContext);
+
+@Schema({ _id: false })
+export class MediaAudioMetadata {
+  @Prop({
+    type: Number,
+    default: null,
+    min: 1,
+    max: 600000,
+    validate: {
+      validator: (value: number | null | undefined) =>
+        value === null ||
+        value === undefined ||
+        (Number.isSafeInteger(value) && value > 0 && value <= 600000),
+      message: 'durationMs must be a positive safe integer at most 600000',
+    },
+  })
+  durationMs?: number | null;
+}
+
+export const MediaAudioMetadataSchema =
+  SchemaFactory.createForClass(MediaAudioMetadata);
+
 @Schema({ timestamps: true, collection: 'media_evidences' })
 export class MediaEvidence {
   @Prop({ type: SchemaTypes.ObjectId, ref: Patient.name, required: true })
@@ -391,6 +436,12 @@ export class MediaEvidence {
 
   @Prop({ type: MediaOperatorSnapshotSchema, default: null })
   operatorSnapshot?: MediaOperatorSnapshot | null;
+
+  @Prop({ type: MediaPatientAdministrationContextSchema, default: null })
+  patientAdministrationContext?: MediaPatientAdministrationContext | null;
+
+  @Prop({ type: MediaAudioMetadataSchema, default: null })
+  audioMetadata?: MediaAudioMetadata | null;
 
   @Prop({
     type: String,

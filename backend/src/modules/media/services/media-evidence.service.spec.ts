@@ -4,12 +4,14 @@ import { Test } from '@nestjs/testing';
 import { Types } from 'mongoose';
 import {
   HandwritingTraceSnapshotSchema,
+  MediaAudioMetadataSchema,
   MediaCaptureContextSchema,
   MediaEvidence,
   MediaEvidenceSchema,
   MediaEvidenceVersionTraceSchema,
   MediaImageMetadataSchema,
   MediaOperatorSnapshotSchema,
+  MediaPatientAdministrationContextSchema,
   MediaStorageSnapshotSchema,
 } from '../schemas/media-evidence.schema';
 import {
@@ -101,6 +103,8 @@ function createEvidenceFixture(overrides: Record<string, unknown> = {}) {
       operatorName: 'Sample Operator',
       operatorRole: 'research_assistant',
     },
+    patientAdministrationContext: null,
+    audioMetadata: null,
     qualityStatus: 'acceptable',
     qualityHints: { requiresReview: false },
     operatorNote: 'De-identified operator note',
@@ -117,6 +121,7 @@ function createEvidenceFixture(overrides: Record<string, unknown> = {}) {
 describe('MediaEvidence schema', () => {
   it('defines collection and indexes', () => {
     expect(MediaEvidenceSchema.get('collection')).toBe('media_evidences');
+    expect(MediaEvidenceSchema.indexes()).toHaveLength(8);
     expect(MediaEvidenceSchema.indexes()).toEqual(
       expect.arrayContaining([
         [{ evidenceCode: 1 }, expect.objectContaining({ unique: true })],
@@ -153,6 +158,9 @@ describe('MediaEvidence schema', () => {
     );
     expect(MediaEvidenceSchema.path('evidenceType')?.instance).toBe('String');
     expect(MediaEvidenceSchema.path('captureMode')?.instance).toBe('String');
+    expect(MediaEvidenceSchema.path('captureMode')?.options.enum).toContain(
+      'browser_audio_recording',
+    );
     expect(MediaEvidenceSchema.path('status')?.instance).toBe('String');
     expect(MediaEvidenceSchema.path('storageStatus')?.instance).toBe('String');
     expect(MediaEvidenceSchema.path('responseType')?.instance).toBe('String');
@@ -211,6 +219,18 @@ describe('MediaEvidence schema', () => {
     expect(MediaOperatorSnapshotSchema.path('operatorRole')?.instance).toBe(
       'String',
     );
+    expect(
+      MediaPatientAdministrationContextSchema.path('sessionId')?.instance,
+    ).toBe('ObjectId');
+    expect(
+      MediaPatientAdministrationContextSchema.path('stepKey')?.instance,
+    ).toBe('String');
+    expect(
+      MediaPatientAdministrationContextSchema.path('stepRun')?.instance,
+    ).toBe('Number');
+    expect(MediaAudioMetadataSchema.path('durationMs')?.instance).toBe(
+      'Number',
+    );
   });
 
   it('keeps embedded schemas without nested _id fields', () => {
@@ -220,6 +240,8 @@ describe('MediaEvidence schema', () => {
     expect(HandwritingTraceSnapshotSchema.get('_id')).toBe(false);
     expect(MediaCaptureContextSchema.get('_id')).toBe(false);
     expect(MediaOperatorSnapshotSchema.get('_id')).toBe(false);
+    expect(MediaPatientAdministrationContextSchema.get('_id')).toBe(false);
+    expect(MediaAudioMetadataSchema.get('_id')).toBe(false);
   });
 });
 
@@ -334,6 +356,8 @@ describe('MediaEvidenceService', () => {
         operatorName: 'Sample Operator',
         operatorRole: 'doctor',
       },
+      patientAdministrationContext: null,
+      audioMetadata: null,
     });
     mediaEvidenceModel.findOne.mockReturnValue(createExecQuery(rawEvidence));
 
@@ -416,6 +440,8 @@ describe('MediaEvidenceService', () => {
         operatorName: 'Sample Operator',
         operatorRole: 'doctor',
       },
+      patientAdministrationContext: null,
+      audioMetadata: null,
       qualityStatus: 'acceptable',
       qualityHints: { requiresReview: false },
       operatorNote: 'De-identified operator note',
@@ -432,6 +458,40 @@ describe('MediaEvidenceService', () => {
     expect(mediaEvidenceModel.findOne).toHaveBeenCalledWith({
       evidenceCode: 'EVD-TEST-002',
     });
+  });
+
+  it('maps patient administration audio context with nullable staff image fields', async () => {
+    const sessionId = new Types.ObjectId();
+    const rawEvidence = createEvidenceFixture({
+      evidenceType: 'audio',
+      captureMode: 'browser_audio_recording',
+      imageMetadata: null,
+      operatorSnapshot: null,
+      patientAdministrationContext: {
+        sessionId,
+        stepKey: 'speech-one',
+        stepRun: 2,
+      },
+      audioMetadata: { durationMs: 3210 },
+    });
+    mediaEvidenceModel.findOne.mockReturnValue(createExecQuery(rawEvidence));
+
+    const result = await service.findEvidenceByCode('EVD-TEST-001');
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        evidenceType: 'audio',
+        captureMode: 'browser_audio_recording',
+        imageMetadata: null,
+        operatorSnapshot: null,
+        patientAdministrationContext: {
+          sessionId: sessionId.toString(),
+          stepKey: 'speech-one',
+          stepRun: 2,
+        },
+        audioMetadata: { durationMs: 3210 },
+      }),
+    );
   });
 
   it('lists evidence by item response id ordered by createdAt ascending', async () => {

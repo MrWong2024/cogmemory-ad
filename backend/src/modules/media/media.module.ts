@@ -6,6 +6,7 @@ import { AuthModule } from '../auth/auth.module';
 import { PatientsModule } from '../patients/patients.module';
 import { StorageModule } from '../storage/storage.module';
 import { MediaEvidenceController } from './controllers/media-evidence.controller';
+import { PatientAdministrationEvidenceController } from './controllers/patient-administration-evidence.controller';
 import { MediaUploadExceptionInterceptor } from './lib/media-upload-exception.interceptor';
 import {
   MediaEvidence,
@@ -13,6 +14,7 @@ import {
 } from './schemas/media-evidence.schema';
 import { MediaEvidenceService } from './services/media-evidence.service';
 import { MediaEvidenceWorkflowService } from './services/media-evidence-workflow.service';
+import { PatientAdministrationEvidenceService } from './services/patient-administration-evidence.service';
 
 @Module({
   imports: [
@@ -24,10 +26,14 @@ import { MediaEvidenceWorkflowService } from './services/media-evidence-workflow
       { name: MediaEvidence.name, schema: MediaEvidenceSchema },
     ]),
   ],
-  controllers: [MediaEvidenceController],
+  controllers: [
+    MediaEvidenceController,
+    PatientAdministrationEvidenceController,
+  ],
   providers: [
     MediaEvidenceService,
     MediaEvidenceWorkflowService,
+    PatientAdministrationEvidenceService,
     MediaUploadExceptionInterceptor,
   ],
   exports: [MediaEvidenceService],

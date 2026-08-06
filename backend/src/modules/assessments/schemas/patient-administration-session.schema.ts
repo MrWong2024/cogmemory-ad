@@ -3,6 +3,7 @@ import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
 import {
   PATIENT_ADMINISTRATION_CAPTURED_BY_VALUES,
   PATIENT_ADMINISTRATION_CONTROL_EVENT_ACTIONS,
+  PATIENT_ADMINISTRATION_EVIDENCE_TYPES,
   PATIENT_ADMINISTRATION_IMPACT_FACTOR_CODES,
   PATIENT_ADMINISTRATION_OPEN_STATUSES,
   PATIENT_ADMINISTRATION_STATUSES,
@@ -10,6 +11,7 @@ import {
 import type {
   PatientAdministrationCapturedBy,
   PatientAdministrationControlEventAction,
+  PatientAdministrationEvidenceType,
   PatientAdministrationImpactFactorCode,
   PatientAdministrationStatus,
 } from '../patient-administration.constants';
@@ -160,6 +162,36 @@ export class PatientAdministrationPlaybackFact {
 export const PatientAdministrationPlaybackFactSchema =
   SchemaFactory.createForClass(PatientAdministrationPlaybackFact);
 
+@Schema({ _id: false })
+export class PatientAdministrationStepEvidenceRef {
+  @Prop({ type: String, required: true, trim: true, minlength: 1 })
+  stepKey!: string;
+
+  @Prop({
+    type: Number,
+    required: true,
+    min: 1,
+    validate: positiveSafeIntegerValidator,
+  })
+  stepRun!: number;
+
+  @Prop({
+    type: String,
+    enum: PATIENT_ADMINISTRATION_EVIDENCE_TYPES,
+    required: true,
+  })
+  evidenceType!: PatientAdministrationEvidenceType;
+
+  @Prop({ type: SchemaTypes.ObjectId, required: true })
+  mediaEvidenceId!: Types.ObjectId;
+
+  @Prop({ type: Date, required: true })
+  uploadedAt!: Date;
+}
+
+export const PatientAdministrationStepEvidenceRefSchema =
+  SchemaFactory.createForClass(PatientAdministrationStepEvidenceRef);
+
 @Schema({
   timestamps: true,
   collection: 'patient_administration_sessions',
@@ -242,6 +274,9 @@ export class PatientAdministrationSession {
 
   @Prop({ type: [PatientAdministrationPlaybackFactSchema], default: [] })
   playbackFacts!: PatientAdministrationPlaybackFact[];
+
+  @Prop({ type: [PatientAdministrationStepEvidenceRefSchema], default: [] })
+  stepEvidenceRefs!: PatientAdministrationStepEvidenceRef[];
 }
 
 export type PatientAdministrationSessionDocument =

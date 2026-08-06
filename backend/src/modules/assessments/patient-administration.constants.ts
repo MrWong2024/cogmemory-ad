@@ -53,6 +53,12 @@ export const PATIENT_ADMINISTRATION_CAPTURED_BY_VALUES = [
   'staff',
 ] as const;
 
+export const PATIENT_ADMINISTRATION_EVIDENCE_TYPES = [
+  'audio',
+  'photo',
+  'handwriting',
+] as const;
+
 export type PatientAdministrationStatus =
   (typeof PATIENT_ADMINISTRATION_STATUSES)[number];
 export type PatientAdministrationOpenStatus =
@@ -63,3 +69,5 @@ export type PatientAdministrationControlEventAction =
   (typeof PATIENT_ADMINISTRATION_CONTROL_EVENT_ACTIONS)[number];
 export type PatientAdministrationCapturedBy =
   (typeof PATIENT_ADMINISTRATION_CAPTURED_BY_VALUES)[number];
+export type PatientAdministrationEvidenceType =
+  (typeof PATIENT_ADMINISTRATION_EVIDENCE_TYPES)[number];

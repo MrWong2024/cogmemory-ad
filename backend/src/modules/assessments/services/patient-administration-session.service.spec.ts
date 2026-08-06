@@ -134,6 +134,8 @@ describe('PatientAdministrationSessionService', () => {
       scaleVersionId,
       scaleCode: 'mmse',
       scaleVersion: '1.0',
+      subjectCode: 'SUBJECT-UNIT-001',
+      instanceCode: 'MMSE-UNIT-001',
       status: 'draft',
       lockedAt: null,
       voidedAt: null,
@@ -231,9 +233,28 @@ describe('PatientAdministrationSessionService', () => {
       controlEvents: [] as Array<Record<string, unknown>>,
       stepCaptures: [] as Array<Record<string, unknown>>,
       playbackFacts: [] as Array<Record<string, unknown>>,
+      stepEvidenceRefs: [
+        stepEvidenceRef('first', 1, 'audio', '507f1f77bcf86cd799439018'),
+        stepEvidenceRef('second', 1, 'audio', '507f1f77bcf86cd799439019'),
+      ] as Array<Record<string, unknown>>,
       createdAt: now,
       updatedAt: now,
       ...overrides,
+    };
+  }
+
+  function stepEvidenceRef(
+    stepKey: string,
+    stepRun: number,
+    evidenceType: 'audio' | 'photo' | 'handwriting',
+    mediaEvidenceId = '507f1f77bcf86cd799439018',
+  ) {
+    return {
+      stepKey,
+      stepRun,
+      evidenceType,
+      mediaEvidenceId: new Types.ObjectId(mediaEvidenceId),
+      uploadedAt: new Date(),
     };
   }
 
@@ -387,7 +408,11 @@ describe('PatientAdministrationSessionService', () => {
       PatientAdministrationSessionSchema.path('sessionTokenHash').options
         .select,
     ).toBe(false);
-    for (const embeddedPath of ['stepCaptures', 'playbackFacts']) {
+    for (const embeddedPath of [
+      'stepCaptures',
+      'playbackFacts',
+      'stepEvidenceRefs',
+    ]) {
       const path = PatientAdministrationSessionSchema.path(embeddedPath);
       expect(path).toBeDefined();
       expect(path.options.default).toEqual([]);
@@ -397,6 +422,8 @@ describe('PatientAdministrationSessionService', () => {
       PatientAdministrationSessionSchema.path('stepCaptures').schema;
     const playbackSchema =
       PatientAdministrationSessionSchema.path('playbackFacts').schema;
+    const evidenceSchema =
+      PatientAdministrationSessionSchema.path('stepEvidenceRefs').schema;
     expect(captureSchema?.path('capturedBy').options.enum).toEqual([
       'patient',
       'staff',
@@ -404,12 +431,210 @@ describe('PatientAdministrationSessionService', () => {
     expect(
       playbackSchema?.path('technicalReplayAuthorizations').schema?.options._id,
     ).toBe(false);
+    expect(evidenceSchema?.path('stepRun').instance).toBe('Number');
+    expect(evidenceSchema?.path('evidenceType').options.enum).toEqual([
+      'audio',
+      'photo',
+      'handwriting',
+    ]);
+    expect(evidenceSchema?.path('mediaEvidenceId').instance).toBe('ObjectId');
     for (const forbidden of ['asr', 'oss']) {
       expect(
         PatientAdministrationSessionSchema.path(forbidden),
       ).toBeUndefined();
     }
   });
+
+  it('prepares an authoritative current-run upload context without writing', async () => {
+    const version = scaleVersion([{}, { advanceBy: 'patient' }]);
+    const active = sessionDocument({
+      status: 'active',
+      revision: 3,
+      sessionTokenHash: 'hash:raw-patient-token',
+      stepEvidenceRefs: [],
+    });
+    arrangePatientBusiness(active, version);
+
+    const context = await service.prepareCurrentEvidenceUpload(
+      patientContext(3),
+      3,
+      'audio',
+    );
+
+    expect(context).toEqual({
+      sessionId: '507f1f77bcf86cd799439017',
+      sessionTokenHash: 'hash:raw-patient-token',
+      scaleInstanceId,
+      patientId,
+      assessmentVisitId: visitId,
+      subjectCode: 'SUBJECT-UNIT-001',
+      scaleDefinitionId,
+      scaleVersionId,
+      scaleCode: 'mmse',
+      scaleVersion: '1.0',
+      instanceCode: 'MMSE-UNIT-001',
+      currentStepKey: 'first',
+      stepRun: 1,
+      itemCode: 'item-1',
+      responseMode: 'speech',
+      expectedRevision: 3,
+    });
+    expect(sessionModel.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('rejects response-mode mismatches, observations, and duplicate current-run evidence', async () => {
+    const speech = scaleVersion([{}, { advanceBy: 'patient' }]);
+    const active = sessionDocument({
+      status: 'active',
+      revision: 3,
+      sessionTokenHash: 'hash:raw-patient-token',
+      stepEvidenceRefs: [],
+    });
+    arrangePatientBusiness(active, speech);
+    await expectHttpException(
+      service.prepareCurrentEvidenceUpload(patientContext(3), 3, 'photo'),
+      403,
+      'PATIENT_ADMINISTRATION_EVIDENCE_NOT_ALLOWED',
+    );
+
+    const observation = scaleVersion([
+      {},
+      { responseMode: 'staff_observation', assetKeys: [] },
+    ]);
+    arrangePatientBusiness(active, observation);
+    await expectHttpException(
+      service.prepareCurrentEvidenceUpload(patientContext(3), 3, 'audio'),
+      403,
+      'PATIENT_ADMINISTRATION_EVIDENCE_NOT_ALLOWED',
+    );
+
+    arrangePatientBusiness(
+      sessionDocument({
+        status: 'active',
+        revision: 3,
+        sessionTokenHash: 'hash:raw-patient-token',
+      }),
+      speech,
+    );
+    await expectHttpException(
+      service.prepareCurrentEvidenceUpload(patientContext(3), 3, 'audio'),
+      409,
+      'PATIENT_ADMINISTRATION_SESSION_CONFLICT',
+    );
+  });
+
+  it('attaches one current-run evidence reference with revision CAS', async () => {
+    const updated = sessionDocument({
+      status: 'active',
+      revision: 4,
+      sessionTokenHash: 'hash:raw-patient-token',
+    });
+    sessionModel.findOneAndUpdate.mockReturnValue(createQuery(updated));
+    const uploadedAt = new Date();
+
+    const revision = await service.attachCurrentStepEvidence({
+      uploadContext: {
+        sessionId: '507f1f77bcf86cd799439017',
+        sessionTokenHash: 'hash:raw-patient-token',
+        scaleInstanceId,
+        patientId,
+        assessmentVisitId: visitId,
+        subjectCode: 'SUBJECT-UNIT-001',
+        scaleDefinitionId,
+        scaleVersionId,
+        scaleCode: 'mmse',
+        scaleVersion: '1.0',
+        instanceCode: 'MMSE-UNIT-001',
+        currentStepKey: 'first',
+        stepRun: 1,
+        itemCode: 'item-1',
+        responseMode: 'speech',
+        expectedRevision: 3,
+      },
+      mediaEvidenceId: '507f1f77bcf86cd799439020',
+      evidenceType: 'audio',
+      uploadedAt,
+    });
+
+    expect(revision).toBe(4);
+    const filter = requireRecord(
+      readMockCallArgument(sessionModel.findOneAndUpdate, 0),
+      'evidence attach filter',
+    );
+    expect(filter).toEqual(
+      expect.objectContaining({
+        status: 'active',
+        currentStepKey: 'first',
+        revision: 3,
+        sessionTokenHash: 'hash:raw-patient-token',
+      }),
+    );
+    expect(filter.stepEvidenceRefs).toEqual({
+      $not: {
+        $elemMatch: {
+          stepKey: 'first',
+          stepRun: 1,
+          evidenceType: { $in: ['audio'] },
+        },
+      },
+    });
+    const update = requireRecord(
+      readMockCallArgument(sessionModel.findOneAndUpdate, 1),
+      'evidence attach update',
+    );
+    expect(update.$inc).toEqual({ revision: 1 });
+    expect(update.$push).toEqual({
+      stepEvidenceRefs: {
+        stepKey: 'first',
+        stepRun: 1,
+        evidenceType: 'audio',
+        mediaEvidenceId: new Types.ObjectId('507f1f77bcf86cd799439020'),
+        uploadedAt,
+      },
+    });
+  });
+
+  it.each([
+    ['writing', 'photo'],
+    ['drawing', 'handwriting'],
+  ] as const)(
+    'requires a current-run image evidence before completing %s',
+    async (responseMode, evidenceType) => {
+      const version = scaleVersion([
+        {},
+        { advanceBy: 'patient', responseMode, assetKeys: [] },
+      ]);
+      const withoutEvidence = sessionDocument({
+        status: 'active',
+        revision: 3,
+        sessionTokenHash: 'hash:raw-patient-token',
+        playbackFacts: [],
+        stepEvidenceRefs: [],
+      });
+      arrangePatientBusiness(withoutEvidence, version);
+      await expectHttpException(
+        service.completePatientStep(patientContext(3), 3),
+        409,
+        'PATIENT_ADMINISTRATION_STEP_INVALID',
+      );
+
+      const withEvidence = sessionDocument({
+        ...withoutEvidence,
+        stepEvidenceRefs: [stepEvidenceRef('first', 1, evidenceType)],
+      });
+      const advanced = sessionDocument({
+        status: 'active',
+        currentStepKey: 'second',
+        revision: 4,
+      });
+      arrangePatientBusiness(withEvidence, version);
+      sessionModel.findOneAndUpdate.mockReturnValue(createQuery(advanced));
+
+      await expect(
+        service.completePatientStep(patientContext(3), 3),
+      ).resolves.toEqual(expect.objectContaining({ revision: 4 }));
+    },
+  );
 
   it('creates prepared state from the minimum ordered step and persists only the code hash', async () => {
     arrangeEditableBusiness();
@@ -665,6 +890,52 @@ describe('PatientAdministrationSessionService', () => {
       'PATIENT_ADMINISTRATION_STEP_INVALID',
     );
     expect(sessionModel.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('requires current-run audio for speech but no media for staff observation', async () => {
+    const patientSpeech = scaleVersion([{}, { advanceBy: 'patient' }]);
+    const speechWithoutEvidence = sessionDocument({
+      status: 'active',
+      revision: 3,
+      sessionTokenHash: 'hash:raw-patient-token',
+      playbackFacts: [playbackFact('first', 'asset-1')],
+      stepEvidenceRefs: [],
+    });
+    arrangePatientBusiness(speechWithoutEvidence, patientSpeech);
+    await expectHttpException(
+      service.completePatientStep(patientContext(3), 3),
+      409,
+      'PATIENT_ADMINISTRATION_STEP_INVALID',
+    );
+
+    const observationVersion = scaleVersion([
+      {},
+      { responseMode: 'staff_observation', assetKeys: [] },
+    ]);
+    const observation = sessionDocument({
+      status: 'active',
+      revision: 3,
+      stepEvidenceRefs: [],
+    });
+    const advanced = sessionDocument({
+      status: 'active',
+      currentStepKey: 'second',
+      revision: 4,
+    });
+    arrangeEditableBusiness(observationVersion);
+    sessionModel.findOne.mockReturnValue(createQuery(observation));
+    sessionModel.findOneAndUpdate.mockReturnValue(createQuery(advanced));
+
+    await expect(
+      service.completeStaffStep(
+        patientId,
+        visitId,
+        scaleInstanceId,
+        3,
+        'Observed by staff',
+        operator,
+      ),
+    ).resolves.toEqual(expect.objectContaining({ revision: 4 }));
   });
 
   it('captures a patient step with revision/token CAS and advances in configured order', async () => {
@@ -937,6 +1208,20 @@ describe('PatientAdministrationSessionService', () => {
     });
     arrangePatientBusiness(resumed, patientVersion);
     sessionModel.findOneAndUpdate.mockReturnValue(createQuery(advanced));
+    await expectHttpException(
+      service.completePatientStep(patientContext(7), 7),
+      409,
+      'PATIENT_ADMINISTRATION_STEP_INVALID',
+    );
+    sessionModel.findOne.mockReturnValue(
+      createQuery({
+        ...resumed,
+        stepEvidenceRefs: [
+          stepEvidenceRef('first', 1, 'audio'),
+          stepEvidenceRef('first', 2, 'audio', '507f1f77bcf86cd799439020'),
+        ],
+      }),
+    );
     await service.completePatientStep(patientContext(7), 7);
     const rerunUpdate = requireRecord(
       readMockCallArgument(sessionModel.findOneAndUpdate, 1, 1),
