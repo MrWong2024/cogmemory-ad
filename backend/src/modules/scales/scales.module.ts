@@ -13,6 +13,7 @@ import {
 } from './schemas/scale-version.schema';
 import { ScaleSeedDataService } from './seeds/scale-seed-data.service';
 import { ScaleCatalogService } from './services/scale-catalog.service';
+import { PresentationAssetsService } from './services/presentation-assets.service';
 import { ScalesService } from './services/scales.service';
 
 @Module({
@@ -24,7 +25,17 @@ import { ScalesService } from './services/scales.service';
     ]),
   ],
   controllers: [ScalesController],
-  providers: [ScalesService, ScaleSeedDataService, ScaleCatalogService],
-  exports: [ScalesService, ScaleSeedDataService, ScaleCatalogService],
+  providers: [
+    ScalesService,
+    ScaleSeedDataService,
+    ScaleCatalogService,
+    PresentationAssetsService,
+  ],
+  exports: [
+    ScalesService,
+    ScaleSeedDataService,
+    ScaleCatalogService,
+    PresentationAssetsService,
+  ],
 })
 export class ScalesModule {}

@@ -29,6 +29,57 @@ export type ScaleEvidenceType = (typeof SCALE_EVIDENCE_TYPES)[number];
 
 export type ScaleRuleConfig = Record<string, unknown> | null;
 
+export const PATIENT_ADMINISTRATION_RESPONSE_MODES = [
+  'speech',
+  'writing',
+  'drawing',
+  'staff_observation',
+] as const;
+export type PatientAdministrationResponseMode =
+  (typeof PATIENT_ADMINISTRATION_RESPONSE_MODES)[number];
+
+export const PATIENT_ADMINISTRATION_ADVANCE_BY_VALUES = [
+  'patient',
+  'staff',
+] as const;
+export type PatientAdministrationAdvanceBy =
+  (typeof PATIENT_ADMINISTRATION_ADVANCE_BY_VALUES)[number];
+
+@Schema({ _id: false })
+export class PatientAdministrationStepConfig {
+  @Prop({ type: String, required: true, trim: true })
+  stepKey!: string;
+
+  @Prop({ type: Number, required: true })
+  order!: number;
+
+  @Prop({ type: String, required: true, trim: true })
+  itemCode!: string;
+
+  @Prop({ type: String, trim: true })
+  patientText?: string;
+
+  @Prop({ type: [{ type: String, trim: true }], default: [] })
+  assetKeys!: string[];
+
+  @Prop({
+    type: String,
+    enum: PATIENT_ADMINISTRATION_RESPONSE_MODES,
+    required: true,
+  })
+  responseMode!: PatientAdministrationResponseMode;
+
+  @Prop({
+    type: String,
+    enum: PATIENT_ADMINISTRATION_ADVANCE_BY_VALUES,
+    required: true,
+  })
+  advanceBy!: PatientAdministrationAdvanceBy;
+}
+
+export const PatientAdministrationStepConfigSchema =
+  SchemaFactory.createForClass(PatientAdministrationStepConfig);
+
 @Schema({ _id: false })
 export class ScaleScoreRangeConfig {
   @Prop({ type: Number, required: true })
@@ -167,6 +218,15 @@ export class ScaleVersion {
 
   @Prop({ type: String, trim: true })
   sourceDocument?: string;
+
+  @Prop({ type: String, trim: true })
+  presentationPackageKey?: string;
+
+  @Prop({
+    type: [PatientAdministrationStepConfigSchema],
+    default: undefined,
+  })
+  patientAdministrationSteps?: PatientAdministrationStepConfig[];
 
   @Prop({
     type: String,

@@ -1,5 +1,9 @@
 // backend/src/modules/scales/seeds/scale-seed-data.service.ts
 import { Injectable } from '@nestjs/common';
+import {
+  PATIENT_ADMINISTRATION_ADVANCE_BY_VALUES,
+  PATIENT_ADMINISTRATION_RESPONSE_MODES,
+} from '../schemas/scale-version.schema';
 import { MMSE_SCALE_SEED } from './mmse.seed';
 import { MOCA_SCALE_SEED } from './moca.seed';
 import type {
@@ -146,6 +150,7 @@ export function validateScaleSeeds(
 
     const groupCodes = collectGroupCodes(seed, issues, issueScaleCode);
     validateItems(seed, groupCodes, itemCodes, issues, issueScaleCode);
+    validatePatientAdministration(seed, issues, issueScaleCode);
   });
 
   const errors = issues
@@ -253,6 +258,275 @@ function validateItems(
     validateEvidenceConsistency(item, issues, scaleCode);
     validateMultiStepCalculation(item, issues, scaleCode);
     validateKnownCorrections(item, issues, scaleCode);
+  });
+}
+
+function validatePatientAdministration(
+  seed: ScaleSeedData,
+  issues: ScaleSeedValidationIssue[],
+  scaleCode: string,
+) {
+  const packageKey: unknown = seed.version.presentationPackageKey;
+  const steps: unknown = seed.version.patientAdministrationSteps;
+  const hasPackageKey = packageKey !== undefined;
+  const hasSteps = steps !== undefined;
+
+  if (hasPackageKey !== hasSteps) {
+    addIssue(issues, 'error', 'patient_administration_config_incomplete', {
+      message: `scale ${scaleCode} must define presentationPackageKey and patientAdministrationSteps together`,
+      scaleCode,
+    });
+    return;
+  }
+
+  if (!hasPackageKey && !hasSteps) {
+    return;
+  }
+
+  if (typeof packageKey !== 'string' || !packageKey.trim()) {
+    addIssue(issues, 'error', 'presentation_package_key_empty', {
+      message: `scale ${scaleCode} presentationPackageKey must not be empty`,
+      scaleCode,
+    });
+  }
+
+  if (!Array.isArray(steps)) {
+    addIssue(issues, 'error', 'patient_administration_steps_not_array', {
+      message: `scale ${scaleCode} patientAdministrationSteps must be an array`,
+      scaleCode,
+    });
+    return;
+  }
+
+  const administrationSteps: unknown[] = steps;
+
+  const itemCodes = new Set(seed.version.items.map((item) => item.code));
+  const stepKeys = new Set<string>();
+  const orders = new Set<number>();
+  const explicitScoringAnswers = collectExplicitScoringAnswers(
+    seed.version.items,
+  );
+
+  administrationSteps.forEach((step, index) => {
+    if (!isRecord(step)) {
+      addIssue(issues, 'error', 'patient_administration_step_invalid', {
+        message: `scale ${scaleCode} patient administration step ${index + 1} must be an object`,
+        scaleCode,
+      });
+      return;
+    }
+
+    const rawStepKey = step.stepKey;
+    const stepKey = typeof rawStepKey === 'string' ? rawStepKey.trim() : '';
+    const itemCode = step.itemCode;
+    const order = step.order;
+    const assetKeys = step.assetKeys;
+    const patientText = step.patientText;
+
+    if (!stepKey) {
+      addIssue(issues, 'error', 'patient_administration_step_key_empty', {
+        message: `scale ${scaleCode} patient administration stepKey must not be empty`,
+        scaleCode,
+      });
+    } else if (stepKeys.has(stepKey)) {
+      addIssue(issues, 'error', 'patient_administration_step_key_duplicate', {
+        message: `duplicate patient administration stepKey in scale ${scaleCode}: ${stepKey}`,
+        scaleCode,
+      });
+    } else {
+      stepKeys.add(stepKey);
+    }
+
+    if (!Number.isInteger(order) || (order as number) <= 0) {
+      addIssue(issues, 'error', 'patient_administration_order_invalid', {
+        message: `patient administration step ${stepKey || index + 1} order must be a positive integer`,
+        scaleCode,
+      });
+    } else if (orders.has(order as number)) {
+      addIssue(issues, 'error', 'patient_administration_order_duplicate', {
+        message: `duplicate patient administration order in scale ${scaleCode}: ${String(order)}`,
+        scaleCode,
+      });
+    } else {
+      orders.add(order as number);
+    }
+
+    if (typeof itemCode !== 'string' || !itemCodes.has(itemCode)) {
+      addIssue(issues, 'error', 'patient_administration_item_missing', {
+        message: `patient administration step ${stepKey || index + 1} references missing itemCode: ${String(itemCode)}`,
+        scaleCode,
+        itemCode: typeof itemCode === 'string' ? itemCode : undefined,
+      });
+    }
+
+    if (
+      typeof step.responseMode !== 'string' ||
+      !PATIENT_ADMINISTRATION_RESPONSE_MODES.includes(
+        step.responseMode as (typeof PATIENT_ADMINISTRATION_RESPONSE_MODES)[number],
+      )
+    ) {
+      addIssue(
+        issues,
+        'error',
+        'patient_administration_response_mode_invalid',
+        {
+          message: `patient administration step ${stepKey || index + 1} has invalid responseMode`,
+          scaleCode,
+        },
+      );
+    }
+
+    if (
+      typeof step.advanceBy !== 'string' ||
+      !PATIENT_ADMINISTRATION_ADVANCE_BY_VALUES.includes(
+        step.advanceBy as (typeof PATIENT_ADMINISTRATION_ADVANCE_BY_VALUES)[number],
+      )
+    ) {
+      addIssue(issues, 'error', 'patient_administration_advance_by_invalid', {
+        message: `patient administration step ${stepKey || index + 1} has invalid advanceBy`,
+        scaleCode,
+      });
+    }
+
+    if (
+      !Array.isArray(assetKeys) ||
+      !assetKeys.every((assetKey) => typeof assetKey === 'string')
+    ) {
+      addIssue(issues, 'error', 'patient_administration_asset_keys_invalid', {
+        message: `patient administration step ${stepKey || index + 1} assetKeys must be a string array`,
+        scaleCode,
+      });
+    } else if (new Set(assetKeys).size !== assetKeys.length) {
+      addIssue(issues, 'error', 'patient_administration_asset_key_duplicate', {
+        message: `patient administration step ${stepKey || index + 1} must not repeat assetKeys`,
+        scaleCode,
+      });
+    }
+
+    if (
+      patientText !== undefined &&
+      (typeof patientText !== 'string' || !patientText.trim())
+    ) {
+      addIssue(issues, 'error', 'patient_administration_patient_text_empty', {
+        message: `patient administration step ${stepKey || index + 1} patientText must not be empty`,
+        scaleCode,
+      });
+    }
+
+    if (typeof patientText === 'string') {
+      const leakedAnswer = explicitScoringAnswers.find((answer) =>
+        patientText.includes(answer),
+      );
+
+      if (leakedAnswer) {
+        addIssue(
+          issues,
+          'error',
+          'patient_administration_scoring_answer_leak',
+          {
+            message: `patient administration step ${stepKey || index + 1} patientText must not contain an explicit scoring answer`,
+            scaleCode,
+            itemCode: typeof itemCode === 'string' ? itemCode : undefined,
+          },
+        );
+      }
+    }
+  });
+
+  const orderedValues = [...orders].sort((left, right) => left - right);
+  if (
+    orderedValues.length !== administrationSteps.length ||
+    orderedValues.some((order, index) => order !== index + 1)
+  ) {
+    addIssue(issues, 'error', 'patient_administration_order_not_contiguous', {
+      message: `scale ${scaleCode} patient administration order must be contiguous from 1`,
+      scaleCode,
+    });
+  }
+
+  if (normalizeSeedCode(seed.version.scaleCode) === 'mmse') {
+    validateMmseReadingStep(administrationSteps, issues, scaleCode);
+  }
+}
+
+function validateMmseReadingStep(
+  steps: unknown[],
+  issues: ScaleSeedValidationIssue[],
+  scaleCode: string,
+) {
+  const readingStep = steps.find(
+    (step): step is Record<string, unknown> =>
+      isRecord(step) && step.stepKey === 'mmse-reading-command',
+  );
+
+  if (!readingStep) {
+    addIssue(issues, 'error', 'mmse_reading_step_missing', {
+      message: 'MMSE patient administration must include the reading step',
+      scaleCode,
+    });
+    return;
+  }
+
+  if (readingStep.patientText !== '请闭上您的眼睛') {
+    addIssue(issues, 'error', 'mmse_reading_patient_text_invalid', {
+      message: 'MMSE reading step patientText must be 请闭上您的眼睛',
+      scaleCode,
+      itemCode: 'mmse.language.reading_command',
+    });
+  }
+
+  if (!Array.isArray(readingStep.assetKeys) || readingStep.assetKeys.length) {
+    addIssue(issues, 'error', 'mmse_reading_asset_keys_invalid', {
+      message: 'MMSE reading step must not reference audio or image assets',
+      scaleCode,
+      itemCode: 'mmse.language.reading_command',
+    });
+  }
+
+  if (readingStep.responseMode !== 'staff_observation') {
+    addIssue(issues, 'error', 'mmse_reading_response_mode_invalid', {
+      message: 'MMSE reading step responseMode must be staff_observation',
+      scaleCode,
+      itemCode: 'mmse.language.reading_command',
+    });
+  }
+}
+
+function collectExplicitScoringAnswers(items: ScaleSeedItem[]): string[] {
+  const answers = new Set<string>();
+
+  items.forEach((item) => {
+    collectRuleAnswers(item.scoringRule, undefined, answers);
+  });
+
+  return [...answers];
+}
+
+function collectRuleAnswers(
+  value: unknown,
+  propertyName: string | undefined,
+  answers: Set<string>,
+) {
+  if (Array.isArray(value)) {
+    value.forEach((entry) => collectRuleAnswers(entry, propertyName, answers));
+    return;
+  }
+
+  if (!isRecord(value)) {
+    if (
+      ['expected', 'text', 'word', 'words'].includes(propertyName ?? '') &&
+      (typeof value === 'string' || typeof value === 'number')
+    ) {
+      const answer = String(value).trim();
+      if (answer) {
+        answers.add(answer);
+      }
+    }
+    return;
+  }
+
+  Object.entries(value).forEach(([key, entry]) => {
+    collectRuleAnswers(entry, key, answers);
   });
 }
 
@@ -482,6 +756,10 @@ function addIssue(
     scaleCode: issue.scaleCode,
     itemCode: issue.itemCode,
   });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function cloneSeedArray(seeds: ScaleSeedData[]): ScaleSeedData[] {

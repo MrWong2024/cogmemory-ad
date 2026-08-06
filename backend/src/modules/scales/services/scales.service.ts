@@ -9,6 +9,9 @@ import {
   ScaleStatus,
 } from '../schemas/scale-definition.schema';
 import {
+  PatientAdministrationAdvanceBy,
+  PatientAdministrationResponseMode,
+  PatientAdministrationStepConfig,
   ScaleEvidenceType,
   ScaleGroupConfig,
   ScaleItemConfig,
@@ -70,6 +73,16 @@ export type ScaleItemConfigSummary = {
   researchExportField?: string;
 };
 
+export type PatientAdministrationStepConfigSummary = {
+  stepKey: string;
+  order: number;
+  itemCode: string;
+  patientText?: string;
+  assetKeys: string[];
+  responseMode: PatientAdministrationResponseMode;
+  advanceBy: PatientAdministrationAdvanceBy;
+};
+
 export type ScaleVersionSummary = {
   id: string;
   scaleDefinitionId: string;
@@ -80,6 +93,8 @@ export type ScaleVersionSummary = {
   scoringRuleVersion?: string;
   fieldEncodingVersion?: string;
   sourceDocument?: string;
+  presentationPackageKey?: string;
+  patientAdministrationSteps?: PatientAdministrationStepConfigSummary[];
   status: ScaleStatus;
   totalScoreRange: ScaleScoreRangeSummary;
   groups: ScaleGroupConfigSummary[];
@@ -183,6 +198,10 @@ export class ScalesService {
       scoringRuleVersion: scaleVersion.scoringRuleVersion,
       fieldEncodingVersion: scaleVersion.fieldEncodingVersion,
       sourceDocument: scaleVersion.sourceDocument,
+      presentationPackageKey: scaleVersion.presentationPackageKey,
+      patientAdministrationSteps: scaleVersion.patientAdministrationSteps?.map(
+        (step) => this.mapPatientAdministrationStep(step),
+      ),
       status: scaleVersion.status,
       totalScoreRange: this.mapScoreRange(scaleVersion.totalScoreRange),
       groups: (scaleVersion.groups ?? []).map((group) =>
@@ -204,6 +223,20 @@ export class ScalesService {
       min: scoreRange.min,
       max: scoreRange.max,
       step: scoreRange.step,
+    };
+  }
+
+  private mapPatientAdministrationStep(
+    step: PatientAdministrationStepConfig,
+  ): PatientAdministrationStepConfigSummary {
+    return {
+      stepKey: step.stepKey,
+      order: step.order,
+      itemCode: step.itemCode,
+      patientText: step.patientText,
+      assetKeys: [...(step.assetKeys ?? [])],
+      responseMode: step.responseMode,
+      advanceBy: step.advanceBy,
     };
   }
 

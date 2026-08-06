@@ -14,6 +14,7 @@
     "start:browser-test": "node -r ts-node/register -r tsconfig-paths/register scripts/start-browser-test-backend.ts",
     "start:prod": "node -e \"process.env.NODE_ENV='production'; require('./dist/src/main.js')\"",
     "seed:demo": "node -r ts-node/register -r tsconfig-paths/register scripts/seed-demo-data.ts",
+    "presentation-assets:verify": "node -r ts-node/register -r tsconfig-paths/register scripts/verify-presentation-assets.ts",
     "lint": "eslint \"{src,test,scripts}/**/*.ts\"",
     "lint:fix": "eslint \"{src,test,scripts}/**/*.ts\" --fix",
     "lint:file": "eslint",

@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { isDeepStrictEqual } from 'node:util';
 import {
   ScaleDefinition,
   type ScaleDefinitionDocument,
@@ -82,7 +83,7 @@ export class ScaleCatalogService {
       });
     }
 
-    const version = await this.ensureVersion(definition, seed.version);
+    let version = await this.ensureVersion(definition, seed.version);
 
     if (version.status !== 'active') {
       throw new ConflictException({
@@ -92,6 +93,10 @@ export class ScaleCatalogService {
     }
 
     this.assertVersionMatchesSeed(version, seed.version);
+    version = await this.ensurePatientAdministrationConfig(
+      version,
+      seed.version,
+    );
 
     await this.scaleDefinitionModel
       .updateOne(
@@ -238,6 +243,7 @@ export class ScaleCatalogService {
               scoringRuleVersion: seed.scoringRuleVersion,
               fieldEncodingVersion: seed.fieldEncodingVersion,
               sourceDocument: seed.sourceDocument,
+              ...this.getPresentationConfigForInsert(seed),
               status: seed.status,
               totalScoreRange: structuredClone(seed.totalScoreRange),
               groups: structuredClone(seed.groups),
@@ -280,6 +286,121 @@ export class ScaleCatalogService {
     return version;
   }
 
+  private async ensurePatientAdministrationConfig(
+    version: ScaleVersionDocument,
+    seed: ScaleSeedVersion,
+  ): Promise<ScaleVersionDocument> {
+    const seedPackageKey = seed.presentationPackageKey;
+    const seedSteps = seed.patientAdministrationSteps;
+
+    if (seedPackageKey === undefined && seedSteps === undefined) {
+      return version;
+    }
+
+    if (seedPackageKey === undefined || seedSteps === undefined) {
+      this.throwVersionConflict();
+    }
+
+    const hasStoredPackageKey = version.presentationPackageKey !== undefined;
+    const hasStoredSteps = version.patientAdministrationSteps !== undefined;
+
+    if (!hasStoredPackageKey && !hasStoredSteps) {
+      const patchedVersion = await this.scaleVersionModel
+        .findOneAndUpdate(
+          {
+            _id: version._id,
+            presentationPackageKey: { $exists: false },
+            patientAdministrationSteps: { $exists: false },
+          },
+          {
+            $set: {
+              presentationPackageKey: seedPackageKey,
+              patientAdministrationSteps: structuredClone(seedSteps),
+            },
+          },
+          { returnDocument: 'after', runValidators: true },
+        )
+        .exec();
+
+      if (patchedVersion) {
+        this.assertPatientAdministrationMatchesSeed(patchedVersion, seed);
+        return patchedVersion;
+      }
+
+      const concurrentVersion = await this.scaleVersionModel
+        .findOne({ _id: version._id })
+        .exec();
+
+      if (!concurrentVersion) {
+        this.throwVersionConflict();
+      }
+
+      this.assertPatientAdministrationMatchesSeed(concurrentVersion, seed);
+      return concurrentVersion;
+    }
+
+    this.assertPatientAdministrationMatchesSeed(version, seed);
+    return version;
+  }
+
+  private getPresentationConfigForInsert(
+    seed: ScaleSeedVersion,
+  ): Record<string, unknown> {
+    if (
+      seed.presentationPackageKey === undefined ||
+      seed.patientAdministrationSteps === undefined
+    ) {
+      return {};
+    }
+
+    return {
+      presentationPackageKey: seed.presentationPackageKey,
+      patientAdministrationSteps: structuredClone(
+        seed.patientAdministrationSteps,
+      ),
+    };
+  }
+
+  private assertPatientAdministrationMatchesSeed(
+    version: ScaleVersionDocument,
+    seed: ScaleSeedVersion,
+  ): void {
+    const storedSteps = this.toComparablePatientAdministrationSteps(
+      version.patientAdministrationSteps,
+    );
+    const seedSteps = this.toComparablePatientAdministrationSteps(
+      seed.patientAdministrationSteps,
+    );
+    if (
+      seed.presentationPackageKey === undefined ||
+      seed.patientAdministrationSteps === undefined ||
+      version.presentationPackageKey !== seed.presentationPackageKey ||
+      !isDeepStrictEqual(storedSteps, seedSteps)
+    ) {
+      this.throwVersionConflict();
+    }
+  }
+
+  private toComparablePatientAdministrationSteps(
+    steps: ScaleSeedVersion['patientAdministrationSteps'],
+  ): unknown {
+    if (!Array.isArray(steps)) {
+      return steps;
+    }
+
+    return Array.from(steps, (step) => ({
+      stepKey: step.stepKey,
+      order: step.order,
+      itemCode: step.itemCode,
+      ...(step.patientText === undefined
+        ? {}
+        : { patientText: step.patientText }),
+      assetKeys: Array.isArray(step.assetKeys) ? [...step.assetKeys] : null,
+      responseMode: step.responseMode,
+      advanceBy: step.advanceBy,
+    }));
+  }
+
   private assertVersionMatchesSeed(
     version: ScaleVersionDocument,
     seed: ScaleSeedVersion,
@@ -298,11 +419,15 @@ export class ScaleCatalogService {
       (version.items?.length ?? 0) !== seed.items.length;
 
     if (conflicts) {
-      throw new ConflictException({
-        code: 'SCALE_CATALOG_VERSION_CONFLICT',
-        message: 'Stored scale version conflicts with the built-in catalog',
-      });
+      this.throwVersionConflict();
     }
+  }
+
+  private throwVersionConflict(): never {
+    throw new ConflictException({
+      code: 'SCALE_CATALOG_VERSION_CONFLICT',
+      message: 'Stored scale version conflicts with the built-in catalog',
+    });
   }
 
   private toAvailableScaleOption(

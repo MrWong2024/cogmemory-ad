@@ -235,6 +235,10 @@ describe('assessment execution initialization public APIs (e2e)', () => {
       throw new Error('E2E requires NODE_ENV=test');
     }
 
+    if (process.env.COGMEMORY_DATABASE_PURPOSE !== 'standard_test') {
+      throw new Error('E2E requires the standard_test database purpose');
+    }
+
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -243,14 +247,12 @@ describe('assessment execution initialization public APIs (e2e)', () => {
     await app.init();
 
     connection = app.get<Connection>(getConnectionToken());
-    const databaseName = connection.name.toLowerCase();
+    const databaseName = connection.name;
 
-    if (!databaseName.includes('_test')) {
-      throw new Error('E2E database name must follow the test naming rule');
-    }
-
-    if (databaseName.includes('_dev') || databaseName.includes('_prod')) {
-      throw new Error('E2E must not connect to development or production');
+    if (databaseName !== 'cogmemory_ad_test') {
+      throw new Error(
+        `E2E database must be cogmemory_ad_test, received ${databaseName}`,
+      );
     }
 
     const configService = app.get(ConfigService);
@@ -374,6 +376,9 @@ describe('assessment execution initialization public APIs (e2e)', () => {
       expect(item).not.toHaveProperty('items');
       expect(item).not.toHaveProperty('scoringRule');
       expect(item).not.toHaveProperty('expectedValue');
+      expect(item).not.toHaveProperty('presentationPackageKey');
+      expect(item).not.toHaveProperty('patientAdministrationSteps');
+      expect(item).not.toHaveProperty('patientText');
     }
     expect(await scaleDefinitionModel.countDocuments({}).exec()).toBe(0);
     expect(await scaleVersionModel.countDocuments({}).exec()).toBe(0);
@@ -434,6 +439,11 @@ describe('assessment execution initialization public APIs (e2e)', () => {
       mmseVersion?._id.toString(),
     );
     expect(mmseVersion?.items).toHaveLength(11);
+    expect(mmseVersion?.presentationPackageKey).toBe('mmse-1.0-package-001');
+    expect(mmseVersion?.patientAdministrationSteps).toHaveLength(19);
+    expect(
+      mmseVersion?.patientAdministrationSteps?.map((step) => step.order),
+    ).toEqual(Array.from({ length: 19 }, (_, index) => index + 1));
 
     const mmseInstance = await scaleInstanceModel
       .findOne({ assessmentVisitId: visitId, scaleCode: 'mmse' })
@@ -464,6 +474,53 @@ describe('assessment execution initialization public APIs (e2e)', () => {
     expect(readResponseBody(mocaResponse)).toEqual(
       expect.objectContaining({ createdItemResponseCount: 16 }),
     );
+
+    const mocaVersion = await scaleVersionModel
+      .findOne({ scaleCode: 'moca', version: '1.0' })
+      .lean()
+      .exec();
+    expect(mocaVersion).not.toHaveProperty('presentationPackageKey');
+    expect(mocaVersion).not.toHaveProperty('patientAdministrationSteps');
+
+    await scaleVersionModel
+      .updateOne(
+        { _id: mmseVersion?._id },
+        {
+          $unset: {
+            presentationPackageKey: 1,
+            patientAdministrationSteps: 1,
+          },
+        },
+      )
+      .exec();
+
+    const legacyPatientResponse = await createPatient('LEGACY').expect(201);
+    const legacyPatientId = readString(
+      readResponseBody(legacyPatientResponse),
+      'id',
+    );
+    const legacyVisitResponse = await createVisit(
+      legacyPatientId,
+      'LEGACY',
+    ).expect(201);
+    const legacyVisitId = readString(
+      readResponseBody(legacyVisitResponse),
+      'id',
+    );
+    await doctorAgent
+      .post(
+        `/patients/${legacyPatientId}/visits/${legacyVisitId}/scale-instances`,
+      )
+      .send({ scaleCode: 'mmse' })
+      .expect(201);
+
+    const backfilledMmseVersion = await scaleVersionModel
+      .findById(mmseVersion?._id)
+      .exec();
+    expect(backfilledMmseVersion?.presentationPackageKey).toBe(
+      'mmse-1.0-package-001',
+    );
+    expect(backfilledMmseVersion?.patientAdministrationSteps).toHaveLength(19);
 
     const detail = await doctorAgent
       .get(`/patients/${patientId}/visits/${visitId}`)

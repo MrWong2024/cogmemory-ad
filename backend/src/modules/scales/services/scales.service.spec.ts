@@ -67,6 +67,20 @@ describe('Scale schemas', () => {
     expect(ScaleVersionSchema.path('items.scoringRule')?.instance).toBe(
       'Mixed',
     );
+    expect(ScaleVersionSchema.path('presentationPackageKey')?.instance).toBe(
+      'String',
+    );
+    expect(
+      ScaleVersionSchema.path('patientAdministrationSteps')?.instance,
+    ).toBe('Array');
+    expect(
+      ScaleVersionSchema.path('patientAdministrationSteps.responseMode')
+        ?.options.enum,
+    ).toEqual(['speech', 'writing', 'drawing', 'staff_observation']);
+    expect(
+      ScaleVersionSchema.path('patientAdministrationSteps.advanceBy')?.options
+        .enum,
+    ).toEqual(['patient', 'staff']);
   });
 });
 
@@ -186,6 +200,19 @@ describe('ScalesService', () => {
       scoringRuleVersion: 'score-1',
       fieldEncodingVersion: 'field-1',
       sourceDocument: 'source-placeholder',
+      presentationPackageKey: 'moca-1.0-package-001',
+      patientAdministrationSteps: [
+        {
+          _id: new Types.ObjectId(),
+          stepKey: 'moca-sample',
+          order: 1,
+          itemCode: 'moca.sample.item',
+          patientText: 'Patient-safe instruction',
+          assetKeys: ['moca-sample-guidance'],
+          responseMode: 'speech',
+          advanceBy: 'patient',
+        },
+      ],
       status: 'active',
       totalScoreRange: { min: 0, max: 30, step: 1 },
       groups: [
@@ -246,6 +273,18 @@ describe('ScalesService', () => {
       scoringRuleVersion: 'score-1',
       fieldEncodingVersion: 'field-1',
       sourceDocument: 'source-placeholder',
+      presentationPackageKey: 'moca-1.0-package-001',
+      patientAdministrationSteps: [
+        {
+          stepKey: 'moca-sample',
+          order: 1,
+          itemCode: 'moca.sample.item',
+          patientText: 'Patient-safe instruction',
+          assetKeys: ['moca-sample-guidance'],
+          responseMode: 'speech',
+          advanceBy: 'patient',
+        },
+      ],
       status: 'active',
       totalScoreRange: { min: 0, max: 30, step: 1 },
       groups: [
@@ -290,6 +329,13 @@ describe('ScalesService', () => {
     });
     expect(result).not.toHaveProperty('_id');
     expect(result).not.toHaveProperty('internalMarker');
+    expect(result?.patientAdministrationSteps?.[0]).not.toHaveProperty('_id');
+    expect(result?.patientAdministrationSteps).not.toBe(
+      rawVersion.patientAdministrationSteps,
+    );
+    expect(result?.patientAdministrationSteps?.[0].assetKeys).not.toBe(
+      rawVersion.patientAdministrationSteps[0].assetKeys,
+    );
   });
 
   it('lists active definitions through mapper output', async () => {

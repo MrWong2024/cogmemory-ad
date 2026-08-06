@@ -10,7 +10,7 @@
 - 已具备 NestJS 启动入口、根模块、全局应用配置、健康检查、配置加载与校验、MongoDB 连接底座、全局 ValidationPipe、全局异常过滤器和 Storage 公共模块。
 - `backend\src\modules` 当前包含 `storage`、`scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains`、`reports`、`clinical-history`、`users` 与 `auth`。
 - `StorageModule` 当前只提供 fake / OSS 底层 driver 结构和 `STORAGE_SERVICE` token，不提供独立、通用的 Storage 管理或上传 API；题目媒体业务上传链路由 `MediaModule` 基于该抽象提供。
-- `ScalesModule` 当前提供量表定义 / 量表版本 Schema、内部 `ScalesService`、MMSE / MoCA seed、只读 `ScaleSeedDataService`、`validateScaleSeeds()`、公开只读 `ScalesController` 和 `ScaleCatalogService`。`GET /scales/available` 只返回安全摘要且不写数据库；量表初始化时才按需幂等物化对应 seed 版本。
+- `ScalesModule` 当前提供量表定义 / 量表版本 Schema、内部 `ScalesService`、MMSE / MoCA seed、只读 `ScaleSeedDataService`、`ScaleCatalogService`、内部只读 `PresentationAssetsService` 和公开只读 `ScalesController`。`GET /scales/available` 只返回安全摘要且不写数据库；量表初始化时才按需幂等物化对应 seed 版本。没有公共题目资产接口或静态目录挂载。
 - `PatientsModule` 当前提供患者 / 受试者基础档案 Schema、内部读取底座，以及 `GET /patients`、`POST /patients`、`GET /patients/:patientId` 三个患者最小公开 API。
 - `AssessmentsModule` 当前提供访视 / 量表实例 / 题目作答 Schema、`AssessmentsService`、`AssessmentExecutionService`、`AssessmentScaleWorkflowService`、`AssessmentExecutionDetailService`、`ItemResponseDraftService`，以及 `AssessmentVisitsController` / `AssessmentExecutionController`。A29 在 A14 单实例详情与单题草稿 PATCH 上增加独立草稿版本、原子 CAS 与持久化计时状态；A30 再为 A14 / A15 写入增加父 / 子 submission barrier 门禁。
 - A16 在 `AssessmentsModule` 提供 `ScaleInstanceSubmissionController`、`ScaleInstanceSubmissionService`、`ScaleInstanceSubmissionBarrierService`、纯 readiness / barrier 函数、提交 DTO 与安全公开响应类型；开放 readiness GET 与 submit POST，并由 A30 的可恢复屏障协议完成跨父子集合线性化保护。
@@ -57,15 +57,15 @@
 - `ScaleDefinition` 当前索引为 `{ code: 1 }` unique 与 `{ status: 1, sortOrder: 1 }`。
 - `ScaleVersion` Schema 位于 `backend\src\modules\scales\schemas\scale-version.schema.ts`。
 - `ScaleVersion` collection 为 `scale_versions`，使用 `timestamps: true`，不在 class 中重复声明 `createdAt` / `updatedAt`。
-- `ScaleVersion` 当前覆盖量表引用、量表 code、版本、CRF 版本、评分规则版本、字段编码版本、来源材料、状态、总分范围、分组配置、题目配置、质控规则、报告规则、科研导出映射、生效时间和退役时间。
+- `ScaleVersion` 当前覆盖量表引用、量表 code、版本、CRF 版本、评分规则版本、字段编码版本、来源材料、状态、总分范围、分组配置、题目配置、可选 `presentationPackageKey`、可选 `patientAdministrationSteps`、质控规则、报告规则、科研导出映射、生效时间和退役时间；患者步骤子文档 `_id: false`，只含步骤、题目、患者安全文字、资产键、作答模式和推进方。
 - `ScaleVersion` 当前索引为 `{ scaleDefinitionId: 1, version: 1 }` unique、`{ scaleCode: 1, version: 1 }`、`{ scaleCode: 1, status: 1 }`。
 - 内嵌 group / item 配置已预留指导语、作答类型、得分范围、是否计入总分、认知域、证据类型、计时、图片上传、平板手写、操作者备注、质控规则、报告规则和科研导出映射等字段。
-- `backend\src\modules\scales\seeds` 当前已新增内部 MMSE / MoCA 初始配置 seed 类型与常量，覆盖 `ScaleDefinition` 配置、`ScaleVersion` 配置、分组、题目、指导语摘要、作答类型、分值范围、是否计入总分、图片 / 手写 / 计时 / 原始文本 / 操作者备注要求、自动计分规则元数据占位、认知域映射、质控规则占位、报告展示规则占位和科研导出字段映射。
-- `ScaleSeedDataService` 当前提供内存 seed 的只读读取能力：`normalizeScaleCode()`、`getAllScaleSeeds()`、`getScaleSeedByCode()`、`getScaleVersionSeed()`、`listSeedScaleDefinitions()`、`listSeedScaleVersions()` 和 `validateScaleSeeds()`；不注入 Mongoose model，不读取数据库，不写数据库。
-- `ScaleCatalogService` 当前提供 `listAvailableScaleOptions()`、`getAvailableScaleOption()`、`ensureSeedScaleVersionMaterialized()`：前两者只读取经 `validateScaleSeeds()` 校验的 seed；公开目录按 `sortOrder` / code 排序，只返回名称、版本追溯、总分范围、分组 / 题目数量和能力布尔值，不返回完整题目、指导语、评分规则、正确答案、ObjectId 或 Mixed 字段。
-- `ensureSeedScaleVersionMaterialized()` 以 definition code 和 definitionId + version 为业务键，使用 `$setOnInsert` upsert 创建或复用记录；已有 definition / version 配置不被覆盖。非 active 记录分别返回 `SCALE_NOT_ACTIVE` / `SCALE_VERSION_NOT_ACTIVE`；追溯字段或分组 / 题目数量冲突返回 `SCALE_CATALOG_VERSION_CONFLICT`；duplicate key 竞态后重新读取。`currentVersionId` 仅在为空或缺失时设置，不覆盖已有引用。
-- 该物化能力仅由 A13 初始化调用，不是全量 seed runner，不在应用启动时执行，也没有 CLI、管理 API 或配置编辑能力。
-- `validateScaleSeeds()` 当前为不落库的种子数据校验纯函数，覆盖量表 code、版本、group code、item code、groupCode 引用、CRF 编码重复风险、scoreRange、证据 / 计时一致性、MoCA 即刻记忆不计分、MoCA 延迟回忆提示后表现保留、MoCA 抽象项 CRF 修正、MMSE 表达第 9 项和绘图第 10 项修正，以及 MMSE / MoCA 连续减 7 分步配置。
+- `backend\src\modules\scales\seeds` 中 MMSE 1.0 绑定 `mmse-1.0-package-001` 和 19 个患者安全呈现步骤，全部 22 个 released 资产均被引用；阅读闭眼步骤不绑定音频。MoCA 1.0 仍无 package 或步骤字段，不写空配置。
+- `ScaleSeedDataService` 当前提供内存 seed 的只读读取与纯校验；呈现校验覆盖 package / steps 成对、步骤键和连续顺序、同版本 item 引用、枚举、同一步资产键去重、非空患者文字、阅读项安全合同和显式评分答案不泄漏。通用 seed validator 不读取 manifest 或文件系统。
+- `ScaleCatalogService` 的公开目录仍只返回名称、版本追溯、总分范围、分组 / 题目数量和能力布尔值，不返回呈现 package、患者步骤、患者文字、资产或评分配置。
+- `ensureSeedScaleVersionMaterialized()` 新插入 MMSE 时随 `$setOnInsert` 写入两项呈现字段；legacy MMSE 仅在两字段均不存在时以 `_id` + 双 `$exists: false` 单次原子补齐并重读校验。已一致则零写复用；部分字段或内容冲突返回 `SCALE_CATALOG_VERSION_CONFLICT` 且不覆盖；并发补齐可重读收敛。MoCA 行为不变，`currentVersionId` 仍只在为空或缺失时设置。
+- 该物化能力仅由 A13 初始化调用，不是全量 seed runner，也不在应用启动时扫描。`presentation-assets:verify` 是不连接数据库、不可写入的 released package 校验 CLI，不是 seed / migration runner。
+- `PresentationAssetsService` 从 backend 工作目录按 `process.cwd()/../.local/presentation-assets` 确定私有根，只按精确 packageKey 定位；校验 released / 整包审核、身份、受控相对路径、MIME / 扩展名、文件存在与 SHA-256，并按 assetKey 提供内部只读流。当前 MMSE `package-001` 已 released；服务不读取 PDF、不生成或修复资产、不访问 OSS、不在启动时强制验证。
 - MMSE / MoCA 资料治理遵循 D-018：项目“来源”中的 `MMSE+MoCA.pdf` 是权威原始资料；仓库根目录与 `docs`、`backend`、`frontend` 同级的 `.local/reference/MMSE+MoCA.pdf` 是 Codex 本地工作镜像，不是第二套业务基线，并由根目录 `.gitignore` 的 `/.local/reference/` 排除而不进入 Git。
 - 涉及 MMSE / MoCA 题项、指导语、评分规则、CRF 编码、图片素材或种子数据时，必须同时实际参阅该 PDF；seed 中的 `sourceDocument` 或其他来源标识只用于追溯，不能代替阅读 PDF，也不得只依据 seed、页面、handoff、代码命名或模型记忆推断。
 - 最新代码和 handoff 是已演进落地的当前实现事实和业务契约；PDF 的明显原始编号或排版错误不得覆盖 MMSE“表达”第 9 项、“绘图”第 10 项、MoCA 抽象项 `N1.2.12.1` / `N1.2.12.2` 等已确认并落地的修正及内部稳定语义编码。如项目来源、本地工作镜像、handoff 与代码出现无法合理解释的不一致，必须停止相关实现并报告差异。
@@ -292,7 +292,7 @@
 ## 16. 当前尚未实现
 
 - 尚无公开用户管理接口、角色权限管理接口、短信验证码接口、OAuth / SSO 接口或密码重置接口。
-- 现有医生侧工作台与临床工作流底座已经实现；尚未实现院内受监督患者施测所需的患者短期受控施测会话与安全进入、同设备患者模式交接 / 结束清除 / 医护解锁、跨设备安全进入、每个步骤的题目和指导语文字 / 语音 / 自动播放 / 手动播放 / 重播 / 作答门禁、设备准备和不计分练习隔离，以及基于服务端权威状态的患者端安全响应和会话恢复合同。
+- 现有医生侧工作台、MMSE 19 步呈现配置和 released 私有题目资产底座已经实现；尚未实现患者短期受控施测会话与安全进入、同设备患者模式交接 / 结束清除 / 医护解锁、跨设备安全进入、当前步骤授权与公开呈现接口、播放 / 重播 / 作答门禁、设备准备和不计分练习隔离，以及基于服务端权威状态的患者端安全响应和会话恢复合同。
 - 尚未实现统一临床工作端所需的医护施测模式与医生复核报告模式职责编排、设备和语言准备确认、患者进度与求助查看、控制权合同、医护动作观察和实物操作记录、结构化影响因素与异常原因、完成结果送审、医生异常优先复核、无歧义客观步骤汇总确认及医生最终整体确认。适用语音回答步骤的录音及一种基础 ASR 产生的转写候选、患者点击 / 书写 / 绘图等原始作答与必要过程事实，仍须经医生复核确认后才能受控形成或更新正式 `ItemResponse`。
 - 尚未实现 WP-12 的医护代录知情者辅助信息能力，也没有将知情者来源、关系、接触频率或了解程度与患者作答、ItemResponse、量表得分和报告结论分离的专用合同；当前不存在知情者长期账号、家庭门户或短期自助链接。
 - 上述缺口是能力边界，不代表未来数据实体、集合数量、接口形态、事务边界、角色枚举或传输协议已经确定，也不预设独立应用、独立 attempt / capture / review 集合、通用工作流或投影子系统、事件溯源、双写平台或专用投影队列；同设备交接不等同必须跨设备配对，跨设备安全进入也不预设二维码。现有 staff `Session`、`administrationMode` 值、`ItemResponse`、`MediaEvidence` 和提交屏障不能等同于受监督患者施测会话及其完整闭环，也不能推出全页面 TTS、强实时同步或特定事件平台。
@@ -302,7 +302,7 @@
 - A12-A28 已覆盖评分计算/复核/确认、认知域计算、报告生成/编辑/确认/锁定/来源冻结/归档/版本化更正、replacement 后续生命周期、历史读取与基础随访趋势；仍无评分独立 lock / void / reopen / 重跑、认知域人工修改 / 确认 / 作废 / 重算、报告签名 / unfreeze / unarchive、correction cancel / branch 或 PDF 接口。
 - 尚无批量作答、自动保存调度、计时动作、提交撤销 / reopen / lock / force submit 或访视状态流转接口。
 - 媒体当前仅有题目下列表、服务端 multipart 上传、短期签名访问与逻辑作废；尚无全患者 / 访视 / 实例媒体列表、直接 objectKey 下载、永久 URL、物理删除、替换、批量、分片或客户端直传接口。
-- 尚无全量数据库 seed runner、量表管理或完整 MMSE / MoCA 题目配置公开接口；A13 只在初始化时按需物化并提供安全摘要。
+- 尚无全量数据库 seed runner、量表管理或完整 MMSE / MoCA 题目配置公开接口；A13 只在初始化时按需物化并提供安全摘要，released MMSE 资产当前仅由内部只读 Service 与无数据库 CLI 访问。
 - 已有 A17 compute / latest 与 A18 单题人工复核 / 确认；尚无批量人工评分、锁定、作废、撤销确认、reopen、重跑或历史列表接口。
 - 已有 A19 认知域 compute / latest；尚无认知域人工复核、确认、锁定、作废、重算、历史列表、跨量表合并或报告接口。
 - 已有 A20-A27 报告 generate / latest / edit / submit / confirm / lock / freeze-sources / archive / corrections、版本列表和指定历史详情，以及 A27-A28 患者历史评估与 follow-up-trends；B17 前端历史/趋势产品页已完成。仍无签名、unlock / unfreeze / unarchive、correction cancel / branch、PDF / Word / 打印导出、AuditLog 模型或 AI 报告。

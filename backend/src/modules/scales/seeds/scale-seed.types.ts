@@ -4,6 +4,7 @@ import type {
   ScaleStatus,
 } from '../schemas/scale-definition.schema';
 import type {
+  PatientAdministrationStepConfig,
   ScaleEvidenceType,
   ScaleResponseType,
 } from '../schemas/scale-version.schema';
@@ -67,6 +68,8 @@ export type ScaleSeedVersion = {
   scoringRuleVersion?: string;
   fieldEncodingVersion?: string;
   sourceDocument?: string;
+  presentationPackageKey?: string;
+  patientAdministrationSteps?: PatientAdministrationStepConfig[];
   status: ScaleStatus;
   totalScoreRange: ScaleSeedScoreRange;
   groups: ScaleSeedGroup[];

@@ -52,20 +52,20 @@
 
 - Service 名称：`ScalesService`
 - 文件路径：`backend\src\modules\scales\services\scales.service.ts`
-- 职责边界：提供量表定义与量表版本配置的内部读取底座；规范化 scale code；按 mapper 输出 `ScaleDefinitionSummary` / `ScaleVersionSummary`，不直接返回完整 Mongoose document。
+- 职责边界：提供量表定义与量表版本配置的内部读取底座；规范化 scale code；按 mapper 输出 `ScaleDefinitionSummary` / `ScaleVersionSummary`，其中患者呈现步骤显式白名单映射并深拷贝，不返回 Mongoose 子文档或 `_id`。
 - 当前方法：`normalizeScaleCode(code)`、`findDefinitionByCode(code)`、`findVersionByScaleCodeAndVersion(scaleCode, version)`、`listActiveDefinitions()`。
 - 上游调用方：当前由 `AssessmentExecutionDetailService`、`ScaleInstanceSubmissionService`、`ProvisionalScoringWorkflowService`、`ScoreReviewWorkflowService`、`CognitiveDomainComputationWorkflowService` 与 `ClinicalReportGenerationWorkflowService` 直接调用；没有直接公开 Controller。
 - 下游依赖：`ScaleDefinition` 与 `ScaleVersion` Mongoose Model。
 - 边界：不创建、更新、删除量表配置；不导入种子数据；不实现评估执行、作答、计分、报告、AI、认证或权限。
-- 测试覆盖口径：`backend\src\modules\scales\services\scales.service.spec.ts`，覆盖 code 规范化、查无返回 `null`、mapper 输出、schema collection、索引和关键字段显式类型；不连接真实 MongoDB。
+- 测试覆盖口径：`backend\src\modules\scales\services\scales.service.spec.ts`，覆盖 code 规范化、查无返回 `null`、安全 mapper、呈现步骤深拷贝与子文档字段剥离、schema collection、索引和关键字段显式类型；不连接真实 MongoDB。
 
 - Service 名称：`ScaleSeedDataService`
 - 文件路径：`backend\src\modules\scales\seeds\scale-seed-data.service.ts`
-- 职责边界：提供 MMSE / MoCA 初始配置 seed 的内部只读读取能力，并提供 `validateScaleSeeds()` 种子数据校验纯函数；返回 seed 克隆，避免调用方误改全局常量。
+- 职责边界：提供 MMSE / MoCA 初始配置 seed 的内部只读读取能力，并提供不做 manifest IO 的 `validateScaleSeeds()` 种子数据校验纯函数；MMSE 1.0 含 packageKey 和 19 步，MoCA 当前保持无呈现配置。
 - 当前方法：`normalizeScaleCode(code)`、`getAllScaleSeeds()`、`getScaleSeedByCode(scaleCode)`、`getScaleVersionSeed(scaleCode, version)`、`listSeedScaleDefinitions()`、`listSeedScaleVersions()`、`validateScaleSeeds(seeds?)`。
-- 上游调用方：当前由 `ScaleCatalogService` 与 `AssessmentExecutionService` 直接调用；没有直接公开 Controller。尚未实现的全量导入脚本或 seed runner 属于未来边界。
+- 上游调用方：当前由 `ScaleCatalogService`、`AssessmentExecutionService` 与只读 `presentation-assets:verify` CLI 直接调用；没有直接公开 Controller。全量导入脚本或 seed runner 属于未来边界。
 - 下游依赖：MMSE / MoCA seed 常量；不依赖 Mongoose Model，不依赖 `ScalesService`，不依赖数据库、Storage、SMS 或 LLM。
-- 边界：不创建、更新、删除数据库记录；不提供 import / upsert / seed runner；不执行写库；不暴露公开 MMSE / MoCA 配置查询 API；不实现评估执行、作答提交、媒体上传、自动计分触发、报告、AI、认证或权限。
+- 边界：不创建、更新、删除数据库记录；不提供 import / upsert / seed runner；不执行写库；不读取 manifest；不暴露公开 MMSE / MoCA 配置查询 API；不实现评估执行、作答提交、媒体上传、自动计分触发、报告、AI、认证或权限。
 - 测试覆盖口径：`backend\src\modules\scales\seeds\scale-seed-data.service.spec.ts`，覆盖 MMSE / MoCA seed 读取、code 规范化、版本读取、definition / version 列表、内置 seed 校验、总分范围、PDF / CRF 编号修正规则、MoCA 即刻记忆和延迟回忆记录规则、连续减 7 分步规则、图片 / 手写 / 用时证据要求、item code 唯一、groupCode 引用和校验错误分支；不连接真实 MongoDB，不调用 Storage / OSS / SMS / LLM，测试数据为配置样例或脱敏人工样例。
 
 - Service 名称：`ScaleCatalogService`
@@ -74,9 +74,17 @@
 - 当前方法：`listAvailableScaleOptions()`、`getAvailableScaleOption(scaleCode, version?)`、`ensureSeedScaleVersionMaterialized(scaleCode, version?)`。
 - 上游调用方：`ScalesController` 调用只读目录；`AssessmentScaleWorkflowService` 调用解析与按需物化。
 - 下游依赖：`ScaleSeedDataService`、`ScaleDefinition` / `ScaleVersion` Model。
-- 写库与冲突边界：GET 目录不写库；物化使用 `$setOnInsert`，复用时不覆盖已有临床配置；校验状态、追溯字段和 group / item 数量；duplicate key 竞态后重新读取；currentVersionId 仅空值时设置。
+- 写库与冲突边界：GET 目录不写库；MMSE 新插入随 `$setOnInsert` 写呈现双字段；legacy 两字段均缺失时以单次条件原子更新同时补齐并重读。已一致零写复用；部分字段、内容冲突或竞争后不一致均返回稳定 conflict，绝不覆盖既有临床配置；MoCA 不写空字段；currentVersionId 仅空值时设置。
 - 错误语义：`SCALE_NOT_AVAILABLE`、`SCALE_VERSION_NOT_AVAILABLE`、`SCALE_NOT_ACTIVE`、`SCALE_VERSION_NOT_ACTIVE`、`SCALE_CATALOG_INVALID`、`SCALE_CATALOG_VERSION_CONFLICT`。
-- 测试覆盖口径：`scale-catalog.service.spec.ts` 覆盖摘要、seed 校验失败、创建 / 复用、冲突、inactive、duplicate key 竞态和不覆盖语义；不连接真实 MongoDB。
+- 测试覆盖口径：`scale-catalog.service.spec.ts` 覆盖摘要、seed 校验失败、新插入、legacy 原子补齐、一致零写复用、部分 / 冲突拒绝、合法并发收敛、MoCA 零呈现写入、inactive、duplicate key 竞态和不覆盖语义；不连接真实 MongoDB。
+
+- Service 名称：`PresentationAssetsService`
+- 文件路径：`backend\src\modules\scales\services\presentation-assets.service.ts`
+- 职责边界：内部只读解析精确 packageKey，从 backend 工作目录按 `process.cwd()/../.local/presentation-assets` 定位唯一 package；验证 released manifest、整包审核字段、package / scale / version 身份、相对路径 containment、assetKey / file 唯一、MIME / 扩展名、文件存在与 SHA-256；提供整包校验和单资产只读流。
+- 输入 / 输出：输入 packageKey，或 packageKey + assetKey；输出经校验的 manifest / 资产元数据，或只读 `ReadStream`。稳定错误仅为 `PRESENTATION_ASSET_PACKAGE_INVALID` 与 `PRESENTATION_ASSET_NOT_FOUND`。
+- 上游调用方：当前由 `presentation-assets:verify` CLI 使用，并由 `ScalesModule` 导出供后续 WP-10-B 内部编排复用；没有 Controller、公开 route、静态挂载或永久 URL。
+- 非职责：不扫描“最新” package，不读取 PDF，不裁图、生成 / 转码音频、调用 TTS、访问 OSS、写入 / 修复 manifest、缓存到数据库或在应用启动时阻断后端。
+- 测试覆盖口径：`presentation-assets.service.spec.ts` 使用临时目录 fixture，覆盖 released 正常包、draft、审核字段、identity、路径越界、未知 assetKey、缺文件、hash 与 MIME 合同；不触碰真实 package，不连接数据库。
 
 - Controller 名称：`ScalesController`
 - 文件路径：`backend\src\modules\scales\controllers\scales.controller.ts`

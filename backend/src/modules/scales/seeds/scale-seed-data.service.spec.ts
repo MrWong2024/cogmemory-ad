@@ -64,6 +64,216 @@ describe('ScaleSeedDataService', () => {
     expect(result.warnings).toEqual([]);
   });
 
+  it('configures the MMSE 1.0 patient package as 19 contiguous safe steps', () => {
+    const mmse = getSeed(service.getAllScaleSeeds(), 'mmse');
+    const steps = getPatientAdministrationSteps(mmse);
+
+    expect(mmse.version.presentationPackageKey).toBe('mmse-1.0-package-001');
+    expect(steps).toHaveLength(19);
+    expect(steps.map((step) => step.order)).toEqual(
+      Array.from({ length: 19 }, (_, index) => index + 1),
+    );
+    expect(steps.map((step) => step.stepKey)).toEqual([
+      'mmse-orientation-year',
+      'mmse-orientation-season',
+      'mmse-orientation-month',
+      'mmse-orientation-date',
+      'mmse-orientation-weekday',
+      'mmse-orientation-city',
+      'mmse-orientation-district',
+      'mmse-orientation-street',
+      'mmse-orientation-floor',
+      'mmse-orientation-place',
+      'mmse-immediate-recall',
+      'mmse-attention-calculation',
+      'mmse-delayed-recall',
+      'mmse-naming',
+      'mmse-repetition',
+      'mmse-reading-command',
+      'mmse-three-step-command',
+      'mmse-expression',
+      'mmse-drawing',
+    ]);
+
+    const itemCodes = new Set(mmse.version.items.map((item) => item.code));
+    expect(steps.every((step) => itemCodes.has(step.itemCode))).toBe(true);
+    const referencedAssets = steps.flatMap((step) => step.assetKeys);
+    expect(referencedAssets).toHaveLength(22);
+    expect(new Set(referencedAssets).size).toBe(22);
+  });
+
+  it('keeps the MMSE reading step visual-only and staff-observed', () => {
+    const mmse = getSeed(service.getAllScaleSeeds(), 'mmse');
+    const readingStep = getPatientAdministrationSteps(mmse).find(
+      (step) => step.stepKey === 'mmse-reading-command',
+    );
+
+    expect(readingStep).toEqual({
+      stepKey: 'mmse-reading-command',
+      order: 16,
+      itemCode: 'mmse.language.reading_command',
+      patientText: '请闭上您的眼睛',
+      assetKeys: [],
+      responseMode: 'staff_observation',
+      advanceBy: 'staff',
+    });
+  });
+
+  it('keeps MoCA valid without patient presentation configuration', () => {
+    const seeds = service.getAllScaleSeeds();
+    const moca = getSeed(seeds, 'moca');
+
+    expect(moca.version.presentationPackageKey).toBeUndefined();
+    expect(moca.version.patientAdministrationSteps).toBeUndefined();
+    expect(validateScaleSeeds(seeds).valid).toBe(true);
+  });
+
+  it('requires packageKey and patient steps to be present together', () => {
+    const seeds = service.getAllScaleSeeds();
+    const mmse = getSeed(seeds, 'mmse');
+    delete mmse.version.presentationPackageKey;
+
+    expectValidationIssue(
+      validateScaleSeeds(seeds),
+      'patient_administration_config_incomplete',
+    );
+  });
+
+  it.each([
+    {
+      name: 'duplicate stepKey',
+      issueCode: 'patient_administration_step_key_duplicate',
+      mutate: (seed: ScaleSeedData) => {
+        const steps = getPatientAdministrationSteps(seed);
+        steps[1].stepKey = steps[0].stepKey;
+      },
+    },
+    {
+      name: 'non-contiguous order',
+      issueCode: 'patient_administration_order_not_contiguous',
+      mutate: (seed: ScaleSeedData) => {
+        getPatientAdministrationSteps(seed)[18].order = 20;
+      },
+    },
+    {
+      name: 'duplicate order',
+      issueCode: 'patient_administration_order_duplicate',
+      mutate: (seed: ScaleSeedData) => {
+        const steps = getPatientAdministrationSteps(seed);
+        steps[1].order = steps[0].order;
+      },
+    },
+    {
+      name: 'empty stepKey',
+      issueCode: 'patient_administration_step_key_empty',
+      mutate: (seed: ScaleSeedData) => {
+        getPatientAdministrationSteps(seed)[0].stepKey = '   ';
+      },
+    },
+    {
+      name: 'non-positive order',
+      issueCode: 'patient_administration_order_invalid',
+      mutate: (seed: ScaleSeedData) => {
+        getPatientAdministrationSteps(seed)[0].order = 0;
+      },
+    },
+    {
+      name: 'unknown itemCode',
+      issueCode: 'patient_administration_item_missing',
+      mutate: (seed: ScaleSeedData) => {
+        getPatientAdministrationSteps(seed)[0].itemCode = 'mmse.unknown';
+      },
+    },
+    {
+      name: 'invalid responseMode',
+      issueCode: 'patient_administration_response_mode_invalid',
+      mutate: (seed: ScaleSeedData) => {
+        const step = getPatientAdministrationSteps(
+          seed,
+        )[0] as unknown as Record<string, unknown>;
+        step.responseMode = 'video';
+      },
+    },
+    {
+      name: 'invalid advanceBy',
+      issueCode: 'patient_administration_advance_by_invalid',
+      mutate: (seed: ScaleSeedData) => {
+        const step = getPatientAdministrationSteps(
+          seed,
+        )[0] as unknown as Record<string, unknown>;
+        step.advanceBy = 'system';
+      },
+    },
+    {
+      name: 'duplicate assetKey',
+      issueCode: 'patient_administration_asset_key_duplicate',
+      mutate: (seed: ScaleSeedData) => {
+        const step = getPatientAdministrationSteps(seed)[0];
+        step.assetKeys = [step.assetKeys[0], step.assetKeys[0]];
+      },
+    },
+    {
+      name: 'non-string assetKey',
+      issueCode: 'patient_administration_asset_keys_invalid',
+      mutate: (seed: ScaleSeedData) => {
+        const step = getPatientAdministrationSteps(
+          seed,
+        )[0] as unknown as Record<string, unknown>;
+        step.assetKeys = [123];
+      },
+    },
+    {
+      name: 'empty patientText',
+      issueCode: 'patient_administration_patient_text_empty',
+      mutate: (seed: ScaleSeedData) => {
+        getPatientAdministrationSteps(seed)[0].patientText = '   ';
+      },
+    },
+  ])('rejects patient presentation $name', ({ issueCode, mutate }) => {
+    const seeds = service.getAllScaleSeeds();
+    mutate(getSeed(seeds, 'mmse'));
+
+    expectValidationIssue(validateScaleSeeds(seeds), issueCode);
+  });
+
+  it('rejects explicit scoring answers in patientText', () => {
+    const seeds = service.getAllScaleSeeds();
+    const mmse = getSeed(seeds, 'mmse');
+    const step = getPatientAdministrationSteps(mmse).find(
+      (candidate) => candidate.stepKey === 'mmse-attention-calculation',
+    );
+
+    if (!step) {
+      throw new Error('Expected MMSE attention step');
+    }
+    step.patientText = '正确答案是 93。';
+
+    expectValidationIssue(
+      validateScaleSeeds(seeds),
+      'patient_administration_scoring_answer_leak',
+    );
+  });
+
+  it('rejects audio or changed text on the MMSE reading step', () => {
+    const seeds = service.getAllScaleSeeds();
+    const mmse = getSeed(seeds, 'mmse');
+    const readingStep = getPatientAdministrationSteps(mmse).find(
+      (step) => step.stepKey === 'mmse-reading-command',
+    );
+
+    if (!readingStep) {
+      throw new Error('Expected MMSE reading step');
+    }
+    readingStep.patientText = '请闭上你的眼睛';
+    readingStep.assetKeys = ['mmse-reading-guidance'];
+    readingStep.responseMode = 'speech';
+
+    const result = validateScaleSeeds(seeds);
+    expectValidationIssue(result, 'mmse_reading_patient_text_invalid');
+    expectValidationIssue(result, 'mmse_reading_asset_keys_invalid');
+    expectValidationIssue(result, 'mmse_reading_response_mode_invalid');
+  });
+
   it('keeps MMSE total score range at 0-30', () => {
     const mmse = getSeed(service.getAllScaleSeeds(), 'mmse');
 
@@ -322,6 +532,28 @@ function getItem(seed: ScaleSeedData, itemCode: string): ScaleSeedItem {
   }
 
   return item;
+}
+
+function getPatientAdministrationSteps(seed: ScaleSeedData) {
+  const steps = seed.version.patientAdministrationSteps;
+
+  if (!steps) {
+    throw new Error(
+      `Expected patient administration steps for ${seed.definition.code}`,
+    );
+  }
+
+  return steps;
+}
+
+function expectValidationIssue(
+  result: ReturnType<typeof validateScaleSeeds>,
+  issueCode: string,
+): void {
+  expect(result.valid).toBe(false);
+  expect(result.issues).toEqual(
+    expect.arrayContaining([expect.objectContaining({ code: issueCode })]),
+  );
 }
 
 function getRuleArray(item: ScaleSeedItem, propertyName: string): unknown[] {
