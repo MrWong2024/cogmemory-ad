@@ -29,11 +29,14 @@ import type {
 import { SESSION_COOKIE_NAME } from '../../auth/auth.constants';
 import { PATIENT_WORKFLOW_ROLES } from '../../patients/patients.constants';
 import {
+  CompletePatientAdministrationStaffStepDto,
   ConfirmPatientAdministrationPreparationDto,
   CreatePatientAdministrationSessionDto,
   PatientAdministrationControlDto,
   PatientAdministrationRequiredReasonDto,
   PatientAdministrationRevisionDto,
+  PatientAdministrationStaffAssetParamDto,
+  TakeOverPatientAdministrationStepDto,
 } from '../dto/patient-administration.dto';
 import { ScaleInstanceExecutionParamDto } from '../dto/scale-instance-execution-param.dto';
 import { PATIENT_ADMINISTRATION_COOKIE_NAME } from '../patient-administration.constants';
@@ -224,6 +227,84 @@ export class PatientAdministrationStaffController {
       params.patientId,
       params.visitId,
       params.scaleInstanceId,
+      input.expectedRevision,
+      input.reason,
+      this.patientAdministrationSessionService.buildOperatorSnapshot(
+        currentUser,
+      ),
+    );
+  }
+
+  @Post('current/complete')
+  @HttpCode(HttpStatus.OK)
+  completeCurrentStep(
+    @Param() params: ScaleInstanceExecutionParamDto,
+    @CurrentUser() currentUser: AuthenticatedUserContext | undefined,
+    @Body() input: CompletePatientAdministrationStaffStepDto,
+  ): Promise<PatientAdministrationSessionSummaryResponse> {
+    return this.patientAdministrationSessionService.completeStaffStep(
+      params.patientId,
+      params.visitId,
+      params.scaleInstanceId,
+      input.expectedRevision,
+      input.staffObservation,
+      this.patientAdministrationSessionService.buildOperatorSnapshot(
+        currentUser,
+      ),
+    );
+  }
+
+  @Post('current/takeover')
+  @HttpCode(HttpStatus.OK)
+  takeOverCurrentStep(
+    @Param() params: ScaleInstanceExecutionParamDto,
+    @CurrentUser() currentUser: AuthenticatedUserContext | undefined,
+    @Body() input: TakeOverPatientAdministrationStepDto,
+  ): Promise<PatientAdministrationSessionSummaryResponse> {
+    return this.patientAdministrationSessionService.takeOverCurrentStep(
+      params.patientId,
+      params.visitId,
+      params.scaleInstanceId,
+      input.expectedRevision,
+      input.reason,
+      input.staffObservation,
+      this.patientAdministrationSessionService.buildOperatorSnapshot(
+        currentUser,
+      ),
+    );
+  }
+
+  @Post('redo-last')
+  @HttpCode(HttpStatus.OK)
+  redoLastStep(
+    @Param() params: ScaleInstanceExecutionParamDto,
+    @CurrentUser() currentUser: AuthenticatedUserContext | undefined,
+    @Body() input: PatientAdministrationRequiredReasonDto,
+  ): Promise<PatientAdministrationSessionSummaryResponse> {
+    return this.patientAdministrationSessionService.redoLastStep(
+      params.patientId,
+      params.visitId,
+      params.scaleInstanceId,
+      input.expectedRevision,
+      input.reason,
+      this.patientAdministrationSessionService.buildOperatorSnapshot(
+        currentUser,
+      ),
+    );
+  }
+
+  @Post('current/audio/:assetKey/replay-authorize')
+  @HttpCode(HttpStatus.OK)
+  authorizeTechnicalReplay(
+    @Param() params: PatientAdministrationStaffAssetParamDto,
+    @CurrentUser() currentUser: AuthenticatedUserContext | undefined,
+    @Body() input: PatientAdministrationRequiredReasonDto,
+  ): Promise<PatientAdministrationSessionSummaryResponse> {
+    return this.patientAdministrationSessionService.authorizeTechnicalReplay(
+      params.patientId,
+      params.visitId,
+      params.scaleInstanceId,
+      params.assetKey,
       input.expectedRevision,
       input.reason,
       this.patientAdministrationSessionService.buildOperatorSnapshot(

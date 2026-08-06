@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  ForbiddenException,
   HttpException,
   HttpStatus,
   Injectable,
@@ -17,7 +18,12 @@ import type {
   PatientAdministrationStepConfigSummary,
   ScaleVersionSummary,
 } from '../../scales/services/scales.service';
-import { PresentationAssetsService } from '../../scales/services/presentation-assets.service';
+import {
+  PresentationAssetsService,
+  type OpenedPresentationAsset,
+  type VerifiedPresentationAsset,
+  type VerifiedPresentationAssetPackage,
+} from '../../scales/services/presentation-assets.service';
 import { ScalesService } from '../../scales/services/scales.service';
 import { normalizeScaleInstanceSubmissionWriteBarrier } from '../lib/scale-instance-submission-write-barrier';
 import {
@@ -36,7 +42,9 @@ import type {
 } from '../patient-administration.constants';
 import type { AssessmentOperatorSnapshot } from '../schemas/assessment-visit.schema';
 import {
+  PatientAdministrationPlaybackFact,
   PatientAdministrationSession,
+  PatientAdministrationStepCapture,
   type PatientAdministrationSessionDocument,
 } from '../schemas/patient-administration-session.schema';
 import {
@@ -52,7 +60,9 @@ import type {
   PatientAdministrationCredentialResponse,
   PatientAdministrationCurrentResponse,
   PatientAdministrationEntryCodeResponse,
+  PatientAdministrationOpenedAsset,
   PatientAdministrationOperatorResponse,
+  PatientAdministrationPlayedAudio,
   PatientAdministrationRequestContext,
   PatientAdministrationSessionSummaryResponse,
 } from '../types/patient-administration-response.types';
@@ -81,6 +91,7 @@ type AdministrationBusinessContext = {
   scaleVersion: ScaleVersionSummary;
   orderedSteps: PatientAdministrationStepConfigSummary[];
   currentStep: PatientAdministrationStepConfigSummary;
+  presentationPackage: VerifiedPresentationAssetPackage;
 };
 
 export type PatientAdministrationCredentialIssue = {
@@ -789,22 +800,820 @@ export class PatientAdministrationSessionService {
       throw new UnauthorizedException();
     }
 
+    return this.toCurrentResponse(current, business);
+  }
+
+  async completePatientStep(
+    context: PatientAdministrationRequestContext,
+    expectedRevision: number,
+  ): Promise<PatientAdministrationCurrentResponse> {
+    const { session, business } = await this.requireActivePatientContext(
+      context,
+      expectedRevision,
+    );
+    if (business.currentStep.advanceBy !== 'patient') {
+      this.throwStepConflict();
+    }
+    this.assertCurrentStepAudioPlayed(session, business);
+
+    const updated = await this.completeCurrentStep(
+      session,
+      business,
+      expectedRevision,
+      'patient',
+      undefined,
+      undefined,
+      context.sessionTokenHash,
+    );
+    return this.toCurrentResponse(
+      updated,
+      this.businessForSessionStep(business, updated.currentStepKey),
+    );
+  }
+
+  async completeStaffStep(
+    patientId: string,
+    visitId: string,
+    scaleInstanceId: string,
+    expectedRevision: number,
+    staffObservation: string,
+    operatorSnapshot: AssessmentOperatorSnapshot,
+  ): Promise<PatientAdministrationSessionSummaryResponse> {
+    const session = await this.requireMutableSession(
+      patientId,
+      visitId,
+      scaleInstanceId,
+      expectedRevision,
+      ['active'],
+      true,
+    );
+    const business = await this.requireBusinessContinuation(
+      patientId,
+      visitId,
+      scaleInstanceId,
+      session.currentStepKey,
+    );
+    if (business.currentStep.advanceBy !== 'staff') {
+      this.throwStepConflict();
+    }
+    this.assertCurrentStepAudioPlayed(session, business);
+
+    return this.toSessionSummary(
+      await this.completeCurrentStep(
+        session,
+        business,
+        expectedRevision,
+        'staff',
+        staffObservation,
+        operatorSnapshot,
+      ),
+    );
+  }
+
+  async takeOverCurrentStep(
+    patientId: string,
+    visitId: string,
+    scaleInstanceId: string,
+    expectedRevision: number,
+    reason: string,
+    staffObservation: string,
+    operatorSnapshot: AssessmentOperatorSnapshot,
+  ): Promise<PatientAdministrationSessionSummaryResponse> {
+    const session = await this.requireMutableSession(
+      patientId,
+      visitId,
+      scaleInstanceId,
+      expectedRevision,
+      ['paused'],
+      true,
+    );
+    const business = await this.requireBusinessContinuation(
+      patientId,
+      visitId,
+      scaleInstanceId,
+      session.currentStepKey,
+    );
+    if (business.currentStep.advanceBy !== 'patient') {
+      this.throwStepConflict();
+    }
+
+    const now = new Date();
+    const stepRun = this.getCurrentStepRun(session, session.currentStepKey);
+    const stepCaptures = this.copyStepCaptures(session);
+    this.assertNoActiveStepCapture(stepCaptures, session.currentStepKey);
+    stepCaptures.push({
+      stepKey: session.currentStepKey,
+      stepRun,
+      capturedBy: 'staff',
+      staffObservation,
+      operatorSnapshot,
+      capturedAt: now,
+    });
+    const nextStep = this.getNextStep(business);
+    const updated = await this.patientAdministrationSessionModel
+      .findOneAndUpdate(
+        {
+          _id: session._id,
+          scaleInstanceId: session.scaleInstanceId,
+          status: 'paused',
+          currentStepKey: session.currentStepKey,
+          revision: expectedRevision,
+          expiresAt: { $gt: now },
+        },
+        {
+          $set: {
+            stepCaptures,
+            currentStepKey: nextStep?.stepKey ?? session.currentStepKey,
+            ...(nextStep ? {} : { status: 'completed', completedAt: now }),
+          },
+          ...(nextStep
+            ? {}
+            : {
+                $unset: {
+                  entryCodeHash: 1,
+                  entryCodeExpiresAt: 1,
+                  sessionTokenHash: 1,
+                },
+              }),
+          $inc: { revision: 1 },
+          $push: {
+            controlEvents: this.buildControlEvent(
+              'staff_takeover',
+              now,
+              operatorSnapshot,
+              reason,
+            ),
+          },
+        },
+        { returnDocument: 'after', runValidators: true },
+      )
+      .select('+entryCodeHash +sessionTokenHash')
+      .exec();
+    if (!updated) {
+      await this.throwAfterAtomicMiss(scaleInstanceId);
+      throw new Error('Unreachable atomic miss');
+    }
+    return this.toSessionSummary(updated);
+  }
+
+  async redoLastStep(
+    patientId: string,
+    visitId: string,
+    scaleInstanceId: string,
+    expectedRevision: number,
+    reason: string,
+    operatorSnapshot: AssessmentOperatorSnapshot,
+  ): Promise<PatientAdministrationSessionSummaryResponse> {
+    const session = await this.requireMutableSession(
+      patientId,
+      visitId,
+      scaleInstanceId,
+      expectedRevision,
+      ['paused'],
+      true,
+    );
+    const business = await this.requireBusinessContinuation(
+      patientId,
+      visitId,
+      scaleInstanceId,
+      session.currentStepKey,
+    );
+    const currentIndex = business.orderedSteps.findIndex(
+      (step) => step.stepKey === session.currentStepKey,
+    );
+    if (currentIndex <= 0) {
+      this.throwStepConflict();
+    }
+    const previousStep = business.orderedSteps[currentIndex - 1];
+    const stepCaptures = this.copyStepCaptures(session);
+    const activeCaptureIndexes = stepCaptures
+      .map((capture, index) => ({ capture, index }))
+      .filter(
+        ({ capture }) =>
+          capture.stepKey === previousStep.stepKey && !capture.invalidatedAt,
+      )
+      .map(({ index }) => index);
+    if (activeCaptureIndexes.length !== 1) {
+      this.throwStepConflict();
+    }
+
+    const now = new Date();
+    const captureIndex = activeCaptureIndexes[0];
+    stepCaptures[captureIndex] = {
+      ...stepCaptures[captureIndex],
+      invalidatedAt: now,
+      invalidatedReason: reason,
+    };
+    const updated = await this.patientAdministrationSessionModel
+      .findOneAndUpdate(
+        {
+          _id: session._id,
+          scaleInstanceId: session.scaleInstanceId,
+          status: 'paused',
+          currentStepKey: session.currentStepKey,
+          revision: expectedRevision,
+          expiresAt: { $gt: now },
+        },
+        {
+          $set: {
+            currentStepKey: previousStep.stepKey,
+            stepCaptures,
+          },
+          $inc: { revision: 1 },
+          $push: {
+            controlEvents: this.buildControlEvent(
+              'step_redo',
+              now,
+              operatorSnapshot,
+              reason,
+            ),
+          },
+        },
+        { returnDocument: 'after', runValidators: true },
+      )
+      .select('+entryCodeHash +sessionTokenHash')
+      .exec();
+    if (!updated) {
+      await this.throwAfterAtomicMiss(scaleInstanceId);
+      throw new Error('Unreachable atomic miss');
+    }
+    return this.toSessionSummary(updated);
+  }
+
+  async authorizeTechnicalReplay(
+    patientId: string,
+    visitId: string,
+    scaleInstanceId: string,
+    assetKey: string,
+    expectedRevision: number,
+    reason: string,
+    operatorSnapshot: AssessmentOperatorSnapshot,
+  ): Promise<PatientAdministrationSessionSummaryResponse> {
+    const session = await this.requireMutableSession(
+      patientId,
+      visitId,
+      scaleInstanceId,
+      expectedRevision,
+      ['paused'],
+      true,
+    );
+    const business = await this.requireBusinessContinuation(
+      patientId,
+      visitId,
+      scaleInstanceId,
+      session.currentStepKey,
+    );
+    const asset = this.requireCurrentAsset(business, assetKey, 'audio');
+    if (asset.role !== 'stimulus') {
+      this.throwAssetNotAllowed();
+    }
+
+    const stepRun = this.getCurrentStepRun(session, session.currentStepKey);
+    const playbackFacts = this.copyPlaybackFacts(session);
+    const factIndex = this.findPlaybackFactIndex(
+      playbackFacts,
+      session.currentStepKey,
+      stepRun,
+      assetKey,
+    );
+    if (factIndex < 0 || playbackFacts[factIndex].playCount < 1) {
+      this.throwAssetNotAllowed();
+    }
+    if (playbackFacts[factIndex].remainingAuthorizedReplays !== 0) {
+      this.throwSessionConflict();
+    }
+
+    const now = new Date();
+    const fact = playbackFacts[factIndex];
+    playbackFacts[factIndex] = {
+      ...fact,
+      remainingAuthorizedReplays: 1,
+      technicalReplayAuthorizations: [
+        ...fact.technicalReplayAuthorizations,
+        { authorizedAt: now, authorizedBy: operatorSnapshot, reason },
+      ],
+    };
+    const updated = await this.patientAdministrationSessionModel
+      .findOneAndUpdate(
+        {
+          _id: session._id,
+          scaleInstanceId: session.scaleInstanceId,
+          status: 'paused',
+          currentStepKey: session.currentStepKey,
+          revision: expectedRevision,
+          expiresAt: { $gt: now },
+        },
+        { $set: { playbackFacts }, $inc: { revision: 1 } },
+        { returnDocument: 'after', runValidators: true },
+      )
+      .select('+entryCodeHash +sessionTokenHash')
+      .exec();
+    if (!updated) {
+      await this.throwAfterAtomicMiss(scaleInstanceId);
+      throw new Error('Unreachable atomic miss');
+    }
+    return this.toSessionSummary(updated);
+  }
+
+  async openCurrentImage(
+    context: PatientAdministrationRequestContext,
+    assetKey: string,
+  ): Promise<PatientAdministrationOpenedAsset> {
+    const { session, business } = await this.requireActivePatientContext(
+      context,
+      context.revision,
+    );
+    const asset = this.requireCurrentAsset(business, assetKey, 'image');
+    const opened = await this.presentationAssetsService.openAsset(
+      business.scaleVersion.presentationPackageKey as string,
+      asset.assetKey,
+    );
+    if (opened.kind !== 'image' || opened.mimeType !== asset.mimeType) {
+      this.destroyOpenedAsset(opened);
+      this.throwPackageInvalid();
+    }
+
+    const finalSession = await this.patientAdministrationSessionModel
+      .findOne({
+        _id: session._id,
+        scaleInstanceId: session.scaleInstanceId,
+        sessionTokenHash: context.sessionTokenHash,
+        status: 'active',
+        currentStepKey: session.currentStepKey,
+        revision: session.revision,
+        expiresAt: { $gt: new Date() },
+      })
+      .select('+sessionTokenHash')
+      .exec();
+    if (!finalSession) {
+      this.destroyOpenedAsset(opened);
+      this.throwSessionConflict();
+    }
+    return opened;
+  }
+
+  async playCurrentAudio(
+    context: PatientAdministrationRequestContext,
+    assetKey: string,
+    expectedRevision: number,
+  ): Promise<PatientAdministrationPlayedAudio> {
+    const { session, business } = await this.requireActivePatientContext(
+      context,
+      expectedRevision,
+    );
+    const asset = this.requireCurrentAsset(business, assetKey, 'audio');
+    if (asset.role !== 'guidance' && asset.role !== 'stimulus') {
+      this.throwAssetNotAllowed();
+    }
+
+    const stepRun = this.getCurrentStepRun(session, session.currentStepKey);
+    const playbackFacts = this.copyPlaybackFacts(session);
+    this.assertPriorAudioPlayed(business, playbackFacts, stepRun, assetKey);
+    let factIndex = this.findPlaybackFactIndex(
+      playbackFacts,
+      session.currentStepKey,
+      stepRun,
+      assetKey,
+    );
+    if (factIndex < 0) {
+      playbackFacts.push({
+        stepKey: session.currentStepKey,
+        stepRun,
+        assetKey,
+        playCount: 0,
+        remainingAuthorizedReplays: 0,
+        technicalReplayAuthorizations: [],
+      });
+      factIndex = playbackFacts.length - 1;
+    }
+    const currentFact = playbackFacts[factIndex];
+    if (
+      asset.role === 'stimulus' &&
+      currentFact.playCount > 0 &&
+      currentFact.remainingAuthorizedReplays < 1
+    ) {
+      this.throwAssetNotAllowed();
+    }
+
+    const opened = await this.presentationAssetsService.openAsset(
+      business.scaleVersion.presentationPackageKey as string,
+      assetKey,
+    );
+    if (opened.kind !== 'audio' || opened.mimeType !== asset.mimeType) {
+      this.destroyOpenedAsset(opened);
+      this.throwPackageInvalid();
+    }
+
+    const now = new Date();
+    playbackFacts[factIndex] = {
+      ...currentFact,
+      playCount: currentFact.playCount + 1,
+      remainingAuthorizedReplays:
+        asset.role === 'stimulus' && currentFact.playCount > 0
+          ? currentFact.remainingAuthorizedReplays - 1
+          : currentFact.remainingAuthorizedReplays,
+      lastPlayedAt: now,
+    };
+    const updated = await this.patientAdministrationSessionModel
+      .findOneAndUpdate(
+        {
+          _id: session._id,
+          scaleInstanceId: session.scaleInstanceId,
+          sessionTokenHash: context.sessionTokenHash,
+          status: 'active',
+          currentStepKey: session.currentStepKey,
+          revision: expectedRevision,
+          expiresAt: { $gt: now },
+        },
+        { $set: { playbackFacts }, $inc: { revision: 1 } },
+        { returnDocument: 'after', runValidators: true },
+      )
+      .select('+sessionTokenHash')
+      .exec();
+    if (!updated) {
+      this.destroyOpenedAsset(opened);
+      await this.throwAfterPatientAtomicMiss(context);
+      throw new Error('Unreachable patient atomic miss');
+    }
+    return { asset: opened, revision: updated.revision };
+  }
+
+  private async requireActivePatientContext(
+    context: PatientAdministrationRequestContext,
+    expectedRevision: number,
+  ): Promise<{
+    session: PatientAdministrationSessionDocument;
+    business: AdministrationBusinessContext;
+  }> {
+    const session = await this.patientAdministrationSessionModel
+      .findOne({
+        _id: new Types.ObjectId(context.sessionId),
+        sessionTokenHash: context.sessionTokenHash,
+      })
+      .select('+sessionTokenHash')
+      .exec();
+    if (!session) {
+      throw new UnauthorizedException();
+    }
+
+    const current = await this.expireIfNeeded(session, new Date());
+    if (
+      current.status !== 'active' ||
+      current.sessionTokenHash !== context.sessionTokenHash ||
+      current.revision !== context.revision ||
+      current.revision !== expectedRevision
+    ) {
+      this.throwSessionConflict();
+    }
     return {
-      status: current.status,
-      revision: current.revision,
-      expiresAt: current.expiresAt,
+      session: current,
+      business: await this.requireBusinessContinuationForSession(current),
+    };
+  }
+
+  private async completeCurrentStep(
+    session: PatientAdministrationSessionDocument,
+    business: AdministrationBusinessContext,
+    expectedRevision: number,
+    capturedBy: 'patient' | 'staff',
+    staffObservation?: string,
+    operatorSnapshot?: AssessmentOperatorSnapshot,
+    sessionTokenHash?: string,
+  ): Promise<PatientAdministrationSessionDocument> {
+    if (
+      (capturedBy === 'staff' && !operatorSnapshot) ||
+      (capturedBy === 'patient' && operatorSnapshot)
+    ) {
+      this.throwStepConflict();
+    }
+
+    const stepCaptures = this.copyStepCaptures(session);
+    this.assertNoActiveStepCapture(stepCaptures, session.currentStepKey);
+    const now = new Date();
+    stepCaptures.push({
+      stepKey: session.currentStepKey,
+      stepRun: this.getCurrentStepRun(session, session.currentStepKey),
+      capturedBy,
+      ...(staffObservation ? { staffObservation } : {}),
+      ...(operatorSnapshot ? { operatorSnapshot } : {}),
+      capturedAt: now,
+    });
+    const nextStep = this.getNextStep(business);
+    const setValues: Record<string, unknown> = {
+      stepCaptures,
+      currentStepKey: nextStep?.stepKey ?? session.currentStepKey,
+    };
+    if (!nextStep) {
+      setValues.status = 'completed';
+      setValues.completedAt = now;
+    }
+
+    const updated = await this.patientAdministrationSessionModel
+      .findOneAndUpdate(
+        {
+          _id: session._id,
+          scaleInstanceId: session.scaleInstanceId,
+          status: 'active',
+          currentStepKey: session.currentStepKey,
+          revision: expectedRevision,
+          expiresAt: { $gt: now },
+          ...(sessionTokenHash ? { sessionTokenHash } : {}),
+        },
+        {
+          $set: setValues,
+          ...(!nextStep
+            ? {
+                $unset: {
+                  entryCodeHash: 1,
+                  entryCodeExpiresAt: 1,
+                  sessionTokenHash: 1,
+                },
+              }
+            : {}),
+          $inc: { revision: 1 },
+        },
+        { returnDocument: 'after', runValidators: true },
+      )
+      .select('+entryCodeHash +sessionTokenHash')
+      .exec();
+    if (!updated) {
+      if (sessionTokenHash) {
+        await this.throwAfterPatientAtomicMiss({
+          sessionId: session._id.toString(),
+          sessionTokenHash,
+          revision: expectedRevision,
+        });
+      }
+      await this.throwAfterAtomicMiss(session.scaleInstanceId.toString());
+      throw new Error('Unreachable atomic miss');
+    }
+    return updated;
+  }
+
+  private toCurrentResponse(
+    session: PatientAdministrationSessionDocument,
+    business: AdministrationBusinessContext,
+  ): PatientAdministrationCurrentResponse {
+    return {
+      status: session.status,
+      revision: session.revision,
+      expiresAt: session.expiresAt,
       currentStep:
-        current.status === 'active'
+        session.status === 'active'
           ? {
               stepKey: business.currentStep.stepKey,
               order: business.currentStep.order,
               patientText: business.currentStep.patientText,
               responseMode: business.currentStep.responseMode,
               advanceBy: business.currentStep.advanceBy,
-              assetKeys: [...business.currentStep.assetKeys],
+              assets: this.getStepAssets(business).map((asset) => ({
+                assetKey: asset.assetKey,
+                kind: asset.kind,
+                role:
+                  asset.kind === 'audio' &&
+                  (asset.role === 'guidance' || asset.role === 'stimulus')
+                    ? asset.role
+                    : null,
+                mimeType: asset.mimeType,
+              })),
             }
           : null,
     };
+  }
+
+  private businessForSessionStep(
+    business: AdministrationBusinessContext,
+    stepKey: string,
+  ): AdministrationBusinessContext {
+    const currentStep = business.orderedSteps.find(
+      (step) => step.stepKey === stepKey,
+    );
+    if (!currentStep) {
+      this.throwStepConfigurationInvalid();
+    }
+    return { ...business, currentStep };
+  }
+
+  private getNextStep(
+    business: AdministrationBusinessContext,
+  ): PatientAdministrationStepConfigSummary | undefined {
+    const currentIndex = business.orderedSteps.findIndex(
+      (step) => step.stepKey === business.currentStep.stepKey,
+    );
+    if (currentIndex < 0) {
+      this.throwStepConfigurationInvalid();
+    }
+    return business.orderedSteps[currentIndex + 1];
+  }
+
+  private getStepAssets(
+    business: AdministrationBusinessContext,
+  ): VerifiedPresentationAsset[] {
+    return this.resolveStepAssets(
+      business.presentationPackage,
+      business.currentStep,
+    );
+  }
+
+  private resolveStepAssets(
+    presentationPackage: VerifiedPresentationAssetPackage,
+    step: PatientAdministrationStepConfigSummary,
+  ): VerifiedPresentationAsset[] {
+    return step.assetKeys.map((assetKey) => {
+      const matches = presentationPackage.assets.filter(
+        (asset) => asset.assetKey === assetKey,
+      );
+      if (matches.length !== 1 || matches[0].stepKey !== step.stepKey) {
+        this.throwStepConfigurationInvalid();
+      }
+      const asset = matches[0];
+      if (
+        (asset.kind === 'image' && asset.role !== undefined) ||
+        (asset.kind === 'audio' &&
+          asset.role !== 'guidance' &&
+          asset.role !== 'stimulus')
+      ) {
+        this.throwStepConfigurationInvalid();
+      }
+      return asset;
+    });
+  }
+
+  private requireCurrentAsset(
+    business: AdministrationBusinessContext,
+    assetKey: string,
+    kind: 'audio' | 'image',
+  ): VerifiedPresentationAsset {
+    if (!business.currentStep.assetKeys.includes(assetKey)) {
+      this.throwAssetNotAllowed();
+    }
+    const asset = this.getStepAssets(business).find(
+      (candidate) => candidate.assetKey === assetKey,
+    );
+    if (!asset || asset.kind !== kind) {
+      this.throwAssetNotAllowed();
+    }
+    return asset;
+  }
+
+  private getCurrentStepRun(
+    session: PatientAdministrationSessionDocument,
+    stepKey: string,
+  ): number {
+    const invalidatedCount = (session.stepCaptures ?? []).filter(
+      (capture) => capture.stepKey === stepKey && capture.invalidatedAt,
+    ).length;
+    const stepRun = invalidatedCount + 1;
+    if (!Number.isSafeInteger(stepRun) || stepRun < 1) {
+      this.throwStepConflict();
+    }
+    return stepRun;
+  }
+
+  private copyStepCaptures(
+    session: PatientAdministrationSessionDocument,
+  ): PatientAdministrationStepCapture[] {
+    return (session.stepCaptures ?? []).map((capture) => ({
+      stepKey: capture.stepKey,
+      stepRun: capture.stepRun,
+      capturedBy: capture.capturedBy,
+      ...(capture.staffObservation
+        ? { staffObservation: capture.staffObservation }
+        : {}),
+      ...(capture.operatorSnapshot
+        ? { operatorSnapshot: capture.operatorSnapshot }
+        : {}),
+      capturedAt: capture.capturedAt,
+      ...(capture.invalidatedAt
+        ? { invalidatedAt: capture.invalidatedAt }
+        : {}),
+      ...(capture.invalidatedReason
+        ? { invalidatedReason: capture.invalidatedReason }
+        : {}),
+    }));
+  }
+
+  private copyPlaybackFacts(
+    session: PatientAdministrationSessionDocument,
+  ): PatientAdministrationPlaybackFact[] {
+    return (session.playbackFacts ?? []).map((fact) => ({
+      stepKey: fact.stepKey,
+      stepRun: fact.stepRun,
+      assetKey: fact.assetKey,
+      playCount: fact.playCount,
+      remainingAuthorizedReplays: fact.remainingAuthorizedReplays,
+      ...(fact.lastPlayedAt ? { lastPlayedAt: fact.lastPlayedAt } : {}),
+      technicalReplayAuthorizations: (
+        fact.technicalReplayAuthorizations ?? []
+      ).map((authorization) => ({
+        authorizedAt: authorization.authorizedAt,
+        authorizedBy: authorization.authorizedBy,
+        reason: authorization.reason,
+      })),
+    }));
+  }
+
+  private assertNoActiveStepCapture(
+    captures: PatientAdministrationStepCapture[],
+    stepKey: string,
+  ): void {
+    if (
+      captures.some(
+        (capture) => capture.stepKey === stepKey && !capture.invalidatedAt,
+      )
+    ) {
+      this.throwStepConflict();
+    }
+  }
+
+  private findPlaybackFactIndex(
+    playbackFacts: PatientAdministrationPlaybackFact[],
+    stepKey: string,
+    stepRun: number,
+    assetKey: string,
+  ): number {
+    const matches = playbackFacts
+      .map((fact, index) => ({ fact, index }))
+      .filter(
+        ({ fact }) =>
+          fact.stepKey === stepKey &&
+          fact.stepRun === stepRun &&
+          fact.assetKey === assetKey,
+      );
+    if (matches.length > 1) {
+      this.throwStepConflict();
+    }
+    return matches[0]?.index ?? -1;
+  }
+
+  private assertCurrentStepAudioPlayed(
+    session: PatientAdministrationSessionDocument,
+    business: AdministrationBusinessContext,
+  ): void {
+    const stepRun = this.getCurrentStepRun(session, session.currentStepKey);
+    const playbackFacts = this.copyPlaybackFacts(session);
+    for (const asset of this.getStepAssets(business)) {
+      if (asset.kind !== 'audio') {
+        continue;
+      }
+      const factIndex = this.findPlaybackFactIndex(
+        playbackFacts,
+        session.currentStepKey,
+        stepRun,
+        asset.assetKey,
+      );
+      if (factIndex < 0 || playbackFacts[factIndex].playCount < 1) {
+        this.throwStepConflict();
+      }
+    }
+  }
+
+  private assertPriorAudioPlayed(
+    business: AdministrationBusinessContext,
+    playbackFacts: PatientAdministrationPlaybackFact[],
+    stepRun: number,
+    assetKey: string,
+  ): void {
+    for (const asset of this.getStepAssets(business)) {
+      if (asset.assetKey === assetKey) {
+        return;
+      }
+      if (asset.kind !== 'audio') {
+        continue;
+      }
+      const factIndex = this.findPlaybackFactIndex(
+        playbackFacts,
+        business.currentStep.stepKey,
+        stepRun,
+        asset.assetKey,
+      );
+      if (factIndex < 0 || playbackFacts[factIndex].playCount < 1) {
+        this.throwAssetNotAllowed();
+      }
+    }
+    this.throwAssetNotAllowed();
+  }
+
+  private destroyOpenedAsset(asset: OpenedPresentationAsset): void {
+    try {
+      asset.stream.destroy();
+    } catch {
+      // The authorization failure remains authoritative even if close fails.
+    }
+  }
+
+  private async throwAfterPatientAtomicMiss(
+    context: PatientAdministrationRequestContext,
+  ): Promise<never> {
+    const current = await this.patientAdministrationSessionModel
+      .findById(new Types.ObjectId(context.sessionId))
+      .select('+sessionTokenHash')
+      .exec();
+    if (!current || current.sessionTokenHash !== context.sessionTokenHash) {
+      throw new UnauthorizedException();
+    }
+    await this.expireIfNeeded(current, new Date());
+    this.throwSessionConflict();
   }
 
   private async requireMutableSession(
@@ -943,7 +1752,7 @@ export class PatientAdministrationSessionService {
       scaleVersion.id !== scaleInstance.scaleVersionId ||
       scaleVersion.scaleDefinitionId !== scaleInstance.scaleDefinitionId
     ) {
-      this.throwStepInvalid();
+      this.throwStepConfigurationInvalid();
     }
 
     const orderedSteps = this.validateAndOrderSteps(
@@ -954,7 +1763,7 @@ export class PatientAdministrationSessionService {
       (step) => step.stepKey === resolvedStepKey,
     );
     if (!currentStep) {
-      this.throwStepInvalid();
+      this.throwStepConfigurationInvalid();
     }
     if (!scaleVersion.presentationPackageKey?.trim()) {
       this.throwPackageInvalid();
@@ -964,24 +1773,27 @@ export class PatientAdministrationSessionService {
       await this.presentationAssetsService.validatePackage(
         scaleVersion.presentationPackageKey,
       );
-    const packageAssetKeys = new Set(
-      verifiedPackage.assets.map((asset) => asset.assetKey),
-    );
+    if (
+      verifiedPackage.manifest.scaleCode !== scaleVersion.scaleCode ||
+      verifiedPackage.manifest.scaleVersion !== scaleVersion.version
+    ) {
+      this.throwPackageInvalid();
+    }
     const stepsToValidate = validateAllStepAssets
       ? orderedSteps
       : [currentStep];
     for (const step of stepsToValidate) {
-      for (const assetKey of step.assetKeys) {
-        if (!packageAssetKeys.has(assetKey)) {
-          throw new NotFoundException({
-            code: 'PRESENTATION_ASSET_NOT_FOUND',
-            message: 'Presentation asset was not found',
-          });
-        }
-      }
+      this.resolveStepAssets(verifiedPackage, step);
     }
 
-    return { visit, scaleInstance, scaleVersion, orderedSteps, currentStep };
+    return {
+      visit,
+      scaleInstance,
+      scaleVersion,
+      orderedSteps,
+      currentStep,
+      presentationPackage: verifiedPackage,
+    };
   }
 
   private async requireBusinessContinuationForSession(
@@ -1011,7 +1823,7 @@ export class PatientAdministrationSessionService {
     steps: PatientAdministrationStepConfigSummary[] | undefined,
   ): PatientAdministrationStepConfigSummary[] {
     if (!steps?.length) {
-      this.throwStepInvalid();
+      this.throwStepConfigurationInvalid();
     }
 
     const stepKeys = new Set<string>();
@@ -1024,13 +1836,19 @@ export class PatientAdministrationSessionService {
         stepKeys.has(step.stepKey) ||
         orders.has(step.order)
       ) {
-        this.throwStepInvalid();
+        this.throwStepConfigurationInvalid();
       }
       stepKeys.add(step.stepKey);
       orders.add(step.order);
     }
 
-    return [...steps].sort((left, right) => left.order - right.order);
+    const orderedSteps = [...steps].sort(
+      (left, right) => left.order - right.order,
+    );
+    if (orderedSteps.some((step, index) => step.order !== index + 1)) {
+      this.throwStepConfigurationInvalid();
+    }
+    return orderedSteps;
   }
 
   private async findLatestSessionByScaleInstance(
@@ -1311,10 +2129,24 @@ export class PatientAdministrationSessionService {
     });
   }
 
-  private throwStepInvalid(): never {
+  private throwStepConfigurationInvalid(): never {
     throw new InternalServerErrorException({
       code: 'PATIENT_ADMINISTRATION_STEP_INVALID',
       message: 'Patient administration step configuration is invalid',
+    });
+  }
+
+  private throwStepConflict(): never {
+    throw new ConflictException({
+      code: 'PATIENT_ADMINISTRATION_STEP_INVALID',
+      message: 'Patient administration step is not valid for this operation',
+    });
+  }
+
+  private throwAssetNotAllowed(): never {
+    throw new ForbiddenException({
+      code: 'PATIENT_ADMINISTRATION_ASSET_NOT_ALLOWED',
+      message: 'Patient administration asset is not allowed',
     });
   }
 

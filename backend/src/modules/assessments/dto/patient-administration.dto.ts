@@ -12,6 +12,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { ScaleInstanceExecutionParamDto } from './scale-instance-execution-param.dto';
 import { PATIENT_ADMINISTRATION_IMPACT_FACTOR_CODES } from '../patient-administration.constants';
 import type { PatientAdministrationImpactFactorCode } from '../patient-administration.constants';
 
@@ -32,6 +33,48 @@ export class PatientAdministrationRevisionDto {
   @Min(0)
   @Max(Number.MAX_SAFE_INTEGER)
   expectedRevision!: number;
+}
+
+export class CompletePatientAdministrationStepDto extends PatientAdministrationRevisionDto {}
+
+export class CompletePatientAdministrationStaffStepDto extends PatientAdministrationRevisionDto {
+  @Transform(trimString)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(2000)
+  staffObservation!: string;
+}
+
+export class TakeOverPatientAdministrationStepDto extends PatientAdministrationRevisionDto {
+  @Transform(trimString)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(500)
+  reason!: string;
+
+  @Transform(trimString)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(2000)
+  staffObservation!: string;
+}
+
+export class PatientAdministrationAssetParamDto {
+  @Transform(trimString)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(120)
+  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+  assetKey!: string;
+}
+
+export class PatientAdministrationStaffAssetParamDto extends ScaleInstanceExecutionParamDto {
+  @Transform(trimString)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(120)
+  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+  assetKey!: string;
 }
 
 export class PatientAdministrationControlDto extends PatientAdministrationRevisionDto {

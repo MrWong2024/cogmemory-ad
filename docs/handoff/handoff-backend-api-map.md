@@ -11,7 +11,7 @@
 - AuthModule 内部 session cookie 名称已统一为 `cogmemory_ad_session`，登录成功下发 HttpOnly Cookie，`SameSite=Lax`，`Path=/`，production 环境启用 `Secure`。
 - 当前没有 users controller，没有公开用户管理 API，没有注册、密码重置、角色权限管理、短信验证码、OAuth / SSO 或 JWT 登录 API。
 - A12 已新增 `PatientsController` 与 `AssessmentVisitsController`，形成第一组受保护临床业务 API；所有五个接口均显式绑定 `SessionAuthGuard`、`RolesGuard` 和 `@Roles('admin', 'doctor', 'nurse', 'research_assistant')`。
-- 当前已有实例 submission、评分、认知域、报告与历史趋势接口；WP-10-B1 另提供八个 staff 会话控制接口和两个 patient 接口。B1 不提供步骤推进、资产二进制、患者回答、录音 / ASR、ItemResponse 写入或患者 UI。
+- 当前已有实例 submission、评分、认知域、报告与历史趋势接口；WP-10-B 共提供十二个 staff 会话 / 步骤控制接口和五个 patient 会话 / 步骤 / 资产接口。B2 不提供患者回答、录音 / ASR、ItemResponse 写入或患者 UI。
 - 当前 API 事实以实际 Controller、DTO、response type 和对应单元 / E2E 测试为准。
 
 ## 3. 当前 API 清单
@@ -454,7 +454,7 @@
 - A20 / A21 / A26：generate 与 latest 使用当前 latest；合法 replacement 的 edit / submit / confirm / lock / freeze-sources / archive 仅 doctor/admin，Patient inactive / Visit locked / voided 不阻断。V1 的 A21-A23 资格不放宽；公开 endpoint、DTO 与 response 未变化。
 - errors：400 confirmation / DTO；401；403；404 ownership；409 not-correctable / not-latest / conflict / audit-unavailable / replacement-conflict / incomplete；未知持久化失败 500。
 
-## WP-10-B1 患者短期会话与控制权 API
+## WP-10-B 患者短期会话、步骤推进与受控资产 API
 
 ### Staff 会话接口
 
@@ -466,14 +466,21 @@
 - `POST /pause` / `POST /resume`：Body `{ expectedRevision, reason? }`。pause 只允许 active 且不清除患者 Token；resume 要求 paused、准备已确认、患者凭证存在且底层仍可继续，不延长绝对过期时间。
 - `POST /entry-code/reissue`：Body `{ expectedRevision, reason }`；prepared 保持 prepared，active / paused 统一变 paused；旧患者 Token 立即失效，新六位码最长十分钟且不超过绝对有效期。
 - `POST /terminate`：Body `{ expectedRevision, reason }`；开放会话转 terminated，清除全部凭证且不删除记录、不修改 ScaleInstance / ItemResponse。pause / terminate 即使底层后来锁定仍允许在 route ownership、revision、状态和有效期匹配时执行。
+- `POST /current/complete`：Body `{ expectedRevision, staffObservation }`；仅 active 且当前步骤 `advanceBy=staff`，要求当前 run 的全部音频已按顺序至少播放一次，写入 staff capture 后推进。最后一步则转 completed 并清除全部凭证。
+- `POST /current/takeover`：Body `{ expectedRevision, reason, staffObservation }`；仅 paused 且当前步骤 `advanceBy=patient`，不要求患者先完成播放，写入 staff capture、`staff_takeover` control event 并推进；保持 paused，若无下一步则 completed。
+- `POST /redo-last`：Body `{ expectedRevision, reason }`；仅 paused，只允许当前步骤的直接前一步且必须恰有一个 active capture；原 capture 只写 invalidatedAt / invalidatedReason，不删除，currentStepKey 回退，下一 capture 的 stepRun 为该步骤无效 capture 数 + 1。
+- `POST /current/audio/:assetKey/replay-authorize`：Body `{ expectedRevision, reason }`；仅 paused、当前步骤、audio stimulus 且本 run 已播放一次并无未消费授权。成功只增加一个 `remainingAuthorizedReplays` 与授权审计；重复堆叠为 409。
 - Staff summary 严格为 id、status、currentStepKey、revision、expiresAt、entryCodeExpiresAt、hasPatientCredential、准备 / 影响因素 / createdBy、生命周期时间及 timestamps；不含 credential hash、raw Token、controlEvents、步骤配置或资产路径。
 
 ### Patient 会话接口
 
 - `POST /patient-administration/enter`：无 staff Guard；Body 仅 `{ code }`（trim 后精确六位数字）。若请求带仍有效 staff Cookie，409 `PATIENT_ADMINISTRATION_SESSION_CONFLICT` 且不消费 code；陈旧 staff Cookie 可清除。进入码按 hash、状态、双有效期、无现存患者 Token及底层可继续条件原子消费，成功只设置患者 HttpOnly Cookie并返回 `{ status, revision, expiresAt }`；无效 / 过期 / 已用 / 不存在统一 401 `PATIENT_ADMINISTRATION_ENTRY_INVALID`，同 IP + User-Agent client key 固定窗口失败限流为 429 且使用同 code。
-- `GET /patient-administration/current`：`PatientAdministrationSessionGuard` 只读 `cogmemory_ad_patient_session`，拒绝过期 / 被轮换 / 底层失效 / 同请求有效 staff 身份。最终读取再次匹配 session id + token hash + 开放状态。响应仅 `{ status, revision, expiresAt, currentStep }`；prepared / paused 的 currentStep=null，active 仅返回当前 stepKey、order、patientText、responseMode、advanceBy、assetKeys。
-- Cookie：患者 Cookie 固定 HttpOnly、SameSite=Lax、Path=`/patient-administration`，Secure 取 `session.cookieSecure`，maxAge 不大于两小时且不进入 URL / JSON / localStorage。B1 没有题目资产或回答 Route。
-- 新增稳定错误仅为 `PATIENT_ADMINISTRATION_SESSION_NOT_FOUND`、`PATIENT_ADMINISTRATION_SESSION_CONFLICT`、`PATIENT_ADMINISTRATION_ENTRY_INVALID`、`PATIENT_ADMINISTRATION_STEP_INVALID`；继续复用既有 Patient / Visit / ScaleInstance / presentation asset 错误。
+- `GET /patient-administration/current`：`PatientAdministrationSessionGuard` 只读 `cogmemory_ad_patient_session`，拒绝过期 / 被轮换 / 底层失效 / 同请求有效 staff 身份。最终读取再次匹配 session id + token hash + 开放状态。响应仅 `{ status, revision, expiresAt, currentStep }`；prepared / paused 的 currentStep=null，active 仅返回当前 stepKey、order、patientText、responseMode、advanceBy、`assets[{ assetKey, kind, role, mimeType }]`。
+- `POST /patient-administration/current/complete`：Body 只含 `{ expectedRevision }`；仅 active 且当前步骤 `advanceBy=patient`，要求当前 run 的全部 audio 已按配置顺序至少播放一次。成功写入 patient capture 并推进；最后一步转 completed、清除全部服务端凭证与患者 Cookie，返回 currentStep=null。
+- `GET /patient-administration/current/assets/:assetKey`：只允许 active 当前步骤已配置的 image；读取不改 revision。打开流后在首字节返回前再次匹配 session id、token hash、active、currentStepKey、revision 与未过期，失败销毁流。成功返回原始二进制与 Content-Type / Length、`Cache-Control: private, no-store, max-age=0`、`X-Content-Type-Options: nosniff`。
+- `POST /patient-administration/current/audio/:assetKey/play`：Body 只含 `{ expectedRevision }`；仅 active 当前步骤已配置的 guidance / stimulus audio。按步骤 asset 顺序要求前序 audio 已播放；guidance 可重播，stimulus 默认每 run 一次，只有 paused staff 授权后可再播放一次。先打开流、再以 token + currentStepKey + expectedRevision CAS 写 playback fact，成功通过 `X-Patient-Administration-Revision` 返回新 revision；CAS 失败销毁流且不返回二进制。
+- Cookie：患者 Cookie 固定 HttpOnly、SameSite=Lax、Path=`/patient-administration`，Secure 取 `session.cookieSecure`，maxAge 不大于两小时且不进入 URL / JSON / localStorage；完成、终止或失效后不再可用。
+- 稳定错误包括 `PATIENT_ADMINISTRATION_SESSION_NOT_FOUND`、`PATIENT_ADMINISTRATION_SESSION_CONFLICT`、`PATIENT_ADMINISTRATION_ENTRY_INVALID`、`PATIENT_ADMINISTRATION_STEP_INVALID` 与 403 `PATIENT_ADMINISTRATION_ASSET_NOT_ALLOWED`；继续复用既有 Patient / Visit / ScaleInstance / presentation package/file 错误。业务步骤归属、播放前置条件和 redo 条件失败为 409 step invalid；revision / 状态竞争为 409 session conflict。
 
 ## A27 WP-04 后端阶段一历史读取
 

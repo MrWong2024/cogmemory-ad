@@ -288,16 +288,45 @@ describe('patient administration session APIs (e2e)', () => {
     if (!mmseSeed?.version.patientAdministrationSteps) {
       throw new Error('MMSE patient administration seed is unavailable');
     }
-    const stubAssetKeys = [
-      ...new Set(
-        mmseSeed.version.patientAdministrationSteps.flatMap(
-          (step) => step.assetKeys,
-        ),
-      ),
-    ];
+    const stubAssets = mmseSeed.version.patientAdministrationSteps.flatMap(
+      (step) =>
+        step.assetKeys.map((assetKey) => {
+          const isImage = assetKey === 'mmse-drawing-stimulus';
+          return {
+            assetKey,
+            stepKey: step.stepKey,
+            kind: isImage ? ('image' as const) : ('audio' as const),
+            ...(isImage
+              ? {}
+              : {
+                  role: assetKey.endsWith('-stimulus')
+                    ? 'stimulus'
+                    : 'guidance',
+                }),
+            mimeType: isImage ? 'image/png' : 'audio/mpeg',
+            file: `${assetKey}.${isImage ? 'png' : 'mp3'}`,
+            filePath: `in-memory/${assetKey}.${isImage ? 'png' : 'mp3'}`,
+            size: 16,
+            sha256: '0'.repeat(64),
+          };
+        }),
+    );
     const presentationAssetsStub = {
       validatePackage: jest.fn().mockResolvedValue({
-        assets: stubAssetKeys.map((assetKey) => ({ assetKey })),
+        packageDirectory: 'in-memory',
+        manifestPath: 'in-memory/manifest.json',
+        manifest: {
+          packageKey: 'mmse-1.0-package-001',
+          scaleCode: 'mmse',
+          scaleVersion: '1.0',
+          status: 'released',
+          sourcePdf: 'in-memory.pdf',
+          sourcePdfSha256: '0'.repeat(64),
+          reviewedBy: 'B1 regression stub',
+          reviewedAt: '2026-08-06T00:00:00.000Z',
+          assets: stubAssets,
+        },
+        assets: stubAssets,
       }),
     };
 
@@ -601,7 +630,7 @@ describe('patient administration session APIs (e2e)', () => {
     expect(Object.keys(activeStep).sort()).toEqual(
       [
         'advanceBy',
-        'assetKeys',
+        'assets',
         'order',
         'patientText',
         'responseMode',
@@ -609,6 +638,18 @@ describe('patient administration session APIs (e2e)', () => {
       ].sort(),
     );
     const firstStepKey = readString(activeStep, 'stepKey');
+    const assets = activeStep.assets;
+    if (!Array.isArray(assets)) {
+      throw new Error('Expected current step assets');
+    }
+    for (const asset of assets) {
+      if (!isRecord(asset)) {
+        throw new Error('Expected safe current step asset metadata');
+      }
+      expect(Object.keys(asset).sort()).toEqual(
+        ['assetKey', 'kind', 'mimeType', 'role'].sort(),
+      );
+    }
     const serializedCurrent = JSON.stringify(activeBody).toLowerCase();
     for (const forbidden of [
       'patientid',

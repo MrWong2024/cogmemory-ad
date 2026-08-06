@@ -44,6 +44,13 @@ export const PATIENT_ADMINISTRATION_CONTROL_EVENT_ACTIONS = [
   'device_reissued',
   'terminated',
   'expired',
+  'staff_takeover',
+  'step_redo',
+] as const;
+
+export const PATIENT_ADMINISTRATION_CAPTURED_BY_VALUES = [
+  'patient',
+  'staff',
 ] as const;
 
 export type PatientAdministrationStatus =
@@ -54,3 +61,5 @@ export type PatientAdministrationImpactFactorCode =
   (typeof PATIENT_ADMINISTRATION_IMPACT_FACTOR_CODES)[number];
 export type PatientAdministrationControlEventAction =
   (typeof PATIENT_ADMINISTRATION_CONTROL_EVENT_ACTIONS)[number];
+export type PatientAdministrationCapturedBy =
+  (typeof PATIENT_ADMINISTRATION_CAPTURED_BY_VALUES)[number];

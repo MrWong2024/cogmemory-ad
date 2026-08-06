@@ -6,7 +6,7 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 DTO、响应 type、Storage interface，以及 A12-A28 和 WP-10-B1 业务契约；B1 DTO / response 单独锁定患者会话控制与最小公开步骤边界。
+- 当前存在公共底座 DTO、响应 type、Storage interface，以及 A12-A28 和 WP-10-B 业务契约；B1 锁定患者会话控制，B2 补齐步骤推进、受控资产与播放事实边界。
 - 当前新增公开认证请求 DTO：`LoginDto`。
 - 当前新增公开患者 / 访视 DTO：`CreatePatientDto`、`ListPatientsQueryDto`、`PatientIdParamDto`、`CreateAssessmentVisitDto`、`ListAssessmentVisitsQueryDto`、`PatientVisitsParamDto`。
 - 当前仍没有用户管理、注册、密码重置、撤销 / reopen / force submit、批量 / 分片 / 客户端直传、认知域人工修改 / 确认 / 锁定 / 重算或报告退回 / 签名 / unlock / unfreeze / unarchive / correction cancel / 作废 / PDF 请求 DTO；A25 已新增受控 correction DTO。
@@ -45,7 +45,7 @@
 - 用途：`POST /auth/logout` 稳定成功响应 type。
 - 字段：`authenticated: false`、`ok: true`。
 
-### WP-10-B1 patient administration DTO / response
+### WP-10-B patient administration DTO / response
 
 - 文件：`backend\src\modules\assessments\dto\patient-administration.dto.ts` 与 `types\patient-administration-response.types.ts`。
 - `CreatePatientAdministrationSessionDto`：空白名单 DTO；创建接口无业务 Body，任何额外字段由全局 `forbidNonWhitelisted` 拒绝。
@@ -54,10 +54,15 @@
 - `PatientAdministrationControlDto`：继承 expectedRevision；`reason?` trim、string、最大 500。
 - `PatientAdministrationRequiredReasonDto`：继承 expectedRevision；`reason` 必填、trim 后非空、最大 500。
 - `ConfirmPatientAdministrationPreparationDto`：expectedRevision；`impactFactorCodes` 必须为数组、允许空、元素唯一且只允许 sensory / upper_limb / language_culture_education / instruction_comprehension / fatigue_emotion_refusal / environment / device_network / other；`impactFactorNote?` trim、最大 500。
+- `CompletePatientAdministrationStepDto`：患者完成当前步骤，只声明 `expectedRevision`；客户端提交 stepKey、assetKey、advanceBy、回答或其他字段均由全局 whitelist 拒绝。
+- `CompletePatientAdministrationStaffStepDto`：staff 完成 staff 步骤；除 expectedRevision 外要求 trim 后非空的 `staffObservation`，最大 2000。
+- `TakeOverPatientAdministrationStepDto`：paused staff 接管当前 patient 步骤；要求 expectedRevision、trim 后非空 reason（最大 500）与 staffObservation（最大 2000）。
+- `PatientAdministrationAssetParamDto`：patient 资产路径只含 assetKey；trim、非空、最大 120，只允许小写字母数字及单连字符分段。`PatientAdministrationStaffAssetParamDto` 在三个既有 MongoId 路径参数上增加同一 assetKey 校验，供 staff 技术重播授权使用。
 - `PatientAdministrationSessionSummaryResponse`：只含 id、status、currentStepKey、revision、expiresAt、entryCodeExpiresAt、hasPatientCredential、preparationConfirmedAt / By、impactFactorCodes / Note、createdBy、startedAt / pausedAt / completedAt / terminatedAt / expiredAt、createdAt / updatedAt。操作者只含 operatorId / Name / Role，不含 credential 或 controlEvents。
 - `PatientAdministrationEntryCodeResponse`：在 staff summary 上增加 `entryCode` 与非空 `entryCodeExpiresAt`；raw code 只在创建 / 重签该次响应出现。
 - `PatientAdministrationCredentialResponse`：跨设备 enter 仅含 status、revision、expiresAt；handoff 与其他 staff 状态动作返回 staff summary。两种路径的患者 Token 都只写 Cookie。
-- `PatientAdministrationCurrentResponse`：仅 status、revision、expiresAt、currentStep；非 active 为 null，active step 只含 stepKey、order、可选 patientText、responseMode、advanceBy、assetKeys。
+- `PatientAdministrationCurrentResponse`：仅 status、revision、expiresAt、currentStep；非 active 为 null，active step 只含 stepKey、order、可选 patientText、responseMode、advanceBy、assets。每个 asset 仅含 assetKey、kind、role（guidance / stimulus / null）与 mimeType，不含 file / filePath / size / sha256 / spokenText / manifest / packageKey；旧 `assetKeys` 响应字段已移除。
+- `PatientAdministrationOpenedAsset` / `PatientAdministrationPlayedAudio`：仅为 Controller 与 Service 之间的内部流 type，携带已授权 assetKey / kind / mimeType / size / Readable；音频结果额外带写后 revision。它们不是 JSON 公开 DTO，不允许把路径、manifest 或 hash 映射到响应。
 - `PatientAdministrationRequestContext`：Guard 内部仅含 sessionId、sessionTokenHash、revision；不得挂载 raw Token、患者档案、完整 ScaleVersion 或步骤集合。
 
 - 名称：`PaginationQueryDto`

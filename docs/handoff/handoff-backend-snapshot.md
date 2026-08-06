@@ -12,7 +12,7 @@
 - `StorageModule` 当前只提供 fake / OSS 底层 driver 结构和 `STORAGE_SERVICE` token，不提供独立、通用的 Storage 管理或上传 API；题目媒体业务上传链路由 `MediaModule` 基于该抽象提供。
 - `ScalesModule` 当前提供量表定义 / 量表版本 Schema、内部 `ScalesService`、MMSE / MoCA seed、只读 `ScaleSeedDataService`、`ScaleCatalogService`、内部只读 `PresentationAssetsService` 和公开只读 `ScalesController`。`GET /scales/available` 只返回安全摘要且不写数据库；量表初始化时才按需幂等物化对应 seed 版本。没有公共题目资产接口或静态目录挂载。
 - `PatientsModule` 当前提供患者 / 受试者基础档案 Schema、内部读取底座，以及 `GET /patients`、`POST /patients`、`GET /patients/:patientId` 三个患者最小公开 API。
-- `AssessmentsModule` 当前除访视 / 量表实例 / 题目作答底座外，已注册 WP-10-B1 `PatientAdministrationSession`、会话 Service、患者专用 Guard、staff / patient Controller 与 Cookie 工具。B1 独立于既有 staff `Session`，不写 `ItemResponse`，不开放题目资产二进制。
+- `AssessmentsModule` 当前除访视 / 量表实例 / 题目作答底座外，已注册 WP-10-B `PatientAdministrationSession`、会话 Service、患者专用 Guard、staff / patient Controller 与 Cookie 工具。患者会话独立于既有 staff `Session`；B2 已开放权威步骤推进和当前题目受控二进制，但不写 `ItemResponse`。
 - A16 在 `AssessmentsModule` 提供 `ScaleInstanceSubmissionController`、`ScaleInstanceSubmissionService`、`ScaleInstanceSubmissionBarrierService`、纯 readiness / barrier 函数、提交 DTO 与安全公开响应类型；开放 readiness GET 与 submit POST，并由 A30 的可恢复屏障协议完成跨父子集合线性化保护。
 - `MediaModule` 当前在既有媒体证据 Schema / Service 上新增 A15 公开 `MediaEvidenceController`、工作流 Service、安全 mapper、图片与轨迹纯校验；提供题目下列表、multipart 上传、短期签名访问和作废四个接口。
 - `ScoringModule` 当前在计分结果快照 Schema、`ScoringService` 与 `summarizeItemScores()` 通用汇总基础上，提供 A17 阶段性 workflow、A18 `ScoreReviewWorkflowService`、纯评分 / 人工复核函数与安全 public mapper；公开 compute / latest / manual-review / confirm，不提供 lock、void、重跑、认知域或报告接口。
@@ -25,7 +25,7 @@
 - 本地默认前端 origin 为 `http://localhost:3002`。
 - test 数据库用途已分为 `standard_test` → `cogmemory_ad_test` 与 `browser_acceptance` → `cogmemory_ad_browser_test`；未显式指定的 `NODE_ENV=test` 进程默认 `standard_test`。配置 URI 在连接前按固定映射校验，连接后再按 Mongoose `connection.name` 校验。
 - `npm run start:browser-test` 是 Browser test backend 专用入口：仅接受 Browser app 用户及目标库 `readWrite` 角色，通过实际库名与角色门禁后才监听；当前所有 Browser fixture CLI 仅接受 Browser db_admin 用户及目标库 `dbOwner` 角色，具体 CLI 与 Profile 以当前代码和 testing playbook 为准。
-- 当前报告接口为十一个，另有患者历史评估与基础随访趋势两个接口；WP-10-B1 新增八个 staff 会话控制接口和两个 patient 接口。staff 入口继续显式使用 `SessionAuthGuard` + `RolesGuard`，patient `current` 使用独立患者 Cookie Guard。
+- 当前报告接口为十一个，另有患者历史评估与基础随访趋势两个接口；WP-10-B 提供十二个 staff 会话 / 步骤控制接口和五个 patient 会话 / 步骤 / 资产接口。staff 入口继续显式使用 `SessionAuthGuard` + `RolesGuard`，patient 入口使用独立患者 Cookie Guard。
 - A27 已实现患者历史评估、完整报告版本链与指定历史详情；A28 已实现 Visit 保留式基础随访趋势、稳定 source/dataStatus 与相邻 exact trace/domain mapping 可比性。
 - D-038 已实施：`standard_test` 与 `browser_acceptance` 双库、Browser app / db_admin 双角色及独立进程隔离结构均已存在，建连前后库名与角色门禁生效。
 - 当前 lint、typecheck、build、unit、E2E、数据库隔离和 Browser 批次的最终结果与数量统一以 `handoff-backend-testing-playbook.md` 为准；本文不重复保存逐阶段测试流水。
@@ -289,18 +289,20 @@
 - 查询为 Visit max+1 加三次按 ID 集合轻量 batch，响应为显式白名单；没有 N+1、内部 HTTP、写入、Schema/index/collection/cache/read model/job/dependency 变化，也不暴露 Patient identity、内部来源 ID、raw/Mixed、metadata、report、media、AI 或诊断字段。
 - WP-04 已完成：A27/A28 后端四个只读接口与 B17 前端历史、版本导航、历史详情和基础趋势均已实施并验收。
 
-## 16. WP-10-B1 患者短期会话与控制权底座
+## 16. WP-10-B 患者短期会话、步骤推进与受控资产
 
-- `patient_administration_sessions` 仅保存 `scaleInstanceId`、服务端 `currentStepKey`、单一 `revision`、绝对两小时有效期、凭证 hash、准备 / 影响因素 / 生命周期时间、操作者快照与最小 control events；开放状态唯一索引和两个 sparse 凭证唯一索引共三个，无 TTL、后台扫描器或物理删除。
+- `patient_administration_sessions` 保存 `scaleInstanceId`、服务端 `currentStepKey`、单一 `revision`、绝对两小时有效期、凭证 hash、准备 / 影响因素 / 生命周期时间、操作者快照、最小 control events，以及 B2 内嵌 `_id:false` 的 `stepCaptures` / `playbackFacts`；开放状态唯一索引和两个 sparse 凭证唯一索引仍共三个，无新 collection / index、TTL、后台扫描器或物理删除。
 - 六位进入码由 CSPRNG 生成且十分钟有效，患者 Token 复用 `AuthService` 的 32 字节 base64url 生成与 SHA-256；数据库不保存明文，raw 值只分别进入创建 / 重签响应或患者 HttpOnly Cookie。患者 Cookie 固定为 `cogmemory_ad_patient_session`、`Path=/patient-administration`、`SameSite=Lax`，Secure 复用现有配置。
-- staff 可创建 / 查询、同设备撤销 staff Session 后安全交接、确认准备、暂停、恢复、换设备重签与终止；跨设备 enter 统一一次性消费并按 IP + User-Agent 的不可逆 client key 做进程内固定窗口失败限流。全部状态写使用同一 revision CAS；过期由各入口惰性原子关闭且只追加一次 expired event。
+- staff 可创建 / 查询、同设备撤销 staff Session 后安全交接、确认准备、暂停、恢复、换设备重签、终止、完成 staff 步骤、paused 接管 patient 步骤、直接前一步逻辑重做及 paused 技术刺激重播授权；跨设备 enter 统一一次性消费并按 IP + User-Agent 的不可逆 client key 做进程内固定窗口失败限流。全部状态、capture 与 playback 写使用同一 revision CAS；过期由各入口惰性原子关闭且只追加一次 expired event。
 - 继续施测检查集中验证 Patient / Visit / ScaleInstance 归属和可编辑性、现有 submission barrier、`supervised_patient_input`、精确 ScaleVersion、当前步骤及 released package assetKey。暂停与终止只要求 route ownership、开放状态、revision 和未过期，底层后来锁定时仍可安全停止。
-- patient `current` 只返回 status、revision、expiresAt 和 active 时的单个当前步骤白名单；prepared / paused 返回 null。Guard request context 仅含 sessionId、sessionTokenHash、revision，并在最终读取时再次以 id + hash + 开放状态过滤；不返回 Patient / Visit / ScaleInstance ID、完整步骤、文件路径、manifest、答案、评分、医护身份、controlEvents 或凭证明文。
+- patient `current` 只返回 status、revision、expiresAt 和 active 时的单个当前步骤白名单；每个当前 asset 只含 assetKey、kind、role、mimeType，prepared / paused 返回 null。患者可完成 `advanceBy=patient` 步骤、GET 当前 image、POST 当前 audio；staff 完成 `advanceBy=staff` 步骤。普通完成要求当前 run 的全部 audio 已按顺序至少播放，guidance 可重播，stimulus 默认一次且 paused staff 只可授权一个未消费技术重播。
+- 每次完成写入 capture；redo 仅允许 paused 的直接前一步，旧 capture 只逻辑失效，stepRun 为 1 + 该步骤无效 capture 数。最后一步完成转 completed，清除 entry / patient credential 并由 patient Controller 清 Cookie。图片打开后还会做最终只读授权检查；音频打开后以 token + currentStepKey + revision CAS 写 playback fact，竞争失败销毁流。
+- Guard request context 仅含 sessionId、sessionTokenHash、revision；响应不返回 Patient / Visit / ScaleInstance ID、完整步骤、文件路径、manifest、sha256、spokenText、答案、评分、医护身份、controlEvents 或凭证明文。B2 对 `ScaleInstance` / `ItemResponse` 保持只读。
 
 ## 17. 当前尚未实现
 
 - 尚无公开用户管理接口、角色权限管理接口、短信验证码接口、OAuth / SSO 接口或密码重置接口。
-- 现有医生侧工作台、MMSE 19 步呈现配置、released 私有题目资产底座及 WP-10-B1 患者短期会话 / 安全进入 / 控制权 API 已实现；尚未实现患者 UI、步骤推进、受控资产 Route、播放 / 重播 / 作答门禁、练习媒体、正式回答、录音 / ASR、OSS 回答证据、医护接管写入、完成态与完整会话恢复产品闭环。
+- 现有医生侧工作台、MMSE 19 步呈现配置、released 私有题目资产底座及 WP-10-B 患者短期会话 / 安全进入 / 控制权 / 步骤推进 / 当前资产 / 播放重播门禁 / staff 接管 / 完成态 API 已实现；尚未实现患者 UI、不计分练习、患者正式回答、录音 / ASR、OSS 回答证据、回答恢复、医生复核确认及完整产品闭环。
 - 尚未实现统一临床工作端所需的医护施测模式与医生复核报告模式职责编排、设备和语言准备确认、患者进度与求助查看、控制权合同、医护动作观察和实物操作记录、结构化影响因素与异常原因、完成结果送审、医生异常优先复核、无歧义客观步骤汇总确认及医生最终整体确认。适用语音回答步骤的录音及一种基础 ASR 产生的转写候选、患者点击 / 书写 / 绘图等原始作答与必要过程事实，仍须经医生复核确认后才能受控形成或更新正式 `ItemResponse`。
 - 尚未实现 WP-12 的医护代录知情者辅助信息能力，也没有将知情者来源、关系、接触频率或了解程度与患者作答、ItemResponse、量表得分和报告结论分离的专用合同；当前不存在知情者长期账号、家庭门户或短期自助链接。
 - 上述缺口是能力边界，不代表未来数据实体、集合数量、接口形态、事务边界、角色枚举或传输协议已经确定，也不预设独立应用、独立 attempt / capture / review 集合、通用工作流或投影子系统、事件溯源、双写平台或专用投影队列；同设备交接不等同必须跨设备配对，跨设备安全进入也不预设二维码。现有 staff `Session`、`administrationMode` 值、`ItemResponse`、`MediaEvidence` 和提交屏障不能等同于受监督患者施测会话及其完整闭环，也不能推出全页面 TTS、强实时同步或特定事件平台。

@@ -1,4 +1,6 @@
 import type { IncomingHttpHeaders } from 'node:http';
+import type { Readable } from 'node:stream';
+import type { PresentationAssetKind } from '../../scales/services/presentation-assets.service';
 import type {
   PatientAdministrationAdvanceBy,
   PatientAdministrationResponseMode,
@@ -55,7 +57,14 @@ export type PatientAdministrationCurrentStepResponse = {
   patientText?: string;
   responseMode: PatientAdministrationResponseMode;
   advanceBy: PatientAdministrationAdvanceBy;
-  assetKeys: string[];
+  assets: PatientAdministrationAssetResponse[];
+};
+
+export type PatientAdministrationAssetResponse = {
+  assetKey: string;
+  kind: PresentationAssetKind;
+  role: 'guidance' | 'stimulus' | null;
+  mimeType: string;
 };
 
 export type PatientAdministrationCurrentResponse = {
@@ -68,6 +77,19 @@ export type PatientAdministrationCurrentResponse = {
 export type PatientAdministrationRequestContext = {
   sessionId: string;
   sessionTokenHash: string;
+  revision: number;
+};
+
+export type PatientAdministrationOpenedAsset = {
+  assetKey: string;
+  kind: PresentationAssetKind;
+  mimeType: string;
+  size: number;
+  stream: Readable;
+};
+
+export type PatientAdministrationPlayedAudio = {
+  asset: PatientAdministrationOpenedAsset;
   revision: number;
 };
 
