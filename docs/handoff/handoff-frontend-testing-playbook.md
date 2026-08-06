@@ -23,7 +23,7 @@
 | WP-03 / B18 补充验证 | P7 `passed=2`、P8 `passed=1`；single-flight contract、P3 与 P9 `passed`；自动化 `gap=0` | “B18-A、B18-B1、B18-B2 与补充验证证据” |
 | Batch E | 8 个真实设备或人工项目待验；最终主要归属 WP-08 | “Batch E：真实设备或人工验收” |
 
-B11～B15 保持完成；B18 补充验证已闭合，自动化 `gap=0`，WP-03 已完成。当前无生产实现活动工作包，下一阶段已锁定为 WP-10.0 且尚未开始；Batch E 的 8 项真实设备或人工项目仍为 `pending`，最终主要归属为 WP-08。
+B11～B15 保持完成；B18 补充验证已闭合，自动化 `gap=0`，WP-03 已完成。产品范围、工作包状态和当前主线以 `handoff-roadmap.md` 为准；Batch E 的 8 项真实设备或人工项目仍为 `pending`，最终主要归属为 WP-08。
 
 ## 2. 当前测试设计规则
 
@@ -201,7 +201,7 @@ B14.1 不是独立业务能力，不拥有独立 Browser 活动 ID，也不恢�
 - P8 running 重载：首次执行因公开 API 将数据库 timing=null 规范化为 idle/none 对象而在首写前失败；使用唯一一次测试资产修复轮后 1/1 通过。start/reload/checkpoint/pause 的 PATCH 数为 3，`expectedRevision=[R,R+1,R+2]`，重载保持服务器 startedAt/lastResumedAt 且不二次 start，显示继续增加；checkpoint wall-clock=15,214ms，最终 paused/system、revision+3、最大 active PATCH=1。post verifier 证明 answered 不变、实例 draft、衍生产物为 0，cleanup `residualCount=0`。
 - P9 媒体失败：1/1 Browser 通过。图片采集区从目标题目内 exact 可访问文件输入“选择已有图片”开始，断言输入 count=1，再以 `xpath=ancestor::section[1]` 取得最近祖先 section 并断言 count=1；exact level-5 heading、待上传预览和上传按钮均限定在该 section。证据要求继续从当前 article 内 exact region“证据要求”取得唯一 photo listitem，并核对 exact“图片”“待记录”“服务端标识：未关联”。真实上传 POST=1，精确 abort matched=1 / aborted=1 / continued=0，Browser backend upload response=0，requestfailed=1；错误 alert 可见，文字值、已处理图片草稿与预览保留，上传按钮恢复 enabled。A14 PATCH=1、status=200、Body keys 仅为 `expectedRevision,responseText`、revisionDelta=1，超过 debounce 后无第二次 PATCH。prepared/post verifier 均通过：MediaEvidence=0、evidenceRefs 不变、photo requirement=pending、answeredItemCount 不变、实例保持 draft，score/domain/report=0，protected/adjacent facts matched；cleanup `residualCount=0`、runtime absent。
 - 最低充分 Storage 证据：development / Browser fake Storage 是进程内测试 Driver，产品没有公开 Storage 管理或对象计数 API；A30 HTTP E2E 已提供 fake Storage 调用集与补偿证据，P5 Browser 已提供真实上传、MediaEvidence、evidenceRef 与终态证据。因此不增加 test-only endpoint、生产 hook、Driver introspection 或跨进程对象计数；该候选按已有精确证据复用关闭，不构成独立剩余产品 gap。
-- 完成边界：A29/A30、B18-A 原 47 项、B18-B1 P1/P2、B18-B2 P4–P6、P7 2 项与 P8 1 项继续复用；single-flight 3 项、P3 2 项与本次 P9 1 项均已关闭，自动化 `gap=0`。B18 补充验证闭合，WP-03 按当前 roadmap 锁定范围完成；Batch E 的 8 项真实设备或人工项目保持原 ID 和待验状态，最终主要归属为 WP-08。下一阶段 WP-10.0 尚未开始。
+- 完成边界：A29/A30、B18-A 原 47 项、B18-B1 P1/P2、B18-B2 P4–P6、P7 2 项与 P8 1 项继续复用；single-flight 3 项、P3 2 项与本次 P9 1 项均已关闭，自动化 `gap=0`。B18 补充验证闭合，WP-03 按当前 roadmap 锁定范围完成；Batch E 的 8 项真实设备或人工项目保持原 ID 和待验状态，最终主要归属为 WP-08。
 
 ## 6. Batch E：真实设备或人工验收
 
@@ -227,4 +227,4 @@ WP-08 启动时必须依据 WP-10、WP-11、WP-12 的最终患者施测合同、
 - 只有影响性产品代码、接口、配置、测试基础设施或产品合同变化时，才按实际影响重新展开风险与证据设计；未变化事实复用现有精确证据。
 - Browser 活动场景的主证据、必要支持证据、适用 verifier 和 cleanup 均通过后才能关闭；静态存在核对不得冒充动态通过。
 - 数据库用途、fixture、verifier、cleanup、Stage 和后端定向命令以 backend testing playbook 为准。
-- testing playbook 与 roadmap 已同步：B18 补充验证闭合、自动化 `gap=0`，WP-03 已完成；当前无生产实现活动工作包，下一阶段 WP-10.0 已锁定且尚未开始，Batch E 的 8 项保持 `pending` 并主要归属 WP-08。
+- testing playbook 与 roadmap 已同步：B18 补充验证闭合、自动化 `gap=0`，WP-03 已完成；Batch E 的 8 项保持 `pending` 并主要归属 WP-08。
