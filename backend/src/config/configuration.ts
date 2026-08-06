@@ -21,6 +21,7 @@ const DEFAULT_BAILIAN_BASE_URL =
 const DEFAULT_BAILIAN_MODEL = 'qwen3.6-plus';
 const DEFAULT_BAILIAN_TIMEOUT_MS = 90000;
 const DEFAULT_BAILIAN_MAX_RETRIES = 1;
+const DEFAULT_BAILIAN_ASR_MODEL = 'qwen-audio-3.0-asr-flash';
 const DEFAULT_ALIYUN_SMS_REGION_ID = 'cn-shenzhen';
 const DEFAULT_ALIYUN_SMS_ENDPOINT = 'dysmsapi.aliyuncs.com';
 const DEFAULT_ALIYUN_SMS_COUNTRY_CODE = '86';
@@ -33,6 +34,7 @@ const DEFAULT_ALIYUN_SMS_CASE_AUTH_POLICY = 1;
 
 type AppEnvironment = 'development' | 'test' | 'production';
 type LlmProvider = 'stub' | 'bailian';
+export type AsrProvider = 'disabled' | 'stub' | 'bailian';
 type SmsAuthProvider = 'stub' | 'aliyun';
 type StorageDriver = 'fake' | 'oss';
 export type SessionCookieSameSite = 'lax' | 'strict' | 'none';
@@ -165,6 +167,25 @@ function parseLlmProvider(
   return env === 'test' ? 'stub' : 'bailian';
 }
 
+function parseAsrProvider(
+  value: string | undefined,
+  env: AppEnvironment,
+): AsrProvider {
+  if (env === 'test') {
+    return 'stub';
+  }
+
+  if (env === 'production') {
+    return value === 'bailian' ? 'bailian' : 'disabled';
+  }
+
+  if (value === 'stub' || value === 'bailian') {
+    return value;
+  }
+
+  return 'disabled';
+}
+
 function parseSmsAuthProvider(
   value: string | undefined,
   env: AppEnvironment,
@@ -222,6 +243,7 @@ function getDefaultOssInternalEndpoint(env: AppEnvironment): string {
 
 export default () => {
   const env = resolveAppEnvironment();
+  const asrProvider = parseAsrProvider(process.env.ASR_PROVIDER, env);
   const databasePurpose = resolveTestDatabasePurpose(
     env,
     process.env.COGMEMORY_DATABASE_PURPOSE,
@@ -308,6 +330,21 @@ export default () => {
         maxRetries: parseNumber(
           process.env.BAILIAN_MAX_RETRIES,
           DEFAULT_BAILIAN_MAX_RETRIES,
+        ),
+      },
+    },
+    asr: {
+      provider: asrProvider,
+      bailian: {
+        apiKey: optionalString(process.env.BAILIAN_API_KEY),
+        apiUrl: optionalString(process.env.BAILIAN_ASR_API_URL),
+        model: optionalString(
+          process.env.BAILIAN_ASR_MODEL,
+          asrProvider === 'disabled' ? '' : DEFAULT_BAILIAN_ASR_MODEL,
+        ),
+        timeoutMs: parseNumber(
+          process.env.BAILIAN_TIMEOUT_MS,
+          DEFAULT_BAILIAN_TIMEOUT_MS,
         ),
       },
     },

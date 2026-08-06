@@ -318,6 +318,7 @@ describe('PatientAdministrationEvidenceService', () => {
         status: 'attached',
         storageStatus: 'stored',
         audioMetadata: { durationMs: 2400 },
+        transcription: { status: 'not_requested' },
         imageMetadata: null,
         handwritingTrace: null,
         operatorSnapshot: null,
@@ -367,6 +368,7 @@ describe('PatientAdministrationEvidenceService', () => {
       ) as CreateMediaEvidenceInput;
       expect(createInput.captureMode).toBe(captureMode);
       expect(createInput.audioMetadata).toBeNull();
+      expect(createInput.transcription).toBeUndefined();
       expect(createInput.storage.mimeType).toBe('image/png');
     },
   );

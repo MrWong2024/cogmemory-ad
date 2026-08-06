@@ -100,6 +100,8 @@ describe('toMediaEvidenceResponse', () => {
     expect(response.imageMetadata?.height).toBe(768);
     expect(response.handwritingTrace?.hasTrajectory).toBe(true);
     expect(response.handwritingTrace?.durationMs).toBeNull();
+    expect(response.audioMetadata).toBeNull();
+    expect(response.transcription).toBeNull();
 
     const serialized = JSON.stringify(response);
     for (const forbidden of [
@@ -127,5 +129,44 @@ describe('toMediaEvidenceResponse', () => {
     ]) {
       expect(serialized).not.toContain(forbidden);
     }
+  });
+
+  it('maps only safe patient audio metadata and transcription facts', () => {
+    const audio = {
+      ...fixture(),
+      evidenceType: 'audio',
+      captureMode: 'browser_audio_recording',
+      audioMetadata: { durationMs: 4321 },
+      transcription: {
+        status: 'succeeded',
+        text: '候选文本',
+        provider: 'stub',
+        model: 'qwen-audio-3.0-asr-flash',
+        requestedAt: new Date('2026-08-06T00:00:00.000Z'),
+        completedAt: new Date('2026-08-06T00:00:01.000Z'),
+        requestedBy: {
+          operatorId: new Types.ObjectId().toString(),
+          operatorName: 'Doctor',
+          operatorRole: 'doctor',
+        },
+      },
+      patientAdministrationContext: {
+        sessionId: new Types.ObjectId().toString(),
+        stepKey: 'speech-1',
+        stepRun: 1,
+      },
+    } as MediaEvidenceSummary;
+    const response = toMediaEvidenceResponse(audio);
+    expect(response.audioMetadata).toEqual({ durationMs: 4321 });
+    expect(response.transcription).toMatchObject({
+      status: 'succeeded',
+      text: '候选文本',
+      provider: 'stub',
+      model: 'qwen-audio-3.0-asr-flash',
+      requestedBy: { operatorName: 'Doctor', operatorRole: 'doctor' },
+    });
+    expect(JSON.stringify(response)).not.toContain(
+      audio.patientAdministrationContext?.sessionId,
+    );
   });
 });

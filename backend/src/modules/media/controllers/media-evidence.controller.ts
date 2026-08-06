@@ -22,15 +22,18 @@ import { MediaEvidenceAccessQueryDto } from '../dto/media-evidence-access-query.
 import { MediaEvidenceItemParamDto } from '../dto/media-evidence-item-param.dto';
 import { MediaEvidenceParamDto } from '../dto/media-evidence-param.dto';
 import { UploadMediaEvidenceDto } from '../dto/upload-media-evidence.dto';
+import { TranscribeMediaEvidenceDto } from '../dto/transcribe-media-evidence.dto';
 import { VoidMediaEvidenceDto } from '../dto/void-media-evidence.dto';
 import { MAX_PRIMARY_MEDIA_FILE_BYTES } from '../lib/media-file-validation';
 import { MediaUploadExceptionInterceptor } from '../lib/media-upload-exception.interceptor';
 import { MediaEvidenceWorkflowService } from '../services/media-evidence-workflow.service';
+import { MediaEvidenceTranscriptionService } from '../services/media-evidence-transcription.service';
 import type {
   MediaEvidenceAccessUrlResponse,
   MediaEvidenceListResponse,
   UploadMediaEvidenceResponse,
   VoidMediaEvidenceResponse,
+  MediaEvidenceTranscriptionActionResponse,
 } from '../types/media-evidence-response.types';
 import type { MediaEvidenceUploadedFiles } from '../types/uploaded-memory-file.types';
 
@@ -42,6 +45,7 @@ import type { MediaEvidenceUploadedFiles } from '../types/uploaded-memory-file.t
 export class MediaEvidenceController {
   constructor(
     private readonly mediaEvidenceWorkflowService: MediaEvidenceWorkflowService,
+    private readonly mediaEvidenceTranscriptionService: MediaEvidenceTranscriptionService,
   ) {}
 
   @Get()
@@ -49,6 +53,20 @@ export class MediaEvidenceController {
     @Param() params: MediaEvidenceItemParamDto,
   ): Promise<MediaEvidenceListResponse> {
     return this.mediaEvidenceWorkflowService.listEvidence(params);
+  }
+
+  @Post(':mediaEvidenceId/transcribe')
+  @HttpCode(HttpStatus.OK)
+  transcribeEvidence(
+    @Param() params: MediaEvidenceParamDto,
+    @Body() _input: TranscribeMediaEvidenceDto,
+    @CurrentUser() currentUser: AuthenticatedUserContext | undefined,
+  ): Promise<MediaEvidenceTranscriptionActionResponse> {
+    void _input;
+    return this.mediaEvidenceTranscriptionService.transcribe(
+      params,
+      currentUser,
+    );
   }
 
   @Post()

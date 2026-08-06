@@ -1,4 +1,7 @@
-import type { MediaEvidenceSummary } from './media-evidence.service';
+import type {
+  MediaEvidenceSummary,
+  MediaTranscriptionSummary,
+} from './media-evidence.service';
 import type {
   MediaEvidenceCaptureContextResponse,
   MediaEvidenceFileResponse,
@@ -6,6 +9,7 @@ import type {
   MediaEvidenceImageMetadataResponse,
   MediaEvidenceOperatorResponse,
   MediaEvidenceResponse,
+  MediaEvidenceTranscriptionResponse,
 } from '../types/media-evidence-response.types';
 
 function finiteNumberOrNull(value: number | null): number | null {
@@ -96,6 +100,37 @@ function mapOperator(
   };
 }
 
+export function toMediaEvidenceTranscriptionResponse(
+  evidence: MediaEvidenceSummary,
+): MediaEvidenceTranscriptionResponse | null {
+  if (!evidence.transcription) {
+    return null;
+  }
+
+  return toTranscriptionResponse(evidence.transcription);
+}
+
+export function toTranscriptionResponse(
+  transcription: MediaTranscriptionSummary,
+): MediaEvidenceTranscriptionResponse {
+  return {
+    status: transcription.status,
+    text: transcription.text,
+    errorCode: transcription.errorCode,
+    provider: transcription.provider,
+    model: transcription.model,
+    requestedAt: transcription.requestedAt,
+    completedAt: transcription.completedAt,
+    requestedBy: transcription.requestedBy
+      ? {
+          operatorId: transcription.requestedBy.operatorId,
+          operatorName: transcription.requestedBy.operatorName,
+          operatorRole: transcription.requestedBy.operatorRole,
+        }
+      : null,
+  };
+}
+
 export function toMediaEvidenceResponse(
   evidence: MediaEvidenceSummary,
 ): MediaEvidenceResponse {
@@ -115,6 +150,10 @@ export function toMediaEvidenceResponse(
     handwritingTrace: mapHandwritingTrace(evidence),
     captureContext: mapCaptureContext(evidence),
     operatorSnapshot: mapOperator(evidence),
+    audioMetadata: evidence.audioMetadata
+      ? { durationMs: finiteNumberOrNull(evidence.audioMetadata.durationMs) }
+      : null,
+    transcription: toMediaEvidenceTranscriptionResponse(evidence),
     qualityStatus: evidence.qualityStatus,
     operatorNote: evidence.operatorNote,
     description: evidence.description,

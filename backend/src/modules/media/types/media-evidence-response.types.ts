@@ -9,6 +9,9 @@ import type {
   MediaQualityStatus,
   MediaResponseType,
   MediaStorageStatus,
+  MediaTranscriptionErrorCode,
+  MediaTranscriptionProvider,
+  MediaTranscriptionStatus,
 } from '../schemas/media-evidence.schema';
 import type { ItemEvidenceStatus } from '../../assessments/schemas/item-response.schema';
 
@@ -53,6 +56,21 @@ export type MediaEvidenceOperatorResponse = {
   operatorRole?: MediaOperatorRole;
 };
 
+export type MediaEvidenceAudioMetadataResponse = {
+  durationMs: number | null;
+};
+
+export type MediaEvidenceTranscriptionResponse = {
+  status: MediaTranscriptionStatus;
+  text?: string;
+  errorCode?: MediaTranscriptionErrorCode;
+  provider?: MediaTranscriptionProvider;
+  model?: string;
+  requestedAt: Date | null;
+  completedAt: Date | null;
+  requestedBy: MediaEvidenceOperatorResponse | null;
+};
+
 export type MediaEvidenceResponse = {
   id: string;
   evidenceCode: string;
@@ -69,6 +87,8 @@ export type MediaEvidenceResponse = {
   handwritingTrace: MediaEvidenceHandwritingTraceResponse | null;
   captureContext: MediaEvidenceCaptureContextResponse | null;
   operatorSnapshot: MediaEvidenceOperatorResponse | null;
+  audioMetadata: MediaEvidenceAudioMetadataResponse | null;
+  transcription: MediaEvidenceTranscriptionResponse | null;
   qualityStatus: MediaQualityStatus;
   operatorNote?: string;
   description?: string;
@@ -102,4 +122,9 @@ export type MediaEvidenceAccessUrlResponse = {
 export type VoidMediaEvidenceResponse = {
   mediaEvidence: MediaEvidenceResponse;
   evidenceRequirement: EvidenceRequirementStateResponse;
+};
+
+export type MediaEvidenceTranscriptionActionResponse = {
+  mediaEvidenceId: string;
+  transcription: MediaEvidenceTranscriptionResponse;
 };

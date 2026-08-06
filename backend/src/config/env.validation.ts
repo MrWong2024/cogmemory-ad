@@ -42,6 +42,22 @@ const llmProviderSchema = Joi.when('NODE_ENV', {
   otherwise: Joi.string().valid('stub', 'bailian').default('bailian'),
 });
 
+const asrProviderSchema = Joi.when('NODE_ENV', {
+  switch: [
+    {
+      is: 'test',
+      then: Joi.string().valid('stub').default('stub'),
+    },
+    {
+      is: 'production',
+      then: Joi.string().valid('disabled', 'bailian').default('disabled'),
+    },
+  ],
+  otherwise: Joi.string()
+    .valid('disabled', 'stub', 'bailian')
+    .default('disabled'),
+});
+
 const smsAuthProviderSchema = Joi.when('NODE_ENV', {
   is: 'test',
   then: Joi.string().valid('stub').default('stub'),
@@ -170,7 +186,11 @@ export const envValidationSchema = Joi.object({
     .valid('lax', 'strict', 'none')
     .default('lax'),
   LLM_PROVIDER: llmProviderSchema,
-  BAILIAN_API_KEY: optionalStringSchema,
+  BAILIAN_API_KEY: Joi.when('ASR_PROVIDER', {
+    is: 'bailian',
+    then: Joi.string().trim().min(1).required(),
+    otherwise: optionalStringSchema,
+  }),
   BAILIAN_BASE_URL: Joi.string()
     .trim()
     .allow('')
@@ -183,6 +203,24 @@ export const envValidationSchema = Joi.object({
   }),
   BAILIAN_TIMEOUT_MS: Joi.number().integer().min(1).default(90000),
   BAILIAN_MAX_RETRIES: Joi.number().integer().min(0).default(1),
+  ASR_PROVIDER: asrProviderSchema,
+  BAILIAN_ASR_API_URL: Joi.when('ASR_PROVIDER', {
+    is: 'bailian',
+    then: Joi.string()
+      .trim()
+      .uri({ scheme: ['https'] })
+      .required(),
+    otherwise: optionalStringSchema,
+  }),
+  BAILIAN_ASR_MODEL: Joi.when('ASR_PROVIDER', {
+    is: 'disabled',
+    then: optionalStringSchema,
+    otherwise: Joi.string()
+      .trim()
+      .min(1)
+      .max(120)
+      .default('qwen-audio-3.0-asr-flash'),
+  }),
   SMS_AUTH_PROVIDER: smsAuthProviderSchema,
   ALIYUN_SMS_ACCESS_KEY_ID: optionalStringSchema,
   ALIYUN_SMS_ACCESS_KEY_SECRET: optionalStringSchema,

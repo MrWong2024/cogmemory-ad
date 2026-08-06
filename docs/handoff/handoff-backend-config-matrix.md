@@ -8,7 +8,7 @@
 
 - `backend\src\config\configuration.ts` 与 `backend\src\config\env.validation.ts` 已初始化。
 - 配置加载顺序为 `.env.${NODE_ENV}`、`.env`。
-- 当前配置同时覆盖公共底座、D-038 测试数据库用途门禁和第三方能力占位口径；SMS Service 与 LLM Service 仍未实现。
+- 当前配置同时覆盖公共底座、D-038 测试数据库用途门禁和第三方能力口径；SMS Service 与 LLM Service 仍未实现，WP-10-C2 已实现与 LLM provider 独立的患者录音 ASR 配置和具体 client。
 - `MediaModule` 已通过 fake / OSS Storage abstraction 提供题目媒体业务上传、短期访问、作废和重传；`StorageModule` 没有独立、通用的 Storage 管理 API。
 - 当前不得写入真实密钥、真实数据库密码、真实 OSS AccessKey、真实短信配置或真实大模型 API Key。
 
@@ -66,11 +66,14 @@
 | `SESSION_COOKIE_SECURE` | `false` | `true` | `false` | 生产默认 secure |
 | `SESSION_COOKIE_SAME_SITE` | `lax` | `lax` | `lax` | `none` 必须搭配 secure |
 | `LLM_PROVIDER` | `bailian` | `bailian` | `stub` | test 只能为 `stub` |
-| `BAILIAN_API_KEY` | 空或占位 | 空或占位 | 空 | 不写真实 API Key |
+| `BAILIAN_API_KEY` | 空或占位；ASR=bailian 时 required | ASR=bailian 时 required | 空 | LLM / ASR 复用密钥变量；不写真实 API Key |
 | `BAILIAN_BASE_URL` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | 同 development | 同 development | 仅占位 |
 | `BAILIAN_MODEL` | `qwen3.6-plus` | `qwen3.6-plus` | 空 | 仅占位 |
-| `BAILIAN_TIMEOUT_MS` | `90000` | `90000` | `90000` | 仅占位 |
+| `BAILIAN_TIMEOUT_MS` | `90000` | `90000` | `90000` | LLM / ASR 复用请求超时；ASR stale claim 为 `max(120000, timeout*2)` |
 | `BAILIAN_MAX_RETRIES` | `1` | `1` | `1` | 仅占位 |
+| `ASR_PROVIDER` | `disabled`；可显式 `stub` / `bailian` | `disabled`；只允许 `disabled` / `bailian` | 强制 `stub` | 与 `LLM_PROVIDER` 独立；disabled 不调用外部服务，production 拒绝 stub |
+| `BAILIAN_ASR_API_URL` | 空；bailian 时 required HTTPS | 空；bailian 时 required HTTPS | 空 | 必须提供百炼同步录音文件识别的完整 workspace URL，不由代码拼接 |
+| `BAILIAN_ASR_MODEL` | disabled 时空；bailian / stub 默认 `qwen-audio-3.0-asr-flash` | disabled 时空；bailian 默认同左 | `qwen-audio-3.0-asr-flash` | C2 唯一允许的 ASR model |
 | `SMS_AUTH_PROVIDER` | `aliyun` | `aliyun` | `stub` | test 只能为 `stub` |
 | `ALIYUN_SMS_ACCESS_KEY_ID` | 空或占位 | 空或占位 | 空 | 不写真实密钥 |
 | `ALIYUN_SMS_ACCESS_KEY_SECRET` | 空或占位 | 空或占位 | 空 | 不写真实密钥 |
@@ -92,10 +95,11 @@
 - `.env.*.example` 只能保留占位值或示例值，不得写入真实密钥。
 - production MongoDB URI 必须由真实部署环境提供，不得写入仓库。
 - production 默认 `STORAGE_DRIVER=oss`，但真实 bucket 与 AccessKey 必须由安全环境变量提供。
-- test 环境使用 fake storage，不得依赖真实 OSS、真实短信或真实大模型服务。
+- test 环境使用 fake storage，并强制 ASR / LLM / SMS 为 stub；不得依赖真实 OSS、百炼、短信或其他真实大模型服务。
 - `standard_test` 与 `browser_acceptance` 的本地隔离测试凭据可由对应独立进程自动读取，但不得写入跟踪文件、文档、日志、manifest、生成物或最终报告。
 - SMS 变量当前只保留阿里云 SMS 配置口径，不代表 SMS Service 已实现。
 - LLM 变量当前只保留 `stub` / `bailian` 占位口径，不代表 LLM Service 已实现。
+- ASR 已实现 `disabled` / 确定性 `stub` / 具体 `bailian` 三种模式；bailian 配置必须同时具备非空 `BAILIAN_API_KEY`、HTTPS 完整 API URL 与固定 model。示例文件保持 disabled / placeholder，不包含签名 URL、真实 key 或私有对象信息。
 
 ## 6. 后续同步规则
 

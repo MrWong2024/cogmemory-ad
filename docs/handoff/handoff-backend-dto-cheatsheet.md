@@ -75,6 +75,14 @@
 - `PatientAdministrationEvidenceResponse` 只含 mediaEvidenceId、evidenceType、revision、uploadedAt；不含 ownership ID、step / run、Storage 信息、文件名、签名 URL、checksum、Token 或完整 `MediaEvidence`。
 - `PatientAdministrationEvidenceUploadContext` / `AttachPatientAdministrationEvidenceInput` 仅在 Service 间内部使用：上下文来自重新读取后的患者会话、权威 ScaleInstance / ScaleVersion 与当前步骤，不接收客户端业务 ID，也不携带 raw Token。
 
+### WP-10-C2 transcription / review DTO / response
+
+- 文件：`backend\src\modules\media\dto\transcribe-media-evidence.dto.ts`、`types\media-evidence-response.types.ts`、`types\patient-administration-review-response.types.ts`。
+- `TranscribeMediaEvidenceDto` 是空白名单 Body DTO；路由要求 JSON Body 但不接受任何字段，provider、model、language、format、采样率、URL、objectKey、文本或状态均由服务端决定。
+- `MediaEvidenceTranscriptionResponse` 只含 status、可选 text / errorCode / provider / model、requestedAt / completedAt 与安全 requestedBy；requestedBy 只含 operatorId / Name / Role。`MediaEvidenceTranscriptionActionResponse` 只再增加 mediaEvidenceId，不公开 Storage 或上游原始响应。
+- `MediaEvidenceResponse` 在旧图片 / 手写安全摘要上新增 nullable `audioMetadata { durationMs }` 与 nullable transcription；legacy 患者录音映射为 `not_requested`，非音频和 staff 图片 / 手写为 null。
+- `PatientAdministrationReviewResponse` 只含最新会话安全摘要、有限 reviewEvents 与按 item / step / run 排列的复核事实。item 只含 itemResponseId、itemCode、itemTitle、status、draftRevision；run 只含 capture 与 evidence。evidence 只含 ID、类型、captureMode、状态、存储状态、uploadedAt、audioMetadata 与 transcription，不含签名 URL、Storage key、文件名、资产、评分或正式作答 payload。
+
 - 名称：`PaginationQueryDto`
 - 文件：`backend\src\common\dto\pagination-query.dto.ts`
 - 用途：公共分页 query DTO。
@@ -296,7 +304,7 @@
 - 名称：`MediaEvidenceSummary`
 - 文件：`backend\src\modules\media\services\media-evidence.service.ts`
 - 用途：`MediaEvidenceService` 内部读取媒体证据元数据时返回的 mapper 输出 type，不是 HTTP DTO。
-- 字段摘要：运行时证据链引用、量表版本追溯、题目标识与快照、证据编码、证据类型、采集方式、存储状态、媒体存储对象元数据、图片元数据、手写轨迹元数据、采集上下文、操作者快照、质量状态、锁定 / 作废 / 删除时间、备注和 metadata。
+- 字段摘要：运行时证据链引用、量表版本追溯、题目标识与快照、证据编码、完整媒体采集方式（含 browser audio）、存储状态、媒体存储对象元数据、图片 / 音频元数据、手写轨迹元数据、患者施测上下文、操作者快照、nullable transcription、质量状态、锁定 / 作废 / 删除时间、备注和 metadata。transcription 仅保存有限状态 / 候选 / 错误 / provider / model / 时间 / requestedBy，不携带签名 URL或原始 provider payload。
 
 - 名称：`MediaEvidenceVersionTraceSummary`、`MediaStorageSummary`、`MediaImageMetadataSummary`、`HandwritingTraceSummary`、`MediaCaptureContextSummary`、`MediaOperatorSnapshotSummary`
 - 文件：`backend\src\modules\media\services\media-evidence.service.ts`
@@ -368,7 +376,7 @@
 
 - 名称：A15 媒体公开响应类型
 - 文件：`backend\src\modules\media\types\media-evidence-response.types.ts`
-- 类型：`MediaEvidenceFileResponse`、`MediaEvidenceImageMetadataResponse`、`MediaEvidenceHandwritingTraceResponse`、`MediaEvidenceCaptureContextResponse`、`MediaEvidenceOperatorResponse`、`MediaEvidenceResponse`、`MediaEvidenceListResponse`、`EvidenceRequirementStateResponse`、`UploadMediaEvidenceResponse`、`MediaEvidenceAccessUrlResponse`、`VoidMediaEvidenceResponse`。
+- 类型：`MediaEvidenceFileResponse`、`MediaEvidenceImageMetadataResponse`、`MediaEvidenceHandwritingTraceResponse`、`MediaEvidenceCaptureContextResponse`、`MediaEvidenceOperatorResponse`、`MediaEvidenceAudioMetadataResponse`、`MediaEvidenceTranscriptionResponse`、`MediaEvidenceResponse`、`MediaEvidenceListResponse`、`EvidenceRequirementStateResponse`、`UploadMediaEvidenceResponse`、`MediaEvidenceAccessUrlResponse`、`VoidMediaEvidenceResponse`、`MediaEvidenceTranscriptionActionResponse`。
 - 安全边界：公开文件摘要只含 MIME、扩展名、大小、storedAt；手写摘要不含 trajectoryObjectKey；证据响应不含关联 ID、subjectCode、definition / version ID、itemSnapshot、versionTrace、qualityHints、metadata、objectKey、bucket、objectPrefix、originalFilename、checksum、publicUrl 或 deletedAt。
 
 - 名称：`UserSummary`

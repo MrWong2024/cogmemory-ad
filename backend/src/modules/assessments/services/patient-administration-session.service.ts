@@ -41,6 +41,8 @@ import type {
   PatientAdministrationEvidenceType,
   PatientAdministrationImpactFactorCode,
   PatientAdministrationOpenStatus,
+  PatientAdministrationStatus,
+  PatientAdministrationCapturedBy,
 } from '../patient-administration.constants';
 import type { AssessmentOperatorSnapshot } from '../schemas/assessment-visit.schema';
 import {
@@ -110,6 +112,61 @@ export type PatientAdministrationStaffCredentialIssue = {
   expiresAt: Date;
   response: PatientAdministrationSessionSummaryResponse;
 };
+
+export type PatientAdministrationReviewEventFact = {
+  action: PatientAdministrationControlEventAction;
+  occurredAt: Date;
+  reason?: string;
+  operatorSnapshot: PatientAdministrationOperatorResponse | null;
+};
+
+export type PatientAdministrationReviewCaptureFact = {
+  stepKey: string;
+  stepRun: number;
+  capturedBy: PatientAdministrationCapturedBy;
+  staffObservation?: string;
+  capturedAt: Date;
+  invalidatedAt: Date | null;
+  invalidatedReason?: string;
+  operatorSnapshot: PatientAdministrationOperatorResponse | null;
+};
+
+export type PatientAdministrationReviewEvidenceRefFact = {
+  stepKey: string;
+  stepRun: number;
+  evidenceType: PatientAdministrationEvidenceType;
+  mediaEvidenceId: string;
+  uploadedAt: Date;
+};
+
+export type PatientAdministrationReviewFacts = {
+  sessionId: string;
+  scaleInstanceId: string;
+  scaleDefinitionId: string;
+  scaleVersionId: string;
+  scaleCode: string;
+  scaleVersion: string;
+  status: PatientAdministrationStatus;
+  preparationConfirmedAt: Date | null;
+  impactFactorCodes: PatientAdministrationImpactFactorCode[];
+  impactFactorNote?: string;
+  startedAt: Date | null;
+  completedAt: Date | null;
+  terminatedAt: Date | null;
+  expiredAt: Date | null;
+  reviewEvents: PatientAdministrationReviewEventFact[];
+  stepCaptures: PatientAdministrationReviewCaptureFact[];
+  stepEvidenceRefs: PatientAdministrationReviewEvidenceRefFact[];
+};
+
+const REVIEW_EVENT_ACTIONS = new Set<PatientAdministrationControlEventAction>([
+  'paused',
+  'resumed',
+  'device_reissued',
+  'staff_takeover',
+  'step_redo',
+  'terminated',
+]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -258,6 +315,69 @@ export class PatientAdministrationSessionService {
 
     const current = await this.expireIfNeeded(session, new Date());
     return this.toSessionSummary(current);
+  }
+
+  async getLatestReviewFacts(
+    patientId: string,
+    visitId: string,
+    scaleInstanceId: string,
+  ): Promise<PatientAdministrationReviewFacts> {
+    const { scaleInstance } = await this.requireRouteOwnership(
+      patientId,
+      visitId,
+      scaleInstanceId,
+    );
+    const session =
+      await this.findLatestSessionByScaleInstance(scaleInstanceId);
+    if (!session) {
+      this.throwSessionNotFound();
+    }
+
+    return {
+      sessionId: session._id.toString(),
+      scaleInstanceId: session.scaleInstanceId.toString(),
+      scaleDefinitionId: scaleInstance.scaleDefinitionId,
+      scaleVersionId: scaleInstance.scaleVersionId,
+      scaleCode: scaleInstance.scaleCode,
+      scaleVersion: scaleInstance.scaleVersion,
+      status: session.status,
+      preparationConfirmedAt: session.preparationConfirmedAt ?? null,
+      impactFactorCodes: [...(session.impactFactorCodes ?? [])],
+      impactFactorNote: session.impactFactorNote,
+      startedAt: session.startedAt ?? null,
+      completedAt: session.completedAt ?? null,
+      terminatedAt: session.terminatedAt ?? null,
+      expiredAt: session.expiredAt ?? null,
+      reviewEvents: (session.controlEvents ?? [])
+        .filter((event) => REVIEW_EVENT_ACTIONS.has(event.action))
+        .map((event) => ({
+          action: event.action,
+          occurredAt: event.occurredAt,
+          reason: event.reason,
+          operatorSnapshot: event.operatorSnapshot
+            ? this.toOperatorResponse(event.operatorSnapshot)
+            : null,
+        })),
+      stepCaptures: (session.stepCaptures ?? []).map((capture) => ({
+        stepKey: capture.stepKey,
+        stepRun: capture.stepRun,
+        capturedBy: capture.capturedBy,
+        staffObservation: capture.staffObservation,
+        capturedAt: capture.capturedAt,
+        invalidatedAt: capture.invalidatedAt ?? null,
+        invalidatedReason: capture.invalidatedReason,
+        operatorSnapshot: capture.operatorSnapshot
+          ? this.toOperatorResponse(capture.operatorSnapshot)
+          : null,
+      })),
+      stepEvidenceRefs: (session.stepEvidenceRefs ?? []).map((reference) => ({
+        stepKey: reference.stepKey,
+        stepRun: reference.stepRun,
+        evidenceType: reference.evidenceType,
+        mediaEvidenceId: reference.mediaEvidenceId.toString(),
+        uploadedAt: reference.uploadedAt,
+      })),
+    };
   }
 
   async validateSameDeviceHandoff(

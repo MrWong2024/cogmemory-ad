@@ -1,5 +1,8 @@
 import { createHash, randomUUID } from 'crypto';
-import type { MediaQualityStatus } from '../../media/schemas/media-evidence.schema';
+import type {
+  MediaCaptureMode,
+  MediaQualityStatus,
+} from '../../media/schemas/media-evidence.schema';
 import type { ClinicalReportDraftBuilderInput } from '../types/clinical-report-generation.types';
 import type {
   CreateClinicalReportInput,
@@ -57,6 +60,15 @@ function mapEvidenceQuality(
     return 'failed';
   }
   return 'unchecked';
+}
+
+function mapEvidenceCaptureMode(
+  captureMode: MediaCaptureMode,
+): ReportEvidenceSnapshotSummary['captureMode'] {
+  if (captureMode === 'browser_audio_recording') {
+    throw new Error('Browser audio evidence cannot be included in a report');
+  }
+  return captureMode;
 }
 
 export function buildClinicalReportDraft(
@@ -129,7 +141,7 @@ export function buildClinicalReportDraft(
     itemCode: item.itemCode,
     itemTitle: item.itemTitle,
     evidenceType: item.evidenceType,
-    captureMode: item.captureMode,
+    captureMode: mapEvidenceCaptureMode(item.captureMode),
     storageObjectKey: item.storage?.objectKey,
     qualityStatus: mapEvidenceQuality(item.qualityStatus),
     summary: '本条仅为图片或手写证据的索引与审计快照，未分析媒体内容。',

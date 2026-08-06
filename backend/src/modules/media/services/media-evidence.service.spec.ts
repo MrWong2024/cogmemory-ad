@@ -1,7 +1,7 @@
 // backend/src/modules/media/services/media-evidence.service.spec.ts
 import { getModelToken } from '@nestjs/mongoose';
 import { Test } from '@nestjs/testing';
-import { Types } from 'mongoose';
+import { model, Schema, Types } from 'mongoose';
 import {
   HandwritingTraceSnapshotSchema,
   MediaAudioMetadataSchema,
@@ -9,6 +9,7 @@ import {
   MediaEvidence,
   MediaEvidenceSchema,
   MediaEvidenceVersionTraceSchema,
+  MediaEvidenceTranscriptionSchema,
   MediaImageMetadataSchema,
   MediaOperatorSnapshotSchema,
   MediaPatientAdministrationContextSchema,
@@ -231,6 +232,15 @@ describe('MediaEvidence schema', () => {
     expect(MediaAudioMetadataSchema.path('durationMs')?.instance).toBe(
       'Number',
     );
+    expect(
+      MediaEvidenceTranscriptionSchema.path('status')?.options.enum,
+    ).toEqual(['not_requested', 'processing', 'succeeded', 'failed']);
+    expect(
+      MediaEvidenceTranscriptionSchema.path('text')?.options.maxlength,
+    ).toBe(20000);
+    expect(MediaEvidenceTranscriptionSchema.path('requestedBy')?.instance).toBe(
+      'Embedded',
+    );
   });
 
   it('keeps embedded schemas without nested _id fields', () => {
@@ -242,6 +252,54 @@ describe('MediaEvidence schema', () => {
     expect(MediaOperatorSnapshotSchema.get('_id')).toBe(false);
     expect(MediaPatientAdministrationContextSchema.get('_id')).toBe(false);
     expect(MediaAudioMetadataSchema.get('_id')).toBe(false);
+    expect(MediaEvidenceTranscriptionSchema.get('_id')).toBe(false);
+  });
+
+  it('validates finite transcription state facts without provider payloads', async () => {
+    const validationSchema = new Schema({
+      transcription: { type: MediaEvidenceTranscriptionSchema },
+    });
+    const ValidationModel = model<{ transcription: unknown }>(
+      'MediaEvidenceTranscriptionUnitValidation',
+      validationSchema,
+    );
+    const requestedBy = {
+      operatorId: new Types.ObjectId(),
+      operatorName: 'Doctor',
+      operatorRole: 'doctor',
+    };
+    await expect(
+      new ValidationModel({
+        transcription: { status: 'processing' },
+      }).validate(),
+    ).rejects.toBeDefined();
+    await expect(
+      new ValidationModel({
+        transcription: {
+          status: 'succeeded',
+          text: ' candidate ',
+          provider: 'stub',
+          model: 'qwen-audio-3.0-asr-flash',
+          requestedAt: new Date(),
+          completedAt: new Date(),
+          requestedBy,
+        },
+      }).validate(),
+    ).resolves.toBeUndefined();
+    await expect(
+      new ValidationModel({
+        transcription: {
+          status: 'failed',
+          text: 'must-not-remain',
+          errorCode: 'provider_rejected',
+          provider: 'stub',
+          model: 'qwen-audio-3.0-asr-flash',
+          requestedAt: new Date(),
+          completedAt: new Date(),
+          requestedBy,
+        },
+      }).validate(),
+    ).rejects.toBeDefined();
   });
 });
 
@@ -358,6 +416,7 @@ describe('MediaEvidenceService', () => {
       },
       patientAdministrationContext: null,
       audioMetadata: null,
+      transcription: null,
     });
     mediaEvidenceModel.findOne.mockReturnValue(createExecQuery(rawEvidence));
 
@@ -442,6 +501,7 @@ describe('MediaEvidenceService', () => {
       },
       patientAdministrationContext: null,
       audioMetadata: null,
+      transcription: null,
       qualityStatus: 'acceptable',
       qualityHints: { requiresReview: false },
       operatorNote: 'De-identified operator note',
@@ -490,6 +550,12 @@ describe('MediaEvidenceService', () => {
           stepRun: 2,
         },
         audioMetadata: { durationMs: 3210 },
+        transcription: {
+          status: 'not_requested',
+          requestedAt: null,
+          completedAt: null,
+          requestedBy: null,
+        },
       }),
     );
   });
@@ -732,5 +798,145 @@ describe('MediaEvidenceService', () => {
     expect(mediaEvidenceModel.deleteOne).toHaveBeenCalledWith({
       _id: rawEvidence._id,
     });
+  });
+
+  it('atomically claims missing, failed or stale transcription with a completion token', async () => {
+    const rawEvidence = createEvidenceFixture({
+      evidenceType: 'audio',
+      captureMode: 'browser_audio_recording',
+      transcription: {
+        status: 'processing',
+        provider: 'stub',
+        model: 'qwen-audio-3.0-asr-flash',
+        requestedAt: new Date('2026-08-06T00:00:00.000Z'),
+        requestedBy: { operatorId: new Types.ObjectId() },
+      },
+    });
+    const ownership = {
+      patientId: rawEvidence.patientId,
+      assessmentVisitId: rawEvidence.assessmentVisitId,
+      scaleInstanceId: rawEvidence.scaleInstanceId,
+      itemResponseId: rawEvidence.itemResponseId,
+    };
+    const claimedAt = new Date('2026-08-06T00:00:00.000Z');
+    const staleBefore = new Date('2026-08-05T23:57:00.000Z');
+    const requestedBy = {
+      operatorId: new Types.ObjectId(),
+      operatorName: 'Doctor',
+      operatorRole: 'doctor' as const,
+    };
+    mediaEvidenceModel.findOneAndUpdate.mockReturnValue(
+      createExecQuery(rawEvidence),
+    );
+
+    await expect(
+      service.claimTranscription(
+        ownership,
+        rawEvidence._id,
+        requestedBy,
+        'stub',
+        'qwen-audio-3.0-asr-flash',
+        claimedAt,
+        staleBefore,
+      ),
+    ).resolves.toMatchObject({
+      claimedAt,
+      transcription: { status: 'processing' },
+    });
+    expect(mediaEvidenceModel.findOneAndUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        _id: rawEvidence._id,
+        ...ownership,
+        status: 'attached',
+        storageStatus: 'stored',
+        lockedAt: null,
+        voidedAt: null,
+        deletedAt: null,
+      }),
+      {
+        $set: {
+          transcription: {
+            status: 'processing',
+            provider: 'stub',
+            model: 'qwen-audio-3.0-asr-flash',
+            requestedAt: claimedAt,
+            requestedBy,
+          },
+        },
+      },
+      { returnDocument: 'after', runValidators: true },
+    );
+    const serializedClaimCall = JSON.stringify(
+      mediaEvidenceModel.findOneAndUpdate.mock.calls[0],
+    );
+    expect(serializedClaimCall).toContain('transcription.status');
+    expect(serializedClaimCall).toContain('failed');
+    expect(serializedClaimCall).toContain(staleBefore.toISOString());
+  });
+
+  it('finalizes success and failure only for the owning legal processing claim', async () => {
+    const rawEvidence = createEvidenceFixture({
+      evidenceType: 'audio',
+      captureMode: 'browser_audio_recording',
+      transcription: {
+        status: 'succeeded',
+        text: 'candidate',
+        provider: 'stub',
+        model: 'qwen-audio-3.0-asr-flash',
+        requestedAt: new Date('2026-08-06T00:00:00.000Z'),
+        completedAt: new Date('2026-08-06T00:00:01.000Z'),
+        requestedBy: { operatorId: new Types.ObjectId() },
+      },
+    });
+    const ownership = {
+      patientId: rawEvidence.patientId,
+      assessmentVisitId: rawEvidence.assessmentVisitId,
+      scaleInstanceId: rawEvidence.scaleInstanceId,
+      itemResponseId: rawEvidence.itemResponseId,
+    };
+    const claimedAt = new Date('2026-08-06T00:00:00.000Z');
+    const completedAt = new Date('2026-08-06T00:00:01.000Z');
+    mediaEvidenceModel.findOneAndUpdate.mockReturnValue(
+      createExecQuery(rawEvidence),
+    );
+    await service.completeTranscription(
+      ownership,
+      rawEvidence._id,
+      claimedAt,
+      ' candidate ',
+      completedAt,
+    );
+    expect(mediaEvidenceModel.findOneAndUpdate).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        _id: rawEvidence._id,
+        ...ownership,
+        status: 'attached',
+        lockedAt: null,
+        voidedAt: null,
+        deletedAt: null,
+        'transcription.status': 'processing',
+        'transcription.requestedAt': claimedAt,
+      }),
+      {
+        $set: {
+          'transcription.status': 'succeeded',
+          'transcription.completedAt': completedAt,
+          'transcription.text': 'candidate',
+        },
+        $unset: { 'transcription.errorCode': 1 },
+      },
+      { returnDocument: 'after', runValidators: true },
+    );
+
+    mediaEvidenceModel.findOneAndUpdate.mockReturnValue(createExecQuery(null));
+    await expect(
+      service.failTranscription(
+        ownership,
+        rawEvidence._id,
+        claimedAt,
+        'provider_unavailable',
+        completedAt,
+      ),
+    ).resolves.toBeNull();
   });
 });

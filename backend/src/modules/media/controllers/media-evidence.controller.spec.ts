@@ -5,6 +5,7 @@ import { RolesGuard } from '../../auth/guards/roles.guard';
 import { SessionAuthGuard } from '../../auth/guards/session-auth.guard';
 import { PATIENT_WORKFLOW_ROLES } from '../../patients/patients.constants';
 import { MediaEvidenceWorkflowService } from '../services/media-evidence-workflow.service';
+import { MediaEvidenceTranscriptionService } from '../services/media-evidence-transcription.service';
 import { MediaEvidenceController } from './media-evidence.controller';
 
 describe('MediaEvidenceController', () => {
@@ -15,6 +16,7 @@ describe('MediaEvidenceController', () => {
     createAccessUrl: jest.Mock;
     voidEvidence: jest.Mock;
   };
+  let transcription: { transcribe: jest.Mock };
 
   beforeEach(async () => {
     workflow = {
@@ -23,11 +25,16 @@ describe('MediaEvidenceController', () => {
       createAccessUrl: jest.fn(),
       voidEvidence: jest.fn(),
     };
+    transcription = { transcribe: jest.fn() };
 
     const moduleRef = await Test.createTestingModule({
       controllers: [MediaEvidenceController],
       providers: [
         { provide: MediaEvidenceWorkflowService, useValue: workflow },
+        {
+          provide: MediaEvidenceTranscriptionService,
+          useValue: transcription,
+        },
       ],
     })
       .overrideGuard(SessionAuthGuard)
@@ -76,6 +83,7 @@ describe('MediaEvidenceController', () => {
     workflow.uploadEvidence.mockResolvedValue({});
     workflow.createAccessUrl.mockResolvedValue({});
     workflow.voidEvidence.mockResolvedValue({});
+    transcription.transcribe.mockResolvedValue({});
 
     await controller.listEvidence(params);
     await controller.uploadEvidence(params, input, files, user);
@@ -85,6 +93,7 @@ describe('MediaEvidenceController', () => {
       { reason: 'wrong capture' },
       user,
     );
+    await controller.transcribeEvidence(mediaParams, {}, user);
 
     expect(workflow.listEvidence).toHaveBeenCalledWith(params);
     expect(workflow.uploadEvidence).toHaveBeenCalledWith(
@@ -101,5 +110,6 @@ describe('MediaEvidenceController', () => {
       { reason: 'wrong capture' },
       user,
     );
+    expect(transcription.transcribe).toHaveBeenCalledWith(mediaParams, user);
   });
 });

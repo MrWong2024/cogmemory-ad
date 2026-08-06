@@ -12,6 +12,7 @@ import {
   MediaEvidence,
   MediaEvidenceDocument,
   MediaEvidenceMetadata,
+  MediaEvidenceTranscription,
   MediaEvidenceStatus,
   MediaEvidenceType,
   MediaEvidenceVersionTrace,
@@ -26,6 +27,9 @@ import {
   MediaStorageDriver,
   MediaStorageSnapshot,
   MediaStorageStatus,
+  MediaTranscriptionErrorCode,
+  MediaTranscriptionProvider,
+  MediaTranscriptionStatus,
 } from '../schemas/media-evidence.schema';
 
 export type MediaEvidenceVersionTraceSummary = {
@@ -96,6 +100,17 @@ export type MediaAudioMetadataSummary = {
   durationMs: number | null;
 };
 
+export type MediaTranscriptionSummary = {
+  status: MediaTranscriptionStatus;
+  text?: string;
+  errorCode?: MediaTranscriptionErrorCode;
+  provider?: MediaTranscriptionProvider;
+  model?: string;
+  requestedAt: Date | null;
+  completedAt: Date | null;
+  requestedBy: MediaOperatorSnapshotSummary | null;
+};
+
 export type MediaEvidenceSummary = {
   id: string;
   patientId: string;
@@ -111,7 +126,7 @@ export type MediaEvidenceSummary = {
   itemCode: string;
   evidenceCode: string;
   evidenceType: MediaEvidenceType;
-  captureMode: Exclude<MediaCaptureMode, 'browser_audio_recording'>;
+  captureMode: MediaCaptureMode;
   status: MediaEvidenceStatus;
   storageStatus: MediaStorageStatus;
   crfCode?: string;
@@ -129,6 +144,7 @@ export type MediaEvidenceSummary = {
   operatorSnapshot: MediaOperatorSnapshotSummary | null;
   patientAdministrationContext?: MediaPatientAdministrationContextSummary | null;
   audioMetadata?: MediaAudioMetadataSummary | null;
+  transcription?: MediaTranscriptionSummary | null;
   qualityStatus: MediaQualityStatus;
   qualityHints: MediaQualityHints;
   operatorNote?: string;
@@ -139,7 +155,16 @@ export type MediaEvidenceSummary = {
   deletedAt: Date | null;
   createdAt: Date | null;
   updatedAt: Date | null;
-};
+} & (
+  | {
+      evidenceType: Extract<MediaEvidenceType, 'photo' | 'handwriting'>;
+      captureMode: Exclude<MediaCaptureMode, 'browser_audio_recording'>;
+    }
+  | {
+      evidenceType: Exclude<MediaEvidenceType, 'photo' | 'handwriting'>;
+      captureMode: MediaCaptureMode;
+    }
+);
 
 export type MediaEvidenceSourceFreezeItem = {
   id: string;
@@ -202,6 +227,7 @@ export type CreateMediaEvidenceInput = {
   operatorSnapshot: MediaOperatorSnapshot | null;
   patientAdministrationContext?: MediaPatientAdministrationContext | null;
   audioMetadata?: MediaAudioMetadata | null;
+  transcription?: MediaEvidenceTranscription;
   qualityStatus: MediaQualityStatus;
   qualityHints: MediaQualityHints;
   operatorNote?: string;
@@ -217,6 +243,11 @@ type NormalizedMediaEvidenceOwnership = {
   assessmentVisitId: Types.ObjectId;
   scaleInstanceId: Types.ObjectId;
   itemResponseId: Types.ObjectId;
+};
+
+export type ClaimedMediaTranscription = {
+  claimedAt: Date;
+  transcription: MediaTranscriptionSummary;
 };
 
 @Injectable()
@@ -358,6 +389,21 @@ export class MediaEvidenceService {
       })
       .exec();
 
+    return evidence ? this.mapEvidence(evidence) : null;
+  }
+
+  async findEvidenceForTranscription(
+    ownership: MediaEvidenceOwnership,
+    mediaEvidenceId: Types.ObjectId | string,
+  ): Promise<MediaEvidenceSummary | null> {
+    const normalizedOwnership = this.normalizeOwnership(ownership);
+    const normalizedEvidenceId = this.normalizeObjectId(mediaEvidenceId);
+    if (!normalizedOwnership || !normalizedEvidenceId) {
+      return null;
+    }
+    const evidence = await this.mediaEvidenceModel
+      .findOne({ _id: normalizedEvidenceId, ...normalizedOwnership })
+      .exec();
     return evidence ? this.mapEvidence(evidence) : null;
   }
 
@@ -520,6 +566,103 @@ export class MediaEvidenceService {
     return this.mapEvidence(evidence);
   }
 
+  async claimTranscription(
+    ownership: MediaEvidenceOwnership,
+    mediaEvidenceId: Types.ObjectId | string,
+    requestedBy: MediaOperatorSnapshot,
+    provider: MediaTranscriptionProvider,
+    model: string,
+    claimedAt: Date,
+    staleBefore: Date,
+  ): Promise<ClaimedMediaTranscription | null> {
+    const normalizedOwnership = this.normalizeOwnership(ownership);
+    const normalizedEvidenceId = this.normalizeObjectId(mediaEvidenceId);
+    if (!normalizedOwnership || !normalizedEvidenceId) {
+      return null;
+    }
+
+    const evidence = await this.mediaEvidenceModel
+      .findOneAndUpdate(
+        {
+          _id: normalizedEvidenceId,
+          ...normalizedOwnership,
+          evidenceType: 'audio',
+          captureMode: 'browser_audio_recording',
+          status: 'attached',
+          storageStatus: 'stored',
+          lockedAt: null,
+          voidedAt: null,
+          deletedAt: null,
+          $or: [
+            { transcription: { $exists: false } },
+            { transcription: null },
+            { 'transcription.status': 'not_requested' },
+            { 'transcription.status': 'failed' },
+            {
+              'transcription.status': 'processing',
+              'transcription.requestedAt': { $lt: staleBefore },
+            },
+          ],
+        },
+        {
+          $set: {
+            transcription: {
+              status: 'processing',
+              provider,
+              model,
+              requestedAt: claimedAt,
+              requestedBy,
+            },
+          },
+        },
+        { returnDocument: 'after', runValidators: true },
+      )
+      .exec();
+
+    if (!evidence) {
+      return null;
+    }
+    return {
+      claimedAt,
+      transcription: this.mapTranscription(evidence) ?? {
+        status: 'processing',
+        provider,
+        model,
+        requestedAt: claimedAt,
+        completedAt: null,
+        requestedBy: this.mapOperatorSnapshot(requestedBy),
+      },
+    };
+  }
+
+  async completeTranscription(
+    ownership: MediaEvidenceOwnership,
+    mediaEvidenceId: Types.ObjectId | string,
+    claimedAt: Date,
+    text: string,
+    completedAt: Date,
+  ): Promise<MediaTranscriptionSummary | null> {
+    return this.finalizeTranscription(ownership, mediaEvidenceId, claimedAt, {
+      status: 'succeeded',
+      text: text.trim(),
+      completedAt,
+    });
+  }
+
+  async failTranscription(
+    ownership: MediaEvidenceOwnership,
+    mediaEvidenceId: Types.ObjectId | string,
+    claimedAt: Date,
+    errorCode: MediaTranscriptionErrorCode,
+    completedAt: Date,
+  ): Promise<MediaTranscriptionSummary | null> {
+    return this.finalizeTranscription(ownership, mediaEvidenceId, claimedAt, {
+      status: 'failed',
+      errorCode,
+      completedAt,
+    });
+  }
+
   async markEvidenceVoided(
     ownership: MediaEvidenceOwnership,
     mediaEvidenceId: Types.ObjectId | string,
@@ -660,10 +803,7 @@ export class MediaEvidenceService {
       itemCode: evidence.itemCode,
       evidenceCode: evidence.evidenceCode,
       evidenceType: evidence.evidenceType,
-      captureMode: evidence.captureMode as Exclude<
-        MediaCaptureMode,
-        'browser_audio_recording'
-      >,
+      captureMode: evidence.captureMode,
       status: evidence.status,
       storageStatus: evidence.storageStatus,
       crfCode: evidence.crfCode,
@@ -683,6 +823,7 @@ export class MediaEvidenceService {
         evidence.patientAdministrationContext,
       ),
       audioMetadata: this.mapAudioMetadata(evidence.audioMetadata),
+      transcription: this.mapTranscription(evidence),
       qualityStatus: evidence.qualityStatus,
       qualityHints: evidence.qualityHints ?? null,
       operatorNote: evidence.operatorNote,
@@ -693,7 +834,7 @@ export class MediaEvidenceService {
       deletedAt: evidence.deletedAt ?? null,
       createdAt: this.readDocumentDate(evidence, 'createdAt'),
       updatedAt: this.readDocumentDate(evidence, 'updatedAt'),
-    };
+    } as MediaEvidenceSummary;
   }
 
   private readDocumentDate(
@@ -835,5 +976,89 @@ export class MediaEvidenceService {
     }
 
     return { durationMs: metadata.durationMs ?? null };
+  }
+
+  private mapTranscription(
+    evidence: MediaEvidenceDocument,
+  ): MediaTranscriptionSummary | null {
+    const transcription = evidence.transcription;
+    if (!transcription) {
+      return evidence.evidenceType === 'audio' &&
+        evidence.captureMode === 'browser_audio_recording' &&
+        Boolean(evidence.patientAdministrationContext)
+        ? {
+            status: 'not_requested',
+            requestedAt: null,
+            completedAt: null,
+            requestedBy: null,
+          }
+        : null;
+    }
+
+    return {
+      status: transcription.status,
+      text: transcription.text,
+      errorCode: transcription.errorCode,
+      provider: transcription.provider,
+      model: transcription.model,
+      requestedAt: transcription.requestedAt ?? null,
+      completedAt: transcription.completedAt ?? null,
+      requestedBy: transcription.requestedBy
+        ? this.mapOperatorSnapshot(transcription.requestedBy)
+        : null,
+    };
+  }
+
+  private async finalizeTranscription(
+    ownership: MediaEvidenceOwnership,
+    mediaEvidenceId: Types.ObjectId | string,
+    claimedAt: Date,
+    completion:
+      | { status: 'succeeded'; text: string; completedAt: Date }
+      | {
+          status: 'failed';
+          errorCode: MediaTranscriptionErrorCode;
+          completedAt: Date;
+        },
+  ): Promise<MediaTranscriptionSummary | null> {
+    const normalizedOwnership = this.normalizeOwnership(ownership);
+    const normalizedEvidenceId = this.normalizeObjectId(mediaEvidenceId);
+    if (!normalizedOwnership || !normalizedEvidenceId) {
+      return null;
+    }
+
+    const setValues: Record<string, unknown> = {
+      'transcription.status': completion.status,
+      'transcription.completedAt': completion.completedAt,
+    };
+    const unsetValues: Record<string, 1> = {};
+    if (completion.status === 'succeeded') {
+      setValues['transcription.text'] = completion.text;
+      unsetValues['transcription.errorCode'] = 1;
+    } else {
+      setValues['transcription.errorCode'] = completion.errorCode;
+      unsetValues['transcription.text'] = 1;
+    }
+
+    const evidence = await this.mediaEvidenceModel
+      .findOneAndUpdate(
+        {
+          _id: normalizedEvidenceId,
+          ...normalizedOwnership,
+          evidenceType: 'audio',
+          captureMode: 'browser_audio_recording',
+          status: 'attached',
+          storageStatus: 'stored',
+          lockedAt: null,
+          voidedAt: null,
+          deletedAt: null,
+          'transcription.status': 'processing',
+          'transcription.requestedAt': claimedAt,
+        },
+        { $set: setValues, $unset: unsetValues },
+        { returnDocument: 'after', runValidators: true },
+      )
+      .exec();
+    return evidence ? this.mapTranscription(evidence) : null;
   }
 }

@@ -1623,4 +1623,101 @@ describe('PatientAdministrationSessionService', () => {
     );
     expect(stream.destroyed).toBe(true);
   });
+
+  it('returns only safe latest-session facts for the review projection', async () => {
+    const uploadedAt = new Date('2026-08-06T01:00:00.000Z');
+    const reviewSession = sessionDocument({
+      status: 'active',
+      preparationConfirmedAt: uploadedAt,
+      impactFactorCodes: ['sensory'],
+      impactFactorNote: 'safe factor note',
+      controlEvents: [
+        {
+          action: 'entry_redeemed',
+          occurredAt: uploadedAt,
+          reason: 'must be filtered',
+        },
+        {
+          action: 'paused',
+          occurredAt: uploadedAt,
+          reason: 'safe reason',
+          operatorSnapshot: operator,
+        },
+      ],
+      stepCaptures: [
+        {
+          stepKey: 'first',
+          stepRun: 1,
+          capturedBy: 'staff',
+          staffObservation: 'safe observation',
+          capturedAt: uploadedAt,
+          invalidatedAt: uploadedAt,
+          invalidatedReason: 'redo',
+          operatorSnapshot: operator,
+        },
+      ],
+      stepEvidenceRefs: [
+        {
+          stepKey: 'first',
+          stepRun: 1,
+          evidenceType: 'audio',
+          mediaEvidenceId: new Types.ObjectId('507f1f77bcf86cd799439018'),
+          uploadedAt,
+        },
+      ],
+    });
+    patientsService.findPatientById.mockResolvedValue(activePatient());
+    assessmentsService.findVisitByPatientAndId.mockResolvedValue(
+      editableVisit(),
+    );
+    assessmentsService.findScaleInstanceByPatientVisitAndId.mockResolvedValue(
+      editableScaleInstance(),
+    );
+    sessionModel.findOne.mockReturnValue(createQuery(reviewSession));
+
+    const result = await service.getLatestReviewFacts(
+      patientId,
+      visitId,
+      scaleInstanceId,
+    );
+    expect(result).toMatchObject({
+      sessionId: reviewSession._id.toString(),
+      scaleInstanceId,
+      scaleDefinitionId,
+      scaleVersionId,
+      scaleCode: 'mmse',
+      scaleVersion: '1.0',
+      status: 'active',
+      impactFactorCodes: ['sensory'],
+      reviewEvents: [
+        {
+          action: 'paused',
+          reason: 'safe reason',
+          operatorSnapshot: {
+            operatorId: operator.operatorId.toString(),
+            operatorName: operator.operatorName,
+            operatorRole: 'doctor',
+          },
+        },
+      ],
+      stepCaptures: [
+        {
+          stepKey: 'first',
+          stepRun: 1,
+          staffObservation: 'safe observation',
+          invalidatedReason: 'redo',
+        },
+      ],
+      stepEvidenceRefs: [
+        {
+          stepKey: 'first',
+          stepRun: 1,
+          evidenceType: 'audio',
+          mediaEvidenceId: '507f1f77bcf86cd799439018',
+        },
+      ],
+    });
+    expect(JSON.stringify(result)).not.toContain('hash-entry');
+    expect(JSON.stringify(result)).not.toContain('must be filtered');
+  });
 });

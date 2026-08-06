@@ -409,6 +409,10 @@ export class PatientAdministrationEvidenceService {
         args.input.evidenceType === 'audio'
           ? { durationMs: args.input.durationMs ?? null }
           : null,
+      transcription:
+        args.input.evidenceType === 'audio'
+          ? { status: 'not_requested' }
+          : undefined,
       imageMetadata: null,
       handwritingTrace: null,
       captureContext: {

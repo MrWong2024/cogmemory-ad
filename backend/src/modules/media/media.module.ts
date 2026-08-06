@@ -5,8 +5,10 @@ import { AssessmentsModule } from '../assessments/assessments.module';
 import { AuthModule } from '../auth/auth.module';
 import { PatientsModule } from '../patients/patients.module';
 import { StorageModule } from '../storage/storage.module';
+import { ScalesModule } from '../scales/scales.module';
 import { MediaEvidenceController } from './controllers/media-evidence.controller';
 import { PatientAdministrationEvidenceController } from './controllers/patient-administration-evidence.controller';
+import { PatientAdministrationReviewController } from './controllers/patient-administration-review.controller';
 import { MediaUploadExceptionInterceptor } from './lib/media-upload-exception.interceptor';
 import {
   MediaEvidence,
@@ -15,6 +17,9 @@ import {
 import { MediaEvidenceService } from './services/media-evidence.service';
 import { MediaEvidenceWorkflowService } from './services/media-evidence-workflow.service';
 import { PatientAdministrationEvidenceService } from './services/patient-administration-evidence.service';
+import { PatientAudioAsrClientService } from './services/patient-audio-asr-client.service';
+import { MediaEvidenceTranscriptionService } from './services/media-evidence-transcription.service';
+import { PatientAdministrationReviewService } from './services/patient-administration-review.service';
 
 @Module({
   imports: [
@@ -22,6 +27,7 @@ import { PatientAdministrationEvidenceService } from './services/patient-adminis
     PatientsModule,
     AssessmentsModule,
     StorageModule,
+    ScalesModule,
     MongooseModule.forFeature([
       { name: MediaEvidence.name, schema: MediaEvidenceSchema },
     ]),
@@ -29,11 +35,15 @@ import { PatientAdministrationEvidenceService } from './services/patient-adminis
   controllers: [
     MediaEvidenceController,
     PatientAdministrationEvidenceController,
+    PatientAdministrationReviewController,
   ],
   providers: [
     MediaEvidenceService,
     MediaEvidenceWorkflowService,
     PatientAdministrationEvidenceService,
+    PatientAudioAsrClientService,
+    MediaEvidenceTranscriptionService,
+    PatientAdministrationReviewService,
     MediaUploadExceptionInterceptor,
   ],
   exports: [MediaEvidenceService],

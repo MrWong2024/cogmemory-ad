@@ -102,6 +102,30 @@ export const MEDIA_QUALITY_STATUSES = [
 ] as const;
 export type MediaQualityStatus = (typeof MEDIA_QUALITY_STATUSES)[number];
 
+export const MEDIA_TRANSCRIPTION_STATUSES = [
+  'not_requested',
+  'processing',
+  'succeeded',
+  'failed',
+] as const;
+export type MediaTranscriptionStatus =
+  (typeof MEDIA_TRANSCRIPTION_STATUSES)[number];
+
+export const MEDIA_TRANSCRIPTION_ERROR_CODES = [
+  'duration_unsupported',
+  'storage_unavailable',
+  'timeout',
+  'provider_unavailable',
+  'provider_rejected',
+  'invalid_response',
+] as const;
+export type MediaTranscriptionErrorCode =
+  (typeof MEDIA_TRANSCRIPTION_ERROR_CODES)[number];
+
+export const MEDIA_TRANSCRIPTION_PROVIDERS = ['stub', 'bailian'] as const;
+export type MediaTranscriptionProvider =
+  (typeof MEDIA_TRANSCRIPTION_PROVIDERS)[number];
+
 export type MediaItemSnapshot = Record<string, unknown> | null;
 export type MediaQualityHints = Record<string, unknown> | null;
 export type MediaEvidenceMetadata = Record<string, unknown> | null;
@@ -322,6 +346,93 @@ export class MediaAudioMetadata {
 export const MediaAudioMetadataSchema =
   SchemaFactory.createForClass(MediaAudioMetadata);
 
+@Schema({ _id: false })
+export class MediaEvidenceTranscription {
+  @Prop({
+    type: String,
+    enum: MEDIA_TRANSCRIPTION_STATUSES,
+    required: true,
+    default: 'not_requested',
+  })
+  status!: MediaTranscriptionStatus;
+
+  @Prop({ type: String, trim: true, maxlength: 20000 })
+  text?: string;
+
+  @Prop({ type: String, enum: MEDIA_TRANSCRIPTION_ERROR_CODES })
+  errorCode?: MediaTranscriptionErrorCode;
+
+  @Prop({ type: String, enum: MEDIA_TRANSCRIPTION_PROVIDERS })
+  provider?: MediaTranscriptionProvider;
+
+  @Prop({ type: String, trim: true, maxlength: 120 })
+  model?: string;
+
+  @Prop({ type: Date })
+  requestedAt?: Date;
+
+  @Prop({ type: Date })
+  completedAt?: Date;
+
+  @Prop({ type: MediaOperatorSnapshotSchema })
+  requestedBy?: MediaOperatorSnapshot;
+}
+
+export const MediaEvidenceTranscriptionSchema = SchemaFactory.createForClass(
+  MediaEvidenceTranscription,
+);
+
+MediaEvidenceTranscriptionSchema.pre('validate', function () {
+  const transcription = this as unknown as MediaEvidenceTranscription;
+  const text = transcription.text?.trim() ?? '';
+  const hasRequestFacts =
+    Boolean(transcription.provider) &&
+    Boolean(transcription.model?.trim()) &&
+    transcription.requestedAt instanceof Date &&
+    Boolean(transcription.requestedBy);
+
+  if (transcription.status === 'not_requested') {
+    if (
+      text ||
+      transcription.errorCode ||
+      transcription.provider ||
+      transcription.model ||
+      transcription.requestedAt ||
+      transcription.completedAt ||
+      transcription.requestedBy
+    ) {
+      throw new Error(
+        'not_requested transcription cannot contain result facts',
+      );
+    }
+    return;
+  }
+
+  if (!hasRequestFacts) {
+    throw new Error('transcription request facts are required');
+  }
+  if (transcription.status === 'processing') {
+    if (text || transcription.errorCode || transcription.completedAt) {
+      throw new Error(
+        'processing transcription cannot contain completion facts',
+      );
+    }
+    return;
+  }
+  if (!(transcription.completedAt instanceof Date)) {
+    throw new Error('completed transcription requires completedAt');
+  }
+  if (transcription.status === 'succeeded') {
+    if (!text || transcription.errorCode) {
+      throw new Error('succeeded transcription requires only non-empty text');
+    }
+    return;
+  }
+  if (text || !transcription.errorCode) {
+    throw new Error('failed transcription requires only an error code');
+  }
+});
+
 @Schema({ timestamps: true, collection: 'media_evidences' })
 export class MediaEvidence {
   @Prop({ type: SchemaTypes.ObjectId, ref: Patient.name, required: true })
@@ -442,6 +553,9 @@ export class MediaEvidence {
 
   @Prop({ type: MediaAudioMetadataSchema, default: null })
   audioMetadata?: MediaAudioMetadata | null;
+
+  @Prop({ type: MediaEvidenceTranscriptionSchema, default: undefined })
+  transcription?: MediaEvidenceTranscription;
 
   @Prop({
     type: String,

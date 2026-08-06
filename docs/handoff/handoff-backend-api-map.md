@@ -11,7 +11,7 @@
 - AuthModule 内部 session cookie 名称已统一为 `cogmemory_ad_session`，登录成功下发 HttpOnly Cookie，`SameSite=Lax`，`Path=/`，production 环境启用 `Secure`。
 - 当前没有 users controller，没有公开用户管理 API，没有注册、密码重置、角色权限管理、短信验证码、OAuth / SSO 或 JWT 登录 API。
 - A12 已新增 `PatientsController` 与 `AssessmentVisitsController`，形成第一组受保护临床业务 API；所有五个接口均显式绑定 `SessionAuthGuard`、`RolesGuard` 和 `@Roles('admin', 'doctor', 'nurse', 'research_assistant')`。
-- 当前已有实例 submission、评分、认知域、报告与历史趋势接口；WP-10-B 共提供十二个 staff 会话 / 步骤控制接口和五个 patient 会话 / 步骤 / 资产接口。B2 不提供患者回答、录音 / ASR、ItemResponse 写入或患者 UI。
+- 当前已有实例 submission、评分、认知域、报告与历史趋势接口；WP-10-B 共提供十二个 staff 会话 / 步骤控制接口和五个 patient 会话 / 步骤 / 资产接口，C1 增加患者当前步骤 evidence 上传，C2 增加显式转写与最新会话复核。自动转写候选不会写入正式 `ItemResponse`，患者 UI 仍未实现。
 - 当前 API 事实以实际 Controller、DTO、response type 和对应单元 / E2E 测试为准。
 
 ## 3. 当前 API 清单
@@ -224,6 +224,15 @@
 - 错误：404 完整归属或 `MEDIA_EVIDENCE_NOT_FOUND` / `MEDIA_TRAJECTORY_NOT_FOUND`；409 `MEDIA_EVIDENCE_NOT_ACCESSIBLE`；503 `MEDIA_STORAGE_UNAVAILABLE`
 - 敏感字段边界：不返回 objectKey、trajectoryObjectKey、bucket、Storage endpoint 或凭据，返回值不是永久公开 URL
 
+- 接口名称：显式转写患者施测录音
+- Method / Path：`POST /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/item-responses/:itemResponseId/media-evidences/:mediaEvidenceId/transcribe`
+- Guard / Roles：`SessionAuthGuard` + `RolesGuard`；`admin`、`doctor`、`nurse`、`research_assistant`
+- Param / Body DTO：`MediaEvidenceParamDto`；空白名单 `TranscribeMediaEvidenceDto`，不接受 provider、model、language、format、URL 或其他 Body 字段
+- 资格：ASR provider 先于业务归属检查；之后完整验证 Patient -> Visit -> ScaleInstance -> ItemResponse -> MediaEvidence、临床角色、active / editable、lock / void / submission barrier。只允许患者会话生成的 attached、stored、未锁定 / 作废 / 删除 `browser_audio_recording` audio，格式权威取 `storage.fileExtension` 且仅 webm / ogg / m4a / mp3；已知 durationMs 超过 300000 在 claim 前拒绝，未知时长允许
+- 响应：200，`MediaEvidenceTranscriptionActionResponse { mediaEvidenceId, transcription }`；succeeded 重复请求幂等，failed 可重试。provider 技术失败持久化有限 `failed/errorCode` 后仍返回 200；disabled / 配置不可用为 503 `MEDIA_TRANSCRIPTION_UNAVAILABLE`，资格失败为 409 `MEDIA_TRANSCRIPTION_NOT_ALLOWED`，并发或状态变化为 409 `MEDIA_TRANSCRIPTION_CONFLICT`
+- 并发与外部调用：processing claim 及 succeeded / failed finalize 都以完整 ownership、合法 evidence 状态和 `requestedAt` token 做条件写；stale 阈值为 `max(120000, BAILIAN_TIMEOUT_MS * 2)`。仅 bailian claim 成功后生成十分钟签名 URL，并使用固定 `qwen-audio-3.0-asr-flash` 同步调用；stub 不联网也不生成 URL
+- 隐私与正式事实：公开转写只含有限状态、候选文本 / 有限错误、provider / model、时间与 requestedBy 安全操作者；不返回或记录 API key、签名 URL、objectKey、原始 provider 响应、request_id 或 usage。候选不自动写入 `ItemResponse`，正式答案仍使用既有 revision CAS 草稿接口由 staff 明确提交
+
 - 接口名称：作废媒体证据
 - Method / Path：`POST /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/item-responses/:itemResponseId/media-evidences/:mediaEvidenceId/void`
 - Guard / Roles：`SessionAuthGuard` + `RolesGuard`；`admin`、`doctor`、`nurse`、`research_assistant`
@@ -356,7 +365,7 @@
 - `backend\src\modules\scales` 当前仅有公开只读 `ScalesController` 的 `GET /scales/available`；不提供完整题目配置、seed 执行、量表管理或版本编辑 API。
 - `backend\src\modules\patients` 当前仅通过 `PatientsController` 暴露 A12 三个患者接口；未暴露 PATCH、DELETE 或归档接口。
 - `backend\src\modules\assessments` 还通过 `ScaleInstanceSubmissionController` 暴露 A16 两个接口；`AssessmentExecutionService` 仍为内部初始化能力，不暴露批量保存或计分接口。
-- `backend\src\modules\media` 当前仅通过 `MediaEvidenceController` 暴露上述四个题目级媒体接口；没有全患者 / 访视 / 实例媒体列表、直接对象 key 下载、永久 URL、物理删除、替换、批量、分片、客户端直传、OCR 或 AI 接口。
+- `backend\src\modules\media` 当前通过 `MediaEvidenceController` 暴露上述五个题目级媒体接口，并通过 `PatientAdministrationReviewController` 暴露一个实例级最新会话复核接口；没有全患者 / 访视 / 实例媒体列表、直接对象 key 下载、永久 URL、物理删除、替换、批量、分片、客户端直传、OCR、自动语义评分或自动正式答案接口。
 - `backend\src\modules\scoring` 当前通过同一 `ScoringController` 暴露 A17 compute / latest 与 A18 manual-review / confirm；没有 lock、void、撤销确认、reopen、重跑、列表、患者级或访视级评分 API。
 - `backend\src\modules\cognitive-domains` 当前通过 `CognitiveDomainResultsController` 暴露 A19 compute / latest；没有人工修改、确认、锁定、作废、重算、历史列表、患者 / 访视级列表或报告 API。
 - `backend\src\modules\reports` 当前通过 `ClinicalReportsController` 暴露 A20-A25 的 generate / latest / edit / submit / confirm / lock / freeze-sources / archive / corrections，以及 A27 的版本列表和指定历史详情；A26 不新增专用 endpoint，而是把同一 A22-A24 lock / freeze-sources / archive 接口安全泛化到合法 V2+ replacement。当前尚未暴露 correction 列表、cancel、branch、replacement 专用接口、PDF 或 AI API。
@@ -454,7 +463,7 @@
 - A20 / A21 / A26：generate 与 latest 使用当前 latest；合法 replacement 的 edit / submit / confirm / lock / freeze-sources / archive 仅 doctor/admin，Patient inactive / Visit locked / voided 不阻断。V1 的 A21-A23 资格不放宽；公开 endpoint、DTO 与 response 未变化。
 - errors：400 confirmation / DTO；401；403；404 ownership；409 not-correctable / not-latest / conflict / audit-unavailable / replacement-conflict / incomplete；未知持久化失败 500。
 
-## WP-10 患者短期会话、步骤推进、受控资产与 C1 evidence API
+## WP-10 患者短期会话、步骤推进、受控资产、C1 evidence 与 C2 review API
 
 ### Staff 会话接口
 
@@ -484,6 +493,14 @@
 - evidence 响应固定 `{ mediaEvidenceId, evidenceType, revision, uploadedAt }`；不返回 patient / visit / instance / item / session / step / run、objectKey、bucket、URL、checksum、原始文件名或 Token。上传不自动完成步骤、不推进 currentStepKey、不写 `ItemResponse.evidenceRefs`，只以会话 revision CAS 追加当前 run 的内嵌引用；重复或竞争使用既有 `PATIENT_ADMINISTRATION_SESSION_CONFLICT`，CAS 失败精确补偿本次 Evidence 与对象。
 - Cookie：患者 Cookie 固定 HttpOnly、SameSite=Lax、Path=`/patient-administration`，Secure 取 `session.cookieSecure`，maxAge 不大于两小时且不进入 URL / JSON / localStorage；完成、终止或失效后不再可用。
 - 稳定错误包括 `PATIENT_ADMINISTRATION_SESSION_NOT_FOUND`、`PATIENT_ADMINISTRATION_SESSION_CONFLICT`、`PATIENT_ADMINISTRATION_ENTRY_INVALID`、`PATIENT_ADMINISTRATION_STEP_INVALID`、403 `PATIENT_ADMINISTRATION_ASSET_NOT_ALLOWED` 与 C1 唯一新增的 403 `PATIENT_ADMINISTRATION_EVIDENCE_NOT_ALLOWED`；媒体校验 / 存储 / 创建继续复用既有 `MEDIA_*` 错误。业务步骤归属、播放 / 媒体前置条件和 redo 条件失败为 409 step invalid；revision / 状态 / 重复上传竞争为 409 session conflict。
+
+### Staff 最新患者施测复核接口
+
+- `GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/patient-administration/review`：`SessionAuthGuard` + `RolesGuard`，角色固定 admin / doctor / nurse / research_assistant；三个路径 ID 使用 `ScaleInstanceExecutionParamDto`，无 Query / Body。
+- 只读取该 ownership 下按 createdAt、_id 倒序的最新患者施测会话，并联合其权威 ScaleVersion 步骤、该实例全部 ItemResponse 与会话引用的 MediaEvidence；不延长、过期或改写会话。
+- 响应为 `PatientAdministrationReviewResponse { session, reviewEvents, items }`：session 只含状态、准备 / 影响因素及有限生命周期时间；reviewEvents 只含受控 action / 时间 / 原因 / 安全操作者；item 按权威步骤顺序分组，含安全 status / draftRevision、step / run、capture、evidence、audioMetadata 与 transcription。redo 的 invalidated run 和只有 evidence 的 run 均保留。
+- 完整性检查要求 ScaleVersion identity、连续唯一步骤、ItemResponse 精确集合 / ownership / version，以及每个 evidence ref 的 patient / visit / instance / item / session / step / run / type 全部匹配；损坏事实 fail closed 为 409 `PATIENT_ADMINISTRATION_STEP_INVALID`。不存在会话沿用 404 `PATIENT_ADMINISTRATION_SESSION_NOT_FOUND`。
+- 不生成或返回签名 URL，不返回 patientText、资产、播放事实、credential / hash、Storage 路径、评分、完整 controlEvents、ItemResponse 答案 payload 或正式答案变更；review 本身只读。
 
 ## A27 WP-04 后端阶段一历史读取
 

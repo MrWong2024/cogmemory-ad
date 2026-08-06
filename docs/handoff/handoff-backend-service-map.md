@@ -6,7 +6,7 @@
 
 ## 2. 当前状态
 
-- 当前存在公共底座 Service / Provider、A12-A28 与 WP-10 业务能力；B1/B2 在 AssessmentsModule 内完成患者会话、权威步骤与受控资产，C1 由 MediaModule 单一患者 evidence 编排 Service 复用该会话 Service、既有 MediaEvidence 与 Storage，不改变 Auth、ItemResponse 或 presentation asset 服务实现。
+- 当前存在公共底座 Service / Provider、A12-A28 与 WP-10 业务能力；B1/B2 在 AssessmentsModule 内完成患者会话、权威步骤与受控资产，C1 由 MediaModule 单一患者 evidence 编排 Service 复用该会话 Service、既有 MediaEvidence 与 Storage，C2 在同一模块增加具体 ASR client、显式转写编排与最新会话只读 review；不改变 Auth、ItemResponse、Storage interface / driver、Scoring 或 presentation asset 服务实现。经明确授权，Reports 仅增加一个 report-local fail-closed captureMode 适配，不扩大其既有图片 / 手写来源范围。
 - 当前没有独立医生、SMS 或 LLM Service；A21 不调用来源计分 / 认知域 / 媒体 Service、Storage、PDF 或 AI 能力。
 
 ## 3. 当前 Service / Provider 清单
@@ -114,7 +114,7 @@
 
 - Service 名称：`PatientAdministrationSessionService`
 - 文件路径：`backend\src\modules\assessments\services\patient-administration-session.service.ts`
-- 职责边界：集中编排创建 / 查询、同设备签发、跨设备一次性兑换、准备确认、暂停 / 恢复、换设备重签、终止、患者凭证校验、当前步骤最小响应、patient / staff 完成、paused staff 接管、直接前一步重做、当前图片流、顺序音频播放、技术重播授权、C1 evidence prepare / attach CAS 与完成媒体门禁、惰性过期；自身不上传对象、不创建 MediaEvidence，也不写 `ItemResponse`、`ScaleInstance` 状态、评分或报告。
+- 职责边界：集中编排创建 / 查询、同设备签发、跨设备一次性兑换、准备确认、暂停 / 恢复、换设备重签、终止、患者凭证校验、当前步骤最小响应、patient / staff 完成、paused staff 接管、直接前一步重做、当前图片流、顺序音频播放、技术重播授权、C1 evidence prepare / attach CAS 与完成媒体门禁、惰性过期；C2 只增加按 createdAt、_id 倒序读取最新会话的安全 review facts 方法。自身不上传对象、不创建 MediaEvidence，也不写 `ItemResponse`、`ScaleInstance` 状态、评分或报告。
 - 下游依赖：`PatientAdministrationSession` 与只读 `ScaleInstance` identity Model、`PatientsService`、`AssessmentsService`、`ScalesService`、`PresentationAssetsService`、`AuthService`。只复用现有 submission barrier 规范化函数和 Auth token 生成 / SHA-256，不复制平行认证或屏障逻辑。
 - 状态与并发：开放状态 prepared / active / paused；顺序推进最后一步产生 completed 并清除全部凭证。全部 credential / control / capture / playback 写共享单一 revision CAS，每次恰加一；patient 写额外匹配 sessionTokenHash 和 currentStepKey。并发完成或播放同 revision 最多一个成功；音频流在 CAS 前打开，失败立即 destroy，不返回未获授权二进制。同实例 partial unique 索引封住并发创建，进入码 unique collision 有限重试，公开兑换按 client key 固定窗口限流。
 - 过期与失效：各入口惰性检查绝对两小时有效期，以状态 + revision 原子写 expired、清空全部凭证并追加一次事件；患者 Guard / current 遇到底层不可继续时 fail closed、原子终止开放会话并不泄露原因。无 TTL、cron、queue、transaction、retry loop 或物理删除。
@@ -135,13 +135,37 @@
 - 文件路径：`backend\src\modules\media\services\patient-administration-evidence.service.ts`
 - 职责边界：接收 Guard context、C1 DTO 与单个内存文件；调用 SessionService prepare，使用 `AssessmentsService.findItemResponseByScaleInstanceAndItemCode()` 只读解析并复核 ownership / answerSource / lock / void / barrier；按 responseMode 选择 audio 或既有图片纯校验；写私有 Storage、创建权威 `MediaEvidence`、再调用 SessionService attach CAS，最后只返回四字段安全响应。
 - 权威映射：speech audio → `browser_audio_recording`，writing / drawing handwriting → `tablet_handwriting`，photo → `photo_upload`；`patientAdministrationContext` 保存 sessionId / stepKey / stepRun，audioMetadata 只保存可选 durationMs。患者原始文件名、Token、IP、User-Agent、客户端 captureMode 与任意 metadata 均不持久化。
-- 补偿与非职责：Storage 成功后 MediaEvidence 创建失败删除精确 objectKey；MediaEvidence 成功后 Session CAS 失败删除精确 Evidence ID 与 objectKey。不得调用 ItemResponse evidenceRef attach / clear / restore，不修改 ItemResponse / ScaleInstance，不完成步骤、不实现替换 / void / delete API、ASR、转写、评分、报告、队列或 worker。
+- 补偿与非职责：Storage 成功后 MediaEvidence 创建失败删除精确 objectKey；MediaEvidence 成功后 Session CAS 失败删除精确 Evidence ID 与 objectKey。不得调用 ItemResponse evidenceRef attach / clear / restore，不修改 ItemResponse / ScaleInstance，不完成步骤、不实现替换 / void / delete API，也不自行执行 ASR / 转写、评分、报告、队列或 worker；C2 转写由独立编排 Service 读取其产物。
 - 下游依赖：`PatientAdministrationSessionService`、`AssessmentsService` 只读查询、`MediaEvidenceService`、`STORAGE_SERVICE`、`StorageConfigService`；没有 Repository、第二患者媒体 Service 或反向模块依赖。
 - 测试覆盖口径：纯 audio validator unit、患者 evidence 编排 unit、会话 gate / CAS unit、MediaEvidence nullable mapper unit，以及 AppModule + standard_test + 可追踪 fake Storage 的 C1 E2E；真实 OSS、Browser 和真实设备不在 C1 自动化范围。
 
 - Controller 名称：`PatientAdministrationEvidenceController`
 - 文件路径：`backend\src\modules\media\controllers\patient-administration-evidence.controller.ts`
 - 职责边界：仅绑定 `POST /patient-administration/current/evidence`、患者 Guard、multipart 单一 `file`、10 MiB / 四个字段上限、DTO 与现有上传异常拦截器；不推导 item、不生成 objectKey、不操作 Storage / Model / Session。
+
+- Service 名称：`MediaEvidenceService`（WP-10-C2 扩展）
+- 文件路径：`backend\src\modules\media\services\media-evidence.service.ts`
+- 职责边界：在既有统一 MediaEvidence 创建 / 查询 / 映射底座上增加 transcription 安全映射、legacy 患者 audio 的 `not_requested` 兼容，以及 claim / complete / fail 三类条件写。它不调用外部 ASR、不生成签名 URL，也不读取或修改 `ItemResponse`、会话生命周期、评分或报告。
+- 并发边界：claim 匹配完整 ownership、attached / stored / 未锁定 / 未作废 / 未删除患者 audio，并允许 not_requested / failed 或超时 processing；finalize 额外匹配本次 requestedAt token 与 processing。旧 provider 完成、submit / lock / void 竞争或 stale reclaim 后均不能覆盖新事实。Schema 的可选 `_id:false` transcription 子文档只含 status、text、errorCode、provider、model、requestedAt、completedAt、requestedBy，不增加索引。
+
+- Service 名称：`PatientAudioAsrClientService`
+- 文件路径：`backend\src\modules\media\services\patient-audio-asr-client.service.ts`
+- 职责边界：具体配置驱动 client，不提供 registry / factory / 多供应商动态路由。disabled 直接不可用；test 强制 stub，返回固定候选且不访问 Storage / network；bailian 使用内建 fetch + AbortController 单次同步 POST，不重试。
+- 百炼合同：只接受 webm / ogg / m4a / mp3 与已生成的短期 URL；请求固定 `Authorization: Bearer ...`、`Content-Type: application/json`、`X-DashScope-SSE: disable`，model 为 `qwen-audio-3.0-asr-flash`，input 只含 `messages[].content[].input_audio`，parameters 只含权威 format 与 `language_hints: ['zh']`。只解析 trim 后非空且不超过 20000 字符的顶层 `output.text`，向上只抛有限技术错误，不记录 key、URL 或原始响应。
+
+- Service 名称：`MediaEvidenceTranscriptionService`
+- 文件路径：`backend\src\modules\media\services\media-evidence-transcription.service.ts`
+- 职责边界：staff 显式转写的唯一业务编排；先检查 provider，再验证 Patient -> Visit -> ScaleInstance -> ItemResponse -> MediaEvidence ownership、角色、active / editable、lock / void / submission barrier 与患者 audio 资格。claim 成功后仅 bailian 调用 Storage 十分钟签名 URL，再调用具体 client 并 CAS finalize；技术失败写有限 failed 状态后返回 200。
+- 非职责与安全：不删除或改写录音 / 会话 / `ItemResponse` / `ScaleInstance`，不自动形成正式答案，不调用 Scoring / Reports，不做队列、worker、流式字幕、重试或采样率推断。disabled / 配置错误为 503，资格与并发分别使用两个稳定 409 code。
+
+- Service 名称：`PatientAdministrationReviewService`
+- 文件路径：`backend\src\modules\media\services\patient-administration-review.service.ts`
+- 职责边界：组合 `PatientAdministrationSessionService.getLatestReviewFacts()`、权威 ScaleVersion 步骤、完整 ItemResponse 集合与会话引用的 MediaEvidence，按 item / step / run 输出安全只读复核投影；保留 invalidated capture 与 evidence-only run。
+- 完整性与非职责：逐项验证 version identity、唯一步骤顺序、ItemResponse ownership / 集合 / version，以及 evidence 的 patient / visit / instance / item / session / step / run / type；任何损坏统一 fail closed。它不写会话或答案、不生成签名 URL、不返回资产 / patientText / playback / hash / Storage / scoring / 完整 controlEvents，也不引入 collection、缓存或投影队列。
+
+- Controller 名称：`PatientAdministrationReviewController`
+- 文件路径：`backend\src\modules\media\controllers\patient-administration-review.controller.ts`
+- 职责边界：仅绑定最新会话 review GET、既有 staff Session / Roles Guard 与三个 ownership 路径参数；不复制组合、完整性检查或 mapper 逻辑。既有 `MediaEvidenceController` 仅新增空 Body 的显式 transcribe POST，并把 current user 交给转写 Service。
 
 - Service 名称：`AssessmentExecutionService`
 - 文件路径：`backend\src\modules\assessments\services\assessment-execution.service.ts`

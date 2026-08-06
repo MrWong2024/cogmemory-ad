@@ -1,0 +1,89 @@
+import configuration from './configuration';
+import { envValidationSchema } from './env.validation';
+
+const ORIGINAL_ENV = process.env;
+
+describe('ASR configuration', () => {
+  beforeEach(() => {
+    process.env = { ...ORIGINAL_ENV };
+    delete process.env.ASR_PROVIDER;
+    delete process.env.BAILIAN_API_KEY;
+    delete process.env.BAILIAN_ASR_API_URL;
+    delete process.env.BAILIAN_ASR_MODEL;
+  });
+
+  afterAll(() => {
+    process.env = ORIGINAL_ENV;
+  });
+
+  it('defaults development and production ASR to disabled', () => {
+    process.env.NODE_ENV = 'development';
+    expect(configuration().asr).toEqual({
+      provider: 'disabled',
+      bailian: { apiKey: '', apiUrl: '', model: '', timeoutMs: 90000 },
+    });
+
+    process.env.NODE_ENV = 'production';
+    expect(configuration().asr.provider).toBe('disabled');
+  });
+
+  it('forces test configuration to the deterministic stub', () => {
+    process.env.NODE_ENV = 'test';
+    process.env.ASR_PROVIDER = 'bailian';
+    expect(configuration().asr).toMatchObject({
+      provider: 'stub',
+      bailian: { model: 'qwen-audio-3.0-asr-flash' },
+    });
+  });
+
+  it('rejects real ASR in test and the stub in production', () => {
+    expect(
+      envValidationSchema.validate({
+        NODE_ENV: 'test',
+        ASR_PROVIDER: 'bailian',
+      }).error,
+    ).toBeDefined();
+    expect(
+      envValidationSchema.validate({
+        NODE_ENV: 'production',
+        MONGO_URI: 'mongodb://localhost/cogmemory_ad',
+        MONGO_ADMIN_URI: 'mongodb://localhost/cogmemory_ad',
+        STORAGE_DRIVER: 'fake',
+        ASR_PROVIDER: 'stub',
+      }).error,
+    ).toBeDefined();
+  });
+
+  it('requires Bailian credentials and a full HTTPS ASR URL', () => {
+    const missing = envValidationSchema.validate({
+      NODE_ENV: 'development',
+      ASR_PROVIDER: 'bailian',
+    });
+    expect(missing.error?.message).toContain('BAILIAN_API_KEY');
+    expect(missing.error?.message).toContain('BAILIAN_ASR_API_URL');
+
+    const insecure = envValidationSchema.validate({
+      NODE_ENV: 'development',
+      ASR_PROVIDER: 'bailian',
+      BAILIAN_API_KEY: 'placeholder',
+      BAILIAN_ASR_API_URL: 'http://workspace.example/asr',
+    });
+    expect(insecure.error?.message).toContain('BAILIAN_ASR_API_URL');
+  });
+
+  it('uses the exact ASR model default for a valid Bailian configuration', () => {
+    const result = envValidationSchema.validate({
+      NODE_ENV: 'development',
+      ASR_PROVIDER: 'bailian',
+      BAILIAN_API_KEY: 'placeholder',
+      BAILIAN_ASR_API_URL: 'https://workspace.example/asr',
+    });
+    expect(result.error).toBeUndefined();
+    const validated = result.value as unknown;
+    expect(
+      typeof validated === 'object' && validated !== null
+        ? Reflect.get(validated, 'BAILIAN_ASR_MODEL')
+        : undefined,
+    ).toBe('qwen-audio-3.0-asr-flash');
+  });
+});
