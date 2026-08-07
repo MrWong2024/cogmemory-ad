@@ -34,6 +34,7 @@ export function PatientAdministrationWrittenResponse({
   const activePointerRef = useRef<number | null>(null);
   const photoUrlRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
+  const savingRef = useRef(false);
   const [mode, setMode] = useState<InputMode>('canvas');
   const [hasInk, setHasInk] = useState(false);
   const [photo, setPhoto] = useState<Blob | null>(null);
@@ -69,6 +70,7 @@ export function PatientAdministrationWrittenResponse({
     resetCanvas();
     return () => {
       mountedRef.current = false;
+      savingRef.current = false;
       if (photoUrlRef.current) URL.revokeObjectURL(photoUrlRef.current);
       photoUrlRef.current = null;
       onBusyChange(false);
@@ -152,16 +154,18 @@ export function PatientAdministrationWrittenResponse({
   }
 
   async function saveContent() {
-    if (disabled || uploading || saved) return;
+    if (savingRef.current || disabled || uploading || saved) return;
     if ((mode === 'canvas' && !hasInk) || (mode === 'photo' && !photo)) {
       setError(mode === 'canvas' ? '请先完成有效书写或绘图。' : '请先选择照片。');
       return;
     }
+    savingRef.current = true;
     setUploading(true);
     onBusyChange(true);
     setError(null);
     try {
       const file = mode === 'canvas' ? await canvasBlob() : photo;
+      if (!mountedRef.current) return;
       if (!file || file.size > MAX_FILE_BYTES) {
         setError('本题内容大小不符合要求，请清空后重试。');
         return;
@@ -179,6 +183,7 @@ export function PatientAdministrationWrittenResponse({
     } catch {
       if (mountedRef.current) setError('本题内容未能生成，请重试。');
     } finally {
+      savingRef.current = false;
       if (mountedRef.current) {
         setUploading(false);
         onBusyChange(false);

@@ -13,12 +13,10 @@ import {
   IMAGE_PATTERN,
   PATIENT_COMPLETE_PATTERN,
   PAUSE_PATTERN,
-  REDO_PATTERN,
   REPLAY_PATTERN,
   RESUME_PATTERN,
   STAFF_COMPLETE_PATTERN,
   STAFF_ROOT_PATTERN,
-  TAKEOVER_PATTERN,
   allowAutoplayIfNeeded,
   assertExactBodyKeys,
   assertF2BrowserAudit,
@@ -27,6 +25,7 @@ import {
   completeSyntheticPreparation,
   createF2PatientContext,
   enterPatientDevice,
+  expectEvidenceUpload,
   installSyntheticMicrophone,
   invariant,
   loginF2Staff,
@@ -133,46 +132,7 @@ test.describe('WP-10 F2-P1 complete MMSE patient administration', () => {
       ).toHaveCount(0);
       await completePatientStep(patientPage);
 
-      await waitForStep(patientPage, 2);
-      await allowAutoplayIfNeeded(patientPage);
-      await expect(
-        patientPage.getByRole('button', { name: '开始录音', exact: true }),
-      ).toBeEnabled({ timeout: 20_000 });
-      await refreshStaff(staffPage);
-      await pauseStaff(staffPage, 'F2 第2步由医护接管');
-      await expect(
-        patientPage.getByRole('heading', { name: '施测已暂停，请稍候' }),
-      ).toBeVisible({ timeout: 10_000 });
-      await staffPage
-        .getByLabel('接管原因（必填，最多 500 字）')
-        .fill('患者当前需要医护协助');
-      await staffPage
-        .getByLabel('接管观察（必填，最多 2000 字）')
-        .fill('医护已按规范观察并接管第2步');
-      const takeoverResponsePromise = waitForPost(staffPage, '/current/takeover');
-      await staffPage.getByRole('button', { name: '接管当前步骤' }).click();
-      expect((await takeoverResponsePromise).status()).toBe(200);
-      await expect(staffPage.getByText(/施测仍保持暂停/)).toBeVisible();
-      await resumeStaff(staffPage, '第2步接管完成后继续');
-
-      await completeSpeechStep(patientPage, 3);
-      await waitForStep(patientPage, 4);
-      await allowAutoplayIfNeeded(patientPage);
-      await expect(
-        patientPage.getByRole('button', { name: '开始录音', exact: true }),
-      ).toBeEnabled({ timeout: 20_000 });
-      await refreshStaff(staffPage);
-      await pauseStaff(staffPage, 'F2 第3步需要重做');
-      await staffPage
-        .getByLabel('重做原因（必填，最多 500 字）')
-        .fill('复核后按规范重做上一完成步骤');
-      const redoResponsePromise = waitForPost(staffPage, '/redo-last');
-      await staffPage.getByRole('button', { name: '重做上一完成步骤' }).click();
-      expect((await redoResponsePromise).status()).toBe(200);
-      await resumeStaff(staffPage, '已准备重做第3步');
-      await completeSpeechStep(patientPage, 3);
-
-      for (let order = 4; order <= 10; order += 1) {
+      for (let order = 2; order <= 10; order += 1) {
         await completeSpeechStep(patientPage, order);
       }
 
@@ -280,7 +240,9 @@ test.describe('WP-10 F2-P1 complete MMSE patient administration', () => {
         steps: 8,
       });
       await patientPage.mouse.up();
-      await patientPage.getByRole('button', { name: '保存本题内容' }).click();
+      await expectEvidenceUpload(patientPage, () =>
+        patientPage.getByRole('button', { name: '保存本题内容' }).click(),
+      );
       await expect(patientPage.getByText('本题内容已保存')).toBeVisible({
         timeout: 15_000,
       });
@@ -307,13 +269,11 @@ test.describe('WP-10 F2-P1 complete MMSE patient administration', () => {
         .getByRole('radio', { name: '纸笔完成后选择照片' })
         .check();
       await patientPage.getByLabel('选择本题照片').setInputFiles(safeTestPng());
-      const photoEvidenceRequestPromise = patientPage.waitForRequest(
-        (request) =>
-          new URL(request.url()).pathname === '/patient-administration/current/evidence' &&
-          request.method() === 'POST',
+      const photoEvidenceResponse = await expectEvidenceUpload(
+        patientPage,
+        () => patientPage.getByRole('button', { name: '保存本题内容' }).click(),
       );
-      await patientPage.getByRole('button', { name: '保存本题内容' }).click();
-      const photoEvidenceRequest = await photoEvidenceRequestPromise;
+      const photoEvidenceRequest = photoEvidenceResponse.request();
       expect(photoEvidenceRequest.postData() ?? '').not.toContain(
         'private-local-source-name.png',
       );
@@ -361,7 +321,7 @@ test.describe('WP-10 F2-P1 complete MMSE patient administration', () => {
 
       expect(
         patient.ledger.count({ method: 'POST', safeUrlPattern: AUDIO_PATTERN }),
-      ).toBe(24);
+      ).toBe(23);
       expect(
         patient.ledger.count({ method: 'GET', safeUrlPattern: IMAGE_PATTERN }),
       ).toBe(1);
@@ -376,15 +336,9 @@ test.describe('WP-10 F2-P1 complete MMSE patient administration', () => {
       ).toBe(16);
       expect(
         staff.ledger.count({ method: 'POST', safeUrlPattern: PAUSE_PATTERN }),
-      ).toBe(3);
-      expect(
-        staff.ledger.count({ method: 'POST', safeUrlPattern: RESUME_PATTERN }),
-      ).toBe(3);
-      expect(
-        staff.ledger.count({ method: 'POST', safeUrlPattern: TAKEOVER_PATTERN }),
       ).toBe(1);
       expect(
-        staff.ledger.count({ method: 'POST', safeUrlPattern: REDO_PATTERN }),
+        staff.ledger.count({ method: 'POST', safeUrlPattern: RESUME_PATTERN }),
       ).toBe(1);
       expect(
         staff.ledger.count({ method: 'POST', safeUrlPattern: REPLAY_PATTERN }),

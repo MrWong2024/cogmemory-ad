@@ -43,6 +43,10 @@ export function PatientAdministrationSpeechResponse({
   const startedAtRef = useRef(0);
   const capturedAtRef = useRef('');
   const mountedRef = useRef(true);
+  const startRunRef = useRef(0);
+  const startInFlightRef = useRef(false);
+  const savingRef = useRef(false);
+  const [starting, setStarting] = useState(false);
   const [recording, setRecording] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [pending, setPending] = useState<PendingRecording | null>(null);
@@ -73,6 +77,9 @@ export function PatientAdministrationSpeechResponse({
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      startRunRef.current += 1;
+      startInFlightRef.current = false;
+      savingRef.current = false;
       clearTimer();
       const recorder = recorderRef.current;
       recorderRef.current = null;
@@ -94,17 +101,33 @@ export function PatientAdministrationSpeechResponse({
   }
 
   async function startRecording() {
-    if (disabled || recording || uploading || saved) return;
+    if (
+      startInFlightRef.current ||
+      starting ||
+      recording ||
+      uploading ||
+      saved ||
+      disabled
+    ) {
+      return;
+    }
     const mimeType = chooseMimeType();
     if (!mimeType || !navigator.mediaDevices?.getUserMedia) {
       setError('当前浏览器不支持本题录音，请告知医护人员更换设备或接管。');
       return;
     }
+    const run = startRunRef.current + 1;
+    startRunRef.current = run;
+    startInFlightRef.current = true;
+    setStarting(true);
+    onBusyChange(true);
     clearPreview();
     setError(null);
+    let acquiredStream: MediaStream | null = null;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      if (!mountedRef.current) {
+      acquiredStream = stream;
+      if (!mountedRef.current || startRunRef.current !== run) {
         stream.getTracks().forEach((track) => track.stop());
         return;
       }
@@ -120,7 +143,9 @@ export function PatientAdministrationSpeechResponse({
       recorder.onerror = () => {
         clearTimer();
         stopTracks();
-        if (mountedRef.current) {
+        if (startRunRef.current === run) startInFlightRef.current = false;
+        if (mountedRef.current && startRunRef.current === run) {
+          setStarting(false);
           setRecording(false);
           onBusyChange(false);
           setError('录音未能正常完成，请重试或告知医护人员。');
@@ -130,9 +155,11 @@ export function PatientAdministrationSpeechResponse({
         clearTimer();
         stopTracks();
         recorderRef.current = null;
+        if (startRunRef.current === run) startInFlightRef.current = false;
         if (!mountedRef.current) return;
         const blob = new Blob(chunksRef.current, { type: recorder.mimeType });
         chunksRef.current = [];
+        setStarting(false);
         setRecording(false);
         onBusyChange(false);
         if (blob.size === 0) {
@@ -153,16 +180,25 @@ export function PatientAdministrationSpeechResponse({
         setPreviewUrl(url);
       };
       recorder.start();
+      setStarting(false);
       setRecording(true);
-      onBusyChange(true);
       timerRef.current = window.setTimeout(() => {
         if (recorder.state === 'recording') recorder.stop();
       }, MAX_RECORDING_MS);
     } catch {
-      stopTracks();
-      setRecording(false);
-      onBusyChange(false);
-      setError('麦克风权限或设备不可用，请告知医护人员协助。');
+      recorderRef.current = null;
+      if (streamRef.current === acquiredStream) {
+        stopTracks();
+      } else {
+        acquiredStream?.getTracks().forEach((track) => track.stop());
+      }
+      if (startRunRef.current === run) startInFlightRef.current = false;
+      if (mountedRef.current && startRunRef.current === run) {
+        setStarting(false);
+        setRecording(false);
+        onBusyChange(false);
+        setError('麦克风权限或设备不可用，请告知医护人员协助。');
+      }
     }
   }
 
@@ -172,7 +208,7 @@ export function PatientAdministrationSpeechResponse({
   }
 
   async function saveRecording() {
-    if (!pending || uploading || saved) return;
+    if (savingRef.current || !pending || uploading || saved) return;
     const normalizedMimeType = pending.blob.type.split(';')[0].toLowerCase();
     if (
       pending.blob.size > MAX_FILE_BYTES ||
@@ -183,6 +219,7 @@ export function PatientAdministrationSpeechResponse({
       setError('录音格式或大小不符合要求，请重新录制。');
       return;
     }
+    savingRef.current = true;
     setUploading(true);
     onBusyChange(true);
     setError(null);
@@ -198,6 +235,7 @@ export function PatientAdministrationSpeechResponse({
         setSaved(true);
       }
     } finally {
+      savingRef.current = false;
       if (mountedRef.current) {
         setUploading(false);
         onBusyChange(false);
@@ -232,7 +270,7 @@ export function PatientAdministrationSpeechResponse({
 
       <div className="flex flex-wrap gap-3">
         {!recording && !pending && !saved ? (
-          <Button className="min-h-12" disabled={disabled || uploading} onClick={() => void startRecording()} size="lg">
+          <Button className="min-h-12" disabled={disabled || starting || uploading} onClick={() => void startRecording()} size="lg">
             开始录音
           </Button>
         ) : null}

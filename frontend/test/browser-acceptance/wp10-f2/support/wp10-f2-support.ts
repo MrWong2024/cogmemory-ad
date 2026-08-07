@@ -165,6 +165,14 @@ export async function installSyntheticMicrophone(
       gain.gain.value = 0.03;
       oscillator.connect(gain);
       gain.connect(destination);
+      if (audioContext.state === 'suspended') {
+        try {
+          await audioContext.resume();
+        } catch {
+          void audioContext.close();
+          throw new DOMException('AudioContext could not resume', 'NotAllowedError');
+        }
+      }
       oscillator.start();
       let released = false;
       const release = () => {
@@ -266,6 +274,39 @@ export async function allowAutoplayIfNeeded(page: Page): Promise<void> {
   throw new Error('Patient audio remained blocked by autoplay policy');
 }
 
+function safeEvidenceResponseCode(responseBody: unknown): string {
+  if (
+    typeof responseBody !== 'object' ||
+    responseBody === null ||
+    !('code' in responseBody) ||
+    typeof responseBody.code !== 'string' ||
+    !/^[A-Za-z0-9_.-]{1,80}$/.test(responseBody.code)
+  ) {
+    return 'unknown';
+  }
+  return responseBody.code;
+}
+
+export async function expectEvidenceUpload(
+  page: Page,
+  trigger: () => Promise<void>,
+): Promise<Response> {
+  const responsePromise = page.waitForResponse(
+    (response) =>
+      responsePath(response) === '/patient-administration/current/evidence' &&
+      response.request().method() === 'POST',
+  );
+  await trigger();
+  const response = await responsePromise;
+  if (response.status() !== 201) {
+    const responseBody: unknown = await response.json().catch(() => null);
+    throw new Error(
+      `F2 evidence upload failed: status=${response.status()} code=${safeEvidenceResponseCode(responseBody)}`,
+    );
+  }
+  return response;
+}
+
 export async function recordAndSaveSpeech(page: Page): Promise<void> {
   const start = page.getByRole('button', { name: '开始录音', exact: true });
   for (let attempt = 0; attempt < 200; attempt += 1) {
@@ -283,7 +324,9 @@ export async function recordAndSaveSpeech(page: Page): Promise<void> {
   await page.waitForTimeout(350);
   await page.getByRole('button', { name: '结束录音', exact: true }).click();
   await expect(page.getByLabel('试听本题回答')).toBeVisible();
-  await page.getByRole('button', { name: '保存本题回答', exact: true }).click();
+  await expectEvidenceUpload(page, () =>
+    page.getByRole('button', { name: '保存本题回答', exact: true }).click(),
+  );
   await expect(page.getByText('回答已保存', { exact: true })).toBeVisible({
     timeout: 15_000,
   });

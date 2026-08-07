@@ -59,6 +59,8 @@ export function PatientAdministrationCurrentStep({
   const [mountedStep] = useState(step);
   const revisionRef = useRef(revision);
   const mountedRef = useRef(true);
+  const mutationInFlightRef = useRef(false);
+  const audioInFlightRef = useRef(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
   const audioCancelRef = useRef<(() => void) | null>(null);
@@ -192,41 +194,46 @@ export function PatientAdministrationCurrentStep({
 
   const runAudioAssets = useCallback(
     async (assets: CurrentStep['assets']): Promise<boolean> => {
+      if (audioInFlightRef.current) return false;
+      audioInFlightRef.current = true;
       setAudioBusy(true);
       setMessage(null);
-      for (const asset of assets) {
-        if (!mountedRef.current) return false;
-        setStatus(asset.role === 'stimulus' ? '正在播放本题测量语音' : '正在播放本题指导语');
-        try {
-          const played = await playCurrentPatientAdministrationAudio(
-            asset.assetKey,
-            revisionRef.current,
-          );
+      try {
+        for (const asset of assets) {
           if (!mountedRef.current) return false;
-          publishRevision(played.revision);
-          await playDownloadedAudio(played.blob);
-        } catch (error: unknown) {
-          if (!mountedRef.current) return false;
-          if (
-            asset.role === 'stimulus' &&
-            error instanceof PatientAdministrationApiError &&
-            error.kind === 'step_invalid'
-          ) {
-            setMessage('本轮测量语音已播放过，当前不会再次播放。如您还没有听清，请告诉医护人员处理。');
-            continue;
+          setStatus(asset.role === 'stimulus' ? '正在播放本题测量语音' : '正在播放本题指导语');
+          try {
+            const played = await playCurrentPatientAdministrationAudio(
+              asset.assetKey,
+              revisionRef.current,
+            );
+            if (!mountedRef.current) return false;
+            publishRevision(played.revision);
+            await playDownloadedAudio(played.blob);
+          } catch (error: unknown) {
+            if (!mountedRef.current) return false;
+            if (
+              asset.role === 'stimulus' &&
+              error instanceof PatientAdministrationApiError &&
+              error.kind === 'step_invalid'
+            ) {
+              setMessage('本轮测量语音已播放过，当前不会再次播放。如您还没有听清，请告诉医护人员处理。');
+              continue;
+            }
+            if (!(error instanceof PatientAdministrationApiError)) {
+              setMessage('题目语音未能正常播放，请告知医护人员。');
+              setStatus('题目语音播放失败');
+            } else {
+              await handleWriteError(error);
+            }
+            return false;
           }
-          if (!(error instanceof PatientAdministrationApiError)) {
-            setMessage('题目语音未能正常播放，请告知医护人员。');
-            setStatus('题目语音播放失败');
-          } else {
-            await handleWriteError(error);
-          }
-          setAudioBusy(false);
-          return false;
         }
+        return true;
+      } finally {
+        audioInFlightRef.current = false;
+        if (mountedRef.current) setAudioBusy(false);
       }
-      if (mountedRef.current) setAudioBusy(false);
-      return true;
     },
     [handleWriteError, playDownloadedAudio, publishRevision],
   );
@@ -268,6 +275,8 @@ export function PatientAdministrationCurrentStep({
 
     return () => {
       mountedRef.current = false;
+      mutationInFlightRef.current = false;
+      audioInFlightRef.current = false;
       controller.abort();
       audioCancelRef.current?.();
       audioCancelRef.current = null;
@@ -285,7 +294,8 @@ export function PatientAdministrationCurrentStep({
     async (
       input: Omit<PatientAdministrationEvidenceUploadInput, 'expectedRevision'>,
     ): Promise<boolean> => {
-      if (mutationBusy) return false;
+      if (mutationInFlightRef.current) return false;
+      mutationInFlightRef.current = true;
       setMutationBusy(true);
       setMessage(null);
       try {
@@ -299,14 +309,23 @@ export function PatientAdministrationCurrentStep({
         await handleWriteError(error);
         return false;
       } finally {
+        mutationInFlightRef.current = false;
         if (mountedRef.current) setMutationBusy(false);
       }
     },
-    [handleWriteError, mutationBusy, publishRevision],
+    [handleWriteError, publishRevision],
   );
 
   async function completeStep() {
-    if (mutationBusy || responseBusy || audioBusy || !audioReady) return;
+    if (
+      mutationInFlightRef.current ||
+      responseBusy ||
+      audioBusy ||
+      !audioReady
+    ) {
+      return;
+    }
+    mutationInFlightRef.current = true;
     setMutationBusy(true);
     setMessage(null);
     try {
@@ -319,6 +338,7 @@ export function PatientAdministrationCurrentStep({
     } catch (error: unknown) {
       await handleWriteError(error, true);
     } finally {
+      mutationInFlightRef.current = false;
       if (mountedRef.current) setMutationBusy(false);
     }
   }

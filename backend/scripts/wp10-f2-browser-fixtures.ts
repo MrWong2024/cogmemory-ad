@@ -614,9 +614,6 @@ async function assertPost(input: {
     const ordersCovered = new Set(
       validCaptures.map((capture) => capture.stepKey),
     );
-    const redoCaptures = administration.stepCaptures.filter(
-      (capture) => capture.stepKey === 'mmse-orientation-month',
-    );
     const replay = administration.playbackFacts.find(
       (fact) =>
         fact.stepKey === 'mmse-immediate-recall' &&
@@ -638,16 +635,9 @@ async function assertPost(input: {
       administration.sessionTokenHash ||
       validCaptures.length !== 19 ||
       ordersCovered.size !== 19 ||
-      administration.stepCaptures.length !== 20 ||
-      redoCaptures.length !== 2 ||
-      !redoCaptures.some(
-        (capture) => capture.stepRun === 1 && capture.invalidatedAt,
-      ) ||
-      !redoCaptures.some(
-        (capture) => capture.stepRun === 2 && !capture.invalidatedAt,
-      ) ||
-      !actions.includes('staff_takeover') ||
-      !actions.includes('step_redo') ||
+      administration.stepCaptures.length !== 19 ||
+      actions.includes('staff_takeover') ||
+      actions.includes('step_redo') ||
       replay?.playCount !== 2 ||
       replay.remainingAuthorizedReplays !== 0 ||
       replay.technicalReplayAuthorizations.length !== 1 ||
@@ -678,16 +668,59 @@ async function assertPost(input: {
   }
 
   const actions = administration.controlEvents.map((event) => event.action);
+  const yearCapture = administration.stepCaptures.find(
+    (capture) => capture.stepKey === 'mmse-orientation-year',
+  );
+  const seasonCapture = administration.stepCaptures.find(
+    (capture) => capture.stepKey === 'mmse-orientation-season',
+  );
+  const monthRun1Capture = administration.stepCaptures.find(
+    (capture) =>
+      capture.stepKey === 'mmse-orientation-month' && capture.stepRun === 1,
+  );
+  const monthRun2Capture = administration.stepCaptures.find(
+    (capture) =>
+      capture.stepKey === 'mmse-orientation-month' && capture.stepRun === 2,
+  );
+  const yearReferences = references.filter(
+    (reference) =>
+      reference.stepKey === 'mmse-orientation-year' && reference.stepRun === 1,
+  );
+  const monthRun1References = references.filter(
+    (reference) =>
+      reference.stepKey === 'mmse-orientation-month' && reference.stepRun === 1,
+  );
+  const monthRun2References = references.filter(
+    (reference) =>
+      reference.stepKey === 'mmse-orientation-month' && reference.stepRun === 2,
+  );
   if (
     administration.status !== 'terminated' ||
-    administration.currentStepKey !== 'mmse-orientation-season' ||
+    administration.currentStepKey !== 'mmse-orientation-month' ||
     administration.entryCodeHash ||
     administration.sessionTokenHash ||
-    administration.stepCaptures.length !== 1 ||
-    administration.stepCaptures[0].stepKey !== 'mmse-orientation-year' ||
-    references.length !== 1 ||
-    media.length !== 1 ||
-    media[0].evidenceType !== 'audio' ||
+    administration.stepCaptures.length !== 3 ||
+    !yearCapture ||
+    yearCapture.stepRun !== 1 ||
+    yearCapture.capturedBy !== 'patient' ||
+    yearCapture.invalidatedAt ||
+    !seasonCapture ||
+    seasonCapture.stepRun !== 1 ||
+    seasonCapture.capturedBy !== 'staff' ||
+    seasonCapture.invalidatedAt ||
+    !monthRun1Capture?.invalidatedAt ||
+    monthRun1Capture.capturedBy !== 'patient' ||
+    monthRun2Capture ||
+    references.length !== 2 ||
+    yearReferences.length !== 1 ||
+    yearReferences[0].evidenceType !== 'audio' ||
+    monthRun1References.length !== 1 ||
+    monthRun1References[0].evidenceType !== 'audio' ||
+    monthRun2References.length !== 0 ||
+    media.length !== 2 ||
+    media.some((evidence) => evidence.evidenceType !== 'audio') ||
+    !actions.includes('staff_takeover') ||
+    !actions.includes('step_redo') ||
     !actions.includes('terminated')
   ) {
     fail(
@@ -701,6 +734,8 @@ async function assertPost(input: {
     revision: administration.revision,
     currentStepKey: administration.currentStepKey,
     stepCaptureCount: administration.stepCaptures.length,
+    validStepCaptureCount: 2,
+    invalidatedStepCaptureCount: 1,
     mediaEvidenceCount: media.length,
     duplicateMediaEvidenceCount: 0,
     itemFacts: 'unchanged',
