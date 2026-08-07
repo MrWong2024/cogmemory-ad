@@ -6,6 +6,21 @@ export type PatientAdministrationStatus =
   | 'terminated'
   | 'expired';
 
+export type PatientAdministrationResponseMode =
+  | 'speech'
+  | 'writing'
+  | 'drawing'
+  | 'staff_observation';
+
+export type PatientAdministrationAdvanceBy = 'patient' | 'staff';
+
+export type PatientAdministrationAssetKind = 'audio' | 'image';
+
+export type PatientAdministrationEvidenceType =
+  | 'audio'
+  | 'photo'
+  | 'handwriting';
+
 export type PatientAdministrationImpactFactorCode =
   | 'sensory'
   | 'upper_limb'
@@ -60,11 +75,11 @@ export type PatientAdministrationCurrentStep = {
   stepKey: string;
   order: number;
   patientText?: string;
-  responseMode: string;
-  advanceBy: string;
+  responseMode: PatientAdministrationResponseMode;
+  advanceBy: PatientAdministrationAdvanceBy;
   assets: Array<{
     assetKey: string;
-    kind: string;
+    kind: PatientAdministrationAssetKind;
     role: 'guidance' | 'stimulus' | null;
     mimeType: string;
   }>;
@@ -97,4 +112,39 @@ export type PatientAdministrationControlInput = {
 export type PatientAdministrationRequiredReasonInput = {
   expectedRevision: number;
   reason: string;
+};
+
+export type PatientAdministrationStaffCompleteInput = {
+  expectedRevision: number;
+  staffObservation: string;
+};
+
+export type PatientAdministrationTakeoverInput = {
+  expectedRevision: number;
+  reason: string;
+  staffObservation: string;
+};
+
+export type PatientAdministrationEvidenceUploadInput = {
+  file: Blob;
+  expectedRevision: number;
+  evidenceType: PatientAdministrationEvidenceType;
+  capturedAt?: string;
+  durationMs?: number;
+};
+
+export type PatientAdministrationEvidenceUploadResponse = {
+  mediaEvidenceId: string;
+  evidenceType: PatientAdministrationEvidenceType;
+  revision: number;
+  uploadedAt: string;
+};
+
+export type PatientAdministrationBinaryAsset = {
+  blob: Blob;
+  mimeType: string;
+};
+
+export type PatientAdministrationPlayedAudio = PatientAdministrationBinaryAsset & {
+  revision: number;
 };

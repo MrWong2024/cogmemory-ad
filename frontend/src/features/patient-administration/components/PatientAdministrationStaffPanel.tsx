@@ -12,6 +12,8 @@ import {
   CardTitle,
 } from '@/src/components/ui/Card';
 import {
+  authorizePatientAdministrationStimulusReplay,
+  completePatientAdministrationStaffStep,
   confirmPatientAdministrationPreparation,
   createPatientAdministrationSession,
   getPatientAdministrationSession,
@@ -19,13 +21,16 @@ import {
   PatientAdministrationApiError,
   pausePatientAdministration,
   reissuePatientAdministrationEntryCode,
+  redoLastPatientAdministrationStep,
   resumePatientAdministration,
+  takeOverPatientAdministrationCurrentStep,
   terminatePatientAdministration,
 } from '@/src/features/patient-administration/api/patient-administration-api';
 import {
   PatientAdministrationPreparation,
   type PatientAdministrationPreparationValue,
 } from '@/src/features/patient-administration/components/PatientAdministrationPreparation';
+import { PatientAdministrationStaffStepControls } from '@/src/features/patient-administration/components/PatientAdministrationStaffStepControls';
 import {
   formatPatientAdministrationDate,
   patientAdministrationStatusLabels,
@@ -82,6 +87,12 @@ function getPanelErrorMessage(error: unknown): string {
   }
   if (error.kind === 'session_not_found') {
     return '当前量表实例尚未创建患者施测会话。';
+  }
+  if (error.kind === 'step_invalid') {
+    return '当前步骤不支持此操作，请刷新并核对服务端状态。';
+  }
+  if (error.kind === 'asset_not_allowed') {
+    return '当前步骤不允许授权该资源，请刷新并核对当前步骤。';
   }
   return '患者施测服务暂不可用，请稍后手动刷新。';
 }
@@ -432,6 +443,92 @@ export function PatientAdministrationStaffPanel({
     }
   }
 
+  async function handleStaffStepComplete(
+    staffObservation: string,
+  ): Promise<boolean> {
+    const latest = sessionRef.current;
+    if (!latest || !beginWrite('staff-complete')) return false;
+    try {
+      const response = await completePatientAdministrationStaffStep(ids, {
+        expectedRevision: latest.revision,
+        staffObservation,
+      });
+      applySession(response);
+      setMessage('医护观察已记录，服务端已推进到最新步骤。');
+      return true;
+    } catch (error: unknown) {
+      await handleWriteFailure(error);
+      return false;
+    } finally {
+      finishWrite();
+    }
+  }
+
+  async function handleTakeover(
+    reason: string,
+    staffObservation: string,
+  ): Promise<boolean> {
+    const latest = sessionRef.current;
+    if (!latest || !beginWrite('takeover')) return false;
+    try {
+      const response = await takeOverPatientAdministrationCurrentStep(ids, {
+        expectedRevision: latest.revision,
+        reason,
+        staffObservation,
+      });
+      applySession(response);
+      setMessage('当前步骤已由医护接管；施测仍保持暂停，请核对后显式恢复。');
+      return true;
+    } catch (error: unknown) {
+      await handleWriteFailure(error);
+      return false;
+    } finally {
+      finishWrite();
+    }
+  }
+
+  async function handleRedo(reason: string): Promise<boolean> {
+    const latest = sessionRef.current;
+    if (!latest || !beginWrite('redo')) return false;
+    try {
+      const response = await redoLastPatientAdministrationStep(ids, {
+        expectedRevision: latest.revision,
+        reason,
+      });
+      applySession(response);
+      setMessage('服务端已回退到需重做的步骤；施测仍保持暂停，请核对后显式恢复。');
+      return true;
+    } catch (error: unknown) {
+      await handleWriteFailure(error);
+      return false;
+    } finally {
+      finishWrite();
+    }
+  }
+
+  async function handleReplayAuthorize(
+    assetKey: string,
+    reason: string,
+  ): Promise<boolean> {
+    const latest = sessionRef.current;
+    if (!latest || !beginWrite('replay-authorize')) return false;
+    try {
+      const response = await authorizePatientAdministrationStimulusReplay(
+        ids,
+        assetKey,
+        { expectedRevision: latest.revision, reason },
+      );
+      applySession(response);
+      setMessage('技术重播已授权，请恢复施测。');
+      return true;
+    } catch (error: unknown) {
+      await handleWriteFailure(error);
+      return false;
+    } finally {
+      finishWrite();
+    }
+  }
+
   if (failClosed) {
     return (
       <Card aria-live="assertive" role="status">
@@ -467,7 +564,7 @@ export function PatientAdministrationStaffPanel({
       <CardHeader className="border-b border-[var(--cma-line)]">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="grid gap-2">
-            <Badge tone="info">WP-10 F1 · MMSE 患者施测</Badge>
+            <Badge tone="info">MMSE 患者施测</Badge>
             <CardTitle>患者施测发起与会话控制</CardTitle>
           </div>
           <Button
@@ -479,7 +576,7 @@ export function PatientAdministrationStaffPanel({
           </Button>
         </div>
         <CardDescription>
-          此区域只负责会话发起、设备准备、安全进入与控制；正式题目、患者作答和证据功能尚未在 F1 开放。
+          用于患者施测发起、设备准备、当前步骤监管以及必要的暂停、接管、重做和医护观察。患者原始作答尚需医生后续复核确认后才进入正式量表结果。
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-6 pt-6">
@@ -705,6 +802,19 @@ export function PatientAdministrationStaffPanel({
               安全交接给患者
             </Button>
           </section>
+        ) : null}
+
+        {session &&
+        (session.status === 'active' || session.status === 'paused') ? (
+          <PatientAdministrationStaffStepControls
+            disabled={Boolean(writeAction)}
+            onComplete={handleStaffStepComplete}
+            onRedo={handleRedo}
+            onReplayAuthorize={handleReplayAuthorize}
+            onTakeover={handleTakeover}
+            session={session}
+            writeAction={writeAction}
+          />
         ) : null}
 
         {session && openStatuses.has(session.status) ? (

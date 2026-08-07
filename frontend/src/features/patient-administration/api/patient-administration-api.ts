@@ -4,11 +4,17 @@ import type {
   PatientAdministrationControlInput,
   PatientAdministrationCredentialResponse,
   PatientAdministrationCurrentResponse,
+  PatientAdministrationBinaryAsset,
   PatientAdministrationEntryCodeResponse,
+  PatientAdministrationEvidenceUploadInput,
+  PatientAdministrationEvidenceUploadResponse,
+  PatientAdministrationPlayedAudio,
   PatientAdministrationPreparationInput,
   PatientAdministrationRequiredReasonInput,
   PatientAdministrationRouteIds,
   PatientAdministrationSessionSummary,
+  PatientAdministrationStaffCompleteInput,
+  PatientAdministrationTakeoverInput,
 } from '@/src/features/patient-administration/types/patient-administration';
 
 export type PatientAdministrationApiErrorKind =
@@ -19,6 +25,10 @@ export type PatientAdministrationApiErrorKind =
   | 'session_conflict'
   | 'entry_invalid'
   | 'rate_limited'
+  | 'step_invalid'
+  | 'asset_not_allowed'
+  | 'evidence_not_allowed'
+  | 'media_invalid'
   | 'request_outcome_uncertain'
   | 'service_unavailable'
   | 'invalid_response'
@@ -65,6 +75,33 @@ function mapError(response: Response, body: ErrorBody): PatientAdministrationApi
     Number.isFinite(body.remainingSeconds)
       ? Math.max(1, Math.ceil(body.remainingSeconds))
       : undefined;
+
+  if (code === 'PATIENT_ADMINISTRATION_STEP_INVALID') {
+    return new PatientAdministrationApiError('step_invalid', response.status, code);
+  }
+  if (code === 'PATIENT_ADMINISTRATION_ASSET_NOT_ALLOWED') {
+    return new PatientAdministrationApiError(
+      'asset_not_allowed',
+      response.status,
+      code,
+    );
+  }
+  if (code === 'PATIENT_ADMINISTRATION_EVIDENCE_NOT_ALLOWED') {
+    return new PatientAdministrationApiError(
+      'evidence_not_allowed',
+      response.status,
+      code,
+    );
+  }
+  if (
+    code === 'MEDIA_FILE_EMPTY' ||
+    code === 'MEDIA_FILE_TOO_LARGE' ||
+    code === 'MEDIA_FILE_TYPE_NOT_ALLOWED' ||
+    code === 'MEDIA_FILE_SIGNATURE_INVALID' ||
+    code === 'MEDIA_FILE_EMBEDDED_METADATA_NOT_ALLOWED'
+  ) {
+    return new PatientAdministrationApiError('media_invalid', response.status, code);
+  }
 
   if (response.status === 401) {
     return new PatientAdministrationApiError(
@@ -253,4 +290,145 @@ export async function getCurrentPatientAdministration(
     signal,
   });
   return readJson<PatientAdministrationCurrentResponse>(response);
+}
+
+export async function completeCurrentPatientAdministrationStep(
+  expectedRevision: number,
+): Promise<PatientAdministrationCurrentResponse> {
+  const response = await patientAdministrationFetch(
+    '/patient-administration/current/complete',
+    jsonPost({ expectedRevision }),
+    true,
+  );
+  return readJson<PatientAdministrationCurrentResponse>(response, true);
+}
+
+export async function getCurrentPatientAdministrationAsset(
+  assetKey: string,
+  signal?: AbortSignal,
+): Promise<PatientAdministrationBinaryAsset> {
+  const response = await patientAdministrationFetch(
+    `/patient-administration/current/assets/${encodeURIComponent(assetKey)}`,
+    { method: 'GET', signal, headers: { Accept: 'image/*' } },
+  );
+  const mimeType = response.headers.get('content-type')?.split(';')[0]?.trim() ?? '';
+  if (!mimeType.startsWith('image/')) {
+    throw new PatientAdministrationApiError('invalid_response', response.status);
+  }
+  try {
+    return { blob: await response.blob(), mimeType };
+  } catch {
+    throw new PatientAdministrationApiError('invalid_response', response.status);
+  }
+}
+
+export async function playCurrentPatientAdministrationAudio(
+  assetKey: string,
+  expectedRevision: number,
+): Promise<PatientAdministrationPlayedAudio> {
+  const response = await patientAdministrationFetch(
+    `/patient-administration/current/audio/${encodeURIComponent(assetKey)}/play`,
+    {
+      ...jsonPost({ expectedRevision }),
+      headers: {
+        ...jsonPost({ expectedRevision }).headers,
+        Accept: 'audio/*',
+      },
+    },
+    true,
+  );
+  const mimeType = response.headers.get('content-type')?.split(';')[0]?.trim() ?? '';
+  const revision = Number(
+    response.headers.get('x-patient-administration-revision'),
+  );
+  if (
+    !mimeType.startsWith('audio/') ||
+    !Number.isSafeInteger(revision) ||
+    revision < 0
+  ) {
+    throw new PatientAdministrationApiError(
+      'request_outcome_uncertain',
+      response.status,
+    );
+  }
+  try {
+    return { blob: await response.blob(), mimeType, revision };
+  } catch {
+    throw new PatientAdministrationApiError(
+      'request_outcome_uncertain',
+      response.status,
+    );
+  }
+}
+
+function genericEvidenceFilename(file: Blob): string {
+  switch (file.type.split(';')[0].toLowerCase()) {
+    case 'audio/webm':
+      return 'patient-response.webm';
+    case 'audio/ogg':
+      return 'patient-response.ogg';
+    case 'audio/mp4':
+      return 'patient-response.m4a';
+    case 'audio/mpeg':
+      return 'patient-response.mp3';
+    case 'image/jpeg':
+      return 'patient-evidence.jpg';
+    case 'image/webp':
+      return 'patient-evidence.webp';
+    default:
+      return 'patient-evidence.png';
+  }
+}
+
+export async function uploadCurrentPatientAdministrationEvidence(
+  input: PatientAdministrationEvidenceUploadInput,
+): Promise<PatientAdministrationEvidenceUploadResponse> {
+  const form = new FormData();
+  form.append('file', input.file, genericEvidenceFilename(input.file));
+  form.append('expectedRevision', input.expectedRevision.toString());
+  form.append('evidenceType', input.evidenceType);
+  if (input.capturedAt) form.append('capturedAt', input.capturedAt);
+  if (input.evidenceType === 'audio' && input.durationMs !== undefined) {
+    form.append('durationMs', input.durationMs.toString());
+  }
+  const response = await patientAdministrationFetch(
+    '/patient-administration/current/evidence',
+    { method: 'POST', body: form },
+    true,
+  );
+  return readJson<PatientAdministrationEvidenceUploadResponse>(response, true);
+}
+
+export function completePatientAdministrationStaffStep(
+  ids: PatientAdministrationRouteIds,
+  input: PatientAdministrationStaffCompleteInput,
+): Promise<PatientAdministrationSessionSummary> {
+  return readStaffSession(ids, '/current/complete', jsonPost(input), true);
+}
+
+export function takeOverPatientAdministrationCurrentStep(
+  ids: PatientAdministrationRouteIds,
+  input: PatientAdministrationTakeoverInput,
+): Promise<PatientAdministrationSessionSummary> {
+  return readStaffSession(ids, '/current/takeover', jsonPost(input), true);
+}
+
+export function redoLastPatientAdministrationStep(
+  ids: PatientAdministrationRouteIds,
+  input: PatientAdministrationRequiredReasonInput,
+): Promise<PatientAdministrationSessionSummary> {
+  return readStaffSession(ids, '/redo-last', jsonPost(input), true);
+}
+
+export function authorizePatientAdministrationStimulusReplay(
+  ids: PatientAdministrationRouteIds,
+  assetKey: string,
+  input: PatientAdministrationRequiredReasonInput,
+): Promise<PatientAdministrationSessionSummary> {
+  return readStaffSession(
+    ids,
+    `/current/audio/${encodeURIComponent(assetKey)}/replay-authorize`,
+    jsonPost(input),
+    true,
+  );
 }

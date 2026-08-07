@@ -16,6 +16,7 @@ import {
   PatientAdministrationApiError,
 } from '@/src/features/patient-administration/api/patient-administration-api';
 import { PatientAdministrationPreparation } from '@/src/features/patient-administration/components/PatientAdministrationPreparation';
+import { PatientAdministrationCurrentStep } from '@/src/features/patient-administration/components/PatientAdministrationCurrentStep';
 import {
   patientAdministrationStatusLabels,
   patientAdministrationStatusTones,
@@ -35,6 +36,23 @@ export function PatientAdministrationPage() {
   const requestIdRef = useRef(0);
   const inFlightRef = useRef(false);
 
+  const applyCurrent = useCallback(
+    (response: PatientAdministrationCurrentResponse) => {
+      setCurrent((previous) =>
+        previous && previous.revision > response.revision ? previous : response,
+      );
+    },
+    [],
+  );
+
+  const applyRevision = useCallback((revision: number) => {
+    setCurrent((previous) =>
+      previous && revision > previous.revision
+        ? { ...previous, revision }
+        : previous,
+    );
+  }, []);
+
   const loadCurrent = useCallback(async (replaceInFlight = false) => {
     if (inFlightRef.current && !replaceInFlight) return;
     controllerRef.current?.abort();
@@ -45,9 +63,7 @@ export function PatientAdministrationPage() {
     try {
       const response = await getCurrentPatientAdministration(controller.signal);
       if (requestId !== requestIdRef.current) return;
-      setCurrent((previous) =>
-        previous && previous.revision > response.revision ? previous : response,
-      );
+      applyCurrent(response);
       setInvalid(false);
       setConnectionInterrupted(false);
     } catch (error: unknown) {
@@ -68,7 +84,7 @@ export function PatientAdministrationPage() {
         setLoading(false);
       }
     }
-  }, []);
+  }, [applyCurrent]);
 
   useEffect(() => {
     void loadCurrent();
@@ -172,7 +188,7 @@ export function PatientAdministrationPage() {
             <>
               <CardTitle className="text-3xl">已进入患者施测模式</CardTitle>
               <CardDescription className="text-lg">
-                请在医护人员指导下继续。
+                请一次只完成当前显示的步骤，并在需要时告知医护人员。
               </CardDescription>
             </>
           ) : null}
@@ -221,12 +237,22 @@ export function PatientAdministrationPage() {
             </div>
           ) : null}
           {current.status === 'active' ? (
-            <div className="grid gap-3 text-lg leading-8">
-              <p className="font-semibold text-[var(--cma-success)]">设备准备完成</p>
-              <p>已进入患者施测模式</p>
-              <p>请在医护人员指导下继续</p>
-              <p className="text-[var(--cma-muted)]">正式题目将在下一步操作中显示</p>
-            </div>
+            current.currentStep ? (
+              <PatientAdministrationCurrentStep
+                key={current.currentStep.stepKey}
+                onCurrentChange={applyCurrent}
+                onRevisionChange={applyRevision}
+                revision={current.revision}
+                step={current.currentStep}
+              />
+            ) : (
+              <p
+                className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] px-5 py-4 text-lg text-[var(--cma-warning)]"
+                role="alert"
+              >
+                当前步骤暂时不可用，请让医护人员协助。
+              </p>
+            )
           ) : null}
         </CardContent>
       </Card>
