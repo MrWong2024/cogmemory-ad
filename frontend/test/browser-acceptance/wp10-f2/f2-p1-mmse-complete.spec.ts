@@ -134,6 +134,10 @@ test.describe('WP-10 F2-P1 complete MMSE patient administration', () => {
       await completePatientStep(patientPage);
 
       await waitForStep(patientPage, 2);
+      await allowAutoplayIfNeeded(patientPage);
+      await expect(
+        patientPage.getByRole('button', { name: '开始录音', exact: true }),
+      ).toBeEnabled({ timeout: 20_000 });
       await refreshStaff(staffPage);
       await pauseStaff(staffPage, 'F2 第2步由医护接管');
       await expect(
@@ -153,6 +157,10 @@ test.describe('WP-10 F2-P1 complete MMSE patient administration', () => {
 
       await completeSpeechStep(patientPage, 3);
       await waitForStep(patientPage, 4);
+      await allowAutoplayIfNeeded(patientPage);
+      await expect(
+        patientPage.getByRole('button', { name: '开始录音', exact: true }),
+      ).toBeEnabled({ timeout: 20_000 });
       await refreshStaff(staffPage);
       await pauseStaff(staffPage, 'F2 第3步需要重做');
       await staffPage

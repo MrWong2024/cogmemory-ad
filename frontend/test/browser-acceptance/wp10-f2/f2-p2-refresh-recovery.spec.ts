@@ -125,6 +125,10 @@ test.describe('WP-10 F2-P2 upload recovery after patient reload', () => {
       ).toBeEnabled({ timeout: 20_000 });
       await completePatientStep(patientPage);
       await waitForStep(patientPage, 2);
+      await allowAutoplayIfNeeded(patientPage);
+      await expect(
+        patientPage.getByRole('button', { name: '开始录音', exact: true }),
+      ).toBeEnabled({ timeout: 20_000 });
       expect(
         patient.ledger.count({ method: 'POST', safeUrlPattern: EVIDENCE_PATTERN }),
       ).toBe(1);
