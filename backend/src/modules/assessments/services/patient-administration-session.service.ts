@@ -1632,30 +1632,55 @@ export class PatientAdministrationSessionService {
     session: PatientAdministrationSessionDocument,
     business: AdministrationBusinessContext,
   ): PatientAdministrationCurrentResponse {
+    const currentStep =
+      session.status === 'active'
+        ? this.toCurrentStepResponse(session, business)
+        : null;
     return {
       status: session.status,
       revision: session.revision,
       expiresAt: session.expiresAt,
-      currentStep:
-        session.status === 'active'
-          ? {
-              stepKey: business.currentStep.stepKey,
-              order: business.currentStep.order,
-              patientText: business.currentStep.patientText,
-              responseMode: business.currentStep.responseMode,
-              advanceBy: business.currentStep.advanceBy,
-              assets: this.getStepAssets(business).map((asset) => ({
-                assetKey: asset.assetKey,
-                kind: asset.kind,
-                role:
-                  asset.kind === 'audio' &&
-                  (asset.role === 'guidance' || asset.role === 'stimulus')
-                    ? asset.role
-                    : null,
-                mimeType: asset.mimeType,
-              })),
-            }
-          : null,
+      currentStep,
+    };
+  }
+
+  private toCurrentStepResponse(
+    session: PatientAdministrationSessionDocument,
+    business: AdministrationBusinessContext,
+  ): NonNullable<PatientAdministrationCurrentResponse['currentStep']> {
+    const stepRun = this.getCurrentStepRun(session, session.currentStepKey);
+    const playbackFacts = this.copyPlaybackFacts(session);
+    return {
+      stepKey: business.currentStep.stepKey,
+      order: business.currentStep.order,
+      patientText: business.currentStep.patientText,
+      responseMode: business.currentStep.responseMode,
+      advanceBy: business.currentStep.advanceBy,
+      assets: this.getStepAssets(business).map((asset) => {
+        const role =
+          asset.kind === 'audio' &&
+          (asset.role === 'guidance' || asset.role === 'stimulus')
+            ? asset.role
+            : null;
+        const playbackFactIndex =
+          asset.kind === 'audio' && role === 'stimulus'
+            ? this.findPlaybackFactIndex(
+                playbackFacts,
+                session.currentStepKey,
+                stepRun,
+                asset.assetKey,
+              )
+            : -1;
+        return {
+          assetKey: asset.assetKey,
+          kind: asset.kind,
+          role,
+          mimeType: asset.mimeType,
+          technicalReplayAuthorized:
+            playbackFactIndex >= 0 &&
+            playbackFacts[playbackFactIndex].remainingAuthorizedReplays > 0,
+        };
+      }),
     };
   }
 

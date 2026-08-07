@@ -75,6 +75,17 @@ export function PatientAdministrationCurrentStep({
   const [status, setStatus] = useState('正在准备本题内容');
   const [message, setMessage] = useState<string | null>(null);
   const [helpVisible, setHelpVisible] = useState(false);
+  const [locallyConsumedReplayAssetKey, setLocallyConsumedReplayAssetKey] =
+    useState<string | null>(null);
+  const authorizedReplayAssets = step.assets.filter(
+    (asset) =>
+      asset.kind === 'audio' &&
+      asset.role === 'stimulus' &&
+      asset.technicalReplayAuthorized,
+  );
+  const authorizedReplayAsset =
+    authorizedReplayAssets.length === 1 ? authorizedReplayAssets[0] : null;
+  const authorizedReplayStatusInvalid = authorizedReplayAssets.length > 1;
 
   const publishRevision = useCallback(
     (nextRevision: number) => {
@@ -89,6 +100,21 @@ export function PatientAdministrationCurrentStep({
   useEffect(() => {
     if (revision > revisionRef.current) revisionRef.current = revision;
   }, [revision]);
+
+  useEffect(() => {
+    if (
+      locallyConsumedReplayAssetKey &&
+      !step.assets.some(
+        (asset) =>
+          asset.assetKey === locallyConsumedReplayAssetKey &&
+          asset.kind === 'audio' &&
+          asset.role === 'stimulus' &&
+          asset.technicalReplayAuthorized,
+      )
+    ) {
+      setLocallyConsumedReplayAssetKey(null);
+    }
+  }, [locallyConsumedReplayAssetKey, step.assets]);
 
   const reconcileAfterWrite = useCallback(
     async (uncertain: boolean) => {
@@ -243,6 +269,10 @@ export function PatientAdministrationCurrentStep({
     const controller = new AbortController();
     const imageAsset = mountedStep.assets.find((asset) => asset.kind === 'image');
     const audioAssets = mountedStep.assets.filter((asset) => asset.kind === 'audio');
+    const initialAuthorizedReplayAssets = audioAssets.filter(
+      (asset) =>
+        asset.role === 'stimulus' && asset.technicalReplayAuthorized,
+    );
 
     void (async () => {
       if (imageAsset) {
@@ -263,8 +293,17 @@ export function PatientAdministrationCurrentStep({
           return;
         }
       }
+      if (initialAuthorizedReplayAssets.length > 1) {
+        setStatus('当前技术重播状态异常');
+        return;
+      }
       const played = await runAudioAssets(audioAssets);
       if (!mountedRef.current || !played) return;
+      if (initialAuthorizedReplayAssets.length === 1) {
+        setLocallyConsumedReplayAssetKey(
+          initialAuthorizedReplayAssets[0].assetKey,
+        );
+      }
       setAudioReady(true);
       setStatus(
         mountedStep.advanceBy === 'staff'
@@ -347,6 +386,24 @@ export function PatientAdministrationCurrentStep({
     (asset) => asset.kind === 'audio' && asset.role === 'guidance',
   );
   const controlsDisabled = audioBusy || mutationBusy || responseBusy;
+  const showAuthorizedReplay = Boolean(
+    audioReady &&
+      authorizedReplayAsset &&
+      !controlsDisabled &&
+      locallyConsumedReplayAssetKey !== authorizedReplayAsset.assetKey,
+  );
+
+  async function playAuthorizedReplay() {
+    if (!authorizedReplayAsset || controlsDisabled || !audioReady) return;
+    const played = await runAudioAssets([authorizedReplayAsset]);
+    if (!mountedRef.current || !played) return;
+    setLocallyConsumedReplayAssetKey(authorizedReplayAsset.assetKey);
+    setStatus(
+      mountedStep.advanceBy === 'staff'
+        ? '请按题目要求作答，并等待医护人员完成本步骤'
+        : '题目已准备好，请完成本题回答',
+    );
+  }
 
   return (
     <article className="grid gap-5" data-testid="patient-administration-current-step">
@@ -379,6 +436,18 @@ export function PatientAdministrationCurrentStep({
       {audioReady && guidanceAssets.length > 0 ? (
         <Button className="w-full sm:w-fit" disabled={controlsDisabled} onClick={() => void runAudioAssets(guidanceAssets)} variant="secondary">
           再听一遍指导语
+        </Button>
+      ) : null}
+
+      {authorizedReplayStatusInvalid ? (
+        <p className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] px-4 py-3 leading-7 text-[var(--cma-warning)]" role="alert">
+          当前技术重播状态异常，请告知医护人员
+        </p>
+      ) : null}
+
+      {showAuthorizedReplay ? (
+        <Button className="w-full sm:w-fit" onClick={() => void playAuthorizedReplay()} variant="secondary">
+          播放医护授权的测量语音
         </Button>
       ) : null}
 

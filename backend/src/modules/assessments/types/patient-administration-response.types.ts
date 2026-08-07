@@ -66,6 +66,7 @@ export type PatientAdministrationAssetResponse = {
   kind: PresentationAssetKind;
   role: 'guidance' | 'stimulus' | null;
   mimeType: string;
+  technicalReplayAuthorized: boolean;
 };
 
 export type PatientAdministrationCurrentResponse = {

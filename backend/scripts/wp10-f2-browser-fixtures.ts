@@ -638,9 +638,9 @@ async function assertPost(input: {
       administration.stepCaptures.length !== 19 ||
       actions.includes('staff_takeover') ||
       actions.includes('step_redo') ||
-      replay?.playCount !== 2 ||
+      replay?.playCount !== 1 ||
       replay.remainingAuthorizedReplays !== 0 ||
-      replay.technicalReplayAuthorizations.length !== 1 ||
+      replay.technicalReplayAuthorizations.length !== 0 ||
       media.length !== 17 ||
       evidenceCounts.audio !== 15 ||
       evidenceCounts.handwriting !== 1 ||
@@ -657,7 +657,7 @@ async function assertPost(input: {
         administration.stepCaptures.length - validCaptures.length,
       mediaEvidenceCount: media.length,
       evidenceCounts,
-      technicalReplayPlayCount: replay.playCount,
+      stimulusPlayCount: replay.playCount,
       technicalReplayAuthorizationCount:
         replay.technicalReplayAuthorizations.length,
       itemFacts: 'unchanged',

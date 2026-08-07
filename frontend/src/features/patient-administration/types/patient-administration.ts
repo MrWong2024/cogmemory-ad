@@ -82,6 +82,7 @@ export type PatientAdministrationCurrentStep = {
     kind: PatientAdministrationAssetKind;
     role: 'guidance' | 'stimulus' | null;
     mimeType: string;
+    technicalReplayAuthorized: boolean;
   }>;
 };
 

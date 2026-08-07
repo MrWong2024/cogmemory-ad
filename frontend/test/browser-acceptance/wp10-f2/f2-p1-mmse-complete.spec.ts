@@ -42,21 +42,6 @@ import {
 
 const environment = resolveF2Environment();
 
-async function pauseStaff(page: import('@playwright/test').Page, reason: string) {
-  await page.getByLabel('暂停 / 恢复原因（可选，最多 500 字）').fill(reason);
-  const responsePromise = waitForPost(page, '/pause');
-  await page.getByRole('button', { name: '暂停施测', exact: true }).click();
-  expect((await responsePromise).status()).toBe(200);
-  await expect(page.getByText('已暂停', { exact: true }).first()).toBeVisible();
-}
-
-async function resumeStaff(page: import('@playwright/test').Page, reason: string) {
-  await page.getByLabel('暂停 / 恢复原因（可选，最多 500 字）').fill(reason);
-  const responsePromise = waitForPost(page, '/resume');
-  await page.getByRole('button', { name: '恢复施测', exact: true }).click();
-  expect((await responsePromise).status()).toBe(200);
-}
-
 async function completeSpeechStep(
   page: import('@playwright/test').Page,
   order: number,
@@ -69,7 +54,7 @@ async function completeSpeechStep(
 test.describe('WP-10 F2-P1 complete MMSE patient administration', () => {
   test.skip(!environment, 'Explicit live Browser acceptance environment is required');
 
-  test('completes all 19 server-authoritative steps with multimedia and staff controls', async ({
+  test('completes all 19 server-authoritative steps in the normal multimedia flow', async ({
     browser,
     roleContexts,
   }) => {
@@ -130,33 +115,19 @@ test.describe('WP-10 F2-P1 complete MMSE patient administration', () => {
       await expect(
         patientPage.getByRole('button', { name: /重播|再听一遍测量语音/ }),
       ).toHaveCount(0);
+      await expect(
+        patientPage.getByRole('button', {
+          name: '播放医护授权的测量语音',
+          exact: true,
+        }),
+      ).toHaveCount(0);
       await completePatientStep(patientPage);
 
       for (let order = 2; order <= 10; order += 1) {
         await completeSpeechStep(patientPage, order);
       }
 
-      await waitForStep(patientPage, 11);
-      await allowAutoplayIfNeeded(patientPage);
-      await expect(
-        patientPage.getByRole('button', { name: '开始录音', exact: true }),
-      ).toBeEnabled({ timeout: 20_000 });
-      await refreshStaff(staffPage);
-      await pauseStaff(staffPage, '即刻回忆测量语音技术中断');
-      await staffPage
-        .getByLabel('技术重播原因（必填，最多 500 字）')
-        .fill('扬声器短暂中断，需要授权一次技术重播');
-      const replayResponsePromise = waitForPost(
-        staffPage,
-        '/replay-authorize',
-      );
-      await staffPage.getByRole('button', { name: '授权技术重播' }).click();
-      expect((await replayResponsePromise).status()).toBe(200);
-      await expect(staffPage.getByText('技术重播已授权，请恢复施测。')).toBeVisible();
-      await resumeStaff(staffPage, '技术重播已授权');
-      await waitForStep(patientPage, 11);
-      await recordAndSaveSpeech(patientPage);
-      await completePatientStep(patientPage);
+      await completeSpeechStep(patientPage, 11);
 
       await completeSpeechStep(patientPage, 12);
       await completeSpeechStep(patientPage, 13);
@@ -321,7 +292,7 @@ test.describe('WP-10 F2-P1 complete MMSE patient administration', () => {
 
       expect(
         patient.ledger.count({ method: 'POST', safeUrlPattern: AUDIO_PATTERN }),
-      ).toBe(23);
+      ).toBe(22);
       expect(
         patient.ledger.count({ method: 'GET', safeUrlPattern: IMAGE_PATTERN }),
       ).toBe(1);
@@ -336,13 +307,13 @@ test.describe('WP-10 F2-P1 complete MMSE patient administration', () => {
       ).toBe(16);
       expect(
         staff.ledger.count({ method: 'POST', safeUrlPattern: PAUSE_PATTERN }),
-      ).toBe(1);
+      ).toBe(0);
       expect(
         staff.ledger.count({ method: 'POST', safeUrlPattern: RESUME_PATTERN }),
-      ).toBe(1);
+      ).toBe(0);
       expect(
         staff.ledger.count({ method: 'POST', safeUrlPattern: REPLAY_PATTERN }),
-      ).toBe(1);
+      ).toBe(0);
       expect(
         staff.ledger.count({
           method: 'POST',

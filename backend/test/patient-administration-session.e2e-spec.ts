@@ -731,8 +731,15 @@ describe('patient administration session APIs (e2e)', () => {
         throw new Error('Expected safe current step asset metadata');
       }
       expect(Object.keys(asset).sort()).toEqual(
-        ['assetKey', 'kind', 'mimeType', 'role'].sort(),
+        [
+          'assetKey',
+          'kind',
+          'mimeType',
+          'role',
+          'technicalReplayAuthorized',
+        ].sort(),
       );
+      expect(asset.technicalReplayAuthorized).toBe(false);
     }
     const serializedCurrent = JSON.stringify(activeBody).toLowerCase();
     for (const forbidden of [

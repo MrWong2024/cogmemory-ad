@@ -614,8 +614,15 @@ describe('patient administration 19-step flow APIs (e2e)', () => {
         throw new Error('Expected safe first-step asset');
       }
       expect(Object.keys(value).sort()).toEqual(
-        ['assetKey', 'kind', 'mimeType', 'role'].sort(),
+        [
+          'assetKey',
+          'kind',
+          'mimeType',
+          'role',
+          'technicalReplayAuthorized',
+        ].sort(),
       );
+      expect(value.technicalReplayAuthorized).toBe(false);
     }
     expect(JSON.stringify(first).toLowerCase()).not.toMatch(
       /filepath|sha256|spokentext|packagekey|sourcepdf/,
@@ -749,6 +756,10 @@ describe('patient administration 19-step flow APIs (e2e)', () => {
     });
     const guidanceKey = stringOf(recallAssets[0], 'assetKey');
     const stimulusKey = stringOf(recallAssets[1], 'assetKey');
+    expect(
+      recallAssets.find((asset) => asset.assetKey === stimulusKey)
+        ?.technicalReplayAuthorized,
+    ).toBe(false);
     await playAudio(guidanceKey);
     const concurrentStimulus = await Promise.all([
       patientAgent
@@ -773,6 +784,12 @@ describe('patient administration 19-step flow APIs (e2e)', () => {
     revision = Number(
       stimulusWinner.headers['x-patient-administration-revision'],
     );
+    const afterFirstStimulus = await currentStep(11);
+    expect(
+      arrayOf(afterFirstStimulus, 'assets').find(
+        (asset) => isRecord(asset) && asset.assetKey === stimulusKey,
+      ),
+    ).toEqual(expect.objectContaining({ technicalReplayAuthorized: false }));
     expect(stimulusLoser.headers['content-type']).toMatch(/^application\/json/);
     expect(bodyOf(stimulusLoser)).toEqual(
       expect.objectContaining({
@@ -801,6 +818,16 @@ describe('patient administration 19-step flow APIs (e2e)', () => {
       })
       .expect(200);
     revision = numberOf(bodyOf(authorized), 'revision');
+    const pausedCurrent = await patientAgent
+      .get('/patient-administration/current')
+      .expect(200);
+    expect(bodyOf(pausedCurrent)).toEqual(
+      expect.objectContaining({
+        status: 'paused',
+        revision,
+        currentStep: null,
+      }),
+    );
     await staff
       .post(`${base}/current/audio/${stimulusKey}/replay-authorize`)
       .send({ expectedRevision: revision, reason: 'must not stack' })
@@ -814,6 +841,12 @@ describe('patient administration 19-step flow APIs (e2e)', () => {
       .send({ expectedRevision: revision, reason: 'technical issue resolved' })
       .expect(200);
     revision = numberOf(bodyOf(resumedAfterReplay), 'revision');
+    const authorizedCurrent = await currentStep(11);
+    expect(
+      arrayOf(authorizedCurrent, 'assets').find(
+        (asset) => isRecord(asset) && asset.assetKey === stimulusKey,
+      ),
+    ).toEqual(expect.objectContaining({ technicalReplayAuthorized: true }));
     const concurrentReplay = await Promise.all([
       patientAgent
         .post(`/patient-administration/current/audio/${stimulusKey}/play`)
@@ -834,6 +867,12 @@ describe('patient administration 19-step flow APIs (e2e)', () => {
     revision = Number(
       replayWinner.headers['x-patient-administration-revision'],
     );
+    const afterAuthorizedReplay = await currentStep(11);
+    expect(
+      arrayOf(afterAuthorizedReplay, 'assets').find(
+        (asset) => isRecord(asset) && asset.assetKey === stimulusKey,
+      ),
+    ).toEqual(expect.objectContaining({ technicalReplayAuthorized: false }));
     await patientAgent
       .post(`/patient-administration/current/audio/${stimulusKey}/play`)
       .send({ expectedRevision: revision })

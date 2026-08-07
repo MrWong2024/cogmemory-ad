@@ -1197,12 +1197,158 @@ describe('PatientAdministrationSessionService', () => {
           kind: 'audio',
           role: 'guidance',
           mimeType: 'audio/mpeg',
+          technicalReplayAuthorized: false,
         },
       ],
     });
     expect(response.currentStep).not.toHaveProperty('assetKeys');
     expect(JSON.stringify(response)).not.toMatch(
       /filePath|sha256|spokenText|packageKey/,
+    );
+  });
+
+  it('projects technical replay authorization only for the current stimulus run', async () => {
+    const version = scaleVersion();
+    const withoutFact = sessionDocument({
+      status: 'active',
+      currentStepKey: 'second',
+      revision: 3,
+      sessionTokenHash: 'hash:raw-patient-token',
+      playbackFacts: [],
+    });
+    arrangePatientBusiness(withoutFact, version);
+    const currentWithoutFact = await service.getCurrent(patientContext(3));
+    expect(
+      currentWithoutFact.currentStep?.assets[0].technicalReplayAuthorized,
+    ).toBe(false);
+
+    const playedWithoutAuthorization = sessionDocument({
+      status: 'active',
+      currentStepKey: 'second',
+      revision: 4,
+      sessionTokenHash: 'hash:raw-patient-token',
+      playbackFacts: [playbackFact('second', 'asset-2')],
+    });
+    arrangePatientBusiness(playedWithoutAuthorization, version);
+    const currentAfterFirstPlay = await service.getCurrent(patientContext(4));
+    expect(
+      currentAfterFirstPlay.currentStep?.assets[0].technicalReplayAuthorized,
+    ).toBe(false);
+
+    const authorized = sessionDocument({
+      status: 'active',
+      currentStepKey: 'second',
+      revision: 5,
+      sessionTokenHash: 'hash:raw-patient-token',
+      playbackFacts: [
+        playbackFact('second', 'asset-2', {
+          remainingAuthorizedReplays: 1,
+        }),
+      ],
+    });
+    arrangePatientBusiness(authorized, version);
+    const currentWithAuthorization = await service.getCurrent(
+      patientContext(5),
+    );
+    expect(
+      currentWithAuthorization.currentStep?.assets[0].technicalReplayAuthorized,
+    ).toBe(true);
+
+    const redone = sessionDocument({
+      status: 'active',
+      currentStepKey: 'second',
+      revision: 6,
+      sessionTokenHash: 'hash:raw-patient-token',
+      stepCaptures: [
+        {
+          stepKey: 'second',
+          stepRun: 1,
+          capturedBy: 'patient',
+          capturedAt: new Date(),
+          invalidatedAt: new Date(),
+          invalidatedReason: 'redo current stimulus',
+        },
+      ],
+      playbackFacts: [
+        playbackFact('second', 'asset-2', {
+          remainingAuthorizedReplays: 1,
+        }),
+      ],
+    });
+    arrangePatientBusiness(redone, version);
+    const currentAfterRedo = await service.getCurrent(patientContext(6));
+    expect(
+      currentAfterRedo.currentStep?.assets[0].technicalReplayAuthorized,
+    ).toBe(false);
+  });
+
+  it('keeps guidance and image assets unauthorized for technical replay', async () => {
+    const version = scaleVersion([
+      {},
+      { advanceBy: 'patient', assetKeys: ['asset-1', 'asset-image'] },
+    ]);
+    const packageWithImage = verifiedPackage();
+    packageWithImage.assets.push({
+      assetKey: 'asset-image',
+      stepKey: 'first',
+      kind: 'image',
+      mimeType: 'image/png',
+      file: 'asset-image.png',
+      filePath: 'safe/asset-image.png',
+      size: 9,
+      sha256: '4'.repeat(64),
+    });
+    const active = sessionDocument({
+      status: 'active',
+      revision: 7,
+      sessionTokenHash: 'hash:raw-patient-token',
+      playbackFacts: [
+        playbackFact('first', 'asset-1', {
+          remainingAuthorizedReplays: 1,
+        }),
+        playbackFact('first', 'asset-image', {
+          remainingAuthorizedReplays: 1,
+        }),
+      ],
+    });
+    arrangePatientBusiness(active, version);
+    presentationAssetsService.validatePackage.mockResolvedValue(
+      packageWithImage,
+    );
+
+    const response = await service.getCurrent(patientContext(7));
+
+    expect(response.currentStep?.assets).toEqual([
+      expect.objectContaining({
+        assetKey: 'asset-1',
+        role: 'guidance',
+        technicalReplayAuthorized: false,
+      }),
+      expect.objectContaining({
+        assetKey: 'asset-image',
+        role: null,
+        technicalReplayAuthorized: false,
+      }),
+    ]);
+  });
+
+  it('fails closed when current stimulus playback facts are duplicated', async () => {
+    const active = sessionDocument({
+      status: 'active',
+      currentStepKey: 'second',
+      revision: 8,
+      sessionTokenHash: 'hash:raw-patient-token',
+      playbackFacts: [
+        playbackFact('second', 'asset-2'),
+        playbackFact('second', 'asset-2'),
+      ],
+    });
+    arrangePatientBusiness(active, scaleVersion());
+
+    await expectHttpException(
+      service.getCurrent(patientContext(8)),
+      409,
+      'PATIENT_ADMINISTRATION_STEP_INVALID',
     );
   });
 
@@ -1808,6 +1954,12 @@ describe('PatientAdministrationSessionService', () => {
       sessionTokenHash: 'hash:raw-patient-token',
     };
     arrangePatientBusiness(activeAuthorized, scaleVersion());
+    const currentWithAuthorization = await service.getCurrent(
+      patientContext(6),
+    );
+    expect(currentWithAuthorization.currentStep?.assets).toEqual([
+      expect.objectContaining({ technicalReplayAuthorized: true }),
+    ]);
     const consumed = sessionDocument({
       status: 'active',
       currentStepKey: 'second',
@@ -1842,6 +1994,11 @@ describe('PatientAdministrationSessionService', () => {
         remainingAuthorizedReplays: 0,
       }),
     );
+    arrangePatientBusiness(consumed, scaleVersion());
+    const currentAfterReplay = await service.getCurrent(patientContext(7));
+    expect(currentAfterReplay.currentStep?.assets).toEqual([
+      expect.objectContaining({ technicalReplayAuthorized: false }),
+    ]);
   });
 
   it('rejects replay authorization unless paused and after the first stimulus play', async () => {
