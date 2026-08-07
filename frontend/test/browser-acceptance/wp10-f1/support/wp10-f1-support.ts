@@ -624,27 +624,22 @@ export async function openExecution(input: {
       responsePath(response) === input.descriptor.scenario.navigationPath &&
       response.request().method() === 'GET',
   );
-  const patientAdministrationResponsePromise = input.page.waitForResponse(
-    (response) =>
-      new URL(response.url()).origin === input.environment.backendOrigin &&
-      responsePath(response) ===
-        `${input.descriptor.scenario.navigationPath}/patient-administration` &&
-      response.request().method() === 'GET',
-  );
   await input.page.goto(
     `${input.environment.frontendOrigin}${input.descriptor.scenario.navigationPath}`,
     { waitUntil: 'domcontentloaded' },
   );
-  const [executionResponse, patientAdministrationResponse] = await Promise.all([
-    executionResponsePromise,
-    patientAdministrationResponsePromise,
-  ]);
+  const executionResponse = await executionResponsePromise;
   expect(executionResponse.status()).toBe(200);
-  expect(patientAdministrationResponse.status()).toBe(404);
   await expect(
     input.page.getByTestId('patient-administration-staff-panel'),
   ).toBeVisible();
   await expect(input.page.getByText('WP-10 F1 · MMSE 患者施测')).toBeVisible();
+  const refreshButton = input.page.getByRole('button', {
+    name: '手动刷新',
+    exact: true,
+  });
+  await expect(refreshButton).toBeVisible();
+  await expect(refreshButton).toBeEnabled();
   await expect(
     input.page.getByRole('button', { name: '创建患者施测会话', exact: true }),
   ).toBeVisible();
