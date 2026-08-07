@@ -613,10 +613,21 @@ async function assertPost(input: {
     ) {
       fail('WP10_F1_P1_POST_INVALID', 'Same-device post facts are invalid');
     }
-    const staffAuthCount = await input.models.authSessions.countDocuments({
-      userId: user._id,
-    });
-    if (staffAuthCount !== 0) {
+    const staffAuthSessions = await input.models.authSessions
+      .find({ userId: user._id })
+      .select({ status: 1, revokedAt: 1 })
+      .exec();
+    const activeStaffAuthCount = staffAuthSessions.filter(
+      (session) => session.status === 'active',
+    ).length;
+    const revokedStaffAuthCount = staffAuthSessions.filter(
+      (session) => session.status === 'revoked' && session.revokedAt,
+    ).length;
+    if (
+      staffAuthSessions.length !== 1 ||
+      activeStaffAuthCount !== 0 ||
+      revokedStaffAuthCount !== 1
+    ) {
       fail(
         'WP10_F1_P1_STAFF_AUTH_REMAINED',
         'Staff auth session was not revoked',
@@ -627,7 +638,8 @@ async function assertPost(input: {
       status: administration.status,
       revision: administration.revision,
       controlEvents: actions,
-      staffAuthSessionCount: staffAuthCount,
+      activeStaffAuthSessionCount: activeStaffAuthCount,
+      revokedStaffAuthSessionCount: revokedStaffAuthCount,
       credentialState: 'patient_only',
       ...itemBoundary,
     };

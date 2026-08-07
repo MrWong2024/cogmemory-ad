@@ -36,7 +36,7 @@ type CurrentBody = {
 };
 
 function patientCookieMetadata(context: BrowserContext, backendOrigin: string) {
-  return context.cookies(backendOrigin).then((cookies) =>
+  return context.cookies(`${backendOrigin}/patient-administration`).then((cookies) =>
     cookies.map(({ name, domain, httpOnly, secure, sameSite, path }) => ({
       name,
       domain,

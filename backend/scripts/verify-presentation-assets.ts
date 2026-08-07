@@ -12,6 +12,8 @@ const MMSE_SOURCE_PDF = '.local/reference/MMSE+MoCA.pdf';
 const MMSE_SOURCE_PDF_SHA256 =
   '9BEB51BC8C509E17F6519154F059817875D861E13F8DE2BD6BBE78FD4DE6E59A';
 const MMSE_SOURCE_PDF_PAGE_COUNT = 8;
+const PRESENTATION_ASSET_STEP_BINDING_MISMATCH =
+  'presentation asset step binding mismatch';
 
 async function main(): Promise<void> {
   if (process.argv.length > 2) {
@@ -48,8 +50,14 @@ async function main(): Promise<void> {
 
   for (const step of mmseSeed.patientAdministrationSteps) {
     for (const assetKey of step.assetKeys) {
-      if (!manifestAssetKeys.has(assetKey)) {
-        throw new Error('MMSE seed references an unknown presentation asset');
+      const matchingAssets = manifest.assets.filter(
+        (asset) => asset.assetKey === assetKey,
+      );
+      if (
+        matchingAssets.length !== 1 ||
+        matchingAssets[0].stepKey !== step.stepKey
+      ) {
+        throw new Error(PRESENTATION_ASSET_STEP_BINDING_MISMATCH);
       }
       referencedAssetKeys.add(assetKey);
     }
@@ -101,6 +109,7 @@ async function main(): Promise<void> {
       `sourcePdfPages=${sourcePdfPageCount}`,
       `sourcePdfSha256=${sourcePdfSha256}`,
       'assetHashes=ok',
+      'stepBindings=ok',
     ].join(' | '),
   );
 }
@@ -171,6 +180,13 @@ function countPdfPages(pdfBytes: Buffer): number {
 }
 
 function getSafeErrorCode(error: unknown): string {
+  if (
+    error instanceof Error &&
+    error.message === PRESENTATION_ASSET_STEP_BINDING_MISMATCH
+  ) {
+    return PRESENTATION_ASSET_STEP_BINDING_MISMATCH;
+  }
+
   if (error instanceof HttpException) {
     const response: unknown = error.getResponse();
     if (

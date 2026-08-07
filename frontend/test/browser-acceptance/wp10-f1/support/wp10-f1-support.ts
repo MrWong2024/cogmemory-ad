@@ -44,15 +44,15 @@ export type StaffSession = {
 };
 
 export const STAFF_ROOT_PATTERN =
-  '/patients/<id>/visits/<id>/scale-instances/<id>/patient-administration';
+  '/patients/<id>/visits/<id>/scale-instances/<id>/<id>';
 export const PREPARATION_PATTERN = `${STAFF_ROOT_PATTERN}/preparation/confirm`;
 export const HANDOFF_PATTERN = `${STAFF_ROOT_PATTERN}/handoff`;
 export const PAUSE_PATTERN = `${STAFF_ROOT_PATTERN}/pause`;
 export const RESUME_PATTERN = `${STAFF_ROOT_PATTERN}/resume`;
 export const REISSUE_PATTERN = `${STAFF_ROOT_PATTERN}/entry-code/reissue`;
 export const TERMINATE_PATTERN = `${STAFF_ROOT_PATTERN}/terminate`;
-export const ENTER_PATTERN = '/patient-administration/enter';
-export const CURRENT_PATTERN = '/patient-administration/current';
+export const ENTER_PATTERN = '/<id>/enter';
+export const CURRENT_PATTERN = '/<id>/current';
 
 export function invariant(
   condition: unknown,
@@ -235,6 +235,7 @@ export async function completeLocalPreparation(page: Page): Promise<void> {
   ).toBeVisible();
 
   const canvas = page.getByLabel('不计分触摸和书写练习画布');
+  await canvas.scrollIntoViewIfNeeded();
   const bounds = await canvas.boundingBox();
   invariant(bounds, 'Preparation canvas bounds are unavailable');
   await page.mouse.move(bounds.x + 20, bounds.y + 30);
