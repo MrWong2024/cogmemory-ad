@@ -60,6 +60,7 @@ export function configureApp(app: INestApplication): void {
 
   app.enableCors({
     credentials: true,
+    exposedHeaders: ['X-Patient-Administration-Revision'],
     origin: resolveCorsOrigin(corsOriginValue),
   });
   app.use(cookieParser());

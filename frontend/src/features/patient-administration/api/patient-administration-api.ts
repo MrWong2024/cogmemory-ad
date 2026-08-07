@@ -338,9 +338,10 @@ export async function playCurrentPatientAdministrationAudio(
     true,
   );
   const mimeType = response.headers.get('content-type')?.split(';')[0]?.trim() ?? '';
-  const revision = Number(
-    response.headers.get('x-patient-administration-revision'),
+  const revisionHeader = response.headers.get(
+    'x-patient-administration-revision',
   );
+  const revision = revisionHeader === null ? Number.NaN : Number(revisionHeader);
   if (
     !mimeType.startsWith('audio/') ||
     !Number.isSafeInteger(revision) ||

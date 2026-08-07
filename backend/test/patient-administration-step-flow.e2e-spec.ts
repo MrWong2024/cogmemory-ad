@@ -484,6 +484,7 @@ describe('patient administration 19-step flow APIs (e2e)', () => {
     async function playAudio(assetKey: string): Promise<void> {
       const response = await patientAgent
         .post(`/patient-administration/current/audio/${assetKey}/play`)
+        .set('Origin', 'http://localhost:3000')
         .send({ expectedRevision: revision })
         .expect(200);
       expect(response.headers['content-type']).toMatch(/^audio\/mpeg/);
@@ -491,6 +492,9 @@ describe('patient administration 19-step flow APIs (e2e)', () => {
         'private, no-store, max-age=0',
       );
       expect(response.headers['x-content-type-options']).toBe('nosniff');
+      expect(response.headers['access-control-expose-headers']).toContain(
+        'X-Patient-Administration-Revision',
+      );
       expect(response.body).toEqual(Buffer.from(`${AUDIO_PREFIX}${assetKey}`));
       revision = Number(response.headers['x-patient-administration-revision']);
       expect(Number.isSafeInteger(revision)).toBe(true);
