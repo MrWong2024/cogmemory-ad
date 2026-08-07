@@ -196,6 +196,7 @@
 ### 6.7 `ScaleInstanceExecutionPage`
 
 - 路径：`frontend\src\features\assessments\components\ScaleInstanceExecutionPage.tsx`
+- WP-10-F1 组合边界：只在服务端实例摘要明确为 MMSE 1.0、`supervised_patient_input` 时渲染一个 `PatientAdministrationStaffPanel`；面板不接管既有 A14–A19 作答、媒体、提交、评分或认知域状态。
 - 职责：接收 patientId / visitId / scaleInstanceId，加载 A14 安全执行详情，管理 invalid / loading / 401 / 403 / not-found / configuration-unavailable / retry、动态分组、逐题 autosave snapshot、`${itemResponseId}:${evidenceType}` 媒体草稿、未收口统计、beforeunload、页面级显示 tick、实时 progress，以及 B6 独立 readiness / stale / error、题目定位、本地阻断、提交确认、submit 写锁和当前会话 receipt
 - 保存：所有作答、立即保存、标记完成、计时动作与 checkpoint 进入 `useItemResponseAutosaveCoordinator`；页面不再用单一 saving 集合表达保存状态。切组立即 flush 离开组内合法 queued 项但不等待完成，也不清除其他组状态。
 - 媒体父级职责：分组切换不清除 JPEG Blob / strokes；持有跨分组媒体写锁；A15 返回 requirement 时通知协调器推进媒体 generation，旧 A14 响应仅在 generation 未变化时采用自身 evidenceRequirements；A15 不改作答 draft / revision / progress
@@ -704,6 +705,27 @@
 
 - 前端代码、纯合同和静态构建已完成，P3 网络核对 Browser 回归与 P9 媒体上传失败草稿保全均已通过；既有双 Session、断网、刷新、切组、媒体竞态和实时计时证据继续复用。
 - P9 证明上传网络中止后当前 React 会话中的文字草稿、已处理图片草稿和预览仍保留，上传错误可见且重试入口恢复；B18 补充验证闭合、自动化 `gap=0`，WP-03 已完成。验证事实统一见 `handoff-frontend-testing-playbook.md`。
+
+### 6.80 WP-10-F1 医护发起与准备组件
+
+- `PatientAdministrationStaffPanel.tsx`：在既有 MMSE 实例页读取 / 创建最新短期会话，5 秒串行轮询并提供准备确认、同 / 跨设备交接、暂停、恢复、换设备重签和终止；写入使用最新 revision、全局单写锁且不自动重放。入口码只在当前 React 内存显示，刷新即丢失。
+- 轮询边界：每次 GET 使用 AbortController，下一轮在当前请求完成后调度；组件卸载、实例身份改变或进入写入时取消旧读取。响应以请求 generation 与服务端 revision 判定，过时结果不得覆盖新状态。
+- `PatientAdministrationPreparation.tsx`：管理七项本地准备事实、八类影响因素和最长 500 字备注；WebAudio 只播放合成测试音，MediaRecorder 只生成最长 10 秒本地试听 Blob，Canvas 只记录 Pointer 练习。Blob URL 在替换 / 卸载时撤销，停止仍持有的 MediaStream track；不上传、不创建 `MediaEvidence`、不修改 `ItemResponse`。
+- 同设备交接成功后使用 `window.location.replace` 清除 staff 页面历史并进入患者 Shell；若安全导航不能完成则保持 fail-closed 状态，不把 staff UI 重新视为可继续操作。跨设备只展示一次性码与等待兑换状态。
+
+### 6.81 WP-10-F1 患者独立 Shell 与页面
+
+- `PatientAdministrationShell.tsx`：为 `/patient-administration/**` 提供独立视觉与最少导航；不 import `PatientsWorkspaceShell`、`useAuth` 或 staff Context，不触发 `/auth/me`。
+- `PatientAdministrationEnterPage.tsx`：仅接受六位 ASCII 数字，显式提交一次 enter；成功 replace 到 current 页。code 不写 React 长期 store、URL、storage、日志或技术摘要，错误只映射稳定患者文案。
+- `PatientAdministrationPage.tsx`：3 秒串行轮询 current，使用 AbortController、generation 与 revision 防旧响应覆盖；无患者凭证时返回进入页。active 在 F1 只显示等待医护，不读取 / 渲染 currentStep 正式内容、资产、音频或证据。
+- 状态边界：paused、terminated / expired、completed 与服务不可用各自有最小安全状态；页面不显示患者标识、访视、量表分数、报告、诊断、staff 身份、其他患者或 Cookie 信息，也不提供 F2/F3 写操作。
+
+### 6.82 WP-10-F1 类型、Client 与展示纯函数
+
+- `types/patient-administration.ts`：只建模十个既有 endpoint 的公开 staff / patient 响应、revision、准备事实、影响因素和写请求白名单；不定义后端内部 token、hash、Session、asset file path、审计对象或正式评分字段。
+- `api/patient-administration-api.ts`：唯一 patient-administration fetch 所在；全部路径 ID 编码，统一 `credentials: include` / `no-store`，GET 接收 AbortSignal，写请求结果不确定映射为只读核对语义且不自动 retry。
+- `lib/patient-administration-display.ts`：集中把公开状态与稳定错误 kind 映射为安全中文文案；不透传后端英文 message、完整 response、进入码或内部技术字段。
+- 当前完成边界：F1 代码和静态门禁已形成，但真实 Browser 被 MMSE seed / released manifest `stepKey` 基线矛盾阻断；组件存在不得表述为 F1 已验收完成，动态证据见 testing playbook。
 
 ## 7. 后续同步规则
 

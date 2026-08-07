@@ -14,7 +14,7 @@
 - `frontend/package.json` 当前使用 Next.js 16.2.9、React 19.2.7、TypeScript 5.9.3、Tailwind CSS 4.3.0、Playwright Test 1.62.0 与 `@axe-core/playwright` 4.12.1。
 - `frontend/app` 使用 App Router，负责页面、layout 和 `not-found`；动态路由参数按 Next 16 的 Promise 形式读取。
 - `frontend/src/components/ui` 提供 `Button`、`Card`、`Badge` 三个低业务语义公共组件。
-- `frontend/src/features/auth`、`patients`、`assessments` 分别承载认证、患者/访视/历史趋势、量表执行与报告工作流。
+- `frontend/src/features/auth`、`patients`、`assessments` 分别承载认证、患者/访视/历史趋势、量表执行与报告工作流；`patient-administration` 承载 WP-10-F1 独立患者 Shell、安全进入 / 等待页、本地设备准备与 MMSE 医护发起面板。
 - `frontend/src/lib/env.ts` 只读取 `NEXT_PUBLIC_API_BASE_URL` 并导出 `frontendEnv.apiBaseUrl`。
 - `frontend/test/browser-acceptance` 是通用 Browser acceptance 目录：`support` 提供环境、独立 Chromium BrowserContext、Network、真实键盘、viewport、Axe、ARIA tree、可选 live-region helper、runtime、beforeunload 与安全输出能力；`infrastructure` 使用进程内临时 localhost 页面验证跑道；`live` 只在显式 localhost origins 下验证 production frontend + Browser test backend 拓扑。live-region helper 可以保留为可选技术能力，但动态可访问性播报和屏幕阅读器行为不属于现有 B18 Browser 验收合同；这不表示患者施测终端的逐步骤题目 / 指导语语音播报已经实现或已有验证。Axe 与 ARIA tree 自动检查不等同于屏幕阅读器专项验收。
 - 当前没有 BFF、Next Route Handler 代理、middleware、全局业务 Provider、Redux/Zustand/SWR/React Query 或第三方图表库。
@@ -36,6 +36,8 @@
 | `/patients/[patientId]/visits/[visitId]` | 访视详情、量表初始化、current report workflow 与报告版本面板 |
 | `/patients/[patientId]/visits/[visitId]/clinical-reports/[reportId]` | B17 指定历史报告只读详情 |
 | `/patients/[patientId]/visits/[visitId]/scale-instances/[scaleInstanceId]` | 量表执行、媒体、提交、评分与认知域 |
+| `/patient-administration/enter` | F1 患者六位一次性进入码入口；独立 Shell，不调用 `/auth/me` |
+| `/patient-administration` | F1 患者当前短期会话安全等待页；不呈现正式步骤内容或资产 |
 | `not-found` | 未匹配地址的静态 404 兜底 |
 
 `frontend/app/patients/layout.tsx` 统一挂载 `PatientsWorkspaceShell`；该 Shell 使用 `useAuth()` 处理认证状态，并通过轻量 Context 向后代复用已取得的公开用户，不产生第二次 `/auth/me`。
@@ -76,6 +78,14 @@
 - `ClinicalReportVersionPanel` 是访视详情的独立 sibling；版本加载失败不阻断 current report workflow。
 - `HistoricalClinicalReportDetailPage` 不挂载 `useClinicalReport` 或 `useClinicalReportWorkflow`，没有 A21–A25 写入口。
 
+### 4.5 WP-10-F1 patient administration
+
+- `ScaleInstanceExecutionPage` 只在 MMSE 1.0、`supervised_patient_input` 实例上组合 `PatientAdministrationStaffPanel`；既有作答、媒体、提交、评分和认知域职责不迁移。
+- 医护面板以 5 秒 GET 轮询最新会话，使用 AbortController、single-flight 和 revision 防旧响应覆盖；准备确认、交接、暂停、恢复、重签与终止均为显式写入，结果不确定时不自动重放。
+- `PatientAdministrationPreparation` 的七项确认、WebAudio 测试音、最长 10 秒的本地 MediaRecorder 回放、Canvas Pointer 练习和八类影响因素都只服务准备阶段；Blob 与 object URL 在 React 内存中形成并精确撤销，练习不写正式作答或证据。
+- `/patient-administration/**` 使用独立 `PatientAdministrationShell`，不挂载 staff shell、`useAuth()` 或 `/auth/me`。进入码仅在 React / 表单即时内存中存在，不写 URL、storage 或日志；患者 current GET 以 3 秒间隔串行轮询。
+- F1 活动页只显示安全等待、暂停、终止 / 过期和完成状态，不读取或呈现 currentStep 的正式文字、图片、音频、证据或 F2/F3 操作。
+
 ## 5. 当前 API 与状态管理
 
 ### 5.1 API Client 范围
@@ -88,6 +98,7 @@
 - Cognitive domain：A19 latest/compute。
 - Clinical report：A20 latest/generate、A21 edit/submit/confirm、A22 lock、A23 freeze-sources、A24 archive、A25 corrections，以及 A27 report versions/historical detail。
 - Clinical history：A27 assessment history 与 A28 follow-up trends。
+- Patient administration F1：医护侧会话读取 / 创建 / 准备 / 交接 / 暂停 / 恢复 / 重签 / 终止，以及患者 enter / current 十个既有公开接口。
 - A26 没有 replacement 专用 endpoint；安全 V2+ 复用 A21–A24。
 
 所有实际 `fetch` 均位于上述 API Client。它们使用 `frontendEnv.apiBaseUrl`、`credentials: 'include'` 和 `cache: 'no-store'`；GET 按调用场景接收 `AbortSignal`。前端没有 BFF、Authorization/JWT 注入、本地 token 存储或完整响应日志。
@@ -100,6 +111,7 @@ A21–A25 写请求从当前服务端 `report.updatedAt` 取得 `expectedUpdated
 - B17 history/trends 可把非敏感筛选、分页与查询上限写入 URL query；浏览器前进/后退恢复这类可分享状态。
 - 页面不把临床写工作流草稿、客户端可读凭据、敏感业务对象或不可逆操作的待提交状态写入 URL、localStorage、sessionStorage 或 IndexedDB；这些状态只保存在 React 内存。主登录态仍由服务端 Session + HttpOnly Cookie 维护，前端不读取 Cookie。
 - B18-A 的作答、备注、计时、冲突快照、attempt 与媒体 generation 同样只在当前页面内存；不使用 Cache Storage 或其他离线持久化。强制重载会丢失未发送或未确认的内存草稿，`beforeunload` 是本阶段的明确保护边界，页面只从后端恢复已保存事实。
+- F1 的患者进入码、同 / 跨设备选择、设备练习 Blob / object URL、准备勾选与影响因素草稿同样只在当前 React 会话内存；患者页面不保存 staff 认证状态或完整会话响应。
 - 后端 Session + HttpOnly Cookie 是主登录态；前端不读取 Cookie，不使用 JWT。
 - 401 返回登录流程，403 保留可安全读取的页面事实并显示权限状态；后端 Guard 始终是最终权限边界。
 
@@ -133,17 +145,18 @@ A21–A25 写请求从当前服务端 `report.updatedAt` 取得 `expectedUpdated
 
 ## 7. 当前实现结论与验证入口
 
+- WP-10-F1 的前端代码、定向 lint、正式 typecheck、固定 API Base production build 和 2 个 Browser spec discovery 已完成；但真实 F1-P1 在创建会话处被既有 MMSE seed / released manifest `stepKey` 矛盾稳定阻断，P1/P2 均未闭环，不能标记 F1 完成。完整证据和 cleanup 见 frontend / backend testing playbook。
 - B16 replacement V2+ 生命周期、B17 history/versions/detail/trends 与 B18 自动保存、single-flight 网络核对、切组、媒体 generation、实时计时及失败草稿保全均已完成；WP-03 已完成。Batch E 的 8 项历史真实设备或人工候选仍为 `pending`，当前主要归属为 WP-08；WP-08 启动时仍须按最终患者施测合同重新治理适用候选，不能把机械关闭这 8 项等同于 WP-08 完成。
 - Playwright、Chromium 与 Axe 通用 Browser acceptance 基础设施已完成。B10-89 后续已由 B10-C2 定向通过；B10 `generation-workflow` 48 pass、`public-surface-security` 47 pass，共 95 项完成，Batch C / B7–B10 已完成。Batch D 的 B11～B15 均已完成；B14.1 已治理为累计证据索引而非独立 Browser 批次，具体状态以 `handoff-frontend-testing-playbook.md` 为准。
 - 当前静态门禁、Batch 状态、Browser/automated 数量、权限/错误、响应式、键盘、Network、Runtime Storage、evidence commit、verify 与 cleanup 统一见 `handoff-frontend-testing-playbook.md`；本 snapshot 不维护测试终态。
 
 ## 8. 当前未实现边界
 
-- 受监督患者施测终端：尚无面向患者的一步一屏页面、单一主操作与大触控区、明确状态和求助入口、覆盖平板与具备触摸功能电脑大屏的标准触控设备适配、患者短期受控会话和安全进入、逐步骤题目 / 指导语文字与语音播报及自动播放 / 手动播放 / 重播控制、设备准备与不计分练习、适用语音回答步骤的录音与一种基础 ASR 人工降级、患者端服务端权威恢复，以及完成后共享设备隐私退出和安全交还。患者施测终端与临床工作端协同完成完整 MMSE / MoCA 的多模态编排尚未实现；现有量表执行页属于医护侧工作流，不能表述为上述患者终端已经落地。
+- 受监督患者施测终端：F1 已实现六位码安全进入、患者独立 Shell、安全等待页、MMSE 医护发起控制和设备准备代码，但尚未通过真实 Browser 完成门禁；也尚无一步一屏正式题目、指导语文字 / 语音、受控资产播放、正式患者录音 / ASR、正式点击 / 书写 / 绘图、服务端权威逐步恢复及完成后的完整安全交还。患者端与临床工作端协同完成完整 MMSE / MoCA 的多模态编排仍未实现。
 - 患者点击、书写和绘图等数字交互，与医护对闭眼、拿纸、对折、放置等动作观察和实物操作结果的记录确认，均尚无患者施测专用编排；非语音步骤不默认录音，动作观察不等于视频、摄像头、传感器或自动行为识别。摄像头不是标准患者交互设备的通用前置；未来具体步骤确有拍摄或扫码必要时，须由该步骤合同单独锁定权限、隐私、适配和验收。现有医生侧图片上传、纸笔结果拍照和手写证据能力不因此删除或取消。
-- 统一临床工作端：现有医生侧工作台和量表执行工作流是代码底座，但尚未形成同一工作流内的医护施测模式与医生复核报告模式；设备 / 语言准备、动作观察、结构化影响因素和异常原因记录、患者求助与控制、完成结果送审、医生异常优先复核、无歧义客观步骤汇总确认及医生最终整体确认均尚未实现。两种模式是逻辑职责，不表示必须建设两套应用、两个账号或新增互斥角色。
+- 统一临床工作端：F1 已在既有 MMSE 实例页加入本地设备 / 语言准备、结构化影响因素和会话控制面板，但真实验收未闭环；动作观察、患者求助处理、完成结果送审、医生异常优先复核、无歧义客观步骤汇总确认及医生最终整体确认仍未实现。两种模式是逻辑职责，不表示必须建设两套应用、两个账号或新增互斥角色。
 - 临床运营与知情者辅助：现有 `AuthDashboard` 仍是轻量入口，尚无 WP-12 的最小临床运营工作区或医护代录知情者辅助信息能力；知情者来源、关系和了解程度与患者作答 / ItemResponse / 量表得分分离呈现也尚未实现。当前缺口不等于一期要求知情者长期账号、家庭门户或短期自助链接。
-- 当前尚未确定同设备患者模式交接与医护解锁、跨设备安全进入、每步骤文字 / 语音 / 播放 / 重播、准备练习、影响因素分类、具体同步时效和刷新策略，以及适用步骤原始录音、绘图与中间媒体的保留、删除和正式备份边界；这些缺口不表示二维码、全页面 TTS、强实时协作、特定传输技术、全部固定录音、永久保存全部原始证据、独立应用 / 新角色，或独立 attempt / capture / review 集合和通用投影子系统已经成为未来实现合同。
+- F1 已锁定同 / 跨设备安全进入、准备练习、八类影响因素与 5 秒 staff / 3 秒 patient 轮询；仍未实现每步骤文字 / 语音 / 播放 / 重播，以及适用步骤原始录音、绘图与中间媒体的正式采集、保留、删除和备份边界。这些缺口不表示二维码、全页面 TTS、强实时协作、特定传输技术、全部固定录音、永久保存全部原始证据、独立应用 / 新角色，或独立 attempt / capture / review 集合和通用投影子系统已经成为未来实现合同。
 - HIS / EMR、计费、保险及其他第三方医院系统集成当前未实现，且不属于一期产品缺口、WP-09 或上线验收门禁。
 - 患者：编辑、删除、归档、合并。
 - 访视：编辑、删除、完整状态流转。

@@ -17,6 +17,7 @@
 | B14.1 | 累计证据索引，不是独立 Browser 批次 | shared Node-only 与分层 backend 证据完整 | frontend testing playbook“B14.1 累计证据索引” |
 | Batch D / B15 | 完成；`passed=2`、`pending=0`；P0 `gap=0` | A25 HTTP/unit、三类并发收敛、Correction Node-only 与 verifier 完整 | frontend testing playbook“当前证据索引” |
 | A29 / A30 / WP-03 backend | 后端范围完成；A29 / A30 证据复用；backend 阻断性 `gap=0` | 父实例 + 固定题目 scope 的可恢复 barrier、A14/A15 原子门禁、fencing/releasing 恢复、完成/释放 CAS 竞争、legacy / invalid / privacy 证据完整 | frontend single-flight、P3 与 P9 已闭合；B18 补充验证自动化 `gap=0`，WP-03 已完成 |
+| WP-10-F1 | fixture / verifier 已实现；F1-P1 被既有 MMSE presentation `stepKey` 契约矛盾阻断，F1-P2 未启动 | Browser 库零 PatientAdministrationSession 副作用并精确 cleanup；`presentation-assets:verify` 的关联校验缺口已只读定位 | frontend testing playbook“WP-10-F1 当前证据与阻断” |
 | Batch E | 8 个真实设备或人工项目待验 | 不由后端自动测试冒充 | frontend testing playbook“Batch E：真实设备或人工验收” |
 
 roadmap 独立维护产品范围和工作包状态；testing playbook 治理不启动下一工作包。
@@ -150,6 +151,8 @@ fixture 只制造合法最小前置，不成为第二个产品：优先使用现
 
 一个任务可以包含多个 Profile，但不得跨 Profile 拼接前置、可写 Report、数据库终态或 cleanup。后续无关 Profile 失败，不得使此前独立闭环证据失效。
 
+WP-10-F1 使用 `backend/scripts/wp10-f1-browser-fixtures.ts` 的 `prepare`、`verify-prepared`、`verify-post`、`cleanup` 四个命令和两个固定 Profile `F1-P1-same-device` / `F1-P2-cross-device`。runtime descriptor 只含安全 route IDs、staff account 与 ItemResponse 基线 hash；密码只来自进程环境。prepared verifier 还必须验证实际 MMSE 1.0 presentation package 中每个 seed assetKey 唯一存在且 manifest `stepKey` 与所属步骤逐字一致；该门禁失败时不得启动 Browser 写入。
+
 ### 5.2 写入、并发、verifier 与 Stage
 
 - 写请求按风险验证 Body 白名单、次数、actor、状态转换、审计和最终 MongoDB 状态；禁止自动 retry、replay 或 polling。
@@ -199,6 +202,7 @@ lint、typecheck、build、unit、HTTP E2E、Browser、verifier 和 cleanup 互�
 | WP-10-C1 | 新增 audio validator 与患者 evidence 编排 unit，扩展 session / MediaEvidence unit；完整 unit 98 suites / 947 tests。精确 E2E discovery 命中 C1、B2、B1、初始化与既有 staff media 五个文件，正式结果 5 suites / 25 tests | AppModule + `standard_test`，连接后实际库逐字为 `cogmemory_ad_test`；PresentationAssets 只读内存 stub，Storage=fake / 可追踪 fake，验证 audio/photo/handwriting、DTO/隐私、当前 run gate、redo、takeover、并发上传、pause-CAS 精确补偿、ItemResponse / ScaleInstance 零变化、staff media 回归与精确 cleanup。Browser、真实设备、真实 OSS 未执行 | WP-10-C1 完成；WP-10-C 与 WP-10 仍进行中，下一阶段 WP-10-C2 | 本行、roadmap 与 backend snapshot/API/DTO/service map |
 | WP-10-C2 | 受影响 unit 9 suites / 94 tests、报告适配定向 unit 1 suite / 2 tests、完整 unit 102 suites / 984 tests 均通过；最终 E2E discovery 精确命中 C2、C1、B2、B1、初始化、staff media、ItemResponse draft 与 submission 共 8 个文件，正式结果 8 suites / 52 tests；完整 lint / typecheck / build 通过 | AppModule + `standard_test` + `cogmemory_ad_test`，Storage=可追踪 fake、ASR=受控 stub、PresentationAssets=只读内存 stub；覆盖上传→review→转写→幂等→人工 ItemResponse CAS、failed/retry、并发 claim、超长拒绝、redo invalidated run、takeover observation、安全访问及精确 cleanup。真实百炼、真实 OSS、Browser、真实设备未执行 | WP-10-C2 与 WP-10-C 后端范围完成；WP-10 仍进行中，下一阶段“WP-10 前端 MMSE 完整闭环” | 本行、roadmap 与 backend snapshot/API/DTO/service/config map |
 | WP-10-F0（pre-F1 修复） | unit discovery 精确命中 session service 1 suite，定向 34 tests；完整 unit 102 suites / 999 tests。E2E discovery 精确命中 session 与 step-flow 两份，正式结果 2 suites / 7 tests；最终 lint / typecheck / build 均退出 0 | AppModule + `standard_test`，连接后实际库逐字为 `cogmemory_ad_test`；Storage=fake、LLM/SMS=stub、PresentationAssets=只读内存 stub。覆盖同设备 preparation→handoff、未准备零副作用拒绝、跨设备 enter→preparation、paused handoff / resume、startedAt / revision / events、Cookie 身份切换及 ScaleInstance / ItemResponse / MediaEvidence 零变化；按测试自有前缀 / ID 精确 cleanup，残留均为 0。Browser、前端、真实设备、真实麦克风未执行 | 同设备后端缺口已关闭；不等于 F1 或 WP-10 完成，下一阶段仍为 WP-10 前端 MMSE 完整闭环 F1 | 本行与 backend snapshot/API/service map；roadmap / DTO / config / 稳定合同 / frontend handoff 不变 |
+| WP-10-F1 | 新增 Browser fixture CLI，不修改 backend `src`、既有测试、依赖、配置或 env；定向 fixture lint / backend typecheck 与最终 presentation-assets 校验按本任务最终门禁记录 | P1 prepared 前置最初确认 active Patient、in_progress Visit、MMSE 1.0 supervised draft instance 与 11 个 ItemResponse；真实创建 POST 返回 `PATIENT_ADMINISTRATION_STEP_INVALID` 且只读核对 PatientAdministrationSession=0。增强的 prepared verifier 将根因分类为 `stepAssetMismatch:step_key`；P1 cleanup 删除任务 auth / fixture 资源且 residual 0、runtime absent。P2 因相同前置未启动 | `blocked`；F1 不完成。需在独立后续任务修复 MMSE seed / released manifest 关联和无数据库校验覆盖，再从全新 fixture 重跑两个 Profile | frontend testing playbook“WP-10-F1 当前证据与阻断”及 roadmap |
 
 B12～B15 的 Browser 操作、页面文案、keyboard、viewport、Storage 和活动场景结果只在 frontend testing playbook 的语义索引中维护；本手册不复制执行流水或历史迁移表。
 

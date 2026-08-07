@@ -70,6 +70,15 @@ export default function HomePage() {
                   进入工作台
                 </Link>
               </div>
+              <p className="mt-5 text-base text-[var(--cma-muted)]">
+                已由医护人员发起本次施测？{' '}
+                <Link
+                  className="font-semibold text-[var(--cma-primary)] underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cma-ring)]"
+                  href="/patient-administration/enter"
+                >
+                  患者施测入口
+                </Link>
+              </p>
             </div>
             <div className="w-full border-l-4 border-[var(--cma-line-strong)] pl-5 lg:max-w-sm">
               <p className="text-sm font-semibold text-[var(--cma-primary)]">

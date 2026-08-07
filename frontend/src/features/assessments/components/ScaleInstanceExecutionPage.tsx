@@ -84,6 +84,7 @@ import type {
   ScaleSubmissionReadinessResponse,
 } from '@/src/features/assessments/types/scale-instance-submission';
 import { logout } from '@/src/features/auth/api/auth-api';
+import { PatientAdministrationStaffPanel } from '@/src/features/patient-administration/components/PatientAdministrationStaffPanel';
 import {
   assessmentVisitStatusLabels,
   assessmentVisitTypeLabels,
@@ -1914,6 +1915,16 @@ export function ScaleInstanceExecutionPage({
         >
           {readOnlyReason} 历史安全草稿不会隐藏，所有编辑和保存操作已禁用。
         </p>
+      ) : null}
+
+      {scale.code === 'mmse' &&
+      scaleInstance.administrationMode === 'supervised_patient_input' ? (
+        <PatientAdministrationStaffPanel
+          onUnauthorized={() => router.replace('/login')}
+          patientId={patientId}
+          scaleInstanceId={scaleInstanceId}
+          visitId={visitId}
+        />
       ) : null}
 
       <div className="grid gap-5 xl:grid-cols-3">

@@ -9,6 +9,7 @@
 - 当前包含既有公共、认证、患者 / 访视与量表实例路由；B17 新增患者历史、随访趋势和指定历史报告只读详情三个路由，报告版本面板继续落在访视详情。
 - B16 已让安全线性 replacement V2+ 在既有访视详情复用 A22 lock、A23 freeze-sources 与 A24 archive；没有 replacement 专用路由。
 - B17 / WP-04 已完成；历史报告详情保持只读，current report workflow、版本列表和历史详情职责分离。
+- WP-10-F1 已新增患者独立 Shell 的 `/patient-administration/enter` 与 `/patient-administration`，并在既有 MMSE `supervised_patient_input` 实例页组合医护发起 / 准备面板；代码已实现但真实 Browser 完成门禁被 MMSE presentation `stepKey` 基线矛盾阻断，不能标记 F1 完成。
 - `/dashboard` 已提供患者档案入口，但仍不是完整医生工作台。
 - 当前不包含患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、独立评分、评分锁定、独立认知域、current 报告专用详情、AI、用户管理或权限菜单路由。
 - 当前不包含 Next middleware 或路由级服务端认证中间件。
@@ -137,6 +138,7 @@
 
 - 页面名称：量表实例施测执行、媒体证据、正式提交、评分确认与认知域结果
 - 页面职责：在既有 A14-A18 能力上接入 A19 认知域 latest / compute、安全结果展示与贡献定位；不新增独立评分或认知域路由。
+- F1 条件组合：仅服务端详情明确为 MMSE 1.0 且 `administrationMode=supervised_patient_input` 时渲染 `PatientAdministrationStaffPanel`；其他量表、版本和施测方式不显示该面板。
 - 动态参数：Server Component 按 Next 16 `params: Promise<{ patientId: string; visitId: string; scaleInstanceId: string }>` 等待参数后传给 `ScaleInstanceExecutionPage`；route 不 fetch、不保存表单状态
 - 访问边界：继续复用 `/patients/**` 的 `PatientsWorkspaceShell`；不新增 middleware、BFF 或 Provider，不读取 Cookie；后端 Guard 是最终权限边界
 - 数据来源：既有 A14-A18 请求，以及 A19 cognitive-domain latest GET / compute POST；评分和认知域只读刷新各自只使用 latest GET。
@@ -180,7 +182,26 @@
 - 当前非目标：不提供批量评分、评分 lock / void / 撤销确认 / reopen / rerun / runNo=2 / 完整历史；不提供认知域人工修改 / 确认 / 锁定 / 作废 / 重算 / weighted mapping 编辑；不在单量表页提供报告生成、诊断、OCR 或 AI。
 - 关联组件：既有执行与评分组件，以及 `useCognitiveDomainResult`、`CognitiveDomainResultPanel`、`CognitiveDomainScoreList`、`CognitiveDomainContributionList`、`CognitiveDomainMappingSummary`。
 
-### 3.10 `not-found`
+### 3.10 `/patient-administration/enter`
+
+- 页面名称：患者安全进入
+- 页面职责：接收六位 ASCII 数字一次性进入码，只有患者显式提交才调用 enter；不自动提交、不在页面重载后恢复输入。
+- 访问边界：公开患者入口，使用独立 `PatientAdministrationShell`；不挂载 `/patients/**` staff workspace，不调用 `/auth/me`，后端患者 Cookie / Guard 是最终边界。
+- 数据来源：显式提交时 `POST /patient-administration/enter`；成功后 `router.replace('/patient-administration')`。
+- 安全边界：进入码只在表单即时内存与单次请求体中存在，不写 URL、localStorage、sessionStorage、IndexedDB、日志或 DOM 回执；页面不展示患者、访视、量表、staff 或 Cookie 详情。
+- 状态：区分格式错误、码无效 / 已使用 / 过期、会话不可进入、服务不可用和提交中；写请求结果不确定时不自动重放。
+- 关联组件：`PatientAdministrationShell`、`PatientAdministrationEnterPage`。
+
+### 3.11 `/patient-administration`
+
+- 页面名称：患者当前会话安全等待页
+- 页面职责：读取患者短期 Cookie 对应的 current 会话，显示等待医护、暂停、终止 / 过期或完成状态；F1 active 仍只显示安全等待，不进入正式步骤。
+- 访问边界：患者独立 Shell；不读取 staff Session、`/auth/me` 或 staff workspace Context。无患者会话时只提供返回安全进入页。
+- 数据来源：`GET /patient-administration/current`，3 秒串行轮询；使用 AbortController、single-flight 和 revision / run 身份防止过时响应覆盖。
+- 隐私与功能边界：不呈现 currentStep 的 patientText、assetKeys、图片、音频、播放、录音、证据、评分、报告、诊断、其他患者或 staff 信息；不提供 F2/F3 操作。
+- 关联组件：`PatientAdministrationShell`、`PatientAdministrationPage`。
+
+### 3.12 `not-found`
 
 - 页面名称：404 兜底页
 - 页面职责：处理未匹配地址并提供返回首页入口
