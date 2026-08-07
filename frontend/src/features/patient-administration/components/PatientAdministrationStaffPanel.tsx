@@ -50,6 +50,26 @@ const inputClassName =
 const checkboxClassName =
   'mt-1 h-5 w-5 shrink-0 accent-[var(--cma-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cma-ring)]';
 
+function inferFlowChoiceFromSession(
+  session: PatientAdministrationSessionSummary,
+): FlowChoice | null {
+  if (
+    session.status === 'prepared' &&
+    session.preparationConfirmedAt &&
+    !session.hasPatientCredential
+  ) {
+    return 'same_device';
+  }
+  if (
+    session.status === 'prepared' &&
+    !session.preparationConfirmedAt &&
+    session.hasPatientCredential
+  ) {
+    return 'cross_device';
+  }
+  return null;
+}
+
 function getPanelErrorMessage(error: unknown): string {
   if (!(error instanceof PatientAdministrationApiError)) {
     return '患者施测服务暂不可用，请稍后手动刷新。';
@@ -110,9 +130,19 @@ export function PatientAdministrationStaffPanel({
   const applySession = useCallback(
     (response: PatientAdministrationSessionSummary) => {
       const previous = sessionRef.current;
-      if (previous && previous.revision > response.revision) return;
+      if (
+        previous &&
+        previous.id === response.id &&
+        previous.revision > response.revision
+      ) {
+        return;
+      }
       sessionRef.current = response;
       setSession(response);
+      const inferredFlowChoice = inferFlowChoiceFromSession(response);
+      if (inferredFlowChoice) {
+        setFlowChoice(inferredFlowChoice);
+      }
     },
     [],
   );
@@ -417,7 +447,9 @@ export function PatientAdministrationStaffPanel({
   const canConfirmPreparation = Boolean(
     session?.status === 'prepared' &&
       !session.preparationConfirmedAt &&
-      ((flowChoice === 'same_device' && preparationValue.ready) ||
+      ((flowChoice === 'same_device' &&
+        !session.hasPatientCredential &&
+        preparationValue.ready) ||
         (flowChoice === 'cross_device' &&
           session.hasPatientCredential &&
           crossDevicePreparationConfirmed)),
@@ -574,7 +606,7 @@ export function PatientAdministrationStaffPanel({
             ) : null}
             <div className="flex flex-wrap gap-3">
               <Button
-                disabled={Boolean(writeAction)}
+                disabled={session.hasPatientCredential || Boolean(writeAction)}
                 onClick={() => {
                   setFlowChoice('same_device');
                   setCrossDevicePreparationConfirmed(false);

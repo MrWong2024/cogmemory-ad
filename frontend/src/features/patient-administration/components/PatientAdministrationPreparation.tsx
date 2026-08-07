@@ -120,7 +120,6 @@ export function PatientAdministrationPreparation({
   }, [releaseMicrophone]);
 
   useEffect(() => {
-    microphoneRunRef.current += 1;
     onChange?.({
       ready,
       impactFactorCodes,
@@ -129,6 +128,7 @@ export function PatientAdministrationPreparation({
   }, [impactFactorCodes, impactFactorNote, onChange, ready]);
 
   useEffect(() => {
+    microphoneRunRef.current += 1;
     setFacts(initialFacts);
     setImpactFactorCodes([]);
     setImpactFactorNote('');
@@ -198,11 +198,19 @@ export function PatientAdministrationPreparation({
       return;
     }
 
+    let stream: MediaStream | null = null;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (microphoneRun !== microphoneRunRef.current) {
+        for (const track of stream.getTracks()) {
+          track.stop();
+        }
+        return;
+      }
+      const activeStream = stream;
       const chunks: Blob[] = [];
-      const recorder = new MediaRecorder(stream);
-      streamRef.current = stream;
+      const recorder = new MediaRecorder(activeStream);
+      streamRef.current = activeStream;
       recorderRef.current = recorder;
       recorder.addEventListener('dataavailable', (event) => {
         if (event.data.size > 0) chunks.push(event.data);
@@ -210,8 +218,8 @@ export function PatientAdministrationPreparation({
       recorder.addEventListener(
         'stop',
         () => {
-          for (const track of stream.getTracks()) track.stop();
-          if (streamRef.current === stream) streamRef.current = null;
+          for (const track of activeStream.getTracks()) track.stop();
+          if (streamRef.current === activeStream) streamRef.current = null;
           if (recorderRef.current === recorder) recorderRef.current = null;
           if (timerRef.current !== null) {
             window.clearTimeout(timerRef.current);
@@ -238,6 +246,15 @@ export function PatientAdministrationPreparation({
       setMicrophoneStatus('正在本地录音，最长 10 秒；内容不会上传或保存。');
       timerRef.current = window.setTimeout(() => stopRecording(), 10_000);
     } catch {
+      if (microphoneRun !== microphoneRunRef.current) {
+        for (const track of stream?.getTracks() ?? []) {
+          track.stop();
+        }
+        return;
+      }
+      for (const track of stream?.getTracks() ?? []) {
+        track.stop();
+      }
       releaseMicrophone();
       updateFact('microphone', true);
       setMicrophoneStatus('麦克风权限或设备不可用，已明确记录当前不可用。');

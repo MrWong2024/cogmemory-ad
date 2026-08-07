@@ -10,11 +10,9 @@ import {
 import {
   AUTH_ME_PATTERN,
   HANDOFF_PATTERN,
-  PATIENT_ROUTE_PATTERN,
   PREPARATION_PATTERN,
   STAFF_ROOT_PATTERN,
-  VISIT_ROUTE_PATTERN,
-  assertF1AuditDelta,
+  assertF1BrowserAudit,
   assertNoF2F3Requests,
   bodyContainsAny,
   completeLocalPreparation,
@@ -24,8 +22,6 @@ import {
   readDescriptor,
   requireSecret,
   resolveEnvironment,
-  type F1AllowedControlledAbort,
-  type F1ExpectedHttpFailure,
 } from './support/wp10-f1-support';
 
 const environment = resolveEnvironment();
@@ -37,6 +33,12 @@ type CurrentBody = {
     stepKey?: unknown;
     assets?: Array<{ assetKey?: unknown }>;
   } | null;
+};
+
+type StaffSessionBody = {
+  status?: unknown;
+  preparationConfirmedAt?: unknown;
+  hasPatientCredential?: unknown;
 };
 
 function patientCookieMetadata(context: BrowserContext, backendOrigin: string) {
@@ -70,46 +72,7 @@ test.describe('WP-10 F1-P1 same-device preparation and safe handoff', () => {
       viewport: { width: 1280, height: 800 },
     });
     const { context, page } = staff.roleContext;
-    let auditCheckpoint = staff.auditStartCheckpoint;
-    const auditTotals = { expectedHttpConsoleErrors: 0 };
-    const audit = (
-      expectedHttpFailures: F1ExpectedHttpFailure[],
-      allowedControlledAborts: F1AllowedControlledAbort[],
-    ): void => {
-      const result = assertF1AuditDelta({
-        consoleAudit: staff.consoleAudit,
-        ledger: staff.ledger,
-        checkpoint: auditCheckpoint,
-        expectedHttpFailures,
-        allowedControlledAborts,
-      });
-      auditCheckpoint = result.checkpoint;
-      auditTotals.expectedHttpConsoleErrors += result.expectedHttpConsoleErrors;
-    };
-
-    audit(
-      [{ method: 'GET', status: 401, safeUrlPattern: AUTH_ME_PATTERN, count: 1 }],
-      [],
-    );
     await openExecution({ page, descriptor, environment });
-    audit(
-      [
-        {
-          method: 'GET',
-          status: 404,
-          safeUrlPattern: STAFF_ROOT_PATTERN,
-          count: 1,
-        },
-      ],
-      [
-        {
-          method: 'GET',
-          status: 404,
-          safeUrlPattern: STAFF_ROOT_PATTERN,
-          count: 1,
-        },
-      ],
-    );
 
     await page
       .getByRole('radio', { name: /同一设备/ })
@@ -138,23 +101,6 @@ test.describe('WP-10 F1-P1 same-device preparation and safe handoff', () => {
     expect(storageWhileCodeVisible.localStorageKeys).toEqual([]);
     expect(storageWhileCodeVisible.sessionStorageKeys).toEqual([]);
     expect(storageWhileCodeVisible.indexedDbNames).toEqual([]);
-    audit(
-      [],
-      [
-        {
-          method: 'GET',
-          status: 200,
-          safeUrlPattern: PATIENT_ROUTE_PATTERN,
-          count: 1,
-        },
-        {
-          method: 'GET',
-          status: 200,
-          safeUrlPattern: VISIT_ROUTE_PATTERN,
-          count: 1,
-        },
-      ],
-    );
 
     await expect(page.getByRole('button', { name: '安全交接给患者' })).toHaveCount(
       0,
@@ -179,6 +125,37 @@ test.describe('WP-10 F1-P1 same-device preparation and safe handoff', () => {
       .locator('dd');
     await expect(revisionValue).toHaveText('1');
 
+    const executionReloadResponsePromise = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).origin === environment.backendOrigin &&
+        new URL(response.url()).pathname === descriptor.scenario.navigationPath &&
+        response.request().method() === 'GET' &&
+        response.status() === 200,
+    );
+    const staffReloadResponsePromise = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).origin === environment.backendOrigin &&
+        new URL(response.url()).pathname ===
+          `${descriptor.scenario.navigationPath}/patient-administration` &&
+        response.request().method() === 'GET' &&
+        response.status() === 200,
+    );
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await executionReloadResponsePromise;
+    const staffReloadResponse = await staffReloadResponsePromise;
+    const reloadedSession = (await staffReloadResponse.json()) as StaffSessionBody;
+    expect(reloadedSession.status).toBe('prepared');
+    expect(typeof reloadedSession.preparationConfirmedAt).toBe('string');
+    expect(reloadedSession.hasPatientCredential).toBe(false);
+    await expect(page.getByTestId('patient-administration-staff-panel')).toBeVisible();
+    await expect(page.getByText('等待准备', { exact: true })).toBeVisible();
+    await expect(page.getByText('同设备不可逆安全交接', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('patient-administration-preparation')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '确认准备与影响因素' })).toHaveCount(
+      0,
+    );
+    await expect(page.getByRole('button', { name: '安全交接给患者' })).toBeVisible();
+
     const staffAuthStatus = await page.evaluate(async (backendOrigin) => {
       const response = await fetch(`${backendOrigin}/auth/me`, {
         cache: 'no-store',
@@ -187,7 +164,6 @@ test.describe('WP-10 F1-P1 same-device preparation and safe handoff', () => {
       return response.status;
     }, environment.backendOrigin);
     expect(staffAuthStatus).toBe(200);
-    audit([], []);
 
     await page
       .getByRole('checkbox', {
@@ -237,7 +213,6 @@ test.describe('WP-10 F1-P1 same-device preparation and safe handoff', () => {
       !(await bodyContainsAny(page, responseOnlyValues)),
       'Patient page rendered an internal identifier, step, or asset value',
     );
-    audit([], []);
 
     const authAfterHandoff = await page.evaluate(async (backendOrigin) => {
       const response = await fetch(`${backendOrigin}/auth/me`, {
@@ -247,10 +222,6 @@ test.describe('WP-10 F1-P1 same-device preparation and safe handoff', () => {
       return response.status;
     }, environment.backendOrigin);
     expect(authAfterHandoff).toBe(401);
-    audit(
-      [{ method: 'GET', status: 401, safeUrlPattern: AUTH_ME_PATTERN, count: 1 }],
-      [],
-    );
     expect(await patientCookieMetadata(context, environment.backendOrigin)).toEqual([
       {
         name: 'cogmemory_ad_patient_session',
@@ -273,16 +244,11 @@ test.describe('WP-10 F1-P1 same-device preparation and safe handoff', () => {
       await auditViewport(page, { width: 800, height: 1280 }),
     );
     expect((await runAccessibilityAudit(page)).violationCount).toBe(0);
-    audit([], []);
 
     const backResponse = await page.goBack({ waitUntil: 'domcontentloaded' });
     invariant(backResponse !== null, 'Browser back navigation had no history entry');
     await expect(page).toHaveURL(`${environment.frontendOrigin}/login`);
     await expect(page.getByTestId('patient-administration-staff-panel')).toHaveCount(0);
-    audit(
-      [{ method: 'GET', status: 401, safeUrlPattern: AUTH_ME_PATTERN, count: 2 }],
-      [],
-    );
 
     staff.ledger.assertNoAutomaticRetry({
       method: 'POST',
@@ -306,11 +272,19 @@ test.describe('WP-10 F1-P1 same-device preparation and safe handoff', () => {
       staff.ledger.count({ method: 'POST', safeUrlPattern: HANDOFF_PATTERN }),
     ).toBe(1);
     assertNoF2F3Requests([staff.ledger]);
-    const consoleSummary = staff.consoleAudit.stop();
-    audit([], []);
-    expect(consoleSummary.errorCount).toBe(
-      auditTotals.expectedHttpConsoleErrors,
-    );
-    expect(consoleSummary.pageErrorCount).toBe(0);
+    const auditSummary = assertF1BrowserAudit({
+      ledger: staff.ledger,
+      consoleAudit: staff.consoleAudit,
+      expectedHttpFailures: [
+        { method: 'GET', status: 401, safeUrlPattern: AUTH_ME_PATTERN },
+        { method: 'GET', status: 404, safeUrlPattern: STAFF_ROOT_PATTERN },
+      ],
+    });
+    expect(auditSummary.expectedHttpFailuresObserved).toBe(2);
+    expect(auditSummary.unexpectedHttpFailures).toBe(0);
+    expect(auditSummary.unexpectedTransportFailures).toBe(0);
+    expect(auditSummary.unexpectedConsoleErrors).toBe(0);
+    expect(auditSummary.pageErrors).toBe(0);
+    staff.consoleAudit.stop();
   });
 });

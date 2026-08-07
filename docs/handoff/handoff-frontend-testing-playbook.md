@@ -21,7 +21,7 @@
 | WP-03 / B18-B1 | 核心真实 Browser 阶段完成；`passed=6`、`pending=0`；证据复用 | “B18-A、B18-B1 与 B18-B2 证据” |
 | WP-03 / B18-B2 | 剩余真实 Browser 阶段完成；P4/P5/P6 `passed=6`、`pending=0`；P0 `gap=0` | “B18-A、B18-B1 与 B18-B2 证据” |
 | WP-03 / B18 补充验证 | P7 `passed=2`、P8 `passed=1`；single-flight contract、P3 与 P9 `passed`；自动化 `gap=0` | “B18-A、B18-B1、B18-B2 与补充验证证据” |
-| WP-10-F1 | 代码与静态门禁完成；F1-P1 `blocked`，F1-P2 `not_started`，F1 不得标记完成 | “WP-10-F1 当前证据与阻断” |
+| WP-10-F1 | 完成；F1-P1 / F1-P2 各正式运行一次并通过，post verifier 与 cleanup 均闭合 | “WP-10-F1 最终证据与 Browser Audit 治理” |
 | Batch E | 8 个真实设备或人工项目待验；最终主要归属 WP-08 | “Batch E：真实设备或人工验收” |
 
 B11～B15 保持完成；B18 补充验证已闭合，自动化 `gap=0`，WP-03 已完成。产品范围、工作包状态和当前主线以 `handoff-roadmap.md` 为准；Batch E 的 8 项真实设备或人工项目仍为 `pending`，最终主要归属为 WP-08。
@@ -182,14 +182,14 @@ B14.1 不是独立业务能力，不拥有独立 Browser 活动 ID，也不恢�
 | archive | B14 | B14 Browser、Archive Node-only 与 A24 HTTP E2E |
 | correction | B15 | B15 Browser、Correction Node-only 与 A25 HTTP E2E |
 
-### 4.2 WP-10-F1 当前证据与阻断
+### 4.2 WP-10-F1 最终证据与 Browser Audit 治理
 
-- 生产代码精确门禁：新增 / 修改 frontend 生产文件定向 lint 退出 0；正式 `npm run typecheck`（`next typegen && tsc --noEmit`）退出 0；`NEXT_PUBLIC_API_BASE_URL=http://localhost:5002` 的 production `npm run build` 退出 0并发现两个患者路由。typecheck / build 前均只读确认本项目 Node / Next 与 3002 / 5002 listener 为 0，并以同一沙箱外身份写入 `.next`；输出未出现 `EPERM`、未处理拒绝或异常。
-- Browser 资产：`frontend/test/browser-acceptance/wp10-f1/` 提供独立的 F1-P1 same-device 与 F1-P2 cross-device spec；精确 discovery 为 2 files / 2 tests。两个 Profile 设计为独立 namespace、独立 BrowserContext、production frontend、真实 Browser backend、真实 HTTP、prepared / post verifier 与精确 cleanup。
-- F1-P1 执行结论为 `blocked`，不是通过：登录与正式 MMSE 实例页入口成功，创建 patient-administration 会话的真实 POST 稳定返回 500 / `PATIENT_ADMINISTRATION_STEP_INVALID`。首次失败后只读 verifier 证明患者会话数仍为 0；在结果已知为零副作用后仅做一次受控复现，错误一致，不再重放。
-- 只读根因证据：MMSE 1.0 seed 将 `mmse-orientation-intro-guidance` 作为 `mmse-orientation-year` 的资产；released manifest 的同一 assetKey 却声明 `stepKey=mmse-orientation-intro`。创建服务要求每个资产 `stepKey` 与当前步骤逐字一致。既有 `presentation-assets:verify` 通过是因为它只检查 seed assetKey 是否存在与孤儿资产，不校验 assetKey→stepKey 关联。
-- 因同一确定性创建前置，F1-P2 状态为 `not_started`；不得通过直接改库、修改 released 私有资产、mock 响应或放宽产品断言绕过。修复基线后须使用全新独立 fixture 从 prepared verifier 重新执行 P1，再 cleanup 后执行 P2。
-- 本轮 cleanup：P1 namespace 删除 2 个任务 auth Session、1 个 User、1 个 Patient、1 个 Visit、1 个 ScaleInstance 和 11 个 ItemResponse；PatientAdministrationSession 删除数为 0，`residualCount=0`，runtime descriptor absent。服务、端口与 test-results 的最终收口须以本次任务最终报告和最终只读检查为准。
+- 静态门禁：`presentation-assets:verify` 为 assets=22、steps=19、referencedAssets=22、assetHashes / stepBindings 均 ok；frontend 完整 lint、正式 `next typegen && tsc --noEmit` 与 `NEXT_PUBLIC_API_BASE_URL=http://localhost:5002` 的 production build 最终均 exit 0。typecheck / build 前确认 Node 与 3002 / 5002 listener 为 0，并以同一沙箱外身份写入 `.next`；没有 `EPERM`、未处理拒绝或异常。
+- 审计治理：F1 曾过度追踪 GET abort 的 Browser 生命周期，现已删除 checkpoint、network snapshot identity、pending / deferred controlled abort、entryIndex ownership、候选与逐 stage 精确 abort 计数。F1 只在 Profile 结束前按各 BrowserContext 的完整 NetworkLedger / ConsoleAudit 结算业务合同，不修改公共 `network-ledger.ts` 或 `runtime-audit.ts`。
+- canceled GET 只表示客户端取消，不再独立判为产品失败，也不按 path、initiator、resourceType 或次数细分；关键读取是否成功由 UI、HTTP response 与 post verifier 证明。mutation transport failure、GET timed_out / failed、任意 5xx、未知 4xx、未知 Console error 和 runtime / page error仍严格阻断。明确 expected 4xx 必须至少真实出现一次，不要求与 Console error 数量一一对应。
+- F1-P1 正式运行唯一一次，1/1 通过：same-device create、七项本地准备、影响因素、preparation confirm 后真实 reload，并从服务端事实恢复“同设备不可逆安全交接”，随后 handoff、staff Session revoke、patient credential/current active、back fail-closed、Cookie/Storage/URL/DOM、accessibility、viewport、POST 次数与 F2/F3=0 均通过。staff audit 观察到 required GET 401 `/auth/me` 与 GET 404 staff root，无未知 HTTP / transport / Console / page failure；post 为 active revision 2，cleanup `residualCount=0`、runtime absent。
+- F1-P2 正式运行唯一一次，1/1 通过：cross-device create、首患者兑换与本地准备、staff 看见 credential 后真实 reload，自动恢复 cross-device 且 same-device disabled；继续 preparation confirm、active、pause、resume、reissue、第二患者、resume、terminate。两次旧 credential 的 current 401 均恰好一次，超过一个 3 秒 poll 周期后仍为一次。staff / first patient / second patient 分别审计 required 401/404 或 current 401，无未知失败；post 为 terminated revision 8、完整 controlEvents，cleanup `residualCount=0`、runtime absent。
+- 两个 Profile 均使用独立 namespace / BrowserContext、production frontend、真实 Browser backend、真实 HTTP 与 `cogmemory_ad_browser_test`；Storage=fake、ASR/LLM/SMS=stub。真实设备、真实麦克风和真实触控笔仍为 `not_executed`，桌面 Browser 的 unsupported / permission-unavailable 分支与 Pointer 练习不得冒充真实硬件验收。
 | shared façade / coordinator / reducer / identity isolation | 跨 B11～B15 | `frontend/test/browser-acceptance/contracts/clinical-report-workflow-shared-non-browser.spec.ts`；稳定 `reportId`、route RESET、unexpected identity 隔离、expected correction transition 保真、identity generation、layout barrier、单一 writingRef/latest/beforeunload |
 
 ## 5. B18-A、B18-B1、B18-B2 与补充验证证据

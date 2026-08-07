@@ -3,10 +3,7 @@ import type { Page } from '@playwright/test';
 import { test, expect } from '../support/acceptance-test';
 import { runAccessibilityAudit } from '../support/accessibility-audit';
 import type { NetworkLedger } from '../support/network-ledger';
-import {
-  auditRuntimeStorage,
-  type ConsoleAudit,
-} from '../support/runtime-audit';
+import { auditRuntimeStorage } from '../support/runtime-audit';
 import {
   assertNoGlobalHorizontalOverflow,
   auditViewport,
@@ -16,14 +13,12 @@ import {
   CURRENT_PATTERN,
   ENTER_PATTERN,
   PAUSE_PATTERN,
-  PATIENT_ROUTE_PATTERN,
   PREPARATION_PATTERN,
   REISSUE_PATTERN,
   RESUME_PATTERN,
   STAFF_ROOT_PATTERN,
   TERMINATE_PATTERN,
-  VISIT_ROUTE_PATTERN,
-  assertF1AuditDelta,
+  assertF1BrowserAudit,
   assertNoF2F3Requests,
   bodyContainsAny,
   completeLocalPreparation,
@@ -34,9 +29,6 @@ import {
   readDescriptor,
   requireSecret,
   resolveEnvironment,
-  type F1AllowedControlledAbort,
-  type F1AuditCheckpoint,
-  type F1ExpectedHttpFailure,
 } from './support/wp10-f1-support';
 
 const environment = resolveEnvironment();
@@ -49,40 +41,6 @@ function waitForPost(page: Page, suffix: string) {
   );
 }
 
-function createAuditTracker(input: {
-  consoleAudit: ConsoleAudit;
-  ledger: NetworkLedger;
-  auditStartCheckpoint: F1AuditCheckpoint;
-}) {
-  let checkpoint = input.auditStartCheckpoint;
-  let expectedHttpConsoleErrors = 0;
-
-  const check = (
-    expectedHttpFailures: F1ExpectedHttpFailure[],
-    allowedControlledAborts: F1AllowedControlledAbort[],
-  ): void => {
-    const result = assertF1AuditDelta({
-      consoleAudit: input.consoleAudit,
-      ledger: input.ledger,
-      checkpoint,
-      expectedHttpFailures,
-      allowedControlledAborts,
-    });
-    checkpoint = result.checkpoint;
-    expectedHttpConsoleErrors += result.expectedHttpConsoleErrors;
-  };
-
-  return {
-    check,
-    stop(): void {
-      const summary = input.consoleAudit.stop();
-      check([], []);
-      expect(summary.errorCount).toBe(expectedHttpConsoleErrors);
-      expect(summary.pageErrorCount).toBe(0);
-    },
-  };
-}
-
 function countCurrentUnauthorized(ledger: NetworkLedger): number {
   return ledger.entries().filter(
     ({ method, status, safeUrlPattern }) =>
@@ -91,6 +49,12 @@ function countCurrentUnauthorized(ledger: NetworkLedger): number {
       safeUrlPattern === CURRENT_PATTERN,
   ).length;
 }
+
+type StaffSessionBody = {
+  status?: unknown;
+  preparationConfirmedAt?: unknown;
+  hasPatientCredential?: unknown;
+};
 
 async function enterOnPatientDevice(
   page: Page,
@@ -125,30 +89,7 @@ test.describe('WP-10 F1-P2 cross-device entry and staff control', () => {
       viewport: { width: 1280, height: 800 },
     });
     const staffPage = staff.roleContext.page;
-    const staffAudit = createAuditTracker(staff);
-    staffAudit.check(
-      [{ method: 'GET', status: 401, safeUrlPattern: AUTH_ME_PATTERN, count: 1 }],
-      [],
-    );
     await openExecution({ page: staffPage, descriptor, environment });
-    staffAudit.check(
-      [
-        {
-          method: 'GET',
-          status: 404,
-          safeUrlPattern: STAFF_ROOT_PATTERN,
-          count: 1,
-        },
-      ],
-      [
-        {
-          method: 'GET',
-          status: 404,
-          safeUrlPattern: STAFF_ROOT_PATTERN,
-          count: 1,
-        },
-      ],
-    );
 
     const firstPatientContext = await browser.newContext({
       viewport: { width: 390, height: 844 },
@@ -166,8 +107,6 @@ test.describe('WP-10 F1-P2 cross-device entry and staff control', () => {
       context: secondPatientContext,
       page: secondPatientPage,
     });
-    const firstPatientAudit = createAuditTracker(firstPatient);
-    const secondPatientAudit = createAuditTracker(secondPatient);
 
     try {
       await staffPage.getByRole('radio', { name: /跨设备/ }).check();
@@ -178,23 +117,6 @@ test.describe('WP-10 F1-P2 cross-device entry and staff control', () => {
       await expect(codeLocator).toBeVisible();
       const firstCode = (await codeLocator.innerText()).replace(/\s/g, '');
       invariant(/^\d{6}$/.test(firstCode), 'Initial entry code shape is invalid');
-      staffAudit.check(
-        [],
-        [
-          {
-            method: 'GET',
-            status: 200,
-            safeUrlPattern: PATIENT_ROUTE_PATTERN,
-            count: 1,
-          },
-          {
-            method: 'GET',
-            status: 200,
-            safeUrlPattern: VISIT_ROUTE_PATTERN,
-            count: 1,
-          },
-        ],
-      );
       await expect(
         staffPage.getByRole('button', { name: '确认准备与影响因素' }),
       ).toBeDisabled();
@@ -233,13 +155,54 @@ test.describe('WP-10 F1-P2 cross-device entry and staff control', () => {
       expect(
         firstPatient.ledger.entries().filter(({ method }) => method !== 'GET').length,
       ).toBe(1);
-      firstPatientAudit.check([], []);
 
       await staffPage.getByRole('button', { name: '手动刷新' }).click();
       await expect(staffPage.getByText('患者设备已进入', { exact: true })).toBeVisible({
         timeout: 10_000,
       });
       await expect(codeLocator).toHaveCount(0);
+
+      const executionReloadResponsePromise = staffPage.waitForResponse(
+        (response) =>
+          new URL(response.url()).origin === environment.backendOrigin &&
+          new URL(response.url()).pathname === descriptor.scenario.navigationPath &&
+          response.request().method() === 'GET' &&
+          response.status() === 200,
+      );
+      const staffReloadResponsePromise = staffPage.waitForResponse(
+        (response) =>
+          new URL(response.url()).origin === environment.backendOrigin &&
+          new URL(response.url()).pathname ===
+            `${descriptor.scenario.navigationPath}/patient-administration` &&
+          response.request().method() === 'GET' &&
+          response.status() === 200,
+      );
+      await staffPage.reload({ waitUntil: 'domcontentloaded' });
+      await executionReloadResponsePromise;
+      const staffReloadResponse = await staffReloadResponsePromise;
+      const reloadedSession = (await staffReloadResponse.json()) as StaffSessionBody;
+      expect(reloadedSession.status).toBe('prepared');
+      expect(reloadedSession.preparationConfirmedAt).toBeNull();
+      expect(reloadedSession.hasPatientCredential).toBe(true);
+      await expect(
+        staffPage.getByTestId('patient-administration-staff-panel'),
+      ).toBeVisible();
+      await expect(staffPage.getByText('患者设备已进入', { exact: true })).toBeVisible();
+      await expect(
+        staffPage.getByRole('button', { name: '同一设备准备' }),
+      ).toBeDisabled();
+      await expect(
+        staffPage.getByRole('button', { name: '跨设备准备' }),
+      ).toBeEnabled();
+      await expect(
+        staffPage.getByRole('checkbox', {
+          name: '患者已当面告知本机准备与不计分练习完成',
+        }),
+      ).toBeVisible();
+      await expect(
+        staffPage.getByRole('button', { name: '确认准备与影响因素' }),
+      ).toBeDisabled();
+
       await staffPage
         .getByRole('checkbox', { name: '环境干扰因素' })
         .check();
@@ -261,8 +224,6 @@ test.describe('WP-10 F1-P2 cross-device entry and staff control', () => {
       await expect(
         firstPatientPage.getByRole('heading', { name: '已进入患者施测模式' }),
       ).toBeVisible({ timeout: 10_000 });
-      staffAudit.check([], []);
-      firstPatientAudit.check([], []);
 
       await staffPage
         .getByLabel('暂停 / 恢复原因（可选，最多 500 字）')
@@ -273,8 +234,6 @@ test.describe('WP-10 F1-P2 cross-device entry and staff control', () => {
       await expect(
         firstPatientPage.getByRole('heading', { name: '施测已暂停，请稍候' }),
       ).toBeVisible({ timeout: 10_000 });
-      staffAudit.check([], []);
-      firstPatientAudit.check([], []);
 
       const firstResumeResponsePromise = waitForPost(staffPage, '/resume');
       await staffPage.getByRole('button', { name: '恢复施测' }).click();
@@ -282,8 +241,6 @@ test.describe('WP-10 F1-P2 cross-device entry and staff control', () => {
       await expect(
         firstPatientPage.getByRole('heading', { name: '已进入患者施测模式' }),
       ).toBeVisible({ timeout: 10_000 });
-      staffAudit.check([], []);
-      firstPatientAudit.check([], []);
 
       await staffPage
         .getByLabel('重新签发原因（必填，最多 500 字）')
@@ -308,21 +265,8 @@ test.describe('WP-10 F1-P2 cross-device entry and staff control', () => {
           name: '当前患者施测凭证已失效',
         }),
       ).toBeVisible({ timeout: 10_000 });
-      staffAudit.check([], []);
-      firstPatientAudit.check(
-        [
-          {
-            method: 'GET',
-            status: 401,
-            safeUrlPattern: CURRENT_PATTERN,
-            count: 1,
-          },
-        ],
-        [],
-      );
       expect(countCurrentUnauthorized(firstPatient.ledger)).toBe(1);
       await firstPatientPage.waitForTimeout(3_500);
-      firstPatientAudit.check([], []);
       expect(countCurrentUnauthorized(firstPatient.ledger)).toBe(1);
 
       await secondPatientPage.goto(
@@ -335,8 +279,6 @@ test.describe('WP-10 F1-P2 cross-device entry and staff control', () => {
       ).toBeVisible();
       await staffPage.getByRole('button', { name: '手动刷新' }).click();
       await expect(secondCodeLocator).toHaveCount(0);
-      secondPatientAudit.check([], []);
-      staffAudit.check([], []);
 
       const secondResumeResponsePromise = waitForPost(staffPage, '/resume');
       await staffPage.getByRole('button', { name: '恢复施测' }).click();
@@ -344,8 +286,6 @@ test.describe('WP-10 F1-P2 cross-device entry and staff control', () => {
       await expect(
         secondPatientPage.getByRole('heading', { name: '已进入患者施测模式' }),
       ).toBeVisible({ timeout: 10_000 });
-      staffAudit.check([], []);
-      secondPatientAudit.check([], []);
       assertNoGlobalHorizontalOverflow(
         await auditViewport(secondPatientPage, { width: 800, height: 1280 }),
       );
@@ -373,23 +313,9 @@ test.describe('WP-10 F1-P2 cross-device entry and staff control', () => {
           name: '交还设备并由医护人员重新登录',
         }),
       ).toBeVisible();
-      staffAudit.check([], []);
-      secondPatientAudit.check(
-        [
-          {
-            method: 'GET',
-            status: 401,
-            safeUrlPattern: CURRENT_PATTERN,
-            count: 1,
-          },
-        ],
-        [],
-      );
       expect(countCurrentUnauthorized(secondPatient.ledger)).toBe(1);
       await secondPatientPage.waitForTimeout(3_500);
-      secondPatientAudit.check([], []);
       expect(countCurrentUnauthorized(secondPatient.ledger)).toBe(1);
-      firstPatientAudit.check([], []);
 
       const firstStorage = await auditRuntimeStorage(firstPatientPage);
       const secondStorage = await auditRuntimeStorage(secondPatientPage);
@@ -472,9 +398,44 @@ test.describe('WP-10 F1-P2 cross-device entry and staff control', () => {
         firstPatient.ledger,
         secondPatient.ledger,
       ]);
-      staffAudit.stop();
-      firstPatientAudit.stop();
-      secondPatientAudit.stop();
+      const staffAuditSummary = assertF1BrowserAudit({
+        ledger: staff.ledger,
+        consoleAudit: staff.consoleAudit,
+        expectedHttpFailures: [
+          { method: 'GET', status: 401, safeUrlPattern: AUTH_ME_PATTERN },
+          { method: 'GET', status: 404, safeUrlPattern: STAFF_ROOT_PATTERN },
+        ],
+      });
+      const firstPatientAuditSummary = assertF1BrowserAudit({
+        ledger: firstPatient.ledger,
+        consoleAudit: firstPatient.consoleAudit,
+        expectedHttpFailures: [
+          { method: 'GET', status: 401, safeUrlPattern: CURRENT_PATTERN },
+        ],
+      });
+      const secondPatientAuditSummary = assertF1BrowserAudit({
+        ledger: secondPatient.ledger,
+        consoleAudit: secondPatient.consoleAudit,
+        expectedHttpFailures: [
+          { method: 'GET', status: 401, safeUrlPattern: CURRENT_PATTERN },
+        ],
+      });
+      expect(staffAuditSummary.expectedHttpFailuresObserved).toBe(2);
+      expect(firstPatientAuditSummary.expectedHttpFailuresObserved).toBe(1);
+      expect(secondPatientAuditSummary.expectedHttpFailuresObserved).toBe(1);
+      for (const summary of [
+        staffAuditSummary,
+        firstPatientAuditSummary,
+        secondPatientAuditSummary,
+      ]) {
+        expect(summary.unexpectedHttpFailures).toBe(0);
+        expect(summary.unexpectedTransportFailures).toBe(0);
+        expect(summary.unexpectedConsoleErrors).toBe(0);
+        expect(summary.pageErrors).toBe(0);
+      }
+      staff.consoleAudit.stop();
+      firstPatient.consoleAudit.stop();
+      secondPatient.consoleAudit.stop();
     } finally {
       await Promise.all([firstPatientContext.close(), secondPatientContext.close()]);
     }

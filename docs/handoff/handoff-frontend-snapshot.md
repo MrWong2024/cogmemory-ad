@@ -81,9 +81,10 @@
 ### 4.5 WP-10-F1 patient administration
 
 - `ScaleInstanceExecutionPage` 只在 MMSE 1.0、`supervised_patient_input` 实例上组合 `PatientAdministrationStaffPanel`；既有作答、媒体、提交、评分和认知域职责不迁移。
-- 医护面板以 5 秒 GET 轮询最新会话，使用 AbortController、single-flight 和 revision 防旧响应覆盖；准备确认、交接、暂停、恢复、重签与终止均为显式写入，结果不确定时不自动重放。
-- `PatientAdministrationPreparation` 的七项确认、WebAudio 测试音、最长 10 秒的本地 MediaRecorder 回放、Canvas Pointer 练习和八类影响因素都只服务准备阶段；Blob 与 object URL 在 React 内存中形成并精确撤销，练习不写正式作答或证据。
+- 医护面板以 5 秒 GET 轮询最新会话，使用 AbortController、single-flight 和同一 Session ID 内的 revision 屏障防旧响应覆盖；不同 Session 的权威响应可替换旧终态。服务端已唯一确定时，刷新后从 prepared / preparation / credential 事实恢复 same-device 或 cross-device，本地 flowChoice 仍不写后端或 Storage；已有患者 credential 时禁止切回 same-device。
+- `PatientAdministrationPreparation` 的七项确认、WebAudio 测试音、最长 10 秒的本地 MediaRecorder 回放、Canvas Pointer 练习和八类影响因素都只服务准备阶段；Blob 与 object URL 在 React 内存中形成并精确撤销。麦克风异步 run 在 reset、重启或卸载后失效，迟到的 MediaStream 会立即停止且不创建 recorder 或写状态；练习不写正式作答或证据。
 - `/patient-administration/**` 使用独立 `PatientAdministrationShell`，不挂载 staff shell、`useAuth()` 或 `/auth/me`。进入码仅在 React / 表单即时内存中存在，不写 URL、storage 或日志；患者 current GET 以 3 秒间隔串行轮询。
+- `PatientAdministrationPage` 的读取 cleanup 对称 abort 并释放 controller / in-flight 引用，不在 cleanup 中写 React 状态或发起新请求。
 - F1 活动页只显示安全等待、暂停、终止 / 过期和完成状态，不读取或呈现 currentStep 的正式文字、图片、音频、证据或 F2/F3 操作。
 
 ## 5. 当前 API 与状态管理
@@ -145,7 +146,7 @@ A21–A25 写请求从当前服务端 `report.updatedAt` 取得 `expectedUpdated
 
 ## 7. 当前实现结论与验证入口
 
-- WP-10-F1 的前端代码、定向 lint、正式 typecheck、固定 API Base production build 和 2 个 Browser spec discovery 已完成；但真实 F1-P1 在创建会话处被既有 MMSE seed / released manifest `stepKey` 矛盾稳定阻断，P1/P2 均未闭环，不能标记 F1 完成。完整证据和 cleanup 见 frontend / backend testing playbook。
+- WP-10-F1 已完成：frontend lint、正式 typecheck、固定 API Base production build 与 presentation assets 门禁通过；F1-P1 / F1-P2 各正式运行一次并通过，分别覆盖同设备 preparation 后刷新恢复与跨设备 credential 后刷新恢复，post verifier 与独立 cleanup 均闭合。F2 正式题目呈现与作答尚未实现；完整证据见 frontend / backend testing playbook。
 - B16 replacement V2+ 生命周期、B17 history/versions/detail/trends 与 B18 自动保存、single-flight 网络核对、切组、媒体 generation、实时计时及失败草稿保全均已完成；WP-03 已完成。Batch E 的 8 项历史真实设备或人工候选仍为 `pending`，当前主要归属为 WP-08；WP-08 启动时仍须按最终患者施测合同重新治理适用候选，不能把机械关闭这 8 项等同于 WP-08 完成。
 - Playwright、Chromium 与 Axe 通用 Browser acceptance 基础设施已完成。B10-89 后续已由 B10-C2 定向通过；B10 `generation-workflow` 48 pass、`public-surface-security` 47 pass，共 95 项完成，Batch C / B7–B10 已完成。Batch D 的 B11～B15 均已完成；B14.1 已治理为累计证据索引而非独立 Browser 批次，具体状态以 `handoff-frontend-testing-playbook.md` 为准。
 - 当前静态门禁、Batch 状态、Browser/automated 数量、权限/错误、响应式、键盘、Network、Runtime Storage、evidence commit、verify 与 cleanup 统一见 `handoff-frontend-testing-playbook.md`；本 snapshot 不维护测试终态。

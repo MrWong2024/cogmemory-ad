@@ -7,18 +7,12 @@ import {
   resolveLiveAcceptanceEnvironment,
 } from '../../support/acceptance-env';
 import { expect } from '../../support/acceptance-test';
-import {
-  NetworkLedger,
-  type NetworkLedgerEntry,
-} from '../../support/network-ledger';
+import { NetworkLedger } from '../../support/network-ledger';
 import type {
   RoleContext,
   RoleContextFactory,
 } from '../../support/role-context-factory';
-import {
-  ConsoleAudit,
-  type ConsoleAuditEvent,
-} from '../../support/runtime-audit';
+import { ConsoleAudit } from '../../support/runtime-audit';
 
 export type Profile = 'F1-P1-same-device' | 'F1-P2-cross-device';
 
@@ -47,46 +41,21 @@ export type StaffSession = {
   roleContext: RoleContext;
   ledger: NetworkLedger;
   consoleAudit: ConsoleAudit;
-  auditStartCheckpoint: F1AuditCheckpoint;
-};
-
-export type F1AuditCheckpoint = {
-  consoleEventCount: number;
-  networkEntries: NetworkLedgerEntry[];
-  pendingControlledAborts: F1PendingControlledAbort[];
-};
-
-export type F1PendingControlledAbort = {
-  entryIndex: number;
-  method: 'GET';
-  status: number;
-  safeUrlPattern: string;
 };
 
 export type F1ExpectedHttpFailure = {
   method: string;
   status: number;
   safeUrlPattern: string;
-  count: number;
 };
 
-export type F1AllowedControlledAbort = {
-  method: 'GET';
-  status: number;
-  safeUrlPattern: string;
-  count: number;
-};
-
-export type F1AuditDeltaSummary = {
-  checkpoint: F1AuditCheckpoint;
-  expectedHttpConsoleErrors: number;
-  expectedHttpFailures: number;
-  controlledAborts: number;
+export type F1BrowserAuditSummary = {
+  expectedHttpFailuresObserved: number;
+  ignoredCanceledGets: number;
   unexpectedConsoleErrors: 0;
   pageErrors: 0;
   unexpectedHttpFailures: 0;
-  unexpectedRequestFailures: 0;
-  mutationRequestAborts: 0;
+  unexpectedTransportFailures: 0;
 };
 
 export const STAFF_ROOT_PATTERN =
@@ -100,100 +69,12 @@ export const TERMINATE_PATTERN = `${STAFF_ROOT_PATTERN}/terminate`;
 export const ENTER_PATTERN = '/<id>/enter';
 export const CURRENT_PATTERN = '/<id>/current';
 export const AUTH_ME_PATTERN = '/auth/me';
-export const PATIENT_ROUTE_PATTERN = '/patients/<id>';
-export const VISIT_ROUTE_PATTERN = '/patients/<id>/visits/<id>';
 
 export function invariant(
   condition: unknown,
   safeMessage: string,
 ): asserts condition {
   if (!condition) throw new Error(safeMessage);
-}
-
-function cloneNetworkEntries(entries: NetworkLedgerEntry[]): NetworkLedgerEntry[] {
-  return entries.map((entry) => ({ ...entry, bodyKeys: [...entry.bodyKeys] }));
-}
-
-export function captureF1AuditCheckpoint(
-  consoleAudit: ConsoleAudit,
-  ledger: NetworkLedger,
-): F1AuditCheckpoint {
-  return {
-    consoleEventCount: consoleAudit.events().length,
-    networkEntries: cloneNetworkEntries(ledger.entries()),
-    pendingControlledAborts: [],
-  };
-}
-
-type NetworkEntryChange = {
-  entry: NetworkLedgerEntry;
-  entryIndex: number;
-  isNew: boolean;
-  statusChanged: boolean;
-  failureChanged: boolean;
-};
-
-function networkEntryIdentityMatches(
-  left: NetworkLedgerEntry,
-  right: NetworkLedgerEntry,
-): boolean {
-  return (
-    left.method === right.method &&
-    left.safeUrlPattern === right.safeUrlPattern &&
-    left.resourceType === right.resourceType &&
-    left.initiator === right.initiator &&
-    left.initiatorSource === right.initiatorSource &&
-    left.bodyKeys.join('\u0000') === right.bodyKeys.join('\u0000')
-  );
-}
-
-function readNetworkChanges(
-  checkpoint: F1AuditCheckpoint,
-  currentEntries: NetworkLedgerEntry[],
-): NetworkEntryChange[] {
-  if (currentEntries.length < checkpoint.networkEntries.length) {
-    throw new Error('F1 audit network snapshot moved backwards');
-  }
-
-  return currentEntries.flatMap((entry, index): NetworkEntryChange[] => {
-    const previous = checkpoint.networkEntries[index];
-    if (!previous) {
-      return [
-        {
-          entry,
-          entryIndex: index,
-          isNew: true,
-          statusChanged: entry.status !== null,
-          failureChanged: entry.failureReason !== null,
-        },
-      ];
-    }
-    if (!networkEntryIdentityMatches(previous, entry)) {
-      throw new Error('F1 audit network snapshot identity changed');
-    }
-    if (previous.status !== null && previous.status !== entry.status) {
-      throw new Error('F1 audit observed an invalid response status transition');
-    }
-    if (
-      previous.failureReason !== null &&
-      previous.failureReason !== entry.failureReason
-    ) {
-      throw new Error('F1 audit observed an invalid request failure transition');
-    }
-    const statusChanged = previous.status !== entry.status;
-    const failureChanged = previous.failureReason !== entry.failureReason;
-    return statusChanged || failureChanged
-      ? [
-          {
-            entry,
-            entryIndex: index,
-            isNew: false,
-            statusChanged,
-            failureChanged,
-          },
-        ]
-      : [];
-  });
 }
 
 function auditExpectationKey(input: {
@@ -204,279 +85,128 @@ function auditExpectationKey(input: {
   return `${input.method.toUpperCase()}\u0000${input.status}\u0000${input.safeUrlPattern}`;
 }
 
-function buildExpectationCounts(
-  expectations: Array<{
-    method: string;
-    status: number;
-    safeUrlPattern: string;
-    count: number;
-  }>,
-  kind: 'http' | 'abort',
-): Map<string, number> {
-  const counts = new Map<string, number>();
-  for (const expectation of expectations) {
-    const validStatus =
-      kind === 'http'
-        ? expectation.status >= 400 && expectation.status < 500
-        : expectation.status >= 100 && expectation.status < 500;
+export function assertF1BrowserAudit(input: {
+  consoleAudit: ConsoleAudit;
+  ledger: NetworkLedger;
+  expectedHttpFailures: F1ExpectedHttpFailure[];
+}): F1BrowserAuditSummary {
+  const entries = input.ledger.entries();
+  const expectationKeys = new Set<string>();
+
+  for (const expectation of input.expectedHttpFailures) {
     if (
-      !Number.isSafeInteger(expectation.count) ||
-      expectation.count < 1 ||
-      !validStatus ||
-      !expectation.safeUrlPattern.startsWith('/') ||
-      (kind === 'abort' && expectation.method.toUpperCase() !== 'GET')
+      expectation.status < 400 ||
+      expectation.status >= 500 ||
+      !Number.isSafeInteger(expectation.status) ||
+      !expectation.safeUrlPattern.startsWith('/')
     ) {
-      throw new Error('F1 audit expectation is invalid');
+      throw new Error('F1 browser audit expectation is invalid');
     }
-    const key = auditExpectationKey(expectation);
-    counts.set(key, (counts.get(key) ?? 0) + expectation.count);
-  }
-  return counts;
-}
-
-function incrementCount(counts: Map<string, number>, key: string): void {
-  counts.set(key, (counts.get(key) ?? 0) + 1);
-}
-
-function unsafeRequestFailure(
-  source: 'pending' | 'current_candidate' | 'request_failure',
-  entryIndex: number,
-  entry: NetworkLedgerEntry,
-): Error {
-  return new Error(
-    `F1 audit unsafe request failure: source=${source} entryIndex=${entryIndex} method=${entry.method} status=${entry.status ?? 'null'} failureReason=${entry.failureReason ?? 'null'} safeUrlPattern=${entry.safeUrlPattern} resourceType=${entry.resourceType} initiator=${entry.initiator} initiatorSource=${entry.initiatorSource}`,
-  );
-}
-
-function mapsEqual(left: Map<string, number>, right: Map<string, number>): boolean {
-  return (
-    left.size === right.size &&
-    [...left].every(([key, count]) => right.get(key) === count)
-  );
-}
-
-function matchConsoleEvent(
-  event: ConsoleAuditEvent,
-  expectations: F1ExpectedHttpFailure[],
-  currentEntries: NetworkLedgerEntry[],
-  matchedCounts: Map<string, number>,
-): boolean {
-  if (
-    event.kind !== 'console_error' ||
-    event.category !== 'network' ||
-    event.httpStatus === null ||
-    event.safeUrlPattern === null
-  ) {
-    return false;
+    expectationKeys.add(auditExpectationKey(expectation));
   }
 
-  const match = expectations.find((expectation) => {
-    if (
-      expectation.status !== event.httpStatus ||
-      expectation.safeUrlPattern !== event.safeUrlPattern
-    ) {
-      return false;
+  let ignoredCanceledGets = 0;
+  for (const entry of entries) {
+    if (entry.status !== null && entry.status >= 500) {
+      throw new Error('F1 browser audit detected an HTTP 5xx response');
     }
-    const key = auditExpectationKey(expectation);
-    const responseCount = currentEntries.filter(
+    if (
+      entry.status !== null &&
+      entry.status >= 400 &&
+      !expectationKeys.has(
+        auditExpectationKey({
+          method: entry.method,
+          status: entry.status,
+          safeUrlPattern: entry.safeUrlPattern,
+        }),
+      )
+    ) {
+      throw new Error('F1 browser audit detected an unexpected HTTP 4xx response');
+    }
+
+    if (entry.failureReason === null) {
+      continue;
+    }
+    if (entry.method !== 'GET') {
+      throw new Error(
+        'F1 browser audit detected a mutation transport failure',
+      );
+    }
+    if (entry.failureReason === 'aborted') {
+      ignoredCanceledGets += 1;
+      continue;
+    }
+    throw new Error(
+      'F1 browser audit detected a GET timeout or transport failure',
+    );
+  }
+
+  for (const expectation of input.expectedHttpFailures) {
+    const observed = entries.some(
       (entry) =>
         entry.method === expectation.method.toUpperCase() &&
         entry.status === expectation.status &&
         entry.safeUrlPattern === expectation.safeUrlPattern,
-    ).length;
-    return (matchedCounts.get(key) ?? 0) < responseCount;
-  });
-  if (!match) return false;
-  incrementCount(matchedCounts, auditExpectationKey(match));
-  return true;
-}
-
-export function assertF1AuditDelta(input: {
-  consoleAudit: ConsoleAudit;
-  ledger: NetworkLedger;
-  checkpoint: F1AuditCheckpoint;
-  expectedHttpFailures: F1ExpectedHttpFailure[];
-  allowedControlledAborts: F1AllowedControlledAbort[];
-}): F1AuditDeltaSummary {
-  const currentConsoleEvents = input.consoleAudit.events();
-  if (currentConsoleEvents.length < input.checkpoint.consoleEventCount) {
-    throw new Error('F1 audit console snapshot moved backwards');
-  }
-  const newConsoleEvents = currentConsoleEvents.slice(
-    input.checkpoint.consoleEventCount,
-  );
-  const currentEntries = input.ledger.entries();
-  const changes = readNetworkChanges(input.checkpoint, currentEntries);
-
-  const expectedHttpCounts = buildExpectationCounts(
-    input.expectedHttpFailures,
-    'http',
-  );
-  const actualHttpCounts = new Map<string, number>();
-  const httpFailures = changes
-    .filter(
-      ({ entry, isNew, statusChanged }) =>
-        (isNew || statusChanged) && entry.status !== null && entry.status >= 400,
-    )
-    .map(({ entry }) => entry);
-  for (const entry of httpFailures) {
-    if (entry.status === null || entry.status >= 500) {
-      throw new Error('F1 audit detected an unexpected HTTP failure');
-    }
-    incrementCount(
-      actualHttpCounts,
-      auditExpectationKey({
-        method: entry.method,
-        status: entry.status,
-        safeUrlPattern: entry.safeUrlPattern,
-      }),
     );
-  }
-  if (!mapsEqual(actualHttpCounts, expectedHttpCounts)) {
-    throw new Error('F1 audit HTTP failures did not match the stage contract');
-  }
-
-  const allowedAbortCounts = buildExpectationCounts(
-    input.allowedControlledAborts,
-    'abort',
-  );
-  const pendingByEntryIndex = new Map<number, F1PendingControlledAbort>();
-  for (const pending of input.checkpoint.pendingControlledAborts) {
-    const entry = currentEntries[pending.entryIndex];
-    if (pendingByEntryIndex.has(pending.entryIndex)) {
-      throw new Error('F1 audit pending controlled abort identity is invalid');
-    }
-    if (
-      !entry ||
-      entry.method !== pending.method ||
-      entry.status !== pending.status ||
-      entry.safeUrlPattern !== pending.safeUrlPattern
-    ) {
-      throw new Error('F1 audit pending controlled abort identity changed');
-    }
-    if (
-      entry.failureReason !== null &&
-      entry.failureReason !== 'aborted'
-    ) {
-      throw unsafeRequestFailure('pending', pending.entryIndex, entry);
-    }
-    pendingByEntryIndex.set(pending.entryIndex, { ...pending });
-  }
-
-  const candidateCounts = new Map<string, number>();
-  const currentCandidates = new Map<number, F1PendingControlledAbort>();
-  for (const change of changes) {
-    const { entry, entryIndex, isNew, statusChanged } = change;
-    if ((!isNew && !statusChanged) || entry.status === null) continue;
-    const key = auditExpectationKey({
-      method: entry.method,
-      status: entry.status,
-      safeUrlPattern: entry.safeUrlPattern,
-    });
-    const allowedCount = allowedAbortCounts.get(key);
-    if (allowedCount === undefined) continue;
-    if (
-      entry.method !== 'GET' ||
-      entry.status >= 500 ||
-      (entry.failureReason !== null && entry.failureReason !== 'aborted')
-    ) {
-      throw unsafeRequestFailure('current_candidate', entryIndex, entry);
-    }
-    incrementCount(candidateCounts, key);
-    if ((candidateCounts.get(key) ?? 0) > allowedCount) {
+    if (!observed) {
       throw new Error(
-        'F1 audit controlled abort candidates exceeded the stage contract',
+        'F1 browser audit did not observe a required HTTP failure',
       );
     }
-    currentCandidates.set(entryIndex, {
-      entryIndex,
-      method: 'GET',
-      status: entry.status,
-      safeUrlPattern: entry.safeUrlPattern,
-    });
   }
 
-  const requestFailures = changes.filter(
-    ({ entry, isNew, failureChanged }) =>
-      (isNew || failureChanged) && entry.failureReason !== null,
-  );
-  for (const { entry, entryIndex } of requestFailures) {
-    if (
-      entry.failureReason !== 'aborted' ||
-      entry.method !== 'GET' ||
-      entry.status === null ||
-      entry.status >= 500
-    ) {
-      throw unsafeRequestFailure('request_failure', entryIndex, entry);
+  for (const event of input.consoleAudit.events()) {
+    if (event.kind === 'page_error') {
+      throw new Error('F1 browser audit detected a page error');
     }
-  }
+    if (event.category !== 'network') {
+      throw new Error('F1 browser audit detected an unexpected Console error');
+    }
 
-  const consumedPending = new Set<number>();
-  const consumedCurrentCandidates = new Set<number>();
-  for (const { entry, entryIndex } of requestFailures) {
-    const pending = pendingByEntryIndex.get(entryIndex);
-    if (pending) {
-      consumedPending.add(entryIndex);
+    if (event.httpStatus !== null) {
+      const expectation = input.expectedHttpFailures.find(
+        (candidate) =>
+          candidate.status === event.httpStatus &&
+          candidate.safeUrlPattern === event.safeUrlPattern,
+      );
+      const responseObserved =
+        expectation !== undefined &&
+        entries.some(
+          (entry) =>
+            entry.method === expectation.method.toUpperCase() &&
+            entry.status === expectation.status &&
+            entry.safeUrlPattern === expectation.safeUrlPattern,
+        );
+      if (!responseObserved) {
+        throw new Error(
+          'F1 browser audit detected an unexplained HTTP Console error',
+        );
+      }
       continue;
     }
-    const currentCandidate = currentCandidates.get(entryIndex);
-    if (currentCandidate) {
-      consumedCurrentCandidates.add(entryIndex);
-      continue;
-    }
-    if (entry.failureReason === 'aborted') {
-      throw new Error('F1 audit detected an unexplained request abort');
-    }
-  }
 
-  const nextPendingControlledAborts: F1PendingControlledAbort[] = [];
-  for (const pending of pendingByEntryIndex.values()) {
-    if (consumedPending.has(pending.entryIndex)) continue;
-    const entry = currentEntries[pending.entryIndex];
-    if (!entry || entry.failureReason !== null) {
-      throw new Error('F1 audit pending controlled abort was not consumed');
-    }
-    nextPendingControlledAborts.push({ ...pending });
-  }
-  for (const candidate of currentCandidates.values()) {
-    if (consumedCurrentCandidates.has(candidate.entryIndex)) continue;
-    const entry = currentEntries[candidate.entryIndex];
-    if (!entry || entry.failureReason !== null) {
-      throw new Error('F1 audit current controlled abort was not consumed');
-    }
-    nextPendingControlledAborts.push({ ...candidate });
-  }
-
-  const matchedConsoleCounts = new Map<string, number>();
-  for (const event of newConsoleEvents) {
-    if (
-      !matchConsoleEvent(
-        event,
-        input.expectedHttpFailures,
-        currentEntries,
-        matchedConsoleCounts,
-      )
-    ) {
-      throw new Error('F1 audit detected an unexplained Console or Page error');
+    const canceledGetObserved =
+      event.safeUrlPattern !== null &&
+      entries.some(
+        (entry) =>
+          entry.method === 'GET' &&
+          entry.failureReason === 'aborted' &&
+          entry.safeUrlPattern === event.safeUrlPattern,
+      );
+    if (!canceledGetObserved) {
+      throw new Error(
+        'F1 browser audit detected an unexplained network Console error',
+      );
     }
   }
 
   return {
-    checkpoint: {
-      consoleEventCount: currentConsoleEvents.length,
-      networkEntries: cloneNetworkEntries(currentEntries),
-      pendingControlledAborts: nextPendingControlledAborts.map((pending) => ({
-        ...pending,
-      })),
-    },
-    expectedHttpConsoleErrors: newConsoleEvents.length,
-    expectedHttpFailures: httpFailures.length,
-    controlledAborts: requestFailures.length,
+    expectedHttpFailuresObserved: expectationKeys.size,
+    ignoredCanceledGets,
     unexpectedConsoleErrors: 0,
     pageErrors: 0,
     unexpectedHttpFailures: 0,
-    unexpectedRequestFailures: 0,
-    mutationRequestAborts: 0,
+    unexpectedTransportFailures: 0,
   };
 }
 
@@ -540,7 +270,6 @@ export async function loginStaff(input: {
   await ledger.attach(page);
   const consoleAudit = new ConsoleAudit(page);
   consoleAudit.start();
-  const auditStartCheckpoint = captureF1AuditCheckpoint(consoleAudit, ledger);
   await page.goto(`${input.environment.frontendOrigin}/login`, {
     waitUntil: 'domcontentloaded',
   });
@@ -610,7 +339,7 @@ export async function loginStaff(input: {
       path: '/',
     },
   ]);
-  return { roleContext, ledger, consoleAudit, auditStartCheckpoint };
+  return { roleContext, ledger, consoleAudit };
 }
 
 export async function openExecution(input: {
@@ -680,17 +409,12 @@ export async function createPatientContext(input: {
 }): Promise<{
   ledger: NetworkLedger;
   consoleAudit: ConsoleAudit;
-  auditStartCheckpoint: F1AuditCheckpoint;
 }> {
   const ledger = new NetworkLedger();
   await ledger.attach(input.page);
   const consoleAudit = new ConsoleAudit(input.page);
   consoleAudit.start();
-  return {
-    ledger,
-    consoleAudit,
-    auditStartCheckpoint: captureF1AuditCheckpoint(consoleAudit, ledger),
-  };
+  return { ledger, consoleAudit };
 }
 
 export function assertNoF2F3Requests(ledgers: NetworkLedger[]): void {

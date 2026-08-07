@@ -75,6 +75,8 @@ export function PatientAdministrationPage() {
     return () => {
       requestIdRef.current += 1;
       controllerRef.current?.abort();
+      controllerRef.current = null;
+      inFlightRef.current = false;
     };
   }, [loadCurrent]);
 
