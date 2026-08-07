@@ -7,12 +7,18 @@ import {
   resolveLiveAcceptanceEnvironment,
 } from '../../support/acceptance-env';
 import { expect } from '../../support/acceptance-test';
-import { NetworkLedger } from '../../support/network-ledger';
+import {
+  NetworkLedger,
+  type NetworkLedgerEntry,
+} from '../../support/network-ledger';
 import type {
   RoleContext,
   RoleContextFactory,
 } from '../../support/role-context-factory';
-import { ConsoleAudit } from '../../support/runtime-audit';
+import {
+  ConsoleAudit,
+  type ConsoleAuditEvent,
+} from '../../support/runtime-audit';
 
 export type Profile = 'F1-P1-same-device' | 'F1-P2-cross-device';
 
@@ -41,6 +47,38 @@ export type StaffSession = {
   roleContext: RoleContext;
   ledger: NetworkLedger;
   consoleAudit: ConsoleAudit;
+  auditStartCheckpoint: F1AuditCheckpoint;
+};
+
+export type F1AuditCheckpoint = {
+  consoleEventCount: number;
+  networkEntries: NetworkLedgerEntry[];
+};
+
+export type F1ExpectedHttpFailure = {
+  method: string;
+  status: number;
+  safeUrlPattern: string;
+  count: number;
+};
+
+export type F1AllowedControlledAbort = {
+  method: 'GET';
+  status: number;
+  safeUrlPattern: string;
+  count: number;
+};
+
+export type F1AuditDeltaSummary = {
+  checkpoint: F1AuditCheckpoint;
+  expectedHttpConsoleErrors: number;
+  expectedHttpFailures: number;
+  controlledAborts: number;
+  unexpectedConsoleErrors: 0;
+  pageErrors: 0;
+  unexpectedHttpFailures: 0;
+  unexpectedRequestFailures: 0;
+  mutationRequestAborts: 0;
 };
 
 export const STAFF_ROOT_PATTERN =
@@ -53,12 +91,274 @@ export const REISSUE_PATTERN = `${STAFF_ROOT_PATTERN}/entry-code/reissue`;
 export const TERMINATE_PATTERN = `${STAFF_ROOT_PATTERN}/terminate`;
 export const ENTER_PATTERN = '/<id>/enter';
 export const CURRENT_PATTERN = '/<id>/current';
+export const AUTH_ME_PATTERN = '/auth/me';
+export const PATIENT_ROUTE_PATTERN = '/patients/<id>';
+export const VISIT_ROUTE_PATTERN = '/patients/<id>/visits/<id>';
 
 export function invariant(
   condition: unknown,
   safeMessage: string,
 ): asserts condition {
   if (!condition) throw new Error(safeMessage);
+}
+
+function cloneNetworkEntries(entries: NetworkLedgerEntry[]): NetworkLedgerEntry[] {
+  return entries.map((entry) => ({ ...entry, bodyKeys: [...entry.bodyKeys] }));
+}
+
+export function captureF1AuditCheckpoint(
+  consoleAudit: ConsoleAudit,
+  ledger: NetworkLedger,
+): F1AuditCheckpoint {
+  return {
+    consoleEventCount: consoleAudit.events().length,
+    networkEntries: cloneNetworkEntries(ledger.entries()),
+  };
+}
+
+type NetworkEntryChange = {
+  entry: NetworkLedgerEntry;
+  isNew: boolean;
+  statusChanged: boolean;
+  failureChanged: boolean;
+};
+
+function networkEntryIdentityMatches(
+  left: NetworkLedgerEntry,
+  right: NetworkLedgerEntry,
+): boolean {
+  return (
+    left.method === right.method &&
+    left.safeUrlPattern === right.safeUrlPattern &&
+    left.resourceType === right.resourceType &&
+    left.initiator === right.initiator &&
+    left.initiatorSource === right.initiatorSource &&
+    left.bodyKeys.join('\u0000') === right.bodyKeys.join('\u0000')
+  );
+}
+
+function readNetworkChanges(
+  checkpoint: F1AuditCheckpoint,
+  currentEntries: NetworkLedgerEntry[],
+): NetworkEntryChange[] {
+  if (currentEntries.length < checkpoint.networkEntries.length) {
+    throw new Error('F1 audit network snapshot moved backwards');
+  }
+
+  return currentEntries.flatMap((entry, index): NetworkEntryChange[] => {
+    const previous = checkpoint.networkEntries[index];
+    if (!previous) {
+      return [{ entry, isNew: true, statusChanged: entry.status !== null, failureChanged: entry.failureReason !== null }];
+    }
+    if (!networkEntryIdentityMatches(previous, entry)) {
+      throw new Error('F1 audit network snapshot identity changed');
+    }
+    if (previous.status !== null && previous.status !== entry.status) {
+      throw new Error('F1 audit observed an invalid response status transition');
+    }
+    if (
+      previous.failureReason !== null &&
+      previous.failureReason !== entry.failureReason
+    ) {
+      throw new Error('F1 audit observed an invalid request failure transition');
+    }
+    const statusChanged = previous.status !== entry.status;
+    const failureChanged = previous.failureReason !== entry.failureReason;
+    return statusChanged || failureChanged
+      ? [{ entry, isNew: false, statusChanged, failureChanged }]
+      : [];
+  });
+}
+
+function auditExpectationKey(input: {
+  method: string;
+  status: number;
+  safeUrlPattern: string;
+}): string {
+  return `${input.method.toUpperCase()}\u0000${input.status}\u0000${input.safeUrlPattern}`;
+}
+
+function buildExpectationCounts(
+  expectations: Array<{
+    method: string;
+    status: number;
+    safeUrlPattern: string;
+    count: number;
+  }>,
+  kind: 'http' | 'abort',
+): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const expectation of expectations) {
+    const validStatus =
+      kind === 'http'
+        ? expectation.status >= 400 && expectation.status < 500
+        : expectation.status >= 100 && expectation.status < 500;
+    if (
+      !Number.isSafeInteger(expectation.count) ||
+      expectation.count < 1 ||
+      !validStatus ||
+      !expectation.safeUrlPattern.startsWith('/') ||
+      (kind === 'abort' && expectation.method.toUpperCase() !== 'GET')
+    ) {
+      throw new Error('F1 audit expectation is invalid');
+    }
+    const key = auditExpectationKey(expectation);
+    counts.set(key, (counts.get(key) ?? 0) + expectation.count);
+  }
+  return counts;
+}
+
+function incrementCount(counts: Map<string, number>, key: string): void {
+  counts.set(key, (counts.get(key) ?? 0) + 1);
+}
+
+function mapsEqual(left: Map<string, number>, right: Map<string, number>): boolean {
+  return (
+    left.size === right.size &&
+    [...left].every(([key, count]) => right.get(key) === count)
+  );
+}
+
+function matchConsoleEvent(
+  event: ConsoleAuditEvent,
+  expectations: F1ExpectedHttpFailure[],
+  currentEntries: NetworkLedgerEntry[],
+  matchedCounts: Map<string, number>,
+): boolean {
+  if (
+    event.kind !== 'console_error' ||
+    event.category !== 'network' ||
+    event.httpStatus === null ||
+    event.safeUrlPattern === null
+  ) {
+    return false;
+  }
+
+  const match = expectations.find((expectation) => {
+    if (
+      expectation.status !== event.httpStatus ||
+      expectation.safeUrlPattern !== event.safeUrlPattern
+    ) {
+      return false;
+    }
+    const key = auditExpectationKey(expectation);
+    const responseCount = currentEntries.filter(
+      (entry) =>
+        entry.method === expectation.method.toUpperCase() &&
+        entry.status === expectation.status &&
+        entry.safeUrlPattern === expectation.safeUrlPattern,
+    ).length;
+    return (matchedCounts.get(key) ?? 0) < responseCount;
+  });
+  if (!match) return false;
+  incrementCount(matchedCounts, auditExpectationKey(match));
+  return true;
+}
+
+export function assertF1AuditDelta(input: {
+  consoleAudit: ConsoleAudit;
+  ledger: NetworkLedger;
+  checkpoint: F1AuditCheckpoint;
+  expectedHttpFailures: F1ExpectedHttpFailure[];
+  allowedControlledAborts: F1AllowedControlledAbort[];
+}): F1AuditDeltaSummary {
+  const currentConsoleEvents = input.consoleAudit.events();
+  if (currentConsoleEvents.length < input.checkpoint.consoleEventCount) {
+    throw new Error('F1 audit console snapshot moved backwards');
+  }
+  const newConsoleEvents = currentConsoleEvents.slice(
+    input.checkpoint.consoleEventCount,
+  );
+  const currentEntries = input.ledger.entries();
+  const changes = readNetworkChanges(input.checkpoint, currentEntries);
+
+  const expectedHttpCounts = buildExpectationCounts(
+    input.expectedHttpFailures,
+    'http',
+  );
+  const actualHttpCounts = new Map<string, number>();
+  const httpFailures = changes
+    .filter(
+      ({ entry, isNew, statusChanged }) =>
+        (isNew || statusChanged) && entry.status !== null && entry.status >= 400,
+    )
+    .map(({ entry }) => entry);
+  for (const entry of httpFailures) {
+    if (entry.status === null || entry.status >= 500) {
+      throw new Error('F1 audit detected an unexpected HTTP failure');
+    }
+    incrementCount(
+      actualHttpCounts,
+      auditExpectationKey({
+        method: entry.method,
+        status: entry.status,
+        safeUrlPattern: entry.safeUrlPattern,
+      }),
+    );
+  }
+  if (!mapsEqual(actualHttpCounts, expectedHttpCounts)) {
+    throw new Error('F1 audit HTTP failures did not match the stage contract');
+  }
+
+  const allowedAbortCounts = buildExpectationCounts(
+    input.allowedControlledAborts,
+    'abort',
+  );
+  const actualAbortCounts = new Map<string, number>();
+  const requestFailures = changes
+    .filter(
+      ({ entry, isNew, failureChanged }) =>
+        (isNew || failureChanged) && entry.failureReason !== null,
+    )
+    .map(({ entry }) => entry);
+  for (const entry of requestFailures) {
+    if (
+      entry.failureReason !== 'aborted' ||
+      entry.method !== 'GET' ||
+      entry.status === null ||
+      entry.status >= 500
+    ) {
+      throw new Error('F1 audit detected an unsafe request failure');
+    }
+    const key = auditExpectationKey({
+      method: entry.method,
+      status: entry.status,
+      safeUrlPattern: entry.safeUrlPattern,
+    });
+    incrementCount(actualAbortCounts, key);
+    if ((actualAbortCounts.get(key) ?? 0) > (allowedAbortCounts.get(key) ?? 0)) {
+      throw new Error('F1 audit detected an unexplained request abort');
+    }
+  }
+
+  const matchedConsoleCounts = new Map<string, number>();
+  for (const event of newConsoleEvents) {
+    if (
+      !matchConsoleEvent(
+        event,
+        input.expectedHttpFailures,
+        currentEntries,
+        matchedConsoleCounts,
+      )
+    ) {
+      throw new Error('F1 audit detected an unexplained Console or Page error');
+    }
+  }
+
+  return {
+    checkpoint: {
+      consoleEventCount: currentConsoleEvents.length,
+      networkEntries: cloneNetworkEntries(currentEntries),
+    },
+    expectedHttpConsoleErrors: newConsoleEvents.length,
+    expectedHttpFailures: httpFailures.length,
+    controlledAborts: requestFailures.length,
+    unexpectedConsoleErrors: 0,
+    pageErrors: 0,
+    unexpectedHttpFailures: 0,
+    unexpectedRequestFailures: 0,
+    mutationRequestAborts: 0,
+  };
 }
 
 export function resolveEnvironment(): EnabledEnvironment | null {
@@ -121,6 +421,7 @@ export async function loginStaff(input: {
   await ledger.attach(page);
   const consoleAudit = new ConsoleAudit(page);
   consoleAudit.start();
+  const auditStartCheckpoint = captureF1AuditCheckpoint(consoleAudit, ledger);
   await page.goto(`${input.environment.frontendOrigin}/login`, {
     waitUntil: 'domcontentloaded',
   });
@@ -190,7 +491,7 @@ export async function loginStaff(input: {
       path: '/',
     },
   ]);
-  return { roleContext, ledger, consoleAudit };
+  return { roleContext, ledger, consoleAudit, auditStartCheckpoint };
 }
 
 export async function openExecution(input: {
@@ -248,12 +549,20 @@ export async function completeLocalPreparation(page: Page): Promise<void> {
 export async function createPatientContext(input: {
   context: BrowserContext;
   page: Page;
-}): Promise<{ ledger: NetworkLedger; consoleAudit: ConsoleAudit }> {
+}): Promise<{
+  ledger: NetworkLedger;
+  consoleAudit: ConsoleAudit;
+  auditStartCheckpoint: F1AuditCheckpoint;
+}> {
   const ledger = new NetworkLedger();
   await ledger.attach(input.page);
   const consoleAudit = new ConsoleAudit(input.page);
   consoleAudit.start();
-  return { ledger, consoleAudit };
+  return {
+    ledger,
+    consoleAudit,
+    auditStartCheckpoint: captureF1AuditCheckpoint(consoleAudit, ledger),
+  };
 }
 
 export function assertNoF2F3Requests(ledgers: NetworkLedger[]): void {
