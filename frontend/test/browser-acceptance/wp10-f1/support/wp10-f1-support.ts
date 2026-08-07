@@ -53,6 +53,14 @@ export type StaffSession = {
 export type F1AuditCheckpoint = {
   consoleEventCount: number;
   networkEntries: NetworkLedgerEntry[];
+  pendingControlledAborts: F1PendingControlledAbort[];
+};
+
+export type F1PendingControlledAbort = {
+  entryIndex: number;
+  method: 'GET';
+  status: number;
+  safeUrlPattern: string;
 };
 
 export type F1ExpectedHttpFailure = {
@@ -113,11 +121,13 @@ export function captureF1AuditCheckpoint(
   return {
     consoleEventCount: consoleAudit.events().length,
     networkEntries: cloneNetworkEntries(ledger.entries()),
+    pendingControlledAborts: [],
   };
 }
 
 type NetworkEntryChange = {
   entry: NetworkLedgerEntry;
+  entryIndex: number;
   isNew: boolean;
   statusChanged: boolean;
   failureChanged: boolean;
@@ -148,7 +158,15 @@ function readNetworkChanges(
   return currentEntries.flatMap((entry, index): NetworkEntryChange[] => {
     const previous = checkpoint.networkEntries[index];
     if (!previous) {
-      return [{ entry, isNew: true, statusChanged: entry.status !== null, failureChanged: entry.failureReason !== null }];
+      return [
+        {
+          entry,
+          entryIndex: index,
+          isNew: true,
+          statusChanged: entry.status !== null,
+          failureChanged: entry.failureReason !== null,
+        },
+      ];
     }
     if (!networkEntryIdentityMatches(previous, entry)) {
       throw new Error('F1 audit network snapshot identity changed');
@@ -165,7 +183,15 @@ function readNetworkChanges(
     const statusChanged = previous.status !== entry.status;
     const failureChanged = previous.failureReason !== entry.failureReason;
     return statusChanged || failureChanged
-      ? [{ entry, isNew: false, statusChanged, failureChanged }]
+      ? [
+          {
+            entry,
+            entryIndex: index,
+            isNew: false,
+            statusChanged,
+            failureChanged,
+          },
+        ]
       : [];
   });
 }
@@ -304,14 +330,67 @@ export function assertF1AuditDelta(input: {
     input.allowedControlledAborts,
     'abort',
   );
-  const actualAbortCounts = new Map<string, number>();
-  const requestFailures = changes
-    .filter(
-      ({ entry, isNew, failureChanged }) =>
-        (isNew || failureChanged) && entry.failureReason !== null,
-    )
-    .map(({ entry }) => entry);
-  for (const entry of requestFailures) {
+  const pendingByEntryIndex = new Map<number, F1PendingControlledAbort>();
+  for (const pending of input.checkpoint.pendingControlledAborts) {
+    const entry = currentEntries[pending.entryIndex];
+    if (pendingByEntryIndex.has(pending.entryIndex)) {
+      throw new Error('F1 audit pending controlled abort identity is invalid');
+    }
+    if (
+      !entry ||
+      entry.method !== pending.method ||
+      entry.status !== pending.status ||
+      entry.safeUrlPattern !== pending.safeUrlPattern
+    ) {
+      throw new Error('F1 audit pending controlled abort identity changed');
+    }
+    if (
+      entry.failureReason !== null &&
+      entry.failureReason !== 'aborted'
+    ) {
+      throw new Error('F1 audit detected an unsafe request failure');
+    }
+    pendingByEntryIndex.set(pending.entryIndex, { ...pending });
+  }
+
+  const candidateCounts = new Map<string, number>();
+  const currentCandidates = new Map<number, F1PendingControlledAbort>();
+  for (const change of changes) {
+    const { entry, entryIndex, isNew, statusChanged } = change;
+    if ((!isNew && !statusChanged) || entry.status === null) continue;
+    const key = auditExpectationKey({
+      method: entry.method,
+      status: entry.status,
+      safeUrlPattern: entry.safeUrlPattern,
+    });
+    const allowedCount = allowedAbortCounts.get(key);
+    if (allowedCount === undefined) continue;
+    if (
+      entry.method !== 'GET' ||
+      entry.status >= 500 ||
+      (entry.failureReason !== null && entry.failureReason !== 'aborted')
+    ) {
+      throw new Error('F1 audit detected an unsafe request failure');
+    }
+    incrementCount(candidateCounts, key);
+    if ((candidateCounts.get(key) ?? 0) > allowedCount) {
+      throw new Error(
+        'F1 audit controlled abort candidates exceeded the stage contract',
+      );
+    }
+    currentCandidates.set(entryIndex, {
+      entryIndex,
+      method: 'GET',
+      status: entry.status,
+      safeUrlPattern: entry.safeUrlPattern,
+    });
+  }
+
+  const requestFailures = changes.filter(
+    ({ entry, isNew, failureChanged }) =>
+      (isNew || failureChanged) && entry.failureReason !== null,
+  );
+  for (const { entry } of requestFailures) {
     if (
       entry.failureReason !== 'aborted' ||
       entry.method !== 'GET' ||
@@ -320,15 +399,42 @@ export function assertF1AuditDelta(input: {
     ) {
       throw new Error('F1 audit detected an unsafe request failure');
     }
-    const key = auditExpectationKey({
-      method: entry.method,
-      status: entry.status,
-      safeUrlPattern: entry.safeUrlPattern,
-    });
-    incrementCount(actualAbortCounts, key);
-    if ((actualAbortCounts.get(key) ?? 0) > (allowedAbortCounts.get(key) ?? 0)) {
+  }
+
+  const consumedPending = new Set<number>();
+  const consumedCurrentCandidates = new Set<number>();
+  for (const { entry, entryIndex } of requestFailures) {
+    const pending = pendingByEntryIndex.get(entryIndex);
+    if (pending) {
+      consumedPending.add(entryIndex);
+      continue;
+    }
+    const currentCandidate = currentCandidates.get(entryIndex);
+    if (currentCandidate) {
+      consumedCurrentCandidates.add(entryIndex);
+      continue;
+    }
+    if (entry.failureReason === 'aborted') {
       throw new Error('F1 audit detected an unexplained request abort');
     }
+  }
+
+  const nextPendingControlledAborts: F1PendingControlledAbort[] = [];
+  for (const pending of pendingByEntryIndex.values()) {
+    if (consumedPending.has(pending.entryIndex)) continue;
+    const entry = currentEntries[pending.entryIndex];
+    if (!entry || entry.failureReason !== null) {
+      throw new Error('F1 audit pending controlled abort was not consumed');
+    }
+    nextPendingControlledAborts.push({ ...pending });
+  }
+  for (const candidate of currentCandidates.values()) {
+    if (consumedCurrentCandidates.has(candidate.entryIndex)) continue;
+    const entry = currentEntries[candidate.entryIndex];
+    if (!entry || entry.failureReason !== null) {
+      throw new Error('F1 audit current controlled abort was not consumed');
+    }
+    nextPendingControlledAborts.push({ ...candidate });
   }
 
   const matchedConsoleCounts = new Map<string, number>();
@@ -349,6 +455,9 @@ export function assertF1AuditDelta(input: {
     checkpoint: {
       consoleEventCount: currentConsoleEvents.length,
       networkEntries: cloneNetworkEntries(currentEntries),
+      pendingControlledAborts: nextPendingControlledAborts.map((pending) => ({
+        ...pending,
+      })),
     },
     expectedHttpConsoleErrors: newConsoleEvents.length,
     expectedHttpFailures: httpFailures.length,
