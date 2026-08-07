@@ -9,7 +9,7 @@
 - 当前包含既有公共、认证、患者 / 访视与量表实例路由；B17 新增患者历史、随访趋势和指定历史报告只读详情三个路由，报告版本面板继续落在访视详情。
 - B16 已让安全线性 replacement V2+ 在既有访视详情复用 A22 lock、A23 freeze-sources 与 A24 archive；没有 replacement 专用路由。
 - B17 / WP-04 已完成；历史报告详情保持只读，current report workflow、版本列表和历史详情职责分离。
-- WP-10-F1 已新增患者独立 Shell 的 `/patient-administration/enter` 与 `/patient-administration`，并在既有 MMSE `supervised_patient_input` 实例页组合医护发起 / 准备面板；same-device / cross-device 两个正式 Browser Profile 均已通过，F1 完成，下一阶段 F2 继续复用这些路由。
+- WP-10-F1/F2 复用患者独立 Shell 的 `/patient-administration/enter` 与 `/patient-administration`，并在既有 MMSE `supervised_patient_input` 实例页组合医护发起、准备与步骤控制面板；F1 已完成，F2 正常 MMSE 19 步正式患者 Browser 主链已完成。F2-P2 recovery 属于 WP-10 最终收口，下一阶段 F3 继续复用这些路由。
 - `/dashboard` 已提供患者档案入口，但仍不是完整医生工作台。
 - 当前不包含患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、独立评分、评分锁定、独立认知域、current 报告专用详情、AI、用户管理或权限菜单路由。
 - 当前不包含 Next middleware 或路由级服务端认证中间件。
@@ -138,10 +138,10 @@
 
 - 页面名称：量表实例施测执行、媒体证据、正式提交、评分确认与认知域结果
 - 页面职责：在既有 A14-A18 能力上接入 A19 认知域 latest / compute、安全结果展示与贡献定位；不新增独立评分或认知域路由。
-- F1 条件组合：仅服务端详情明确为 MMSE 1.0 且 `administrationMode=supervised_patient_input` 时渲染 `PatientAdministrationStaffPanel`；其他量表、版本和施测方式不显示该面板。
+- F1/F2 条件组合：仅服务端详情明确为 MMSE 1.0 且 `administrationMode=supervised_patient_input` 时渲染 `PatientAdministrationStaffPanel`；其他量表、版本和施测方式不显示该面板。
 - 动态参数：Server Component 按 Next 16 `params: Promise<{ patientId: string; visitId: string; scaleInstanceId: string }>` 等待参数后传给 `ScaleInstanceExecutionPage`；route 不 fetch、不保存表单状态
 - 访问边界：继续复用 `/patients/**` 的 `PatientsWorkspaceShell`；不新增 middleware、BFF 或 Provider，不读取 Cookie；后端 Guard 是最终权限边界
-- 数据来源：既有 A14-A18 请求，以及 A19 cognitive-domain latest GET / compute POST；评分和认知域只读刷新各自只使用 latest GET。
+- 数据来源：既有 A14-A18 请求与 A19 cognitive-domain latest GET / compute POST；另由医护面板读取 / 创建 patient-administration 会话，并调用准备、交接、暂停 / 恢复 / 重签 / 终止、staff complete / takeover / redo / technical replay authorize。评分和认知域只读刷新各自只使用 latest GET。
 - loading / 取消：执行详情 GET 使用 AbortController；重试和卸载取消旧请求，被取消请求不显示服务错误；任一动态 ID 无效时不发请求
 - 401 / 403 / 404 / 409：401 返回 `/login`；403 展示无权限与返回 / 退出入口；患者、访视、实例不存在分别使用稳定状态；配置不可用不渲染空白题目页
 - 分组：groups 按 order、题目按 itemOrder 排序，使用 groupCode 动态归组；无匹配分组题目进入“其他项目”；button 导航显示每组完成数并支持键盘 focus
@@ -177,10 +177,11 @@
 - 非诊断边界：主区域明确结果仅展示项目在认知维度中的映射，不能脱离量表、临床访谈和其他检查单独形成诊断；不输出阈值、等级、疾病概率、报告或 AI 解读。
 - 评分隔离：compute / latest 只允许同步服务端 scaleInstance 摘要，不覆盖 Visit、ItemResponse、作答 / 媒体草稿或 submission readiness，不触发 A14 / A15 写操作
 - 只读：completed / locked / voided 实例仍可查看 readiness、作答和历史证据；submit 期间题目保存、图片 / 手写采集、上传与作废临时真实禁用
+- F2 医护控制：面板显示服务端 currentStep 进度；staff-owned 步骤要求医护观察后显式完成，paused 时提供 takeover、直接前一步 redo 与一次 technical replay 授权。所有写操作使用最新 revision，不自动重放；它们只改变患者短期会话事实，不写正式 ItemResponse、提交、评分或报告。
 - 报告入口：单量表页面不生成访视级报告；完成评分确认与认知域计算后返回访视详情页，在独立报告区域选择多实例 scope。
 - 产品文案：页面顶部概括当前页的施测记录、媒体证据、正式提交、评分复核与认知域结果，并说明临床报告工作流位于访视详情；认知域人工确认和 AI 临床解释仍未实现
 - 当前非目标：不提供批量评分、评分 lock / void / 撤销确认 / reopen / rerun / runNo=2 / 完整历史；不提供认知域人工修改 / 确认 / 锁定 / 作废 / 重算 / weighted mapping 编辑；不在单量表页提供报告生成、诊断、OCR 或 AI。
-- 关联组件：既有执行与评分组件，以及 `useCognitiveDomainResult`、`CognitiveDomainResultPanel`、`CognitiveDomainScoreList`、`CognitiveDomainContributionList`、`CognitiveDomainMappingSummary`。
+- 关联组件：既有执行与评分组件、`PatientAdministrationStaffPanel`、`PatientAdministrationStaffStepControls`，以及 `useCognitiveDomainResult`、`CognitiveDomainResultPanel`、`CognitiveDomainScoreList`、`CognitiveDomainContributionList`、`CognitiveDomainMappingSummary`。
 
 ### 3.10 `/patient-administration/enter`
 
@@ -194,12 +195,13 @@
 
 ### 3.11 `/patient-administration`
 
-- 页面名称：患者当前会话安全等待页
-- 页面职责：读取患者短期 Cookie 对应的 current 会话，显示等待医护、暂停、终止 / 过期或完成状态；F1 active 仍只显示安全等待，不进入正式步骤。
+- 页面名称：患者当前会话与 MMSE 正式步骤页
+- 页面职责：读取患者短期 Cookie 对应的 current 会话；active 时一步一屏呈现服务端权威 MMSE 当前步骤，prepared / paused 显示等待医护，terminated / expired / completed 显示最小安全结束状态。
 - 访问边界：患者独立 Shell；不读取 staff Session、`/auth/me` 或 staff workspace Context。无患者会话时只提供返回安全进入页。
-- 数据来源：`GET /patient-administration/current`，3 秒串行轮询；使用 AbortController、single-flight 和 revision / run 身份防止过时响应覆盖。
-- 隐私与功能边界：不呈现 currentStep 的 patientText、assetKeys、图片、音频、播放、录音、证据、评分、报告、诊断、其他患者或 staff 信息；不提供 F2/F3 操作。
-- 关联组件：`PatientAdministrationShell`、`PatientAdministrationPage`。
+- 数据来源：`GET /patient-administration/current` 以 3 秒串行轮询并使用 AbortController、single-flight 和 revision / run 身份防旧响应覆盖；当前步骤按需调用 private image GET、audio play POST、multipart evidence POST 与 patient complete POST。
+- F2 交互：按服务端顺序播放 frozen MP3；guidance 可受控重播，stimulus 仅在 current asset 的 `technicalReplayAuthorized=true` 时允许一次技术重播。speech 使用 MediaRecorder 上传 audio，writing / drawing 使用 Canvas handwriting 或 photo，上传后由患者显式完成步骤；staff-owned 步骤只等待医护处理。
+- 隐私与功能边界：只呈现当前步骤获准的 patientText、image / audio 和作答控件，不取得完整量表、评分、报告、诊断、其他患者或 staff 信息；completed 后清除当前步骤并安全交还。页面不调用 F3 review / ASR / ItemResponse / submit / scoring / report。
+- 关联组件：`PatientAdministrationShell`、`PatientAdministrationPage`、`PatientAdministrationCurrentStep`、`PatientAdministrationSpeechResponse`、`PatientAdministrationWrittenResponse`。
 
 ### 3.12 `not-found`
 

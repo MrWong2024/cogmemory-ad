@@ -11,7 +11,7 @@
 - AuthModule 内部 session cookie 名称已统一为 `cogmemory_ad_session`，登录成功下发 HttpOnly Cookie，`SameSite=Lax`，`Path=/`，production 环境启用 `Secure`。
 - 当前没有 users controller，没有公开用户管理 API，没有注册、密码重置、角色权限管理、短信验证码、OAuth / SSO 或 JWT 登录 API。
 - A12 已新增 `PatientsController` 与 `AssessmentVisitsController`，形成第一组受保护临床业务 API；所有五个接口均显式绑定 `SessionAuthGuard`、`RolesGuard` 和 `@Roles('admin', 'doctor', 'nurse', 'research_assistant')`。
-- 当前已有实例 submission、评分、认知域、报告与历史趋势接口；WP-10-B 共提供十二个 staff 会话 / 步骤控制接口和五个 patient 会话 / 步骤 / 资产接口，C1 增加患者当前步骤 evidence 上传，C2 增加显式转写与最新会话复核。自动转写候选不会写入正式 `ItemResponse`，患者 UI 仍未实现。
+- 当前已有实例 submission、评分、认知域、报告与历史趋势接口；WP-10-B 共提供十二个 staff 会话 / 步骤控制接口和五个 patient 会话 / 步骤 / 资产接口，C1 增加患者当前步骤 evidence 上传，C2 增加显式转写与最新会话复核。自动转写候选不会写入正式 `ItemResponse`；F1/F2 患者 UI 已实现正常 MMSE 19 步正式施测主链，F3 尚未开始。
 - 当前 API 事实以实际 Controller、DTO、response type 和对应单元 / E2E 测试为准。
 
 ## 3. 当前 API 清单
@@ -484,7 +484,7 @@
 ### Patient 会话接口
 
 - `POST /patient-administration/enter`：无 staff Guard；Body 仅 `{ code }`（trim 后精确六位数字）。若请求带仍有效 staff Cookie，409 `PATIENT_ADMINISTRATION_SESSION_CONFLICT` 且不消费 code；陈旧 staff Cookie 可清除。进入码按 hash、状态、双有效期、无现存患者 Token及底层可继续条件原子消费，成功只设置患者 HttpOnly Cookie并返回 `{ status, revision, expiresAt }`；会话仍为 prepared，直到 staff preparation confirm 才转 active。无效 / 过期 / 已用 / 不存在统一 401 `PATIENT_ADMINISTRATION_ENTRY_INVALID`，同 IP + User-Agent client key 固定窗口失败限流为 429 且使用同 code。
-- `GET /patient-administration/current`：`PatientAdministrationSessionGuard` 只读 `cogmemory_ad_patient_session`，拒绝过期 / 被轮换 / 底层失效 / 同请求有效 staff 身份。最终读取再次匹配 session id + token hash + 开放状态。响应仅 `{ status, revision, expiresAt, currentStep }`；prepared / paused 的 currentStep=null，active 仅返回当前 stepKey、order、patientText、responseMode、advanceBy、`assets[{ assetKey, kind, role, mimeType }]`。
+- `GET /patient-administration/current`：`PatientAdministrationSessionGuard` 只读 `cogmemory_ad_patient_session`，拒绝过期 / 被轮换 / 底层失效 / 同请求有效 staff 身份。最终读取再次匹配 session id + token hash + 开放状态。响应仅 `{ status, revision, expiresAt, currentStep }`；prepared / paused 的 currentStep=null，active 仅返回当前 stepKey、order、patientText、responseMode、advanceBy、`assets[{ assetKey, kind, role, mimeType, technicalReplayAuthorized }]`。`currentStep.assets[].technicalReplayAuthorized:boolean` 仅在当前 asset 是 stimulus、属于当前 step/current run 且仍有未消费技术重播授权时为 true；guidance 与 image 始终为 false，不暴露 count、history、reason 或 operator。该公开字段不改变 Schema，不新增 endpoint。
 - `POST /patient-administration/current/complete`：Body 只含 `{ expectedRevision }`；仅 active 且当前步骤 `advanceBy=patient`，要求当前 run 的全部 audio 已按配置顺序至少播放一次，并满足 C1 媒体门禁：speech 为 audio，writing / drawing 为 photo 或 handwriting，staff_observation 无媒体要求。成功写入 patient capture 并推进；最后一步转 completed、清除全部服务端凭证与患者 Cookie，返回 currentStep=null。
 - `GET /patient-administration/current/assets/:assetKey`：只允许 active 当前步骤已配置的 image；读取不改 revision。打开流后在首字节返回前再次匹配 session id、token hash、active、currentStepKey、revision 与未过期，失败销毁流。成功返回原始二进制与 Content-Type / Length、`Cache-Control: private, no-store, max-age=0`、`X-Content-Type-Options: nosniff`。
 - `POST /patient-administration/current/audio/:assetKey/play`：Body 只含 `{ expectedRevision }`；仅 active 当前步骤已配置的 guidance / stimulus audio。按步骤 asset 顺序要求前序 audio 已播放；guidance 可重播，stimulus 默认每 run 一次，只有 paused staff 授权后可再播放一次。先打开流、再以 token + currentStepKey + expectedRevision CAS 写 playback fact，成功通过 `X-Patient-Administration-Revision` 返回新 revision；CAS 失败销毁流且不返回二进制。

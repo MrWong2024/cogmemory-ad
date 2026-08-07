@@ -22,9 +22,10 @@
 | WP-03 / B18-B2 | 剩余真实 Browser 阶段完成；P4/P5/P6 `passed=6`、`pending=0`；P0 `gap=0` | “B18-A、B18-B1 与 B18-B2 证据” |
 | WP-03 / B18 补充验证 | P7 `passed=2`、P8 `passed=1`；single-flight contract、P3 与 P9 `passed`；自动化 `gap=0` | “B18-A、B18-B1、B18-B2 与补充验证证据” |
 | WP-10-F1 | 完成；F1-P1 / F1-P2 各正式运行一次并通过，post verifier 与 cleanup 均闭合 | “WP-10-F1 最终证据与 Browser Audit 治理” |
+| WP-10-F2 | 完成；F2-P1 已通过正常 MMSE 19 步业务主流程与 post verifier；F2-P2 与 staff Axe 2 项转入 WP-10 最终收口，不阻断 F3 | “WP-10-F2 阶段证据与最终收口归属” |
 | Batch E | 8 个真实设备或人工项目待验；最终主要归属 WP-08 | “Batch E：真实设备或人工验收” |
 
-B11～B15 保持完成；B18 补充验证已闭合，自动化 `gap=0`，WP-03 已完成。产品范围、工作包状态和当前主线以 `handoff-roadmap.md` 为准；Batch E 的 8 项真实设备或人工项目仍为 `pending`，最终主要归属为 WP-08。
+B11～B15 保持完成；B18 补充验证已闭合，自动化 `gap=0`，WP-03 已完成。WP-10-F2 的正常患者 MMSE 正式施测主流程已完成，下一阶段为 F3；F2-P2 与 staff Axe 两项已有明确 WP-10 最终收口归属。产品范围、工作包状态和当前主线以 `handoff-roadmap.md` 为准；Batch E 的 8 项真实设备或人工项目仍为 `pending`，最终主要归属为 WP-08。
 
 ## 2. 当前测试设计规则
 
@@ -49,13 +50,19 @@ B11～B15 保持完成；B18 补充验证已闭合，自动化 `gap=0`，WP-03 �
 
 完成口径引用 `docs/codex-instruction-spec.md` 3.9，并在项目内分为三级：
 
-- **当前任务或阶段完成**：本阶段实现和验收已完成，候选均有明确归属且状态/证据已同步；后续自动化阶段仍 `pending` 时只能关闭当前阶段，不能宣布对应实现单元完成。
-- **A# / B# 或其他实现单元完成**：锁定范围内全部自动化候选和后续阶段均已关闭，不存在本单元 `pending` 自动化验收或阻断性 `gap`，mandatory 人工/真实设备项目满足当前范围，且最终覆盖对账和证据收口完成。
+- **当前任务或阶段完成**：本阶段实现和验收已完成，候选均有明确归属且状态/证据已同步；具名后续阶段或工作包最终收口候选仍 `pending` 时可以关闭当前子阶段，但不能据此宣布对应工作包完成。
+- **A# / B# 或其他实现单元完成**：锁定范围内当前阻断候选、即时自动化验收及属于本单元完成门禁的后续阶段均已关闭，不存在未披露的阻断性 `gap`，mandatory 人工/真实设备项目满足当前范围，且最终覆盖对账和证据收口完成。仅允许保留经治理且具名归属到工作包最终收口的非阻断候选；它们在关闭前继续阻断对应工作包完成。
 - **工作包或产品能力完成**：相关 A#、B#、跨层合同、联调和用户流程验收均按锁定范围关闭，manual / real-device 边界满足工作包合同并由 roadmap 按真实证据维护；Testing Playbook 不自行启动或关闭工作包。
 
 A# 没有正式 UI 风险时不机械建立 Browser；UI 候选可以归属到同一工作包中具名的 B#，但在 B# 验收通过前仍是 open，只能准确表述 A# 的后端范围完成。B# 应复用当前代码态仍适用的 A# unit / HTTP E2E / verifier 精确证据，只为新增用户可见风险补最低充分 Browser；若 B# 改变后端合同或暴露新的公开调用路径，必须重新扫描后端候选，并明确由当前跨层实现单元或具名 A# 承担。
 
-mandatory 人工或真实设备项目尚未签收时，不得无条件宣布完整范围完成；当前合同明确只覆盖桌面、自动化、后端或其他子范围时，必须使用准确限定语。Batch E 的现有状态和范围继续由第 5 节维护，本次规则补强不重新评定其阻断关系。
+mandatory 人工或真实设备项目尚未签收时，不得无条件宣布完整范围完成；当前合同明确只覆盖桌面、自动化、后端或其他子范围时，必须使用准确限定语。Batch E 的现有状态和范围继续由第 6 节维护，本次规则补强不重新评定其阻断关系。
+
+#### 2.1.1 阶段阻断与工作包最终收口
+
+正常主流程优先：开发阶段先证明普通、预期、单用户或单写者的用户主链完整可用，再按风险补充异常组合。以下任一情况属于当前阶段阻断，必须当前关闭：普通主流程不可达；数据错误、丢失或重复；权限或隐私问题；正常单次操作持续出现未知 4xx / 5xx；用户无法继续；直接违反当前实现合同；或没有可信恢复路径。
+
+低频并发恢复、多种异常组合、代表性但不影响核心操作的 accessibility 项、真实设备专项，以及已有 unit / HTTP E2E 强证据但尚缺高层补充验收的边缘恢复，可以治理为工作包最终收口候选，不阻断当前子阶段。此类候选必须写明具体工作包与复核时点，不得静默删除或无期限延期，并在工作包完成前重新核对。该判断沿用现有活动场景和 roadmap 语义，不新增 `core_complete`、`partial_complete`、`hardening_pending`、`acceptance_partial` 或其他状态，也不建立持久候选仓库。
 
 ### 2.2 可达性、风险与最低充分证据
 
@@ -72,7 +79,7 @@ mandatory 人工或真实设备项目尚未签收时，不得无条件宣布完�
 
 设计顺序：
 
-1. 证明真实 UI、公开 API、合法并发、正式导入或真实设备入口。
+1. 先证明正常用户主流程，再证明真实 UI、公开 API、合法并发、正式导入或真实设备入口。
 2. 判断风险是否涉及临床数据完整性、不可逆动作、权限、安全、隐私、恢复或已知回归，且是否足以阻断发布。
 3. 检查相关代码、接口与配置未变化时是否已有可复用的精确证据。
 4. 选择最低充分主证据，只为尚未被准确证明的事实补证。
@@ -106,7 +113,7 @@ backend unit、HTTP E2E、database verifier、fixture 与 cleanup 的具体规�
 
 微型 Profile 原则上只包含 1～4 个紧密相关场景，具有单一主风险、最小合法前置、独立执行、独立证据、必要后置验证和精确 cleanup，并独立关闭自己拥有的活动场景。一个 Codex 任务可以包含多个风险一致、证据层相近且能分别收口的 Profile，但不因此共享可写 Report、BrowserContext、Session、数据库终态或 cleanup。
 
-同一 Profile 保持证据原子性：同一 Git 代码态、同一最小前置、一次 Browser 执行、适用的 verifier 和一次精确 cleanup。后续无关 Profile 失败，不得作废已经闭环的证据。禁止批次专属 runner、journal、aggregator 或完整 manifest，禁止把大量不相关状态塞入一次原子运行。
+同一 Profile 保持证据原子性：同一 Git 代码态、同一最小前置、一次 Browser 执行、适用的 verifier 和一次精确 cleanup。Browser Profile 应有清晰单一职责；正常业务主链与低频 recovery / takeover / redo 等异常恢复原则上拆开，不用一条长 Profile 同时承担全部组合。已有低层测试充分覆盖的边缘恢复不要求在所有高层 Browser 主链重复排列。后续无关 Profile 失败，不得作废已经闭环的证据。禁止批次专属 runner、journal、aggregator 或完整 manifest，禁止把大量不相关状态塞入一次原子运行。
 
 ### 2.6 Browser 必须验证的行为与横切抽样
 
@@ -116,9 +123,11 @@ backend unit、HTTP E2E、database verifier、fixture 与 cleanup 的具体规�
 - 多角色或双 Session 使用独立 BrowserContext，不通过清除同一 Context Cookie 模拟隔离。
 - 响应式代表范围为 390×844、800×1280、1280×800、1024×1366、1366×1024、1280×720、1536×864；宽表只允许局部滚动。
 - 键盘证据使用真实 Tab、Shift+Tab、Enter、Space 与 `isTrusted=true` 事件，验证自然焦点顺序、focus-visible 和焦点进出。
-- Axe 与 ARIA tree 用于代表性基础 A/AA、role、accessible name 和结构检查，不替代真实设备或专业判断。
+- Axe 与 ARIA tree 用于代表性基础 A/AA、role、accessible name 和结构检查，不替代真实设备或专业判断，也不得机械把 `violationCount === 0` 设为所有业务阶段的统一完成条件。直接影响核心操作、表单 accessible name、键盘操作、标签或内容可理解性的 violation 必须当前关闭；非关键结构或语义项可以在明确风险与最终归属后进入工作包最终 accessibility 收口。
 
 认证生命周期、logout/Cookie、Storage/URL 隐私、CORS、Console、DOM 敏感信息扫描、Axe、viewport、focus-visible 和不支持 Action 扫描，只在对应能力变化或缺少可信证据时附着少量真实流程；横切证据不得替代业务特有页面断言、错误恢复、请求次数或数据库终态。
+
+GET aborted / canceled 本身不代表产品失败；只有必要读取因此无法取得且使业务状态不可达、用户无法继续或没有可信恢复路径时才阻断。Playwright 时序、Next prefetch、内部取消顺序、Console 网络噪声或精确事件到达顺序，不得在缺少业务风险证据时反向要求 production 增加状态、锁、配置、API、重试或状态机。
 
 ### 2.7 活动场景状态、失败与复杂度
 
@@ -191,6 +200,18 @@ B14.1 不是独立业务能力，不拥有独立 Browser 活动 ID，也不恢�
 - F1-P2 正式运行唯一一次，1/1 通过：cross-device create、首患者兑换与本地准备、staff 看见 credential 后真实 reload，自动恢复 cross-device 且 same-device disabled；继续 preparation confirm、active、pause、resume、reissue、第二患者、resume、terminate。两次旧 credential 的 current 401 均恰好一次，超过一个 3 秒 poll 周期后仍为一次。staff / first patient / second patient 分别审计 required 401/404 或 current 401，无未知失败；post 为 terminated revision 8、完整 controlEvents，cleanup `residualCount=0`、runtime absent。
 - 两个 Profile 均使用独立 namespace / BrowserContext、production frontend、真实 Browser backend、真实 HTTP 与 `cogmemory_ad_browser_test`；Storage=fake、ASR/LLM/SMS=stub。真实设备、真实麦克风和真实触控笔仍为 `not_executed`，桌面 Browser 的 unsupported / permission-unavailable 分支与 Pointer 练习不得冒充真实硬件验收。
 | shared façade / coordinator / reducer / identity isolation | 跨 B11～B15 | `frontend/test/browser-acceptance/contracts/clinical-report-workflow-shared-non-browser.spec.ts`；稳定 `reportId`、route RESET、unexpected identity 隔离、expected correction transition 保真、identity generation、layout barrier、单一 writingRef/latest/beforeunload |
+
+### 4.3 WP-10-F2 阶段证据与最终收口归属
+
+- F2-P1 已实际完成正常 MMSE 19 步正式患者施测主流程：服务端权威 currentStep、一步一屏、private image / frozen MP3、guidance / stimulus 播放边界、MediaRecorder 语音证据、handwriting / photo、patient / staff complete 与 completed 安全结束均通过正式 Browser 业务链。
+- P1 post verifier 已通过：患者会话 `completed`，有效 capture 为 19/19，`MediaEvidence=17`（audio=15、handwriting=1、photo=1），`ItemResponse` 与 `ScaleInstance` 事实 unchanged，score / domain / report 等 downstream=0。F2 未写正式 ItemResponse，也未调用 F3 review / ASR / submit / scoring / report。
+- technical replay 的持久授权事实与 current response 投影已由 backend unit / HTTP E2E 证明 `false → authorize → true → replay → false`；frontend 已消费显式 `technicalReplayAuthorized`。该边缘状态已有最低充分低层证据，不为 F2 增加第三个 Browser Profile；真实人机体验可在最终真实设备 smoke 观察。
+- F2 最终代码态的 backend unit、HTTP E2E、lint、typecheck、build，以及 frontend lint、正式 typecheck、production build 均已通过；本 closeout 只固化既有正式证据，不重新运行这些业务或构建验收。
+- F2-P2 尚未执行，范围固定为 upload 后 reload recovery、takeover、redo、old-run isolation 与 terminate；归属 WP-10 最终 Browser 收口，必须在 F3 完成后、WP-10 宣布完成前执行，不阻断进入 F3。
+- 当前正式证据只保留 staff 页面代表性 Axe `violationCount=2`，具体 rule ID 未保留，不猜测类别，也不为取 rule 重跑完整 19 步。它归属 WP-10 最终 Browser / accessibility 收口：届时重新取得 rule，影响核心操作、accessible name、键盘或明显可理解性的项目必须修复；非阻断结构 / 语义项按最终验收分类处理。
+- 真实设备、真实麦克风、真实触控笔及真实 OSS 患者上传仍不由桌面 synthetic microphone Browser 冒充；设备与人工验收继续归属既有 Batch E / WP-08。真实 ASR 不属于 F2 完成门禁。
+
+因此 WP-10-F2 按现有 roadmap 语义为“完成”，WP-10 仍进行中，下一阶段为 F3；上述最终收口项目保持明确归属，不引入新的完成状态。
 
 ## 5. B18-A、B18-B1、B18-B2 与补充验证证据
 

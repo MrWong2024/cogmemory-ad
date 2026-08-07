@@ -6,7 +6,7 @@
 
 ## 2. 当前状态与边界
 
-- 当前前端 API Client 覆盖 Auth、A12–A25 既有临床闭环、A27/A28 四个只读历史与趋势接口，以及 WP-10-F1 的十个既有 patient-administration endpoint；A26 不新增 endpoint，而是让合法 V2+ replacement 复用 A21–A24。
+- 当前前端 API Client 覆盖 Auth、A12–A25 既有临床闭环、A27/A28 四个只读历史与趋势接口，以及 WP-10-F1/F2 的 staff / patient administration endpoint；A26 不新增 endpoint，而是让合法 V2+ replacement 复用 A21–A24。
 - B16 不新增接口：合法 V1 与公开摘要结构安全的 replacement V2+ 共用既有 A22 lock、A23 freeze-sources、A24 archive；A25 corrections 与 A20 / A21 调用保持。
 - B17 对接 A27/A28 四个只读 GET：patient assessment history、clinical report versions、specified historical report、patient follow-up trends；不修改既有接口、DTO/response 或写请求。
 - A21–A25 写请求均只使用当前服务端 `report.updatedAt` 作为 `expectedUpdatedAt`，逐字段重建 Body 白名单且不自动重试；受控冲突最多自动 latest 一次，不重发原请求或自动恢复。
@@ -464,7 +464,7 @@ B14.1 / B15 / B16 调用归属更新：
 
 B17 四个 GET 的共同边界：全部使用 `frontendEnv.apiBaseUrl`、`credentials: 'include'`、`cache: 'no-store'`、无 Body，并接收 `AbortSignal`；401 返回登录，403/404/409/500 使用前端稳定中文文案，不记录或显示完整后端响应。未新增 BFF、middleware、依赖或请求状态库。
 
-### 4.39 F1 医护 patient-administration API
+### 4.39 F1/F2 医护 patient-administration API
 
 - Client：`frontend/src/features/patient-administration/api/patient-administration-api.ts`；调用方为 `PatientAdministrationStaffPanel`。
 - 会话读取：`GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/patient-administration`，支持 `AbortSignal`，用于首次读取与 5 秒串行轮询。
@@ -472,13 +472,21 @@ B17 四个 GET 的共同边界：全部使用 `frontendEnv.apiBaseUrl`、`creden
 - 准备确认：`POST .../patient-administration/preparation/confirm`；Body 只含服务端 DTO 允许的 `expectedRevision`、七项准备事实和至多八类结构化影响因素 / 最长 500 字备注。
 - 交接：`POST .../patient-administration/handoff`；Body 只含 `expectedRevision`，同 / 跨设备选择仅决定前端交接路径而不发送后端。成功后同设备使用 `window.location.replace('/patient-administration')` 进入独立患者 Shell；导航失败时 fail closed，不返回仍持有 staff 内容的正常工作流。
 - 控制：`POST .../patient-administration/pause`、`resume`、`entry-code/reissue`、`terminate`，均从最新服务端会话取得 revision、逐字段构造 Body 且不自动 retry / replay。
+- staff 步骤完成：`POST .../patient-administration/current/complete`，Body 只含 `expectedRevision` 与 trim 后非空的 `staffObservation`；只用于服务端判定为 staff-owned 的当前步骤。
+- paused 接管：`POST .../patient-administration/current/takeover`，Body 只含 `expectedRevision`、必填 reason 与 `staffObservation`；由服务端决定当前 patient 步骤是否可接管。
+- 直接前一步重做：`POST .../patient-administration/redo-last`，Body 只含 `expectedRevision` 与必填 reason；旧 run 仍由服务端隔离，前端不提交 stepKey / stepRun。
+- 技术重播授权：`POST .../patient-administration/current/audio/:assetKey/replay-authorize`，Body 只含 `expectedRevision` 与必填 reason；前端只在 paused 的已知 MMSE stimulus 控件中发起，授权成功仍须显式恢复，患者端是否可重播以服务端 current asset 的 `technicalReplayAuthorized` 为准。
 - 所有路径 ID 都经 `encodeURIComponent()`；请求统一 `credentials: 'include'`、`cache: 'no-store'`。401 返回 staff 登录，403 / 404 / 409 / 500 映射稳定中文状态；网络或未知写结果只提示只读刷新，不重发原写请求。
 
-### 4.40 F1 患者安全进入与 current API
+### 4.40 F1/F2 患者安全进入与正式步骤 API
 
 - Client：同一 `patient-administration-api.ts`；调用方为独立 Shell 下的 `PatientAdministrationEnterPage` 与 `PatientAdministrationPage`。
 - `POST /patient-administration/enter`：Body 只含显式提交的六位 ASCII 数字 `{ code }`；成功只采用患者 HttpOnly Cookie 和最小公开响应，Client 不保存或回显 code。无自动提交、retry 或结果不确定重放。
-- `GET /patient-administration/current`：无 Body、支持 `AbortSignal`，由患者页首次读取和 3 秒串行轮询调用；前端只消费 F1 安全状态 / revision，不把 currentStep 正式文字、资产、音频或证据传给活动页。
+- `GET /patient-administration/current`：无 Body、支持 `AbortSignal`，由患者页首次读取和 3 秒串行轮询调用；active 时消费服务端 currentStep 的 stepKey / order / patientText / responseMode / advanceBy 与当前资产白名单。每个 asset 的 `technicalReplayAuthorized` 只作为当前 stimulus 当前 run 的一次技术重播资格；guidance / image 为 false，前端不推导 count、history、reason 或 operator。
+- `GET /patient-administration/current/assets/:assetKey`：只读取当前步骤获准 private image，响应按 Blob / object URL 在当前组件内存展示并在换步或卸载时撤销；不保存资产路径或永久 URL。
+- `POST /patient-administration/current/audio/:assetKey/play`：Body 只含最新 `expectedRevision`；成功消费二进制与响应 header 中的新 revision。前端按服务端资产顺序播放，guidance 可由患者显式再听，stimulus 不自行重播，只有当前响应显式授权时才发起一次技术重播。
+- `POST /patient-administration/current/evidence`：multipart 固定文件字段 `file`，只发送 expectedRevision、evidenceType（audio / photo / handwriting）与适用 capturedAt / durationMs；不发送 stepKey、stepRun、业务 ID、captureMode、objectKey、源文件名或 metadata。成功只采用 `{ mediaEvidenceId, evidenceType, revision, uploadedAt }`。
+- `POST /patient-administration/current/complete`：Body 只含最新 `expectedRevision`；证据与播放前置由服务端判定。成功采用新的 current response，最后一步进入 completed；不写正式 ItemResponse，也不调用 F3 downstream。
 - 患者 Client 不调用 `/auth/me`、staff patient / visit / instance GET 或其他认证 API；401 / 无当前会话返回安全进入页，终止 / 过期 / 完成只显示最小状态和安全离开入口。
 
 ## 5. 当前认证公开类型
@@ -516,11 +524,11 @@ B17 四个 GET 的共同边界：全部使用 `frontendEnv.apiBaseUrl`、`creden
 - B15 `clinical-report.ts` 新增 correction state / summary、replacement lineage、request / receipt / response；Date JSON 继续为 string / null，不定义 metadata、原始 correctionRecords、内部审计对象、五类来源 ID、AuditLog ID 或分支 / 合并类型。
 - `ClinicalReportApiError.kind` 新增 A25 九个安全 kind，并继续复用认证、资源、完整性、作废、metadata、服务不可用与 unknown 映射。
 - B17 `clinical-history.ts` 与 `clinical-report-history.ts` 分别建模 assessment history / follow-up trend 与报告版本公开关系；响应不包含 Patient identity、内部 lineage ID、metadata、原始作答、报告正文以外的内部来源或诊断字段。
-- F1 `patient-administration.ts` 只建模 staff / patient 两侧所需的公开会话、revision、准备与控制响应；进入码字段只存在于创建 / 重签即时响应和 enter 请求类型，不进入患者 current 类型、持久状态、日志或 DOM 技术摘要。
+- F1/F2 `patient-administration.ts` 只建模 staff / patient 两侧所需的公开会话、revision、准备 / 控制、current step / asset、evidence 上传与写请求白名单；current asset 明确建模 `technicalReplayAuthorized:boolean`。进入码字段只存在于创建 / 重签即时响应和 enter 请求类型，不进入患者 current 类型、持久状态、日志或 DOM 技术摘要。
 
 ## 7. 当前未对接 API
 
-- 当前已对接 Auth、A12–A25、A27/A28 与 F1 十个 patient-administration endpoint；A26 只改变 A22–A24 对合法 replacement 的服务端适用范围，不存在 replacement 专用平行接口。
+- 当前已对接 Auth、A12–A25、A27/A28 与 F1/F2 patient-administration endpoint；A26 只改变 A22–A24 对合法 replacement 的服务端适用范围，不存在 replacement 专用平行接口。F3 review / ASR / ItemResponse 确认 / submit / scoring / report 的患者施测前端编排尚未对接。
 - 患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 完整状态流转、撤销提交 / reopen、评分 lock / void / rerun / 独立历史、认知域修改 / 确认 / 锁定 / 作废 / 重算、报告退回 / reject / reopen / withdraw / 签名 / unlock / unfreeze / unarchive / 作废 / 重生成 / PDF / 打印 / 下载、AI、用户管理、角色权限管理或科研导出 API 当前均未对接。
 - 不得在后端 API 未确认并进入明确任务范围前编造前端对接事实。
 

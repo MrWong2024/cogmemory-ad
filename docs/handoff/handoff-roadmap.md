@@ -5,12 +5,12 @@
 - 本次路线图重构的起始基线：`27a2e02e6fa14bbe7831a8db9397e8ae367aa408`。该 SHA 只用于追溯上次范围重构的起点，不表示当前 Git 基线。
 - 正式名称：智忆评——阿尔茨海默病认知评估与辅助诊断系统；CogMemory AD — Alzheimer’s Cognitive Assessment and Clinical Decision Support System。
 - 一期产品目标：**院内受监督临床试用闭环**。
-- 当前实现：现有医生侧工作台已形成临床工作端的代码底座，量表运行时、作答与证据、评分、报告、历史及审计底座已经形成；WP-10-F1 的 MMSE 临床发起、设备准备、安全进入和患者安全等待页已完成同设备 / 跨设备正式 Browser 闭环。F2 的正式题目呈现与作答尚未实现。`/dashboard` 仍是轻量入口，不等同统计型 Dashboard。
+- 当前实现：现有医生侧工作台已形成临床工作端的代码底座，量表运行时、作答与证据、评分、报告、历史及审计底座已经形成；WP-10-F1 的 MMSE 临床发起、设备准备与安全进入已完成，WP-10-F2 的服务端权威 19 步一步一屏、题目资产与音频、录音及图像证据、患者 / 医护完成和安全结束已落地，正常 MMSE 19 步正式患者 Browser 主流程已通过。F3 尚未开始。`/dashboard` 仍是轻量入口，不等同统计型 Dashboard。
 - 当前里程碑：后端 A30，前端 B18；A29 / A30 合同与验证保持闭合，B18 补充验证已闭合且自动化 `gap=0`。
 - 已完成工作包：WP-02、WP-03、WP-04。
 - 一期已完成能力域：10 个，不因本次重新编组机械变化。
 - 一期正式剩余工作包：5 个，待确认 0 个；规模为 S 0 / M 2 / L 3；按 S=1、M=2、L=3 加权为 `0×1 + 2×2 + 3×3 = 13`。
-- 当前状态：WP-10 进行中；WP-10-A、WP-10-B、WP-10-C 后端范围与 WP-10-F1 前端子阶段已完成，下一阶段为 WP-10-F2。
+- 当前状态：WP-10 进行中；WP-10-A、WP-10-B、WP-10-C 后端范围与 WP-10-F1、WP-10-F2 前端子阶段已完成，下一阶段为 WP-10-F3。
 - Batch E：8 项真实设备或人工验收仍为 `pending`，最终主要归属为 WP-08；桌面 Browser 结果不得替代真实设备或专业判断。
 
 一期不按工作包数量计算或展示完成百分比。
@@ -103,7 +103,12 @@
 - WP-10-C2 已完成：患者 audio 可由 staff 显式触发受控 stub / 百炼同步 ASR 候选，`MediaEvidence.transcription` 以 claim / finalize CAS 保存有限状态；最新患者施测会话可通过安全 review 投影复核 item / step / run、失效重做、接管观察和媒体候选。候选不会自动写入 `ItemResponse`，医生仍通过既有 revision CAS 草稿接口人工确认；报告链对意外进入的浏览器录音 evidence fail closed，不扩大既有图片 / 手写报告范围。
 - WP-10-F1 代码范围已实现：既有 MMSE `supervised_patient_input` 实例页新增医护发起与 5 秒服务端权威轮询、七项本地设备准备、音量 / 麦克风 / 指针练习、八类结构化影响因素、同 / 跨设备交接、暂停 / 恢复 / 重签 / 终止；独立患者 Shell 提供六位一次性码进入、3 秒当前会话轮询和仅等待医护的安全活动页。F1 不呈现正式步骤文字、资产、音频或证据，也不进入 F2/F3。
 - WP-10-F1 已完成：F1-P1 在 preparation confirm 后真实 reload，按服务端事实恢复同设备交接并完成 staff 身份撤销与 patient active；F1-P2 在患者 credential 已存在时真实 reload，恢复跨设备准备并完成 pause / resume / reissue / 新患者 / resume / terminate。两个 Profile 均使用独立 fixture、production frontend、真实 Browser backend 与 `cogmemory_ad_browser_test`，post verifier 通过且 cleanup `residualCount=0`。
-- WP-10-C 后端范围与 WP-10-F1 已完成；WP-10 整体仍为进行中，下一阶段为 WP-10-F2。
+- WP-10-F2 已完成：正式患者端按服务端权威 currentStep 呈现 MMSE 19 步一步一屏，使用 private image 与 frozen MP3，执行 guidance / stimulus 播放边界、speech MediaRecorder、audio / handwriting / photo evidence、patient / staff complete、pause / resume、takeover / redo、显式技术重播授权与 completed 安全结束；不写正式 `ItemResponse`，不调用 F3 review / ASR / submit / scoring / report。
+- F2-P1 已实际完成正常 19 步 Browser 业务主流程；post verifier 为 session=completed、19/19 captures、`MediaEvidence=17`（audio=15、handwriting=1、photo=1），`ItemResponse` / `ScaleInstance` unchanged、downstream=0。technical replay 的持久授权事实与公开投影由 backend unit / E2E 证明 `false → authorize → true → replay → false`，无数据库 Schema、endpoint 或 revision 扩张。
+- WP-10 最终 Browser 收口保留 F2-P2：upload 后 reload recovery、takeover、redo、old-run isolation、terminate。它必须在 F3 完成后、WP-10 宣布完成前执行，不阻断进入 F3，也不得无期限延期。
+- WP-10 最终 Browser / accessibility 收口保留“staff 页面代表性 Axe 尚有 2 项待最终分类”。现有证据未保留具体 rule ID，不猜测类别，也不为取得 rule 重跑完整 19 步；最终收口时重新取得规则，影响核心操作、表单 accessible name、键盘操作或明显可访问性的项目必须修复，非阻断结构 / 语义项按最终验收处理。
+- 真实设备、真实麦克风、真实触控笔与人工验收继续按既有 Batch E / WP-08 归属执行；桌面 synthetic microphone Browser 不等价真实设备验收。真实 OSS 患者上传与真实 ASR 仍按各自最终验收边界处理，不阻断 F2 完成。
+- WP-10-C 后端范围、WP-10-F1 与 WP-10-F2 已完成；WP-10 整体仍为进行中，下一阶段为 WP-10-F3。
 - 一期正式剩余工作包仍为 WP-10、WP-11、WP-12、WP-08、WP-09；数量、规模和加权工作量不因 WP-10 内部阶段完成而变化。
 
 ## 4. 一期正式剩余工作包
@@ -117,7 +122,7 @@
 
 | ID | 工作包 | 规模 | 优先级 | 依赖 | 状态 |
 |---|---|---|---|---|---|
-| WP-10 | 受监督患者施测底座与 MMSE 闭环 | L | P0 | A30、B18、既有量表版本 / 作答 / 媒体 / 评分 / 报告底座；WP-10.0 合同完成 | 进行中（A/B/C 后端范围与 F1 完成；下一阶段 F2） |
+| WP-10 | 受监督患者施测底座与 MMSE 闭环 | L | P0 | A30、B18、既有量表版本 / 作答 / 媒体 / 评分 / 报告底座；WP-10.0 合同完成 | 进行中（A/B/C 后端范围与 F1/F2 完成；下一阶段 F3） |
 | WP-11 | MoCA 多模态患者施测闭环 | L | P0 | WP-10 的会话、步骤、患者原始作答与必要过程事实、医生复核确认和受控形成或更新正式 ItemResponse 的边界稳定 | 待开始 |
 | WP-12 | 临床运营最小闭环 | M | P0 | 既有认证、患者、访视和报告链；WP-10 合同稳定后可部分并行，必须在 WP-08 前完成 | 待开始 |
 | WP-08 | 临床端到端联调与真实设备验收 | L | P0 | WP-10、WP-11、WP-12 | 待开始 |
@@ -127,8 +132,8 @@
 
 **目标**
 
-- 已完成子阶段：WP-10-B1 交付短期会话与控制权安全底座，WP-10-B2 交付患者逐步推进与受控题目资产访问，WP-10-C1 交付当前 run 的原始媒体证据上传、私有 Storage 编排与完成门禁，WP-10-C2 交付基础 ASR 候选、复核投影及既有正式答案链衔接；不改变本工作包数量、规模或完成定义。
-- 当前前端子阶段：WP-10-F1 已完成，下一阶段为 WP-10-F2。继续遵守医生确认后才进入正式 `ItemResponse` 的边界；F1 不呈现正式题目或写入正式答案。WP-10-C 后端范围已完成，WP-10 仍未完成。
+- 已完成子阶段：WP-10-B1 交付短期会话与控制权安全底座，WP-10-B2 交付患者逐步推进与受控题目资产访问，WP-10-C1 交付当前 run 的原始媒体证据上传、私有 Storage 编排与完成门禁，WP-10-C2 交付基础 ASR 候选、复核投影及既有正式答案链衔接；WP-10-F1 交付发起、准备和安全进入，WP-10-F2 交付正常 MMSE 19 步正式患者施测主流程；不改变本工作包数量、规模或完成定义。
+- 当前前端子阶段：WP-10-F1、WP-10-F2 已完成，下一阶段为 WP-10-F3。继续遵守医生确认后才进入正式 `ItemResponse` 的边界；F2 只形成患者原始事实与必要证据，不调用 F3 review / ASR / submit / scoring / report。WP-10 最终收口仍保留具名 F2-P2 与 staff Axe 分类，WP-10-C 后端范围已完成，WP-10 仍未完成。
 
 - 患者短期受控施测会话与安全进入；同设备交接不强制配对，跨设备时采用短期配对、医护确认或其他安全机制。
 - 患者施测终端采用一步一屏、单一主操作、大字号、大触控区、明确状态和随时可达的求助入口，并适配平板和具备触摸功能的电脑大屏等标准触控设备；手机只承担逐步骤验收后的有限兼容。
