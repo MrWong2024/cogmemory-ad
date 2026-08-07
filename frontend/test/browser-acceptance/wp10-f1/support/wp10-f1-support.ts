@@ -238,6 +238,16 @@ function incrementCount(counts: Map<string, number>, key: string): void {
   counts.set(key, (counts.get(key) ?? 0) + 1);
 }
 
+function unsafeRequestFailure(
+  source: 'pending' | 'current_candidate' | 'request_failure',
+  entryIndex: number,
+  entry: NetworkLedgerEntry,
+): Error {
+  return new Error(
+    `F1 audit unsafe request failure: source=${source} entryIndex=${entryIndex} method=${entry.method} status=${entry.status ?? 'null'} failureReason=${entry.failureReason ?? 'null'} safeUrlPattern=${entry.safeUrlPattern} resourceType=${entry.resourceType} initiator=${entry.initiator} initiatorSource=${entry.initiatorSource}`,
+  );
+}
+
 function mapsEqual(left: Map<string, number>, right: Map<string, number>): boolean {
   return (
     left.size === right.size &&
@@ -348,7 +358,7 @@ export function assertF1AuditDelta(input: {
       entry.failureReason !== null &&
       entry.failureReason !== 'aborted'
     ) {
-      throw new Error('F1 audit detected an unsafe request failure');
+      throw unsafeRequestFailure('pending', pending.entryIndex, entry);
     }
     pendingByEntryIndex.set(pending.entryIndex, { ...pending });
   }
@@ -370,7 +380,7 @@ export function assertF1AuditDelta(input: {
       entry.status >= 500 ||
       (entry.failureReason !== null && entry.failureReason !== 'aborted')
     ) {
-      throw new Error('F1 audit detected an unsafe request failure');
+      throw unsafeRequestFailure('current_candidate', entryIndex, entry);
     }
     incrementCount(candidateCounts, key);
     if ((candidateCounts.get(key) ?? 0) > allowedCount) {
@@ -390,14 +400,14 @@ export function assertF1AuditDelta(input: {
     ({ entry, isNew, failureChanged }) =>
       (isNew || failureChanged) && entry.failureReason !== null,
   );
-  for (const { entry } of requestFailures) {
+  for (const { entry, entryIndex } of requestFailures) {
     if (
       entry.failureReason !== 'aborted' ||
       entry.method !== 'GET' ||
       entry.status === null ||
       entry.status >= 500
     ) {
-      throw new Error('F1 audit detected an unsafe request failure');
+      throw unsafeRequestFailure('request_failure', entryIndex, entry);
     }
   }
 
