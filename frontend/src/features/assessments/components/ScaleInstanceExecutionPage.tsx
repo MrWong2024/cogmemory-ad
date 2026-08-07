@@ -340,6 +340,9 @@ export function ScaleInstanceExecutionPage({
   const [confirmationSafetyBlock, setConfirmationSafetyBlock] = useState<
     'warnings' | 'audit_unavailable' | null
   >(null);
+  const handlePatientAdministrationUnauthorized = useCallback(() => {
+    router.replace('/login');
+  }, [router]);
 
   const handleAutosaveItemAccepted = useCallback(
     (
@@ -1920,7 +1923,7 @@ export function ScaleInstanceExecutionPage({
       {scale.code === 'mmse' &&
       scaleInstance.administrationMode === 'supervised_patient_input' ? (
         <PatientAdministrationStaffPanel
-          onUnauthorized={() => router.replace('/login')}
+          onUnauthorized={handlePatientAdministrationUnauthorized}
           patientId={patientId}
           scaleInstanceId={scaleInstanceId}
           visitId={visitId}
