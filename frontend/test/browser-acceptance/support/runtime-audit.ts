@@ -1,12 +1,19 @@
 import type { ConsoleMessage, Page } from '@playwright/test';
-import { sanitizeIdentifier } from './safe-output';
+import { sanitizeIdentifier, sanitizeUrlPattern } from './safe-output';
 
-type ConsoleCategory =
+export type ConsoleCategory =
   | 'network'
   | 'react'
   | 'security'
   | 'runtime'
   | 'other';
+
+export type ConsoleAuditEvent = {
+  kind: 'console_error' | 'page_error';
+  category: ConsoleCategory;
+  httpStatus: number | null;
+  safeUrlPattern: string | null;
+};
 
 export type ConsoleAuditSummary = {
   warningCount: number;
@@ -36,11 +43,27 @@ function classifyConsoleText(text: string): ConsoleCategory {
   return 'other';
 }
 
+function parseBrowserHttpFailureStatus(text: string): number | null {
+  const match =
+    /^Failed to load resource: the server responded with a status of (4\d{2}|5\d{2})(?: \([^()\r\n]*\))?$/.exec(
+      text,
+    );
+  return match?.[1] ? Number(match[1]) : null;
+}
+
+function readSafeConsoleLocation(message: ConsoleMessage): string | null {
+  const locationUrl = message.location().url;
+  if (!locationUrl) return null;
+  const safeUrlPattern = sanitizeUrlPattern(locationUrl);
+  return safeUrlPattern === '<invalid-url>' ? null : safeUrlPattern;
+}
+
 export class ConsoleAudit {
   private warningCount = 0;
   private errorCount = 0;
   private pageErrorCount = 0;
   private readonly categoryCounts = new Map<ConsoleCategory, number>();
+  private readonly auditEvents: ConsoleAuditEvent[] = [];
 
   private recordCategory(category: ConsoleCategory): void {
     this.categoryCounts.set(
@@ -52,13 +75,29 @@ export class ConsoleAudit {
   private readonly onConsole = (message: ConsoleMessage): void => {
     if (message.type() !== 'warning' && message.type() !== 'error') return;
     if (message.type() === 'warning') this.warningCount += 1;
-    if (message.type() === 'error') this.errorCount += 1;
-    this.recordCategory(classifyConsoleText(message.text()));
+    const category = classifyConsoleText(message.text());
+    if (message.type() === 'error') {
+      this.errorCount += 1;
+      this.auditEvents.push({
+        kind: 'console_error',
+        category,
+        httpStatus: parseBrowserHttpFailureStatus(message.text()),
+        safeUrlPattern: readSafeConsoleLocation(message),
+      });
+    }
+    this.recordCategory(category);
   };
 
   private readonly onPageError = (error: Error): void => {
     this.pageErrorCount += 1;
-    this.recordCategory(classifyConsoleText(error.message));
+    const category = classifyConsoleText(error.message);
+    this.recordCategory(category);
+    this.auditEvents.push({
+      kind: 'page_error',
+      category,
+      httpStatus: null,
+      safeUrlPattern: null,
+    });
   };
 
   constructor(private readonly page: Page) {}
@@ -77,6 +116,10 @@ export class ConsoleAudit {
         .map(([category, count]) => ({ category, count }))
         .sort((left, right) => left.category.localeCompare(right.category)),
     };
+  }
+
+  events(): ConsoleAuditEvent[] {
+    return this.auditEvents.map((event) => ({ ...event }));
   }
 
   stop(): ConsoleAuditSummary {
