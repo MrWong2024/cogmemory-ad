@@ -202,6 +202,8 @@ export async function completeSyntheticPreparation(page: Page): Promise<void> {
   await page.getByRole('button', { name: '停止录音' }).click();
   await expect(page.getByText('本地录音已完成，可在本设备回放检查。')).toBeVisible();
   const canvas = page.getByLabel('不计分触摸和书写练习画布');
+  await canvas.scrollIntoViewIfNeeded();
+  await expect(canvas).toBeVisible();
   const bounds = await canvas.boundingBox();
   invariant(bounds, 'Preparation canvas bounds are unavailable');
   await page.mouse.move(bounds.x + 20, bounds.y + 30);
