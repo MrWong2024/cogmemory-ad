@@ -284,7 +284,7 @@ BFF 协作：
 - `docs/codex-instruction-spec.md`：Codex 指令结构
 - `docs/codex-rules.md`：Codex 执行规则、依赖治理、Git 安全、验证规则
 - `docs/backend-architecture.md`：后端架构、模块分层和 API 风格
-- `docs/frontend-architecture.md`：前端 BFF、路由、会话协作和 UI 处理
+- `docs/frontend-architecture.md`：前端后端访问拓扑、路由、会话协作和 UI 处理
 - `docs/database-conventions.md`：数据库治理、索引与集合命名
 - `docs/e2e-testing.md`：E2E 测试组织和环境
 

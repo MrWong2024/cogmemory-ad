@@ -368,7 +368,7 @@
 - 并发语义：所有实际草稿 PATCH 必须携带客户端已读 `expectedRevision`；ownership、可编辑状态、锁状态和 revision 共同进入单文档 `findOneAndUpdate` 条件。初始 stale 与合法竞争 miss 都返回 409 `ITEM_RESPONSE_DRAFT_CONFLICT`；冲突不覆盖、不合并、不自动重试，B18 通过既有 GET 重新读取服务端事实。
 - 媒体边界：A15 上传与作废可以改变 evidenceRefs 和通用 `updatedAt`，但不递增 `draftRevision`、不修改 `draftSavedAt`；A14 草稿 PATCH 不覆盖或重建 evidenceRefs。草稿版本只代表 A14 作答、备注和计时，不是 ItemResponse 全局版本。
 - 计时持久化：实时计时的 idle / running / paused / completed、`lastResumedAt` 与累计 duration 随 ItemResponse 草稿完整快照保存；legacy timing 只读安全规范化，不在 GET 回写。计时不新建 collection、history 或后台 job，也不自动 answered、提交、评分或修改 Visit / ScaleInstance startedAt。
-- 跨端边界：A29 只完成后端保存合同；当前前端仍为 B17 / 旧 B4 客户端。B18 负责 expectedRevision 适配、自动保存、冲突恢复、网络 / 切组恢复、未保存状态和实时计时交互；B18 未完成前不得宣布 WP-03 完成。
+- 跨端边界：A29 只完成后端保存合同；决策当时前端仍为 B17 / 旧 B4 客户端。B18 负责 expectedRevision 适配、自动保存、冲突恢复、网络 / 切组恢复、未保存状态和实时计时交互；当时 B18 尚未完成，因此当时 WP-03 尚未完成。
 
 ### D-040：A16 采用父实例 + 固定题目 scope 的可恢复 submission write barrier
 
@@ -379,7 +379,7 @@
 - 失败释放：readiness 失效时先把父推进 `releasing`，只清理 barrierId 精确相同的子屏障，逐项确认 open 后再清父屏障；外部或其他 token 永不由本次释放删除。释放中断可恢复，完成与释放通过父状态 CAS 竞争且只能有一个方向成功。
 - 完成事实：最终 `submissionId` 复用首次 `barrierId`，submittedBy / startedAt 复用首次 actor / 时间；ScaleInstance 原子变为 completed 并把父屏障置 completed，所有同 token 子屏障继续保留，永久阻断暂停后释放的 A14 / A15 写。completed 幂等不重写首次事实；无 A30 字段的 legacy completed 实例继续按既有 A16 审计兼容读取。
 - 公开与数据边界：屏障是 private persistence state，不新增 index、collection、endpoint、DTO、role、公开 response、配置、队列或后台任务；公开 mapper 不返回屏障、scope、内部 ID 或首次 actor 字段。A17 / A18 / A23 既有来源冻结边界不因 A30 改变。
-- 跨端边界：A30 关闭 A29 的相邻生命周期并发写保护 gap 并使 B18 重新成为下一实施阶段，但 B18 的自动保存、冲突恢复与 Browser 交互尚未实现，WP-03 仍未完成。
+- 跨端边界：A30 关闭 A29 的相邻生命周期并发写保护 gap 并使 B18 在决策当时重新成为下一实施阶段；当时 B18 的自动保存、冲突恢复与 Browser 交互尚未实现，因此当时 WP-03 仍未完成。
 
 ## 4. 后续同步规则
 
