@@ -98,11 +98,14 @@ B# 可以引用当前代码态下仍适用的 A# 精确 unit、HTTP E2E 或 veri
 
 ### 3.3 低频并发、CAS 与安全拒绝
 
+- 系统级允许正常并行：医护 A 操作患者 A、医护 B 操作患者 B，以及不同 `Patient`、`Visit`、`ScaleInstance` 或 `PatientAdministrationSession` 的读写，可以由独立请求和会话正常并行，不建立全局业务队列。
+- 同一业务聚合、同一个 `ScaleInstance` 或同一个 Session 内，在业务允许时优先一个阶段只有一个主要写入主体；读操作正常并发，不把多人实时协同编辑同一评估作为默认能力。该原则不表示 Node 单线程、全局 mutex、MongoDB 全局锁、Redis 锁、`session locked` 字段、所有 HTTP 请求排队、分布式锁或 worker 全局串行，也不授权新增技术锁模型。
 - 低频真实并发的正确目标不是让全部竞争操作都成功；一个写入成功、另一个因服务端状态或 revision 已变化而被 CAS 安全拒绝，可以是正确结果。
 - 409 本身不是产品缺陷。判定取决于是否存在真实竞争、数据是否保持一致、最新服务端状态是否可读取，以及用户是否能在明确提示后显式重试。
 - 正常无竞争操作稳定 409、没有其他写入却持续 stale、成功事实丢失、重复副作用、状态矛盾或无法恢复，才是产品 `gap`，必须按当前合同关闭。
 - 网络结果不确定、409 或页面恢复后，POST / PATCH / DELETE 等有副作用操作不得自动 retry / replay；先 GET 最新权威状态，再由用户决定是否重新操作。
 - 不得仅为减少 409 默认建设自动 retry、自动 merge、锁、队列、lease、多套 revision 或分布式协调。只有当前业务合同证明这些机制不可缺少时，才能按最低充分范围引入。
+- 并发 E2E 只选择少量代表性真实竞争，证明 CAS 有效、一个成功、一个安全拒绝、成功事实不被覆盖、无重复副作用、数据库终态一致且可恢复。不穷举所有 step × endpoint × role × interleaving；已有 unit / HTTP E2E 的低层精确证据仍适用于当前代码态时，不要求 Browser 再排列同一组合。
 - `MediaEvidence` 的“两阶段 Storage / DB CAS + 失败精确补偿”继续保留；它承担真实对象与数据库引用的一致性、单一引用和零残留责任，不是为了隐藏普通 CAS 拒绝，也不因本次复杂度治理删除。
 
 ## 4. 定向 Jest / HTTP E2E 命令
@@ -165,7 +168,7 @@ WP-10-F1 使用 `backend/scripts/wp10-f1-browser-fixtures.ts` 的 `prepare`、`v
 
 ### 5.2 写入、并发、verifier 与 Stage
 
-- 写请求按风险验证 Body 白名单、次数、actor、状态转换、审计和最终 MongoDB 状态；禁止自动 retry、replay 或 polling。真实竞争允许“一个成功 + 一个 CAS 安全拒绝”，前提是数据一致、最新状态可读且用户可显式重试。
+- 写请求按风险验证 Body 白名单、次数、actor、状态转换、审计和最终 MongoDB 状态；禁止自动 retry、replay 或 polling。同一业务聚合在一个业务阶段优先一个主要写入主体，不影响独立患者或独立量表实例正常并行。真实竞争允许“一个成功 + 一个 CAS 安全拒绝”，前提是数据一致、最新状态可读且用户可显式重试。
 - 多角色或双 Session 使用真实独立会话；网络结果不确定时先只读核对服务端事实，不得重试写请求。
 - Evidence 上传继续验证 prepare / Storage / `MediaEvidence` / session attach 的两阶段 CAS 与失败精确补偿，确保未被权威 session 接受的本次对象和记录不残留；该一致性职责不得用前端提示或普通 409 断言替代。
 - verifier 只在现有 HTTP E2E 不足时补充 Browser 写入终态；适用时拒绝零写入、额外写入、错误 actor、错误状态、缺失 audit、受保护字段漂移和跨 Profile 污染。
@@ -181,7 +184,7 @@ WP-10-F1 使用 `backend/scripts/wp10-f1-browser-fixtures.ts` 的 `prepare`、`v
 
 ## 6. 失败、止损与执行范围
 
-每轮分别报告产品缺陷、测试代码缺陷、fixture 缺陷、Playwright/support 缺陷、环境编排缺陷、工具或权限限制和 `not_executed`。只有稳定复现并证明违反产品合同的行为才归类为产品缺陷。
+每轮先分类并分别报告 `product`、`spec/test`、`fixture`、`support/runner`、`environment`、`tool limitation` 和 `not_executed`。只有稳定复现并证明违反正式产品合同的行为才归类为产品缺陷；测试工具时序、fixture、runner 或环境问题只修对应层，不得自动演化为 production 并发、锁、重试或协调要求。
 
 同一方案连续两轮因环境、fixture 或测试资产失败时不得第三轮同方案重跑；公共 support 连续影响两个场景时停止方案；每个微型 Profile 最多一次测试资产修复轮。不得在同一任务同时重构 fixture、重构 runner、修改业务断言并执行正式完整验收；测试基础设施明显超过被测业务时停止扩张并重新评估分层。
 

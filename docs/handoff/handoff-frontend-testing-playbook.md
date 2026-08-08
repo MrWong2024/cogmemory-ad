@@ -85,6 +85,13 @@ mandatory 人工或真实设备项目尚未签收时，不得无条件宣布完�
 4. 选择最低充分主证据，只为尚未被准确证明的事实补证。
 5. 最后设计最小合法前置、场景和断言；禁止先扩张断言再反向建设 fixture。
 
+Browser 验收按以下优先级执行；这是现有阶段 A/B/C 内的证据选择与执行顺序，不新增测试阶段或项目状态：
+
+1. **Happy Path Smoke**：先证明正常用户按正常步骤从入口走到正常结束。happy path 未完成前，不持续扩大低频异常矩阵。
+2. **高价值防御**：再选择重复点击、重复提交、权限绕过、stale write、代表性凭证失效和一个代表性并发冲突等少量场景，重点证明无数据覆盖、无重复副作用及服务端事实一致。
+3. **少量代表性恢复**：按实际合同选择 refresh、pause / resume 或 recovery 等代表性路径，不排列所有恢复组合，也不在每条主链重复已有低层精确证据。
+4. **工作包最终收口**：非关键 Axe、真实设备、极低频组合和可用性细节在具名归属与复核时点下收口。第四层未全部完成时，不默认阻断下一业务功能，但在实际关闭前仍按 roadmap 合同阻断对应工作包完成。
+
 业务风险守恒针对真实可达风险、不可替代状态语义和安全边界，不针对历史 Audit ID 数量、层级组合或顺序。同一风险只在最合适层作为主证据；代码阅读不等于动态通过，页面文本不替代数据库终态，fixture E2E 不冒充产品 Browser。Browser 收缩不得删除认证、授权、ownership、DTO 白名单、不可逆状态门禁、幂等、合法并发、隐私或数据库无副作用证据。
 
 ### 2.3 证据层职责
@@ -127,7 +134,7 @@ backend unit、HTTP E2E、database verifier、fixture 与 cleanup 的具体规�
 
 认证生命周期、logout/Cookie、Storage/URL 隐私、CORS、Console、DOM 敏感信息扫描、Axe、viewport、focus-visible 和不支持 Action 扫描，只在对应能力变化或缺少可信证据时附着少量真实流程；横切证据不得替代业务特有页面断言、错误恢复、请求次数或数据库终态。
 
-GET aborted / canceled 本身不代表产品失败；只有必要读取因此无法取得且使业务状态不可达、用户无法继续或没有可信恢复路径时才阻断。Playwright 时序、Next prefetch、内部取消顺序、Console 网络噪声或精确事件到达顺序，不得在缺少业务风险证据时反向要求 production 增加状态、锁、配置、API、重试或状态机。
+GET aborted / canceled 本身不代表产品失败；只有必要读取因此无法取得且使业务状态不可达、用户无法继续或没有可信恢复路径时才阻断。Next prefetch、Playwright response / requestfailed 时序、内部取消顺序、测试鼠标坐标、runner 编排、Console 网络噪声或精确事件到达顺序，必须先归入对应测试层分类，不得在缺少稳定业务风险证据时反向要求 production 增加状态、锁、配置、API、重试或状态机。
 
 ### 2.7 活动场景状态、失败与复杂度
 
@@ -135,7 +142,7 @@ GET aborted / canceled 本身不代表产品失败；只有必要读取因此无
 
 `unknown` 仅是命令已启动但没有可靠摘要、输出不完整或证据不足时的临时执行结论，不是活动场景状态；它不得关闭、通过或判失败场景。明确且持续的外部环境、工具或权限阻断才记 `blocked`；命令、选择器、权限或进程未启动导致目标没有实际执行时记 `not_executed`。exit code、测试文件存在、历史失败轮局部观察或 cleanup 成功均不能批量推导通过。
 
-每轮区分产品缺陷、测试代码缺陷、fixture 缺陷、Playwright/support 缺陷、环境编排缺陷、工具或权限限制及未执行。稳定复现且证明违反产品合同才归类为产品缺陷。同一方案连续两轮因环境、fixture 或测试资产失败时不得第三轮同方案重跑；公共 support 连续影响两个场景或测试基础设施明显超过被测业务时停止扩张。每个 Profile 最多一次测试资产修复轮，之后只重跑受影响 Profile 与必要关联证据。
+每轮先分类为 `product`、`spec/test`、`fixture`、`support/runner`、`environment`、`tool limitation` 或 `not_executed`，再修正对应层；这些是失败归因，不是新的活动场景状态。只有稳定复现且证明违反正式产品合同的行为才归类为产品缺陷。GET aborted、Next prefetch、Playwright response / requestfailed 时序、测试鼠标坐标和 runner 编排问题不能因自动化失败本身升级为产品 `gap`。同一方案连续两轮因环境、fixture 或测试资产失败时不得第三轮同方案重跑；公共 support 连续影响两个场景或测试基础设施明显超过被测业务时停止扩张。每个 Profile 最多一次测试资产修复轮，之后只重跑受影响 Profile 与必要关联证据。
 
 测试资产通用复杂度治理引用 `docs/codex-instruction-spec.md` 3.10。frontend/Browser 只补充：按职责内聚、重复基础设施、跨进程链路、独立状态、cleanup 责任、证据价值与维护成本判断；不得以物理行、非空行、净新增行或文件数量单独决定通过、失败、压缩或拆分。
 
