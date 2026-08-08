@@ -220,6 +220,13 @@ B14.1 不是独立业务能力，不拥有独立 Browser 活动 ID，也不恢�
 
 因此 WP-10-F2 按现有 roadmap 语义为“完成”，WP-10 仍进行中，下一阶段为 F3；上述最终收口项目保持明确归属，不引入新的完成状态。
 
+### 4.4 WP-10 F3 前最低实现对齐证据
+
+- `f2-p1-mmse-complete.spec.ts` 已同步长期 happy path 合同：第 14 步录音 evidence 后 patient complete，第 16 步保持“请闭上您的眼睛”、无录音与无新 audio POST 后 patient complete，第 17 步 stimulus 正常播放、无 evidence upload 后 patient complete；ledger 长期期望为 patient complete=19、staff complete=0。
+- 本对齐不重跑完整 F2 Browser，不重做 F2 Audit、不修改 Axe、不运行 P2，F2 仍为完成。底层行为由 backend 定向 unit / HTTP E2E 证明；frontend lint、含 `next typegen` 的正式 typecheck 与 canonical production build 均退出 0。
+- Windows `.next` 写入门禁中，执行前沙箱外只读核对本项目 Node/Next 进程为 0、3002 监听为 0；typecheck 与 build 随后均以同一沙箱外执行身份写入 `.next`，输出无 `EPERM`、Unhandled Rejection 或 uncaughtException。
+- 结论：F3 前最低实现对齐已完成，WP-10 仍进行中，下一阶段仍为 F3，本次未实施 F3。
+
 ## 5. B18-A、B18-B1、B18-B2 与补充验证证据
 
 - 精确 contract discovery：`b18-item-response-autosave.contract.spec.ts` 为 30 项，原 27 项没有删除或弱化；与 20 项 `b18-item-response-timer.contract.spec.ts` 合计 50 项。两个文件不声明 page、context、browser 或 browserName fixture。

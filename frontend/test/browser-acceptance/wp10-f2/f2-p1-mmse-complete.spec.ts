@@ -134,19 +134,7 @@ test.describe('WP-10 F2-P1 complete MMSE patient administration', () => {
 
       await waitForStep(patientPage, 14);
       await recordAndSaveSpeech(patientPage);
-      await expect(
-        patientPage.getByRole('button', { name: '完成本题并继续' }),
-      ).toHaveCount(0);
-      await refreshStaff(staffPage);
-      await staffPage
-        .getByLabel('医护观察（必填，最多 2000 字）')
-        .fill('已观察患者完成物品命名');
-      let staffCompleteResponsePromise = waitForPost(
-        staffPage,
-        '/current/complete',
-      );
-      await staffPage.getByRole('button', { name: '确认医护观察并继续' }).click();
-      expect((await staffCompleteResponsePromise).status()).toBe(200);
+      await completePatientStep(patientPage);
 
       await completeSpeechStep(patientPage, 15);
 
@@ -164,16 +152,7 @@ test.describe('WP-10 F2-P1 complete MMSE patient administration', () => {
       expect(
         patient.ledger.count({ method: 'POST', safeUrlPattern: AUDIO_PATTERN }),
       ).toBe(audioCountBeforeReading);
-      await refreshStaff(staffPage);
-      await staffPage
-        .getByLabel('医护观察（必填，最多 2000 字）')
-        .fill('已观察患者阅读并执行闭眼指令');
-      staffCompleteResponsePromise = waitForPost(
-        staffPage,
-        '/current/complete',
-      );
-      await staffPage.getByRole('button', { name: '确认医护观察并继续' }).click();
-      expect((await staffCompleteResponsePromise).status()).toBe(200);
+      await completePatientStep(patientPage);
 
       const evidenceCountBeforeStep17 = patient.ledger.count({
         method: 'POST',
@@ -181,22 +160,15 @@ test.describe('WP-10 F2-P1 complete MMSE patient administration', () => {
       });
       await waitForStep(patientPage, 17);
       await allowAutoplayIfNeeded(patientPage);
-      await expect(patientPage.getByText(/等待医护人员完成本步骤/)).toBeVisible({
+      await expect(
+        patientPage.getByRole('button', { name: '完成本题并继续' }),
+      ).toBeVisible({
         timeout: 20_000,
       });
       expect(
         patient.ledger.count({ method: 'POST', safeUrlPattern: EVIDENCE_PATTERN }),
       ).toBe(evidenceCountBeforeStep17);
-      await refreshStaff(staffPage);
-      await staffPage
-        .getByLabel('医护观察（必填，最多 2000 字）')
-        .fill('已观察患者完成三步指令');
-      staffCompleteResponsePromise = waitForPost(
-        staffPage,
-        '/current/complete',
-      );
-      await staffPage.getByRole('button', { name: '确认医护观察并继续' }).click();
-      expect((await staffCompleteResponsePromise).status()).toBe(200);
+      await completePatientStep(patientPage);
 
       await patientPage.setViewportSize({ width: 800, height: 1280 });
       await waitForStep(patientPage, 18);
@@ -304,7 +276,7 @@ test.describe('WP-10 F2-P1 complete MMSE patient administration', () => {
           method: 'POST',
           safeUrlPattern: PATIENT_COMPLETE_PATTERN,
         }),
-      ).toBe(16);
+      ).toBe(19);
       expect(
         staff.ledger.count({ method: 'POST', safeUrlPattern: PAUSE_PATTERN }),
       ).toBe(0);
@@ -319,7 +291,7 @@ test.describe('WP-10 F2-P1 complete MMSE patient administration', () => {
           method: 'POST',
           safeUrlPattern: STAFF_COMPLETE_PATTERN,
         }),
-      ).toBe(3);
+      ).toBe(0);
       assertExactBodyKeys(patient.ledger, AUDIO_PATTERN, ['expectedRevision']);
       assertExactBodyKeys(patient.ledger, PATIENT_COMPLETE_PATTERN, [
         'expectedRevision',

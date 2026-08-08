@@ -157,7 +157,7 @@ export const MMSE_SCALE_VERSION_SEED: ScaleSeedVersion = {
       patientText: '请说出医护人员向您展示的物品名称。',
       assetKeys: ['mmse-naming-guidance'],
       responseMode: 'speech',
-      advanceBy: 'staff',
+      advanceBy: 'patient',
     },
     {
       stepKey: 'mmse-repetition',
@@ -175,7 +175,7 @@ export const MMSE_SCALE_VERSION_SEED: ScaleSeedVersion = {
       patientText: '请闭上您的眼睛',
       assetKeys: [],
       responseMode: 'staff_observation',
-      advanceBy: 'staff',
+      advanceBy: 'patient',
     },
     {
       stepKey: 'mmse-three-step-command',
@@ -184,7 +184,7 @@ export const MMSE_SCALE_VERSION_SEED: ScaleSeedVersion = {
       patientText: '请按照语音提示完成动作。',
       assetKeys: ['mmse-three-step-command-stimulus'],
       responseMode: 'staff_observation',
-      advanceBy: 'staff',
+      advanceBy: 'patient',
     },
     {
       stepKey: 'mmse-expression',

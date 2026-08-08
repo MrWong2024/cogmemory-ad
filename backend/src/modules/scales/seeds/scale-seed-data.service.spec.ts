@@ -102,7 +102,7 @@ describe('ScaleSeedDataService', () => {
     expect(new Set(referencedAssets).size).toBe(22);
   });
 
-  it('keeps the MMSE reading step visual-only and staff-observed', () => {
+  it('keeps the MMSE reading step visual-only, staff-observed, and patient-advanced', () => {
     const mmse = getSeed(service.getAllScaleSeeds(), 'mmse');
     const readingStep = getPatientAdministrationSteps(mmse).find(
       (step) => step.stepKey === 'mmse-reading-command',
@@ -115,7 +115,7 @@ describe('ScaleSeedDataService', () => {
       patientText: '请闭上您的眼睛',
       assetKeys: [],
       responseMode: 'staff_observation',
-      advanceBy: 'staff',
+      advanceBy: 'patient',
     });
   });
 

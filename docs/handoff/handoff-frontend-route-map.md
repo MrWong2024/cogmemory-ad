@@ -177,7 +177,7 @@
 - 非诊断边界：主区域明确结果仅展示项目在认知维度中的映射，不能脱离量表、临床访谈和其他检查单独形成诊断；不输出阈值、等级、疾病概率、报告或 AI 解读。
 - 评分隔离：compute / latest 只允许同步服务端 scaleInstance 摘要，不覆盖 Visit、ItemResponse、作答 / 媒体草稿或 submission readiness，不触发 A14 / A15 写操作
 - 只读：completed / locked / voided 实例仍可查看 readiness、作答和历史证据；submit 期间题目保存、图片 / 手写采集、上传与作废临时真实禁用
-- F2 医护控制：面板显示服务端 currentStep 进度；staff-owned 步骤要求医护观察后显式完成，paused 时提供 takeover、直接前一步 redo 与一次 technical replay 授权。所有写操作使用最新 revision，不自动重放；它们只改变患者短期会话事实，不写正式 ItemResponse、提交、评分或报告。该 staff-owned 同步推进仅为当前 F2 实现事实，不是长期目标合同；Roadmap 已锁定 `naming`、`reading-command`、`three-step-command` 为 F3 前最低实现对齐项，目标是患者正常主链连续推进、医护观察后续复核记录，在代码实际对齐前本页继续描述当前行为。
+- 医护控制：面板显示服务端 currentStep 进度；MMSE `naming`、`reading-command`、`three-step-command` 已显示“由患者推进”，active 时不再呈现医护观察 complete；paused 时仍提供 takeover、直接前一步 redo 与一次 technical replay 授权。所有写操作使用最新 revision，不自动重放；它们只改变患者短期会话事实，不写正式 ItemResponse、提交、评分或报告。临床观察判断与 Session 推进已解耦，观察结果留待 F3 后续复核。
 - 报告入口：单量表页面不生成访视级报告；完成评分确认与认知域计算后返回访视详情页，在独立报告区域选择多实例 scope。
 - 产品文案：页面顶部概括当前页的施测记录、媒体证据、正式提交、评分复核与认知域结果，并说明临床报告工作流位于访视详情；认知域人工确认和 AI 临床解释仍未实现
 - 当前非目标：不提供批量评分、评分 lock / void / 撤销确认 / reopen / rerun / runNo=2 / 完整历史；不提供认知域人工修改 / 确认 / 锁定 / 作废 / 重算 / weighted mapping 编辑；不在单量表页提供报告生成、诊断、OCR 或 AI。
@@ -199,7 +199,7 @@
 - 页面职责：读取患者短期 Cookie 对应的 current 会话；active 时一步一屏呈现服务端权威 MMSE 当前步骤，prepared / paused 显示等待医护，terminated / expired / completed 显示最小安全结束状态。
 - 访问边界：患者独立 Shell；不读取 staff Session、`/auth/me` 或 staff workspace Context。无患者会话时只提供返回安全进入页。
 - 数据来源：`GET /patient-administration/current` 以 3 秒串行轮询并使用 AbortController、single-flight 和 revision / run 身份防旧响应覆盖；当前步骤按需调用 private image GET、audio play POST、multipart evidence POST 与 patient complete POST。
-- F2 交互：按服务端顺序播放 frozen MP3；guidance 可受控重播，stimulus 仅在 current asset 的 `technicalReplayAuthorized=true` 时允许一次技术重播。speech 使用 MediaRecorder 上传 audio，writing / drawing 使用 Canvas handwriting 或 photo，上传后由患者显式完成步骤；staff-owned 步骤只等待医护处理。这里的等待医护处理同样是当前 F2 实现事实；F3 前最低实现对齐尚未落地，本页不提前写成患者推进已实现。
+- 当前交互：按服务端顺序播放 frozen MP3；guidance 可受控重播，stimulus 仅在 current asset 的 `technicalReplayAuthorized=true` 时允许一次技术重播。speech 使用 MediaRecorder 上传 audio，writing / drawing 使用 Canvas handwriting 或 photo，上传后由患者显式完成步骤。`naming` 仍需录音 evidence 后完成；`reading-command` 无音频 / evidence 可直接完成；`three-step-command` 须先通过 stimulus audio gate 再完成。两个 staff_observation 步骤均提示医护将在后续复核记录观察结果，不新增观察输入或状态。
 - 隐私与功能边界：只呈现当前步骤获准的 patientText、image / audio 和作答控件，不取得完整量表、评分、报告、诊断、其他患者或 staff 信息；completed 后清除当前步骤并安全交还。页面不调用 F3 review / ASR / ItemResponse / submit / scoring / report。
 - 关联组件：`PatientAdministrationShell`、`PatientAdministrationPage`、`PatientAdministrationCurrentStep`、`PatientAdministrationSpeechResponse`、`PatientAdministrationWrittenResponse`。
 

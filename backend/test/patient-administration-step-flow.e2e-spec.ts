@@ -936,14 +936,21 @@ describe('patient administration 19-step flow APIs (e2e)', () => {
     await patientComplete();
     await advanceNormally(13);
 
-    const staffStep14 = await currentStep(14);
-    await playCurrentAudioAssets(staffStep14);
+    const namingStep = await currentStep(14);
+    await playCurrentAudioAssets(namingStep);
     await patientAgent
       .post('/patient-administration/current/complete')
       .send({ expectedRevision: revision })
       .expect(409);
-    await uploadCurrentEvidence(staffStep14);
-    await staffComplete('Named objects observed by staff');
+    await uploadCurrentEvidence(namingStep);
+    await staff
+      .post(`${base}/current/complete`)
+      .send({
+        expectedRevision: revision,
+        staffObservation: 'Must not complete a patient-owned naming step',
+      })
+      .expect(409);
+    await patientComplete();
 
     const firstRunStep15 = await currentStep(15);
     await playCurrentAudioAssets(firstRunStep15);
@@ -1013,12 +1020,16 @@ describe('patient administration 19-step flow APIs (e2e)', () => {
       )?.stepRun,
     ).toBe(2);
 
-    const staffStep16 = await currentStep(16);
-    expect(arrayOf(staffStep16, 'assets')).toEqual([]);
-    await staffComplete('Reading instruction observed by staff');
-    const staffStep17 = await currentStep(17);
-    await playCurrentAudioAssets(staffStep17);
-    await staffComplete('Three-step command observed by staff');
+    const readingStep = await currentStep(16);
+    expect(arrayOf(readingStep, 'assets')).toEqual([]);
+    await patientComplete();
+    const threeStepCommand = await currentStep(17);
+    await patientAgent
+      .post('/patient-administration/current/complete')
+      .send({ expectedRevision: revision })
+      .expect(409);
+    await playCurrentAudioAssets(threeStepCommand);
+    await patientComplete();
 
     const takeoverStep18 = await currentStep(18);
     const pausedForTakeover = await staff

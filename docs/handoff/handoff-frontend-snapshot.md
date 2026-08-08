@@ -87,7 +87,7 @@
 - `PatientAdministrationPage` 的读取 cleanup 对称 abort 并释放 controller / in-flight 引用；active 时把服务端 currentStep 交给 `PatientAdministrationCurrentStep`，prepared / paused 显示安全等待，terminated / expired / completed 显示最小安全结束状态。
 - F2 按服务端权威 currentStep 逐步呈现 MMSE 19 步一步一屏。当前步骤只读取获准 private image，按顺序播放 frozen MP3；guidance 可受控重播，stimulus 只在服务端当前 run 明确 `technicalReplayAuthorized=true` 时允许一次技术重播。
 - speech 步骤通过 `MediaRecorder` 形成短录音并上传 audio evidence；writing / drawing 支持屏幕 Canvas 生成 handwriting 或纸笔完成后选择 photo。上传成功只形成 `MediaEvidence` 与当前 run 引用，随后由患者显式完成步骤。
-- staff-owned 步骤由 `PatientAdministrationStaffStepControls` 记录医护观察并完成；paused 时支持 takeover、直接前一步 redo 与技术重播授权，既有 pause / resume / terminate 控制保持。患者最后一步完成后进入 completed 安全交还，不调用 F3 review / ASR / submit / scoring / report。
+- MMSE 19 步当前均由患者正常推进；`mmse-naming` 仍为 speech 并先上传 audio evidence，`mmse-reading-command` 与 `mmse-three-step-command` 仍为 staff_observation，界面提示医护会在后续复核记录观察结果。`PatientAdministrationStaffStepControls` 显示“由患者推进”，active 时不再呈现医护 complete；paused 异常控制仍支持 takeover、直接前一步 redo 与技术重播授权，既有 pause / resume / terminate 保持。患者最后一步完成后进入 completed 安全交还，不调用 F3 review / ASR / submit / scoring / report。
 
 ## 5. 当前 API 与状态管理
 

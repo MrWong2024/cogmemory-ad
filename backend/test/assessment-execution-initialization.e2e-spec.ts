@@ -444,6 +444,45 @@ describe('assessment execution initialization public APIs (e2e)', () => {
     expect(
       mmseVersion?.patientAdministrationSteps?.map((step) => step.order),
     ).toEqual(Array.from({ length: 19 }, (_, index) => index + 1));
+    expect(
+      mmseVersion?.patientAdministrationSteps
+        ?.filter((step) =>
+          [
+            'mmse-naming',
+            'mmse-reading-command',
+            'mmse-three-step-command',
+          ].includes(step.stepKey),
+        )
+        .map((step) => ({
+          stepKey: step.stepKey,
+          order: step.order,
+          assetKeys: [...step.assetKeys],
+          responseMode: step.responseMode,
+          advanceBy: step.advanceBy,
+        })),
+    ).toEqual([
+      {
+        stepKey: 'mmse-naming',
+        order: 14,
+        assetKeys: ['mmse-naming-guidance'],
+        responseMode: 'speech',
+        advanceBy: 'patient',
+      },
+      {
+        stepKey: 'mmse-reading-command',
+        order: 16,
+        assetKeys: [],
+        responseMode: 'staff_observation',
+        advanceBy: 'patient',
+      },
+      {
+        stepKey: 'mmse-three-step-command',
+        order: 17,
+        assetKeys: ['mmse-three-step-command-stimulus'],
+        responseMode: 'staff_observation',
+        advanceBy: 'patient',
+      },
+    ]);
 
     const mmseInstance = await scaleInstanceModel
       .findOne({ assessmentVisitId: visitId, scaleCode: 'mmse' })

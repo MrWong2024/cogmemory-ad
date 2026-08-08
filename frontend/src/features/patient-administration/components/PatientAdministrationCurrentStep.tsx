@@ -461,7 +461,7 @@ export function PatientAdministrationCurrentStep({
 
       {audioReady && mountedStep.responseMode === 'staff_observation' ? (
         <p className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] px-5 py-4 text-lg leading-8">
-          请按题目要求完成动作，完成后由医护人员记录本步骤。
+          请按题目要求完成动作。医护人员会在后续复核中记录观察结果。
         </p>
       ) : null}
 

@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, type QueryFilter } from 'mongoose';
 import { isDeepStrictEqual } from 'node:util';
 import {
   ScaleDefinition,
@@ -28,6 +28,34 @@ import type {
 type MongoDuplicateKeyError = {
   code: number;
 };
+
+const MMSE_PATIENT_ADVANCE_LEGACY_STEP_KEYS = new Set([
+  'mmse-naming',
+  'mmse-reading-command',
+  'mmse-three-step-command',
+]);
+
+function createKnownMmsePatientAdvancePredecessor(
+  currentSteps: NonNullable<ScaleSeedVersion['patientAdministrationSteps']>,
+): NonNullable<ScaleSeedVersion['patientAdministrationSteps']> | null {
+  const predecessorSteps = structuredClone(currentSteps);
+  let predecessorChangeCount = 0;
+
+  for (const step of predecessorSteps) {
+    if (!MMSE_PATIENT_ADVANCE_LEGACY_STEP_KEYS.has(step.stepKey)) {
+      continue;
+    }
+    if (step.advanceBy !== 'patient') {
+      return null;
+    }
+    step.advanceBy = 'staff';
+    predecessorChangeCount += 1;
+  }
+
+  return predecessorChangeCount === MMSE_PATIENT_ADVANCE_LEGACY_STEP_KEYS.size
+    ? predecessorSteps
+    : null;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -339,8 +367,77 @@ export class ScaleCatalogService {
       return concurrentVersion;
     }
 
+    if (this.isKnownMmsePatientAdvanceLegacyConfig(version, seed)) {
+      const legacySteps = createKnownMmsePatientAdvancePredecessor(seedSteps);
+      if (!legacySteps) {
+        this.throwVersionConflict();
+      }
+      const legacyFilter: QueryFilter<ScaleVersionDocument> = {
+        _id: version._id,
+        scaleCode: seed.scaleCode,
+        version: seed.version,
+        presentationPackageKey: seedPackageKey,
+        patientAdministrationSteps: structuredClone(legacySteps),
+      };
+      const patchedVersion = await this.scaleVersionModel
+        .findOneAndUpdate(
+          legacyFilter,
+          {
+            $set: {
+              patientAdministrationSteps: structuredClone(seedSteps),
+            },
+          },
+          { returnDocument: 'after', runValidators: true },
+        )
+        .exec();
+
+      if (patchedVersion) {
+        this.assertPatientAdministrationMatchesSeed(patchedVersion, seed);
+        return patchedVersion;
+      }
+
+      const concurrentVersion = await this.scaleVersionModel
+        .findOne({ _id: version._id })
+        .exec();
+
+      if (!concurrentVersion) {
+        this.throwVersionConflict();
+      }
+
+      this.assertPatientAdministrationMatchesSeed(concurrentVersion, seed);
+      return concurrentVersion;
+    }
+
     this.assertPatientAdministrationMatchesSeed(version, seed);
     return version;
+  }
+
+  private isKnownMmsePatientAdvanceLegacyConfig(
+    version: ScaleVersionDocument,
+    seed: ScaleSeedVersion,
+  ): boolean {
+    if (
+      this.scaleSeedDataService.normalizeScaleCode(seed.scaleCode) !== 'mmse' ||
+      seed.version.trim() !== '1.0' ||
+      version.presentationPackageKey !== seed.presentationPackageKey ||
+      !Array.isArray(seed.patientAdministrationSteps)
+    ) {
+      return false;
+    }
+
+    const predecessorSteps = createKnownMmsePatientAdvancePredecessor(
+      seed.patientAdministrationSteps,
+    );
+
+    return (
+      predecessorSteps !== null &&
+      isDeepStrictEqual(
+        this.toComparablePatientAdministrationSteps(
+          version.patientAdministrationSteps,
+        ),
+        this.toComparablePatientAdministrationSteps(predecessorSteps),
+      )
+    );
   }
 
   private getPresentationConfigForInsert(

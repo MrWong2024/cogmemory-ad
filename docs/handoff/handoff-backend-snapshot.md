@@ -60,10 +60,10 @@
 - `ScaleVersion` 当前覆盖量表引用、量表 code、版本、CRF 版本、评分规则版本、字段编码版本、来源材料、状态、总分范围、分组配置、题目配置、可选 `presentationPackageKey`、可选 `patientAdministrationSteps`、质控规则、报告规则、科研导出映射、生效时间和退役时间；患者步骤子文档 `_id: false`，只含步骤、题目、患者安全文字、资产键、作答模式和推进方。
 - `ScaleVersion` 当前索引为 `{ scaleDefinitionId: 1, version: 1 }` unique、`{ scaleCode: 1, version: 1 }`、`{ scaleCode: 1, status: 1 }`。
 - 内嵌 group / item 配置已预留指导语、作答类型、得分范围、是否计入总分、认知域、证据类型、计时、图片上传、平板手写、操作者备注、质控规则、报告规则和科研导出映射等字段。
-- `backend\src\modules\scales\seeds` 中 MMSE 1.0 绑定 `mmse-1.0-package-001` 和 19 个患者安全呈现步骤，全部 22 个 released 资产均被引用；阅读闭眼步骤不绑定音频。MoCA 1.0 仍无 package 或步骤字段，不写空配置。
+- `backend\src\modules\scales\seeds` 中 MMSE 1.0 绑定 `mmse-1.0-package-001` 和 19 个患者安全呈现步骤，全部 22 个 released 资产均被引用；`mmse-naming`、`mmse-reading-command`、`mmse-three-step-command` 均由患者正常推进，其 `responseMode` 仍分别为 speech / staff_observation / staff_observation；阅读闭眼步骤不绑定音频。MoCA 1.0 仍无 package 或步骤字段，不写空配置。
 - `ScaleSeedDataService` 当前提供内存 seed 的只读读取与纯校验；呈现校验覆盖 package / steps 成对、步骤键和连续顺序、同版本 item 引用、枚举、同一步资产键去重、非空患者文字、阅读项安全合同和显式评分答案不泄漏。通用 seed validator 不读取 manifest 或文件系统。
 - `ScaleCatalogService` 的公开目录仍只返回名称、版本追溯、总分范围、分组 / 题目数量和能力布尔值，不返回呈现 package、患者步骤、患者文字、资产或评分配置。
-- `ensureSeedScaleVersionMaterialized()` 新插入 MMSE 时随 `$setOnInsert` 写入两项呈现字段；legacy MMSE 仅在两字段均不存在时以 `_id` + 双 `$exists: false` 单次原子补齐并重读校验。已一致则零写复用；部分字段或内容冲突返回 `SCALE_CATALOG_VERSION_CONFLICT` 且不覆盖；并发补齐可重读收敛。MoCA 行为不变，`currentVersionId` 仍只在为空或缺失时设置。
+- `ensureSeedScaleVersionMaterialized()` 新插入 MMSE 时随 `$setOnInsert` 写入两项呈现字段；legacy MMSE 两字段均不存在时仍以 `_id` + 双 `$exists: false` 单次原子补齐并重读校验。对已物化的 MMSE 1.0，另仅允许 package 不变、19 步全部内容不变且唯一差异恰为上述三步 `staff → patient` 的已知 predecessor；以 `_id` + scale/version + package + 已验证 legacy steps 作 CAS filter，只更新 `patientAdministrationSteps`，未命中时重读并仅对 current seed 收敛。已一致零写复用；任意额外 drift 均返回 `SCALE_CATALOG_VERSION_CONFLICT` 且不覆盖。MoCA 行为不变，`currentVersionId` 仍只在为空或缺失时设置。
 - 该物化能力仅由 A13 初始化调用，不是全量 seed runner，也不在应用启动时扫描。`presentation-assets:verify` 是不连接数据库、不可写入的 released package 校验 CLI，不是 seed / migration runner。
 - `PresentationAssetsService` 从 backend 工作目录按 `process.cwd()/../.local/presentation-assets` 确定私有根，只按精确 packageKey 定位；校验 released / 整包审核、身份、受控相对路径、MIME / 扩展名、文件存在与 SHA-256，并按 assetKey 提供内部只读流。当前 MMSE `package-001` 已 released；服务不读取 PDF、不生成或修复资产、不访问 OSS、不在启动时强制验证。
 - MMSE / MoCA 资料治理遵循 D-018：项目“来源”中的 `MMSE+MoCA.pdf` 是权威原始资料；仓库根目录与 `docs`、`backend`、`frontend` 同级的 `.local/reference/MMSE+MoCA.pdf` 是 Codex 本地工作镜像，不是第二套业务基线，并由根目录 `.gitignore` 的 `/.local/reference/` 排除而不进入 Git。
@@ -307,7 +307,7 @@
 
 - 尚无公开用户管理接口、角色权限管理接口、短信验证码接口、OAuth / SSO 接口或密码重置接口。
 - F3 医生复核前端闭环尚未实现：医生查看患者原始事实、evidence 与 ASR candidate，经现有 `ItemResponse` 草稿、`markAsAnswered`、submission readiness 和 A16 整体提交进入评分 / 报告链。
-- F3 前仍需把当前依赖 staff 同步推进的观察型 MMSE 步骤对齐为患者正常主链连续推进；该项不改变 WP-10-F2 已完成状态，也不等于实施 F3。
+- F3 前最低实现对齐已完成：三个观察型 MMSE 步骤已为患者正常主链连续推进，医护临床判断仍留待 F3 后续复核。WP-10-F2 仍为完成，WP-10 仍进行中，下一阶段仍为 F3，本次未实施 F3。
 - WP-10 最终 Browser / accessibility 收口仍包括 F2-P2 recovery 与 staff Axe 分类；真实设备、真实麦克风 / 触控笔、真实患者 OSS 与真实 ASR 按 roadmap 既定边界验收。MoCA 患者端完整实施仍未完成。
 - 尚未实现 WP-12 的医护代录知情者辅助信息能力，也没有将知情者来源、关系、接触频率或了解程度与患者作答、ItemResponse、量表得分和报告结论分离的专用合同；当前不存在知情者长期账号、家庭门户或短期自助链接。
 - HIS / EMR、计费、保险及其他第三方医院系统集成当前未实现，且不属于一期后端实现缺口、WP-09 或上线验收门禁。

@@ -5,7 +5,7 @@
 - 本次路线图重构的起始基线：`27a2e02e6fa14bbe7831a8db9397e8ae367aa408`。该 SHA 只用于追溯上次范围重构的起点，不表示当前 Git 基线。
 - 正式名称：智忆评——阿尔茨海默病认知评估与辅助诊断系统；CogMemory AD — Alzheimer’s Cognitive Assessment and Clinical Decision Support System。
 - 一期产品目标：**院内受监督临床试用闭环**。
-- 当前实现：现有医生侧工作台已形成临床工作端的代码底座，量表运行时、作答与证据、评分、报告、历史及审计底座已经形成；WP-10-F1 的 MMSE 临床发起、设备准备与安全进入已完成，WP-10-F2 的服务端权威 19 步一步一屏、题目资产与音频、录音及图像证据、患者 / 医护完成和安全结束已落地，正常 MMSE 19 步正式患者 Browser 主流程已通过。F3 尚未开始。`/dashboard` 仍是轻量入口，不等同统计型 Dashboard。
+- 当前实现：现有医生侧工作台已形成临床工作端的代码底座，量表运行时、作答与证据、评分、报告、历史及审计底座已经形成；WP-10-F1 的 MMSE 临床发起、设备准备与安全进入已完成，WP-10-F2 的服务端权威 19 步一步一屏、题目资产与音频、录音及图像证据、患者 / 医护完成和安全结束已落地，正常 MMSE 19 步正式患者 Browser 主流程已通过；F3 前最低实现对齐已完成，三个观察型步骤已改为患者正常推进。F3 尚未开始。`/dashboard` 仍是轻量入口，不等同统计型 Dashboard。
 - 当前里程碑：后端 A30，前端 B18；A29 / A30 合同与验证保持闭合，B18 补充验证已闭合且自动化 `gap=0`。
 - 已完成工作包：WP-02、WP-03、WP-04。
 - 一期已完成能力域：10 个，不因本次重新编组机械变化。
@@ -111,7 +111,7 @@
 - WP-10-F1 已完成：F1-P1 在 preparation confirm 后真实 reload，按服务端事实恢复同设备交接并完成 staff 身份撤销与 patient active；F1-P2 在患者 credential 已存在时真实 reload，恢复跨设备准备并完成 pause / resume / reissue / 新患者 / resume / terminate。两个 Profile 均使用独立 fixture、production frontend、真实 Browser backend 与 `cogmemory_ad_browser_test`，post verifier 通过且 cleanup `residualCount=0`。
 - WP-10-F2 已完成：正式患者端按服务端权威 currentStep 呈现 MMSE 19 步一步一屏，使用 private image 与 frozen MP3，执行 guidance / stimulus 播放边界、speech MediaRecorder、audio / handwriting / photo evidence、patient / staff complete、pause / resume、takeover / redo、显式技术重播授权与 completed 安全结束；不写正式 `ItemResponse`，不调用 F3 review / ASR / submit / scoring / report。
 - F2-P1 已实际完成正常 19 步 Browser 业务主流程；post verifier 为 session=completed、19/19 captures、`MediaEvidence=17`（audio=15、handwriting=1、photo=1），`ItemResponse` / `ScaleInstance` unchanged、downstream=0。technical replay 的持久授权事实与公开投影由 backend unit / E2E 证明 `false → authorize → true → replay → false`，无数据库 Schema、endpoint 或 revision 扩张。
-- F3 前最低实现对齐项（不新增工作包编号、不重新打开 F2）：将当前依赖 `advanceBy=staff` 同步推进的 MMSE 观察型步骤 `naming`、`reading-command`、`three-step-command` 调整为患者正常主链可连续推进；医护现场观察在后续复核形成正式记录。该项只锁定 F3 前的最低代码对齐目标，本次文档治理不实施，也不改变 WP-10-F2“完成”、WP-10“进行中”或 F3“下一阶段”的状态。
+- F3 前最低实现对齐已完成（不新增工作包编号、不重新打开 F2）：MMSE 观察型步骤 `naming`、`reading-command`、`three-step-command` 已由 `advanceBy=staff` 改为患者正常主链连续推进；`responseMode` 与既有 evidence / audio 门禁不变，医护现场观察仍由后续复核形成正式记录。WP-10-F2 仍为“完成”，WP-10 仍“进行中”，F3 仍为下一阶段且本次未实施。
 - WP-10 最终 Browser 收口保留 F2-P2：upload 后 reload recovery、takeover、redo、old-run isolation、terminate。它必须在 F3 完成后、WP-10 宣布完成前执行，不阻断进入 F3，也不得无期限延期。
 - WP-10 最终 Browser / accessibility 收口保留“staff 页面代表性 Axe 尚有 2 项待最终分类”。现有证据未保留具体 rule ID，不猜测类别，也不为取得 rule 重跑完整 19 步；最终收口时重新取得规则，影响核心操作、表单 accessible name、键盘操作或明显可访问性的项目必须修复，非阻断结构 / 语义项按最终验收处理。
 - 真实设备、真实麦克风、真实触控笔与人工验收继续按既有 Batch E / WP-08 归属执行；桌面 synthetic microphone Browser 不等价真实设备验收。真实 OSS 患者上传与真实 ASR 仍按各自最终验收边界处理，不阻断 F2 完成。
