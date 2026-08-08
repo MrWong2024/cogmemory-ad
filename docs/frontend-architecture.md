@@ -20,7 +20,7 @@
 
 ## 2. 不可违背约束
 
-- 当前 CogMemory AD 前端由浏览器通过公开 API Base URL 直连 backend API；不得在缺少现实需求时把 BFF 设为默认或强制层。
+- 后端访问拓扑必须由项目级部署、认证、安全和复杂度合同确定；不得在缺少现实需求时机械增加 BFF，也不得在必须保护服务端私有凭据等条件下强行采用浏览器直连。
 - 前端不得在 client bundle 暴露服务端敏感环境变量。
 - Server Components、Server Actions、Route Handler 与 Client Components 的职责必须清晰。
 - 认证和权限口径以 `docs/auth-baseline.md` 为准。
@@ -29,29 +29,35 @@
 
 ---
 
-## 3. 后端访问与可选 BFF 规则
+## 3. 后端访问拓扑与 BFF 选择
 
-### 3.1 当前 CogMemory AD 方案
+### 3.1 条件式拓扑选择
 
-- 浏览器通过 `NEXT_PUBLIC_API_BASE_URL` 暴露的公开 backend API 地址直接发起请求，API Client 使用 `credentials: 'include'` 携带现有 HttpOnly Session Cookie。
-- 当前不存在 `/api/proxy/**` BFF、Next Route Handler proxy 或本地 token layer，不应为保持所谓架构形式而增加这些层。
-- 浏览器直连必须继续满足既有 CORS、Cookie、权限、错误处理和敏感信息保护合同；公开环境变量不得包含服务端 Secret。
+后端访问拓扑可以根据现实需求选择：
+
+- Browser 直接访问公开 backend API；
+- 由部署层提供同源反向代理；
+- 通过 BFF、Route Handler 或其他受控服务端代理访问 backend。
+
+三者没有一项是所有项目的机械默认答案。选择时必须同时核对认证与 Cookie 拓扑、CORS / SameSite / Domain、server-only Secret、服务端聚合或转换、同源要求、文件上传 / 下载与流式响应、部署结构，以及实现、测试和运维复杂度。
+
+多个方案都满足安全和业务合同时，采用最低充分复杂度的方案；现有方式已经满足合同时，不为架构形式增加、删除或迁移中间层。
 
 ### 3.2 BFF 的可选引入条件
 
-BFF 是未来可选技术方案，不是默认架构。只有存在明确现实需求时才引入，例如：
+BFF 是条件式架构能力，不是信仰或固定模板。只有存在明确现实需求时才引入或保留，例如：
 
 - 必须隐藏只能由服务端持有的私有凭据；
 - 必须执行服务端聚合、转换或受控编排；
 - 部署合同明确要求同源代理；
 - 现有部署、安全或认证合同无法由浏览器直连满足。
 
-不能仅因为“架构上更规范”增加 BFF。确需引入时，代理必须保持 HTTP 方法，不擅自改写请求体，透传认证所需 Cookie、`Content-Type`、必要请求头和必要响应头，并保留错误状态码和必要响应体；二进制响应不得强行按 JSON 解析。
+不能仅因为“BFF 更规范”增加 BFF，也不能仅因为“直连少一层”删除确有现实用途的 BFF。确需代理时，代理必须保持 HTTP 方法，不擅自改写请求体，按合同透传认证所需 Cookie、`Content-Type`、必要请求头和必要响应头，并保留错误状态码和必要响应体；二进制或流式响应不得强行按 JSON 解析。
 
 ### 3.3 RSC、下载与导入导出
 
-- Server Components 运行在服务端环境中，不得用相对 `/api/...` 假定请求会自动命中 backend；如确需服务端请求，应显式使用当前公开 backend 地址，或在满足 3.2 条件时引入受控 BFF。
-- 文件下载、导入导出和带 `Content-Disposition` 的响应默认仍可按现有公开 API 合同直连处理；如确需 BFF，必须透传 `Content-Type` 与 `Content-Disposition`。
+- Server Components 运行在服务端环境中，不得用相对 `/api/...` 假定请求会自动命中 backend；如需服务端请求，应使用项目级配置明确的服务端可访问 API 地址或项目已锁定的代理路径。
+- 文件上传、下载、导入导出及流式响应应按项目已选拓扑处理。经过代理时，必须透传适用的 `Content-Type`、`Content-Disposition`、状态码和流式语义。
 - 前端应根据文件名、MIME type 和响应头处理下载行为。
 
 ---
@@ -157,8 +163,9 @@ tag 示例：
 
 设计原则：
 
-- 当前默认通过 `frontendEnv.apiBaseUrl` 直连公开 backend API，并统一使用 `credentials: 'include'`。
-- BFF 仅在第 3.2 节所列现实需求成立时引入，不作为 API Client 的默认依赖。
+- API Client 的 base URL 或 proxy path 由项目配置与项目级 handoff 明确，Client 不自行决定项目网络拓扑。
+- `credentials`、Cookie 和认证请求选项按项目已锁定的认证与部署拓扑统一处理。
+- Browser direct、反向代理或 BFF 均不得被 API Client 代码机械假定为所有项目的固定答案。
 - 统一处理 `json`、`text`、`204`、空响应。
 - 统一错误分流。
 - 不把服务端环境变量暴露到 client bundle。
@@ -230,25 +237,25 @@ tag 示例：
 
 - 仅 `NEXT_PUBLIC_` 前缀变量可进入 client bundle。
 - 服务端私有变量只能在 server-only 代码中读取。
-- 当前浏览器公开 API 地址使用 `NEXT_PUBLIC_API_BASE_URL`；该变量不得包含服务端 Secret。
-- 如未来确需 BFF，其后端地址和私有凭据必须使用 server-only 环境变量。
+- 浏览器可读变量不得包含服务端 Secret；BFF 或其他服务端代理的私有地址与凭据必须使用 server-only 环境变量。
 - 不得在 Client Component 中读取服务端私有变量。
 
-当前配置：
+通用示例：
 
-- `NEXT_PUBLIC_API_BASE_URL`
+- `NEXT_PUBLIC_API_BASE_URL`：Browser 直连公开 API 时可能采用的公开变量名示例。
+- `BACKEND_API_BASE_URL`：服务端代理访问 backend 时可能采用的 server-only 变量名示例。
 
-`NEXT_PUBLIC_APP_NAME`、`NEXT_PUBLIC_ENABLE_xxx` 等名称仅是未来公开配置示例，不代表当前项目已存在。
+上述名称仅用于说明作用域，不代表任何项目必须存在这些变量，也不构成当前配置清单。具体名称和值由项目配置与项目级 handoff 维护。
 
 ---
 
 ## 11. 前端架构演进与文档同步口径
 
-涉及以下变化时，应同步更新本文档，或在任务的“〖文档同步要求〗”中明确说明：
+通用前端架构原则本身发生变化时，应同步更新本文档，或在任务的“〖文档同步要求〗”中明确说明，例如：
 
 - 前端目录结构
 - 路由分区原则
-- 浏览器直连 backend API 与可选 BFF 的引入条件
+- 后端访问拓扑的通用选择条件
 - 认证协作方式
 - API Client 约定
 - 缓存刷新策略
@@ -261,6 +268,10 @@ tag 示例：
 - 普通页面新增
 - 普通组件新增
 - 局部 UI 调整
+- 某个具体项目在 Browser direct、反向代理或 BFF 之间作出选择或切换
+- 某个具体项目的 base URL、环境变量名、proxy path 或部署值变化
+
+上述项目专属事实优先同步项目级 handoff、代码或配置；只有变化同时改变跨项目通用架构原则时，才更新本文档。
 
 Codex 执行边界和文档同步执行规则以 `docs/codex-rules.md` 为准。
 
