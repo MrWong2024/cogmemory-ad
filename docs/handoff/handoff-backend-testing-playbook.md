@@ -192,9 +192,9 @@ WP-10-F1 使用 `backend/scripts/wp10-f1-browser-fixtures.ts` 的 `prepare`、`v
 
 - 纯文档变化只执行文档、链接、diff 与 Git 范围检查。
 - 单个测试文件变化先执行精确 discovery，再执行定向测试和必要静态检查。
-- 单模块生产代码变化执行受影响 unit / HTTP E2E 及对应 lint、typecheck、build。
-- 只有认证、公共 Guard、Schema、通用 mapper、公共测试基础设施或跨模块合同变化，才扩大回归范围。
-- 完整 unit / E2E 原则上只在最终代码态或存在明确跨模块影响时执行。
+- 单模块生产代码变化执行受影响 unit / HTTP E2E 及对应 lint、typecheck、build；在最终代码态实际通过的定向 unit / HTTP E2E 可以作为最终有效动态证据。
+- 只有存在明确扩大依据时才执行完整 unit / 完整 HTTP E2E，例如认证或公共 Guard / Pipe、Schema 或共享持久化合同、公共 mapper / 共享基础设施、跨模块公共合同、修改影响边界无法由定向证据可靠界定、工作包最终收口明确要求，或用户明确要求。
+- “最终代码态”只决定何时运行已经证明有必要的完整回归，不构成扩大测试范围的理由；需要执行完整回归时，应在本实现单元最终代码态运行。不得仅因已经到最终代码态、“为了保险”“为了更完整”或后端代码发生修改而执行完整套件。
 
 lint、typecheck、build、unit、HTTP E2E、Browser、verifier 和 cleanup 互不替代。删除测试资产后必须额外核对 discovery、TypeScript 全量范围、import、package script 和文档链接。禁止放宽 TypeScript、扩大 exclude、添加 suppression、跳过测试或吞掉退出码制造通过。
 
