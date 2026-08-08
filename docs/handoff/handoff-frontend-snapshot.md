@@ -144,27 +144,26 @@ A21–A25 写请求从当前服务端 `report.updatedAt` 取得 `expectedUpdated
 - `ITEM_RESPONSE_DRAFT_CONFLICT` 会停止自动写、保留本地草稿、读取最新服务器事实，并要求用户明确确认采用服务器版本或以最新 revision 显式重存本地版本；再次冲突仍停止，不自动合并或循环重试。
 - 网络异常、AbortError 与 500 / 502 / 503 / 504 进入结果不确定核对：只读 GET 依据 revision 与本次实际发送字段区分未提交、已提交或冲突，不盲目重放。已知离线不发 PATCH；恢复 online 时，无不确定 attempt 的草稿重新排队，有不确定 attempt 的题目先核对。
 - 页面级只有一个 1000ms 显示 tick，并按服务器 `lastResumedAt` 计算 running 显示；system 支持开始、暂停、继续、完成、复位，manual / imported 只构造 completed。运行计时每 15 秒按实际 wall-clock 形成完整 checkpoint，切组不会停止其他题组的计时数学。
-- B18-A 原 47 项非 Browser 合同继续成立，并新增 3 项正式 contract 关闭逐 ItemResponse/attempt reconciliation single-flight、失败后人工重试释放和 initialize stale run 失效；B18-B1 的 6 个核心 Browser 场景、B18-B2 P4/P5/P6 的 6 个 Browser 场景、P7 显式保存和 P8 running 重载继续成立，P3 2/2 回归与 P9 1/1 媒体上传失败草稿保全均通过。媒体上传网络中止不会清除当前 React 会话中的文字草稿和已处理图片预览；B18 补充验证已闭合，自动化 `gap=0`。
+- 当前自动保存、逐 `ItemResponse` / attempt reconciliation single-flight、显式冲突处理、网络结果核对、切组 flush、媒体 generation、实时计时和失败草稿保全已实现；媒体上传网络中止不会清除当前 React 会话中的文字草稿和已处理图片预览。
 
 ## 7. 当前实现结论与验证入口
 
-- WP-10-F1、WP-10-F2 已完成：F1 的同 / 跨设备发起、准备与安全进入已闭合；F2 正常 MMSE 19 步正式患者 Browser 主链与 post verifier 已通过，覆盖 audio / image / evidence、writing / drawing、patient / staff complete、显式 `technicalReplayAuthorized` 和 completed 安全结束。F2-P2 recovery 与 staff Axe 2 项已有 WP-10 最终收口归属，下一阶段为 F3；完整证据见 frontend / backend testing playbook。
-- B16 replacement V2+ 生命周期、B17 history/versions/detail/trends 与 B18 自动保存、single-flight 网络核对、切组、媒体 generation、实时计时及失败草稿保全均已完成；WP-03 已完成。Batch E 的 8 项历史真实设备或人工候选仍为 `pending`，当前主要归属为 WP-08；WP-08 启动时仍须按最终患者施测合同重新治理适用候选，不能把机械关闭这 8 项等同于 WP-08 完成。
-- Playwright、Chromium 与 Axe 通用 Browser acceptance 基础设施已完成。B10-89 后续已由 B10-C2 定向通过；B10 `generation-workflow` 48 pass、`public-surface-security` 47 pass，共 95 项完成，Batch C / B7–B10 已完成。Batch D 的 B11～B15 均已完成；B14.1 已治理为累计证据索引而非独立 Browser 批次，具体状态以 `handoff-frontend-testing-playbook.md` 为准。
-- 当前静态门禁、Batch 状态、Browser/automated 数量、权限/错误、响应式、键盘、Network、Runtime Storage、evidence commit、verify 与 cleanup 统一见 `handoff-frontend-testing-playbook.md`；本 snapshot 不维护测试终态。
+- WP-10-F1、WP-10-F2 已完成：同 / 跨设备发起、准备与安全进入，以及正常 MMSE 19 步正式患者主链均已实现。F2-P2 recovery 与 staff Axe 分类保留在 WP-10 最终收口，下一阶段仍为 F3。
+- replacement V2+ 生命周期、history / versions / detail / trends、自动保存与媒体协调等既有前端能力已实现；精确当前事实见对应 maps。本 snapshot 不保存已关闭批次的测试数字或 evidence ledger。
+- 稳定验证规则和当前仍待验边界见 frontend / backend testing playbook；已关闭阶段的详细执行证据由 Git 历史和当前测试资产追溯。
 
 ## 8. 当前未实现边界
 
 - 受监督患者施测终端：MMSE 的 F1/F2 已实现并完成正常 19 步正式患者主链；F2-P2 的 upload 后 reload recovery、takeover、redo、old-run isolation 与 terminate 尚待 WP-10 最终 Browser 收口。MoCA 患者端多模态编排尚未实现。
-- F3 尚未开始：F2 患者原始事实与必要证据尚未接入医生异常优先 review、真实 ASR、医生整体确认后的正式 `ItemResponse`、submit、scoring 或 report。现有 C2 后端 review / ASR 底座不等于 F3 前端闭环。
-- 真实设备、真实麦克风、真实触控笔、真实 OSS 患者上传与真实 ASR 尚未验收；桌面 synthetic microphone、mouse / Pointer 与 fake Storage 证据不得冒充这些边界。真实设备与人工项目继续归属 Batch E / WP-08。
+- F3 尚未开始，其核心前端链为 patient administration review → 医生查看患者原始事实 / evidence / ASR candidate → 通过 existing `ItemResponse` draft 人工录入或修订 → `markAsAnswered` → submission readiness → existing A16 submit → 正式提交结果 → 既有 scoring / report 链。ASR candidate 不自动写 `ItemResponse`；A16 前草稿已经存在，A16 不创建或复制第二份答案。
+- 真实 ASR 服务验收与 F3 前端闭环实现是两个不同边界。F3 可按既定 fake / stub / 受控环境完成开发与自动化验收；真实设备、真实麦克风、真实触控笔、真实患者 OSS 和真实 ASR 继续按 roadmap 原有最终验收归属，不扩大 F3，桌面 synthetic microphone、mouse / Pointer 与 fake Storage 证据不得冒充这些边界。
 - 非语音步骤仍不默认录音，动作观察不等于视频、摄像头、传感器或自动行为识别。摄像头不是标准患者交互设备的通用前置；未来具体步骤确有拍摄或扫码必要时，须由该步骤合同单独锁定权限、隐私、适配和验收。现有医生侧图片上传、纸笔结果拍照和手写证据能力不因此删除或取消。
 - 临床运营与知情者辅助：现有 `AuthDashboard` 仍是轻量入口，尚无 WP-12 的最小临床运营工作区或医护代录知情者辅助信息能力；知情者来源、关系和了解程度与患者作答 / ItemResponse / 量表得分分离呈现也尚未实现。当前缺口不等于一期要求知情者长期账号、家庭门户或短期自助链接。
 - F1/F2 已锁定同 / 跨设备安全进入、准备练习、八类影响因素、5 秒 staff / 3 秒 patient 轮询、逐步骤文字 / 语音 / 播放 / 重播和当前 run 证据采集；这不表示二维码、全页面 TTS、强实时协作、特定传输技术、全部固定录音、永久保存全部原始证据、独立应用 / 新角色，或独立 attempt / capture / review 集合和通用投影子系统成为未来实现合同。
 - HIS / EMR、计费、保险及其他第三方医院系统集成当前未实现，且不属于一期产品缺口、WP-09 或上线验收门禁。
 - 患者：编辑、删除、归档、合并。
 - 访视：编辑、删除、完整状态流转。
-- 施测：不实现永久离线草稿或批量 PATCH；Batch E 当前 8 个历史 ID 和 `pending` 状态保持不变，主要归属为 WP-08，最终适用的真实设备与人工候选须在 WP-08 启动时按最终合同重新治理。
+- 施测：不实现永久离线草稿或批量 PATCH；真实设备与人工候选按 roadmap 和 testing playbook 的当前待验边界治理。
 - 评分：独立锁定、作废、撤销确认、reopen、rerun、批量人工评分和独立历史列表。
 - 认知域：人工修改、确认、锁定、作废、重算和跨量表合并。
 - 报告：reject、reopen、withdraw、签名、unlock、unfreeze、unarchive、作废、重生成、PDF、打印、下载。
@@ -176,12 +175,6 @@ A21–A25 写请求从当前服务端 `report.updatedAt` 取得 `expectedUpdated
 
 - 新增或调整页面/路由时更新 route map；API Client、method、请求/响应或错误映射变化时更新 API map。
 - 稳定组件、Hook、状态协调或职责边界变化时更新 component map；snapshot 只同步模块级当前事实。
-- 验证策略、批次状态、数字、cleanup 或 evidence commit 只更新 frontend testing playbook。
+- 稳定验证规则、cleanup 合同和当前仍待验边界只更新 frontend testing playbook；已关闭阶段的详细执行证据由 Git 历史和当前测试资产追溯。
 - 业务工作包状态只由 roadmap 维护；文档治理不得改变 roadmap 状态。
 - 不得把产品占位文案、阶段性历史记录或尚未启动的验收批次写成当前实现事实。
-
-## 10. 历史追溯
-
-- B16 replacement 生命周期实现可从 `eabb9b3` 及缺陷修复 `066ee87` 追溯。
-- B17 产品实现可从 `4ba9106` 追溯；WP-04 与其他前端验证证据统一由 frontend testing playbook 索引。
-- B18-B2 既有收口基线为 `5479181da3840504fe0ddeeb15406e2e9b3e8010`；single-flight/P3 收口任务基线为 `191669f6ac7e636bbe1339d9acae226e243b3278`，P9 最终收口基线为 `e99c4a6dceab69aa2ab274dc99270a20a0797d39`，执行证据由 frontend testing playbook 维护。

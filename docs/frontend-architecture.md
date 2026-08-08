@@ -1,6 +1,6 @@
 # 前端架构规范（Next.js）
 
-本文档定义 `frontend\` 前端工程的目录结构、路由组织、数据获取、BFF 代理、组件分层、错误处理、缓存刷新和架构演进口径。  
+本文档定义 `frontend\` 前端工程的目录结构、路由组织、数据获取、后端访问、可选 BFF、组件分层、错误处理、缓存刷新和架构演进口径。
 适用于采用 Next.js App Router + TypeScript 的前端工程。  
 本文档不承担 Codex 指令模板和 Codex 执行边界职责；Codex 指令结构以 `docs/codex-instruction-spec.md` 为准，Codex 执行规则以 `docs/codex-rules.md` 为准；认证、会话、角色和权限口径以 `docs/auth-baseline.md` 为准。
 
@@ -20,7 +20,7 @@
 
 ## 2. 不可违背约束
 
-- 前端请求后端时应优先通过 BFF 代理。
+- 当前 CogMemory AD 前端由浏览器通过公开 API Base URL 直连 backend API；不得在缺少现实需求时把 BFF 设为默认或强制层。
 - 前端不得在 client bundle 暴露服务端敏感环境变量。
 - Server Components、Server Actions、Route Handler 与 Client Components 的职责必须清晰。
 - 认证和权限口径以 `docs/auth-baseline.md` 为准。
@@ -29,34 +29,30 @@
 
 ---
 
-## 3. BFF 代理与服务端请求规则
+## 3. 后端访问与可选 BFF 规则
 
-### 3.1 默认方案
+### 3.1 当前 CogMemory AD 方案
 
-- 页面、RSC、Server Actions、Client Components 统一请求同域 `/api/proxy/**`。
-- `app/api/proxy/[...path]/route.ts` 转发到后端 `/api/**`。
-- 代理层负责透传 Cookie、请求体、必要请求头和必要响应头。
+- 浏览器通过 `NEXT_PUBLIC_API_BASE_URL` 暴露的公开 backend API 地址直接发起请求，API Client 使用 `credentials: 'include'` 携带现有 HttpOnly Session Cookie。
+- 当前不存在 `/api/proxy/**` BFF、Next Route Handler proxy 或本地 token layer，不应为保持所谓架构形式而增加这些层。
+- 浏览器直连必须继续满足既有 CORS、Cookie、权限、错误处理和敏感信息保护合同；公开环境变量不得包含服务端 Secret。
 
-代理约束：
+### 3.2 BFF 的可选引入条件
 
-- 支持常见 HTTP method：`GET`、`POST`、`PUT`、`PATCH`、`DELETE`。
-- 转发请求 body。
-- 透传必要请求头，至少包括 `cookie`、`content-type`、`accept`。
-- 透传必要响应头，至少包括 `content-type`、`content-disposition`、`set-cookie`。
-- 多条 `set-cookie` 不得丢失。
+BFF 是未来可选技术方案，不是默认架构。只有存在明确现实需求时才引入，例如：
 
-### 3.2 RSC 调后端规则
+- 必须隐藏只能由服务端持有的私有凭据；
+- 必须执行服务端聚合、转换或受控编排；
+- 部署合同明确要求同源代理；
+- 现有部署、安全或认证合同无法由浏览器直连满足。
 
-- Next.js Server Components 运行在服务端环境中，不应使用相对 `/api/...` 期待直接命中后端服务。
-- 如需通过同域访问后端，优先调用 BFF 代理。
-- 仅在部署、反向代理和环境变量约定都明确时，才考虑服务端直连后端。
+不能仅因为“架构上更规范”增加 BFF。确需引入时，代理必须保持 HTTP 方法，不擅自改写请求体，透传认证所需 Cookie、`Content-Type`、必要请求头和必要响应头，并保留错误状态码和必要响应体；二进制响应不得强行按 JSON 解析。
 
-### 3.3 文件下载与导入导出
+### 3.3 RSC、下载与导入导出
 
-- 文件下载、导入导出、二进制响应、带 `Content-Disposition` 的响应，优先经 BFF 代理统一处理。
-- BFF 代理必须透传 `Content-Type` 与 `Content-Disposition`。
-- 不应把二进制响应强行按 JSON 解析。
-- 前端应根据文件名、 MIME type 和响应头处理下载行为。
+- Server Components 运行在服务端环境中，不得用相对 `/api/...` 假定请求会自动命中 backend；如确需服务端请求，应显式使用当前公开 backend 地址，或在满足 3.2 条件时引入受控 BFF。
+- 文件下载、导入导出和带 `Content-Disposition` 的响应默认仍可按现有公开 API 合同直连处理；如确需 BFF，必须透传 `Content-Type` 与 `Content-Disposition`。
+- 前端应根据文件名、MIME type 和响应头处理下载行为。
 
 ---
 
@@ -161,8 +157,8 @@ tag 示例：
 
 设计原则：
 
-- 默认走 BFF。
-- 直连后端仅在部署和环境变量明确时使用。
+- 当前默认通过 `frontendEnv.apiBaseUrl` 直连公开 backend API，并统一使用 `credentials: 'include'`。
+- BFF 仅在第 3.2 节所列现实需求成立时引入，不作为 API Client 的默认依赖。
 - 统一处理 `json`、`text`、`204`、空响应。
 - 统一错误分流。
 - 不把服务端环境变量暴露到 client bundle。
@@ -234,18 +230,15 @@ tag 示例：
 
 - 仅 `NEXT_PUBLIC_` 前缀变量可进入 client bundle。
 - 服务端私有变量只能在 server-only 代码中读取。
-- BFF 代理后端地址应使用服务端环境变量。
+- 当前浏览器公开 API 地址使用 `NEXT_PUBLIC_API_BASE_URL`；该变量不得包含服务端 Secret。
+- 如未来确需 BFF，其后端地址和私有凭据必须使用 server-only 环境变量。
 - 不得在 Client Component 中读取服务端私有变量。
 
-通用示例：
+当前配置：
 
-- `BACKEND_URL`
-- `NEXT_PUBLIC_APP_NAME`
-- `NEXT_PUBLIC_ENABLE_xxx`
+- `NEXT_PUBLIC_API_BASE_URL`
 
-说明：
-
-- 上述变量名仅作为示例，不代表当前项目已经存在对应配置。
+`NEXT_PUBLIC_APP_NAME`、`NEXT_PUBLIC_ENABLE_xxx` 等名称仅是未来公开配置示例，不代表当前项目已存在。
 
 ---
 
@@ -255,7 +248,7 @@ tag 示例：
 
 - 前端目录结构
 - 路由分区原则
-- BFF 代理约定
+- 浏览器直连 backend API 与可选 BFF 的引入条件
 - 认证协作方式
 - API Client 约定
 - 缓存刷新策略
@@ -283,4 +276,3 @@ Codex 执行边界和文档同步执行规则以 `docs/codex-rules.md` 为准。
 - `docs/database-conventions.md`：数据库治理
 
 如出现执行规则与前端架构说明的重叠或冲突，应以 `docs/codex-rules.md` 的执行规则为准；本文档聚焦前端工程架构本身。
-
