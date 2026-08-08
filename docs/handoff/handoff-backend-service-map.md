@@ -75,9 +75,9 @@
 - 当前方法：`listAvailableScaleOptions()`、`getAvailableScaleOption(scaleCode, version?)`、`ensureSeedScaleVersionMaterialized(scaleCode, version?)`。
 - 上游调用方：`ScalesController` 调用只读目录；`AssessmentScaleWorkflowService` 调用解析与按需物化。
 - 下游依赖：`ScaleSeedDataService`、`ScaleDefinition` / `ScaleVersion` Model。
-- 写库与冲突边界：GET 目录不写库；MMSE 新插入随 `$setOnInsert` 写呈现双字段；legacy 两字段均缺失时以单次条件原子更新同时补齐并重读。已物化 MMSE 1.0 另只允许“package 不变、19 步内容不变、仅 naming / reading-command / three-step-command 的 advanceBy 为 staff”这一 predecessor，以 `_id` + scale/version + package + 精确 legacy steps 做 CAS 并只写当前 steps；合法并发可重读收敛。已一致零写复用；任意额外 drift、部分字段或竞争后不一致均返回稳定 conflict，绝不覆盖未知临床配置；MoCA 不写空字段；currentVersionId 仅空值时设置。
+- 写库与冲突边界：GET 目录不写库；MMSE 新插入随 `$setOnInsert` 写呈现双字段；legacy 两字段均缺失时以单次条件原子更新同时补齐并重读。已物化配置与 current seed 一致时零写复用；任意 stored drift 或部分字段均返回稳定 conflict，绝不覆盖未知临床配置；MoCA 不写空字段；currentVersionId 仅空值时设置。
 - 错误语义：`SCALE_NOT_AVAILABLE`、`SCALE_VERSION_NOT_AVAILABLE`、`SCALE_NOT_ACTIVE`、`SCALE_VERSION_NOT_ACTIVE`、`SCALE_CATALOG_INVALID`、`SCALE_CATALOG_VERSION_CONFLICT`。
-- 测试覆盖口径：`scale-catalog.service.spec.ts` 覆盖摘要、seed 校验失败、新插入、legacy 双字段原子补齐、MMSE 三步精确 predecessor 原子迁移、一致零写复用、第四处 / patientText drift fail closed、合法并发收敛、MoCA 零呈现写入、inactive、duplicate key 竞态和不覆盖语义；不连接真实 MongoDB。
+- 测试覆盖口径：`scale-catalog.service.spec.ts` 覆盖摘要、seed 校验失败、新插入、legacy 双字段原子补齐及其既有并发收敛、一致零写复用、stored steps / 部分字段通用 conflict、MoCA 零呈现写入、inactive、duplicate key 竞态和不覆盖语义；不连接真实 MongoDB。
 
 - Service 名称：`PresentationAssetsService`
 - 文件路径：`backend\src\modules\scales\services\presentation-assets.service.ts`
