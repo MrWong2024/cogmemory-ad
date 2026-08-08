@@ -6,15 +6,7 @@
 - [Roadmap](./handoff-roadmap.md) 维护产品范围、工作包状态和当前主线；本 INDEX 不复制这些事实。
 - Backend snapshot 维护当前工程结构、能力和真实未实现边界；各 map、matrix、decisions 与 testing playbook 按下文分工维护专项事实。
 
-## 2. 当前实现摘要
-
-- 后端采用 NestJS、Mongoose 与 HttpOnly Session Cookie 认证底座。
-- 后端业务能力已实施至 A30，覆盖患者、访视与量表执行、单题草稿独立版本 / CAS / 持久化计时、提交写屏障、媒体证据、评分、认知域、临床报告生命周期、历史读取和基础随访趋势。
-- A26 让任意合法线性 replacement V2+ 复用 A21–A24 的既有生命周期。
-- A29 / A30 后端范围完成，父实例 + 固定题目 scope 的可恢复 submission write barrier 已关闭相邻生命周期写保护 gap；frontend reconciliation single-flight、P3 回归与 P9 媒体上传失败草稿保全均已关闭，B18 补充验证自动化 `gap=0`，WP-03 已完成。
-- 详细后端门禁与跨端 Browser 验收状态分别见 backend / frontend testing playbook。
-
-## 3. Handoff 文档导航与职责
+## 2. Handoff 文档导航与职责
 
 - [受监督患者施测合同](./handoff-patient-administration-contract.md)：WP-10.0 跨端业务、题目媒体、数据、安全与医生复核边界的唯一详细入口；不预设后端 Schema、DTO 或 endpoint。
 - [Backend snapshot](./handoff-backend-snapshot.md)：当前后端工程结构、能力范围与真实未实现边界。
@@ -27,7 +19,7 @@
 
 - 跨端 Browser 验收参考：[Frontend testing playbook](./handoff-frontend-testing-playbook.md)。
 
-## 4. 同步规则
+## 3. 同步规则
 
 - 产品范围、工作包状态或当前主线变化时，更新 roadmap。
 - 后端工程结构、能力范围或真实未实现边界变化时，更新 backend snapshot。

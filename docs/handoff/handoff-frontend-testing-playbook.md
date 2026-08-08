@@ -113,7 +113,7 @@ backend unit、HTTP E2E、database verifier、fixture 与 cleanup 的具体规�
 - 单个测试文件变化执行精确 discovery、定向测试和必要静态检查，不自动扩大到完整 E2E。
 - 单模块生产代码变化执行受影响 unit / E2E 与对应层静态门禁。
 - 只有认证、公共 Guard、Schema、通用 mapper、公共测试基础设施或跨模块合同变化，才按实际影响扩大回归。
-- 完整 unit / E2E 原则上在批次最终代码态执行一次，或在存在明确跨模块影响时执行；不得在每个 Profile 后机械重复。
+- 是否执行完整 unit / E2E 由真实影响决定；“最终代码态”只决定已经证明有必要的完整回归何时执行，不构成扩大测试范围的理由。不得仅因达到最终代码态、“为了保险”或“为了更完整”而执行完整套件。
 - 前端最终代码态按实际影响选择 `npm run test:browser:list`、`npm run test:browser:infra`、`npm run lint`、`npm run typecheck`、`npm run build`；discovery 和 infrastructure 不关闭业务场景。
 
 ### 2.5 微型 Browser Profile 与任务粒度
