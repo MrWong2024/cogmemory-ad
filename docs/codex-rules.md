@@ -458,7 +458,7 @@ return projects.map(toProjectSummaryResponse);
 
 ### 后端验证范围与最终门禁
 
-后端验证直接复用 `docs/handoff/handoff-backend-testing-playbook.md` 的既有分层规则，并遵循 `docs/codex-instruction-spec.md` v1.14 的最低充分证据原则；不建立另一套测试分类或门禁体系。
+后端验证直接复用 `docs/handoff/handoff-backend-testing-playbook.md` 的既有分层规则，并遵循 `docs/codex-instruction-spec.md` 的最低充分证据原则；不建立另一套测试分类或门禁体系。
 
 - 命中上方“后端 TypeScript 全量类型检查门禁”触发范围时，`npm run typecheck` 仍是不可替代的独立强制静态门禁，必须按其完整命令、完成标准和失败处理执行。本节不削弱 TypeScript 类型安全。
 - lint、typecheck、build、unit 与 HTTP E2E 按各自真实职责和修改影响选择。默认从定向 unit、定向 HTTP E2E 与必要静态门禁中选择能覆盖实际变化的最低充分集合；在最终代码态实际通过的定向 unit / HTTP E2E 可以作为最终有效动态证据，不要求为了“保险”再机械执行完整 unit 或完整 E2E。
