@@ -215,6 +215,16 @@
 - 错误：400 `MEDIA_PRIMARY_FILE_REQUIRED`、`MEDIA_FILE_EMPTY`、`MEDIA_FILE_TYPE_NOT_ALLOWED`、`MEDIA_FILE_SIGNATURE_INVALID`、`MEDIA_FILE_EMBEDDED_METADATA_NOT_ALLOWED`、`MEDIA_TRAJECTORY_INVALID`、`MEDIA_CAPTURE_MODE_INVALID`；413 `MEDIA_FILE_TOO_LARGE`；404 完整归属错误；409 `PATIENT_NOT_ACTIVE`、`VISIT_NOT_EDITABLE`、`SCALE_INSTANCE_NOT_EDITABLE`、`ITEM_RESPONSE_NOT_EDITABLE`、`ITEM_EVIDENCE_TYPE_NOT_REQUIRED`、`MEDIA_EVIDENCE_ALREADY_ATTACHED`；500 `MEDIA_EVIDENCE_CREATE_FAILED` / `MEDIA_EVIDENCE_ATTACH_FAILED`；503 `MEDIA_STORAGE_UNAVAILABLE`
 - 服务端所有权与隐私：关联字段、evidenceCode、status、storage、checksum、operatorSnapshot、itemSnapshot、versionTrace 和 metadata 均由服务端生成；不保存或响应原始文件名，objectKey 不包含患者姓名 / 编号 / 病历号 / 联系方式 / 备注
 
+- 接口名称：采用既有患者施测媒体证据
+- Method / Path：`POST /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/item-responses/:itemResponseId/media-evidences/:mediaEvidenceId/adopt`
+- Guard / Roles：`SessionAuthGuard` + `RolesGuard`；继续使用 `admin`、`doctor`、`nurse`、`research_assistant`
+- Param / Body DTO：复用 `MediaEvidenceParamDto`；无 Body
+- 资格：完整 Patient -> Visit -> ScaleInstance -> ItemResponse -> MediaEvidence ownership，Patient active、Visit / ScaleInstance / ItemResponse 可编辑、未锁定且父 / 子 submission barrier open；Evidence 必须为 attached / stored、未锁定 / 作废 / 删除且具有患者施测上下文，只支持当前 Item 已要求且 ref 仍为 pending / missing + null 的 photo / handwriting
+- 患者 run：仅采用最新患者施测 Session 已 completed 的事实；目标 Evidence 必须在对应 itemResponse 下精确出现一次，所属 step / stepRun 已有 capture 且 `invalidatedAt=null`，evidence type 与 run 事实一致。invalidated、evidence-only、其他 Session / Item / type 或非患者施测 Evidence 均为 409 `MEDIA_EVIDENCE_NOT_ADOPTABLE`
+- 响应：200，沿用 `UploadMediaEvidenceResponse { mediaEvidence, evidenceRequirement }` 同形安全结构；requirement 为 attached / true，不返回 ownership / session / step / Storage 内部字段
+- 写入与并发：只调用既有 evidenceRef 条件绑定，复用同一个 MediaEvidence ID；并发时允许一个成功、另一个以 `MEDIA_EVIDENCE_ALREADY_ATTACHED` 等既有稳定错误安全拒绝。adoption 不创建或复制 Evidence / OSS 对象，Storage 调用为 0，CAS 失败不删除或 void 原患者 Evidence
+- 非职责：不修改答案、题目 / 实例 / 访视 status、`draftRevision`、`draftSavedAt`、operatorNote 或 score，不自动 `markAsAnswered`、submit、评分或报告复核
+
 - 接口名称：媒体证据临时访问地址
 - Method / Path：`GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/item-responses/:itemResponseId/media-evidences/:mediaEvidenceId/access-url`
 - Guard / Roles：`SessionAuthGuard` + `RolesGuard`；`admin`、`doctor`、`nurse`、`research_assistant`

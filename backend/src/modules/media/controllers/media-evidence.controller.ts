@@ -102,6 +102,16 @@ export class MediaEvidenceController {
     );
   }
 
+  @Post(':mediaEvidenceId/adopt')
+  @HttpCode(HttpStatus.OK)
+  adoptPatientAdministrationEvidence(
+    @Param() params: MediaEvidenceParamDto,
+  ): Promise<UploadMediaEvidenceResponse> {
+    return this.mediaEvidenceWorkflowService.adoptPatientAdministrationEvidence(
+      params,
+    );
+  }
+
   @Get(':mediaEvidenceId/access-url')
   createAccessUrl(
     @Param() params: MediaEvidenceParamDto,

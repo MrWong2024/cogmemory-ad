@@ -274,7 +274,7 @@ export const MMSE_SCALE_VERSION_SEED: ScaleSeedVersion = {
       requiresTimer: false,
       supportsPhotoUpload: false,
       supportsHandwriting: false,
-      requiresOperatorNote: true,
+      requiresOperatorNote: false,
       scoringRule: {
         mode: 'structured_manual',
         sourceDocument: 'MMSE+MoCA.pdf',
@@ -311,7 +311,7 @@ export const MMSE_SCALE_VERSION_SEED: ScaleSeedVersion = {
       requiresTimer: false,
       supportsPhotoUpload: false,
       supportsHandwriting: false,
-      requiresOperatorNote: true,
+      requiresOperatorNote: false,
       scoringRule: {
         mode: 'structured_manual',
         sourceDocument: 'MMSE+MoCA.pdf',
@@ -348,7 +348,7 @@ export const MMSE_SCALE_VERSION_SEED: ScaleSeedVersion = {
       requiresTimer: false,
       supportsPhotoUpload: false,
       supportsHandwriting: false,
-      requiresOperatorNote: true,
+      requiresOperatorNote: false,
       scoringRule: {
         mode: 'structured_manual',
         words: [
@@ -383,7 +383,7 @@ export const MMSE_SCALE_VERSION_SEED: ScaleSeedVersion = {
       requiresTimer: false,
       supportsPhotoUpload: false,
       supportsHandwriting: false,
-      requiresOperatorNote: true,
+      requiresOperatorNote: false,
       scoringRule: {
         mode: 'multi_step_manual',
         independentStepScoring: true,
@@ -441,7 +441,7 @@ export const MMSE_SCALE_VERSION_SEED: ScaleSeedVersion = {
       requiresTimer: false,
       supportsPhotoUpload: false,
       supportsHandwriting: false,
-      requiresOperatorNote: true,
+      requiresOperatorNote: false,
       scoringRule: {
         mode: 'structured_manual',
         words: [
@@ -475,7 +475,7 @@ export const MMSE_SCALE_VERSION_SEED: ScaleSeedVersion = {
       requiresTimer: false,
       supportsPhotoUpload: false,
       supportsHandwriting: false,
-      requiresOperatorNote: true,
+      requiresOperatorNote: false,
       scoringRule: {
         mode: 'structured_manual',
         subItems: [
@@ -512,7 +512,7 @@ export const MMSE_SCALE_VERSION_SEED: ScaleSeedVersion = {
       requiresTimer: false,
       supportsPhotoUpload: false,
       supportsHandwriting: false,
-      requiresOperatorNote: true,
+      requiresOperatorNote: false,
       scoringRule: {
         mode: 'manual_exact_match',
         scoringSummary: '必须完全相同才算正确。',
@@ -542,7 +542,7 @@ export const MMSE_SCALE_VERSION_SEED: ScaleSeedVersion = {
       requiresTimer: false,
       supportsPhotoUpload: false,
       supportsHandwriting: false,
-      requiresOperatorNote: true,
+      requiresOperatorNote: false,
       scoringRule: {
         mode: 'manual_observation',
         scoringSummary: '需有闭眼动作才给分；文盲该项 0 分。',
@@ -572,7 +572,7 @@ export const MMSE_SCALE_VERSION_SEED: ScaleSeedVersion = {
       requiresTimer: false,
       supportsPhotoUpload: false,
       supportsHandwriting: false,
-      requiresOperatorNote: true,
+      requiresOperatorNote: false,
       scoringRule: {
         mode: 'structured_manual',
         subItems: [
@@ -618,7 +618,7 @@ export const MMSE_SCALE_VERSION_SEED: ScaleSeedVersion = {
       requiresTimer: false,
       supportsPhotoUpload: true,
       supportsHandwriting: true,
-      requiresOperatorNote: true,
+      requiresOperatorNote: false,
       scoringRule: {
         mode: 'manual_observation',
         scoringSummary: '句子需有主语和谓语，并表达完整意思。',
@@ -653,7 +653,7 @@ export const MMSE_SCALE_VERSION_SEED: ScaleSeedVersion = {
       requiresTimer: false,
       supportsPhotoUpload: true,
       supportsHandwriting: true,
-      requiresOperatorNote: true,
+      requiresOperatorNote: false,
       scoringRule: {
         mode: 'manual_drawing_review',
         scoringSummary: '图形需有 10 个角和 2 条相交直线。',

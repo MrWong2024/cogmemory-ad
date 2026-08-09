@@ -1,4 +1,5 @@
 import type { ScaleItemConfigSummary } from '../../scales/services/scales.service';
+import { MMSE_SCALE_VERSION_SEED } from '../../scales/seeds/mmse.seed';
 import type {
   ItemResponseSummary,
   ScaleInstanceSummary,
@@ -391,6 +392,32 @@ describe('scale instance submission readiness', () => {
       'ITEM_ANSWER_CONTENT_MISSING',
       'ITEM_NOT_COMPLETED',
     ]);
+  });
+
+  it('does not block a current MMSE item solely because operatorNote is absent', () => {
+    const mmseItem = MMSE_SCALE_VERSION_SEED.items.find(
+      (item) => item.code === 'mmse.orientation.time',
+    );
+    if (!mmseItem) {
+      throw new Error('Expected current MMSE orientation item');
+    }
+    const result = evaluate(
+      [mmseItem],
+      [
+        createItemResponse({
+          itemCode: mmseItem.code,
+          itemTitle: mmseItem.title,
+          itemOrder: mmseItem.order,
+          responseType: mmseItem.responseType,
+          rawResponse: '2026-08-10',
+          operatorNote: undefined,
+        }),
+      ],
+    );
+
+    expect(result.blockingIssues.map((issue) => issue.code)).not.toContain(
+      'ITEM_REQUIRED_OPERATOR_NOTE_MISSING',
+    );
   });
 
   it('blocks a future instance start and reports unavailable duration only as warning', () => {

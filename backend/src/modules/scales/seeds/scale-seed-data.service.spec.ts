@@ -64,6 +64,19 @@ describe('ScaleSeedDataService', () => {
     expect(result.warnings).toEqual([]);
   });
 
+  it('keeps all 11 current MMSE operator notes optional without removing the evidence type', () => {
+    const mmse = getSeed(service.getAllScaleSeeds(), 'mmse');
+
+    expect(mmse.version.items).toHaveLength(11);
+    expect(
+      mmse.version.items.every(
+        (item) =>
+          item.requiresOperatorNote === false &&
+          item.evidenceTypes.includes('operator_note'),
+      ),
+    ).toBe(true);
+  });
+
   it('configures the MMSE 1.0 patient package as 19 contiguous safe steps', () => {
     const mmse = getSeed(service.getAllScaleSeeds(), 'mmse');
     const steps = getPatientAdministrationSteps(mmse);

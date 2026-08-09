@@ -13,6 +13,7 @@ describe('MediaEvidenceController', () => {
   let workflow: {
     listEvidence: jest.Mock;
     uploadEvidence: jest.Mock;
+    adoptPatientAdministrationEvidence: jest.Mock;
     createAccessUrl: jest.Mock;
     voidEvidence: jest.Mock;
   };
@@ -22,6 +23,7 @@ describe('MediaEvidenceController', () => {
     workflow = {
       listEvidence: jest.fn(),
       uploadEvidence: jest.fn(),
+      adoptPatientAdministrationEvidence: jest.fn(),
       createAccessUrl: jest.fn(),
       voidEvidence: jest.fn(),
     };
@@ -55,7 +57,7 @@ describe('MediaEvidenceController', () => {
     ).toEqual([SessionAuthGuard, RolesGuard]);
   });
 
-  it('forwards list, upload, access URL and void inputs', async () => {
+  it('forwards list, upload, adoption, access URL and void inputs', async () => {
     const params = {
       patientId: '507f1f77bcf86cd799439011',
       visitId: '507f1f77bcf86cd799439012',
@@ -81,12 +83,14 @@ describe('MediaEvidenceController', () => {
 
     workflow.listEvidence.mockResolvedValue({ items: [] });
     workflow.uploadEvidence.mockResolvedValue({});
+    workflow.adoptPatientAdministrationEvidence.mockResolvedValue({});
     workflow.createAccessUrl.mockResolvedValue({});
     workflow.voidEvidence.mockResolvedValue({});
     transcription.transcribe.mockResolvedValue({});
 
     await controller.listEvidence(params);
     await controller.uploadEvidence(params, input, files, user);
+    await controller.adoptPatientAdministrationEvidence(mediaParams);
     await controller.createAccessUrl(mediaParams, { asset: 'trajectory' });
     await controller.voidEvidence(
       mediaParams,
@@ -101,6 +105,9 @@ describe('MediaEvidenceController', () => {
       input,
       files,
       user,
+    );
+    expect(workflow.adoptPatientAdministrationEvidence).toHaveBeenCalledWith(
+      mediaParams,
     );
     expect(workflow.createAccessUrl).toHaveBeenCalledWith(mediaParams, {
       asset: 'trajectory',

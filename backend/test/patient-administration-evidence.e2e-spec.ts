@@ -91,6 +91,7 @@ class TrackingFakeStorageService implements StorageService {
     { buffer: Buffer; sizeBytes: number; mimeType: string }
   >();
   readonly uploadedKeys: string[] = [];
+  readonly copiedKeys: string[] = [];
   readonly deletedKeys: string[] = [];
   private blockedBatch:
     | {
@@ -150,6 +151,11 @@ class TrackingFakeStorageService implements StorageService {
       url: `https://fake.invalid/${encodeURIComponent(objectKey)}`,
       expiresAt: new Date(Date.now() + options.expiresInSeconds * 1000),
     });
+  }
+
+  copyObject(sourceObjectKey: string, targetObjectKey: string): Promise<void> {
+    this.copiedKeys.push(`${sourceObjectKey}->${targetObjectKey}`);
+    return Promise.resolve();
   }
 
   deleteObject(objectKey: string): Promise<void> {
@@ -425,8 +431,11 @@ describe('patient administration evidence APIs (e2e)', () => {
     if (
       connection.name !== 'cogmemory_ad_test' ||
       configService.get<string>('app.env') !== 'test' ||
+      configService.get<string>('mongo.purpose') !== 'standard_test' ||
       configService.get<string>('storage.driver') !== 'fake' ||
-      configService.get<string>('llm.provider') !== 'stub'
+      configService.get<string>('asr.provider') !== 'stub' ||
+      configService.get<string>('llm.provider') !== 'stub' ||
+      configService.get<string>('smsAuth.provider') !== 'stub'
     ) {
       throw new Error('C1 E2E isolation is not active');
     }
@@ -477,6 +486,14 @@ describe('patient administration evidence APIs (e2e)', () => {
         )
         .exec();
     }
+    expect(mmseVersion.items).toHaveLength(11);
+    expect(
+      mmseVersion.items.every(
+        (item) =>
+          item.requiresOperatorNote === false &&
+          item.evidenceTypes.includes('operator_note'),
+      ),
+    ).toBe(true);
 
     const user = await userModel.create({
       accountName: ACCOUNT_NAME,
@@ -699,7 +716,7 @@ describe('patient administration evidence APIs (e2e)', () => {
     await completeCurrent(state, step);
   }
 
-  it('persists safe evidence, gates every response mode, isolates redo runs, and leaves answers unchanged', async () => {
+  it('persists safe evidence, isolates redo runs, and adopts only a valid completed run without copying data', async () => {
     const state = await createActiveAdministration('MAIN');
     const scaleBefore = jsonSnapshot(
       await scaleInstanceModel.findById(state.scaleInstanceId).lean().exec(),
@@ -952,6 +969,182 @@ describe('patient administration evidence APIs (e2e)', () => {
           .exec(),
       ),
     ).toEqual(itemsBefore);
+
+    const completedSession = await administrationSessionModel
+      .findById(state.sessionId)
+      .lean()
+      .exec();
+    expect(completedSession?.status).toBe('completed');
+    const drawingEvidence = await mediaEvidenceModel
+      .findOne({
+        scaleInstanceId: new Types.ObjectId(state.scaleInstanceId),
+        evidenceType: 'photo',
+        'patientAdministrationContext.stepKey': 'mmse-drawing',
+        'patientAdministrationContext.stepRun': 1,
+      })
+      .lean()
+      .exec();
+    const invalidatedWritingEvidence = await mediaEvidenceModel
+      .findOne({
+        scaleInstanceId: new Types.ObjectId(state.scaleInstanceId),
+        evidenceType: 'handwriting',
+        'patientAdministrationContext.stepKey': 'mmse-expression',
+        'patientAdministrationContext.stepRun': 1,
+      })
+      .lean()
+      .exec();
+    if (!drawingEvidence || !invalidatedWritingEvidence) {
+      throw new Error('Expected drawing and invalidated writing evidence');
+    }
+    const drawingItemId = drawingEvidence.itemResponseId.toString();
+    const writingItemId = invalidatedWritingEvidence.itemResponseId.toString();
+    const drawingItemBefore = await itemResponseModel
+      .findById(drawingItemId)
+      .lean()
+      .exec();
+    const writingRefsBefore = jsonSnapshot(
+      (await itemResponseModel.findById(writingItemId).lean().exec())
+        ?.evidenceRefs,
+    );
+    if (!drawingItemBefore) {
+      throw new Error('Expected drawing item response');
+    }
+    const formalAnswerBeforeAdoption = jsonSnapshot({
+      status: drawingItemBefore.status,
+      rawResponse: drawingItemBefore.rawResponse,
+      structuredResponse: drawingItemBefore.structuredResponse,
+      responseText: drawingItemBefore.responseText,
+      operatorNote: drawingItemBefore.operatorNote,
+      score: drawingItemBefore.score,
+      draftRevision: drawingItemBefore.draftRevision,
+      draftSavedAt: drawingItemBefore.draftSavedAt,
+    });
+    const readinessPath = `/patients/${state.patientId}/visits/${state.visitId}/scale-instances/${state.scaleInstanceId}/submission-readiness`;
+    const readinessBefore = bodyOf(await staff.get(readinessPath).expect(200));
+    expect(
+      arrayOf(readinessBefore, 'blockingIssues').some(
+        (issue) =>
+          isRecord(issue) &&
+          issue.code === 'ITEM_REQUIRED_MEDIA_MISSING' &&
+          issue.itemCode === 'mmse.visuospatial.copy_drawing',
+      ),
+    ).toBe(true);
+
+    const evidenceCountBeforeAdoption = await mediaEvidenceModel.countDocuments(
+      {
+        scaleInstanceId: new Types.ObjectId(state.scaleInstanceId),
+      },
+    );
+    const storageBeforeAdoption = {
+      uploaded: trackingStorage.uploadedKeys.length,
+      copied: trackingStorage.copiedKeys.length,
+      deleted: trackingStorage.deletedKeys.length,
+      objects: trackingStorage.objects.size,
+    };
+    const adoptPath = `/patients/${state.patientId}/visits/${state.visitId}/scale-instances/${state.scaleInstanceId}/item-responses/${drawingItemId}/media-evidences/${drawingEvidence._id.toString()}/adopt`;
+    const adopted = bodyOf(await staff.post(adoptPath).expect(200));
+    expect(adopted.evidenceRequirement).toEqual({
+      evidenceType: 'photo',
+      status: 'attached',
+      attached: true,
+    });
+    const adoptedMediaEvidence = adopted.mediaEvidence;
+    if (!isRecord(adoptedMediaEvidence)) {
+      throw new Error('Expected adopted media evidence response');
+    }
+    expect(adoptedMediaEvidence.id).toBe(drawingEvidence._id.toString());
+    for (const protectedKey of [
+      'patientId',
+      'visitId',
+      'scaleInstanceId',
+      'itemResponseId',
+      'sessionId',
+      'stepKey',
+      'stepRun',
+      'objectKey',
+      'bucket',
+      'checksum',
+    ]) {
+      expect(adoptedMediaEvidence).not.toHaveProperty(protectedKey);
+    }
+
+    const drawingItemAfter = await itemResponseModel
+      .findById(drawingItemId)
+      .lean()
+      .exec();
+    expect(
+      drawingItemAfter?.evidenceRefs.find(
+        (reference) => reference.evidenceType === 'photo',
+      ),
+    ).toEqual(
+      expect.objectContaining({
+        status: 'attached',
+        mediaEvidenceId: drawingEvidence._id,
+      }),
+    );
+    expect(
+      jsonSnapshot({
+        status: drawingItemAfter?.status,
+        rawResponse: drawingItemAfter?.rawResponse,
+        structuredResponse: drawingItemAfter?.structuredResponse,
+        responseText: drawingItemAfter?.responseText,
+        operatorNote: drawingItemAfter?.operatorNote,
+        score: drawingItemAfter?.score,
+        draftRevision: drawingItemAfter?.draftRevision,
+        draftSavedAt: drawingItemAfter?.draftSavedAt,
+      }),
+    ).toEqual(formalAnswerBeforeAdoption);
+    expect(
+      await mediaEvidenceModel.countDocuments({
+        scaleInstanceId: new Types.ObjectId(state.scaleInstanceId),
+      }),
+    ).toBe(evidenceCountBeforeAdoption);
+    expect({
+      uploaded: trackingStorage.uploadedKeys.length,
+      copied: trackingStorage.copiedKeys.length,
+      deleted: trackingStorage.deletedKeys.length,
+      objects: trackingStorage.objects.size,
+    }).toEqual(storageBeforeAdoption);
+
+    const readinessAfter = bodyOf(await staff.get(readinessPath).expect(200));
+    expect(
+      arrayOf(readinessAfter, 'blockingIssues').some(
+        (issue) =>
+          isRecord(issue) &&
+          issue.code === 'ITEM_REQUIRED_MEDIA_MISSING' &&
+          issue.itemCode === 'mmse.visuospatial.copy_drawing',
+      ),
+    ).toBe(false);
+    await staff
+      .post(adoptPath)
+      .expect(409)
+      .expect((response: Response) => {
+        expect(bodyOf(response)).toEqual(
+          expect.objectContaining({ code: 'MEDIA_EVIDENCE_ALREADY_ATTACHED' }),
+        );
+      });
+
+    const invalidatedAdoptPath = `/patients/${state.patientId}/visits/${state.visitId}/scale-instances/${state.scaleInstanceId}/item-responses/${writingItemId}/media-evidences/${invalidatedWritingEvidence._id.toString()}/adopt`;
+    await staff
+      .post(invalidatedAdoptPath)
+      .expect(409)
+      .expect((response: Response) => {
+        expect(bodyOf(response)).toEqual(
+          expect.objectContaining({ code: 'MEDIA_EVIDENCE_NOT_ADOPTABLE' }),
+        );
+      });
+    expect(
+      jsonSnapshot(
+        (await itemResponseModel.findById(writingItemId).lean().exec())
+          ?.evidenceRefs,
+      ),
+    ).toEqual(writingRefsBefore);
+    expect({
+      uploaded: trackingStorage.uploadedKeys.length,
+      copied: trackingStorage.copiedKeys.length,
+      deleted: trackingStorage.deletedKeys.length,
+      objects: trackingStorage.objects.size,
+    }).toEqual(storageBeforeAdoption);
   });
 
   it('allows at most one concurrent upload and compensates the losing evidence and object', async () => {

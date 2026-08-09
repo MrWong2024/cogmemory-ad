@@ -10,11 +10,11 @@
 - 已具备 NestJS 启动入口、根模块、全局应用配置、健康检查、配置加载与校验、MongoDB 连接底座、全局 ValidationPipe、全局异常过滤器和 Storage 公共模块。
 - `backend\src\modules` 当前包含 `storage`、`scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains`、`reports`、`clinical-history`、`users` 与 `auth`。
 - `StorageModule` 当前只提供 fake / OSS 底层 driver 结构和 `STORAGE_SERVICE` token，不提供独立、通用的 Storage 管理或上传 API；题目媒体业务上传链路由 `MediaModule` 基于该抽象提供。
-- `ScalesModule` 当前提供量表定义 / 量表版本 Schema、内部 `ScalesService`、MMSE / MoCA seed、只读 `ScaleSeedDataService`、`ScaleCatalogService`、内部只读 `PresentationAssetsService` 和公开只读 `ScalesController`。`GET /scales/available` 只返回安全摘要且不写数据库；量表初始化时才按需幂等物化对应 seed 版本。没有公共题目资产接口或静态目录挂载。
+- `ScalesModule` 当前提供量表定义 / 量表版本 Schema、内部 `ScalesService`、MMSE / MoCA seed、只读 `ScaleSeedDataService`、`ScaleCatalogService`、内部只读 `PresentationAssetsService` 和公开只读 `ScalesController`。current MMSE seed 的 11 个正式 Item 均为 `requiresOperatorNote=false`，同时保留 `operator_note` evidence type 与可选 `operatorNote`；通用 readiness 对未来显式 `requiresOperatorNote=true` 的 Item 仍 fail closed。`GET /scales/available` 只返回安全摘要且不写数据库；量表初始化时才按需幂等物化对应 seed 版本。没有公共题目资产接口或静态目录挂载。
 - `PatientsModule` 当前提供患者 / 受试者基础档案 Schema、内部读取底座，以及 `GET /patients`、`POST /patients`、`GET /patients/:patientId` 三个患者最小公开 API。
 - `AssessmentsModule` 当前除访视 / 量表实例 / 题目作答底座外，已注册 WP-10 `PatientAdministrationSession`、会话 Service、患者专用 Guard、staff / patient Controller 与 Cookie 工具。患者会话独立于既有 staff `Session`；C1 在既有会话内增加当前 run 的 `stepEvidenceRefs` 和完成媒体门禁，仍不写 `ItemResponse`。
 - A16 在 `AssessmentsModule` 提供 `ScaleInstanceSubmissionController`、`ScaleInstanceSubmissionService`、`ScaleInstanceSubmissionBarrierService`、纯 readiness / barrier 函数、提交 DTO 与安全公开响应类型；开放 readiness GET 与 submit POST，并由 A30 的可恢复屏障协议完成跨父子集合线性化保护。
-- `MediaModule` 当前同时承载既有 A15 staff 媒体链、WP-10-C1 患者当前步骤媒体链与 WP-10-C2 转写 / 复核链：患者上传继续复用同一 `MediaEvidenceService` 与私有 Storage；staff 媒体响应增加安全 audioMetadata / transcription，另提供显式 transcribe 与最新会话 review，只读复核和机器候选均不写正式答案。
+- `MediaModule` 当前同时承载既有 A15 staff 媒体链、WP-10-C1 患者当前步骤媒体链与 WP-10-C2 转写 / 复核链：患者上传继续复用同一 `MediaEvidenceService` 与私有 Storage；staff 媒体响应增加安全 audioMetadata / transcription，另提供显式 transcribe、最新会话 review 与受控 adoption。只读复核和机器候选均不写正式答案；adoption 只把同一个合法患者 photo / handwriting Evidence ID 绑定到既有 evidenceRef。
 - `ScoringModule` 当前在计分结果快照 Schema、`ScoringService` 与 `summarizeItemScores()` 通用汇总基础上，提供 A17 阶段性 workflow、A18 `ScoreReviewWorkflowService`、纯评分 / 人工复核函数与安全 public mapper；公开 compute / latest / manual-review / confirm，不提供 lock、void、重跑、认知域或报告接口。
 - `CognitiveDomainsModule` 当前在认知域结果 Schema、内部读取和 `summarizeDomainScores()` 基础上，新增 A19 Controller、Workflow、确认评分纯映射 / 校验、安全 public mapper 与 runNo=1 创建能力；公开认知域 compute / latest，不提供人工修改、确认、锁定、作废、重算或报告接口。
 - `ReportsModule` 当前提供 A20 generation / latest、A21 review、A22 lock、A23 source freeze、A24 archive、A25 corrections、A26 replacement lifecycle，以及 A27 报告版本列表与指定历史详情。无 Schema 的 `ClinicalHistoryModule` 提供患者 assessment-history 与 A28 follow-up-trends；WP-04 后端范围已完成。
@@ -140,7 +140,8 @@
 - `PatientAudioAsrClientService` 是单一具体客户端：test 强制 stub 且不生成签名 URL / 不发网络；bailian 使用 Node fetch、AbortController、固定非流式同步请求，只解析 `output.text`，不重试。技术失败写有限 failed 候选并保留录音；disabled / 配置缺失、业务状态或 CAS 冲突使用稳定 API 错误。
 - 完整 `MediaCaptureMode` 现可在 MediaEvidence 内部摘要中表达浏览器录音；ClinicalReport 仍只纳入既有 photo / handwriting，report draft builder 对意外进入的 `browser_audio_recording` 明确 fail closed，不映射、不静默降级，也不扩大报告 Schema。
 - 最新患者施测 review 由会话白名单事实、ScaleVersion 权威步骤、ItemResponse 安全状态与 MediaEvidence 引用联合形成；按 itemCode / step order 分组并保留 evidence-only 与 invalidated run。每个 evidence ref 必须匹配 patient / visit / instance / session / step / run / ID，否则返回 `PATIENT_ADMINISTRATION_STEP_INVALID`；投影不生成签名 URL，不返回 patientText、资产、评分、hash、Storage 路径或完整事件。
-- A15 四个接口统一位于 `/patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/item-responses/:itemResponseId/media-evidences`：GET 列表、POST multipart 上传、GET `:mediaEvidenceId/access-url`、POST `:mediaEvidenceId/void`。
+- A15 六个接口统一位于 `/patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/item-responses/:itemResponseId/media-evidences`：GET 列表、POST multipart 上传、POST `:mediaEvidenceId/adopt`、GET `:mediaEvidenceId/access-url`、POST `:mediaEvidenceId/transcribe`、POST `:mediaEvidenceId/void`。
+- adoption 要求完整 ownership / editable / lock / 父子 submission barrier、attached / stored 且未锁定 / 作废 / 删除的 patient Evidence、最新 completed Session，以及对应 Item 下精确唯一、已有未失效 capture 的 step / run；仅支持当前 ref 仍 pending / missing + null 的 photo / handwriting。最终复用既有 evidenceRef CAS 与同一 MediaEvidence ID，不创建或复制 Evidence / Storage，不调用 Storage，不修改答案 / status / draft / operatorNote / score，不自动 markAsAnswered / submit / 评分；CAS 失败保留原患者 Evidence。
 - 上传主文件最大 10 MiB，仅允许 JPEG / PNG / WebP；校验 MIME 白名单、JPEG / PNG / WebP 魔数和 MIME / 实际格式一致性，并拒绝 JPEG EXIF / XMP、PNG eXIf / tEXt / zTXt / iTXt、WebP EXIF / XMP。主文件由服务端计算 SHA-256；不保存客户端原始文件名。
 - objectKey 使用经 `StorageConfigService.getObjectPrefix()` 校验的前缀、固定 `clinical-evidence` 目录、内部 ObjectId 与随机 UUID；不使用姓名、受试者编号、病历号、手机号、身份证号、备注或原始文件名。公开 mapper 不返回 objectKey、bucket、objectPrefix、originalFilename、checksum、trajectoryObjectKey、metadata、qualityHints 或数据库关联 ID。
 - handwriting 必须包含最终渲染图片，可选上传最大 2 MiB、MIME `application/json` 的轨迹；trajectoryFormat 仅 json / strokes，不接受 SVG。轨迹 JSON 拒绝危险 key、非有限数、非普通对象以及超出深度 10、数组 10000、对象 100 keys、总节点 50000、单字符串 2000 的内容，解析后递归克隆并重新 `JSON.stringify()` 为规范化 Buffer 再写 Storage。
@@ -299,21 +300,21 @@
 
 - `PatientAdministrationSession`、staff / patient 专用 Controller 与 Guard 已实现短期患者会话、安全进入、same-device / cross-device、准备、服务端权威当前步骤、暂停 / 恢复 / 接管 / redo / technical replay / 重签 / 终止和完成态；患者会话与 staff `Session` 保持身份隔离。
 - 会话状态、当前 run capture、播放事实和控制写使用单一 `revision` CAS；旧写不能覆盖已成功事实，患者响应保持最小白名单且不泄露答案、评分、内部定位或 staff 权限。
-- WP-10-F1 的同 / 跨设备流程和 F2 的 MMSE 正常 19 步患者主链已实现；患者 evidence、`MediaEvidence` audio、固定题目资产、书写 / 绘图证据和完成媒体门禁已接入，患者事实仍不直接写 `ItemResponse`。
-- C2 已实现 ASR candidate / review projection；机器候选不自动成为正式答案。医生可沿现有 A14 `ItemResponse` 草稿链人工录入或修订，满足 readiness 后由现有 A16 整体提交，同一批 `ItemResponse` 成为该次正式提交结果，不复制第二套答案。
+- WP-10-F1 的同 / 跨设备流程和 F2 的 MMSE 正常 19 步患者主链已实现；患者 evidence、`MediaEvidence` audio、固定题目资产、书写 / 绘图证据和完成媒体门禁已接入，患者流程本身仍不直接写 `ItemResponse`。只有后续 staff 显式调用受控 adoption 时，合法 photo / handwriting 才以同一 ID 写入既有 evidenceRef。
+- C2 已实现 ASR candidate / review projection；机器候选不自动成为正式答案。F3 的两个最低基础对齐已完成：MMSE current seed 的 operatorNote 已 optional，patient MediaEvidence adoption 已闭合 readiness 的既有 evidenceRef 数据链。医生可沿现有 A14 `ItemResponse` 草稿链人工录入或修订，满足 readiness 后由现有 A16 整体提交，同一批 `ItemResponse` 成为该次正式提交结果，不复制第二套答案。
 - 精确 Schema、endpoint、DTO、Cookie、权限和 Service 事实以 backend API / DTO / service maps 及最新代码为准，本 snapshot 不复制已关闭阶段的实施过程。
 
 ## 17. 当前尚未实现
 
 - 尚无公开用户管理接口、角色权限管理接口、短信验证码接口、OAuth / SSO 接口或密码重置接口。
-- F3 医生复核前端闭环尚未实现：医生查看患者原始事实、evidence 与 ASR candidate，经现有 `ItemResponse` 草稿、`markAsAnswered`、submission readiness 和 A16 整体提交进入评分 / 报告链。
-- F3 前最低实现对齐已完成：三个观察型 MMSE 步骤已为患者正常主链连续推进，医护临床判断仍留待 F3 后续复核。WP-10-F2 仍为完成，WP-10 仍进行中，下一阶段仍为 F3，本次未实施 F3。
+- F3 正常作答复核 UI 尚未实现：下一步是在现有 `ScaleInstance` 页面组合患者原始事实、evidence、ASR candidate、现有 `ItemResponse` 草稿、`markAsAnswered`、submission readiness 和 A16 整体提交。
+- F3-pre 保持完成，三个观察型 MMSE 步骤已为患者正常主链连续推进；本轮两个最低基础对齐也已完成。WP-10-F2 仍为完成，WP-10-F3 已进入进行中但未完成，下一步为正常复核 UI。
 - WP-10 最终 Browser / accessibility 收口仍包括 F2-P2 recovery 与 staff Axe 分类；真实设备、真实麦克风 / 触控笔、真实患者 OSS 与真实 ASR 按 roadmap 既定边界验收。MoCA 患者端完整实施仍未完成。
 - 尚未实现 WP-12 的医护代录知情者辅助信息能力，也没有将知情者来源、关系、接触频率或了解程度与患者作答、ItemResponse、量表得分和报告结论分离的专用合同；当前不存在知情者长期账号、家庭门户或短期自助链接。
 - HIS / EMR、计费、保险及其他第三方医院系统集成当前未实现，且不属于一期后端实现缺口、WP-09 或上线验收门禁。
 - A12-A28 已覆盖评分计算/复核/确认、认知域计算、报告生成/编辑/确认/锁定/来源冻结/归档/版本化更正、replacement 后续生命周期、历史读取与基础随访趋势；仍无评分独立 lock / void / reopen / 重跑、认知域人工修改 / 确认 / 作废 / 重算、报告签名 / unfreeze / unarchive、correction cancel / branch 或 PDF 接口。
 - 尚无批量作答、自动保存调度、计时动作、提交撤销 / reopen / lock / force submit 或访视状态流转接口。
-- 媒体当前仅有题目下列表、服务端 multipart 上传、短期签名访问与逻辑作废；尚无全患者 / 访视 / 实例媒体列表、直接 objectKey 下载、永久 URL、物理删除、替换、批量、分片或客户端直传接口。
+- 媒体当前有题目下列表、服务端 multipart 上传、患者 Evidence adoption、显式患者录音转写、短期签名访问与逻辑作废；尚无全患者 / 访视 / 实例媒体列表、直接 objectKey 下载、永久 URL、物理删除、替换、批量、分片或客户端直传接口。
 - 尚无全量数据库 seed runner、量表管理或完整 MMSE / MoCA 题目配置公开接口；A13 只在初始化时按需物化并提供安全摘要，released MMSE 资产当前仅由内部只读 Service 与无数据库 CLI 访问。
 - 已有 A17 compute / latest 与 A18 单题人工复核 / 确认；尚无批量人工评分、锁定、作废、撤销确认、reopen、重跑或历史列表接口。
 - 已有 A19 认知域 compute / latest；尚无认知域人工复核、确认、锁定、作废、重算、历史列表、跨量表合并或报告接口。

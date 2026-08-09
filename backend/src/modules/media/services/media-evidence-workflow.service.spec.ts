@@ -16,6 +16,11 @@ import {
   MediaEvidenceService,
 } from './media-evidence.service';
 import { MediaEvidenceWorkflowService } from './media-evidence-workflow.service';
+import { PatientAdministrationReviewService } from './patient-administration-review.service';
+import type {
+  PatientAdministrationReviewResponse,
+  PatientAdministrationReviewRunResponse,
+} from '../types/patient-administration-review-response.types';
 
 const ids = {
   patientId: new Types.ObjectId().toString(),
@@ -26,6 +31,7 @@ const ids = {
   definitionId: new Types.ObjectId().toString(),
   versionId: new Types.ObjectId().toString(),
   userId: new Types.ObjectId().toString(),
+  sessionId: new Types.ObjectId().toString(),
 };
 
 const params = {
@@ -181,6 +187,79 @@ function evidence(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function patientAdministrationEvidence(
+  overrides: Record<string, unknown> = {},
+) {
+  return evidence({
+    patientAdministrationContext: {
+      sessionId: ids.sessionId,
+      stepKey: 'mmse-drawing',
+      stepRun: 1,
+    },
+    ...overrides,
+  });
+}
+
+function patientReview(
+  overrides: {
+    status?: PatientAdministrationReviewResponse['session']['status'];
+    capture?: PatientAdministrationReviewRunResponse['capture'];
+    evidence?: PatientAdministrationReviewRunResponse['evidence'];
+  } = {},
+): PatientAdministrationReviewResponse {
+  const capture = Object.prototype.hasOwnProperty.call(overrides, 'capture')
+    ? (overrides.capture ?? null)
+    : {
+        capturedBy: 'patient' as const,
+        capturedAt: new Date('2026-07-10T08:00:01.000Z'),
+        invalidatedAt: null,
+        operatorSnapshot: null,
+      };
+  const reviewEvidence = overrides.evidence ?? [
+    {
+      mediaEvidenceId: ids.mediaEvidenceId,
+      evidenceType: 'photo',
+      captureMode: 'photo_upload',
+      status: 'attached',
+      storageStatus: 'stored',
+      uploadedAt: new Date('2026-07-10T08:00:00.000Z'),
+      audioMetadata: null,
+      transcription: null,
+    },
+  ];
+
+  return {
+    session: {
+      status: overrides.status ?? 'completed',
+      preparationConfirmedAt: new Date('2026-07-10T07:50:00.000Z'),
+      impactFactorCodes: [],
+      startedAt: new Date('2026-07-10T07:55:00.000Z'),
+      completedAt: new Date('2026-07-10T08:05:00.000Z'),
+      terminatedAt: null,
+      expiredAt: null,
+    },
+    reviewEvents: [],
+    items: [
+      {
+        itemResponseId: ids.itemResponseId,
+        itemCode: 'moca.visuospatial.clock',
+        itemTitle: 'Clock drawing',
+        status: 'not_started',
+        draftRevision: 0,
+        steps: [
+          {
+            stepKey: 'mmse-drawing',
+            order: 19,
+            responseMode: 'drawing',
+            advanceBy: 'patient',
+            runs: [{ stepRun: 1, capture, evidence: reviewEvidence }],
+          },
+        ],
+      },
+    ],
+  };
+}
+
 async function expectHttpCode(
   promise: Promise<unknown>,
   status: number,
@@ -216,6 +295,7 @@ describe('MediaEvidenceWorkflowService', () => {
     findEvidenceByOwnership: jest.Mock;
     markEvidenceVoided: jest.Mock;
   };
+  let review: { getReview: jest.Mock };
   let storage: {
     driver: 'fake';
     uploadFile: jest.Mock;
@@ -271,7 +351,9 @@ describe('MediaEvidenceWorkflowService', () => {
           return Promise.resolve(evidence());
         }),
       deleteEvidenceForCompensation: jest.fn().mockResolvedValue(true),
-      findEvidenceByOwnership: jest.fn().mockResolvedValue(evidence()),
+      findEvidenceByOwnership: jest
+        .fn()
+        .mockResolvedValue(patientAdministrationEvidence()),
       markEvidenceVoided: jest
         .fn()
         .mockImplementation(
@@ -291,6 +373,7 @@ describe('MediaEvidenceWorkflowService', () => {
           },
         ),
     };
+    review = { getReview: jest.fn().mockResolvedValue(patientReview()) };
     storage = {
       driver: 'fake',
       uploadFile: jest.fn().mockImplementation((input: UploadFileInput) => {
@@ -315,6 +398,7 @@ describe('MediaEvidenceWorkflowService', () => {
         { provide: PatientsService, useValue: patients },
         { provide: AssessmentsService, useValue: assessments },
         { provide: MediaEvidenceService, useValue: media },
+        { provide: PatientAdministrationReviewService, useValue: review },
         { provide: STORAGE_SERVICE, useValue: storage },
         {
           provide: StorageConfigService,
@@ -412,6 +496,127 @@ describe('MediaEvidenceWorkflowService', () => {
       'photo',
       ids.mediaEvidenceId,
     );
+  });
+
+  it('adopts existing patient evidence from one valid completed run without Storage or evidence creation', async () => {
+    const result =
+      await service.adoptPatientAdministrationEvidence(mediaParams);
+
+    expect(result.mediaEvidence.id).toBe(ids.mediaEvidenceId);
+    expect(result.evidenceRequirement).toEqual({
+      evidenceType: 'photo',
+      status: 'attached',
+      attached: true,
+    });
+    expect(review.getReview).toHaveBeenCalledWith(mediaParams);
+    expect(assessments.attachItemEvidenceReference).toHaveBeenCalledTimes(1);
+    expect(assessments.attachItemEvidenceReference).toHaveBeenCalledWith(
+      ids.patientId,
+      ids.visitId,
+      ids.scaleInstanceId,
+      ids.itemResponseId,
+      'photo',
+      ids.mediaEvidenceId,
+    );
+    expect(storage.uploadFile).not.toHaveBeenCalled();
+    expect(storage.getSignedUrl).not.toHaveBeenCalled();
+    expect(storage.deleteObject).not.toHaveBeenCalled();
+    expect(media.createEvidence).not.toHaveBeenCalled();
+    expect(media.deleteEvidenceForCompensation).not.toHaveBeenCalled();
+  });
+
+  it('rejects patient evidence from an invalidated run', async () => {
+    review.getReview.mockResolvedValue(
+      patientReview({
+        capture: {
+          capturedBy: 'patient',
+          capturedAt: new Date('2026-07-10T08:00:01.000Z'),
+          invalidatedAt: new Date('2026-07-10T08:01:00.000Z'),
+          invalidatedReason: 'redo requested',
+          operatorSnapshot: null,
+        },
+      }),
+    );
+
+    await expectHttpCode(
+      service.adoptPatientAdministrationEvidence(mediaParams),
+      409,
+      'MEDIA_EVIDENCE_NOT_ADOPTABLE',
+    );
+    expect(assessments.attachItemEvidenceReference).not.toHaveBeenCalled();
+  });
+
+  it('rejects an evidence-only run without a valid capture', async () => {
+    review.getReview.mockResolvedValue(patientReview({ capture: null }));
+
+    await expectHttpCode(
+      service.adoptPatientAdministrationEvidence(mediaParams),
+      409,
+      'MEDIA_EVIDENCE_NOT_ADOPTABLE',
+    );
+    expect(assessments.attachItemEvidenceReference).not.toHaveBeenCalled();
+  });
+
+  it('rejects evidence without patient administration context', async () => {
+    media.findEvidenceByOwnership.mockResolvedValue(evidence());
+
+    await expectHttpCode(
+      service.adoptPatientAdministrationEvidence(mediaParams),
+      409,
+      'MEDIA_EVIDENCE_NOT_ADOPTABLE',
+    );
+    expect(review.getReview).not.toHaveBeenCalled();
+    expect(assessments.attachItemEvidenceReference).not.toHaveBeenCalled();
+  });
+
+  it('rejects patient evidence until its latest session is completed', async () => {
+    review.getReview.mockResolvedValue(patientReview({ status: 'active' }));
+
+    await expectHttpCode(
+      service.adoptPatientAdministrationEvidence(mediaParams),
+      409,
+      'MEDIA_EVIDENCE_NOT_ADOPTABLE',
+    );
+    expect(assessments.attachItemEvidenceReference).not.toHaveBeenCalled();
+  });
+
+  it('reuses the current item evidence requirement for adoption', async () => {
+    assessments.findItemResponseByOwnership.mockResolvedValue(
+      itemResponse({ evidenceRefs: [] }),
+    );
+
+    await expectHttpCode(
+      service.adoptPatientAdministrationEvidence(mediaParams),
+      409,
+      'ITEM_EVIDENCE_TYPE_NOT_REQUIRED',
+    );
+    expect(review.getReview).not.toHaveBeenCalled();
+    expect(assessments.attachItemEvidenceReference).not.toHaveBeenCalled();
+  });
+
+  it('classifies an adoption CAS miss won by an attached reference without compensation', async () => {
+    assessments.findItemResponseByOwnership
+      .mockResolvedValueOnce(itemResponse())
+      .mockResolvedValueOnce(
+        itemResponse({
+          evidenceRefs: [
+            {
+              evidenceType: 'photo',
+              mediaEvidenceId: ids.mediaEvidenceId,
+              status: 'attached',
+            },
+          ],
+        }),
+      );
+    assessments.attachItemEvidenceReference.mockResolvedValueOnce(null);
+
+    await expectHttpCode(
+      service.adoptPatientAdministrationEvidence(mediaParams),
+      409,
+      'MEDIA_EVIDENCE_ALREADY_ATTACHED',
+    );
+    expect(media.deleteEvidenceForCompensation).not.toHaveBeenCalled();
+    expect(storage.deleteObject).not.toHaveBeenCalled();
   });
 
   it('normalizes and uploads optional handwriting JSON trajectory', async () => {

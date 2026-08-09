@@ -72,6 +72,7 @@ import {
   type MediaEvidenceOwnership,
   type MediaEvidenceSummary,
 } from './media-evidence.service';
+import { PatientAdministrationReviewService } from './patient-administration-review.service';
 
 const EDITABLE_STATUSES = new Set(['draft', 'in_progress']);
 const EDITABLE_ITEM_RESPONSE_STATUSES = new Set([
@@ -102,6 +103,7 @@ export class MediaEvidenceWorkflowService {
     private readonly patientsService: PatientsService,
     private readonly assessmentsService: AssessmentsService,
     private readonly mediaEvidenceService: MediaEvidenceService,
+    private readonly patientAdministrationReviewService: PatientAdministrationReviewService,
     @Inject(STORAGE_SERVICE)
     private readonly storageService: StorageService,
     private readonly storageConfigService: StorageConfigService,
@@ -271,6 +273,122 @@ export class MediaEvidenceWorkflowService {
       mediaEvidence: toMediaEvidenceResponse(evidence),
       evidenceRequirement: {
         evidenceType: input.evidenceType,
+        status: 'attached',
+        attached: true,
+      },
+    };
+  }
+
+  async adoptPatientAdministrationEvidence(
+    params: MediaEvidenceParamDto,
+  ): Promise<UploadMediaEvidenceResponse> {
+    const chain = await this.requireOwnershipChain(params);
+    this.assertEditableChain(chain);
+    const initialEvidence = await this.requireEvidence(
+      chain.ownership,
+      params.mediaEvidenceId,
+    );
+    const evidenceType = this.toAdoptableEvidenceType(
+      initialEvidence.evidenceType,
+    );
+    this.assertEvidenceRequirement(chain.itemResponse, evidenceType);
+    this.assertAdoptablePatientEvidenceState(initialEvidence);
+
+    let review: Awaited<
+      ReturnType<PatientAdministrationReviewService['getReview']>
+    >;
+    try {
+      review = await this.patientAdministrationReviewService.getReview(params);
+    } catch (error: unknown) {
+      if (error instanceof HttpException) {
+        this.throwNotAdoptable();
+      }
+      throw error;
+    }
+
+    const targetItems = review.items.filter(
+      (item) => item.itemResponseId === params.itemResponseId,
+    );
+    const occurrences = targetItems.flatMap((item) =>
+      item.steps.flatMap((step) =>
+        step.runs.flatMap((run) =>
+          run.evidence
+            .filter(
+              (candidate) =>
+                candidate.mediaEvidenceId === params.mediaEvidenceId,
+            )
+            .map((candidate) => ({
+              stepKey: step.stepKey,
+              stepRun: run.stepRun,
+              capture: run.capture,
+              evidence: candidate,
+            })),
+        ),
+      ),
+    );
+    const occurrence = occurrences[0];
+
+    if (
+      review.session.status !== 'completed' ||
+      targetItems.length !== 1 ||
+      occurrences.length !== 1 ||
+      !occurrence?.capture ||
+      occurrence.capture.invalidatedAt !== null ||
+      occurrence.evidence.evidenceType !== evidenceType ||
+      occurrence.evidence.status !== 'attached' ||
+      occurrence.evidence.storageStatus !== 'stored'
+    ) {
+      this.throwNotAdoptable();
+    }
+
+    const evidence = await this.mediaEvidenceService.findEvidenceByOwnership(
+      chain.ownership,
+      params.mediaEvidenceId,
+    );
+    if (!evidence) {
+      this.throwNotAdoptable();
+    }
+    this.assertAdoptablePatientEvidenceState(evidence);
+    const patientAdministrationContext = evidence.patientAdministrationContext;
+    if (!patientAdministrationContext) {
+      this.throwNotAdoptable();
+    }
+    if (
+      evidence.evidenceType !== evidenceType ||
+      patientAdministrationContext.sessionId !==
+        initialEvidence.patientAdministrationContext?.sessionId ||
+      patientAdministrationContext.stepKey !== occurrence.stepKey ||
+      patientAdministrationContext.stepRun !== occurrence.stepRun
+    ) {
+      this.throwNotAdoptable();
+    }
+
+    let attachedItemResponse: ItemResponseSummary | null;
+    try {
+      attachedItemResponse =
+        await this.assessmentsService.attachItemEvidenceReference(
+          params.patientId,
+          params.visitId,
+          params.scaleInstanceId,
+          params.itemResponseId,
+          evidenceType,
+          evidence.id,
+        );
+    } catch {
+      throw new InternalServerErrorException({
+        code: 'MEDIA_EVIDENCE_ATTACH_FAILED',
+        message: 'Media evidence reference could not be attached',
+      });
+    }
+
+    if (!attachedItemResponse) {
+      return this.classifyAdoptionAttachMiss(params, evidenceType);
+    }
+
+    return {
+      mediaEvidence: toMediaEvidenceResponse(evidence),
+      evidenceRequirement: {
+        evidenceType,
         status: 'attached',
         attached: true,
       },
@@ -577,6 +695,21 @@ export class MediaEvidenceWorkflowService {
     }
   }
 
+  private assertAdoptablePatientEvidenceState(
+    evidence: MediaEvidenceSummary,
+  ): void {
+    if (
+      evidence.status !== 'attached' ||
+      evidence.storageStatus !== 'stored' ||
+      evidence.lockedAt !== null ||
+      evidence.voidedAt !== null ||
+      evidence.deletedAt !== null ||
+      !evidence.patientAdministrationContext
+    ) {
+      this.throwNotAdoptable();
+    }
+  }
+
   private validatePrimaryFile(
     file: UploadedMemoryFile,
   ): ValidatedPrimaryMediaFile {
@@ -840,6 +973,30 @@ export class MediaEvidenceWorkflowService {
     this.throwAlreadyAttached();
   }
 
+  private async classifyAdoptionAttachMiss(
+    params: MediaEvidenceItemParamDto,
+    evidenceType: 'photo' | 'handwriting',
+  ): Promise<never> {
+    try {
+      const chain = await this.requireOwnershipChain(params);
+      this.assertEditableChain(chain);
+      this.assertEvidenceRequirement(chain.itemResponse, evidenceType);
+    } catch (error: unknown) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new InternalServerErrorException({
+        code: 'MEDIA_EVIDENCE_ATTACH_FAILED',
+        message: 'Media evidence reference could not be attached',
+      });
+    }
+
+    throw new InternalServerErrorException({
+      code: 'MEDIA_EVIDENCE_ATTACH_FAILED',
+      message: 'Media evidence reference could not be attached',
+    });
+  }
+
   private async classifyClearMiss(
     params: MediaEvidenceItemParamDto,
   ): Promise<never> {
@@ -935,6 +1092,13 @@ export class MediaEvidenceWorkflowService {
     });
   }
 
+  private throwNotAdoptable(): never {
+    throw new ConflictException({
+      code: 'MEDIA_EVIDENCE_NOT_ADOPTABLE',
+      message: 'Media evidence cannot be adopted',
+    });
+  }
+
   private throwScaleInstanceNotEditable(): never {
     throw new ConflictException({
       code: 'SCALE_INSTANCE_NOT_EDITABLE',
@@ -963,5 +1127,15 @@ export class MediaEvidenceWorkflowService {
       },
       HttpStatus.CONFLICT,
     );
+  }
+
+  private toAdoptableEvidenceType(
+    evidenceType: MediaEvidenceSummary['evidenceType'],
+  ): 'photo' | 'handwriting' {
+    if (evidenceType === 'photo' || evidenceType === 'handwriting') {
+      return evidenceType;
+    }
+
+    return this.throwNotAdoptable();
   }
 }
