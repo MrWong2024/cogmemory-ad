@@ -521,46 +521,6 @@ describe('assessment execution initialization public APIs (e2e)', () => {
     expect(mocaVersion).not.toHaveProperty('presentationPackageKey');
     expect(mocaVersion).not.toHaveProperty('patientAdministrationSteps');
 
-    await scaleVersionModel
-      .updateOne(
-        { _id: mmseVersion?._id },
-        {
-          $unset: {
-            presentationPackageKey: 1,
-            patientAdministrationSteps: 1,
-          },
-        },
-      )
-      .exec();
-
-    const legacyPatientResponse = await createPatient('LEGACY').expect(201);
-    const legacyPatientId = readString(
-      readResponseBody(legacyPatientResponse),
-      'id',
-    );
-    const legacyVisitResponse = await createVisit(
-      legacyPatientId,
-      'LEGACY',
-    ).expect(201);
-    const legacyVisitId = readString(
-      readResponseBody(legacyVisitResponse),
-      'id',
-    );
-    await doctorAgent
-      .post(
-        `/patients/${legacyPatientId}/visits/${legacyVisitId}/scale-instances`,
-      )
-      .send({ scaleCode: 'mmse' })
-      .expect(201);
-
-    const backfilledMmseVersion = await scaleVersionModel
-      .findById(mmseVersion?._id)
-      .exec();
-    expect(backfilledMmseVersion?.presentationPackageKey).toBe(
-      'mmse-1.0-package-001',
-    );
-    expect(backfilledMmseVersion?.patientAdministrationSteps).toHaveLength(19);
-
     const detail = await doctorAgent
       .get(`/patients/${patientId}/visits/${visitId}`)
       .expect(200);

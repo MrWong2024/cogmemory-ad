@@ -102,7 +102,7 @@
 ### WP-10 受监督患者施测底座与 MMSE 闭环：进行中
 
 - 详细稳定合同的唯一入口为[受监督患者施测合同](./handoff-patient-administration-contract.md)，已锁定一期最低充分的会话、逐题呈现、私有题目资产、回答证据、录音 / ASR、医生确认、保留和安全边界。
-- WP-10-A 已完成：MMSE `package-001` 以 released manifest 发布；`ScaleVersion` 与 MMSE 1.0 seed 已绑定 19 步患者安全呈现配置；旧 MMSE 1.0 只在双字段均缺失时原子补齐；内部只读资产服务和无数据库校验 CLI 已落地。
+- WP-10-A 已完成：MMSE `package-001` 以 released manifest 发布；`ScaleVersion` 与 MMSE 1.0 seed 已绑定 19 步患者安全呈现配置；current seed 新物化时写入完整 presentation config，已物化配置必须与 current seed 一致，否则 fail closed；内部只读资产服务和无数据库校验 CLI 已落地。
 - WP-10-B1 已完成：患者短期会话、六位一次性进入码、独立 HttpOnly Cookie / Guard、同设备 staff Session 撤销交接、跨设备兑换、准备确认、暂停 / 恢复、换设备重签、终止、惰性过期、单 revision CAS 与当前步骤最小公开响应已落地。
 - WP-10-B2 已完成：服务端权威的 19 步顺序推进、patient / staff 步骤归属、paused staff 接管、直接前一步逻辑重做、当前图片安全读取、音频顺序播放、刺激一次播放与 paused 技术重播授权、单 revision CAS、完成态与患者凭证清理已落地；步骤捕获和播放事实只内嵌在短期会话中。
 - WP-10-C1 已完成：患者短期会话 Guard 下的当前步骤 multipart 原始证据上传已支持 speech audio、writing / drawing photo 或 handwriting；私有 Storage、`MediaEvidence`、SHA-256、单 revision CAS 与精确补偿形成闭环，当前 run 媒体门禁和 redo run 隔离生效。证据引用只内嵌在患者会话，不写 `ItemResponse`、不形成正式答案，也没有 ASR、医生复核新接口或患者 UI。

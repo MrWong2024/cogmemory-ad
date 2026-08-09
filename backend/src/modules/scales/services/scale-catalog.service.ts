@@ -93,10 +93,7 @@ export class ScaleCatalogService {
     }
 
     this.assertVersionMatchesSeed(version, seed.version);
-    version = await this.ensurePatientAdministrationConfig(
-      version,
-      seed.version,
-    );
+    version = this.ensurePatientAdministrationConfig(version, seed.version);
 
     await this.scaleDefinitionModel
       .updateOne(
@@ -286,10 +283,10 @@ export class ScaleCatalogService {
     return version;
   }
 
-  private async ensurePatientAdministrationConfig(
+  private ensurePatientAdministrationConfig(
     version: ScaleVersionDocument,
     seed: ScaleSeedVersion,
-  ): Promise<ScaleVersionDocument> {
+  ): ScaleVersionDocument {
     const seedPackageKey = seed.presentationPackageKey;
     const seedSteps = seed.patientAdministrationSteps;
 
@@ -299,44 +296,6 @@ export class ScaleCatalogService {
 
     if (seedPackageKey === undefined || seedSteps === undefined) {
       this.throwVersionConflict();
-    }
-
-    const hasStoredPackageKey = version.presentationPackageKey !== undefined;
-    const hasStoredSteps = version.patientAdministrationSteps !== undefined;
-
-    if (!hasStoredPackageKey && !hasStoredSteps) {
-      const patchedVersion = await this.scaleVersionModel
-        .findOneAndUpdate(
-          {
-            _id: version._id,
-            presentationPackageKey: { $exists: false },
-            patientAdministrationSteps: { $exists: false },
-          },
-          {
-            $set: {
-              presentationPackageKey: seedPackageKey,
-              patientAdministrationSteps: structuredClone(seedSteps),
-            },
-          },
-          { returnDocument: 'after', runValidators: true },
-        )
-        .exec();
-
-      if (patchedVersion) {
-        this.assertPatientAdministrationMatchesSeed(patchedVersion, seed);
-        return patchedVersion;
-      }
-
-      const concurrentVersion = await this.scaleVersionModel
-        .findOne({ _id: version._id })
-        .exec();
-
-      if (!concurrentVersion) {
-        this.throwVersionConflict();
-      }
-
-      this.assertPatientAdministrationMatchesSeed(concurrentVersion, seed);
-      return concurrentVersion;
     }
 
     this.assertPatientAdministrationMatchesSeed(version, seed);

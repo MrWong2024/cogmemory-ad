@@ -280,71 +280,6 @@ describe('ScaleCatalogService', () => {
     expect(versionModel.findOne).not.toHaveBeenCalled();
   });
 
-  it('atomically backfills both presentation fields on a legacy MMSE version', async () => {
-    const definitionId = new Types.ObjectId();
-    const versionId = new Types.ObjectId();
-    const seed = seedDataService.getScaleSeedByCode('mmse');
-
-    if (
-      !seed?.version.presentationPackageKey ||
-      !seed.version.patientAdministrationSteps
-    ) {
-      throw new Error('Expected MMSE presentation seed');
-    }
-
-    const legacyVersion = {
-      _id: versionId,
-      scaleDefinitionId: definitionId,
-      ...structuredClone(seed.version),
-      presentationPackageKey: undefined,
-      patientAdministrationSteps: undefined,
-      effectiveFrom: new Date('2026-08-01T00:00:00.000Z'),
-    };
-    const patchedVersion = {
-      ...legacyVersion,
-      presentationPackageKey: seed.version.presentationPackageKey,
-      patientAdministrationSteps: structuredClone(
-        seed.version.patientAdministrationSteps,
-      ),
-    };
-
-    definitionModel.findOneAndUpdate.mockReturnValue(
-      createExecQuery({
-        _id: definitionId,
-        code: 'mmse',
-        status: 'active',
-      }),
-    );
-    versionModel.findOneAndUpdate
-      .mockReturnValueOnce(createExecQuery(legacyVersion))
-      .mockReturnValueOnce(createExecQuery(patchedVersion));
-    definitionModel.updateOne.mockReturnValue(
-      createExecQuery({ modifiedCount: 1 }),
-    );
-
-    await service.ensureSeedScaleVersionMaterialized('mmse');
-
-    expect(versionModel.findOneAndUpdate).toHaveBeenNthCalledWith(
-      2,
-      {
-        _id: versionId,
-        presentationPackageKey: { $exists: false },
-        patientAdministrationSteps: { $exists: false },
-      },
-      {
-        $set: {
-          presentationPackageKey: seed.version.presentationPackageKey,
-          patientAdministrationSteps: seed.version.patientAdministrationSteps,
-        },
-      },
-      { returnDocument: 'after', runValidators: true },
-    );
-    expect(patchedVersion.effectiveFrom).toEqual(
-      new Date('2026-08-01T00:00:00.000Z'),
-    );
-    expect(definitionModel.updateOne).toHaveBeenCalledTimes(1);
-  });
-
   it('reuses an identical MMSE presentation configuration without writing', async () => {
     const definitionId = new Types.ObjectId();
     const seed = seedDataService.getScaleSeedByCode('mmse');
@@ -378,6 +313,13 @@ describe('ScaleCatalogService', () => {
   });
 
   it.each([
+    {
+      name: 'required presentation config is absent',
+      mutate: (version: Record<string, unknown>) => {
+        version.presentationPackageKey = undefined;
+        version.patientAdministrationSteps = undefined;
+      },
+    },
     {
       name: 'only packageKey is present',
       mutate: (version: Record<string, unknown>) => {
@@ -426,53 +368,8 @@ describe('ScaleCatalogService', () => {
       'SCALE_CATALOG_VERSION_CONFLICT',
     );
     expect(versionModel.findOneAndUpdate).toHaveBeenCalledTimes(1);
+    expect(versionModel.findOne).not.toHaveBeenCalled();
     expect(definitionModel.updateOne).not.toHaveBeenCalled();
-  });
-
-  it('converges when another caller wins the atomic legacy backfill', async () => {
-    const definitionId = new Types.ObjectId();
-    const versionId = new Types.ObjectId();
-    const seed = seedDataService.getScaleSeedByCode('mmse');
-
-    if (!seed) {
-      throw new Error('Expected MMSE seed');
-    }
-
-    const legacyVersion = {
-      _id: versionId,
-      scaleDefinitionId: definitionId,
-      ...structuredClone(seed.version),
-      presentationPackageKey: undefined,
-      patientAdministrationSteps: undefined,
-    };
-    const concurrentVersion = {
-      ...legacyVersion,
-      presentationPackageKey: seed.version.presentationPackageKey,
-      patientAdministrationSteps: structuredClone(
-        seed.version.patientAdministrationSteps,
-      ),
-    };
-
-    definitionModel.findOneAndUpdate.mockReturnValue(
-      createExecQuery({
-        _id: definitionId,
-        code: 'mmse',
-        status: 'active',
-      }),
-    );
-    versionModel.findOneAndUpdate
-      .mockReturnValueOnce(createExecQuery(legacyVersion))
-      .mockReturnValueOnce(createExecQuery(null));
-    versionModel.findOne.mockReturnValue(createExecQuery(concurrentVersion));
-    definitionModel.updateOne.mockReturnValue(
-      createExecQuery({ modifiedCount: 1 }),
-    );
-
-    await expect(
-      service.ensureSeedScaleVersionMaterialized('mmse'),
-    ).resolves.toEqual(expect.objectContaining({ scaleCode: 'mmse' }));
-    expect(versionModel.findOne).toHaveBeenCalledWith({ _id: versionId });
-    expect(definitionModel.updateOne).toHaveBeenCalledTimes(1);
   });
 
   it('reuses stored records without overwriting clinical configuration', async () => {
