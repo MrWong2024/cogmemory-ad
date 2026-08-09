@@ -5,7 +5,7 @@
 - 本次路线图重构的起始基线：`27a2e02e6fa14bbe7831a8db9397e8ae367aa408`。该 SHA 只用于追溯上次范围重构的起点，不表示当前 Git 基线。
 - 正式名称：智忆评——阿尔茨海默病认知评估与辅助诊断系统；CogMemory AD — Alzheimer’s Cognitive Assessment and Clinical Decision Support System。
 - 一期产品目标：**院内受监督临床试用闭环**。
-- 当前实现：现有医生侧工作台已形成临床工作端的代码底座，量表运行时、作答与证据、评分、报告、历史及审计底座已经形成；WP-10-F1 的 MMSE 临床发起、设备准备与安全进入已完成，WP-10-F2 的服务端权威 19 步一步一屏、题目资产与音频、录音及图像证据、患者 / 医护完成和安全结束已落地，正常 MMSE 19 步正式患者 Browser 主流程已通过；F3 前最低实现对齐已完成，三个观察型步骤已改为患者正常推进。F3 尚未开始。`/dashboard` 仍是轻量入口，不等同统计型 Dashboard。
+- 当前实现：现有医生侧工作台已形成临床工作端的代码底座，量表运行时、作答与证据、评分、报告、历史及审计底座已经形成；WP-10-F1 的 MMSE 临床发起、设备准备与安全进入已完成，WP-10-F2 的服务端权威 19 步一步一屏、题目资产与音频、录音及图像证据、患者 / 医护完成和安全结束已落地，正常 MMSE 19 步正式患者 Browser 主流程已通过；F3-pre（F3 前最低实现对齐）已完成，三个观察型步骤已改为患者正常推进。F3 代码尚未实施。`/dashboard` 仍是轻量入口，不等同统计型 Dashboard。
 - 当前里程碑：后端 A30，前端 B18；A29 / A30 合同与验证保持闭合，B18 补充验证已闭合且自动化 `gap=0`。
 - 已完成工作包：WP-02、WP-03、WP-04。
 - 一期已完成能力域：10 个，不因本次重新编组机械变化。
@@ -39,8 +39,9 @@
 → 患者端连续推进正常题目主链；医护在现实中提供实物、纸张、观察动作和必要辅助，但正常 happy path 不要求医护端逐题同步系统写入
 → 系统对适用语音回答步骤支持必要的录音和转写，同时支持计时及患者点击、书写与绘图采集
 → 存在有效 staff 终端时，医护施测人员查看步骤、状态、进度、患者求助和异常，并在必要时执行暂停、接管、重做、technical replay、重签、恢复或终止；same-device 患者阶段确需系统干预时先交回设备并重新认证
-→ 完成结果和医护现场观察送入后续异常优先复核；医生能够展开必要事实并形成正式观察记录
-→ 医生通过现有 A14 `ItemResponse` 草稿链人工录入或修订，按既有规则 `markAsAnswered`；正常首次复核不强制填写无业务价值的修改原因，实质纠正或与原始证据存在需解释的明显差异时记录必要说明
+→ 已完成的患者施测进入现有 `ScaleInstance` 临床工作页的量表作答复核；系统先连续呈现整份量表的施测结果、患者原始事实、现有 `ItemResponse` 草稿、待补录 / 修订项和 readiness 阻断
+→ 医护 / 医生先完成正常整份量表复核，有业务需要时再查看录音、书写 / 绘图、ASR 候选、医护观察或施测控制等原始证据
+→ 医护 / 医生通过现有 A14 `ItemResponse` 单题草稿链人工录入或修订，按既有规则 `markAsAnswered`；`operatorNote` 只在有业务说明需要时填写
 → 全部 `ItemResponse` 满足 submission readiness 后，医生使用现有 A16 `submit(confirm=true)` 做整体正式提交
 → 提交成功后，现有 `ItemResponse` 成为该次 `ScaleInstance` 的正式提交结果，再进入既有评分、认知域和报告链
 → PDF / 打印 / 受控下载
@@ -54,7 +55,7 @@
 一期按职责划分三个核心逻辑工作区，不要求建设三套独立应用：
 
 1. **患者施测终端**：面向患者完成听题、阅读、点击、语音回答、书写和绘图；只呈现当前施测所需的最少信息，不显示分数、报告、答案、诊断倾向、医生意见或其他患者信息。
-2. **临床工作端**：在同一前端应用和工作流内区分医护施测模式与医生复核报告模式。医护施测模式负责准备、发起、监管、动作观察、异常和影响因素记录、暂停、接管与恢复；医生复核报告模式负责复核语音、转写、书写、绘图、观察记录、评分和报告。医生可以同时承担两种职责，不强制两个账号、两个互斥角色或两套应用。
+2. **临床工作端**：在同一前端应用和工作流内区分医护施测模式与量表作答复核。医护施测模式负责准备、发起、监管、动作观察、异常和影响因素记录、暂停、接管与恢复；量表作答复核负责把患者施测事实复核为现有 `ItemResponse` 草稿并完成 readiness 后的 A16 整体提交。提交后的 A18 人工评分复核、认知域和报告继续使用已有下游链。医生可以同时承担这些职责，不强制两个账号、两个互斥角色或两套应用。
 3. **临床运营与系统管理工作区**：承担最低充分的账号运营、患者与访视维护、临床任务入口、异常会话、报告输出和作废；允许复用既有页面或受控工具，不建设统计型 Dashboard 或复杂管理平台。
 
 - 医护施测人员可以是医生，也可以是经过授权和训练的其他医护人员；医生负责最终复核、整体确认和报告。职责边界以[受监督患者施测合同](./handoff-patient-administration-contract.md)为准，现有 `nurse`、`doctor` 或其他固定角色的具体承载由 WP-10 / WP-12 按最新代码决定，不在本 roadmap 新增角色枚举或权限设计器。
@@ -74,8 +75,8 @@
 - 正式施测前提供最低充分的准备流程：提示标准触控设备和浏览器可用性，确认屏幕方向和有效交互区域，完成音量试听，并在适用语音步骤需要时完成麦克风试听，提供触摸或书写试操作，确认当前施测语言，记录视力、听力、语言或手部活动等明显影响因素，并至少完成一个不使用正式测量刺激的不计分练习。医护确认患者理解后才开始正式施测；练习不进入 ItemResponse、评分或报告，不改变正式计时和重播事实，也不扩展为训练平台或通用教程系统。
 - 患者施测终端采用一步一屏、单一主要操作、大字号、大触控区、足够间距和明确求助入口；规则未明确允许时患者不得自行跳题。播放、录音、上传、等待医护和完成等状态必须清楚，不以复杂导航、密集表单、游戏化积分、诊断暗示或自动快速切题增加负担。
 - same-device 安全交接进入患者模式后，staff Session 失效，患者不能借助后退、刷新、历史记录或普通导航进入临床工作端。患者模式只显示当前施测所需的最少身份信息；完成、终止或超时后清除当前患者可见内容，结束页只提示已完成并要求交还设备。设备交回后医护 / 医生必须重新认证；这是有意接受的简单安全边界，不为减少一次登录建设同浏览器双身份保持、隐藏身份或自动恢复。
-- 一期只对量表步骤合同明确需要语音回答的步骤支持录音和一种可用的基础 ASR，并由医生复核；动作观察、选择、点击、书写和绘图等非语音步骤不因患者施测端存在而默认录音。ASR 失败时允许医生听取已有录音、重新发起转写或直接人工录入，ASR 服务不可用不得阻断整个施测。不建设多供应商动态路由、流式字幕、方言自动识别、自动语义评分或实时答案生成，也不在 roadmap 选择厂商或具体 API。
-- ASR 只提供辅助转写。自动转写、医生复核形成的 `ItemResponse` 草稿和 A16 整体提交后的正式结果必须可区分；只有整体正式提交后的结果才是该次量表的正式临床事实。
+- 一期只对量表步骤合同明确需要语音回答的步骤支持录音和一种可用的基础 ASR，并由医生复核；动作观察、选择、点击、书写和绘图等非语音步骤不因患者施测端存在而默认录音。已有 transcription 可直接显示；没有 transcription 时仅由医护 / 医生按业务需要显式触发现有 ASR，不需要则不调用。ASR 失败时允许听取已有录音或直接人工录入，不阻断 readiness / submit；不在页面打开时自动批量转写，不建设 ASR batch job、queue、自动 retry、多供应商 fallback、自动语义评分或实时答案生成。
+- ASR 只提供辅助转写。ASR candidate、医生复核形成的 `ItemResponse` 草稿和 A16 整体提交后的正式结果必须可区分；候选不自动写入 `ItemResponse`，只有整体正式提交后的结果才是该次量表的正式临床事实。
 - 系统不自动形成最终医学诊断，量表结果不能脱离临床访谈和其他检查使用。
 - 一期临床试用闭环不等于医疗器械注册完成，也不等于法定数字签名、CA / PKI 或电子印章能力完成。
 - 患者施测终端只服务院内受监督 MMSE / MoCA 闭环，不扩大为家庭照护门户或通用量表流程设计器。
@@ -84,8 +85,9 @@
 ### 2.4 不可削弱的临床安全底线
 
 - 医护身份、固定角色权限和患者数据隔离。
-- 医生最终复核；ASR、自动评分或系统规则均不替代医生确认。
-- 医生复核遵循异常优先和最低操作负担：适用语音步骤、书写绘图、医护观察、暂停 / 接管 / 重做 / 异常中断、缺失不一致、低可信、人工评分、影响因素及无法完成原因必须重点复核；合同明确、无异常且无歧义的简单客观步骤可以汇总呈现和受控批量确认，但最终提交前仍须医生显式整体确认。
+- 医生对正式提交结果负责；患者原始事实、ASR、staff observation、自动评分或系统规则均不得自动成为正式答案。
+- 量表作答复核遵循“正常复核优先，重点项目适度提示”：医生复核整份量表，适用语音、书写绘图、医护观察、暂停 / 接管 / 重做、缺失不一致、影响因素及无法完成原因等既有事实只作为 UI 标记、排序、分组或展开提示。允许汇总呈现和快速逐项复核，但不形成批量写协议、第二套确认状态、Review / Anomaly 领域模型或异常任务处理平台。
+- 正常复核不要求机械逐题播放全部录音、打开全部图片或检查全部 ASR；系统先呈现结构化摘要，原始媒体在有业务需要时按需查看。readiness 必须通过，A16 必须显式整体提交，关键操作留痕与必要原始证据追溯保持。
 - 自动转写、医生修订与最终确认结果可区分；适用语音回答步骤的原始录音或等价证据在医生复核和必要追溯期间可用。
 - 医护接管的控制权与并发保护，避免患者施测终端与临床工作端同时形成相互覆盖的正式写入。
 - 患者点击、书写和绘图等数字交互证据，与医护动作观察和实物操作结果记录保持可区分，并足以支持医生复核、错误恢复和必要追溯；动作观察不默认视频录制、摄像头、传感器、姿态识别、计算机视觉或行为分析。图片、适用步骤录音及其他必要媒体遵循同一最低充分原则；绘图不默认保存完整压力、速度、停顿、事件历史或回放数据，也不自动分析或评分。
@@ -101,17 +103,17 @@
 
 ### WP-10 受监督患者施测底座与 MMSE 闭环：进行中
 
-- 详细稳定合同的唯一入口为[受监督患者施测合同](./handoff-patient-administration-contract.md)，已锁定一期最低充分的会话、逐题呈现、私有题目资产、回答证据、录音 / ASR、医生确认、保留和安全边界。
+- 详细稳定合同的唯一入口为[受监督患者施测合同](./handoff-patient-administration-contract.md)，已锁定一期最低充分的会话、逐题呈现、私有题目资产、回答证据、录音 / ASR、量表作答复核、保留和安全边界。
 - WP-10-A 已完成：MMSE `package-001` 以 released manifest 发布；`ScaleVersion` 与 MMSE 1.0 seed 已绑定 19 步患者安全呈现配置；current seed 新物化时写入完整 presentation config，已物化配置必须与 current seed 一致，否则 fail closed；内部只读资产服务和无数据库校验 CLI 已落地。
 - WP-10-B1 已完成：患者短期会话、六位一次性进入码、独立 HttpOnly Cookie / Guard、同设备 staff Session 撤销交接、跨设备兑换、准备确认、暂停 / 恢复、换设备重签、终止、惰性过期、单 revision CAS 与当前步骤最小公开响应已落地。
 - WP-10-B2 已完成：服务端权威的 19 步顺序推进、patient / staff 步骤归属、paused staff 接管、直接前一步逻辑重做、当前图片安全读取、音频顺序播放、刺激一次播放与 paused 技术重播授权、单 revision CAS、完成态与患者凭证清理已落地；步骤捕获和播放事实只内嵌在短期会话中。
 - WP-10-C1 已完成：患者短期会话 Guard 下的当前步骤 multipart 原始证据上传已支持 speech audio、writing / drawing photo 或 handwriting；私有 Storage、`MediaEvidence`、SHA-256、单 revision CAS 与精确补偿形成闭环，当前 run 媒体门禁和 redo run 隔离生效。证据引用只内嵌在患者会话，不写 `ItemResponse`、不形成正式答案，也没有 ASR、医生复核新接口或患者 UI。
-- WP-10-C2 已完成：患者 audio 可由 staff 显式触发受控 stub / 百炼同步 ASR 候选，`MediaEvidence.transcription` 以 claim / finalize CAS 保存有限状态；最新患者施测会话可通过安全 review 投影复核 item / step / run、失效重做、接管观察和媒体候选。候选不会自动写入 `ItemResponse`，医生仍通过既有 revision CAS 草稿接口人工确认；报告链对意外进入的浏览器录音 evidence fail closed，不扩大既有图片 / 手写报告范围。
+- WP-10-C2 已完成：患者 audio 可由 staff 显式触发受控 stub / 百炼同步 ASR 候选，`MediaEvidence.transcription` 以 claim / finalize CAS 保存有限状态；最新患者施测会话可通过安全只读 review 投影复核 item / step / run、失效重做、接管观察和媒体候选。候选不会自动写入 `ItemResponse`，医护 / 医生仍通过既有 revision CAS 草稿接口人工形成或修订正式答案草稿；报告链对意外进入的浏览器录音 evidence fail closed，不扩大既有图片 / 手写报告范围。
 - WP-10-F1 代码范围已实现：既有 MMSE `supervised_patient_input` 实例页新增医护发起与 5 秒服务端权威轮询、七项本地设备准备、音量 / 麦克风 / 指针练习、八类结构化影响因素、同 / 跨设备交接、暂停 / 恢复 / 重签 / 终止；独立患者 Shell 提供六位一次性码进入、3 秒当前会话轮询和仅等待医护的安全活动页。F1 不呈现正式步骤文字、资产、音频或证据，也不进入 F2/F3。
 - WP-10-F1 已完成：F1-P1 在 preparation confirm 后真实 reload，按服务端事实恢复同设备交接并完成 staff 身份撤销与 patient active；F1-P2 在患者 credential 已存在时真实 reload，恢复跨设备准备并完成 pause / resume / reissue / 新患者 / resume / terminate。两个 Profile 均使用独立 fixture、production frontend、真实 Browser backend 与 `cogmemory_ad_browser_test`，post verifier 通过且 cleanup `residualCount=0`。
 - WP-10-F2 已完成：正式患者端按服务端权威 currentStep 呈现 MMSE 19 步一步一屏，使用 private image 与 frozen MP3，执行 guidance / stimulus 播放边界、speech MediaRecorder、audio / handwriting / photo evidence、patient / staff complete、pause / resume、takeover / redo、显式技术重播授权与 completed 安全结束；不写正式 `ItemResponse`，不调用 F3 review / ASR / submit / scoring / report。
 - F2-P1 已实际完成正常 19 步 Browser 业务主流程；post verifier 为 session=completed、19/19 captures、`MediaEvidence=17`（audio=15、handwriting=1、photo=1），`ItemResponse` / `ScaleInstance` unchanged、downstream=0。technical replay 的持久授权事实与公开投影由 backend unit / E2E 证明 `false → authorize → true → replay → false`，无数据库 Schema、endpoint 或 revision 扩张。
-- F3 前最低实现对齐已完成（不新增工作包编号、不重新打开 F2）：MMSE 观察型步骤 `naming`、`reading-command`、`three-step-command` 已由 `advanceBy=staff` 改为患者正常主链连续推进；`responseMode` 与既有 evidence / audio 门禁不变，医护现场观察仍由后续复核形成正式记录。WP-10-F2 仍为“完成”，WP-10 仍“进行中”，F3 仍为下一阶段且本次未实施。
+- F3-pre（F3 前最低实现对齐）已完成（不新增工作包编号、不重新打开 F2）：MMSE 观察型步骤 `naming`、`reading-command`、`three-step-command` 已由 `advanceBy=staff` 改为患者正常主链连续推进；`responseMode` 与既有 evidence / audio 门禁不变，医护现场观察仍由后续复核形成正式记录。WP-10-F2 仍为“完成”，WP-10 仍“进行中”，F3 仍为下一代码阶段且尚未实施。
 - WP-10 最终 Browser 收口保留 F2-P2：upload 后 reload recovery、takeover、redo、old-run isolation、terminate。它必须在 F3 完成后、WP-10 宣布完成前执行，不阻断进入 F3，也不得无期限延期。
 - WP-10 最终 Browser / accessibility 收口保留“staff 页面代表性 Axe 尚有 2 项待最终分类”。现有证据未保留具体 rule ID，不猜测类别，也不为取得 rule 重跑完整 19 步；最终收口时重新取得规则，影响核心操作、表单 accessible name、键盘操作或明显可访问性的项目必须修复，非阻断结构 / 语义项按最终验收处理。
 - 真实设备、真实麦克风、真实触控笔与人工验收继续按既有 Batch E / WP-08 归属执行；桌面 synthetic microphone Browser 不等价真实设备验收。真实 OSS 患者上传与真实 ASR 仍按各自最终验收边界处理，不阻断 F2 完成。
@@ -140,7 +142,7 @@
 **目标**
 
 - 已完成子阶段：WP-10-B1 交付短期会话与控制权安全底座，WP-10-B2 交付患者逐步推进与受控题目资产访问，WP-10-C1 交付当前 run 的原始媒体证据上传、私有 Storage 编排与完成门禁，WP-10-C2 交付基础 ASR 候选、复核投影及既有正式答案链衔接；WP-10-F1 交付发起、准备和安全进入，WP-10-F2 交付正常 MMSE 19 步正式患者施测主流程；不改变本工作包数量、规模或完成定义。
-- 当前前端子阶段：WP-10-F1、WP-10-F2 已完成，下一阶段为 WP-10-F3。继续遵守患者原始事实、ASR 候选和医护观察不得自动写入 `ItemResponse` 正式答案的边界；医生可在复核时使用现有 `ItemResponse` 草稿链人工录入 / 修订，正式结果以 readiness 后的 A16 整体提交为界。F2 只形成患者原始事实与必要证据，不调用 F3 review / ASR / submit / scoring / report。WP-10 最终收口仍保留具名 F2-P2 与 staff Axe 分类，WP-10-C 后端范围已完成，WP-10 仍未完成。
+- 当前前端子阶段：WP-10-F1、WP-10-F2 已完成，下一阶段 WP-10-F3 统一称为“量表作答复核”；F3 代码尚未实施。继续遵守患者原始事实、ASR 候选和医护观察不得自动写入 `ItemResponse` 正式答案的边界。F2 只形成患者原始事实与必要证据，不调用 F3 review / ASR / submit / scoring / report。WP-10 最终收口仍保留具名 F2-P2 与 staff Axe 分类，WP-10-C 后端范围已完成，WP-10 仍未完成。
 
 - 患者短期受控施测会话与安全进入；same-device 按安全交接合同执行，cross-device 按受监督患者施测合同已锁定的一次性短期进入码执行。
 - 患者施测终端采用一步一屏、单一主操作、大字号、大触控区、明确状态和随时可达的求助入口；患者端与医护端都响应式支持既定手机、平板和桌面代表 viewport，具体步骤所需硬件能力另按合同验收。
@@ -150,8 +152,12 @@
 - 对适用的语音回答步骤支持录音和一种基础 ASR，并提供医生人工降级、自动计时和受控重播策略；非语音步骤不默认录音。
 - 采集患者点击、书写和绘图等数字交互；闭眼、拿纸、对折、放置等动作由医护现场观察，患者端仍连续推进正常主链，观察结论在后续复核形成正式记录。不默认视频、摄像头、传感器或自动动作识别。
 - 医护施测模式支持选择患者 / 访视 / 量表、确认准备、发起交接或跨设备进入、查看进度和求助，以及在后续复核记录动作观察及结构化影响因素；存在有效 staff 终端时可执行暂停、接管、重做、technical replay、重签、恢复、换设备或终止。same-device 患者阶段确需系统干预时，先停止患者操作、交回设备并显式重新认证。最低分类已由患者施测合同锁定，记录不自动改分或诊断。
-- 医生复核报告模式按异常优先呈现适用语音、转写修订、书写绘图、医护观察、异常步骤、人工评分、影响因素和无法完成原因；无异常且无歧义的客观步骤可汇总呈现和受控批量确认，不机械要求逐题点击。正常首次复核录入不强制填写修改原因或无业务价值的 `operatorNote`；对已有草稿作实质纠正、与原始证据存在需解释的明显差异、临床判断需要额外解释，或既有合同要求说明时记录必要说明，并保留既有 Audit 与提交留痕。
-- 医生通过现有 A14 `ItemResponse` 草稿 PATCH 人工录入 / 修订，复用 step、prompt、`operatorNote` 并按规则 `markAsAnswered`；全部满足 submission readiness 后，使用现有 A16 `submit(confirm=true)` 整体正式提交。提交成功后，现有 `ItemResponse` 成为该次 `ScaleInstance` 的正式提交结果，再进入既有评分、认知域和报告链；不创建第二套答案或新确认 API。
+- F3 正常 happy path 为：completed patient administration → 在现有 `ScaleInstance` 页面查看整份量表的结构化复核摘要 → 按需查看患者原始回答、audio、书写 / 绘图、ASR candidate、staff observation 与 reviewEvents → 使用现有 A14 单题 PATCH 补录 / 修订 `ItemResponse`，并按规则 `markAsAnswered` → 查看 submission readiness → readiness 满足后使用现有 A16 `submit(confirm=true)` 整体正式提交。F3 边界止于 A16 整体提交；提交成功后进入既有 A17 / A18 评分、认知域和 ClinicalReport 链，F3 不实现人工评分、ManualScoreReview 或报告复核。
+- F3 默认扩展现有 `/patients/[patientId]/visits/[visitId]/scale-instances/[scaleInstanceId]`，组合当前 `ItemResponse` 编辑、C2 安全只读 review projection、按需媒体证据、readiness 与 A16 submit；默认不新建 `/review` 路由、Review workspace / Dashboard / Task 页面。C2 projection 只作为患者施测事实参考来源，不存储正式答案、Review / confirmation / anomaly 状态，也不扩张为写接口。
+- F3 采用“正常复核优先，重点项目适度提示”。已有未完整作答、staff observation、书写 / 绘图、ASR candidate、施测控制事实、影响因素、无法完成原因与 readiness blocking issue 只影响 UI 标记、排序、分组或展开；不新增 Anomaly、Review、ReviewItem、`ReviewStatus`、`AnomalyStatus`、risk level、review / anomaly queue、持久化待处理状态、后台分类服务或工作流状态机。
+- 允许汇总呈现、紧凑显示与快速逐项复核，但不建设 batch-confirm endpoint、multi-item PATCH、bulk review write 或批量确认状态。正式写入继续使用 A14 单题 PATCH，完成语义继续复用 `markAsAnswered`，提交前判断继续复用 readiness，整份量表最终只使用 A16；不新增 `reviewed`、`confirmed`、`reviewCompleted`、`doctorConfirmed` 或 `reviewRevision` 等“医生看过”持久状态。
+- 正常首次复核不机械逐题查看原始媒体，也不机械逐题填写 `operatorNote`；该字段继续保留为按业务需要填写的 optional 说明，仅用于实质纠正、明显差异、临床判断或题目真实合同明确要求说明的情形，不新增第二套 note / reason 体系。ASR 继续按需显式触发，失败不阻断 readiness / submit，也不自动写 `ItemResponse`。
+- **F3 首个最低实现对齐项**：当前 MMSE seed 的 11 个正式 Item 均为 `requiresOperatorNote: true`，现有 submission readiness 会在 note 缺失时产生 blocking 的 `ITEM_REQUIRED_OPERATOR_NOTE_MISSING`，与正常首次复核不机械逐题填写 `operatorNote` 的正式合同不一致。F3 实现开始时首先取消 MMSE 正常项目的 blanket `requiresOperatorNote=true`，保留 optional `operatorNote` 与 Audit，不改变未来确有说明要求的量表合同，不新增第二套 note / reason；本次只记录 gap，未修改代码，F3 仍未开始实施。
 - 完整 MMSE 患者施测闭环。
 
 **完成定义**
@@ -172,7 +178,7 @@
 
 **完成定义**
 
-- 完整 MoCA 由患者施测终端与临床工作端协同完成，并在医生复核报告模式形成闭环；不要求全部步骤由患者独立操作。
+- 完整 MoCA 由患者施测终端与临床工作端协同完成，并复用“量表作答复核”形成闭环；不要求全部步骤由患者独立操作。A16 submit 后继续进入已有评分、认知域和报告链。
 - 正式评分仍只基于医生 A16 整体提交后的现有 `ItemResponse`，不由 ASR、患者原始作答或必要过程事实直接形成。
 
 ### 4.4 WP-12：临床运营最小闭环
@@ -202,7 +208,7 @@
 
 - 患者施测终端、临床工作端、临床运营与系统管理工作区、评分、报告和错误处置完整联调。
 - 使用既定代表 viewport 验收患者端和医护端在手机、平板和桌面上的响应式合同，并在具备相应硬件的真实设备验收音频播放、麦克风、触控、绘图、网络中断、医护接管、老年用户可读性和医护操作负荷；不穷举所有设备 × 角色组合。合格外设可以提供音频和麦克风能力。摄像头不作为固定验收项；未来只有已锁定施测步骤确有业务必要时，才按该步骤合同单独验收其权限、隐私和设备适配。普通鼠标结果不替代患者触控设备验收。
-- 验收同设备患者模式交接、医护电脑与患者平板的跨设备流程、医护电脑与触摸电脑大屏的跨设备流程、逐步骤题目与指导语播报、准备检查、不计分练习、患者求助、暂停 / 接管 / 恢复、共享设备隐私退出、医护施测到医生异常优先复核和报告，以及医护代录知情者辅助信息。
+- 验收同设备患者模式交接、医护电脑与患者平板的跨设备流程、医护电脑与触摸电脑大屏的跨设备流程、逐步骤题目与指导语播报、准备检查、不计分练习、患者求助、暂停 / 接管 / 恢复、共享设备隐私退出、医护施测到正常整份量表作答复核及后续报告，以及医护代录知情者辅助信息。
 
 **完成定义**
 
