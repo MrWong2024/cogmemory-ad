@@ -148,13 +148,13 @@ A21–A25 写请求从当前服务端 `report.updatedAt` 取得 `expectedUpdated
 
 ## 7. 当前实现结论与验证入口
 
-- WP-10-F1、WP-10-F2、WP-10-F3 已完成：同 / 跨设备发起、准备与安全进入、正常 MMSE 19 步正式患者主链，以及现有 ScaleInstance 页面的正常作答复核闭环均已实现。F2-P2 recovery 与 staff Axe 分类仍保留在 WP-10 最终收口。
+- WP-10 已完成：F1/F2/F3、具名 F2-P2 recovery、staff Axe 分类和 completed gate 后的 F3 定向回归均已闭合。StaffPanel 把最新服务端 session status 最小回传父页面，ReviewPanel 仅在 `completed` 后挂载；active / paused / terminated F2 不产生 F3 请求。下一前端业务工作包为仍待开始的 WP-11。
 - replacement V2+ 生命周期、history / versions / detail / trends、自动保存与媒体协调等既有前端能力已实现；精确当前事实见对应 maps。本 snapshot 不保存已关闭批次的测试数字或 evidence ledger。
 - 稳定验证规则和当前仍待验边界见 frontend / backend testing playbook；已关闭阶段的详细执行证据由 Git 历史和当前测试资产追溯。
 
 ## 8. 当前未实现边界
 
-- 受监督患者施测终端：MMSE 的 F1/F2 已实现并完成正常 19 步正式患者主链；F2-P2 的 upload 后 reload recovery、takeover、redo、old-run isolation 与 terminate 尚待 WP-10 最终 Browser 收口。MoCA 患者端多模态编排尚未实现。
+- 受监督患者施测终端：MMSE 的 F1/F2 正常 19 步与 F2-P2 upload 后 reload recovery、takeover、redo、old-run isolation、terminate 均已完成；staff Axe 阻断对比度问题已修复，最终保留 `definition-list` / serious / nodeCount=1 为非阻断结构语义项。MoCA 患者端多模态编排尚未实现，归属待开始的 WP-11。
 - F3 已实现于既有 `/patients/[patientId]/visits/[visitId]/scale-instances/[scaleInstanceId]`：信息区后、`ScaleInstanceSubmissionPanel` 前展示 `PatientAdministrationReviewPanel`。它一次读取整份 review、允许手动刷新且不轮询，按需获取 access URL、显式触发 ASR、显式采用合法 patient photo / handwriting，并把用户定位到既有 `ItemResponseEditor`；正式答案由 A14 / `markAsAnswered` 保存，整体提交由既有 readiness / A16 完成。ASR candidate 不自动写 `ItemResponse`，adoption 不复制 Evidence 或形成答案。
 - F3 没有新增 `/review` 路由、Review workspace、Anomaly、StaffObservation 或第二套提交状态机；completed 后 review 保持可读，ASR / adoption 写操作进入只读。真实设备、真实麦克风、真实触控笔、真实患者 OSS 和真实 ASR 继续按 roadmap 原有最终验收归属，桌面 Browser 的 stub / fake 证据不得冒充这些边界。
 - 非语音步骤仍不默认录音，动作观察不等于视频、摄像头、传感器或自动行为识别。摄像头不是标准患者交互设备的通用前置；未来具体步骤确有拍摄或扫码必要时，须由该步骤合同单独锁定权限、隐私、适配和验收。现有医生侧图片上传、纸笔结果拍照和手写证据能力不因此删除或取消。

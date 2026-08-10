@@ -196,7 +196,7 @@
 ### 6.7 `ScaleInstanceExecutionPage`
 
 - 路径：`frontend\src\features\assessments\components\ScaleInstanceExecutionPage.tsx`
-- WP-10-F1/F2 组合边界：只在服务端实例摘要明确为 MMSE 1.0、`supervised_patient_input` 时渲染一个 `PatientAdministrationStaffPanel`；面板不接管既有 A14–A19 作答、媒体、提交、评分或认知域状态。
+- WP-10-F1/F2/F3 组合边界：只在服务端实例摘要明确为 MMSE 1.0、`supervised_patient_input` 时渲染一个 `PatientAdministrationStaffPanel`；面板只把最新服务端权威 patient-administration status 最小回传父页面。patient / visit / scaleInstance 身份变化时父页面先重置为 `null`，且仅在 status=`completed` 时挂载 `PatientAdministrationReviewPanel`；不新增父页面 GET、轮询或全局状态。StaffPanel 不接管既有 A14–A19 作答、媒体、提交、评分或认知域状态。
 - 职责：接收 patientId / visitId / scaleInstanceId，加载 A14 安全执行详情，管理 invalid / loading / 401 / 403 / not-found / configuration-unavailable / retry、动态分组、逐题 autosave snapshot、`${itemResponseId}:${evidenceType}` 媒体草稿、未收口统计、beforeunload、页面级显示 tick、实时 progress，以及 B6 独立 readiness / stale / error、题目定位、本地阻断、提交确认、submit 写锁和当前会话 receipt
 - 保存：所有作答、立即保存、标记完成、计时动作与 checkpoint 进入 `useItemResponseAutosaveCoordinator`；页面不再用单一 saving 集合表达保存状态。切组立即 flush 离开组内合法 queued 项但不等待完成，也不清除其他组状态。
 - 媒体父级职责：分组切换不清除 JPEG Blob / strokes；持有跨分组媒体写锁；A15 返回 requirement 时通知协调器推进媒体 generation，旧 A14 响应仅在 generation 未变化时采用自身 evidenceRequirements；A15 不改作答 draft / revision / progress
@@ -708,7 +708,7 @@
 
 ### 6.80 WP-10-F1/F2 医护发起、准备与步骤控制组件
 
-- `PatientAdministrationStaffPanel.tsx`：在既有 MMSE 实例页读取 / 创建最新短期会话，5 秒串行轮询并提供准备确认、同 / 跨设备交接、暂停、恢复、换设备重签和终止；F2 继续组合 staff step complete、paused takeover、直接前一步 redo 与 stimulus technical replay authorize。写入使用最新 revision、全局单写锁且不自动重放。revision stale 屏障只比较同一 Session ID；服务端事实已唯一确定时可在刷新后恢复 same-device / cross-device，患者 credential 已存在时禁止 same-device。flowChoice 与入口码仍只存在当前 React 内存，不新增后端字段或 Storage。
+- `PatientAdministrationStaffPanel.tsx`：在既有 MMSE 实例页读取 / 创建最新短期会话，5 秒串行轮询并提供准备确认、同 / 跨设备交接、暂停、恢复、换设备重签和终止；F2 继续组合 staff step complete、paused takeover、直接前一步 redo 与 stimulus technical replay authorize。每次采用新的服务端权威 session 时通过可选 callback 仅通知 status，无 session 时通知 `null`，不把 session 对象上提。写入使用最新 revision、全局单写锁且不自动重放。revision stale 屏障只比较同一 Session ID；服务端事实已唯一确定时可在刷新后恢复 same-device / cross-device，患者 credential 已存在时禁止 same-device。flowChoice 与入口码仍只存在当前 React 内存，不新增后端字段或 Storage。
 - 轮询边界：每次 GET 使用 AbortController，下一轮在当前请求完成后调度；组件卸载、实例身份改变或进入写入时取消旧读取。响应以请求 generation、Session ID 与服务端 revision 判定，过时结果不得覆盖新状态。
 - `PatientAdministrationPreparation.tsx`：管理七项本地准备事实、八类影响因素和最长 500 字备注；WebAudio 只播放合成测试音，MediaRecorder 只生成最长 10 秒本地试听 Blob，Canvas 只记录 Pointer 练习。reset、重启或卸载会淘汰旧麦克风 run，迟到 stream 立即停止且不创建 recorder 或写状态；Blob URL 与持有的 track 在替换 / 卸载时释放。不上传、不创建 `MediaEvidence`、不修改 `ItemResponse`。
 - `PatientAdministrationStaffStepControls.tsx`：根据 19 步静态安全摘要与最新 staff session 展示当前步骤进度；MMSE 三个目标步骤当前均显示“由患者推进”，active 时不呈现医护观察 complete。paused patient 步骤可填写原因与观察后接管，paused 且有直接前一步时可填写原因 redo，paused stimulus 可填写原因授权一次技术重播。组件不自行生成 revision、stepRun、播放事实或正式答案；staff-complete API 仍保留供其他配置步骤使用。
@@ -727,7 +727,7 @@
 - `api/patient-administration-api.ts`：唯一 patient-administration fetch 所在；F2 增加 current private image、audio play、multipart evidence、patient / staff complete、takeover、redo 与 replay authorize。全部路径 ID 编码，统一 `credentials: include` / `no-store`，GET 接收 AbortSignal，写请求结果不确定映射为只读核对语义且不自动 retry。
 - `lib/patient-administration-display.ts`：集中把公开状态与稳定错误 kind 映射为安全中文文案；不透传后端英文 message、完整 response、进入码或内部技术字段。
 - `lib/mmse-patient-administration.ts`：只维护 MMSE 19 步 order / label / advanceBy 与三个受控 stimulus assetKey 的前端展示摘要；不复制 patientText、完整资产清单、答案或评分规则，服务端 currentStep 仍是权威进度。当前 `naming`、`reading-command`、`three-step-command` 的 advanceBy 均为 patient，order / label / stimulusAssetKey 不变。
-- 当前完成边界：F1、F2、F3 已完成；F2 正常 19 步与 F3 正常作答复核 Browser 主链、post verifier 均已通过。F2-P2 recovery 和 staff Axe 2 项仍归属 WP-10 最终收口；动态证据见 testing playbook。
+- 当前完成边界：WP-10 的 F1、F2、F3 与最终收口均已完成；F2 正常 19 步、F2-P2 recovery、staff Axe 分类及 completed gate 后的 F3 正常作答复核 Browser / post verifier 均已通过。active / paused / terminated F2 不挂载 ReviewPanel，也不调用 F3；动态证据见 testing playbook。
 
 ### 6.83 WP-10-F2 正式步骤与患者证据组件
 
@@ -737,7 +737,7 @@
 
 ### 6.84 WP-10-F3 `PatientAdministrationReviewPanel`
 
-- 路径：`frontend/src/features/patient-administration/components/PatientAdministrationReviewPanel.tsx`。仅在 MMSE `supervised_patient_input` 的现有 `ScaleInstanceExecutionPage` 信息区之后、`ScaleInstanceSubmissionPanel` 之前挂载；不新增路由或 workspace，原 `PatientAdministrationStaffPanel`、分组导航和编辑器保持。
+- 路径：`frontend/src/features/patient-administration/components/PatientAdministrationReviewPanel.tsx`。仅在 MMSE `supervised_patient_input` 且 StaffPanel 回传的最新 patient-administration status=`completed` 时，于现有 `ScaleInstanceExecutionPage` 信息区之后、`ScaleInstanceSubmissionPanel` 之前挂载；prepared / active / paused / terminated / expired 均不进入。Panel 的一次加载 + 手动刷新、无轮询逻辑不变；不新增路由或 workspace，原 `PatientAdministrationStaffPanel`、分组导航和编辑器保持。
 - 读取职责：首次加载一次 completed patient administration review，展示 session / impact factors / reviewEvents、权威 item / step / run、responseMode、当前 ItemResponse status / revision、capture 与媒体摘要；允许显式刷新且不轮询。404 安静表示尚无复核，409 作为完整性冲突，不伪造正常 `staffObservation` 前置。
 - 媒体职责：原始媒体默认折叠；用户明确操作后才请求 access URL。URL 只在当前 React 内存中绑定 audio / image viewer，关闭、实例身份变化或卸载时清除。ASR 仅为显式辅助候选并持续标注“不是正式答案”。
 - adoption / 定位职责：仅对后端合同允许的 completed session、有效 capture、stored/attached photo 或 handwriting、且父页面 requirement 仍 pending/missing 的证据开放显式采用；成功把同一 Evidence requirement 回传父页面并标记 readiness stale。定位按钮复用父页 itemResponseId -> 分组 -> scroll -> focus，不在 panel 内保存答案。

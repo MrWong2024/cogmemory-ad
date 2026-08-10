@@ -11,7 +11,7 @@
 - AuthModule 内部 session cookie 名称已统一为 `cogmemory_ad_session`，登录成功下发 HttpOnly Cookie，`SameSite=Lax`，`Path=/`，production 环境启用 `Secure`。
 - 当前没有 users controller，没有公开用户管理 API，没有注册、密码重置、角色权限管理、短信验证码、OAuth / SSO 或 JWT 登录 API。
 - A12 已新增 `PatientsController` 与 `AssessmentVisitsController`，形成第一组受保护临床业务 API；所有五个接口均显式绑定 `SessionAuthGuard`、`RolesGuard` 和 `@Roles('admin', 'doctor', 'nurse', 'research_assistant')`。
-- 当前已有实例 submission、评分、认知域、报告与历史趋势接口；WP-10-B 共提供十二个 staff 会话 / 步骤控制接口和五个 patient 会话 / 步骤 / 资产接口，C1 增加患者当前步骤 evidence 上传，C2 增加显式转写与最新会话复核。自动转写候选不会写入正式 `ItemResponse`；F1/F2 患者 UI 已实现正常 MMSE 19 步正式施测主链，F3 尚未开始。
+- 当前已有实例 submission、评分、认知域、报告与历史趋势接口；WP-10-B 共提供十二个 staff 会话 / 步骤控制接口和五个 patient 会话 / 步骤 / 资产接口，C1 增加患者当前步骤 evidence 上传，C2 增加显式转写与最新会话复核。自动转写候选不会写入正式 `ItemResponse`；WP-10 的 F1/F2 正常 MMSE 19 步、F2-P2 recovery、F3 正常作答复核及 completed session gate 均已完成。F3 继续复用现有 review / A14 / readiness / A16 API，本次没有后端 endpoint、DTO、Schema、Guard、权限或状态机变化。
 - 当前 API 事实以实际 Controller、DTO、response type 和对应单元 / E2E 测试为准。
 
 ## 3. 当前 API 清单

@@ -56,7 +56,13 @@ export function ScaleSubmissionIssueList({
               </p>
             </div>
             {details.length > 0 ? (
-              <ul className="grid gap-1 text-sm leading-6 text-[var(--cma-muted)]">
+              <ul
+                className={
+                  severity === 'blocking'
+                    ? 'grid gap-1 text-sm leading-6 text-[var(--cma-text-strong)]'
+                    : 'grid gap-1 text-sm leading-6 text-[var(--cma-warning)]'
+                }
+              >
                 {details.map((detail) => (
                   <li key={detail}>{detail}</li>
                 ))}

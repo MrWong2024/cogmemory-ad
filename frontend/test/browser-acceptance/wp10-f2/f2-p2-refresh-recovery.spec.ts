@@ -1,4 +1,5 @@
 import { test, expect } from '../support/acceptance-test';
+import { runAccessibilityAudit } from '../support/accessibility-audit';
 import { auditRuntimeStorage } from '../support/runtime-audit';
 import {
   AUDIO_PATTERN,
@@ -103,6 +104,13 @@ test.describe('WP-10 F2-P2 upload recovery after patient reload', () => {
       );
       await staffPage.getByRole('button', { name: '确认准备与影响因素' }).click();
       expect((await preparationResponsePromise).status()).toBe(200);
+      await expect(
+        staffPage.getByRole('button', { name: '暂停施测', exact: true }),
+      ).toBeVisible();
+      const accessibilitySummary = await runAccessibilityAudit(staffPage);
+      console.log(
+        `WP10_F2_STAFF_AXE_SUMMARY ${JSON.stringify(accessibilitySummary)}`,
+      );
 
       await waitForStep(patientPage, 1);
       await recordAndSaveSpeech(patientPage);

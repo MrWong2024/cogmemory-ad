@@ -20,16 +20,14 @@ import { ItemResponse, type ItemResponseDocument } from '../src/modules/assessme
 import { PatientAdministrationSession, type PatientAdministrationSessionDocument } from '../src/modules/assessments/schemas/patient-administration-session.schema';
 // prettier-ignore
 import { ScaleInstance, type ScaleInstanceDocument } from '../src/modules/assessments/schemas/scale-instance.schema';
-import { AssessmentScaleWorkflowService } from '../src/modules/assessments/services/assessment-scale-workflow.service';
+import { AssessmentExecutionService } from '../src/modules/assessments/services/assessment-execution.service';
 // prettier-ignore
 import { Session, type SessionDocument } from '../src/modules/auth/schemas/session.schema';
 import { AuthService } from '../src/modules/auth/services/auth.service';
-import type { AuthenticatedUserContext } from '../src/modules/auth/types/auth-user-context.type';
 // prettier-ignore
 import { MediaEvidence, type MediaEvidenceDocument } from '../src/modules/media/schemas/media-evidence.schema';
 // prettier-ignore
 import { Patient, type PatientDocument } from '../src/modules/patients/schemas/patient.schema';
-import { ScaleCatalogService } from '../src/modules/scales/services/scale-catalog.service';
 import { PresentationAssetsService } from '../src/modules/scales/services/presentation-assets.service';
 // prettier-ignore
 import { User, type UserDocument } from '../src/modules/users/schemas/user.schema';
@@ -66,8 +64,7 @@ type Models = {
 };
 
 type Workflows = {
-  scaleCatalog: ScaleCatalogService;
-  scaleWorkflow: AssessmentScaleWorkflowService;
+  execution: AssessmentExecutionService;
   presentationAssets: PresentationAssetsService;
 };
 
@@ -85,6 +82,12 @@ class FixtureError extends Error {
 
 const DB = 'cogmemory_ad_browser_test';
 const BASE_DATE = new Date('2026-08-07T00:00:00.000Z');
+
+type ExistingMmseCatalogReference = {
+  scaleDefinitionId: string;
+  scaleVersionId: string;
+  scaleVersion: string;
+};
 
 function fail(code: string, message: string): never {
   throw new FixtureError(code, message);
@@ -141,14 +144,11 @@ function visitCode(namespace: string): string {
   return `${subjectCode(namespace)}-VISIT`;
 }
 
-function actor(user: UserDocument): AuthenticatedUserContext {
+function operator(user: UserDocument) {
   return {
-    id: user._id.toString(),
-    accountName: user.accountName,
-    displayName: user.displayName,
-    roles: [...user.roles],
-    permissions: [...user.permissions],
-    userType: user.userType,
+    operatorId: user._id,
+    operatorName: user.displayName,
+    operatorRole: 'doctor' as const,
   };
 }
 
@@ -294,6 +294,51 @@ async function assertUnused(namespace: string, models: Models): Promise<void> {
   }
 }
 
+async function resolveExistingMmseCatalog(
+  models: Models,
+): Promise<ExistingMmseCatalogReference> {
+  const [definitionValue, versionValue] = await Promise.all([
+    models.items.db.collection('scale_definitions').findOne({ code: 'mmse' }),
+    models.items.db
+      .collection('scale_versions')
+      .findOne({ scaleCode: 'mmse', version: '1.0' }),
+  ]);
+  const definition = definitionValue as {
+    _id?: unknown;
+    status?: unknown;
+  } | null;
+  const version = versionValue as {
+    _id?: unknown;
+    scaleDefinitionId?: unknown;
+    status?: unknown;
+    scaleCode?: unknown;
+    version?: unknown;
+  } | null;
+  if (
+    !definition ||
+    !(definition._id instanceof Types.ObjectId) ||
+    definition.status !== 'active' ||
+    !version ||
+    !(version._id instanceof Types.ObjectId) ||
+    !(version.scaleDefinitionId instanceof Types.ObjectId) ||
+    !version.scaleDefinitionId.equals(definition._id) ||
+    version.status !== 'active' ||
+    version.scaleCode !== 'mmse' ||
+    version.version !== '1.0'
+  ) {
+    fail(
+      'WP10_F2_MMSE_CATALOG_UNAVAILABLE',
+      'The shared Browser MMSE catalog is unavailable',
+    );
+  }
+
+  return {
+    scaleDefinitionId: definition._id.toString(),
+    scaleVersionId: version._id.toString(),
+    scaleVersion: version.version,
+  };
+}
+
 async function createFixture(input: {
   profile: Profile;
   namespace: string;
@@ -349,22 +394,24 @@ async function createFixture(input: {
     notes: 'Synthetic WP-10 F2 browser fixture visit',
     metadata: null,
   });
-  await input.workflows.scaleCatalog.ensureSeedScaleVersionMaterialized('mmse');
+  const catalog = await resolveExistingMmseCatalog(input.models);
+  const executionPlan = input.workflows.execution.buildScaleExecutionPlan({
+    patientId: patient._id,
+    assessmentVisitId: visit._id,
+    subjectCode: patient.subjectCode,
+    scaleDefinitionId: catalog.scaleDefinitionId,
+    scaleVersionId: catalog.scaleVersionId,
+    scaleCode: 'mmse',
+    scaleVersion: catalog.scaleVersion,
+    instanceCode: `INST-${visit._id.toString().toUpperCase()}-MMSE-1`,
+    instanceNo: 1,
+    administrationMode: 'supervised_patient_input',
+    operatorSnapshot: operator(user),
+    startedAt: null,
+    metadata: null,
+  });
   const initialized =
-    await input.workflows.scaleWorkflow.initializeScaleInstance(
-      patient._id.toString(),
-      visit._id.toString(),
-      {
-        scaleCode: 'mmse',
-        scaleVersion: '1.0',
-        administrationMode: 'supervised_patient_input',
-      },
-      {
-        operatorId: actor(user).id,
-        operatorName: user.displayName,
-        operatorRole: 'doctor',
-      },
-    );
+    await input.workflows.execution.createScaleExecutionFromPlan(executionPlan);
   const instance = await input.models.instances.findById(
     initialized.scaleInstance.id,
   );
@@ -903,8 +950,7 @@ async function run(): Promise<void> {
     assertRuntime(app.get(ConfigService), connection);
     const models = modelRegistry(app);
     const workflows: Workflows = {
-      scaleCatalog: app.get(ScaleCatalogService),
-      scaleWorkflow: app.get(AssessmentScaleWorkflowService),
+      execution: app.get(AssessmentExecutionService),
       presentationAssets: app.get(PresentationAssetsService),
     };
     let result: Record<string, unknown>;

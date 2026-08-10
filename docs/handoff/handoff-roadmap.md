@@ -7,10 +7,10 @@
 - 一期产品目标：**院内受监督临床试用闭环**。
 - 当前实现：现有医生侧工作台已形成临床工作端的代码底座，量表运行时、作答与证据、评分、报告、历史及审计底座已经形成；WP-10-F1 的 MMSE 临床发起、设备准备与安全进入、WP-10-F2 的服务端权威 19 步患者主链，以及 WP-10-F3 的正常作答复核 UI 均已完成。F3 直接扩展现有 `ScaleInstance` 页面：读取 completed patient administration review，按需查看媒体或显式生成 ASR 候选、显式采用同一个患者 photo / handwriting Evidence，并定位既有 `ItemResponseEditor` 通过 A14 形成正式答案，随后复用现有 readiness / A16 整体提交。没有新增 `/review` 路由、Review / Anomaly / StaffObservation 工作流。`/dashboard` 仍是轻量入口，不等同统计型 Dashboard。
 - 当前里程碑：后端 A30，前端 B18；A29 / A30 合同与验证保持闭合，B18 补充验证已闭合且自动化 `gap=0`。
-- 已完成工作包：WP-02、WP-03、WP-04。
+- 已完成工作包：WP-02、WP-03、WP-04、WP-10。
 - 一期已完成能力域：10 个，不因本次重新编组机械变化。
-- 一期正式剩余工作包：5 个，待确认 0 个；规模为 S 0 / M 2 / L 3；按 S=1、M=2、L=3 加权为 `0×1 + 2×2 + 3×3 = 13`。
-- 当前状态：WP-10 进行中；WP-10-A、WP-10-B、WP-10-C 后端范围与 WP-10-F1、WP-10-F2、WP-10-F3 前端子阶段已完成。WP-10 整体仍需完成具名 F2-P2 与 staff Axe 最终收口。
+- 一期正式剩余工作包：4 个，待确认 0 个；规模为 S 0 / M 2 / L 2；按 S=1、M=2、L=3 加权为 `0×1 + 2×2 + 2×3 = 10`。
+- 当前状态：WP-10 已完成；下一工作包为 WP-11，状态仍为“待开始”。WP-10-A/B/C、F1/F2/F3、具名 F2-P2 recovery、staff Axe 分类、受影响 F3 回归及本轮 verifier / cleanup 均已闭合。
 - Batch E：8 项真实设备或人工验收仍为 `pending`，最终主要归属为 WP-08；桌面 Browser 结果不得替代真实设备或专业判断。
 
 一期不按工作包数量计算或展示完成百分比。
@@ -102,7 +102,7 @@
 
 ## 3. 当前阶段
 
-### WP-10 受监督患者施测底座与 MMSE 闭环：进行中
+### WP-10 受监督患者施测底座与 MMSE 闭环：已完成
 
 - 详细稳定合同的唯一入口为[受监督患者施测合同](./handoff-patient-administration-contract.md)，已锁定一期最低充分的会话、逐题呈现、私有题目资产、回答证据、录音 / ASR、量表作答复核、保留和安全边界。
 - WP-10-A 已完成：MMSE `package-001` 以 released manifest 发布；`ScaleVersion` 与 MMSE 1.0 seed 已绑定 19 步患者安全呈现配置；current seed 新物化时写入完整 presentation config，已物化配置必须与 current seed 一致，否则 fail closed；内部只读资产服务和无数据库校验 CLI 已落地。
@@ -115,35 +115,34 @@
 - WP-10-F2 已完成：正式患者端按服务端权威 currentStep 呈现 MMSE 19 步一步一屏，使用 private image 与 frozen MP3，执行 guidance / stimulus 播放边界、speech MediaRecorder、audio / handwriting / photo evidence、patient / staff complete、pause / resume、takeover / redo、显式技术重播授权与 completed 安全结束；不写正式 `ItemResponse`，不调用 F3 review / ASR / submit / scoring / report。
 - F2-P1 已实际完成正常 19 步 Browser 业务主流程；post verifier 为 session=completed、19/19 captures、`MediaEvidence=17`（audio=15、handwriting=1、photo=1），`ItemResponse` / `ScaleInstance` unchanged、downstream=0。technical replay 的持久授权事实与公开投影由 backend unit / E2E 证明 `false → authorize → true → replay → false`，无数据库 Schema、endpoint 或 revision 扩张。
 - F3-pre（F3 前最低实现对齐）保持完成（不新增工作包编号、不重新打开 F2）：MMSE 观察型步骤 `naming`、`reading-command`、`three-step-command` 已由 `advanceBy=staff` 改为患者正常主链连续推进；`responseMode` 与既有 evidence / audio 门禁不变。WP-10-F3 也已完成：`PatientAdministrationReviewPanel` 已接入现有 `ScaleInstance` 页面，现场观察仍由医护通过既有 `ItemResponseEditor` / A14 形成正式答案，readiness / A16 继续复用原链。
-- WP-10 最终 Browser 收口保留 F2-P2：upload 后 reload recovery、takeover、redo、old-run isolation、terminate。它必须在 F3 完成后、WP-10 宣布完成前执行，不阻断进入 F3，也不得无期限延期。
-- WP-10 最终 Browser / accessibility 收口保留“staff 页面代表性 Axe 尚有 2 项待最终分类”。现有证据未保留具体 rule ID，不猜测类别，也不为取得 rule 重跑完整 19 步；最终收口时重新取得规则，影响核心操作、表单 accessible name、键盘操作或明显可访问性的项目必须修复，非阻断结构 / 语义项按最终验收处理。
+- WP-10 F2-P2 最终 Browser 收口已完成：upload 后 reload 从服务端 current 恢复且不重复上传，takeover、redo、old-run isolation 与 terminate 均通过；全过程 review / transcribe / adopt / A14 / readiness / A16 请求为 0。post verifier 为 session=`terminated`、valid/invalid capture=2/1、`MediaEvidence=2`、duplicate=0、`ItemResponse` / `ScaleInstance` unchanged、downstream=0；cleanup `residualCount=0`、runtime absent。
+- staff 页面代表性 Axe 最终为 `violationCount=1`：`definition-list` / serious / nodeCount=1。它仅对应信息卡 `<dl>` 的分组结构，不影响核心控件、表单 accessible name、键盘、标签、焦点或内容理解，按 testing playbook 分类为非阻断结构语义项。此前实际发现的 `color-contrast` 阻断项已直接修复并在 fresh F2-P2 中复验消失，不以追求 Axe=0 重构信息卡 DOM。
 - 真实设备、真实麦克风、真实触控笔与人工验收继续按既有 Batch E / WP-08 归属执行；桌面 synthetic microphone Browser 不等价真实设备验收。真实 OSS 患者上传与真实 ASR 仍按各自最终验收边界处理，不阻断 F2 完成。
-- WP-10-C 后端范围与 WP-10-F1、WP-10-F2、WP-10-F3 已完成；WP-10 整体仍为进行中，下一步为 F2-P2 与 staff Axe 最终收口。
-- 一期正式剩余工作包仍为 WP-10、WP-11、WP-12、WP-08、WP-09；数量、规模和加权工作量不因 WP-10 内部阶段完成而变化。
+- WP-10-C 后端范围与 WP-10-F1、WP-10-F2、WP-10-F3、F2-P2、staff Axe 分类及 completed gate 后的 F3 定向回归均已完成；WP-10 整体已完成。
+- 一期正式剩余工作包为 WP-11、WP-12、WP-08、WP-09；下一工作包为 WP-11，但本次不开始 WP-11。
 
 ## 4. 一期正式剩余工作包
 
 ### 4.1 汇总
 
-- 正式剩余工作包：5 个，待确认 0 个。
-- 规模：S 0 / M 2 / L 3。
-- 加权工作量：13（`0×1 + 2×2 + 3×3 = 13`）。
-- 活跃剩余工作包表只计算 WP-10、WP-11、WP-12、WP-08、WP-09；延期、缩减、替代或取消的旧项不重复计数。
+- 正式剩余工作包：4 个，待确认 0 个。
+- 规模：S 0 / M 2 / L 2。
+- 加权工作量：10（`0×1 + 2×2 + 2×3 = 10`）。
+- 活跃剩余工作包表只计算 WP-11、WP-12、WP-08、WP-09；延期、缩减、替代、取消或已完成的旧项不重复计数。
 
 | ID | 工作包 | 规模 | 优先级 | 依赖 | 状态 |
 |---|---|---|---|---|---|
-| WP-10 | 受监督患者施测底座与 MMSE 闭环 | L | P0 | A30、B18、既有量表版本 / 作答 / 媒体 / 评分 / 报告底座；WP-10.0 合同完成 | 进行中（A/B/C 后端范围与 F1/F2/F3 完成；待 F2-P2 与 staff Axe 最终收口） |
 | WP-11 | MoCA 多模态患者施测闭环 | L | P0 | WP-10 的会话、步骤、患者原始作答与必要过程事实、通过现有 `ItemResponse` 草稿链复核并以 A16 整体提交的边界稳定 | 待开始 |
 | WP-12 | 临床运营最小闭环 | M | P0 | 既有认证、患者、访视和报告链；WP-10 合同稳定后可部分并行，必须在 WP-08 前完成 | 待开始 |
 | WP-08 | 临床端到端联调与真实设备验收 | L | P0 | WP-10、WP-11、WP-12 | 待开始 |
 | WP-09 | 部署、备份、监控与试用上线 | M | P0 | WP-08 | 待开始 |
 
-### 4.2 WP-10：受监督患者施测底座与 MMSE 闭环
+### 4.2 WP-10：受监督患者施测底座与 MMSE 闭环（已完成，保留完成定义）
 
 **目标**
 
 - 已完成子阶段：WP-10-B1 交付短期会话与控制权安全底座，WP-10-B2 交付患者逐步推进与受控题目资产访问，WP-10-C1 交付当前 run 的原始媒体证据上传、私有 Storage 编排与完成门禁，WP-10-C2 交付基础 ASR 候选、复核投影及既有正式答案链衔接；WP-10-F1 交付发起、准备和安全进入，WP-10-F2 交付正常 MMSE 19 步正式患者施测主流程，WP-10-F3 交付现有 ScaleInstance 页面的正常作答复核与 A14/readiness/A16 闭环；不改变本工作包数量、规模或完成定义。
-- 当前前端子阶段：WP-10-F1、WP-10-F2、WP-10-F3 均已完成。F3 已在现有 `ScaleInstance` 页面闭合正常复核、按需媒体 / ASR / adoption、定位既有 `ItemResponseEditor`、A14、readiness 与 A16；患者原始事实、ASR 候选和现场医护观察不会自动写入正式答案。F2 仍只形成患者原始事实与必要证据。WP-10 最终收口仍保留具名 F2-P2 与 staff Axe 分类，因此 WP-10 仍未完成。
+- 当前前端子阶段：WP-10-F1、WP-10-F2、WP-10-F3 与最终 F2-P2 / staff Axe 收口均已完成。F3 仅在最新 patient administration status=`completed` 后挂载现有 ReviewPanel；active / paused / terminated F2 不进入 F3。患者原始事实、ASR 候选和现场医护观察不会自动写入正式答案，F2 仍只形成患者原始事实与必要证据。
 
 - 患者短期受控施测会话与安全进入；same-device 按安全交接合同执行，cross-device 按受监督患者施测合同已锁定的一次性短期进入码执行。
 - 患者施测终端采用一步一屏、单一主操作、大字号、大触控区、明确状态和随时可达的求助入口；患者端与医护端都响应式支持既定手机、平板和桌面代表 viewport，具体步骤所需硬件能力另按合同验收。
@@ -161,7 +160,7 @@
 - 正常首次复核不机械逐题查看原始媒体，也不机械逐题填写 `operatorNote`；该字段继续保留为按业务需要填写的 optional 说明，仅用于实质纠正、明显差异、临床判断或题目真实合同明确要求说明的情形，不新增第二套 note / reason 体系。ASR 继续按需显式触发，失败不阻断 readiness / submit，也不自动写 `ItemResponse`。
 - **F3 首个最低实现对齐项（已完成）**：current MMSE seed 的 11 个正式 Item 均已设为 `requiresOperatorNote: false`；`operator_note` evidence type 与可选 `operatorNote` 字段保留。通用 readiness 对未来明确配置 `requiresOperatorNote=true` 的 Item 仍继续产生 `ITEM_REQUIRED_OPERATOR_NOTE_MISSING`，没有第二套 note / reason。
 - **F3 第二个最低实现对齐项（已完成）**：staff 可通过既有临床角色保护的 adoption action，将最新 completed 患者施测 Session 中、对应 Item / step / run 唯一出现且已有有效未失效 capture 的 photo / handwriting `MediaEvidence`，以同一个 ID 绑定到既有 pending / missing `ItemResponse.evidenceRefs`。该能力复用 C2 review 完整性、现有 ownership / editable / barrier 校验和既有 evidenceRef CAS；不上传、复制、创建、删除或 void Evidence / Storage，不自动绑定其他媒体，不自动 `markAsAnswered`、submit 或评分，也未新增 Schema、collection、index 或 Review / Observation 工作流。
-- 两个最低基础对齐与 **F3 正常作答复核 UI：扩展现有 ScaleInstance 页面** 均已完成。F3 没有新增路由、Review / Anomaly / StaffObservation 模型或状态机；正式答案继续走现有 A14，整体提交继续走现有 readiness / A16。下一步仅为 WP-10 具名最终收口，不新增 `contract_frozen` 状态或字段。
+- 两个最低基础对齐与 **F3 正常作答复核 UI：扩展现有 ScaleInstance 页面** 均已完成。F3 没有新增路由、Review / Anomaly / StaffObservation 模型或状态机；正式答案继续走现有 A14，整体提交继续走现有 readiness / A16。WP-10 最终收口已闭合，下一工作包为仍待开始的 WP-11；不新增 `contract_frozen` 状态或字段。
 - 完整 MMSE 患者施测闭环。
 
 **完成定义**
@@ -249,7 +248,7 @@ WP-05、WP-06、WP-07 不再是 WP-08 的一期前置；AI 失败降级和科研
 
 ## 6. 旧范围处置记录
 
-以下记录保留历史编号和处置原因，但不计入一期正式剩余 5 个工作包。
+以下记录保留历史编号和处置原因，但不计入一期正式剩余 4 个工作包。
 
 | 旧 ID | 处置 | 当前归属与保留范围 | 延后部分重新进入条件 |
 |---|---|---|---|

@@ -86,6 +86,7 @@ import type {
 import { logout } from '@/src/features/auth/api/auth-api';
 import { PatientAdministrationStaffPanel } from '@/src/features/patient-administration/components/PatientAdministrationStaffPanel';
 import { PatientAdministrationReviewPanel } from '@/src/features/patient-administration/components/PatientAdministrationReviewPanel';
+import type { PatientAdministrationStatus } from '@/src/features/patient-administration/types/patient-administration';
 import {
   assessmentVisitStatusLabels,
   assessmentVisitTypeLabels,
@@ -301,6 +302,8 @@ export function ScaleInstanceExecutionPage({
   const [reviewLocateError, setReviewLocateError] = useState<string | null>(
     null,
   );
+  const [patientAdministrationStatus, setPatientAdministrationStatus] =
+    useState<PatientAdministrationStatus | null>(null);
   const [scoreResult, setScoreResult] =
     useState<ScoreResultDetailResponse | null>(null);
   const [scoreQueryStatus, setScoreQueryStatus] =
@@ -597,6 +600,7 @@ export function ScaleInstanceExecutionPage({
   }, []);
 
   useEffect(() => {
+    setPatientAdministrationStatus(null);
     if (!idsAreValid) {
       readinessControllerRef.current?.abort();
       scoreResultControllerRef.current?.abort();
@@ -1961,6 +1965,7 @@ export function ScaleInstanceExecutionPage({
       {scale.code === 'mmse' &&
       scaleInstance.administrationMode === 'supervised_patient_input' ? (
         <PatientAdministrationStaffPanel
+          onSessionStatusChange={setPatientAdministrationStatus}
           onUnauthorized={handlePatientAdministrationUnauthorized}
           patientId={patientId}
           scaleInstanceId={scaleInstanceId}
@@ -2113,7 +2118,8 @@ export function ScaleInstanceExecutionPage({
       </div>
 
       {scale.code === 'mmse' &&
-      scaleInstance.administrationMode === 'supervised_patient_input' ? (
+      scaleInstance.administrationMode === 'supervised_patient_input' &&
+      patientAdministrationStatus === 'completed' ? (
         <PatientAdministrationReviewPanel
           evidenceRequirementsByItem={reviewEvidenceRequirementsByItem}
           locateError={reviewLocateError}

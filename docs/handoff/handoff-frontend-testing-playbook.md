@@ -22,11 +22,11 @@
 | WP-03 / B18-B2 | 剩余真实 Browser 阶段完成；P4/P5/P6 `passed=6`、`pending=0`；P0 `gap=0` | “B18-A、B18-B1 与 B18-B2 证据” |
 | WP-03 / B18 补充验证 | P7 `passed=2`、P8 `passed=1`；single-flight contract、P3 与 P9 `passed`；自动化 `gap=0` | “B18-A、B18-B1、B18-B2 与补充验证证据” |
 | WP-10-F1 | 完成；F1-P1 / F1-P2 各正式运行一次并通过，post verifier 与 cleanup 均闭合 | “WP-10-F1 最终证据与 Browser Audit 治理” |
-| WP-10-F2 | 完成；F2-P1 已通过正常 MMSE 19 步业务主流程与 post verifier；F2-P2 与 staff Axe 2 项转入 WP-10 最终收口，不阻断 F3 | “WP-10-F2 阶段证据与最终收口归属” |
-| WP-10-F3 | 完成；唯一正常作答复核 Browser profile、post verifier 与 cleanup 已闭合 | “WP-10-F3 正常作答复核证据” |
+| WP-10-F2 | 完成；F2-P1 正常 19 步与 F2-P2 recovery 均通过，staff Axe 阻断项已修复，最终仅保留 1 个非阻断结构规则 | “WP-10-F2 阶段与最终收口证据” |
+| WP-10-F3 | 完成；正常作答复核主证据与 completed gate 后的定向 happy-path 回归、post verifier、cleanup 均已闭合 | “WP-10-F3 正常作答复核证据” |
 | Batch E | 8 个真实设备或人工项目待验；最终主要归属 WP-08 | “Batch E：真实设备或人工验收” |
 
-B11～B15 保持完成；B18 补充验证已闭合，自动化 `gap=0`，WP-03 已完成。WP-10-F2 的正常患者 MMSE 正式施测与 WP-10-F3 的正常作答复核主流程均已完成；F2-P2 与 staff Axe 两项仍有明确 WP-10 最终收口归属。产品范围、工作包状态和当前主线以 `handoff-roadmap.md` 为准；Batch E 的 8 项真实设备或人工项目仍为 `pending`，最终主要归属为 WP-08。
+B11～B15 保持完成；B18 补充验证已闭合，自动化 `gap=0`，WP-03 已完成。WP-10-F2 的正常患者 MMSE 主流程与 recovery、WP-10-F3 的正常作答复核及 completed gate 回归均已完成，staff Axe 已取得 exact rule 并完成分类；WP-10 已完成。产品范围、工作包状态和当前主线以 `handoff-roadmap.md` 为准；Batch E 的 8 项真实设备或人工项目仍为 `pending`，最终主要归属为 WP-08。
 
 ## 2. 当前测试设计规则
 
@@ -209,24 +209,29 @@ B14.1 不是独立业务能力，不拥有独立 Browser 活动 ID，也不恢�
 - 两个 Profile 均使用独立 namespace / BrowserContext、production frontend、真实 Browser backend、真实 HTTP 与 `cogmemory_ad_browser_test`；Storage=fake、ASR/LLM/SMS=stub。真实设备、真实麦克风和真实触控笔仍为 `not_executed`，桌面 Browser 的 unsupported / permission-unavailable 分支与 Pointer 练习不得冒充真实硬件验收。
 | shared façade / coordinator / reducer / identity isolation | 跨 B11～B15 | `frontend/test/browser-acceptance/contracts/clinical-report-workflow-shared-non-browser.spec.ts`；稳定 `reportId`、route RESET、unexpected identity 隔离、expected correction transition 保真、identity generation、layout barrier、单一 writingRef/latest/beforeunload |
 
-### 4.3 WP-10-F2 阶段证据与最终收口归属
+### 4.3 WP-10-F2 阶段与最终收口证据
 
 - F2-P1 已实际完成正常 MMSE 19 步正式患者施测主流程：服务端权威 currentStep、一步一屏、private image / frozen MP3、guidance / stimulus 播放边界、MediaRecorder 语音证据、handwriting / photo、patient / staff complete 与 completed 安全结束均通过正式 Browser 业务链。
 - P1 post verifier 已通过：患者会话 `completed`，有效 capture 为 19/19，`MediaEvidence=17`（audio=15、handwriting=1、photo=1），`ItemResponse` 与 `ScaleInstance` 事实 unchanged，score / domain / report 等 downstream=0。F2 未写正式 ItemResponse，也未调用 F3 review / ASR / submit / scoring / report。
 - technical replay 的持久授权事实与 current response 投影已由 backend unit / HTTP E2E 证明 `false → authorize → true → replay → false`；frontend 已消费显式 `technicalReplayAuthorized`。该边缘状态已有最低充分低层证据，不为 F2 增加第三个 Browser Profile；真实人机体验可在最终真实设备 smoke 观察。
-- F2 最终代码态的 backend unit、HTTP E2E、lint、typecheck、build，以及 frontend lint、正式 typecheck、production build 均已通过；本 closeout 只固化既有正式证据，不重新运行这些业务或构建验收。
-- F2-P2 尚未执行，范围固定为 upload 后 reload recovery、takeover、redo、old-run isolation 与 terminate；归属 WP-10 最终 Browser 收口，必须在 F3 完成后、WP-10 宣布完成前执行，不阻断进入 F3。
-- 当前正式证据只保留 staff 页面代表性 Axe `violationCount=2`，具体 rule ID 未保留，不猜测类别，也不为取 rule 重跑完整 19 步。它归属 WP-10 最终 Browser / accessibility 收口：届时重新取得 rule，影响核心操作、accessible name、键盘或明显可理解性的项目必须修复；非阻断结构 / 语义项按最终验收分类处理。
+- F2/F3 阶段隔离已收紧：`PatientAdministrationStaffPanel` 只把最新服务端权威 session status（无 session 时为 `null`）通过可选 callback 通知父页面；父页面在 patient / visit / scaleInstance 身份变化时先重置，并仅在 status=`completed` 时挂载 `PatientAdministrationReviewPanel`。没有新增 GET、API、轮询、Context/store 或第二份 session 状态源；ReviewPanel 原有一次加载 + 手动刷新逻辑不变。
+- 最终静态门禁：frontend `npm run lint`、正式 `npm run typecheck`（`next typegen && tsc --noEmit`）与 `NEXT_PUBLIC_API_BASE_URL=http://localhost:5002` 的 production build 均 exit 0；typecheck/build 前 Node/Next 与 3002/5002 listener=0，二者使用同一沙箱外身份写 `.next`，输出无 `EPERM`、Unhandled Rejection 或 uncaughtException。F2 fixture 因实际暴露共享 canonical MMSE seed conflict 做最低修复后，定向 ESLint 与 backend `npm run typecheck` 均 exit 0；未修改 backend `src`。
+- discovery：F2-P2 与 F3 happy path 各自 `npm run test:browser:list -- <exact spec>` 均 exit 0，分别精确发现 1 file / 1 test，没有带入 P1、F1 或其他 Browser suite。
+- fixture 诊断与修复：旧 F2 fixture 对已经物化且与 current seed 有差异的共享 MMSE 1.0 再执行 materialize，实际返回 `SCALE_CATALOG_VERSION_CONFLICT`；失败轮均先只读核对 namespace 根记录为 0。最终 fixture 只读解析并验证既有 active MMSE 1.0 catalog，再通过现有 execution plan 创建 namespace-owned instance/items；不修改共享 catalog，cleanup 仍只删除本 namespace。该修复没有建立新 fixture framework、API、Schema 或生产状态机。
+- F2-P2 最终正式 Profile 使用 fresh namespace `f2p2f83a7d2e`，production frontend、真实 Browser backend、Chromium、真实 HTTP 与 `cogmemory_ad_browser_test`，1/1 通过（47.0s）。upload 成功但 Step 1 未完成时真实 reload，随后从服务端 current 恢复且 Evidence upload 总数不重复；localStorage/sessionStorage/IndexedDB 无业务草稿或凭据。Step 2 pause + takeover 后恢复，Step 3 新 run 上传并完成，pause + redo 后旧 run 失效且旧 Evidence 不自动上传或满足新 run，最后 terminate 并使患者 credential 失效、超过 poll 周期不再继续 current。
+- F2 全流程的 review GET、transcribe、adopt、A14、readiness 与 A16 均为 0；既有 mutation 次数/body-key、NetworkLedger 与 ConsoleAudit 全部通过。由此证明 prepared / active / paused / terminated F2 不进入 F3。
+- staff Axe 首轮实际为 `color-contrast` / serious / nodeCount=135 与 `definition-list` / serious / nodeCount=1。`color-contrast` 直接影响文字可理解性，分类为阻断：最低修复 blocking submission detail 的前景色、active 分组次级文字和 warning token，fresh F2-P2 复验后该 rule 消失。最终为 `violationCount=1`，仅 `definition-list` / serious / nodeCount=1；它对应信息卡 `<dl>` 内的分组 `<div>`，不影响核心操作、accessible name、键盘、标签、焦点或内容理解，分类为非阻断结构语义项并保留，不以 Axe=0 为目标重构页面。
+- F2 final post verifier exit 0：session=`terminated`、revision=21、capture=3（valid=2、invalidated=1）、`MediaEvidence=2`、duplicate=0、takeover / redo / terminated 控制事实齐全、原 run invalidated、`ItemResponse` / `ScaleInstance` unchanged、downstream=0。服务停止后精确 cleanup 删除 namespace-owned 记录，`residualCount=0`、runtime descriptor absent；3002/5002 listener=0。
 - 真实设备、真实麦克风、真实触控笔及真实 OSS 患者上传仍不由桌面 synthetic microphone Browser 冒充；设备与人工验收继续归属既有 Batch E / WP-08。真实 ASR 不属于 F2 完成门禁。
 
-因此 WP-10-F2 按现有 roadmap 语义为“完成”，WP-10 仍进行中，下一阶段为 F3；上述最终收口项目保持明确归属，不引入新的完成状态。
+F2 阶段完成当时“下一阶段为 F3”的历史语义已经由 4.5 的 F3 证据兑现；截至本最终收口，F2-P2、staff Axe、completed gate 后 F3 回归与全部 verifier / cleanup 均已闭合，WP-10 已完成，下一工作包为仍待开始的 WP-11。
 
 ### 4.4 WP-10 F3 前最低实现对齐证据
 
 - `f2-p1-mmse-complete.spec.ts` 已同步长期 happy path 合同：第 14 步录音 evidence 后 patient complete，第 16 步保持“请闭上您的眼睛”、无录音与无新 audio POST 后 patient complete，第 17 步 stimulus 正常播放、无 evidence upload 后 patient complete；ledger 长期期望为 patient complete=19、staff complete=0。
 - 本对齐不重跑完整 F2 Browser，不重做 F2 Audit、不修改 Axe、不运行 P2，F2 仍为完成。底层行为由 backend 定向 unit / HTTP E2E 证明；frontend lint、含 `next typegen` 的正式 typecheck 与 canonical production build 均退出 0。
 - Windows `.next` 写入门禁中，执行前沙箱外只读核对本项目 Node/Next 进程为 0、3002 监听为 0；typecheck 与 build 随后均以同一沙箱外执行身份写入 `.next`，输出无 `EPERM`、Unhandled Rejection 或 uncaughtException。
-- 结论（F3-pre 当轮历史）：该轮只完成 F3 前最低实现对齐、未实施 F3；F3 的后续完成证据见 4.5。WP-10 当前仍进行中，但原因已变为 F2-P2 与 staff Axe 最终收口。
+- 结论（F3-pre 当轮历史）：该轮只完成 F3 前最低实现对齐、未实施 F3；F3 的后续完成证据见 4.5。当时 WP-10 尚待 F2-P2 与 staff Axe，现已由 4.3 的最终证据闭合。
 
 ### 4.5 WP-10-F3 正常作答复核证据
 
@@ -237,7 +242,8 @@ B14.1 不是独立业务能力，不拥有独立 Browser 活动 ID，也不恢�
 - 唯一 happy path 最终 1/1 通过（9.1s）：初始 review 仅 GET 一次且无 polling，操作前 transcribe/access-url/adopt 均为 0；页面展示 completed session、影响因素、19 step、15 audio、1 photo、1 handwriting、`staff_observation` responseMode，正常 reading-command 没有伪造 `staffObservation`。用户显式产生 1 个 transcribe POST、1 个 access-url GET、1 个 adopt POST；ASR 候选明确不是正式答案，adoption 复用同一 Evidence 并更新父页面 requirement / readiness stale，两者都不触发 A14。
 - 正式编辑 / 提交：定位 drawing 与 reading 的既有 ItemResponseEditor，reading 通过现有 A14 以 `expectedRevision,markAsAnswered,rawResponse` 单次 PATCH 保存；readiness 由既有 SubmissionPanel 返回 ready / canSubmitNow 且 blocking=0；A16 以 `{confirm}` 单次 POST 完成实例。completed 后 review 仍可读，ASR / adopt 按钮禁用；只发生预期 latest score GET 404，没有评分、认知域或报告写入。transcribe / adopt Body 为空且所有目标写请求均无自动 retry。
 - post verifier exit 0：ScaleInstance=completed、Session 权威事实不变、MediaEvidence 仍为 17 且没有新建、仅目标录音 transcription 改变一次、adoption 引用精确复用原 Evidence ID且答案/status/revision 不变、reading 为 raw=true / answered / revision+1、其余 9 题答案事实不变、downstream=0、namespace 外事实不变。
-- cleanup：先由原运行句柄停止 frontend/backend，随后确认 Node=0、3002/5002 listener=0；精确 cleanup 删除 namespace-owned user/patient/visit/instance、11 items、1 patient Session、17 media、1 auth Session 与 1 临时 ScaleVersion，`residualCount=0`、runtime descriptor absent。F2-P2、staff Axe、完整 Browser suite、F2 19 步 UI 重放、真实 OSS、真实 ASR、真实设备与无关 backend 全量回归均未执行，继续按既有归属收口。
+- cleanup：先由原运行句柄停止 frontend/backend，随后确认 Node=0、3002/5002 listener=0；精确 cleanup 删除 namespace-owned user/patient/visit/instance、11 items、1 patient Session、17 media、1 auth Session 与 1 临时 ScaleVersion，`residualCount=0`、runtime descriptor absent。该 F3 首轮当时未执行 F2-P2、staff Axe、完整 Browser suite、F2 19 步 UI 重放、真实 OSS、真实 ASR、真实设备与无关 backend 全量回归；F2-P2 与 staff Axe 的后续证据见 4.3，其余边界保持原归属。
+- completed gate 受影响回归：最终代码态使用独立 namespace `f3g6c2d9a1e` prepare / verify-prepared 后，StaffPanel 读取 completed session 并回传 status，ReviewPanel 正常出现且 review GET 正常发生；既有 happy path 1/1 通过（8.6s），显式 ASR、on-demand access-url、same Evidence adoption、定位既有 ItemResponseEditor、A14、readiness 与 A16 均保持。post verifier 为 ScaleInstance=completed、Session unchanged、MediaEvidence=17/new=0、目标 transcription=1、same Evidence adoption、reading revision+1、其他 9 题 unchanged、downstream=0、namespace 外 unchanged；cleanup `residualCount=0`、runtime absent。
 
 ## 5. B18-A、B18-B1、B18-B2 与补充验证证据
 

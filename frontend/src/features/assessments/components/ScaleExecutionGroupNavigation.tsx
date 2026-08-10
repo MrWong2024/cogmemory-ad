@@ -36,7 +36,13 @@ export function ScaleExecutionGroupNavigation({
                 <span className="block text-base font-semibold">
                   {section.title}
                 </span>
-                <span className="mt-1 block text-sm text-[var(--cma-muted)]">
+                <span
+                  className={
+                    isActive
+                      ? 'mt-1 block text-sm text-[var(--cma-text-strong)]'
+                      : 'mt-1 block text-sm text-[var(--cma-muted)]'
+                  }
+                >
                   已完成 {completedCount} / {section.itemResponses.length} 题
                 </span>
               </button>

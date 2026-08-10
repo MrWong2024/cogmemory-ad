@@ -40,11 +40,13 @@ import type {
   PatientAdministrationEntryCodeResponse,
   PatientAdministrationRouteIds,
   PatientAdministrationSessionSummary,
+  PatientAdministrationStatus,
 } from '@/src/features/patient-administration/types/patient-administration';
 
 type FlowChoice = 'same_device' | 'cross_device';
 
 type Props = PatientAdministrationRouteIds & {
+  onSessionStatusChange?: (status: PatientAdministrationStatus | null) => void;
   onUnauthorized: () => void;
 };
 
@@ -101,6 +103,7 @@ export function PatientAdministrationStaffPanel({
   patientId,
   visitId,
   scaleInstanceId,
+  onSessionStatusChange,
   onUnauthorized,
 }: Props) {
   const [session, setSession] =
@@ -150,12 +153,13 @@ export function PatientAdministrationStaffPanel({
       }
       sessionRef.current = response;
       setSession(response);
+      onSessionStatusChange?.(response.status);
       const inferredFlowChoice = inferFlowChoiceFromSession(response);
       if (inferredFlowChoice) {
         setFlowChoice(inferredFlowChoice);
       }
     },
-    [],
+    [onSessionStatusChange],
   );
 
   const handleReadError = useCallback(
@@ -173,12 +177,13 @@ export function PatientAdministrationStaffPanel({
       ) {
         sessionRef.current = null;
         setSession(null);
+        onSessionStatusChange?.(null);
         setMessage(null);
         return;
       }
       setMessage(getPanelErrorMessage(error));
     },
-    [onUnauthorized],
+    [onSessionStatusChange, onUnauthorized],
   );
 
   const loadSession = useCallback(
