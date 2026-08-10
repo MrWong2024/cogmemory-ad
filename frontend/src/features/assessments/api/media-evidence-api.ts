@@ -4,6 +4,7 @@ import type {
   MediaEvidenceAccessAsset,
   MediaEvidenceAccessUrlResponse,
   MediaEvidenceListResponse,
+  MediaEvidenceTranscriptionActionResponse,
   UploadMediaEvidenceInput,
   UploadMediaEvidenceResponse,
   VoidMediaEvidenceRequest,
@@ -32,6 +33,7 @@ export type MediaEvidenceApiErrorKind =
   | 'media_trajectory_invalid'
   | 'media_capture_mode_invalid'
   | 'media_evidence_already_attached'
+  | 'media_evidence_not_adoptable'
   | 'media_evidence_not_found'
   | 'media_evidence_not_accessible'
   | 'media_evidence_not_voidable'
@@ -40,6 +42,9 @@ export type MediaEvidenceApiErrorKind =
   | 'media_evidence_create_failed'
   | 'media_evidence_attach_failed'
   | 'media_evidence_void_failed'
+  | 'media_transcription_unavailable'
+  | 'media_transcription_not_allowed'
+  | 'media_transcription_conflict'
   | 'service_unavailable'
   | 'unknown';
 
@@ -111,6 +116,7 @@ function mapHttpError(
     MEDIA_TRAJECTORY_INVALID: 'media_trajectory_invalid',
     MEDIA_CAPTURE_MODE_INVALID: 'media_capture_mode_invalid',
     MEDIA_EVIDENCE_ALREADY_ATTACHED: 'media_evidence_already_attached',
+    MEDIA_EVIDENCE_NOT_ADOPTABLE: 'media_evidence_not_adoptable',
     MEDIA_EVIDENCE_NOT_FOUND: 'media_evidence_not_found',
     MEDIA_EVIDENCE_NOT_ACCESSIBLE: 'media_evidence_not_accessible',
     MEDIA_EVIDENCE_NOT_VOIDABLE: 'media_evidence_not_voidable',
@@ -119,6 +125,9 @@ function mapHttpError(
     MEDIA_EVIDENCE_CREATE_FAILED: 'media_evidence_create_failed',
     MEDIA_EVIDENCE_ATTACH_FAILED: 'media_evidence_attach_failed',
     MEDIA_EVIDENCE_VOID_FAILED: 'media_evidence_void_failed',
+    MEDIA_TRANSCRIPTION_UNAVAILABLE: 'media_transcription_unavailable',
+    MEDIA_TRANSCRIPTION_NOT_ALLOWED: 'media_transcription_not_allowed',
+    MEDIA_TRANSCRIPTION_CONFLICT: 'media_transcription_conflict',
   };
 
   if (backendCode && businessKinds[backendCode]) {
@@ -332,6 +341,52 @@ export async function getMediaEvidenceAccessUrl(
   );
 
   return readJson<MediaEvidenceAccessUrlResponse>(response);
+}
+
+export async function transcribeItemMediaEvidence(
+  patientId: string,
+  visitId: string,
+  scaleInstanceId: string,
+  itemResponseId: string,
+  mediaEvidenceId: string,
+): Promise<MediaEvidenceTranscriptionActionResponse> {
+  const path = buildItemMediaPath(
+    patientId,
+    visitId,
+    scaleInstanceId,
+    itemResponseId,
+  );
+  const response = await mediaEvidenceFetch(
+    `${path}/${encodeURIComponent(mediaEvidenceId)}/transcribe`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    },
+  );
+
+  return readJson<MediaEvidenceTranscriptionActionResponse>(response);
+}
+
+export async function adoptPatientAdministrationEvidence(
+  patientId: string,
+  visitId: string,
+  scaleInstanceId: string,
+  itemResponseId: string,
+  mediaEvidenceId: string,
+): Promise<UploadMediaEvidenceResponse> {
+  const path = buildItemMediaPath(
+    patientId,
+    visitId,
+    scaleInstanceId,
+    itemResponseId,
+  );
+  const response = await mediaEvidenceFetch(
+    `${path}/${encodeURIComponent(mediaEvidenceId)}/adopt`,
+    { method: 'POST' },
+  );
+
+  return readJson<UploadMediaEvidenceResponse>(response);
 }
 
 export async function voidItemMediaEvidence(

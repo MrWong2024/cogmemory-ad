@@ -10,6 +10,7 @@ import type {
   PatientAdministrationEvidenceUploadResponse,
   PatientAdministrationPlayedAudio,
   PatientAdministrationPreparationInput,
+  PatientAdministrationReviewResponse,
   PatientAdministrationRequiredReasonInput,
   PatientAdministrationRouteIds,
   PatientAdministrationSessionSummary,
@@ -211,6 +212,17 @@ export async function getPatientAdministrationSession(
   signal?: AbortSignal,
 ): Promise<PatientAdministrationSessionSummary> {
   return readStaffSession(ids, '', { method: 'GET', signal });
+}
+
+export async function getPatientAdministrationReview(
+  ids: PatientAdministrationRouteIds,
+  signal?: AbortSignal,
+): Promise<PatientAdministrationReviewResponse> {
+  const response = await patientAdministrationFetch(
+    `${buildStaffRoot(ids)}/review`,
+    { method: 'GET', signal },
+  );
+  return readJson<PatientAdministrationReviewResponse>(response);
 }
 
 export async function createPatientAdministrationSession(

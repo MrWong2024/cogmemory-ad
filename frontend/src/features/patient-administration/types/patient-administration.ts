@@ -149,3 +149,117 @@ export type PatientAdministrationBinaryAsset = {
 export type PatientAdministrationPlayedAudio = PatientAdministrationBinaryAsset & {
   revision: number;
 };
+
+export type PatientAdministrationControlEventAction =
+  | 'entry_redeemed'
+  | 'same_device_handoff'
+  | 'preparation_confirmed'
+  | 'paused'
+  | 'resumed'
+  | 'device_reissued'
+  | 'terminated'
+  | 'expired'
+  | 'staff_takeover'
+  | 'step_redo';
+
+export type PatientAdministrationReviewTranscription = {
+  status: 'not_requested' | 'processing' | 'succeeded' | 'failed';
+  text?: string;
+  errorCode?:
+    | 'duration_unsupported'
+    | 'storage_unavailable'
+    | 'timeout'
+    | 'provider_unavailable'
+    | 'provider_rejected'
+    | 'invalid_response';
+  provider?: 'stub' | 'bailian';
+  model?: string;
+  requestedAt: string | null;
+  completedAt: string | null;
+  requestedBy: {
+    operatorId: string | null;
+    operatorName?: string;
+    operatorRole?:
+      | 'doctor'
+      | 'nurse'
+      | 'research_assistant'
+      | 'admin'
+      | 'unknown';
+  } | null;
+};
+
+export type PatientAdministrationReviewEvidence = {
+  mediaEvidenceId: string;
+  evidenceType: PatientAdministrationEvidenceType;
+  captureMode:
+    | 'photo_upload'
+    | 'tablet_handwriting'
+    | 'paper_scan'
+    | 'browser_audio_recording'
+    | 'system_generated'
+    | 'imported'
+    | 'other';
+  status: 'pending' | 'attached' | 'locked' | 'voided' | 'deleted';
+  storageStatus: 'pending' | 'stored' | 'missing' | 'deleted';
+  uploadedAt: string;
+  audioMetadata: { durationMs: number | null } | null;
+  transcription: PatientAdministrationReviewTranscription | null;
+};
+
+export type PatientAdministrationReviewCapture = {
+  capturedBy: 'patient' | 'staff';
+  staffObservation?: string;
+  capturedAt: string;
+  invalidatedAt: string | null;
+  invalidatedReason?: string;
+  operatorSnapshot: PatientAdministrationOperator | null;
+};
+
+export type PatientAdministrationReviewRun = {
+  stepRun: number;
+  capture: PatientAdministrationReviewCapture | null;
+  evidence: PatientAdministrationReviewEvidence[];
+};
+
+export type PatientAdministrationReviewStep = {
+  stepKey: string;
+  order: number;
+  responseMode: PatientAdministrationResponseMode;
+  advanceBy: PatientAdministrationAdvanceBy;
+  runs: PatientAdministrationReviewRun[];
+};
+
+export type PatientAdministrationReviewItem = {
+  itemResponseId: string;
+  itemCode: string;
+  itemTitle: string;
+  status:
+    | 'not_started'
+    | 'in_progress'
+    | 'answered'
+    | 'scored'
+    | 'locked'
+    | 'voided';
+  draftRevision: number;
+  steps: PatientAdministrationReviewStep[];
+};
+
+export type PatientAdministrationReviewResponse = {
+  session: {
+    status: PatientAdministrationStatus;
+    preparationConfirmedAt: string | null;
+    impactFactorCodes: PatientAdministrationImpactFactorCode[];
+    impactFactorNote?: string;
+    startedAt: string | null;
+    completedAt: string | null;
+    terminatedAt: string | null;
+    expiredAt: string | null;
+  };
+  reviewEvents: Array<{
+    action: PatientAdministrationControlEventAction;
+    occurredAt: string;
+    reason?: string;
+    operatorSnapshot: PatientAdministrationOperator | null;
+  }>;
+  items: PatientAdministrationReviewItem[];
+};

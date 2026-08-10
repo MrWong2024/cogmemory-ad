@@ -23,9 +23,10 @@
 | WP-03 / B18 补充验证 | P7 `passed=2`、P8 `passed=1`；single-flight contract、P3 与 P9 `passed`；自动化 `gap=0` | “B18-A、B18-B1、B18-B2 与补充验证证据” |
 | WP-10-F1 | 完成；F1-P1 / F1-P2 各正式运行一次并通过，post verifier 与 cleanup 均闭合 | “WP-10-F1 最终证据与 Browser Audit 治理” |
 | WP-10-F2 | 完成；F2-P1 已通过正常 MMSE 19 步业务主流程与 post verifier；F2-P2 与 staff Axe 2 项转入 WP-10 最终收口，不阻断 F3 | “WP-10-F2 阶段证据与最终收口归属” |
+| WP-10-F3 | 完成；唯一正常作答复核 Browser profile、post verifier 与 cleanup 已闭合 | “WP-10-F3 正常作答复核证据” |
 | Batch E | 8 个真实设备或人工项目待验；最终主要归属 WP-08 | “Batch E：真实设备或人工验收” |
 
-B11～B15 保持完成；B18 补充验证已闭合，自动化 `gap=0`，WP-03 已完成。WP-10-F2 的正常患者 MMSE 正式施测主流程已完成，下一阶段为 F3；F2-P2 与 staff Axe 两项已有明确 WP-10 最终收口归属。产品范围、工作包状态和当前主线以 `handoff-roadmap.md` 为准；Batch E 的 8 项真实设备或人工项目仍为 `pending`，最终主要归属为 WP-08。
+B11～B15 保持完成；B18 补充验证已闭合，自动化 `gap=0`，WP-03 已完成。WP-10-F2 的正常患者 MMSE 正式施测与 WP-10-F3 的正常作答复核主流程均已完成；F2-P2 与 staff Axe 两项仍有明确 WP-10 最终收口归属。产品范围、工作包状态和当前主线以 `handoff-roadmap.md` 为准；Batch E 的 8 项真实设备或人工项目仍为 `pending`，最终主要归属为 WP-08。
 
 ## 2. 当前测试设计规则
 
@@ -225,7 +226,18 @@ B14.1 不是独立业务能力，不拥有独立 Browser 活动 ID，也不恢�
 - `f2-p1-mmse-complete.spec.ts` 已同步长期 happy path 合同：第 14 步录音 evidence 后 patient complete，第 16 步保持“请闭上您的眼睛”、无录音与无新 audio POST 后 patient complete，第 17 步 stimulus 正常播放、无 evidence upload 后 patient complete；ledger 长期期望为 patient complete=19、staff complete=0。
 - 本对齐不重跑完整 F2 Browser，不重做 F2 Audit、不修改 Axe、不运行 P2，F2 仍为完成。底层行为由 backend 定向 unit / HTTP E2E 证明；frontend lint、含 `next typegen` 的正式 typecheck 与 canonical production build 均退出 0。
 - Windows `.next` 写入门禁中，执行前沙箱外只读核对本项目 Node/Next 进程为 0、3002 监听为 0；typecheck 与 build 随后均以同一沙箱外执行身份写入 `.next`，输出无 `EPERM`、Unhandled Rejection 或 uncaughtException。
-- 结论：F3 前最低实现对齐已完成，WP-10 仍进行中，下一阶段仍为 F3，本次未实施 F3。
+- 结论（F3-pre 当轮历史）：该轮只完成 F3 前最低实现对齐、未实施 F3；F3 的后续完成证据见 4.5。WP-10 当前仍进行中，但原因已变为 F2-P2 与 staff Axe 最终收口。
+
+### 4.5 WP-10-F3 正常作答复核证据
+
+- 静态门禁：frontend `npm run lint`、正式 `npm run typecheck`（`next typegen && tsc --noEmit`）与 `npm run build` 均 exit 0；backend 新增 fixture 的定向 lint 与正式 `npm run typecheck` 均 exit 0。`.next` 写入前有效只读探针确认 Node=0、3002/5002 listener=0，typecheck / build 使用同一沙箱外身份；输出无 `EPERM`、Unhandled Rejection 或 uncaughtException。
+- discovery：`npm run test:browser:list -- test/browser-acceptance/wp10-f3/f3-happy-path.spec.ts` exit 0，精确发现 1 file / 1 test，没有 F1/F2 或其他 profile。
+- fixture：使用 namespace `f3a0811`、同一 Git ignored 固定测试密码与 `cogmemory_ad_browser_test` 管理身份；prepare / verify-prepared 均通过，前置为 11 个 ItemResponse、19 个 review step、17 个既有 MediaEvidence（audio=15、handwriting=1、photo=1）和 completed Session。共享 Browser MMSE 目录未被覆盖；fixture 使用当前 seed 建立 namespace-owned 临时 ScaleVersion，并在 cleanup 精确删除。
+- 运行拓扑：production frontend `http://localhost:3002`、真实 Browser backend `http://localhost:5002`、Chromium 与真实 HTTP；backend 使用 Browser app 身份、Storage=fake、ASR/LLM/SMS=stub。runner / frontend 显式不继承数据库变量或 fixture password，登录只注入同一固定 secret 且不输出值。两项 health/readiness 均为 200。
+- 唯一 happy path 最终 1/1 通过（9.1s）：初始 review 仅 GET 一次且无 polling，操作前 transcribe/access-url/adopt 均为 0；页面展示 completed session、影响因素、19 step、15 audio、1 photo、1 handwriting、`staff_observation` responseMode，正常 reading-command 没有伪造 `staffObservation`。用户显式产生 1 个 transcribe POST、1 个 access-url GET、1 个 adopt POST；ASR 候选明确不是正式答案，adoption 复用同一 Evidence 并更新父页面 requirement / readiness stale，两者都不触发 A14。
+- 正式编辑 / 提交：定位 drawing 与 reading 的既有 ItemResponseEditor，reading 通过现有 A14 以 `expectedRevision,markAsAnswered,rawResponse` 单次 PATCH 保存；readiness 由既有 SubmissionPanel 返回 ready / canSubmitNow 且 blocking=0；A16 以 `{confirm}` 单次 POST 完成实例。completed 后 review 仍可读，ASR / adopt 按钮禁用；只发生预期 latest score GET 404，没有评分、认知域或报告写入。transcribe / adopt Body 为空且所有目标写请求均无自动 retry。
+- post verifier exit 0：ScaleInstance=completed、Session 权威事实不变、MediaEvidence 仍为 17 且没有新建、仅目标录音 transcription 改变一次、adoption 引用精确复用原 Evidence ID且答案/status/revision 不变、reading 为 raw=true / answered / revision+1、其余 9 题答案事实不变、downstream=0、namespace 外事实不变。
+- cleanup：先由原运行句柄停止 frontend/backend，随后确认 Node=0、3002/5002 listener=0；精确 cleanup 删除 namespace-owned user/patient/visit/instance、11 items、1 patient Session、17 media、1 auth Session 与 1 临时 ScaleVersion，`residualCount=0`、runtime descriptor absent。F2-P2、staff Axe、完整 Browser suite、F2 19 步 UI 重放、真实 OSS、真实 ASR、真实设备与无关 backend 全量回归均未执行，继续按既有归属收口。
 
 ## 5. B18-A、B18-B1、B18-B2 与补充验证证据
 

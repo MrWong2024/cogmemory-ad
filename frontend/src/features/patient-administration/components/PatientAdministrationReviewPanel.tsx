@@ -1,0 +1,982 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+import { Badge } from '@/src/components/ui/Badge';
+import { Button } from '@/src/components/ui/Button';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/src/components/ui/Card';
+import {
+  adoptPatientAdministrationEvidence,
+  getMediaEvidenceAccessUrl,
+  MediaEvidenceApiError,
+  transcribeItemMediaEvidence,
+} from '@/src/features/assessments/api/media-evidence-api';
+import type { EvidenceRequirementState } from '@/src/features/assessments/types/media-evidence';
+import {
+  getPatientAdministrationReview,
+  PatientAdministrationApiError,
+} from '@/src/features/patient-administration/api/patient-administration-api';
+import {
+  formatPatientAdministrationDate,
+  patientAdministrationImpactFactorLabels,
+  patientAdministrationStatusLabels,
+  patientAdministrationStatusTones,
+} from '@/src/features/patient-administration/lib/patient-administration-display';
+import type {
+  PatientAdministrationControlEventAction,
+  PatientAdministrationReviewEvidence,
+  PatientAdministrationReviewResponse,
+  PatientAdministrationReviewRun,
+  PatientAdministrationReviewTranscription,
+  PatientAdministrationRouteIds,
+} from '@/src/features/patient-administration/types/patient-administration';
+
+const responseModeLabels = {
+  speech: '口头回答',
+  writing: '书写',
+  drawing: '绘图',
+  staff_observation: '医护现场观察',
+} as const;
+
+const advanceByLabels = {
+  patient: '患者推进',
+  staff: '医护推进',
+} as const;
+
+const itemStatusLabels = {
+  not_started: '未开始',
+  in_progress: '草稿中',
+  answered: '已完成草稿',
+  scored: '已评分',
+  locked: '已锁定',
+  voided: '已作废',
+} as const;
+
+const evidenceTypeLabels = {
+  audio: '患者录音',
+  photo: '患者照片',
+  handwriting: '患者手写 / 绘图',
+} as const;
+
+const captureModeLabels = {
+  photo_upload: '照片上传',
+  tablet_handwriting: '平板手写',
+  paper_scan: '纸笔照片',
+  browser_audio_recording: '浏览器录音',
+  system_generated: '系统生成',
+  imported: '导入',
+  other: '其他',
+} as const;
+
+const eventLabels: Record<PatientAdministrationControlEventAction, string> = {
+  entry_redeemed: '进入码已兑换',
+  same_device_handoff: '同设备已安全交接',
+  preparation_confirmed: '准备已确认',
+  paused: '施测暂停',
+  resumed: '施测恢复',
+  device_reissued: '设备凭证已重签',
+  terminated: '施测终止',
+  expired: '施测过期',
+  staff_takeover: '医护接管',
+  step_redo: '步骤重做',
+};
+
+type EvidenceFeedback = {
+  tone: 'success' | 'error';
+  message: string;
+};
+
+type ViewerState = {
+  evidenceType: PatientAdministrationReviewEvidence['evidenceType'];
+  mediaEvidenceId: string;
+  url: string;
+};
+
+function reviewErrorMessage(error: PatientAdministrationApiError): string {
+  if (error.kind === 'forbidden') {
+    return '当前账号无权读取患者施测作答复核。';
+  }
+  if (error.kind === 'step_invalid' || error.kind === 'session_conflict') {
+    return '患者施测事实不一致，无法安全生成复核摘要。请联系管理员核对数据。';
+  }
+  if (error.kind === 'service_unavailable') {
+    return '复核摘要服务暂时不可用，请稍后手动刷新。';
+  }
+  return '复核摘要加载失败，请手动刷新后重试。';
+}
+
+function accessErrorMessage(error: MediaEvidenceApiError): string {
+  if (error.kind === 'media_evidence_not_accessible') {
+    return '该证据当前不可访问，请刷新复核摘要后核对状态。';
+  }
+  if (error.kind === 'media_storage_unavailable') {
+    return '证据存储暂时不可用，请稍后重试。';
+  }
+  return '证据查看地址获取失败，请重试。';
+}
+
+function transcriptionErrorMessage(error: MediaEvidenceApiError): string {
+  if (error.kind === 'media_transcription_unavailable') {
+    return '辅助转写服务暂时不可用；这不会阻断人工复核或正式提交。';
+  }
+  if (error.kind === 'media_transcription_not_allowed') {
+    return '该录音当前不允许转写，请刷新摘要并核对证据状态。';
+  }
+  if (error.kind === 'media_transcription_conflict') {
+    return '转写状态已变化，本次请求未自动重试；请手动刷新后核对。';
+  }
+  return '辅助转写失败；本次请求未自动重试，可稍后明确重试。';
+}
+
+function adoptionErrorMessage(error: MediaEvidenceApiError): string {
+  if (error.kind === 'media_evidence_not_adoptable') {
+    return '该患者证据已不满足采用条件，请刷新摘要并核对当前服务端事实。';
+  }
+  if (error.kind === 'media_evidence_already_attached') {
+    return '该题已有同类型正式证据，未重复采用。';
+  }
+  if (
+    error.kind === 'scale_instance_not_editable' ||
+    error.kind === 'item_response_not_editable'
+  ) {
+    return '量表或题目已不可编辑，不能再采用患者证据。';
+  }
+  return '患者证据采用失败；没有自动重试，也没有创建替代证据。';
+}
+
+function transcriptionSummary(
+  transcription: PatientAdministrationReviewTranscription | null,
+): string {
+  if (!transcription || transcription.status === 'not_requested') {
+    return '尚未请求辅助转写';
+  }
+  if (transcription.status === 'processing') return '辅助转写处理中';
+  if (transcription.status === 'failed') {
+    return transcription.errorCode
+      ? `辅助转写失败（${transcription.errorCode}）`
+      : '辅助转写失败';
+  }
+  return transcription.text || '辅助转写已完成，但未返回可展示文本';
+}
+
+function durationLabel(durationMs: number | null): string {
+  if (durationMs === null || !Number.isFinite(durationMs)) return '时长未记录';
+  return `${(durationMs / 1000).toFixed(1)} 秒`;
+}
+
+export function PatientAdministrationReviewPanel({
+  evidenceRequirementsByItem,
+  locateError,
+  onClearLocateError,
+  onEvidenceAdopted,
+  onLocateItemResponse,
+  onUnauthorized,
+  patientId,
+  readOnlyReason,
+  scaleInstanceId,
+  visitId,
+}: {
+  evidenceRequirementsByItem: Record<string, EvidenceRequirementState[]>;
+  locateError: string | null;
+  onClearLocateError: () => void;
+  onEvidenceAdopted: (
+    itemResponseId: string,
+    requirement: EvidenceRequirementState,
+  ) => void;
+  onLocateItemResponse: (itemResponseId: string) => boolean;
+  onUnauthorized: () => void;
+  patientId: string;
+  readOnlyReason: string | null;
+  scaleInstanceId: string;
+  visitId: string;
+}) {
+  const ids = useMemo<PatientAdministrationRouteIds>(
+    () => ({ patientId, visitId, scaleInstanceId }),
+    [patientId, scaleInstanceId, visitId],
+  );
+  const mountedRef = useRef(true);
+  const reviewControllerRef = useRef<AbortController | null>(null);
+  const accessControllerRef = useRef<AbortController | null>(null);
+  const [review, setReview] =
+    useState<PatientAdministrationReviewResponse | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isEmpty, setIsEmpty] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [viewer, setViewer] = useState<ViewerState | null>(null);
+  const [viewerLoadingId, setViewerLoadingId] = useState<string | null>(null);
+  const [accessFeedback, setAccessFeedback] = useState<string | null>(null);
+  const [transcribingIds, setTranscribingIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const transcribingIdsRef = useRef(new Set<string>());
+  const [adoptingIds, setAdoptingIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const adoptingIdsRef = useRef(new Set<string>());
+  const [adoptedIds, setAdoptedIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const [feedbacks, setFeedbacks] = useState<
+    Record<string, EvidenceFeedback | undefined>
+  >({});
+
+  const clearViewer = useCallback(() => {
+    accessControllerRef.current?.abort();
+    accessControllerRef.current = null;
+    setViewer(null);
+    setViewerLoadingId(null);
+    setAccessFeedback(null);
+  }, []);
+
+  const loadReview = useCallback(async () => {
+    reviewControllerRef.current?.abort();
+    const controller = new AbortController();
+    reviewControllerRef.current = controller;
+    setIsLoading(true);
+    setLoadError(null);
+
+    try {
+      const response = await getPatientAdministrationReview(
+        ids,
+        controller.signal,
+      );
+      if (controller.signal.aborted || !mountedRef.current) return;
+      setReview(response);
+      setIsEmpty(false);
+    } catch (requestError: unknown) {
+      if (controller.signal.aborted || !mountedRef.current) return;
+      const error =
+        requestError instanceof PatientAdministrationApiError
+          ? requestError
+          : new PatientAdministrationApiError('unknown');
+      if (error.kind === 'unauthenticated') {
+        onUnauthorized();
+        return;
+      }
+      if (error.kind === 'session_not_found') {
+        setReview(null);
+        setIsEmpty(true);
+        setLoadError(null);
+        return;
+      }
+      setReview(null);
+      setIsEmpty(false);
+      setLoadError(reviewErrorMessage(error));
+    } finally {
+      if (reviewControllerRef.current === controller) {
+        reviewControllerRef.current = null;
+      }
+      if (!controller.signal.aborted && mountedRef.current) {
+        setIsLoading(false);
+      }
+    }
+  }, [ids, onUnauthorized]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    void loadReview();
+    return () => {
+      mountedRef.current = false;
+      reviewControllerRef.current?.abort();
+      reviewControllerRef.current = null;
+      accessControllerRef.current?.abort();
+      accessControllerRef.current = null;
+    };
+  }, [loadReview]);
+
+  useEffect(() => {
+    clearViewer();
+    setFeedbacks({});
+    setAdoptedIds(new Set());
+    transcribingIdsRef.current.clear();
+    adoptingIdsRef.current.clear();
+    setTranscribingIds(new Set());
+    setAdoptingIds(new Set());
+  }, [clearViewer, patientId, scaleInstanceId, visitId]);
+
+  const orderedItems = useMemo(
+    () =>
+      review
+        ? [...review.items].sort(
+            (left, right) =>
+              (left.steps[0]?.order ?? Number.MAX_SAFE_INTEGER) -
+              (right.steps[0]?.order ?? Number.MAX_SAFE_INTEGER),
+          )
+        : [],
+    [review],
+  );
+  const stepCount = orderedItems.reduce(
+    (count, item) => count + item.steps.length,
+    0,
+  );
+
+  function setEvidenceFeedback(
+    mediaEvidenceId: string,
+    feedback: EvidenceFeedback | undefined,
+  ) {
+    setFeedbacks((current) => ({ ...current, [mediaEvidenceId]: feedback }));
+  }
+
+  function updateTranscription(
+    mediaEvidenceId: string,
+    transcription: PatientAdministrationReviewTranscription,
+  ) {
+    setReview((current) =>
+      current
+        ? {
+            ...current,
+            items: current.items.map((item) => ({
+              ...item,
+              steps: item.steps.map((step) => ({
+                ...step,
+                runs: step.runs.map((run) => ({
+                  ...run,
+                  evidence: run.evidence.map((evidence) =>
+                    evidence.mediaEvidenceId === mediaEvidenceId
+                      ? { ...evidence, transcription }
+                      : evidence,
+                  ),
+                })),
+              })),
+            })),
+          }
+        : current,
+    );
+  }
+
+  async function handleOpenEvidence(
+    itemResponseId: string,
+    evidence: PatientAdministrationReviewEvidence,
+  ) {
+    accessControllerRef.current?.abort();
+    const controller = new AbortController();
+    accessControllerRef.current = controller;
+    setViewer(null);
+    setViewerLoadingId(evidence.mediaEvidenceId);
+    setAccessFeedback(null);
+    try {
+      const response = await getMediaEvidenceAccessUrl(
+        patientId,
+        visitId,
+        scaleInstanceId,
+        itemResponseId,
+        evidence.mediaEvidenceId,
+        'primary',
+        { signal: controller.signal },
+      );
+      if (controller.signal.aborted || !mountedRef.current) return;
+      setViewer({
+        evidenceType: evidence.evidenceType,
+        mediaEvidenceId: evidence.mediaEvidenceId,
+        url: response.url,
+      });
+    } catch (requestError: unknown) {
+      if (controller.signal.aborted || !mountedRef.current) return;
+      const error =
+        requestError instanceof MediaEvidenceApiError
+          ? requestError
+          : new MediaEvidenceApiError('unknown');
+      if (error.kind === 'unauthenticated') {
+        onUnauthorized();
+        return;
+      }
+      setAccessFeedback(accessErrorMessage(error));
+    } finally {
+      if (accessControllerRef.current === controller) {
+        accessControllerRef.current = null;
+      }
+      if (!controller.signal.aborted && mountedRef.current) {
+        setViewerLoadingId(null);
+      }
+    }
+  }
+
+  async function handleTranscribe(
+    itemResponseId: string,
+    evidence: PatientAdministrationReviewEvidence,
+  ) {
+    const evidenceId = evidence.mediaEvidenceId;
+    if (transcribingIdsRef.current.has(evidenceId)) return;
+    transcribingIdsRef.current.add(evidenceId);
+    setTranscribingIds(new Set(transcribingIdsRef.current));
+    setEvidenceFeedback(evidenceId, undefined);
+    try {
+      const response = await transcribeItemMediaEvidence(
+        patientId,
+        visitId,
+        scaleInstanceId,
+        itemResponseId,
+        evidenceId,
+      );
+      if (!mountedRef.current) return;
+      updateTranscription(evidenceId, response.transcription);
+      setEvidenceFeedback(evidenceId, {
+        tone: response.transcription.status === 'succeeded' ? 'success' : 'error',
+        message:
+          response.transcription.status === 'succeeded'
+            ? '辅助转写候选已返回；它没有写入正式答案。'
+            : '辅助转写未成功；可在需要时明确重试。',
+      });
+    } catch (requestError: unknown) {
+      if (!mountedRef.current) return;
+      const error =
+        requestError instanceof MediaEvidenceApiError
+          ? requestError
+          : new MediaEvidenceApiError('unknown');
+      if (error.kind === 'unauthenticated') {
+        onUnauthorized();
+        return;
+      }
+      setEvidenceFeedback(evidenceId, {
+        tone: 'error',
+        message: transcriptionErrorMessage(error),
+      });
+    } finally {
+      transcribingIdsRef.current.delete(evidenceId);
+      if (mountedRef.current) {
+        setTranscribingIds(new Set(transcribingIdsRef.current));
+      }
+    }
+  }
+
+  async function handleAdopt(
+    itemResponseId: string,
+    evidence: PatientAdministrationReviewEvidence,
+  ) {
+    const evidenceId = evidence.mediaEvidenceId;
+    if (adoptingIdsRef.current.has(evidenceId)) return;
+    adoptingIdsRef.current.add(evidenceId);
+    setAdoptingIds(new Set(adoptingIdsRef.current));
+    setEvidenceFeedback(evidenceId, undefined);
+    try {
+      const response = await adoptPatientAdministrationEvidence(
+        patientId,
+        visitId,
+        scaleInstanceId,
+        itemResponseId,
+        evidenceId,
+      );
+      if (!mountedRef.current) return;
+      setAdoptedIds((current) => new Set(current).add(evidenceId));
+      onEvidenceAdopted(itemResponseId, response.evidenceRequirement);
+      setEvidenceFeedback(evidenceId, {
+        tone: 'success',
+        message:
+          '已采用同一个患者证据并更新正式证据要求；没有复制文件，也没有形成或确认答案。',
+      });
+    } catch (requestError: unknown) {
+      if (!mountedRef.current) return;
+      const error =
+        requestError instanceof MediaEvidenceApiError
+          ? requestError
+          : new MediaEvidenceApiError('unknown');
+      if (error.kind === 'unauthenticated') {
+        onUnauthorized();
+        return;
+      }
+      setEvidenceFeedback(evidenceId, {
+        tone: 'error',
+        message: adoptionErrorMessage(error),
+      });
+    } finally {
+      adoptingIdsRef.current.delete(evidenceId);
+      if (mountedRef.current) {
+        setAdoptingIds(new Set(adoptingIdsRef.current));
+      }
+    }
+  }
+
+  function canAdoptEvidence(
+    itemResponseId: string,
+    run: PatientAdministrationReviewRun,
+    evidence: PatientAdministrationReviewEvidence,
+  ): boolean {
+    if (
+      review?.session.status !== 'completed' ||
+      readOnlyReason ||
+      !run.capture ||
+      run.capture.invalidatedAt ||
+      !['photo', 'handwriting'].includes(evidence.evidenceType) ||
+      evidence.status !== 'attached' ||
+      evidence.storageStatus !== 'stored' ||
+      adoptedIds.has(evidence.mediaEvidenceId)
+    ) {
+      return false;
+    }
+    return (evidenceRequirementsByItem[itemResponseId] ?? []).some(
+      (requirement) =>
+        requirement.evidenceType === evidence.evidenceType &&
+        !requirement.attached &&
+        ['pending', 'missing'].includes(requirement.status),
+    );
+  }
+
+  function renderEvidence(
+    itemResponseId: string,
+    run: PatientAdministrationReviewRun,
+    evidence: PatientAdministrationReviewEvidence,
+  ) {
+    const feedback = feedbacks[evidence.mediaEvidenceId];
+    const transcription = evidence.transcription;
+    const canTranscribe =
+      !readOnlyReason &&
+      review?.session.status === 'completed' &&
+      Boolean(run.capture && !run.capture.invalidatedAt) &&
+      evidence.evidenceType === 'audio' &&
+      evidence.status === 'attached' &&
+      evidence.storageStatus === 'stored' &&
+      transcription?.status !== 'succeeded' &&
+      transcription?.status !== 'processing';
+    const adoptable = canAdoptEvidence(itemResponseId, run, evidence);
+
+    return (
+      <div
+        className="grid gap-3 rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface)] p-4"
+        data-testid={`patient-administration-review-evidence-${evidence.mediaEvidenceId}`}
+        key={evidence.mediaEvidenceId}
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge tone="info">{evidenceTypeLabels[evidence.evidenceType]}</Badge>
+          <span className="text-sm text-[var(--cma-muted)]">
+            {captureModeLabels[evidence.captureMode]} · 状态 {evidence.status} /{' '}
+            {evidence.storageStatus}
+          </span>
+        </div>
+        <p className="text-sm leading-6 text-[var(--cma-muted)]">
+          上传时间：{formatPatientAdministrationDate(evidence.uploadedAt)}
+          {evidence.audioMetadata
+            ? ` · ${durationLabel(evidence.audioMetadata.durationMs)}`
+            : ''}
+        </p>
+        {evidence.evidenceType === 'audio' ? (
+          <div className="rounded-md bg-[var(--cma-info-soft)] p-3">
+            <p className="font-semibold text-[var(--cma-text-strong)]">
+              辅助转写
+            </p>
+            <p
+              className="mt-1 whitespace-pre-wrap text-base leading-7 text-[var(--cma-text-strong)]"
+              data-testid="patient-administration-transcription-candidate"
+            >
+              {transcriptionSummary(transcription)}
+            </p>
+            <p className="mt-2 text-sm leading-6 text-[var(--cma-warning)]">
+              辅助转写不是正式答案，请由医护人员核对。
+            </p>
+          </div>
+        ) : null}
+        <div className="flex flex-wrap gap-2">
+          <Button
+            disabled={viewerLoadingId === evidence.mediaEvidenceId}
+            onClick={() => void handleOpenEvidence(itemResponseId, evidence)}
+            size="sm"
+            variant="secondary"
+          >
+            {viewerLoadingId === evidence.mediaEvidenceId
+              ? '正在获取查看地址...'
+              : '查看原始证据'}
+          </Button>
+          {evidence.evidenceType === 'audio' ? (
+            <Button
+              disabled={!canTranscribe || transcribingIds.has(evidence.mediaEvidenceId)}
+              onClick={() => void handleTranscribe(itemResponseId, evidence)}
+              size="sm"
+              variant="secondary"
+            >
+              {transcribingIds.has(evidence.mediaEvidenceId)
+                ? '正在辅助转写...'
+                : transcription?.status === 'failed'
+                  ? '重试辅助转写'
+                  : transcription?.status === 'succeeded'
+                    ? '辅助转写已完成'
+                  : '生成辅助转写'}
+            </Button>
+          ) : null}
+          {['photo', 'handwriting'].includes(evidence.evidenceType) ? (
+            <Button
+              disabled={!adoptable || adoptingIds.has(evidence.mediaEvidenceId)}
+              onClick={() => void handleAdopt(itemResponseId, evidence)}
+              size="sm"
+              variant="secondary"
+            >
+              {adoptingIds.has(evidence.mediaEvidenceId)
+                ? '正在采用患者证据...'
+                : adoptedIds.has(evidence.mediaEvidenceId)
+                  ? '患者证据已采用'
+                  : '采用到正式题目证据'}
+            </Button>
+          ) : null}
+        </div>
+        {feedback ? (
+          <p
+            className={
+              feedback.tone === 'success'
+                ? 'text-sm leading-6 text-[var(--cma-success)]'
+                : 'text-sm leading-6 text-[var(--cma-danger)]'
+            }
+            role="status"
+          >
+            {feedback.message}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <Card data-testid="patient-administration-review-panel">
+      <CardHeader className="border-b border-[var(--cma-line)]">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <CardTitle>患者施测复核</CardTitle>
+            <CardDescription className="mt-2">
+              汇总患者施测原始事实并定位到现有正式作答编辑器；本面板不直接形成答案、评分或报告。
+            </CardDescription>
+          </div>
+          <Button
+            disabled={isLoading}
+            onClick={() => {
+              clearViewer();
+              void loadReview();
+            }}
+            variant="secondary"
+          >
+            {isLoading ? '正在刷新复核摘要...' : '刷新复核摘要'}
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-5 pt-5">
+        {isLoading && !review ? (
+          <p className="text-base text-[var(--cma-muted)]" role="status">
+            正在加载患者施测复核摘要...
+          </p>
+        ) : null}
+
+        {isEmpty ? (
+          <div className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] p-4">
+            <p className="font-semibold text-[var(--cma-text-strong)]">
+              尚无可复核的患者施测记录
+            </p>
+            <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
+              可在患者施测完成后手动刷新；页面不会轮询该接口。
+            </p>
+          </div>
+        ) : null}
+
+        {loadError ? (
+          <p
+            className="rounded-md border border-[var(--cma-danger)] bg-[var(--cma-danger-soft)] p-4 text-base leading-7 text-[var(--cma-danger)]"
+            role="alert"
+          >
+            {loadError}
+          </p>
+        ) : null}
+
+        {review ? (
+          <>
+            <section
+              aria-labelledby="patient-administration-review-session-heading"
+              className="grid gap-4 rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] p-5"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <h3
+                  className="text-xl font-semibold text-[var(--cma-text-strong)]"
+                  id="patient-administration-review-session-heading"
+                >
+                  施测会话摘要
+                </h3>
+                <Badge tone={patientAdministrationStatusTones[review.session.status]}>
+                  {patientAdministrationStatusLabels[review.session.status]}
+                </Badge>
+                <Badge tone="neutral">{stepCount} 个施测步骤</Badge>
+              </div>
+              <dl className="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
+                <div>
+                  <dt className="font-semibold text-[var(--cma-muted)]">准备确认</dt>
+                  <dd className="mt-1 text-[var(--cma-text-strong)]">
+                    {formatPatientAdministrationDate(
+                      review.session.preparationConfirmedAt,
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="font-semibold text-[var(--cma-muted)]">开始</dt>
+                  <dd className="mt-1 text-[var(--cma-text-strong)]">
+                    {formatPatientAdministrationDate(review.session.startedAt)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="font-semibold text-[var(--cma-muted)]">完成</dt>
+                  <dd className="mt-1 text-[var(--cma-text-strong)]">
+                    {formatPatientAdministrationDate(review.session.completedAt)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="font-semibold text-[var(--cma-muted)]">终止 / 过期</dt>
+                  <dd className="mt-1 text-[var(--cma-text-strong)]">
+                    {formatPatientAdministrationDate(
+                      review.session.terminatedAt ?? review.session.expiredAt,
+                    )}
+                  </dd>
+                </div>
+              </dl>
+              <div>
+                <p className="text-sm font-semibold text-[var(--cma-muted)]">
+                  影响因素
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {review.session.impactFactorCodes.length > 0 ? (
+                    review.session.impactFactorCodes.map((code) => (
+                      <Badge key={code} tone="warning">
+                        {patientAdministrationImpactFactorLabels.find(
+                          (candidate) => candidate.code === code,
+                        )?.label ?? code}
+                      </Badge>
+                    ))
+                  ) : (
+                    <span className="text-sm text-[var(--cma-muted)]">未记录</span>
+                  )}
+                </div>
+                {review.session.impactFactorNote ? (
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[var(--cma-text-strong)]">
+                    {review.session.impactFactorNote}
+                  </p>
+                ) : null}
+              </div>
+              <div>
+                <h4 className="font-semibold text-[var(--cma-text-strong)]">
+                  复核相关控制事件
+                </h4>
+                {review.reviewEvents.length > 0 ? (
+                  <ul className="mt-2 grid gap-2 text-sm leading-6 text-[var(--cma-muted)]">
+                    {review.reviewEvents.map((event, index) => (
+                      <li key={`${event.action}-${event.occurredAt}-${index}`}>
+                        {eventLabels[event.action]} ·{' '}
+                        {formatPatientAdministrationDate(event.occurredAt)}
+                        {event.operatorSnapshot?.operatorName
+                          ? ` · ${event.operatorSnapshot.operatorName}`
+                          : ''}
+                        {event.reason ? ` · ${event.reason}` : ''}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-sm leading-6 text-[var(--cma-muted)]">
+                    本次正常施测未记录暂停、接管、重做等复核相关控制事件。
+                  </p>
+                )}
+              </div>
+            </section>
+
+            {readOnlyReason ? (
+              <p
+                className="rounded-md border border-[var(--cma-warning)] bg-[var(--cma-warning-soft)] p-4 text-sm leading-6 text-[var(--cma-warning)]"
+                role="status"
+              >
+                {readOnlyReason} 复核摘要和原始证据仍可读取，但辅助转写与证据采用已禁用。
+              </p>
+            ) : null}
+
+            {locateError ? (
+              <p
+                className="rounded-md border border-[var(--cma-danger)] bg-[var(--cma-danger-soft)] p-4 text-sm leading-6 text-[var(--cma-danger)]"
+                role="alert"
+              >
+                {locateError}
+              </p>
+            ) : null}
+
+            <section aria-labelledby="patient-administration-review-items-heading">
+              <h3
+                className="text-xl font-semibold text-[var(--cma-text-strong)]"
+                id="patient-administration-review-items-heading"
+              >
+                按量表项目整理的施测结果
+              </h3>
+              <div className="mt-4 grid gap-4">
+                {orderedItems.map((item) => (
+                  <article
+                    className="grid gap-4 rounded-md border border-[var(--cma-line-strong)] p-5"
+                    data-testid={`patient-administration-review-item-${item.itemCode}`}
+                    key={item.itemResponseId}
+                  >
+                    <header className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-[var(--cma-primary)]">
+                          {item.itemCode}
+                        </p>
+                        <h4 className="mt-1 text-lg font-semibold text-[var(--cma-text-strong)]">
+                          {item.itemTitle || '未命名项目'}
+                        </h4>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Badge tone={item.status === 'answered' ? 'success' : 'warning'}>
+                          {itemStatusLabels[item.status]}
+                        </Badge>
+                        <Badge tone="neutral">草稿修订 {item.draftRevision}</Badge>
+                      </div>
+                    </header>
+                    <div className="grid gap-3">
+                      {[...item.steps]
+                        .sort((left, right) => left.order - right.order)
+                        .map((step) => (
+                          <div
+                            className="grid gap-3 rounded-md bg-[var(--cma-surface-muted)] p-4"
+                            data-testid={`patient-administration-review-step-${step.stepKey}`}
+                            key={step.stepKey}
+                          >
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-semibold text-[var(--cma-text-strong)]">
+                                第 {step.order} 步 · {step.stepKey}
+                              </span>
+                              <Badge tone="info">
+                                {responseModeLabels[step.responseMode]}
+                              </Badge>
+                              <Badge tone="neutral">
+                                {advanceByLabels[step.advanceBy]}
+                              </Badge>
+                            </div>
+                            {step.runs.length === 0 ? (
+                              <p className="text-sm text-[var(--cma-muted)]">
+                                当前步骤尚无采集运行事实。
+                              </p>
+                            ) : (
+                              step.runs.map((run) => (
+                                <div
+                                  className="grid gap-3 border-l-2 border-[var(--cma-line-strong)] pl-4"
+                                  key={run.stepRun}
+                                >
+                                  <div className="flex flex-wrap items-center gap-2 text-sm">
+                                    <span className="font-semibold text-[var(--cma-text-strong)]">
+                                      第 {run.stepRun} 次运行
+                                    </span>
+                                    {run.capture ? (
+                                      <>
+                                        <Badge
+                                          tone={run.capture.invalidatedAt ? 'warning' : 'success'}
+                                        >
+                                          {run.capture.invalidatedAt
+                                            ? '已作废 / 已重做'
+                                            : '有效采集'}
+                                        </Badge>
+                                        <span className="text-[var(--cma-muted)]">
+                                          {run.capture.capturedBy === 'patient'
+                                            ? '患者采集'
+                                            : '医护采集'}{' '}
+                                          ·{' '}
+                                          {formatPatientAdministrationDate(
+                                            run.capture.capturedAt,
+                                          )}
+                                        </span>
+                                      </>
+                                    ) : (
+                                      <span className="text-[var(--cma-muted)]">
+                                        无采集摘要
+                                      </span>
+                                    )}
+                                  </div>
+                                  {run.capture?.invalidatedReason ? (
+                                    <p className="text-sm leading-6 text-[var(--cma-warning)]">
+                                      作废 / 重做原因：{run.capture.invalidatedReason}
+                                    </p>
+                                  ) : null}
+                                  {run.capture?.staffObservation ? (
+                                    <div className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface)] p-3">
+                                      <p className="text-sm font-semibold text-[var(--cma-muted)]">
+                                        现场医护观察
+                                      </p>
+                                      <p className="mt-1 whitespace-pre-wrap text-base leading-7 text-[var(--cma-text-strong)]">
+                                        {run.capture.staffObservation}
+                                      </p>
+                                    </div>
+                                  ) : null}
+                                  {run.evidence.length > 0 ? (
+                                    <div className="grid gap-3">
+                                      {run.evidence.map((evidence) =>
+                                        renderEvidence(item.itemResponseId, run, evidence),
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <p className="text-sm text-[var(--cma-muted)]">
+                                      本次运行没有媒体证据。
+                                    </p>
+                                  )}
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        ))}
+                    </div>
+                    <div>
+                      <Button
+                        onClick={() => {
+                          onClearLocateError();
+                          if (!onLocateItemResponse(item.itemResponseId)) {
+                            // The parent reports the failure inside this F3 panel.
+                          }
+                        }}
+                        variant="secondary"
+                      >
+                        定位正式作答
+                      </Button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+
+            {accessFeedback ? (
+              <p
+                className="rounded-md border border-[var(--cma-danger)] bg-[var(--cma-danger-soft)] p-4 text-sm leading-6 text-[var(--cma-danger)]"
+                role="alert"
+              >
+                {accessFeedback}
+              </p>
+            ) : null}
+
+            {viewer ? (
+              <section
+                aria-label="患者原始证据查看器"
+                className="grid gap-3 rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-surface-muted)] p-5"
+                data-testid="patient-administration-review-viewer"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h3 className="text-xl font-semibold text-[var(--cma-text-strong)]">
+                    原始证据查看器
+                  </h3>
+                  <Button onClick={clearViewer} size="sm" variant="secondary">
+                    关闭查看器
+                  </Button>
+                </div>
+                {viewer.evidenceType === 'audio' ? (
+                  <audio
+                    className="w-full"
+                    controls
+                    data-testid="patient-administration-review-audio"
+                    preload="none"
+                    src={viewer.url}
+                  >
+                    当前浏览器不支持音频播放。
+                  </audio>
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element -- signed clinical evidence URL is memory-only and is not an optimizable public asset.
+                  <img
+                    alt="患者原始书写或照片证据"
+                    className="h-auto max-h-[70vh] w-full object-contain"
+                    data-testid="patient-administration-review-image"
+                    src={viewer.url}
+                  />
+                )}
+              </section>
+            ) : null}
+          </>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}

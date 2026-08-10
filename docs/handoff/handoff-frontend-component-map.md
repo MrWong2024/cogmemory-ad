@@ -727,13 +727,21 @@
 - `api/patient-administration-api.ts`：唯一 patient-administration fetch 所在；F2 增加 current private image、audio play、multipart evidence、patient / staff complete、takeover、redo 与 replay authorize。全部路径 ID 编码，统一 `credentials: include` / `no-store`，GET 接收 AbortSignal，写请求结果不确定映射为只读核对语义且不自动 retry。
 - `lib/patient-administration-display.ts`：集中把公开状态与稳定错误 kind 映射为安全中文文案；不透传后端英文 message、完整 response、进入码或内部技术字段。
 - `lib/mmse-patient-administration.ts`：只维护 MMSE 19 步 order / label / advanceBy 与三个受控 stimulus assetKey 的前端展示摘要；不复制 patientText、完整资产清单、答案或评分规则，服务端 currentStep 仍是权威进度。当前 `naming`、`reading-command`、`three-step-command` 的 advanceBy 均为 patient，order / label / stimulusAssetKey 不变。
-- 当前完成边界：F1 已完成；F2 正常 19 步 Browser 主链与 post verifier 已通过，F2-P2 recovery 和 staff Axe 2 项转 WP-10 最终收口；F3 尚未开始。动态证据见 testing playbook。
+- 当前完成边界：F1、F2、F3 已完成；F2 正常 19 步与 F3 正常作答复核 Browser 主链、post verifier 均已通过。F2-P2 recovery 和 staff Axe 2 项仍归属 WP-10 最终收口；动态证据见 testing playbook。
 
 ### 6.83 WP-10-F2 正式步骤与患者证据组件
 
 - `PatientAdministrationCurrentStep.tsx`：对单一 currentStep 编排 private image Blob、按序 frozen MP3、guidance 重播、显式授权的 stimulus 技术重播、当前 revision、evidence 上传与患者完成。staff_observation 步骤提示患者完成动作并由医护在后续复核记录观察结果，不增加 observation input 或状态。换步 / 卸载释放 audio、object URL、AbortController 与 run 引用；旧异步结果不得覆盖新步骤。
 - `PatientAdministrationSpeechResponse.tsx`：使用浏览器支持的 MediaRecorder MIME 形成单步骤短录音，提供显式开始 / 停止 / 本地回放 / 保存；上传 audio evidence 成功后锁定本题证据。MediaStream tracks、timer 与 object URL 在替换或卸载时精确释放，不整场录音、不自动 ASR。
 - `PatientAdministrationWrittenResponse.tsx`：writing / drawing 支持响应式 Canvas handwriting 与纸笔照片两种模式；Canvas 生成 PNG，photo 仅接受 JPEG / PNG / WebP，成功上传后显示“本题内容已保存”。Blob / preview URL 只在当前组件内存，不保存源文件名，不自动完成步骤或形成正式答案。
+
+### 6.84 WP-10-F3 `PatientAdministrationReviewPanel`
+
+- 路径：`frontend/src/features/patient-administration/components/PatientAdministrationReviewPanel.tsx`。仅在 MMSE `supervised_patient_input` 的现有 `ScaleInstanceExecutionPage` 信息区之后、`ScaleInstanceSubmissionPanel` 之前挂载；不新增路由或 workspace，原 `PatientAdministrationStaffPanel`、分组导航和编辑器保持。
+- 读取职责：首次加载一次 completed patient administration review，展示 session / impact factors / reviewEvents、权威 item / step / run、responseMode、当前 ItemResponse status / revision、capture 与媒体摘要；允许显式刷新且不轮询。404 安静表示尚无复核，409 作为完整性冲突，不伪造正常 `staffObservation` 前置。
+- 媒体职责：原始媒体默认折叠；用户明确操作后才请求 access URL。URL 只在当前 React 内存中绑定 audio / image viewer，关闭、实例身份变化或卸载时清除。ASR 仅为显式辅助候选并持续标注“不是正式答案”。
+- adoption / 定位职责：仅对后端合同允许的 completed session、有效 capture、stored/attached photo 或 handwriting、且父页面 requirement 仍 pending/missing 的证据开放显式采用；成功把同一 Evidence requirement 回传父页面并标记 readiness stale。定位按钮复用父页 itemResponseId -> 分组 -> scroll -> focus，不在 panel 内保存答案。
+- 边界：`ItemResponseEditor` 继续独占正式作答、A14 与 `markAsAnswered`；`ScaleInstanceSubmissionPanel` 继续独占 readiness / A16。实例 completed 后 panel 保持可读，transcribe / adopt 禁用；不新增 Review / Anomaly / StaffObservation 模型、批量写、自动 ASR、自动 adoption 或自动提交。
 
 ## 7. 后续同步规则
 

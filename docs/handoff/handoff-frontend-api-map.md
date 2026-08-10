@@ -489,6 +489,14 @@ B17 四个 GET 的共同边界：全部使用 `frontendEnv.apiBaseUrl`、`creden
 - `POST /patient-administration/current/complete`：Body 只含最新 `expectedRevision`；证据与播放前置由服务端判定。成功采用新的 current response，最后一步进入 completed；不写正式 ItemResponse，也不调用 F3 downstream。
 - 患者 Client 不调用 `/auth/me`、staff patient / visit / instance GET 或其他认证 API；401 / 无当前会话返回安全进入页，终止 / 过期 / 完成只显示最小状态和安全离开入口。
 
+### 4.41 F3 正常作答复核 API
+
+- `getPatientAdministrationReview()` -> `GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/patient-administration/review`：由 `PatientAdministrationReviewPanel` 首次挂载时读取一次，支持 `AbortSignal` 与显式手动刷新，不轮询；消费当前 backend DTO 的 session、reviewEvents、item / step / run、capture、evidence、audioMetadata 与 transcription，不增加正式答案字段。
+- `getItemMediaEvidenceAccessUrl()` -> `GET .../item-responses/:itemResponseId/media-evidences/:mediaEvidenceId/access-url`：只有用户明确点击查看时调用。返回 URL 只绑定当前 React 内存中的 `<audio preload="none">` 或 `<img>` viewer，关闭、实例身份变化或卸载时清除，不写 Storage。
+- `transcribeItemMediaEvidence()` -> `POST .../item-responses/:itemResponseId/media-evidences/:mediaEvidenceId/transcribe`：Body 固定为空对象，用户显式触发且不自动 retry。成功只更新 review 中该 Evidence 的辅助候选展示，不调用 A14、不 `markAsAnswered`。
+- `adoptPatientAdministrationEvidence()` -> `POST .../item-responses/:itemResponseId/media-evidences/:mediaEvidenceId/adopt`：无 Body，用户显式触发且不自动 retry。成功消费后端返回的同一 `mediaEvidenceId` 与 `evidenceRequirement`，通知父页面 requirement / readiness stale；不上传、复制或创建 Evidence，不修改答案、status 或 `draftRevision`。
+- 四个 F3 调用继续使用 `credentials: 'include'`、`cache: 'no-store'`、编码后的完整归属路径和稳定错误映射。只读模式仍允许 review / access URL，禁用 transcribe / adopt；正式编辑与提交分别继续使用既有 A14 与 readiness / A16 Client。
+
 ## 5. 当前认证公开类型
 
 - `AuthUserResponse`：`id`、`accountName`、`displayName`、`roles`、`permissions`、可选 `userType`。
@@ -528,7 +536,7 @@ B17 四个 GET 的共同边界：全部使用 `frontendEnv.apiBaseUrl`、`creden
 
 ## 7. 当前未对接 API
 
-- 当前已对接 Auth、A12–A25、A27/A28 与 F1/F2 patient-administration endpoint；A26 只改变 A22–A24 对合法 replacement 的服务端适用范围，不存在 replacement 专用平行接口。F3 review / ASR / ItemResponse 确认 / submit / scoring / report 的患者施测前端编排尚未对接。
+- 当前已对接 Auth、A12–A25、A27/A28 与 F1/F2/F3 patient-administration endpoint；A26 只改变 A22–A24 对合法 replacement 的服务端适用范围，不存在 replacement 专用平行接口。F3 复用既有 A14、readiness / A16 及后续 scoring / report 链，没有平行确认或提交接口。
 - 患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 完整状态流转、撤销提交 / reopen、评分 lock / void / rerun / 独立历史、认知域修改 / 确认 / 锁定 / 作废 / 重算、报告退回 / reject / reopen / withdraw / 签名 / unlock / unfreeze / unarchive / 作废 / 重生成 / PDF / 打印 / 下载、AI、用户管理、角色权限管理或科研导出 API 当前均未对接。
 - 不得在后端 API 未确认并进入明确任务范围前编造前端对接事实。
 

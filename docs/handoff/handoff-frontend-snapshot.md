@@ -148,15 +148,15 @@ A21–A25 写请求从当前服务端 `report.updatedAt` 取得 `expectedUpdated
 
 ## 7. 当前实现结论与验证入口
 
-- WP-10-F1、WP-10-F2 已完成：同 / 跨设备发起、准备与安全进入，以及正常 MMSE 19 步正式患者主链均已实现。F2-P2 recovery 与 staff Axe 分类保留在 WP-10 最终收口，下一阶段仍为 F3。
+- WP-10-F1、WP-10-F2、WP-10-F3 已完成：同 / 跨设备发起、准备与安全进入、正常 MMSE 19 步正式患者主链，以及现有 ScaleInstance 页面的正常作答复核闭环均已实现。F2-P2 recovery 与 staff Axe 分类仍保留在 WP-10 最终收口。
 - replacement V2+ 生命周期、history / versions / detail / trends、自动保存与媒体协调等既有前端能力已实现；精确当前事实见对应 maps。本 snapshot 不保存已关闭批次的测试数字或 evidence ledger。
 - 稳定验证规则和当前仍待验边界见 frontend / backend testing playbook；已关闭阶段的详细执行证据由 Git 历史和当前测试资产追溯。
 
 ## 8. 当前未实现边界
 
 - 受监督患者施测终端：MMSE 的 F1/F2 已实现并完成正常 19 步正式患者主链；F2-P2 的 upload 后 reload recovery、takeover、redo、old-run isolation 与 terminate 尚待 WP-10 最终 Browser 收口。MoCA 患者端多模态编排尚未实现。
-- F3 尚未开始，其核心前端链为 patient administration review → 医生查看患者原始事实 / evidence / ASR candidate → 通过 existing `ItemResponse` draft 人工录入或修订 → `markAsAnswered` → submission readiness → existing A16 submit → 正式提交结果 → 既有 scoring / report 链。ASR candidate 不自动写 `ItemResponse`；A16 前草稿已经存在，A16 不创建或复制第二份答案。
-- 真实 ASR 服务验收与 F3 前端闭环实现是两个不同边界。F3 可按既定 fake / stub / 受控环境完成开发与自动化验收；真实设备、真实麦克风、真实触控笔、真实患者 OSS 和真实 ASR 继续按 roadmap 原有最终验收归属，不扩大 F3，桌面 synthetic microphone、mouse / Pointer 与 fake Storage 证据不得冒充这些边界。
+- F3 已实现于既有 `/patients/[patientId]/visits/[visitId]/scale-instances/[scaleInstanceId]`：信息区后、`ScaleInstanceSubmissionPanel` 前展示 `PatientAdministrationReviewPanel`。它一次读取整份 review、允许手动刷新且不轮询，按需获取 access URL、显式触发 ASR、显式采用合法 patient photo / handwriting，并把用户定位到既有 `ItemResponseEditor`；正式答案由 A14 / `markAsAnswered` 保存，整体提交由既有 readiness / A16 完成。ASR candidate 不自动写 `ItemResponse`，adoption 不复制 Evidence 或形成答案。
+- F3 没有新增 `/review` 路由、Review workspace、Anomaly、StaffObservation 或第二套提交状态机；completed 后 review 保持可读，ASR / adoption 写操作进入只读。真实设备、真实麦克风、真实触控笔、真实患者 OSS 和真实 ASR 继续按 roadmap 原有最终验收归属，桌面 Browser 的 stub / fake 证据不得冒充这些边界。
 - 非语音步骤仍不默认录音，动作观察不等于视频、摄像头、传感器或自动行为识别。摄像头不是标准患者交互设备的通用前置；未来具体步骤确有拍摄或扫码必要时，须由该步骤合同单独锁定权限、隐私、适配和验收。现有医生侧图片上传、纸笔结果拍照和手写证据能力不因此删除或取消。
 - 临床运营与知情者辅助：现有 `AuthDashboard` 仍是轻量入口，尚无 WP-12 的最小临床运营工作区或医护代录知情者辅助信息能力；知情者来源、关系和了解程度与患者作答 / ItemResponse / 量表得分分离呈现也尚未实现。当前缺口不等于一期要求知情者长期账号、家庭门户或短期自助链接。
 - F1/F2 已锁定同 / 跨设备安全进入、准备练习、八类影响因素、5 秒 staff / 3 秒 patient 轮询、逐步骤文字 / 语音 / 播放 / 重播和当前 run 证据采集；这不表示二维码、全页面 TTS、强实时协作、特定传输技术、全部固定录音、永久保存全部原始证据、独立应用 / 新角色，或独立 attempt / capture / review 集合和通用投影子系统成为未来实现合同。

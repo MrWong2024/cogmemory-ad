@@ -85,6 +85,7 @@ import type {
 } from '@/src/features/assessments/types/scale-instance-submission';
 import { logout } from '@/src/features/auth/api/auth-api';
 import { PatientAdministrationStaffPanel } from '@/src/features/patient-administration/components/PatientAdministrationStaffPanel';
+import { PatientAdministrationReviewPanel } from '@/src/features/patient-administration/components/PatientAdministrationReviewPanel';
 import {
   assessmentVisitStatusLabels,
   assessmentVisitTypeLabels,
@@ -295,8 +296,11 @@ export function ScaleInstanceExecutionPage({
     null,
   );
   const [pendingFocusSource, setPendingFocusSource] = useState<
-    'submission' | 'scoring' | null
+    'submission' | 'scoring' | 'review' | null
   >(null);
+  const [reviewLocateError, setReviewLocateError] = useState<string | null>(
+    null,
+  );
   const [scoreResult, setScoreResult] =
     useState<ScoreResultDetailResponse | null>(null);
   const [scoreQueryStatus, setScoreQueryStatus] =
@@ -478,6 +482,7 @@ export function ScaleInstanceExecutionPage({
 
       applyScoreResultDetail(response);
       setConfirmationSafetyBlock(null);
+      setReviewLocateError(null);
       setScoreQueryStatus('loaded');
       setScoreConfirmationVisible(false);
       return response;
@@ -658,6 +663,7 @@ export function ScaleInstanceExecutionPage({
     setScoreWriteState('idle');
     setScoreWriteSafetyBlock(null);
     setConfirmationSafetyBlock(null);
+    setReviewLocateError(null);
 
     void getScaleInstanceExecutionDetail(
       patientId,
@@ -734,6 +740,31 @@ export function ScaleInstanceExecutionPage({
   const activeSection =
     sections.find((section) => section.code === activeGroupCode) ?? sections[0];
   const effectiveActiveGroupCode = activeSection?.code ?? '';
+  const reviewEvidenceRequirementsByItem = useMemo<
+    Record<string, EvidenceRequirementState[]>
+  >(
+    () =>
+      detail
+        ? Object.fromEntries(
+            detail.itemResponses.map((item) => [
+              item.id,
+              item.evidenceRequirements.flatMap((requirement) =>
+                requirement.evidenceType === 'photo' ||
+                requirement.evidenceType === 'handwriting'
+                  ? [
+                      {
+                        evidenceType: requirement.evidenceType,
+                        status: requirement.status,
+                        attached: requirement.attached,
+                      },
+                    ]
+                  : [],
+              ),
+            ]),
+          )
+        : {},
+    [detail],
+  );
   const unsavedAnswerItemCount = autosave.summary.unsettledCount;
   const pendingMediaItemCount = useMemo(() => {
     if (!detail) {
@@ -784,6 +815,8 @@ export function ScaleInstanceExecutionPage({
       if (!element) {
         if (pendingFocusSource === 'scoring') {
           setScoreComputationStatus('未能定位该题目，请重新加载量表后再试。');
+        } else if (pendingFocusSource === 'review') {
+          setReviewLocateError('未能定位正式作答编辑器，请重新加载量表后再试。');
         } else {
           setSubmissionStatus('未能定位该题目，请重新加载量表后再试。');
         }
@@ -1088,8 +1121,8 @@ export function ScaleInstanceExecutionPage({
 
   function locateItemResponse(
     itemResponseId: string,
-    source: 'submission' | 'scoring',
-  ) {
+    source: 'submission' | 'scoring' | 'review',
+  ): boolean {
     const section = sections.find((candidate) =>
       candidate.itemResponses.some((item) => item.id === itemResponseId),
     );
@@ -1097,20 +1130,25 @@ export function ScaleInstanceExecutionPage({
     if (!section) {
       if (source === 'scoring') {
         setScoreComputationStatus('未能定位该题目，请重新加载量表后再试。');
+      } else if (source === 'review') {
+        setReviewLocateError('未能定位正式作答编辑器，请重新加载量表后再试。');
       } else {
         setSubmissionStatus('未能定位该题目，请重新加载量表后再试。');
       }
-      return;
+      return false;
     }
 
     if (source === 'scoring') {
       setScoreComputationStatus(null);
+    } else if (source === 'review') {
+      setReviewLocateError(null);
     } else {
       setSubmissionStatus(null);
     }
     handleSelectGroup(section.code);
     setPendingFocusSource(source);
     setPendingFocusItemId(itemResponseId);
+    return true;
   }
 
   function handleLocateSubmissionIssue(issue: ScaleSubmissionIssue) {
@@ -2073,6 +2111,27 @@ export function ScaleInstanceExecutionPage({
           </CardContent>
         </Card>
       </div>
+
+      {scale.code === 'mmse' &&
+      scaleInstance.administrationMode === 'supervised_patient_input' ? (
+        <PatientAdministrationReviewPanel
+          evidenceRequirementsByItem={reviewEvidenceRequirementsByItem}
+          locateError={reviewLocateError}
+          onClearLocateError={() => setReviewLocateError(null)}
+          onEvidenceAdopted={(itemResponseId, requirement) => {
+            handleEvidenceRequirementChange(itemResponseId, requirement);
+            handleEvidencePersisted(itemResponseId, requirement);
+          }}
+          onLocateItemResponse={(itemResponseId) =>
+            locateItemResponse(itemResponseId, 'review')
+          }
+          onUnauthorized={handlePatientAdministrationUnauthorized}
+          patientId={patientId}
+          readOnlyReason={effectiveReadOnlyReason}
+          scaleInstanceId={scaleInstanceId}
+          visitId={visitId}
+        />
+      ) : null}
 
       <ScaleInstanceSubmissionPanel
         activeAnswerWriteCount={savingItemIds.size}

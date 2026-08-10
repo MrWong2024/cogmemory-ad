@@ -115,6 +115,23 @@ export type MediaEvidenceOperator = {
   operatorRole?: MediaOperatorRole;
 };
 
+export type MediaEvidenceTranscription = {
+  status: 'not_requested' | 'processing' | 'succeeded' | 'failed';
+  text?: string;
+  errorCode?:
+    | 'duration_unsupported'
+    | 'storage_unavailable'
+    | 'timeout'
+    | 'provider_unavailable'
+    | 'provider_rejected'
+    | 'invalid_response';
+  provider?: 'stub' | 'bailian';
+  model?: string;
+  requestedAt: string | null;
+  completedAt: string | null;
+  requestedBy: MediaEvidenceOperator | null;
+};
+
 export type MediaEvidence = {
   id: string;
   evidenceCode: string;
@@ -131,6 +148,8 @@ export type MediaEvidence = {
   handwritingTrace: MediaEvidenceHandwritingTrace | null;
   captureContext: MediaEvidenceCaptureContext | null;
   operatorSnapshot: MediaEvidenceOperator | null;
+  audioMetadata: { durationMs: number | null } | null;
+  transcription: MediaEvidenceTranscription | null;
   qualityStatus: MediaQualityStatus;
   operatorNote?: string;
   description?: string;
@@ -161,6 +180,11 @@ export type MediaEvidenceAccessUrlResponse = {
   asset: MediaEvidenceAccessAsset;
   url: string;
   expiresAt: string;
+};
+
+export type MediaEvidenceTranscriptionActionResponse = {
+  mediaEvidenceId: string;
+  transcription: MediaEvidenceTranscription;
 };
 
 export type VoidMediaEvidenceRequest = {
