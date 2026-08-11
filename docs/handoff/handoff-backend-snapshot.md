@@ -301,15 +301,15 @@
 - `PatientAdministrationSession`、staff / patient 专用 Controller 与 Guard 已实现短期患者会话、安全进入、same-device / cross-device、准备、服务端权威当前步骤、暂停 / 恢复 / 接管 / redo / technical replay / 重签 / 终止和完成态；患者会话与 staff `Session` 保持身份隔离。
 - 会话状态、当前 run capture、播放事实和控制写使用单一 `revision` CAS；旧写不能覆盖已成功事实，患者响应保持最小白名单且不泄露答案、评分、内部定位或 staff 权限。
 - WP-10-F1 的同 / 跨设备流程和 F2 的 MMSE 正常 19 步患者主链已实现；患者 evidence、`MediaEvidence` audio、固定题目资产、书写 / 绘图证据和完成媒体门禁已接入，患者流程本身仍不直接写 `ItemResponse`。只有后续 staff 显式调用受控 adoption 时，合法 photo / handwriting 才以同一 ID 写入既有 evidenceRef。
-- C2 已实现 ASR candidate / review projection；机器候选不自动成为正式答案。F3 的两个最低基础对齐已完成：MMSE current seed 的 operatorNote 已 optional，patient MediaEvidence adoption 已闭合 readiness 的既有 evidenceRef 数据链。医生可沿现有 A14 `ItemResponse` 草稿链人工录入或修订，满足 readiness 后由现有 A16 整体提交，同一批 `ItemResponse` 成为该次正式提交结果，不复制第二套答案。
+- C2 已实现 ASR candidate / review projection；机器候选不自动成为正式答案。F3 的两个最低基础对齐已完成：MMSE current seed 的 operatorNote 已 optional，patient MediaEvidence adoption 已闭合 readiness 的既有 evidenceRef 数据链。
+- WP-10-F3 正常作答复核 UI 已完成，并复用现有 `ScaleInstance` 页面；患者施测 completed 后，同一页面挂载 F3 复核。医护 / 医生继续沿现有 A14 `ItemResponse` 草稿链人工录入或修订，满足既有 readiness 后由现有 A16 整体提交，同一批 `ItemResponse` 成为该次正式提交结果，不复制第二套答案，也没有新增 Review / Anomaly / StaffObservation 工作流。
+- WP-10 已完成；F2-P2 recovery、staff Axe 分类及受影响 F3 回归均已完成收口。
 - 精确 Schema、endpoint、DTO、Cookie、权限和 Service 事实以 backend API / DTO / service maps 及最新代码为准，本 snapshot 不复制已关闭阶段的实施过程。
 
 ## 17. 当前尚未实现
 
 - 尚无公开用户管理接口、角色权限管理接口、短信验证码接口、OAuth / SSO 接口或密码重置接口。
-- F3 正常作答复核 UI 尚未实现：下一步是在现有 `ScaleInstance` 页面组合患者原始事实、evidence、ASR candidate、现有 `ItemResponse` 草稿、`markAsAnswered`、submission readiness 和 A16 整体提交。
-- F3-pre 保持完成，三个观察型 MMSE 步骤已为患者正常主链连续推进；本轮两个最低基础对齐也已完成。WP-10-F2 仍为完成，WP-10-F3 已进入进行中但未完成，下一步为正常复核 UI。
-- WP-10 最终 Browser / accessibility 收口仍包括 F2-P2 recovery 与 staff Axe 分类；真实设备、真实麦克风 / 触控笔、真实患者 OSS 与真实 ASR 按 roadmap 既定边界验收。MoCA 患者端完整实施仍未完成。
+- MoCA 患者端完整实施仍未完成，下一工作包为 WP-11，状态仍为“待开始”；真实设备、真实麦克风 / 触控笔、真实患者 OSS 与真实 ASR 继续按 roadmap 既定 Batch E / WP-08 边界验收。
 - 尚未实现 WP-12 的医护代录知情者辅助信息能力，也没有将知情者来源、关系、接触频率或了解程度与患者作答、ItemResponse、量表得分和报告结论分离的专用合同；当前不存在知情者长期账号、家庭门户或短期自助链接。
 - HIS / EMR、计费、保险及其他第三方医院系统集成当前未实现，且不属于一期后端实现缺口、WP-09 或上线验收门禁。
 - A12-A28 已覆盖评分计算/复核/确认、认知域计算、报告生成/编辑/确认/锁定/来源冻结/归档/版本化更正、replacement 后续生命周期、历史读取与基础随访趋势；仍无评分独立 lock / void / reopen / 重跑、认知域人工修改 / 确认 / 作废 / 重算、报告签名 / unfreeze / unarchive、correction cancel / branch 或 PDF 接口。

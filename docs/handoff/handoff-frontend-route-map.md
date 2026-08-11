@@ -9,7 +9,7 @@
 - 当前包含既有公共、认证、患者 / 访视与量表实例路由；B17 新增患者历史、随访趋势和指定历史报告只读详情三个路由，报告版本面板继续落在访视详情。
 - B16 已让安全线性 replacement V2+ 在既有访视详情复用 A22 lock、A23 freeze-sources 与 A24 archive；没有 replacement 专用路由。
 - B17 / WP-04 已完成；历史报告详情保持只读，current report workflow、版本列表和历史详情职责分离。
-- WP-10-F1/F2 复用患者独立 Shell 的 `/patient-administration/enter` 与 `/patient-administration`，并在既有 MMSE `supervised_patient_input` 实例页组合医护发起、准备与步骤控制面板；F1 已完成，F2 正常 MMSE 19 步正式患者 Browser 主链已完成。F2-P2 recovery 属于 WP-10 最终收口，下一阶段 F3 继续复用这些路由。
+- WP-10 已完成；F1/F2 患者端继续复用 `/patient-administration/enter` 与 `/patient-administration`，既有 MMSE `supervised_patient_input` `ScaleInstance` 页面继续承载医护施测控制。patient administration completed 后，同一既有 `ScaleInstance` 页面挂载 F3 正常作答复核；F3 没有新增独立 `/review` 路由。下一工作包为 WP-11，状态仍为“待开始”。
 - `/dashboard` 已提供患者档案入口，但仍不是完整医生工作台。
 - 当前不包含患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、独立评分、评分锁定、独立认知域、current 报告专用详情、AI、用户管理或权限菜单路由。
 - 当前不包含 Next middleware 或路由级服务端认证中间件。
