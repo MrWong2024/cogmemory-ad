@@ -4,7 +4,10 @@ import { resolve } from 'node:path';
 
 import { expect, test } from '@playwright/test';
 
-import { ClinicalReportApiError } from '@/src/features/assessments/api/clinical-report-api';
+import {
+  ClinicalReportApiError,
+  lockClinicalReport,
+} from '@/src/features/assessments/api/clinical-report-api';
 import {
   canClinicalReportRoleLock,
   canContinueClinicalReportLockDraftWithLatest,
@@ -28,7 +31,10 @@ import {
   createClinicalReportLockDraft,
   markClinicalReportLockDraftStale,
 } from '@/src/features/assessments/lib/clinical-report-workflow-draft';
-import type { ClinicalReport } from '@/src/features/assessments/types/clinical-report';
+import type {
+  ClinicalReport,
+  LockClinicalReportRequest,
+} from '@/src/features/assessments/types/clinical-report';
 
 const reportId = '507f1f77bcf86cd799439011';
 const otherReportId = '507f1f77bcf86cd799439012';
@@ -130,6 +136,65 @@ function exportedObjectType(source: string, name: string): string {
 }
 
 test.describe('B12 lock Node-only contracts', () => {
+  test('B12 lock API serializer sends only the request allowlist from widened runtime input', async () => {
+    const originalFetch = globalThis.fetch;
+    let capturedBody: string | undefined;
+    const runtimeInput: LockClinicalReportRequest & Record<string, unknown> = {
+      confirm: true,
+      lockNote: '  B12 serializer note  ',
+      expectedUpdatedAt: updatedAt,
+      status: 'confirmed',
+      lockedBy: 'B12 runtime operator',
+      metadata: { source: 'B12 runtime metadata' },
+      extraField: 'B12 runtime extra field',
+    };
+
+    try {
+      globalThis.fetch = async (_input, init) => {
+        capturedBody = String(init?.body);
+        return new Response(
+          JSON.stringify({
+            report: eligibleReport(),
+            lockReceipt: {
+              lockId: 'b12-lock-receipt',
+              lockedAt: updatedAt,
+              lockedBy: {
+                operatorId: reportId,
+                operatorName: 'B12 Doctor',
+                operatorRole: 'doctor',
+              },
+              lockNote: 'B12 serializer note',
+              alreadyLocked: false,
+            },
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        );
+      };
+
+      await lockClinicalReport(reportId, otherReportId, reportId, runtimeInput);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+
+    expect(capturedBody).toBeDefined();
+    const body = JSON.parse(capturedBody!) as Record<string, unknown>;
+    expect(Object.keys(body).sort()).toEqual([
+      'confirm',
+      'expectedUpdatedAt',
+      'lockNote',
+    ]);
+    expect(body.confirm).toBe(true);
+    expect(body.expectedUpdatedAt).toBe(updatedAt);
+    expect(body.lockNote).toBe('B12 serializer note');
+    expect(body).not.toHaveProperty('status');
+    expect(body).not.toHaveProperty('lockedBy');
+    expect(body).not.toHaveProperty('metadata');
+    expect(body).not.toHaveProperty('extraField');
+  });
+
   test('B12-S01/S02 preserves the real role and first-lock eligibility matrices', () => {
     expect(canClinicalReportRoleLock(['doctor'])).toBe(true);
     expect(canClinicalReportRoleLock(['admin'])).toBe(true);
