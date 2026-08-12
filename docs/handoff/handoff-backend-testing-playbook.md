@@ -50,9 +50,9 @@ roadmap 独立维护产品范围和工作包状态；testing playbook 治理不�
 
 ### 2.3 Secret 与进程职责
 
-- 密码、完整连接串、Cookie、Session、token、hash 和私有数据不得写入 tracked 文件、CLI 参数、日志、manifest、截图、产物或最终报告。
-- 本地隔离测试固定凭据只能来自项目约定且 Git ignored 的本地配置，或由同一隔离父进程稳定注入；不得从数据库 URI、时间、进程值或其他 Secret 派生。
-- 同一 Profile 从 prepare、prepared verify、Browser 登录、post verify 到 cleanup 使用一致的账号凭据语义；凭据不一致时停止并审计，不反复重试或降低校验。
+- 数据库账号密码、完整 `MONGO_URI` / `MONGO_ADMIN_URI`、真实开发人员或医护账号密码、真实患者相关认证凭据、production / operations 凭据、Cookie、Session、token、hash、私有数据、OSS AccessKey / Secret 及 ASR / LLM / SMS 等第三方 Secret 不得写入 tracked 文件、CLI 参数、日志、manifest、截图、产物或最终报告；该规则同样适用于 `standard_test` 与 `browser_acceptance` 的数据库凭据。
+- unit / E2E、Browser fixture 或本地人工冒烟创建的 synthetic application user，只要专用于测试或人工冒烟、不对应真实人员、不复用真实密码、不具备生产或真实业务数据访问能力，且对应脚本具有正确环境和数据库 fail-closed 门禁，其应用账号密码属于普通测试常量。可以使用 `12345678` 这类固定简单值并直接写入 tracked test、fixture 或人工冒烟准备脚本，也可以按需要写入测试文档和结果；不强制 Git ignored 文件、环境变量、随机生成或父进程注入。
+- 同一 synthetic application account 从 prepare、prepared verify、Browser 登录到 post verify 使用同一个确定性固定值；可以由 tracked 常量或既有稳定配置提供，不得从数据库 URI、数据库用户密码、时间、进程值或其他 Secret 派生。凭据不一致时停止并审计，不反复重试或降低校验。
 - fixture runner 与 Browser backend 负责各自数据库职责；Playwright runner 和 production frontend 的用途始终为 `none`。
 
 ## 3. 后端证据职责
