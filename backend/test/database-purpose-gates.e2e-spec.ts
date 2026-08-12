@@ -3,18 +3,13 @@ import { ConfigService } from '@nestjs/config';
 import { getConnectionToken } from '@nestjs/mongoose';
 import { NestFactory } from '@nestjs/core';
 import { spawnSync } from 'child_process';
+import { existsSync } from 'fs';
 import type { Connection } from 'mongoose';
+import { join } from 'path';
 import { AppModule } from '../src/app.module';
 import { TEST_DATABASE_NAMES } from '../src/config/database-purpose';
 
 jest.setTimeout(30000);
-
-const FIXTURE_SCRIPTS = [
-  'scripts/b123-browser-fixtures.ts',
-  'scripts/b16-browser-fixtures.ts',
-  'scripts/b456-browser-fixtures.ts',
-  'scripts/wp04-browser-fixtures.ts',
-] as const;
 
 describe('database purpose gates (e2e)', () => {
   let app: INestApplicationContext;
@@ -81,8 +76,35 @@ describe('database purpose gates (e2e)', () => {
     );
   });
 
-  it('makes all Browser fixture CLIs reject the normal test database before AppModule import', () => {
-    for (const script of FIXTURE_SCRIPTS) {
+  it('makes representative current Browser fixture CLIs reject the normal test database before AppModule import', () => {
+    const wp10F1RuntimePath = join(
+      process.cwd(),
+      'test-results',
+      `database-purpose-gate-wp10-f1-${process.pid}.json`,
+    );
+    expect(existsSync(wp10F1RuntimePath)).toBe(false);
+
+    const fixtureProbes = [
+      {
+        script: 'scripts/b10-browser-fixtures.ts',
+        args: ['prepare', '--profile', 'public-surface-security'],
+        env: {
+          B10_FIXTURE_PASSWORD: 'database-gate-placeholder',
+        },
+      },
+      {
+        script: 'scripts/wp10-f1-browser-fixtures.ts',
+        args: ['prepare'],
+        env: {
+          WP10_F1_PROFILE: 'F1-P1-same-device',
+          WP10_F1_NAMESPACE: 'wp10-f1-gate',
+          WP10_F1_RUNTIME_PATH: wp10F1RuntimePath,
+          WP10_F1_FIXTURE_PASSWORD: 'database-gate-placeholder',
+        },
+      },
+    ] as const;
+
+    for (const probe of fixtureProbes) {
       const result = spawnSync(
         process.execPath,
         [
@@ -90,8 +112,8 @@ describe('database purpose gates (e2e)', () => {
           'ts-node/register',
           '-r',
           'tsconfig-paths/register',
-          script,
-          'prepare',
+          probe.script,
+          ...probe.args,
         ],
         {
           cwd: process.cwd(),
@@ -103,10 +125,7 @@ describe('database purpose gates (e2e)', () => {
               'mongodb://unused:unused@127.0.0.1:27017/cogmemory_ad_test?authSource=cogmemory_ad_test',
             MONGO_ADMIN_URI:
               'mongodb://unused:unused@127.0.0.1:27017/cogmemory_ad_test?authSource=cogmemory_ad_test',
-            B123_FIXTURE_PASSWORD: 'database-gate-placeholder',
-            B16_FIXTURE_PASSWORD: 'database-gate-placeholder',
-            B456_FIXTURE_PASSWORD: 'database-gate-placeholder',
-            WP04_FIXTURE_PASSWORD: 'database-gate-placeholder',
+            ...probe.env,
           },
           encoding: 'utf8',
         },
@@ -117,5 +136,7 @@ describe('database purpose gates (e2e)', () => {
         'DATABASE_DECLARED_NAME_MISMATCH',
       );
     }
+
+    expect(existsSync(wp10F1RuntimePath)).toBe(false);
   });
 });

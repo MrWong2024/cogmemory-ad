@@ -612,6 +612,48 @@ describe('clinical history read APIs (e2e)', () => {
     expect(record(historyItems[0], 'latest history item').visit).toEqual(
       expect.objectContaining({ id: fixture.visitId }),
     );
+    const firstPage = body(
+      await doctorAgent
+        .get(`/patients/${fixture.patientId}/assessment-history`)
+        .query({ page: 1, pageSize: 1 })
+        .expect(200),
+    );
+    expect(firstPage).toEqual(
+      expect.objectContaining({ total: 2, page: 1, pageSize: 1 }),
+    );
+    const firstPageItems = array(firstPage.items, 'first page history items');
+    expect(firstPageItems).toHaveLength(1);
+    const firstPageVisitId = record(
+      record(firstPageItems[0], 'first page history item').visit,
+      'first page visit',
+    ).id;
+    expect(firstPageVisitId).toBe(fixture.visitId);
+
+    const secondPage = body(
+      await doctorAgent
+        .get(`/patients/${fixture.patientId}/assessment-history`)
+        .query({ page: 2, pageSize: 1 })
+        .expect(200),
+    );
+    expect(secondPage).toEqual(
+      expect.objectContaining({ total: 2, page: 2, pageSize: 1 }),
+    );
+    const secondPageItems = array(
+      secondPage.items,
+      'second page history items',
+    );
+    expect(secondPageItems).toHaveLength(1);
+    const secondPageVisitId = record(
+      record(secondPageItems[0], 'second page history item').visit,
+      'second page visit',
+    ).id;
+    expect(secondPageVisitId).toBe(fixture.olderVisitId);
+
+    const pagedVisitIds = [firstPageVisitId, secondPageVisitId];
+    expect(new Set(pagedVisitIds).size).toBe(2);
+    expect(new Set(pagedVisitIds)).toEqual(
+      new Set([fixture.visitId, fixture.olderVisitId]),
+    );
     const mainScales = array(
       record(historyItems[0], 'main history item').scaleSummaries,
       'scale summaries',
