@@ -126,7 +126,7 @@ Codex 阅读本规范，是为了理解任务治理边界、继承执行期规�
 7. 只要任务包含 Browser fixture 的 prepare、replace、prepared verify、Browser 登录或角色 Session、post-browser verify，指令仍必须确保同一 synthetic application account 在同一 namespace 生命周期内使用同一个确定密码值，并说明所有创建、认证或校验阶段使用的 tracked 常量或稳定配置；不校验密码的 cleanup 无需人为增加该依赖。指令必须禁止从数据库 URI、数据库用户密码、时间、进程值或无关 Secret 派生应用测试密码，也不得在不同阶段无故切换值。若已准备的 namespace 与当前固定值不一致，指令必须要求使用正确固定值显式执行受控 replace，再执行只读 prepared verify，并仅在通过后进入 Browser；不得通过反复 verify、手工改库、降低校验标准或虚报 prepared gate 通过来绕过。
 8. 不得复用已设置数据库连接的 shell 上下文，也不得通过一个全局环境配置同时服务不同数据库用途。切换用途或复用 shell 前，应优先启动独立进程，或明确清除或覆盖数据库主连接变量、管理连接变量、项目定义的数据库用途变量及其他用途相关变量。具体变量名必须从项目级 testing playbook、项目环境约定、任务声明或用户明确输入中解析；通用指令规范不得硬编码项目专属变量名。这是数据库隔离门禁，不是要求每一步清空固定测试密码的保密仪式。
 9. 符合第 6 条的 synthetic application account password 按普通测试常量自动使用；同一账号优先使用确定性固定值，指令不得机械要求一次性密码、每次重新生成、每 Profile 单独生成或逐次人工输入。
-10. 数据库账号密码、完整 MONGO_URI / MONGO_ADMIN_URI、production / operations 凭据、真实开发人员或医护账号密码、真实患者相关认证凭据、可访问真实数据或非隔离环境的凭据、OSS AccessKey / Secret、ASR / LLM / SMS 等第三方 Secret 仍不得包含在指令、Git 跟踪文件、日志、manifest、截图、生成物、最终报告或提交记录中。该严格规则同样适用于 `standard_test` 与 `browser_acceptance` 的数据库账号密码；第 6 条只例外纯合成的被测应用账号密码。
+10. 数据库账号密码、完整 MONGO_URI / MONGO_ADMIN_URI、production / operations 凭据、真实人员账号密码、真实应用用户或业务主体认证凭据、可访问真实数据或非隔离环境的凭据、OSS AccessKey / Secret、ASR / LLM / SMS 等第三方 Secret 仍不得包含在指令、Git 跟踪文件、日志、manifest、截图、生成物、最终报告或提交记录中。该严格规则同样适用于 `standard_test` 与 `browser_acceptance` 的数据库账号密码；第 6 条只例外纯合成的被测应用账号密码。
 11. 输出要求必须报告各子进程的实际数据库用途和实际数据库名校验结果；可以按任务需要报告第 6 条的 synthetic application account password，但不得输出数据库密码、完整连接串、Cookie、Session、token 或其他严格 Secret。
 12. 如无法唯一解析用途或具体数据库，或连接后的实际数据库名与声明不一致，指令必须要求立即停止，不得自动回退到其他数据库。
 

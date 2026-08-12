@@ -122,7 +122,7 @@
 7. 无法唯一解析数据库用途类别或具体数据库时，必须停止并询问用户，不得自行选择。
 8. `none` 类任务必须保持不连接数据库，且不得无故启动应用、fixture、测试后端或其他会建立数据库连接的进程。
 9. `production_or_operations` 必须同时取得用户对目标环境和允许操作的明确授权；缺少任一项都必须停止。
-10. 数据库账号密码、完整数据库连接串、production / operations 凭据、真实开发人员或医护账号密码、真实患者相关认证凭据、可访问真实业务数据或非隔离环境的凭据、OSS AccessKey / Secret、ASR / LLM / SMS 等第三方 Secret，以及未经用户明确授权的其他 Secret，均属于严格保护对象。它们不得出现在 Codex 指令正文、Git 跟踪文件、日志、manifest、截图、生成物、最终报告或提交记录中；本规则不因数据库用途为 `standard_test` 或 `browser_acceptance` 而放宽数据库账号密码和完整连接串。
+10. 数据库账号密码、完整数据库连接串、production / operations 凭据、真实人员账号密码、真实应用用户或业务主体认证凭据、可访问真实业务数据或非隔离环境的凭据、OSS AccessKey / Secret、ASR / LLM / SMS 等第三方 Secret，以及未经用户明确授权的其他 Secret，均属于严格保护对象。它们不得出现在 Codex 指令正文、Git 跟踪文件、日志、manifest、截图、生成物、最终报告或提交记录中；本规则不因数据库用途为 `standard_test` 或 `browser_acceptance` 而放宽数据库账号密码和完整连接串。
 11. unit / E2E 创建的 synthetic application user、Browser fixture 创建的 synthetic application user，以及本地人工冒烟专用 synthetic application user，只要明确为测试或人工冒烟专用、不对应真实人员、不复用真实密码、不具备生产或真实业务数据访问能力，且创建脚本或 fixture 具有正确的环境和数据库 fail-closed 门禁，其应用账号密码属于普通测试常量。该有限规则只适用于被测应用的纯合成账号密码，不适用于第 10 条的任何严格 Secret。
 12. 符合上一条条件的 synthetic application account password 可以使用固定简单值（例如 `12345678`），可以直接写入 tracked test、fixture 或人工冒烟准备脚本，也可以在 Codex 指令、测试文档和测试结果中按需要声明。此类密码不强制来自 Git ignored 文件、环境变量、剪贴板、随机生成、Secret Manager 或父进程注入，也不要求为每个 Profile 单独生成。
 13. 同一 synthetic application account 在其 fixture namespace 或人工冒烟生命周期中仍应使用一个确定性固定值，避免无意义的密码生命周期复杂度。固定值可以由 tracked 测试常量或既有稳定配置提供；不得从数据库 URI、数据库用户密码、时间、进程值或其他 Secret 派生，也不得在不同创建、认证或校验阶段无故切换值。
