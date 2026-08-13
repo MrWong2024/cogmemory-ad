@@ -71,9 +71,9 @@
 | `BAILIAN_MODEL` | `qwen3.6-plus` | `qwen3.6-plus` | 空 | 仅占位 |
 | `BAILIAN_TIMEOUT_MS` | `90000` | `90000` | `90000` | LLM / ASR 复用请求超时；ASR stale claim 为 `max(120000, timeout*2)` |
 | `BAILIAN_MAX_RETRIES` | `1` | `1` | `1` | 仅占位 |
-| `ASR_PROVIDER` | `disabled`；可显式 `stub` / `bailian` | `disabled`；只允许 `disabled` / `bailian` | 强制 `stub` | 与 `LLM_PROVIDER` 独立；disabled 不调用外部服务，production 拒绝 stub |
-| `BAILIAN_ASR_API_URL` | 空；bailian 时 required HTTPS | 空；bailian 时 required HTTPS | 空 | 必须提供百炼同步录音文件识别的完整 workspace URL，不由代码拼接 |
-| `BAILIAN_ASR_MODEL` | disabled 时空；bailian / stub 默认 `qwen-audio-3.0-asr-flash` | disabled 时空；bailian 默认同左 | `qwen-audio-3.0-asr-flash` | C2 唯一允许的 ASR model |
+| `ASR_PROVIDER` | example 为 `bailian`；支持 `disabled` / `stub` / `bailian` | example 为 `bailian`；运行合同只允许 `disabled` / `bailian`，`stub` 解析为 `disabled` | 强制 `stub` | 与 `LLM_PROVIDER` 独立；`disabled` 不调用外部服务，`stub` 返回固定“测试转写候选”，`bailian` 调用百炼 ASR |
+| `BAILIAN_ASR_API_URL` | `https://ws-09jkdkybppp4yy0v.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation` | `https://ws-09jkdkybppp4yy0v.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation` | 空 | `bailian` 时 required 且必须为 HTTPS；必须提供完整 workspace URL，不由代码拼接 |
+| `BAILIAN_ASR_MODEL` | `qwen-audio-3.0-asr-flash` | `qwen-audio-3.0-asr-flash` | `qwen-audio-3.0-asr-flash` | C2 唯一允许的 ASR model |
 | `SMS_AUTH_PROVIDER` | `aliyun` | `aliyun` | `stub` | test 只能为 `stub` |
 | `ALIYUN_SMS_ACCESS_KEY_ID` | 空或占位 | 空或占位 | 空 | 不写真实密钥 |
 | `ALIYUN_SMS_ACCESS_KEY_SECRET` | 空或占位 | 空或占位 | 空 | 不写真实密钥 |
@@ -99,7 +99,7 @@
 - `standard_test` 与 `browser_acceptance` 的本地隔离测试凭据可由对应独立进程自动读取，但不得写入跟踪文件、文档、日志、manifest、生成物或最终报告。
 - SMS 变量当前只保留阿里云 SMS 配置口径，不代表 SMS Service 已实现。
 - LLM 变量当前只保留 `stub` / `bailian` 占位口径，不代表 LLM Service 已实现。
-- ASR 已实现 `disabled` / 确定性 `stub` / 具体 `bailian` 三种模式；bailian 配置必须同时具备非空 `BAILIAN_API_KEY`、HTTPS 完整 API URL 与固定 model。示例文件保持 disabled / placeholder，不包含签名 URL、真实 key 或私有对象信息。
+- ASR 已实现 `disabled` / 确定性 `stub` / 具体 `bailian` 三种模式；development / production example 已预置北京 Workspace 的 Bailian ASR HTTPS endpoint 与固定 model，API Key 仍为占位符；test 强制 `stub`，production 不允许 `stub`。bailian 配置必须同时具备非空 `BAILIAN_API_KEY`、HTTPS 完整 API URL 与固定 model。
 
 ## 6. 后续同步规则
 
