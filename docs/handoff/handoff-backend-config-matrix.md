@@ -52,7 +52,7 @@
 | `MONGO_ADMIN_URI` | `cogmemory_ad_dev` 口径 | required | standard_test 测试管理连接；Browser backend/fixture 按上表映射 | 仅供受控测试管理或运维场景 |
 | `MONGO_AUTO_INDEX` | 默认按非生产启用 | `false` | 默认按非生产启用 | 生产强制关闭 |
 | `MONGO_SERVER_SELECTION_TIMEOUT_MS` | `5000` | `5000` | `5000` | MongoDB 连接超时 |
-| `STORAGE_DRIVER` | `fake` | `oss` | `fake` | 支持 `fake` / `oss` |
+| `STORAGE_DRIVER` | `oss` | `oss` | `fake` | 支持 `fake` / `oss`；development / production example 使用 `oss`，test 使用 `fake` |
 | `OSS_REGION` | `oss-cn-shenzhen` | `oss-cn-shenzhen` | 可为空 | OSS 示例区域 |
 | `OSS_BUCKET` | 占位或空 | required when `oss` | 可为空 | 不写真实 bucket |
 | `OSS_INTERNAL_ENDPOINT` | `oss-cn-shenzhen.aliyuncs.com` | `oss-cn-shenzhen-internal.aliyuncs.com` | 可为空 | 后端访问 endpoint |
