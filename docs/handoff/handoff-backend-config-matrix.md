@@ -73,7 +73,7 @@
 | `BAILIAN_MAX_RETRIES` | `1` | `1` | `1` | 仅占位 |
 | `ASR_PROVIDER` | example 为 `bailian`；支持 `disabled` / `stub` / `bailian` | example 为 `bailian`；运行合同只允许 `disabled` / `bailian`，`stub` 解析为 `disabled` | 强制 `stub` | 与 `LLM_PROVIDER` 独立；`disabled` 不调用外部服务，`stub` 返回固定“测试转写候选”，`bailian` 调用百炼 ASR |
 | `BAILIAN_ASR_API_URL` | `https://ws-09jkdkybppp4yy0v.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation` | `https://ws-09jkdkybppp4yy0v.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation` | 空 | `bailian` 时 required 且必须为 HTTPS；必须提供完整 workspace URL，不由代码拼接 |
-| `BAILIAN_ASR_MODEL` | `qwen-audio-3.0-asr-flash` | `qwen-audio-3.0-asr-flash` | `qwen-audio-3.0-asr-flash` | C2 唯一允许的 ASR model |
+| `BAILIAN_ASR_MODEL` | `qwen-audio-3.0-asr-flash` | `qwen-audio-3.0-asr-flash` | 未显式设置；`stub` 运行时使用内置默认 `qwen-audio-3.0-asr-flash` | Bailian 模式固定模型；test 不调用真实 ASR |
 | `SMS_AUTH_PROVIDER` | `aliyun` | `aliyun` | `stub` | test 只能为 `stub` |
 | `ALIYUN_SMS_ACCESS_KEY_ID` | 空或占位 | 空或占位 | 空 | 不写真实密钥 |
 | `ALIYUN_SMS_ACCESS_KEY_SECRET` | 空或占位 | 空或占位 | 空 | 不写真实密钥 |
