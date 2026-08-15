@@ -15,7 +15,6 @@ import type { AssessmentExecutionApiError } from '@/src/features/assessments/api
 import {
   getScaleCapabilitySummaries,
   scaleAdministrationModeLabels,
-  scaleAdministrationModes,
 } from '@/src/features/assessments/lib/assessment-execution-display';
 import type {
   AvailableScaleOption,
@@ -29,6 +28,14 @@ export type InitializationFeedback = {
 
 const selectClassName =
   'min-h-11 w-full rounded-md border border-[var(--cma-line-strong)] bg-white px-3 py-2 text-base text-[var(--cma-text-strong)] outline-none transition-colors focus:border-[var(--cma-primary)] focus:ring-2 focus:ring-[var(--cma-ring)] disabled:bg-[var(--cma-surface-muted)] disabled:text-[var(--cma-muted)]';
+
+function getDefaultAdministrationMode(
+  scaleCode: string,
+): ScaleAdministrationMode {
+  return scaleCode.toLowerCase() === 'mmse'
+    ? 'supervised_patient_input'
+    : 'clinician_administered';
+}
 
 function getCatalogErrorMessage(error: AssessmentExecutionApiError): string {
   if (error.kind === 'forbidden') {
@@ -177,13 +184,16 @@ export function ScaleInitializationPanel({
           <div className="grid gap-4 lg:grid-cols-2">
             {scales.map((scale) => {
               const normalizedCode = scale.code.toLowerCase();
+              const isMoca = normalizedCode === 'moca';
               const isInitialized = existingScaleCodes.has(normalizedCode);
               const isThisScaleInitializing =
                 initializingScaleCode === normalizedCode;
               const isAnyScaleInitializing = initializingScaleCode !== null;
               const administrationMode =
                 administrationModes[normalizedCode] ??
-                'clinician_administered';
+                getDefaultAdministrationMode(normalizedCode);
+              const isSupervisedPatientInputAvailable =
+                normalizedCode === 'mmse';
               const capabilitySummaries = getScaleCapabilitySummaries(
                 scale.capabilities,
               );
@@ -314,12 +324,51 @@ export function ScaleInitializationPanel({
                       }
                       value={administrationMode}
                     >
-                      {scaleAdministrationModes.map((mode) => (
-                        <option key={mode} value={mode}>
-                          {scaleAdministrationModeLabels[mode]}
+                      <optgroup label="实时施测">
+                        <option
+                          disabled={!isSupervisedPatientInputAvailable}
+                          value="supervised_patient_input"
+                        >
+                          {scaleAdministrationModeLabels.supervised_patient_input}
+                          {isSupervisedPatientInputAvailable
+                            ? '（推荐）'
+                            : '（暂未开放）'}
                         </option>
-                      ))}
+                        <option value="clinician_administered">
+                          {scaleAdministrationModeLabels.clinician_administered}
+                        </option>
+                      </optgroup>
+                      <optgroup label="其他数据来源">
+                        <option disabled value="paper_import">
+                          {scaleAdministrationModeLabels.paper_import}
+                          （暂未开放）
+                        </option>
+                      </optgroup>
                     </select>
+                    <div className="grid gap-2 text-sm leading-6 text-[var(--cma-muted)]">
+                      {administrationMode ===
+                      'supervised_patient_input' ? (
+                        <>
+                          <p>
+                            患者通过语音、录音、书写等完成标准化施测，医护现场监督并最终复核。
+                          </p>
+                          <p>
+                            进入患者施测准备后，再根据现场设备条件选择同设备或双设备；两者为同级设备方式。
+                          </p>
+                        </>
+                      ) : (
+                        <p>
+                          由医护按照传统施测方式操作系统并记录患者回答，适用于患者不便直接操作设备、设备条件不足或现场需要传统施测等场景。
+                        </p>
+                      )}
+                      {isMoca ? (
+                        <p>
+                          MoCA
+                          的监督下患者作答流程尚未开放，当前可使用医护人员施测。
+                        </p>
+                      ) : null}
+                      <p>纸笔结果导入暂未开放。</p>
+                    </div>
                     <Button
                       disabled={controlsDisabled}
                       onClick={() =>

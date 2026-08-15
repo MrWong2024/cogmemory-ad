@@ -173,7 +173,9 @@
 - 职责：展示真实 MMSE / MoCA 安全目录、每张卡片的施测方式选择、已初始化 / 访视状态禁用、提交中与 success / conflict / error 状态
 - 输入：目录 loading / error / retry、既有 scaleCode、当前初始化 code、反馈、访视状态与初始化回调
 - 可访问性：select 有可见 label；错误使用 alert，成功使用 polite live region；按钮禁用时保留明确文字
-- 边界：用户不能输入 scaleCode / version；只提供三种确认施测方式；能力摘要不替代实例执行页的真实能力判断。photo / handwriting requirement 由 B5 支持媒体采集，B18-A 的实时计时只在实际执行题目内提供
+- 施测方式：继续使用原生 select，并以 optgroup 区分实时施测与其他数据来源。MMSE 默认 `supervised_patient_input` 并在初始化选项中标记推荐；`clinician_administered` 仍是可选的实时施测方式。进入患者施测准备后再按现场设备条件选择同设备或双设备，两者同级且不属于初始化 administrationMode。
+- 开放边界：`paper_import` 底层合同和普通实例展示标签保留，但初始化入口暂未开放；MoCA 的 `supervised_patient_input` 患者闭环当前尚未开放，仍默认并仅允许 `clinician_administered`。
+- 边界：用户不能输入 scaleCode / version；能力摘要不替代实例执行页的真实能力判断。photo / handwriting requirement 由 B5 支持媒体采集，B18-A 的实时计时只在实际执行题目内提供
 
 ### 6.4 Assessment Execution API Client
 

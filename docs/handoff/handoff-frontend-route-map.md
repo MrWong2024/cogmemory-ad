@@ -102,7 +102,7 @@
 - loading：认证检查由工作区承担；访视详情、量表目录与报告 latest 各自独立 loading、AbortController、错误与重试；目录或报告失败不移除访视和既有实例
 - 链接无效：任一动态参数不符合 24 位 MongoId 时不发送 A13 请求，显示“访视链接无效”并提供返回入口
 - 401 / 403 / 404：401 返回 `/login`；403 显示无权限及工作台 / 退出登录入口；患者不存在与访视不存在或归属不符使用不同稳定文案
-- 初始化能力：仅 `draft` / `in_progress` 可操作；选择三种已确认施测方式之一，只提交 scaleCode / scaleVersion / administrationMode；已初始化 scaleCode 禁用按钮；重复冲突刷新详情
+- 初始化能力：仅 `draft` / `in_progress` 可操作；使用原生下拉框选择当前开放的施测方式，只提交 scaleCode / scaleVersion / administrationMode。MMSE 默认监督下患者作答，医护人员施测仍是兼容实时模式；paper import 当前未开放，MoCA supervised patient input 待对应患者端闭环开放。已初始化 scaleCode 禁用按钮；重复冲突刷新详情
 - 成功：以服务端返回的 ScaleInstance 更新列表并展示 `createdItemResponseCount` 题目记录骨架数量，不展示 ItemResponse 全量
 - 报告 scope：无报告时由用户从当前访视 completed / locked 实例中明确选择 1-10 项；draft / in_progress / voided 不可选，初始不自动选择。候选状态不等于后端评分 / 认知域 / 媒体前置条件，不扇出 A17 / A19 readiness 请求。
 - 报告生成：用户须阅读 scope 固定、version 1、system_draft、未使用 AI、未医生确认与非诊断说明并勾选 checkbox；POST 只发送 confirm 与稳定排序实例 ID。生成期间禁用 scope 与初始化提交，不自动重试。
