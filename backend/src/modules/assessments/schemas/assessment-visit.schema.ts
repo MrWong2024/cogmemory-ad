@@ -92,6 +92,12 @@ export class AssessmentVisit {
   voidedAt?: Date | null;
 
   @Prop({ type: AssessmentOperatorSnapshotSchema, default: null })
+  voidedBy?: AssessmentOperatorSnapshot | null;
+
+  @Prop({ type: String, trim: true, maxlength: 500 })
+  voidReason?: string;
+
+  @Prop({ type: AssessmentOperatorSnapshotSchema, default: null })
   operatorSnapshot?: AssessmentOperatorSnapshot | null;
 
   @Prop({ type: SchemaTypes.Mixed, default: null })

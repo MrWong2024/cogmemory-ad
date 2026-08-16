@@ -10,7 +10,7 @@
 - `AuthModule` 当前新增 `AuthController`，仅暴露最小公开认证 API 底座；主登录态仍为服务端 Session + HttpOnly Cookie，不采用 JWT 主登录态。
 - AuthModule 内部 session cookie 名称已统一为 `cogmemory_ad_session`，登录成功下发 HttpOnly Cookie，`SameSite=Lax`，`Path=/`，production 环境启用 `Secure`。
 - 当前没有 users controller，没有公开用户管理 API，没有注册、密码重置、角色权限管理、短信验证码、OAuth / SSO 或 JWT 登录 API。
-- A12 已新增 `PatientsController` 与 `AssessmentVisitsController`，形成第一组受保护临床业务 API；所有五个接口均显式绑定 `SessionAuthGuard`、`RolesGuard` 和 `@Roles('admin', 'doctor', 'nurse', 'research_assistant')`。
+- A12 已新增 `PatientsController` 与 `AssessmentVisitsController`，形成第一组受保护临床业务 API；本次提前实现 WP-12 的访视维护窄切片，在既有 `AssessmentVisitsController` 增加 edit / physical delete / void，继续显式绑定 `SessionAuthGuard`、`RolesGuard` 和患者工作流角色。
 - 当前已有实例 submission、评分、认知域、报告与历史趋势接口；WP-10-B 共提供十二个 staff 会话 / 步骤控制接口和五个 patient 会话 / 步骤 / 资产接口，C1 增加患者当前步骤 evidence 上传，C2 增加显式转写与最新会话复核。自动转写候选不会写入正式 `ItemResponse`；WP-10 的 F1/F2 正常 MMSE 19 步、F2-P2 recovery、F3 正常作答复核及 completed session gate 均已完成。F3 继续复用现有 review / A14 / readiness / A16 API，本次没有后端 endpoint、DTO、Schema、Guard、权限或状态机变化。
 - 当前 API 事实以实际 Controller、DTO、response type 和对应单元 / E2E 测试为准。
 
@@ -141,10 +141,37 @@
 - Roles：`admin`、`doctor`、`nurse`、`research_assistant`
 - Param DTO：`PatientVisitParamDto`；patientId / visitId 均使用 `@IsMongoId()`
 - Query / Body DTO：无
-- 响应：`AssessmentVisitExecutionDetailResponse`，结构为 `{ visit, scaleInstances }`；visit 对齐 A12 `AssessmentVisitDetailResponse`，scaleInstances 为 `ScaleInstanceListItemResponse[]`
+- 响应：`AssessmentVisitExecutionDetailResponse`，结构为 `{ visit, scaleInstances, visitMaintenance }`；visit 对齐 A12 `AssessmentVisitDetailResponse` 并安全公开 `voidedBy` / `voidReason`，scaleInstances 为 `ScaleInstanceListItemResponse[]`；`visitMaintenance` 仅包含 `canEdit`、`canDelete`、`canVoid`、`initializedScaleCount`
 - 归属与排序：先确认患者存在，再以 patientId + visitId 联合查询；跨患者访问同样返回 `VISIT_NOT_FOUND`；实例按 scaleCode、instanceNo 排序
+- 维护资格：服务端同时核对 Visit、全部 ScaleInstance、ItemResponse 初始化骨架与任意状态 PatientAdministrationSession；纯初始化不算开始，任一会话或真实作答 / 计时 / 评分 / Evidence / barrier / 锁定 / 作废事实都会使整个 Visit 只能作废。已作废三项能力均为 false；列表 API 不计算该资格
 - 错误状态与 code：路径无效 400；未认证 401；角色不足 403；患者不存在 404 / `PATIENT_NOT_FOUND`；访视不存在或不属于患者 404 / `VISIT_NOT_FOUND`
 - 敏感字段边界：实例不返回 scaleDefinitionId、scaleVersionId、metadata、qualityControlSummary、ItemResponse 全量数据、Mixed 原始字段、scoringRule、externalRefs、clinicalContext 或 `__v`；progress 由实际 ItemResponse 数量与 answered / scored 状态实时派生，仅输出安全整数 totalItemCount / answeredItemCount，不回写 ScaleInstance.progress
+
+- 接口名称：编辑尚未开始的患者访视
+- Method：`PATCH`
+- Path：`/patients/:patientId/visits/:visitId`
+- Guard / Roles：`SessionAuthGuard` + `RolesGuard`；`admin`、`doctor`、`nurse`、`research_assistant`
+- Body DTO：`UpdateAssessmentVisitDto`；只允许可选 `visitCode`、`visitType`、`assessmentDate`、`notes`，但至少必须提供一个字段；`notes: ''` 清空备注
+- 响应：200，最新 `AssessmentVisitExecutionDetailResponse`
+- 错误状态与 code：空 patch 为 400 / `VISIT_UPDATE_EMPTY_PATCH`；维护资格不允许为 409 / `VISIT_NOT_EDITABLE`；重复编号继续为 409 / `VISIT_CODE_CONFLICT`；写入前重新计算服务端资格
+
+- 接口名称：物理删除尚未开始的患者访视
+- Method：`DELETE`
+- Path：`/patients/:patientId/visits/:visitId`
+- Guard / Roles：`SessionAuthGuard` + `RolesGuard`；`admin`、`doctor`、`nurse`、`research_assistant`
+- Body DTO：无
+- 响应：204，无响应体
+- 删除边界：空 Visit 直接删除；initialized-only Visit 按 ItemResponse skeleton → ScaleInstance → AssessmentVisit 顺序删除，只处理当前 patient + visit + instance 所有权范围，不删除 Patient、目录、展示资产或其他 Visit
+- 错误状态与 code：服务端资格不允许为 409 / `VISIT_NOT_DELETABLE`；任意状态 PatientAdministrationSession 均在删除前阻断
+
+- 接口名称：作废已进入实际评估的患者访视
+- Method：`POST`
+- Path：`/patients/:patientId/visits/:visitId/void`
+- Guard / Roles：`SessionAuthGuard` + `RolesGuard`；`admin`、`doctor`、`nurse`、`research_assistant`
+- Body DTO：`VoidAssessmentVisitDto { confirm: true, reason }`；reason trim 后 3–500 字符
+- 响应：201，最新 `AssessmentVisitExecutionDetailResponse`；首次写入 status=voided、服务端 voidedAt、当前 operator `voidedBy` 与 `voidReason`
+- 幂等与保留：已 voided 再调用返回当前详情，不改写原审计字段；不级联修改或删除 ScaleInstance、ItemResponse、PatientAdministrationSession、Evidence、评分、报告或历史
+- 错误状态与 code：仍可物理删除的 pre-assessment Visit 为 409 / `VISIT_NOT_VOIDABLE`
 
 - 接口名称：初始化访视量表实例
 - Method：`POST`

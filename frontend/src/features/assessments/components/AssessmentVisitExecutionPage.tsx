@@ -26,6 +26,7 @@ import {
 } from '@/src/features/assessments/components/ScaleInitializationPanel';
 import { ClinicalReportPanel } from '@/src/features/assessments/components/ClinicalReportPanel';
 import { ClinicalReportVersionPanel } from '@/src/features/assessments/components/ClinicalReportVersionPanel';
+import { AssessmentVisitMaintenancePanel } from '@/src/features/assessments/components/AssessmentVisitMaintenancePanel';
 import { ScaleInstanceList } from '@/src/features/assessments/components/ScaleInstanceList';
 import { useClinicalReport } from '@/src/features/assessments/hooks/useClinicalReport';
 import { useClinicalReportWorkflow } from '@/src/features/assessments/hooks/useClinicalReportWorkflow';
@@ -49,6 +50,7 @@ import { usePatientsWorkspaceUser } from '@/src/features/patients/components/Pat
 
 const mongoIdPattern = /^[a-f\d]{24}$/i;
 const emptyScaleInstances: ScaleInstanceListItem[] = [];
+type MaintenanceWritingAction = 'edit' | 'delete' | 'void';
 
 const secondaryLinkClassName =
   'inline-flex min-h-11 items-center justify-center rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-surface)] px-4 py-2 text-base font-semibold text-[var(--cma-text-strong)] transition-colors hover:border-[var(--cma-primary)] hover:bg-[var(--cma-primary-soft)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cma-ring)]';
@@ -167,6 +169,7 @@ export function AssessmentVisitExecutionPage({
   const currentUser = usePatientsWorkspaceUser();
   const mountedRef = useRef(true);
   const initializingScaleCodeRef = useRef<string | null>(null);
+  const maintenanceWritingRef = useRef<MaintenanceWritingAction | null>(null);
   const idsAreValid =
     mongoIdPattern.test(patientId) && mongoIdPattern.test(visitId);
   const [detail, setDetail] =
@@ -189,6 +192,8 @@ export function AssessmentVisitExecutionPage({
     ReadonlySet<string>
   >(() => new Set());
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const [maintenanceWritingAction, setMaintenanceWritingAction] =
+    useState<MaintenanceWritingAction | null>(null);
 
   const handleUnauthorized = useCallback(() => {
     router.replace('/login');
@@ -196,6 +201,22 @@ export function AssessmentVisitExecutionPage({
   const handleRefreshVisitDetail = useCallback(() => {
     setDetailRetryKey((value) => value + 1);
   }, []);
+  const handleMaintenanceWritingChange = useCallback(
+    (action: MaintenanceWritingAction | null) => {
+      maintenanceWritingRef.current = action;
+      setMaintenanceWritingAction(action);
+    },
+    [],
+  );
+  const handleMaintenanceDetailUpdated = useCallback(
+    (response: AssessmentVisitExecutionDetailResponse) => {
+      setDetail({
+        ...response,
+        scaleInstances: sortScaleInstances(response.scaleInstances),
+      });
+    },
+    [],
+  );
   const detailMatchesRoute =
     detail !== null &&
     detail.visit.id.trim().toLowerCase() === visitId.trim().toLowerCase() &&
@@ -213,7 +234,9 @@ export function AssessmentVisitExecutionPage({
       ? '访视详情正在加载，请等待完成后再生成报告。'
       : initializingScaleCode !== null
         ? '量表初始化正在进行，请等待完成后再生成报告。'
-        : null,
+        : maintenanceWritingAction !== null
+          ? '访视维护写请求正在进行，请等待完成后再生成报告。'
+          : null,
     onUnauthorized: handleUnauthorized,
   });
   const reportWorkflow = useClinicalReportWorkflow({
@@ -225,6 +248,7 @@ export function AssessmentVisitExecutionPage({
     reportWriteBlocked:
       isDetailLoading ||
       initializingScaleCode !== null ||
+      maintenanceWritingAction !== null ||
       reportState.generating,
     onUnauthorized: handleUnauthorized,
     onReportUpdated: reportState.applyClinicalReport,
@@ -374,6 +398,7 @@ export function AssessmentVisitExecutionPage({
       !detail ||
       reportState.generating ||
       reportWorkflow.writingAction !== null ||
+      maintenanceWritingRef.current !== null ||
       initializingScaleCodeRef.current !== null ||
       existingScaleCodes.has(normalizedCode) ||
       !canInitializeScaleForVisit(detail.visit.status)
@@ -424,6 +449,7 @@ export function AssessmentVisitExecutionPage({
         kind: 'success',
         message: `已初始化 ${response.scale.shortName || response.scale.code.toUpperCase()}，共创建 ${response.createdItemResponseCount} 条题目记录骨架。现在可从实例列表打开量表进行逐题草稿记录。`,
       });
+      setDetailRetryKey((value) => value + 1);
     } catch (requestError: unknown) {
       if (!mountedRef.current) {
         return;
@@ -701,6 +727,25 @@ export function AssessmentVisitExecutionPage({
         </CardContent>
       </Card>
 
+      <AssessmentVisitMaintenancePanel
+        externalBusyReason={
+          initializingScaleCode !== null
+            ? '量表初始化正在进行，访视维护操作已临时停用。'
+            : reportState.generating
+              ? '正在生成规则化报告草稿，访视维护操作已临时停用。'
+              : reportWorkflow.writingAction !== null
+                ? '正在执行报告写操作，访视维护操作已临时停用。'
+                : null
+        }
+        maintenance={detail.visitMaintenance}
+        onDetailUpdated={handleMaintenanceDetailUpdated}
+        onRefreshRequested={handleRefreshVisitDetail}
+        onWritingChange={handleMaintenanceWritingChange}
+        patientId={patientId}
+        visit={visit}
+        visitId={visitId}
+      />
+
       <ScaleInstanceList
         catalog={scales}
         instances={detail.scaleInstances}
@@ -727,7 +772,9 @@ export function AssessmentVisitExecutionPage({
             ? '正在生成规则化报告草稿，量表初始化提交已临时停用。'
             : reportWorkflow.writingAction !== null
               ? '正在执行报告写操作，量表初始化提交已临时停用。'
-              : null
+              : maintenanceWritingAction !== null
+                ? '正在执行访视维护操作，量表初始化提交已临时停用。'
+                : null
         }
         feedback={initializationFeedback}
         initializingScaleCode={initializingScaleCode}

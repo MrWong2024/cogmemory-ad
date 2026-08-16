@@ -5,6 +5,8 @@ import type {
   AvailableScaleListResponse,
   InitializeScaleInstanceRequest,
   InitializeScaleInstanceResponse,
+  UpdateAssessmentVisitRequest,
+  VoidAssessmentVisitRequest,
 } from '@/src/features/assessments/types/assessment-execution';
 import type {
   ScaleInstanceExecutionDetailResponse,
@@ -46,6 +48,10 @@ export type AssessmentExecutionApiErrorKind =
   | 'scale_instance_submission_audit_unavailable'
   | 'scale_instance_submission_failed'
   | 'visit_not_editable'
+  | 'visit_not_deletable'
+  | 'visit_not_voidable'
+  | 'visit_update_empty_patch'
+  | 'visit_code_conflict'
   | 'item_response_not_found'
   | 'item_response_not_editable'
   | 'item_response_draft_conflict'
@@ -119,6 +125,10 @@ function mapHttpError(
     VISIT_NOT_FOUND: 'visit_not_found',
     VISIT_NOT_INITIALIZABLE: 'visit_not_initializable',
     VISIT_NOT_EDITABLE: 'visit_not_editable',
+    VISIT_NOT_DELETABLE: 'visit_not_deletable',
+    VISIT_NOT_VOIDABLE: 'visit_not_voidable',
+    VISIT_UPDATE_EMPTY_PATCH: 'visit_update_empty_patch',
+    VISIT_CODE_CONFLICT: 'visit_code_conflict',
     SCALE_NOT_AVAILABLE: 'scale_not_available',
     SCALE_VERSION_NOT_AVAILABLE: 'scale_version_not_available',
     SCALE_NOT_ACTIVE: 'scale_not_active',
@@ -252,6 +262,69 @@ export async function getAssessmentVisitExecutionDetail(
       method: 'GET',
       signal: options.signal,
     },
+  );
+
+  return readJson<AssessmentVisitExecutionDetailResponse>(response);
+}
+
+export async function updateAssessmentVisit(
+  patientId: string,
+  visitId: string,
+  input: UpdateAssessmentVisitRequest,
+): Promise<AssessmentVisitExecutionDetailResponse> {
+  const requestBody: UpdateAssessmentVisitRequest = {
+    ...(input.visitCode !== undefined ? { visitCode: input.visitCode } : {}),
+    ...(input.visitType !== undefined ? { visitType: input.visitType } : {}),
+    ...(input.assessmentDate !== undefined
+      ? { assessmentDate: input.assessmentDate }
+      : {}),
+    ...(input.notes !== undefined ? { notes: input.notes } : {}),
+  };
+  const response = await assessmentExecutionFetch(
+    `/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}`,
+    {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    },
+    { uncertainWrite: true },
+  );
+
+  return readJson<AssessmentVisitExecutionDetailResponse>(response);
+}
+
+export async function deleteAssessmentVisit(
+  patientId: string,
+  visitId: string,
+): Promise<void> {
+  await assessmentExecutionFetch(
+    `/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}`,
+    { method: 'DELETE' },
+    { uncertainWrite: true },
+  );
+}
+
+export async function voidAssessmentVisit(
+  patientId: string,
+  visitId: string,
+  input: VoidAssessmentVisitRequest,
+): Promise<AssessmentVisitExecutionDetailResponse> {
+  const requestBody: VoidAssessmentVisitRequest = {
+    confirm: input.confirm,
+    reason: input.reason,
+  };
+  const response = await assessmentExecutionFetch(
+    `/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/void`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    },
+    { uncertainWrite: true },
   );
 
   return readJson<AssessmentVisitExecutionDetailResponse>(response);

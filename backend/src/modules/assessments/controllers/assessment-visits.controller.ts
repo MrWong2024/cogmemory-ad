@@ -1,7 +1,10 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
+  Patch,
   Post,
   Query,
   Param,
@@ -19,6 +22,8 @@ import { InitializeScaleInstanceDto } from '../dto/initialize-scale-instance.dto
 import { ListAssessmentVisitsQueryDto } from '../dto/list-assessment-visits-query.dto';
 import { PatientVisitParamDto } from '../dto/patient-visit-param.dto';
 import { PatientVisitsParamDto } from '../dto/patient-visits-param.dto';
+import { UpdateAssessmentVisitDto } from '../dto/update-assessment-visit.dto';
+import { VoidAssessmentVisitDto } from '../dto/void-assessment-visit.dto';
 import type { AssessmentOperatorRole } from '../schemas/assessment-visit.schema';
 import { AssessmentScaleWorkflowService } from '../services/assessment-scale-workflow.service';
 import {
@@ -80,6 +85,43 @@ export class AssessmentVisitsController {
     return this.assessmentsService.getVisitExecutionDetail(
       params.patientId,
       params.visitId,
+    );
+  }
+
+  @Patch(':visitId')
+  updateVisit(
+    @Param() params: PatientVisitParamDto,
+    @Body() updateAssessmentVisitDto: UpdateAssessmentVisitDto,
+  ): Promise<AssessmentVisitExecutionDetailResponse> {
+    return this.assessmentsService.updateVisitForPatient(
+      params.patientId,
+      params.visitId,
+      updateAssessmentVisitDto,
+    );
+  }
+
+  @Delete(':visitId')
+  @HttpCode(204)
+  async deleteVisit(@Param() params: PatientVisitParamDto): Promise<void> {
+    await this.assessmentsService.deleteVisitForPatient(
+      params.patientId,
+      params.visitId,
+    );
+  }
+
+  @Post(':visitId/void')
+  voidVisit(
+    @Param() params: PatientVisitParamDto,
+    @Body() voidAssessmentVisitDto: VoidAssessmentVisitDto,
+    @CurrentUser() currentUser: AuthenticatedUserContext | undefined,
+  ): Promise<AssessmentVisitExecutionDetailResponse> {
+    return this.assessmentsService.voidVisitForPatient(
+      params.patientId,
+      params.visitId,
+      {
+        ...voidAssessmentVisitDto,
+        operatorSnapshot: this.buildOperatorSnapshot(currentUser),
+      },
     );
   }
 

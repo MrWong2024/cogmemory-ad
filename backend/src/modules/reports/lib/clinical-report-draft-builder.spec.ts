@@ -364,6 +364,7 @@ describe('clinical-report-draft-builder', () => {
       completedAt: null,
       lockedAt: null,
       voidedAt: null,
+      voidedBy: null,
       operatorSnapshot: {
         operatorId: ids.actor,
         operatorName: '脱敏医生',

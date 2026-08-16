@@ -271,6 +271,7 @@ function createDetail(
       completedAt: null,
       lockedAt: null,
       voidedAt: null,
+      voidedBy: null,
       operatorSnapshot: null,
     },
     scale: { code: 'SCALE_A', name: '测试量表', version: '1.0.0' },

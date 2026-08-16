@@ -93,6 +93,8 @@ export type AssessmentVisit = {
   completedAt: string | null;
   lockedAt: string | null;
   voidedAt: string | null;
+  voidedBy: AssessmentVisitOperator | null;
+  voidReason?: string;
   operatorSnapshot: AssessmentVisitOperator | null;
   notes?: string;
 };

@@ -104,14 +104,14 @@
 
 - Service 名称：`AssessmentsService`
 - 文件路径：`backend\src\modules\assessments\services\assessments.service.ts`
-- 职责边界：保留访视、量表实例和题目作答内部读取底座，并承担 A12 患者访视分页、访视创建、安全公开响应映射、A14 联合归属读取和实际进度统计；A30 内部 summary 携带原始 submission barrier 供 workflow fail-closed 判断，但公开 mapper 不透传。
-- 当前方法：保留既有所有方法；A14 提供 `findScaleInstanceByPatientVisitAndId()`、`findItemResponseByOwnership()`、`countItemResponseProgress()` 与公开内部 mapper 入口，A15 attach / clear 条件写入增加父 / 子 barrier open，A13 `getVisitExecutionDetail()` 使用实际 ItemResponse 计数而非 ScaleInstance.progress Mixed 快照。
+- 职责边界：保留访视、量表实例和题目作答内部读取底座，并承担 A12 患者访视分页 / 创建、安全公开响应映射、A14 联合归属读取和实际进度统计；本次提前承担 WP-12 访视 edit / physical delete / void 的服务端权威资格判断。A30 内部 summary 携带原始 submission barrier 供 workflow fail-closed 判断，但公开 mapper 不透传。
+- 当前方法：`getVisitExecutionDetail()` 返回实际 ItemResponse 进度与 `visitMaintenance`；新增 `updateVisitForPatient()`、`deleteVisitForPatient()`、`voidVisitForPatient()`。A14 / A15 / A30 既有联合读取和 barrier 条件写方法保持不变。
 - 上游调用方：`AssessmentVisitsController`；既有内部调用方可继续复用旧方法。
-- 下游依赖：`AssessmentVisit`、`ScaleInstance`、`ItemResponse` Mongoose Model 和 `PatientsService`；`AssessmentsModule` 导入 `PatientsModule`、`AuthModule`、`ScalesModule`。
-- 规则与异常：先确认患者存在；非 active 返回 409 / `PATIENT_NOT_ACTIVE`；visitCode trim + uppercase；重复编号预检查并捕获 MongoDB 11000，统一为 `VISIT_CODE_CONFLICT`；dateFrom 晚于 dateTo 返回 400 / `INVALID_DATE_RANGE`。
+- 下游依赖：`AssessmentVisit`、`ScaleInstance`、`ItemResponse`、既已注册的 `PatientAdministrationSession` Mongoose Model 和 `PatientsService`；没有新增 module 依赖。
+- 规则与异常：先确认患者与 Visit 联合归属；visitCode trim + uppercase，重复编号统一为 `VISIT_CODE_CONFLICT`。维护资格不依赖 progress 或 Visit status 单点推断：Visit / 全部实例 / 全部题目都必须满足纯初始化字段矩阵，且任一实例 ID 下 PatientAdministrationSession 必须为 0；任意 session 状态都算历史执行事实。
 - 创建所有权：patientId 来自路径，subjectCode 来自 Patient，status 固定 draft，operatorSnapshot 由 Controller 认证上下文生成；不接受客户端状态时间、clinicalContext 或 metadata。
-- 边界：自身不更新、删除访视或流转状态；A13 初始化与 A14 草稿写入均由独立 Service 编排。访视详情先确认患者，再联合 patientId + visitId 查询；ScaleInstance 公开 mapper 不返回 definition / version ID、metadata、qualityControlSummary 或 Mixed 原始字段；实际进度不持久化回写。
-- 测试覆盖口径：service spec 覆盖联合归属、详情、实例查重、排序、安全 mapper，以及实际 total / answered 计数与 A13 进度修正；不连接真实 MongoDB。
+- 维护写边界：纯 pre-assessment Visit 可编辑 / 物理删除且不可作废；删除仅顺序移除当前 Visit 的 ItemResponse skeleton、ScaleInstance 与 AssessmentVisit。存在真实执行事实且未 voided 时只可首次作废；作废仅写 Visit 审计，不修改或删除实例、作答、患者会话、Evidence、评分、报告或历史；重复作废不覆盖原审计。
+- 测试覆盖口径：service spec 以当前 seed prompt / evidence note 验证 pristine classifier，并覆盖答案、计时、评分、step note、Evidence 与任意 Session 代表矩阵；目标 HTTP E2E 覆盖空 / initialized-only 编辑删除、级联范围、真实草稿与 open / terminal Session 阻断、首次 / 幂等作废和事实保留。
 
 - Service 名称：`PatientAdministrationSessionService`
 - 文件路径：`backend\src\modules\assessments\services\patient-administration-session.service.ts`
@@ -284,11 +284,11 @@
 
 - Controller 名称：`AssessmentVisitsController`
 - 文件路径：`backend\src\modules\assessments\controllers\assessment-visits.controller.ts`
-- 职责边界：绑定患者访视列表 / 创建路由、DTO、Guard 和角色；从 `@CurrentUser()` 构建 operatorSnapshot 后调用 `AssessmentsService`。
-- 公开接口：`GET /patients/:patientId/visits`、`POST /patients/:patientId/visits`、`GET /patients/:patientId/visits/:visitId`、`POST /patients/:patientId/visits/:visitId/scale-instances`。
+- 职责边界：绑定患者访视列表 / 创建 / 详情 / 编辑 / 删除 / 作废与量表初始化路由、DTO、Guard 和角色；创建与作废从 `@CurrentUser()` 构建 operatorSnapshot 后调用 `AssessmentsService`。
+- 公开接口：`GET /patients/:patientId/visits`、`POST /patients/:patientId/visits`、`GET|PATCH|DELETE /patients/:patientId/visits/:visitId`、`POST /patients/:patientId/visits/:visitId/void`、`POST /patients/:patientId/visits/:visitId/scale-instances`。
 - operatorRole 优先级：doctor > nurse > research_assistant > admin > unknown；客户端不能传入或覆盖 operatorSnapshot。
 - 权限：仅 `admin`、`doctor`、`nurse`、`research_assistant`；未认证 401，角色不足 403；没有注册全局 Guard。
-- 测试覆盖口径：controller spec 覆盖 Guards / Roles metadata、四个路由参数、当前用户映射和角色优先级；DTO spec 覆盖双 MongoId、scale code / version 转换、施测模式和全部服务器字段白名单拒绝。
+- 测试覆盖口径：controller spec 覆盖 Guards / Roles metadata、维护路由 delegation、作废当前用户映射和角色优先级；DTO spec 覆盖双 MongoId、更新字段转换 / 清空备注、作废确认 / 原因及全部服务器字段白名单拒绝。
 
 - Controller 名称：`AuthController`
 - 文件路径：`backend\src\modules\auth\auth.controller.ts`

@@ -26,6 +26,7 @@ import {
   ScaleInstance,
   ScaleInstanceSchema,
 } from '../schemas/scale-instance.schema';
+import { PatientAdministrationSession } from '../schemas/patient-administration-session.schema';
 import { AssessmentsService } from './assessments.service';
 
 function createExecQuery<T>(value: T) {
@@ -85,6 +86,128 @@ function createPatientSummary(
   };
 }
 
+function createVisitDocumentLike(
+  patientId: Types.ObjectId,
+  visitId: Types.ObjectId,
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    _id: visitId,
+    patientId,
+    subjectCode: 'SUBJ-TEST-MAINTENANCE',
+    visitCode: 'VISIT-TEST-MAINTENANCE',
+    visitType: 'baseline',
+    status: 'draft',
+    assessmentDate: new Date('2026-08-01T08:00:00.000Z'),
+    startedAt: null,
+    completedAt: null,
+    lockedAt: null,
+    voidedAt: null,
+    voidedBy: null,
+    operatorSnapshot: null,
+    clinicalContext: null,
+    metadata: null,
+    ...overrides,
+  };
+}
+
+function createScaleInstanceDocumentLike(
+  patientId: Types.ObjectId,
+  visitId: Types.ObjectId,
+  scaleInstanceId: Types.ObjectId,
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    _id: scaleInstanceId,
+    assessmentVisitId: visitId,
+    patientId,
+    subjectCode: 'SUBJ-TEST-MAINTENANCE',
+    scaleDefinitionId: new Types.ObjectId(),
+    scaleVersionId: new Types.ObjectId(),
+    scaleCode: 'mmse',
+    scaleVersion: '1.0',
+    instanceCode: 'INST-TEST-MAINTENANCE-MMSE-1',
+    instanceNo: 1,
+    status: 'draft',
+    administrationMode: 'clinician_administered',
+    versionTrace: null,
+    startedAt: null,
+    completedAt: null,
+    lockedAt: null,
+    voidedAt: null,
+    durationMs: null,
+    operatorSnapshot: null,
+    progress: { totalItemCount: 1, answeredItemCount: 0 },
+    qualityControlSummary: null,
+    submissionWriteBarrier: null,
+    metadata: { initializedFromSeed: true },
+    ...overrides,
+  };
+}
+
+function createPristineItemResponseDocumentLike(
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    status: 'not_started',
+    draftRevision: 0,
+    draftSavedAt: null,
+    rawResponse: null,
+    structuredResponse: null,
+    isMissing: false,
+    score: {
+      scoreValue: null,
+      maxScore: 1,
+      minScore: 0,
+      scoreStatus: 'not_scored',
+      scoreSource: 'none',
+      scoredAt: null,
+      scoredBy: null,
+    },
+    stepResults: [
+      {
+        stepCode: 'seed-step',
+        order: 1,
+        expectedValue: 'seed-expected',
+        actualValue: null,
+        isCorrect: null,
+        scoreValue: null,
+        countsTowardItemScore: true,
+      },
+    ],
+    promptResponses: [
+      {
+        promptType: 'semantic_category',
+        responseAfterPrompt: null,
+        isCorrect: null,
+        countsTowardScore: false,
+        order: 1,
+        note: 'Initialized from seed prompt record.',
+      },
+    ],
+    timing: {
+      timerState: 'idle',
+      startedAt: null,
+      lastResumedAt: null,
+      completedAt: null,
+      durationMs: null,
+      timerSource: 'none',
+    },
+    evidenceRefs: [
+      {
+        evidenceType: 'duration',
+        mediaEvidenceId: null,
+        status: 'pending',
+        note: 'Initialized from scale seed.',
+      },
+    ],
+    submissionWriteBarrier: null,
+    lockedAt: null,
+    voidedAt: null,
+    ...overrides,
+  };
+}
+
 describe('Assessment schemas', () => {
   it('defines AssessmentVisit collection and indexes', () => {
     expect(AssessmentVisitSchema.get('collection')).toBe('assessment_visits');
@@ -107,6 +230,10 @@ describe('Assessment schemas', () => {
     expect(AssessmentVisitSchema.path('completedAt')?.instance).toBe('Date');
     expect(AssessmentVisitSchema.path('lockedAt')?.instance).toBe('Date');
     expect(AssessmentVisitSchema.path('voidedAt')?.instance).toBe('Date');
+    expect(AssessmentVisitSchema.path('voidedBy.operatorId')?.instance).toBe(
+      'ObjectId',
+    );
+    expect(AssessmentVisitSchema.path('voidReason')?.instance).toBe('String');
     expect(
       AssessmentVisitSchema.path('operatorSnapshot.operatorId')?.instance,
     ).toBe('ObjectId');
@@ -298,17 +425,24 @@ describe('AssessmentsService', () => {
     find: jest.Mock;
     countDocuments: jest.Mock;
     create: jest.Mock;
+    findOneAndUpdate: jest.Mock;
+    deleteOne: jest.Mock;
   };
   let scaleInstanceModel: {
     findOne: jest.Mock;
     findOneAndUpdate: jest.Mock;
     find: jest.Mock;
+    deleteMany: jest.Mock;
   };
   let itemResponseModel: {
     findOne: jest.Mock;
     findOneAndUpdate: jest.Mock;
     find: jest.Mock;
     countDocuments: jest.Mock;
+    deleteMany: jest.Mock;
+  };
+  let patientAdministrationSessionModel: {
+    exists: jest.Mock;
   };
   let patientsService: {
     findPatientById: jest.Mock;
@@ -320,17 +454,24 @@ describe('AssessmentsService', () => {
       find: jest.fn(),
       countDocuments: jest.fn(),
       create: jest.fn(),
+      findOneAndUpdate: jest.fn(),
+      deleteOne: jest.fn(),
     };
     scaleInstanceModel = {
       findOne: jest.fn(),
       findOneAndUpdate: jest.fn(),
       find: jest.fn(),
+      deleteMany: jest.fn(),
     };
     itemResponseModel = {
       findOne: jest.fn(),
       findOneAndUpdate: jest.fn(),
       find: jest.fn(),
       countDocuments: jest.fn(),
+      deleteMany: jest.fn(),
+    };
+    patientAdministrationSessionModel = {
+      exists: jest.fn(),
     };
     patientsService = {
       findPatientById: jest.fn(),
@@ -352,6 +493,10 @@ describe('AssessmentsService', () => {
           useValue: itemResponseModel,
         },
         {
+          provide: getModelToken(PatientAdministrationSession.name),
+          useValue: patientAdministrationSessionModel,
+        },
+        {
           provide: PatientsService,
           useValue: patientsService,
         },
@@ -359,6 +504,10 @@ describe('AssessmentsService', () => {
     }).compile();
 
     service = moduleRef.get(AssessmentsService);
+    itemResponseModel.find.mockReturnValue(createExecQuery([]));
+    patientAdministrationSessionModel.exists.mockReturnValue(
+      createExecQuery(null),
+    );
   });
 
   afterEach(() => {
@@ -532,6 +681,7 @@ describe('AssessmentsService', () => {
       completedAt: null,
       lockedAt: null,
       voidedAt: null,
+      voidedBy: null,
       operatorSnapshot: {
         operatorId,
         operatorName: 'Sample Operator',
@@ -558,6 +708,8 @@ describe('AssessmentsService', () => {
       completedAt: null,
       lockedAt: null,
       voidedAt: null,
+      voidedBy: null,
+      voidReason: undefined,
       operatorSnapshot: {
         operatorId: operatorId.toString(),
         operatorName: 'Sample Operator',
@@ -618,6 +770,8 @@ describe('AssessmentsService', () => {
         completedAt: null,
         lockedAt: null,
         voidedAt: null,
+        voidedBy: null,
+        voidReason: undefined,
         operatorSnapshot: null,
         clinicalContext: null,
         notes: undefined,
@@ -774,6 +928,7 @@ describe('AssessmentsService', () => {
       completedAt: null,
       lockedAt: null,
       voidedAt: null,
+      voidedBy: null,
       operatorSnapshot: {
         operatorId,
         operatorName: 'Sample Operator',
@@ -871,6 +1026,7 @@ describe('AssessmentsService', () => {
       completedAt: null,
       lockedAt: null,
       voidedAt: null,
+      voidedBy: null,
       operatorSnapshot: null,
       clinicalContext: { hidden: true },
       metadata: { hidden: true },
@@ -1249,12 +1405,213 @@ describe('AssessmentsService', () => {
       }),
     ]);
     expect(result.scaleInstances[0]).not.toHaveProperty('metadata');
+    expect(result.visitMaintenance).toEqual({
+      canEdit: true,
+      canDelete: true,
+      canVoid: false,
+      initializedScaleCount: 1,
+    });
     expect(itemResponseModel.countDocuments).toHaveBeenNthCalledWith(1, {
       scaleInstanceId: instanceId,
     });
     expect(itemResponseModel.countDocuments).toHaveBeenNthCalledWith(2, {
       scaleInstanceId: instanceId,
       status: { $in: ['answered', 'scored'] },
+    });
+  });
+
+  it('classifies empty and current seed-shaped visits as pre-assessment', async () => {
+    const patientId = new Types.ObjectId();
+    const visitId = new Types.ObjectId();
+    const scaleInstanceId = new Types.ObjectId();
+    patientsService.findPatientById.mockResolvedValue(
+      createPatientSummary(patientId),
+    );
+    assessmentVisitModel.findOne.mockReturnValue(
+      createExecQuery(createVisitDocumentLike(patientId, visitId)),
+    );
+
+    const emptySort = jest.fn().mockReturnValue(createExecQuery([]));
+    scaleInstanceModel.find.mockReturnValueOnce({ sort: emptySort });
+
+    await expect(
+      service.getVisitExecutionDetail(patientId, visitId),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        visitMaintenance: {
+          canEdit: true,
+          canDelete: true,
+          canVoid: false,
+          initializedScaleCount: 0,
+        },
+      }),
+    );
+
+    const scaleInstance = createScaleInstanceDocumentLike(
+      patientId,
+      visitId,
+      scaleInstanceId,
+    );
+    const initializedSort = jest
+      .fn()
+      .mockReturnValue(createExecQuery([scaleInstance]));
+    scaleInstanceModel.find.mockReturnValueOnce({ sort: initializedSort });
+    itemResponseModel.find.mockReturnValueOnce(
+      createExecQuery([createPristineItemResponseDocumentLike()]),
+    );
+    itemResponseModel.countDocuments.mockReturnValue(createExecQuery(0));
+
+    await expect(
+      service.getVisitExecutionDetail(patientId, visitId),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        visitMaintenance: {
+          canEdit: true,
+          canDelete: true,
+          canVoid: false,
+          initializedScaleCount: 1,
+        },
+      }),
+    );
+  });
+
+  it.each([
+    [
+      'saved answer draft',
+      { status: 'in_progress', draftRevision: 1, responseText: 'answer' },
+    ],
+    [
+      'running timing',
+      {
+        timing: {
+          timerState: 'running',
+          startedAt: new Date('2026-08-01T08:00:00.000Z'),
+          lastResumedAt: new Date('2026-08-01T08:00:00.000Z'),
+          completedAt: null,
+          durationMs: null,
+          timerSource: 'system',
+        },
+      },
+    ],
+    [
+      'scoring fact',
+      {
+        score: {
+          scoreValue: 1,
+          maxScore: 1,
+          minScore: 0,
+          scoreStatus: 'auto_scored',
+          scoreSource: 'auto_rule',
+          scoredAt: new Date('2026-08-01T08:05:00.000Z'),
+          scoredBy: null,
+        },
+      },
+    ],
+    [
+      'user step note',
+      {
+        stepResults: [
+          {
+            stepCode: 'seed-step',
+            order: 1,
+            expectedValue: 'seed-expected',
+            actualValue: null,
+            isCorrect: null,
+            scoreValue: null,
+            countsTowardItemScore: true,
+            note: 'Recorded during assessment',
+          },
+        ],
+      },
+    ],
+    [
+      'attached evidence',
+      {
+        evidenceRefs: [
+          {
+            evidenceType: 'photo',
+            mediaEvidenceId: new Types.ObjectId(),
+            status: 'attached',
+          },
+        ],
+      },
+    ],
+  ])(
+    'classifies representative %s as an assessment fact',
+    async (_name, overrides) => {
+      const patientId = new Types.ObjectId();
+      const visitId = new Types.ObjectId();
+      const scaleInstanceId = new Types.ObjectId();
+      patientsService.findPatientById.mockResolvedValue(
+        createPatientSummary(patientId),
+      );
+      assessmentVisitModel.findOne.mockReturnValue(
+        createExecQuery(createVisitDocumentLike(patientId, visitId)),
+      );
+      const sort = jest
+        .fn()
+        .mockReturnValue(
+          createExecQuery([
+            createScaleInstanceDocumentLike(
+              patientId,
+              visitId,
+              scaleInstanceId,
+            ),
+          ]),
+        );
+      scaleInstanceModel.find.mockReturnValue({ sort });
+      itemResponseModel.find.mockReturnValue(
+        createExecQuery([createPristineItemResponseDocumentLike(overrides)]),
+      );
+      itemResponseModel.countDocuments.mockReturnValue(createExecQuery(0));
+
+      const result = await service.getVisitExecutionDetail(patientId, visitId);
+
+      expect(result.visitMaintenance).toEqual({
+        canEdit: false,
+        canDelete: false,
+        canVoid: true,
+        initializedScaleCount: 1,
+      });
+    },
+  );
+
+  it('treats any patient administration session as an assessment fact', async () => {
+    const patientId = new Types.ObjectId();
+    const visitId = new Types.ObjectId();
+    const scaleInstanceId = new Types.ObjectId();
+    patientsService.findPatientById.mockResolvedValue(
+      createPatientSummary(patientId),
+    );
+    assessmentVisitModel.findOne.mockReturnValue(
+      createExecQuery(createVisitDocumentLike(patientId, visitId)),
+    );
+    const sort = jest
+      .fn()
+      .mockReturnValue(
+        createExecQuery([
+          createScaleInstanceDocumentLike(patientId, visitId, scaleInstanceId),
+        ]),
+      );
+    scaleInstanceModel.find.mockReturnValue({ sort });
+    itemResponseModel.find.mockReturnValue(
+      createExecQuery([createPristineItemResponseDocumentLike()]),
+    );
+    patientAdministrationSessionModel.exists.mockReturnValue(
+      createExecQuery({ _id: new Types.ObjectId() }),
+    );
+    itemResponseModel.countDocuments.mockReturnValue(createExecQuery(0));
+
+    const result = await service.getVisitExecutionDetail(patientId, visitId);
+
+    expect(patientAdministrationSessionModel.exists).toHaveBeenCalledWith({
+      scaleInstanceId: { $in: [scaleInstanceId] },
+    });
+    expect(result.visitMaintenance).toEqual({
+      canEdit: false,
+      canDelete: false,
+      canVoid: true,
+      initializedScaleCount: 1,
     });
   });
 

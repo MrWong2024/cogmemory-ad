@@ -87,6 +87,26 @@ export type ScaleInstanceListItem = {
 export type AssessmentVisitExecutionDetailResponse = {
   visit: AssessmentVisit;
   scaleInstances: ScaleInstanceListItem[];
+  visitMaintenance: VisitMaintenanceState;
+};
+
+export type VisitMaintenanceState = {
+  canEdit: boolean;
+  canDelete: boolean;
+  canVoid: boolean;
+  initializedScaleCount: number;
+};
+
+export type UpdateAssessmentVisitRequest = {
+  visitCode?: string;
+  visitType?: AssessmentVisit['visitType'];
+  assessmentDate?: string;
+  notes?: string;
+};
+
+export type VoidAssessmentVisitRequest = {
+  confirm: true;
+  reason: string;
 };
 
 export type InitializeScaleInstanceRequest = {
@@ -106,4 +126,3 @@ export type InitializeScaleInstanceResponse = {
   scaleInstance: ScaleInstanceListItem;
   createdItemResponseCount: number;
 };
-

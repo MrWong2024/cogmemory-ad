@@ -12,6 +12,18 @@ import {
   AssessmentVisitDocument,
 } from '../src/modules/assessments/schemas/assessment-visit.schema';
 import {
+  ItemResponse,
+  ItemResponseDocument,
+} from '../src/modules/assessments/schemas/item-response.schema';
+import {
+  PatientAdministrationSession,
+  PatientAdministrationSessionDocument,
+} from '../src/modules/assessments/schemas/patient-administration-session.schema';
+import {
+  ScaleInstance,
+  ScaleInstanceDocument,
+} from '../src/modules/assessments/schemas/scale-instance.schema';
+import {
   Session,
   SessionDocument,
 } from '../src/modules/auth/schemas/session.schema';
@@ -58,6 +70,19 @@ function readString(
   return value;
 }
 
+function readRecord(
+  record: Record<string, unknown>,
+  propertyName: string,
+): Record<string, unknown> {
+  const value = record[propertyName];
+
+  if (!isRecord(value)) {
+    throw new Error(`Expected ${propertyName} to be an object`);
+  }
+
+  return value;
+}
+
 describe('patient and assessment visit public APIs (e2e)', () => {
   let app: INestApplication;
   let connection: Connection;
@@ -66,6 +91,9 @@ describe('patient and assessment visit public APIs (e2e)', () => {
   let sessionModel: Model<SessionDocument>;
   let patientModel: Model<PatientDocument>;
   let assessmentVisitModel: Model<AssessmentVisitDocument>;
+  let scaleInstanceModel: Model<ScaleInstanceDocument>;
+  let itemResponseModel: Model<ItemResponseDocument>;
+  let patientAdministrationSessionModel: Model<PatientAdministrationSessionDocument>;
   let doctorAgent: ReturnType<typeof request.agent>;
   let systemAgent: ReturnType<typeof request.agent>;
   let doctorUserId: Types.ObjectId;
@@ -83,6 +111,24 @@ describe('patient and assessment visit public APIs (e2e)', () => {
       await sessionModel.deleteMany({ userId: { $in: userIds } }).exec();
     }
 
+    const scaleInstances = await scaleInstanceModel
+      .find({ subjectCode: /^SUBJ-A12-TEST-/ })
+      .select({ _id: 1 })
+      .exec();
+    const scaleInstanceIds = scaleInstances.map((instance) => instance._id);
+
+    if (scaleInstanceIds.length > 0) {
+      await patientAdministrationSessionModel
+        .deleteMany({ scaleInstanceId: { $in: scaleInstanceIds } })
+        .exec();
+    }
+
+    await itemResponseModel
+      .deleteMany({ subjectCode: /^SUBJ-A12-TEST-/ })
+      .exec();
+    await scaleInstanceModel
+      .deleteMany({ subjectCode: /^SUBJ-A12-TEST-/ })
+      .exec();
     await assessmentVisitModel
       .deleteMany({ visitCode: /^VISIT-A12-TEST-/ })
       .exec();
@@ -103,6 +149,188 @@ describe('patient and assessment visit public APIs (e2e)', () => {
     });
   }
 
+  async function createVisit(
+    suffix: string,
+  ): Promise<{ patientId: string; subjectCode: string; visitId: string }> {
+    const patientResponse = await createPatient(suffix).expect(201);
+    const patientBody = readResponseBody(patientResponse);
+    const patientId = readString(patientBody, 'id');
+    const subjectCode = readString(patientBody, 'subjectCode');
+    const visitResponse = await doctorAgent
+      .post(`/patients/${patientId}/visits`)
+      .send({
+        visitCode: `${TEST_VISIT_PREFIX}${suffix}`,
+        assessmentDate: '2026-08-01T08:00:00.000Z',
+      })
+      .expect(201);
+
+    return {
+      patientId,
+      subjectCode,
+      visitId: readString(readResponseBody(visitResponse), 'id'),
+    };
+  }
+
+  async function createInitializedScale(
+    fixture: { patientId: string; subjectCode: string; visitId: string },
+    suffix: string,
+  ): Promise<{
+    scaleInstanceId: Types.ObjectId;
+    itemResponseId: Types.ObjectId;
+  }> {
+    const scaleDefinitionId = new Types.ObjectId();
+    const scaleVersionId = new Types.ObjectId();
+    const scaleInstance = await scaleInstanceModel.create({
+      assessmentVisitId: new Types.ObjectId(fixture.visitId),
+      patientId: new Types.ObjectId(fixture.patientId),
+      subjectCode: fixture.subjectCode,
+      scaleDefinitionId,
+      scaleVersionId,
+      scaleCode: 'mmse',
+      scaleVersion: '1.0',
+      instanceCode: `INST-A12-MAINT-${suffix}-MMSE-1`,
+      instanceNo: 1,
+      status: 'draft',
+      administrationMode: 'clinician_administered',
+      versionTrace: {
+        crfVersion: '1.0',
+        scoringRuleVersion: '1.0',
+        fieldEncodingVersion: '1.0',
+        sourceDocument: 'e2e-seed-fixture',
+      },
+      startedAt: null,
+      completedAt: null,
+      lockedAt: null,
+      voidedAt: null,
+      durationMs: null,
+      operatorSnapshot: null,
+      progress: {
+        totalItemCount: 1,
+        answeredItemCount: 0,
+        source: 'scale_seed',
+      },
+      qualityControlSummary: null,
+      submissionWriteBarrier: null,
+      metadata: { initializedFromSeed: true },
+    });
+    const itemResponse = await itemResponseModel.create({
+      assessmentVisitId: new Types.ObjectId(fixture.visitId),
+      scaleInstanceId: scaleInstance._id,
+      patientId: new Types.ObjectId(fixture.patientId),
+      subjectCode: fixture.subjectCode,
+      scaleDefinitionId,
+      scaleVersionId,
+      scaleCode: 'mmse',
+      scaleVersion: '1.0',
+      instanceCode: scaleInstance.instanceCode,
+      itemCode: `maintenance-${suffix.toLowerCase()}`,
+      itemOrder: 1,
+      responseType: 'text',
+      countsTowardTotal: true,
+      cognitiveDomainCodes: [],
+      itemConfigSnapshot: { initializedFromSeed: true },
+      versionTrace: {
+        scaleVersion: '1.0',
+        crfVersion: '1.0',
+        scoringRuleVersion: '1.0',
+        fieldEncodingVersion: '1.0',
+        sourceDocument: 'e2e-seed-fixture',
+      },
+      status: 'not_started',
+      answerSource: 'clinician_recorded',
+      draftRevision: 0,
+      draftSavedAt: null,
+      rawResponse: null,
+      structuredResponse: null,
+      isMissing: false,
+      score: {
+        scoreValue: null,
+        maxScore: 1,
+        minScore: 0,
+        scoreStatus: 'not_scored',
+        scoreSource: 'none',
+        scoredAt: null,
+        scoredBy: null,
+      },
+      stepResults: [
+        {
+          stepCode: 'seed-step',
+          order: 1,
+          expectedValue: 'seed-expected',
+          actualValue: null,
+          isCorrect: null,
+          scoreValue: null,
+          countsTowardItemScore: true,
+        },
+      ],
+      promptResponses: [
+        {
+          promptType: 'semantic_category',
+          promptText: 'Category cue',
+          responseAfterPrompt: null,
+          isCorrect: null,
+          countsTowardScore: false,
+          order: 1,
+          note: 'Initialized from seed prompt record.',
+        },
+      ],
+      timing: {
+        timerState: 'idle',
+        startedAt: null,
+        lastResumedAt: null,
+        completedAt: null,
+        durationMs: null,
+        timerSource: 'none',
+      },
+      evidenceRefs: [
+        {
+          evidenceType: 'duration',
+          mediaEvidenceId: null,
+          status: 'pending',
+          note: 'Initialized from scale seed.',
+        },
+      ],
+      submissionWriteBarrier: null,
+      qualityControlHints: null,
+      metadata: { initializedFromSeed: true },
+      lockedAt: null,
+      voidedAt: null,
+    });
+
+    return {
+      scaleInstanceId: scaleInstance._id,
+      itemResponseId: itemResponse._id,
+    };
+  }
+
+  async function createAdministrationSession(
+    scaleInstanceId: Types.ObjectId,
+    status: 'prepared' | 'completed',
+  ): Promise<Types.ObjectId> {
+    const now = new Date();
+    const session = await patientAdministrationSessionModel.create({
+      scaleInstanceId,
+      deviceMode: 'same_device',
+      status,
+      currentStepKey: 'orientation-year',
+      revision: 0,
+      expiresAt: new Date(now.getTime() + 60 * 60 * 1000),
+      impactFactorCodes: [],
+      createdBy: {
+        operatorId: doctorUserId,
+        operatorName: 'A12 Doctor Test Operator',
+        operatorRole: 'doctor',
+      },
+      ...(status === 'completed' ? { completedAt: now } : {}),
+      controlEvents: [],
+      stepCaptures: [],
+      playbackFacts: [],
+      stepEvidenceRefs: [],
+    });
+
+    return session._id;
+  }
+
   beforeAll(async () => {
     if (process.env.NODE_ENV !== 'test') {
       throw new Error('E2E requires NODE_ENV=test');
@@ -118,12 +346,8 @@ describe('patient and assessment visit public APIs (e2e)', () => {
     connection = app.get<Connection>(getConnectionToken());
     const databaseName = connection.name.toLowerCase();
 
-    if (!databaseName.includes('_test')) {
-      throw new Error('E2E database name must follow the test naming rule');
-    }
-
-    if (databaseName.includes('_dev') || databaseName.includes('_prod')) {
-      throw new Error('E2E must not connect to development or production');
+    if (databaseName !== 'cogmemory_ad_test') {
+      throw new Error('E2E database must be exactly cogmemory_ad_test');
     }
 
     const configService = app.get(ConfigService);
@@ -143,6 +367,15 @@ describe('patient and assessment visit public APIs (e2e)', () => {
     assessmentVisitModel = app.get<Model<AssessmentVisitDocument>>(
       getModelToken(AssessmentVisit.name),
     );
+    scaleInstanceModel = app.get<Model<ScaleInstanceDocument>>(
+      getModelToken(ScaleInstance.name),
+    );
+    itemResponseModel = app.get<Model<ItemResponseDocument>>(
+      getModelToken(ItemResponse.name),
+    );
+    patientAdministrationSessionModel = app.get<
+      Model<PatientAdministrationSessionDocument>
+    >(getModelToken(PatientAdministrationSession.name));
     modelsReady = true;
 
     await cleanupA12Data();
@@ -436,6 +669,259 @@ describe('patient and assessment visit public APIs (e2e)', () => {
       .expect(400);
     expect(readString(readResponseBody(invalidRange), 'code')).toBe(
       'INVALID_DATE_RANGE',
+    );
+  });
+
+  it('edits and physically deletes an empty pre-assessment visit', async () => {
+    const fixture = await createVisit('MAINT-EMPTY');
+    const detail = await doctorAgent
+      .get(`/patients/${fixture.patientId}/visits/${fixture.visitId}`)
+      .expect(200);
+
+    expect(readResponseBody(detail).visitMaintenance).toEqual({
+      canEdit: true,
+      canDelete: true,
+      canVoid: false,
+      initializedScaleCount: 0,
+    });
+
+    const updated = await doctorAgent
+      .patch(`/patients/${fixture.patientId}/visits/${fixture.visitId}`)
+      .send({
+        visitCode: ' visit-a12-test-maint-empty-updated ',
+        visitType: 'follow_up',
+        assessmentDate: '2026-08-02T08:00:00.000Z',
+        notes: ' Updated before assessment ',
+      })
+      .expect(200);
+    const updatedBody = readResponseBody(updated);
+
+    expect(updatedBody.visit).toEqual(
+      expect.objectContaining({
+        visitCode: 'VISIT-A12-TEST-MAINT-EMPTY-UPDATED',
+        visitType: 'follow_up',
+        notes: 'Updated before assessment',
+      }),
+    );
+    expect(updatedBody.visitMaintenance).toEqual({
+      canEdit: true,
+      canDelete: true,
+      canVoid: false,
+      initializedScaleCount: 0,
+    });
+
+    await doctorAgent
+      .delete(`/patients/${fixture.patientId}/visits/${fixture.visitId}`)
+      .expect(204);
+    await expect(
+      assessmentVisitModel.exists({ _id: fixture.visitId }),
+    ).resolves.toBeNull();
+    await expect(
+      patientModel.exists({ _id: fixture.patientId }),
+    ).resolves.not.toBeNull();
+  });
+
+  it('edits and deletes initialized-only MMSE with only its skeleton records', async () => {
+    const fixture = await createVisit('MAINT-INITIALIZED');
+    const initialized = await createInitializedScale(fixture, 'INITIALIZED');
+    const detail = await doctorAgent
+      .get(`/patients/${fixture.patientId}/visits/${fixture.visitId}`)
+      .expect(200);
+
+    expect(readResponseBody(detail).visitMaintenance).toEqual({
+      canEdit: true,
+      canDelete: true,
+      canVoid: false,
+      initializedScaleCount: 1,
+    });
+
+    const updated = await doctorAgent
+      .patch(`/patients/${fixture.patientId}/visits/${fixture.visitId}`)
+      .send({ notes: 'Initialized but not started' })
+      .expect(200);
+    expect(readResponseBody(updated).visitMaintenance).toEqual({
+      canEdit: true,
+      canDelete: true,
+      canVoid: false,
+      initializedScaleCount: 1,
+    });
+
+    await doctorAgent
+      .delete(`/patients/${fixture.patientId}/visits/${fixture.visitId}`)
+      .expect(204);
+
+    await expect(
+      itemResponseModel.exists({ _id: initialized.itemResponseId }),
+    ).resolves.toBeNull();
+    await expect(
+      scaleInstanceModel.exists({ _id: initialized.scaleInstanceId }),
+    ).resolves.toBeNull();
+    await expect(
+      assessmentVisitModel.exists({ _id: fixture.visitId }),
+    ).resolves.toBeNull();
+    await expect(
+      patientModel.exists({ _id: fixture.patientId }),
+    ).resolves.not.toBeNull();
+  });
+
+  it('blocks edit/delete after a real item draft and voids idempotently without deleting facts', async () => {
+    const fixture = await createVisit('MAINT-ITEM-FACT');
+    const initialized = await createInitializedScale(fixture, 'ITEM-FACT');
+    await itemResponseModel
+      .updateOne(
+        { _id: initialized.itemResponseId },
+        {
+          $set: {
+            status: 'in_progress',
+            draftRevision: 1,
+            draftSavedAt: new Date('2026-08-01T08:05:00.000Z'),
+            responseText: 'Formal draft answer',
+          },
+        },
+      )
+      .exec();
+
+    const detail = await doctorAgent
+      .get(`/patients/${fixture.patientId}/visits/${fixture.visitId}`)
+      .expect(200);
+    expect(readResponseBody(detail).visitMaintenance).toEqual({
+      canEdit: false,
+      canDelete: false,
+      canVoid: true,
+      initializedScaleCount: 1,
+    });
+
+    const editBlocked = await doctorAgent
+      .patch(`/patients/${fixture.patientId}/visits/${fixture.visitId}`)
+      .send({ notes: 'Must not be written' })
+      .expect(409);
+    expect(readString(readResponseBody(editBlocked), 'code')).toBe(
+      'VISIT_NOT_EDITABLE',
+    );
+    const deleteBlocked = await doctorAgent
+      .delete(`/patients/${fixture.patientId}/visits/${fixture.visitId}`)
+      .expect(409);
+    expect(readString(readResponseBody(deleteBlocked), 'code')).toBe(
+      'VISIT_NOT_DELETABLE',
+    );
+    await expect(
+      itemResponseModel.exists({ _id: initialized.itemResponseId }),
+    ).resolves.not.toBeNull();
+
+    const firstVoid = await doctorAgent
+      .post(`/patients/${fixture.patientId}/visits/${fixture.visitId}/void`)
+      .send({ confirm: true, reason: 'Duplicate clinical visit' })
+      .expect(201);
+    const firstVisit = readRecord(readResponseBody(firstVoid), 'visit');
+    expect(firstVisit).toEqual(
+      expect.objectContaining({
+        status: 'voided',
+        voidReason: 'Duplicate clinical visit',
+        voidedBy: {
+          operatorId: doctorUserId.toString(),
+          operatorName: 'A12 Doctor Test Operator',
+          operatorRole: 'doctor',
+        },
+      }),
+    );
+    expect(readResponseBody(firstVoid).visitMaintenance).toEqual({
+      canEdit: false,
+      canDelete: false,
+      canVoid: false,
+      initializedScaleCount: 1,
+    });
+
+    const originalVoidedAt = readString(firstVisit, 'voidedAt');
+    const secondVoid = await doctorAgent
+      .post(`/patients/${fixture.patientId}/visits/${fixture.visitId}/void`)
+      .send({ confirm: true, reason: 'Must not replace original reason' })
+      .expect(201);
+    const secondVisit = readRecord(readResponseBody(secondVoid), 'visit');
+
+    expect(readString(secondVisit, 'voidedAt')).toBe(originalVoidedAt);
+    expect(readString(secondVisit, 'voidReason')).toBe(
+      'Duplicate clinical visit',
+    );
+    expect(secondVisit.voidedBy).toEqual(firstVisit.voidedBy);
+    await expect(
+      scaleInstanceModel.exists({ _id: initialized.scaleInstanceId }),
+    ).resolves.not.toBeNull();
+    await expect(
+      itemResponseModel.exists({ _id: initialized.itemResponseId }),
+    ).resolves.not.toBeNull();
+  });
+
+  it.each(['prepared', 'completed'] as const)(
+    'treats a %s patient administration session as historical execution fact',
+    async (sessionStatus) => {
+      const suffix = `MAINT-SESSION-${sessionStatus.toUpperCase()}`;
+      const fixture = await createVisit(suffix);
+      const initialized = await createInitializedScale(fixture, suffix);
+      const sessionId = await createAdministrationSession(
+        initialized.scaleInstanceId,
+        sessionStatus,
+      );
+
+      const detail = await doctorAgent
+        .get(`/patients/${fixture.patientId}/visits/${fixture.visitId}`)
+        .expect(200);
+      expect(readResponseBody(detail).visitMaintenance).toEqual({
+        canEdit: false,
+        canDelete: false,
+        canVoid: true,
+        initializedScaleCount: 1,
+      });
+
+      const deleteBlocked = await doctorAgent
+        .delete(`/patients/${fixture.patientId}/visits/${fixture.visitId}`)
+        .expect(409);
+      expect(readString(readResponseBody(deleteBlocked), 'code')).toBe(
+        'VISIT_NOT_DELETABLE',
+      );
+
+      if (sessionStatus === 'completed') {
+        await doctorAgent
+          .post(`/patients/${fixture.patientId}/visits/${fixture.visitId}/void`)
+          .send({ confirm: true, reason: 'Completed session retained' })
+          .expect(201);
+        await expect(
+          patientAdministrationSessionModel.exists({ _id: sessionId }),
+        ).resolves.not.toBeNull();
+      }
+    },
+  );
+
+  it('rejects pre-assessment void, empty/forged patches, and duplicate visit codes', async () => {
+    const source = await createVisit('MAINT-CONTRACT-SOURCE');
+    const target = await createVisit('MAINT-CONTRACT-TARGET');
+
+    const preAssessmentVoid = await doctorAgent
+      .post(`/patients/${source.patientId}/visits/${source.visitId}/void`)
+      .send({ confirm: true, reason: 'Should be deleted' })
+      .expect(409);
+    expect(readString(readResponseBody(preAssessmentVoid), 'code')).toBe(
+      'VISIT_NOT_VOIDABLE',
+    );
+
+    const emptyPatch = await doctorAgent
+      .patch(`/patients/${source.patientId}/visits/${source.visitId}`)
+      .send({})
+      .expect(400);
+    expect(readString(readResponseBody(emptyPatch), 'code')).toBe(
+      'VISIT_UPDATE_EMPTY_PATCH',
+    );
+
+    await doctorAgent
+      .patch(`/patients/${source.patientId}/visits/${source.visitId}`)
+      .send({ status: 'completed', voidReason: 'Forged' })
+      .expect(400);
+
+    const duplicate = await doctorAgent
+      .patch(`/patients/${target.patientId}/visits/${target.visitId}`)
+      .send({ visitCode: `${TEST_VISIT_PREFIX}MAINT-CONTRACT-SOURCE` })
+      .expect(409);
+    expect(readString(readResponseBody(duplicate), 'code')).toBe(
+      'VISIT_CODE_CONFLICT',
     );
   });
 

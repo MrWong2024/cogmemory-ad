@@ -22,6 +22,8 @@ export type AssessmentVisitListItemResponse = {
   completedAt: Date | null;
   lockedAt: Date | null;
   voidedAt: Date | null;
+  voidedBy: AssessmentVisitOperatorResponse | null;
+  voidReason?: string;
   operatorSnapshot: AssessmentVisitOperatorResponse | null;
   notes?: string;
 };

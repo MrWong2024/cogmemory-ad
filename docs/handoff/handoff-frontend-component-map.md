@@ -154,9 +154,18 @@
 ### 6.1 `AssessmentVisitExecutionPage`
 
 - 路径：`frontend\src\features\assessments\components\AssessmentVisitExecutionPage.tsx`
-- 职责：接收路由 patientId / visitId，独立加载访视执行详情与量表目录，管理无效链接、401 / 403 / 404、GET 取消 / 重试、实例初始化和服务端冲突刷新
-- 输出：访视公开字段、实例列表、目录与初始化状态；成功时展示服务端返回的 ScaleInstance 和题目记录骨架数量
-- 边界：详情失败不展示初始化表单；POST 不自动重试或乐观创建；不修改访视状态、不跳转题目页面；组件卸载后不更新初始化状态
+- 职责：接收路由 patientId / visitId，独立加载访视执行详情与量表目录，管理无效链接、401 / 403 / 404、GET 取消 / 重试、实例初始化、服务端冲突刷新，并在页面局部编排 Visit maintenance 与既有初始化 / report writes 互斥
+- 输出：访视公开字段、服务端维护资格、实例列表、目录与初始化状态；初始化成功后刷新完整详情，使 `initializedScaleCount` 继续以服务端为准
+- 边界：详情失败不展示初始化或维护表单；写请求不自动重试或乐观创建；不新增全局 write coordinator；组件卸载后不更新初始化状态
+
+### 6.1.1 `AssessmentVisitMaintenancePanel`
+
+- 路径：`frontend\src\features\assessments\components\AssessmentVisitMaintenancePanel.tsx`
+- 职责：完全按 `detail.visitMaintenance` 显示 edit / delete / void；编辑复用 visitCode / visitType / assessmentDate / notes，删除与作废分别要求显式 checkbox，作废另要求 3–500 字原因
+- 冲突收敛：`VISIT_NOT_EDITABLE`、`VISIT_NOT_DELETABLE`、`VISIT_NOT_VOIDABLE` 均只请求父页面刷新一次详情，不自动重发原写请求，也不把 delete 自动改成 void
+- 删除说明：initializedScaleCount 大于 0 时明确展示未开始 ScaleInstance 和空白 ItemResponse skeleton 的级联范围；成功返回患者详情
+- 作废展示：提示既有量表、作答、证据和历史保留；voided Visit 展示 `voidedAt`、`voidedBy`、`voidReason`，不提供恢复、取消作废或二次删除
+- 外部写锁：初始化、报告生成与 report workflow 写期间禁用维护；维护写入时由父页面禁用初始化和报告写
 
 ### 6.2 `ScaleInstanceList`
 
@@ -180,14 +189,14 @@
 ### 6.4 Assessment Execution API Client
 
 - 路径：`frontend\src\features\assessments\api\assessment-execution-api.ts`
-- 职责：提供 `listAvailableScales()`、`getAssessmentVisitExecutionDetail()`、`initializeScaleInstance()`、`getScaleInstanceExecutionDetail()`、`saveItemResponseDraft()`、`getScaleInstanceSubmissionReadiness()`、`submitScaleInstance()` 与稳定 `AssessmentExecutionApiError`；A14 serializer 必传 `expectedRevision` 并重建完整 timing
-- 边界：只调用 A13 三个、A14 两个与 A16 两个 API；统一 `frontendEnv.apiBaseUrl`、credentials、no-store，GET 支持 AbortSignal，POST / PATCH 重建白名单且不自动重试；draft conflict 与请求结果不确定是独立错误 kind，submit 严格只接受 `{ confirm: true }`，不记录请求 / 响应或泛化为完整 SDK
+- 职责：除既有 A13 / A14 / A16 方法外，同一 client 新增 `updateAssessmentVisit()`、`deleteAssessmentVisit()`、`voidAssessmentVisit()`；稳定映射 `visit_not_deletable`、`visit_not_voidable`、`visit_update_empty_patch`，并继续复用 `visit_not_editable`
+- 边界：统一 `frontendEnv.apiBaseUrl`、credentials、no-store，GET 支持 AbortSignal，所有 POST / PATCH / DELETE 写请求重建白名单并保持 uncertain-write 语义，不自动重试；不记录请求 / 响应或泛化为完整 SDK
 
 ### 6.5 Assessment Execution 类型
 
 - 路径：`frontend\src\features\assessments\types\assessment-execution.ts`
-- 职责：定义安全目录、施测方式、ScaleInstance 安全摘要、访视执行详情和初始化请求 / 响应类型
-- 边界：Date JSON 字段使用 string / null；目录类型不包含完整 groups / items、规则、答案或 ObjectId；初始化请求类型不包含任何服务器控制字段
+- 职责：定义安全目录、施测方式、ScaleInstance 安全摘要、访视执行详情、`VisitMaintenanceState`、Update / Void 请求和初始化请求 / 响应类型
+- 边界：Date JSON 字段使用 string / null；目录类型不包含完整 groups / items、规则、答案或 ObjectId；Update / Void 请求类型只包含服务器允许字段，维护响应不包含内部判定细节
 
 ### 6.6 Assessment Execution 展示纯函数
 
@@ -468,7 +477,7 @@
 
 - `ClinicalReportPanel`：组合 latest 独立状态、not_found、scope、二次确认、generate loading / error / 幂等回执、loaded 报告、草稿 / 非 AI / 非诊断声明和所有只读展示组件；403 只影响报告区域。
 - `ClinicalReportScopeSelector`：稳定排序展示当前访视全部实例；completed / locked 候选和其他状态原因均有文字，checkbox 有可见 label，提供用户触发的前 10 项全选、清空、量表链接和 version 1 scope 固定说明。候选不标记为已满足全部报告条件。
-- `AssessmentVisitExecutionPage`：仅承担访视数据到 Hook / Panel 的有限编排；报告区域位于实例列表之后、初始化目录之前。报告生成期间向 `ScaleInitializationPanel` 传递外部写锁，不改变初始化 API。
+- `AssessmentVisitExecutionPage`：仅承担访视数据到 Hook / Panel 的有限编排；报告区域位于实例列表之后、初始化目录之前。报告生成、报告工作流、初始化与 Visit maintenance 写请求互斥，不改变各自 API 合同。
 
 ### 6.47 ClinicalReport 快照、正文与技术组件
 
@@ -529,7 +538,7 @@
 ### 6.55 B11 `ClinicalReportPanel` / `AssessmentVisitExecutionPage`
 
 - `ClinicalReportPanel`：在既有 A20 展示后组合 WorkflowSummary、DraftEditor、SubmissionPanel 与 ConfirmationPanel；显示 action live / alert、pending / confirmed 文字边界，系统摘要与 clinician-owned 内容职责分离。
-- `AssessmentVisitExecutionPage`：从 PatientsWorkspaceContext 读取 roles，组合 `useClinicalReport` 与 `useClinicalReportWorkflow`；报告写入与量表初始化互斥，但不承载表单细节。
+- `AssessmentVisitExecutionPage`：从 PatientsWorkspaceContext 读取 roles，组合 `useClinicalReport` 与 `useClinicalReportWorkflow`；报告写入、量表初始化与 Visit maintenance 写入互斥，但不承载维护或报告表单细节。
 - 无新路由、Provider 层级之外的全局状态、BFF、middleware 或第二次认证请求。
 
 ### 6.56 B12 ClinicalReport 类型、API 与锁定草稿

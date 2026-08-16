@@ -8,8 +8,8 @@
 
 - 当前存在公共底座 DTO、响应 type、Storage interface，以及 A12-A28 和 WP-10 业务契约；B1/B2 锁定患者会话、步骤与受控资产，C1 增加患者当前步骤原始媒体 evidence 上传白名单。
 - 当前新增公开认证请求 DTO：`LoginDto`。
-- 当前新增公开患者 / 访视 DTO：`CreatePatientDto`、`ListPatientsQueryDto`、`PatientIdParamDto`、`CreateAssessmentVisitDto`、`ListAssessmentVisitsQueryDto`、`PatientVisitsParamDto`。
-- 当前仍没有用户管理、注册、密码重置、撤销 / reopen / force submit、批量 / 分片 / 客户端直传、认知域人工修改 / 确认 / 锁定 / 重算或报告退回 / 签名 / unlock / unfreeze / unarchive / correction cancel / 作废 / PDF 请求 DTO；A25 已新增受控 correction DTO。
+- 当前公开患者 / 访视 DTO 包含 `CreatePatientDto`、`ListPatientsQueryDto`、`PatientIdParamDto`、`CreateAssessmentVisitDto`、`UpdateAssessmentVisitDto`、`VoidAssessmentVisitDto`、`ListAssessmentVisitsQueryDto` 与患者 / 访视 path DTO；edit / delete / void 是提前实现的 WP-12 访视维护窄切片。
+- 当前仍没有用户管理、注册、密码重置、撤销 / reopen / force submit、批量 / 分片 / 客户端直传、认知域人工修改 / 确认 / 锁定 / 重算或报告退回 / 签名 / unlock / unfreeze / unarchive / correction cancel / 报告作废 / PDF 请求 DTO；A25 已新增受控 correction DTO。
 
 ## 3. 当前 DTO / Type 清单
 
@@ -131,6 +131,19 @@
 - 校验摘要：visitCode trim、非空、最大 80；visitType 仅 baseline / follow_up / screening / unscheduled / other；assessmentDate 转为 Date；notes trim、最大 2000。
 - 白名单边界：不声明 patientId、subjectCode、status、operatorSnapshot、状态时间、clinicalContext、metadata 或 timestamps。
 
+- 名称：`UpdateAssessmentVisitDto`
+- 文件：`backend\src\modules\assessments\dto\update-assessment-visit.dto.ts`
+- 用途：`PATCH /patients/:patientId/visits/:visitId` 请求 DTO。
+- 允许字段：可选 `visitCode`、`visitType`、`assessmentDate`、`notes`；Service 要求至少存在一个字段，空对象返回 `VISIT_UPDATE_EMPTY_PATCH`。
+- 校验摘要：与创建语义一致；visitCode trim、非空、最大 80，visitType 使用既有 enum，assessmentDate 转为有效 Date，notes trim、最大 2000 且允许空字符串清空。
+- 白名单边界：不声明 patientId、subjectCode、status、operatorSnapshot、startedAt、completedAt、lockedAt、voidedAt、voidedBy、clinicalContext、metadata 或 timestamps。
+
+- 名称：`VoidAssessmentVisitDto`
+- 文件：`backend\src\modules\assessments\dto\void-assessment-visit.dto.ts`
+- 用途：`POST /patients/:patientId/visits/:visitId/void` 请求 DTO。
+- 字段与校验：`confirm` 必须严格为 true；`reason` trim 后必填、最短 3、最长 500。
+- 白名单边界：voidedAt、voidedBy 与 status 均由服务端生成，客户端不能覆盖。
+
 - 名称：`ListAssessmentVisitsQueryDto`
 - 文件：`backend\src\modules\assessments\dto\list-assessment-visits-query.dto.ts`
 - 用途：`GET /patients/:patientId/visits` query DTO。
@@ -144,7 +157,7 @@
 
 - 名称：`PatientVisitParamDto`
 - 文件：`backend\src\modules\assessments\dto\patient-visit-param.dto.ts`
-- 用途：`GET /patients/:patientId/visits/:visitId` 与 `POST /patients/:patientId/visits/:visitId/scale-instances` path DTO。
+- 用途：访视详情、更新、删除、作废与量表实例初始化的共用 path DTO。
 - 字段与校验：`patientId: string`、`visitId: string`，均使用 `@IsMongoId()`。
 
 - 名称：`InitializeScaleInstanceDto`
@@ -157,7 +170,7 @@
 - 名称：`AssessmentVisitListItemResponse`、`AssessmentVisitDetailResponse`、`AssessmentVisitListResponse`
 - 文件：`backend\src\modules\assessments\types\assessment-visit-response.types.ts`
 - 用途：访视公开响应 type。
-- 字段摘要：id、patientId、subjectCode、visitCode、visitType、status、assessmentDate、状态时间、operatorSnapshot、notes；分页响应包含 items、page、pageSize、total。
+- 字段摘要：id、patientId、subjectCode、visitCode、visitType、status、assessmentDate、状态时间、operatorSnapshot、notes，以及安全作废审计 `voidedBy` / `voidReason`；分页响应包含 items、page、pageSize、total。
 - 安全边界：不包含 clinicalContext、metadata、`__v` 或 Mongoose document 方法。
 
 - 名称：`ScaleScoreRangeResponse`、`ScaleCapabilityResponse`、`AvailableScaleOptionResponse`、`AvailableScaleListResponse`
@@ -179,7 +192,7 @@
 - 名称：`AssessmentVisitExecutionDetailResponse`
 - 文件：`backend\src\modules\assessments\types\assessment-execution-response.types.ts`
 - 用途：A13 访视执行详情响应。
-- 字段：`visit: AssessmentVisitDetailResponse`、`scaleInstances: ScaleInstanceListItemResponse[]`。
+- 字段：`visit: AssessmentVisitDetailResponse`、`scaleInstances: ScaleInstanceListItemResponse[]`、`visitMaintenance: { canEdit, canDelete, canVoid, initializedScaleCount }`；不返回内部判定细节或数据库结构。
 
 - 名称：`InitializeScaleInstanceResponse`
 - 文件：`backend\src\modules\assessments\types\assessment-execution-response.types.ts`
@@ -267,7 +280,7 @@
 - 名称：`AssessmentVisitSummary`
 - 文件：`backend\src\modules\assessments\services\assessments.service.ts`
 - 用途：`AssessmentsService` 内部读取访视时返回的 mapper 输出 type，不是 HTTP DTO。
-- 字段摘要：访视引用输出、患者引用、受试者编码快照、访视编码、访视类型、状态、评估日期、开始 / 完成 / 锁定 / 作废时间、操作者快照、临床上下文、备注和 metadata。
+- 字段摘要：访视引用输出、患者引用、受试者编码快照、访视编码、访视类型、状态、评估日期、开始 / 完成 / 锁定 / 作废时间、作废操作者 / 原因、创建操作者快照、临床上下文、备注和 metadata。
 
 - 名称：`ScaleInstanceSummary`
 - 文件：`backend\src\modules\assessments\services\assessments.service.ts`

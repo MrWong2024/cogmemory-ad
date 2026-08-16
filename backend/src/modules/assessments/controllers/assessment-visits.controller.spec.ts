@@ -34,6 +34,9 @@ describe('AssessmentVisitsController', () => {
     listVisitsByPatientIdPaginated: jest.Mock;
     createVisitForPatient: jest.Mock;
     getVisitExecutionDetail: jest.Mock;
+    updateVisitForPatient: jest.Mock;
+    deleteVisitForPatient: jest.Mock;
+    voidVisitForPatient: jest.Mock;
   };
   let assessmentScaleWorkflowService: {
     initializeScaleInstance: jest.Mock;
@@ -44,6 +47,9 @@ describe('AssessmentVisitsController', () => {
       listVisitsByPatientIdPaginated: jest.fn(),
       createVisitForPatient: jest.fn(),
       getVisitExecutionDetail: jest.fn(),
+      updateVisitForPatient: jest.fn(),
+      deleteVisitForPatient: jest.fn(),
+      voidVisitForPatient: jest.fn(),
     };
     assessmentScaleWorkflowService = {
       initializeScaleInstance: jest.fn(),
@@ -155,6 +161,71 @@ describe('AssessmentVisitsController', () => {
       });
     },
   );
+
+  it('delegates visit update and delete with both ownership ids', async () => {
+    const params = {
+      patientId: '507f1f77bcf86cd799439011',
+      visitId: '507f1f77bcf86cd799439012',
+    };
+    const update = { notes: '' };
+    assessmentsService.updateVisitForPatient.mockResolvedValue({
+      visit: { id: params.visitId },
+      scaleInstances: [],
+      visitMaintenance: {
+        canEdit: true,
+        canDelete: true,
+        canVoid: false,
+        initializedScaleCount: 0,
+      },
+    });
+    assessmentsService.deleteVisitForPatient.mockResolvedValue(undefined);
+
+    await controller.updateVisit(params, update);
+    await controller.deleteVisit(params);
+
+    expect(assessmentsService.updateVisitForPatient).toHaveBeenCalledWith(
+      params.patientId,
+      params.visitId,
+      update,
+    );
+    expect(assessmentsService.deleteVisitForPatient).toHaveBeenCalledWith(
+      params.patientId,
+      params.visitId,
+    );
+  });
+
+  it('builds the current operator snapshot for visit voiding', async () => {
+    const params = {
+      patientId: '507f1f77bcf86cd799439011',
+      visitId: '507f1f77bcf86cd799439012',
+    };
+    const input = { confirm: true as const, reason: 'Duplicate visit' };
+    assessmentsService.voidVisitForPatient.mockResolvedValue({
+      visit: { id: params.visitId, status: 'voided' },
+      scaleInstances: [],
+      visitMaintenance: {
+        canEdit: false,
+        canDelete: false,
+        canVoid: false,
+        initializedScaleCount: 0,
+      },
+    });
+
+    await controller.voidVisit(params, input, createUser(['admin', 'doctor']));
+
+    expect(assessmentsService.voidVisitForPatient).toHaveBeenCalledWith(
+      params.patientId,
+      params.visitId,
+      {
+        ...input,
+        operatorSnapshot: {
+          operatorId: '507f1f77bcf86cd799439011',
+          operatorName: 'Operator A12 Test',
+          operatorRole: 'doctor',
+        },
+      },
+    );
+  });
 
   it.each(OPERATOR_ROLE_CASES)(
     'maps roles %j to operator role %s using the confirmed priority',

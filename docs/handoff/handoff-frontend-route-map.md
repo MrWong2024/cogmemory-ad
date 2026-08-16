@@ -10,8 +10,9 @@
 - B16 已让安全线性 replacement V2+ 在既有访视详情复用 A22 lock、A23 freeze-sources 与 A24 archive；没有 replacement 专用路由。
 - B17 / WP-04 已完成；历史报告详情保持只读，current report workflow、版本列表和历史详情职责分离。
 - WP-10 已完成；F1/F2 患者端继续复用 `/patient-administration/enter` 与 `/patient-administration`，既有 MMSE `supervised_patient_input` `ScaleInstance` 页面继续承载医护施测控制。patient administration completed 后，同一既有 `ScaleInstance` 页面挂载 F3 正常作答复核；F3 没有新增独立 `/review` 路由。下一工作包为 WP-11，状态仍为“待开始”。
+- WP-12 的 Visit edit / initialized-only physical delete / started Visit void 窄切片已提前落在既有访视详情，不新增 route；WP-12 整体仍未完成，也未因此启动 WP-11。
 - `/dashboard` 已提供患者档案入口，但仍不是完整医生工作台。
-- 当前不包含患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 状态流转、独立评分、评分锁定、独立认知域、current 报告专用详情、AI、用户管理或权限菜单路由。
+- 当前不包含患者编辑 / 删除 / 归档 / 合并、访视恢复 / 取消作废 / 二次删除或其他状态流转、独立评分、评分锁定、独立认知域、current 报告专用详情、AI、用户管理或权限菜单路由。
 - 当前不包含 Next middleware 或路由级服务端认证中间件。
 
 ## 3. 当前路由清单
@@ -95,15 +96,19 @@
 ### 3.8 `/patients/[patientId]/visits/[visitId]`
 
 - 页面名称：访视详情、量表初始化与访视级报告工作流
-- 页面职责：展示访视与实例摘要并初始化量表；current report 区域接入 A20–A25，安全线性 replacement V2+ 复用 A21–A24；独立版本面板提供 A27 报告版本导航。
+- 页面职责：展示访视与实例摘要并初始化量表；新增同页“访视维护”区，完全服从服务端 `visitMaintenance` 显示 edit / delete / void；current report 区域接入 A20–A25，安全线性 replacement V2+ 复用 A21–A24；独立版本面板提供 A27 报告版本导航。
 - 动态参数：Server Component 按 Next 16 `params: Promise<{ patientId: string; visitId: string }>` 等待参数后传给 `AssessmentVisitExecutionPage`
 - 访问边界：复用 `/patients/**` 的 `PatientsWorkspaceShell`；Shell 用轻量 `PatientsWorkspaceContext` 提供已取得的安全 AuthUser，不新增第二次 `/auth/me`，不读取 Cookie；角色只控制确认入口可见性，后端 Guard 是最终安全边界
-- 数据来源：既有访视详情 / 量表目录 / 初始化请求，以及 A20 latest / generate、A21 draft / submit / confirm、A22 lock、A23 freeze-sources、A24 archive、A25 `POST .../:reportId/corrections` 与 A27 `GET .../clinical-reports`。
+- 数据来源：访视详情（含服务端 `visitMaintenance`）、同一 execution client 的 Visit PATCH / DELETE / void、量表目录 / 初始化请求，以及 A20 latest / generate、A21 draft / submit / confirm、A22 lock、A23 freeze-sources、A24 archive、A25 `POST .../:reportId/corrections` 与 A27 `GET .../clinical-reports`。
 - loading：认证检查由工作区承担；访视详情、量表目录与报告 latest 各自独立 loading、AbortController、错误与重试；目录或报告失败不移除访视和既有实例
 - 链接无效：任一动态参数不符合 24 位 MongoId 时不发送 A13 请求，显示“访视链接无效”并提供返回入口
 - 401 / 403 / 404：401 返回 `/login`；403 显示无权限及工作台 / 退出登录入口；患者不存在与访视不存在或归属不符使用不同稳定文案
 - 初始化能力：仅 `draft` / `in_progress` 可操作；使用原生下拉框选择当前开放的施测方式，只提交 scaleCode / scaleVersion / administrationMode。MMSE 默认监督下患者作答，医护人员施测仍是兼容实时模式；paper import 当前未开放，MoCA supervised patient input 待对应患者端闭环开放。已初始化 scaleCode 禁用按钮；重复冲突刷新详情
 - 成功：以服务端返回的 ScaleInstance 更新列表并展示 `createdItemResponseCount` 题目记录骨架数量，不展示 ItemResponse 全量
+- 编辑维护：`canEdit=true` 才显示“编辑访视”；同页表单复用创建字段语义，成功采用完整服务器详情。`VISIT_NOT_EDITABLE` 后只刷新一次详情，不重试 PATCH，并提示访视已进入评估流程。
+- 删除维护：`canDelete=true` 才显示“删除访视”；必须勾选显式确认。`initializedScaleCount > 0` 时说明 N 个未开始实例及空白题目会一并删除；204 后 replace 到患者详情并 refresh。`VISIT_NOT_DELETABLE` 只刷新详情并提示改用作废，不自动发送 void。
+- 作废维护：`canVoid=true` 时只显示“作废访视”，要求 3–500 字原因和显式 checkbox，并说明量表、作答、证据、历史保留；成功直接采用服务器详情。已 voided 明确展示时间、人员、原因且整区只读。
+- 写互斥：Visit maintenance 请求期间阻止新的量表初始化和报告写；当前量表初始化、报告生成或 report workflow 写期间禁用维护按钮。只使用页面局部 busy 状态，不新增全局 write coordinator。
 - 报告 scope：无报告时由用户从当前访视 completed / locked 实例中明确选择 1-10 项；draft / in_progress / voided 不可选，初始不自动选择。候选状态不等于后端评分 / 认知域 / 媒体前置条件，不扇出 A17 / A19 readiness 请求。
 - 报告生成：用户须阅读 scope 固定、version 1、system_draft、未使用 AI、未医生确认与非诊断说明并勾选 checkbox；POST 只发送 confirm 与稳定排序实例 ID。生成期间禁用 scope 与初始化提交，不自动重试。
 - 报告状态：latest 独立建模 idle / loading / not_found / loaded / forbidden / error；已有报告只提供重新加载。same scope alreadyGenerated 按成功处理；scope conflict / voided / generation conflict 只自动 latest 一次，不覆盖、不重发 POST。
@@ -129,8 +134,8 @@
 - 状态边界：pending_confirmation 不可编辑；confirmed 未锁定仅可进入 A22 锁定；confirmed 已锁定及 archived / corrected / voided 只读。qualityStatus=passed 只表示报告确认流程质量标记通过；confirmed 与 lockedAt 是正交事实，source=mixed 不表示 AI。
 - 报告安全：不补齐缺失快照，不重新计算评分 / 比例 / 认知域，不调用媒体预览，不显示内部来源 ID / 对象键 / metadata，不输出诊断阈值、疾病判断或治疗建议。
 - 安全边界：目录不展示完整 groups / items、指导语、答案、scoringRule、expectedValue 或内部 ObjectId；能力标识不表示媒体、手写或计时已实现
-- 当前非目标：不在访视详情内读取或保存题目，不提供访视状态流转、报告退回 / reject / reopen / withdraw / 签名 / unlock / unfreeze / rollback / unarchive / restore confirmed / 作废 / 重生成 / PDF / 打印 / 下载或 AI 操作
-- 关联组件：`AssessmentVisitExecutionPage`、`ScaleInstanceList`、`ScaleInitializationPanel`、`PatientsWorkspaceContext`、`useClinicalReport`、`useClinicalReportWorkflow`、`ClinicalReportVersionPanel`、`ClinicalReportCorrectionPanel`、`ClinicalReportLockPanel`、`ClinicalReportSourceFreezePanel`、`ClinicalReportArchivePanel`、`ClinicalReportReadOnlyContent` 与其他 ClinicalReport 展示/摘要组件
+- 当前非目标：不在访视详情内读取或保存题目，不提供访视恢复 / 取消作废 / 单独删除未开始量表或其他访视状态流转，也不提供报告退回 / reject / reopen / withdraw / 签名 / unlock / unfreeze / rollback / unarchive / restore confirmed / 作废 / 重生成 / PDF / 打印 / 下载或 AI 操作
+- 关联组件：`AssessmentVisitExecutionPage`、`AssessmentVisitMaintenancePanel`、`ScaleInstanceList`、`ScaleInitializationPanel`、`PatientsWorkspaceContext`、`useClinicalReport`、`useClinicalReportWorkflow`、`ClinicalReportVersionPanel`、`ClinicalReportCorrectionPanel`、`ClinicalReportLockPanel`、`ClinicalReportSourceFreezePanel`、`ClinicalReportArchivePanel`、`ClinicalReportReadOnlyContent` 与其他 ClinicalReport 展示/摘要组件
 - 当前工作流结论：访视详情仍是唯一 current report 写工作流入口；七类 Action 只能经 `useClinicalReportWorkflow` façade 被页面间接使用。A25 成功后原地采用 replacement；B17 版本面板另行提供公开历史导航，历史详情不反向挂载写工作流。
 - B16 replacement 边界：安全 V2+ 的 draft / mixed / pending_confirmation 复用 A21，confirmed / locked / frozen 阶段按顺序复用当前报告工作流的 A22–A24；Patient inactive、Visit locked / voided 不构成 replacement 的前端阻断。没有 replacement 专用平行 API、路由、页面、Hook 或状态仓库。
 

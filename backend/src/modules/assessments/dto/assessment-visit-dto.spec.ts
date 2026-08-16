@@ -4,6 +4,8 @@ import { validate } from 'class-validator';
 import { CreateAssessmentVisitDto } from './create-assessment-visit.dto';
 import { ListAssessmentVisitsQueryDto } from './list-assessment-visits-query.dto';
 import { PatientVisitsParamDto } from './patient-visits-param.dto';
+import { UpdateAssessmentVisitDto } from './update-assessment-visit.dto';
+import { VoidAssessmentVisitDto } from './void-assessment-visit.dto';
 
 describe('assessment visit DTO validation', () => {
   it('applies list defaults and transforms pagination and date filters', async () => {
@@ -85,6 +87,42 @@ describe('assessment visit DTO validation', () => {
     );
   });
 
+  it('transforms visit update fields and allows an empty string to clear notes', async () => {
+    const dto = plainToInstance(UpdateAssessmentVisitDto, {
+      visitCode: ' visit-a12-updated ',
+      visitType: 'screening',
+      assessmentDate: '2026-02-02T08:00:00.000Z',
+      notes: '   ',
+    });
+
+    expect(await validate(dto)).toHaveLength(0);
+    expect(dto).toEqual(
+      expect.objectContaining({
+        visitCode: 'visit-a12-updated',
+        visitType: 'screening',
+        assessmentDate: new Date('2026-02-02T08:00:00.000Z'),
+        notes: '',
+      }),
+    );
+  });
+
+  it('requires explicit visit void confirmation and a trimmed reason', async () => {
+    const valid = plainToInstance(VoidAssessmentVisitDto, {
+      confirm: true,
+      reason: '  Duplicate clinical visit  ',
+    });
+    const invalid = plainToInstance(VoidAssessmentVisitDto, {
+      confirm: false,
+      reason: 'x',
+    });
+
+    expect(await validate(valid)).toHaveLength(0);
+    expect(valid.reason).toBe('Duplicate clinical visit');
+    expect((await validate(invalid)).map((error) => error.property)).toEqual(
+      expect.arrayContaining(['confirm', 'reason']),
+    );
+  });
+
   it('rejects an invalid patientId', async () => {
     const dto = plainToInstance(PatientVisitsParamDto, {
       patientId: 'not-a-mongo-id',
@@ -111,6 +149,8 @@ describe('assessment visit DTO validation', () => {
           subjectCode: 'FORGED',
           status: 'completed',
           operatorSnapshot: { operatorName: 'Forged' },
+          voidedBy: { operatorName: 'Forged' },
+          voidReason: 'Forged',
           completedAt: '2026-01-01T09:00:00.000Z',
           clinicalContext: { hidden: true },
           metadata: { hidden: true },

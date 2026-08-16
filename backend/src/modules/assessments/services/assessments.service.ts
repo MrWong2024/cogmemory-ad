@@ -10,6 +10,8 @@ import { Model, Types } from 'mongoose';
 import { PatientsService } from '../../patients/services/patients.service';
 import type { CreateAssessmentVisitDto } from '../dto/create-assessment-visit.dto';
 import type { ListAssessmentVisitsQueryDto } from '../dto/list-assessment-visits-query.dto';
+import type { UpdateAssessmentVisitDto } from '../dto/update-assessment-visit.dto';
+import type { VoidAssessmentVisitDto } from '../dto/void-assessment-visit.dto';
 import {
   AssessmentClinicalContext,
   AssessmentOperatorRole,
@@ -57,11 +59,16 @@ import {
   ScaleQualityControlSummary,
   ScaleVersionTrace,
 } from '../schemas/scale-instance.schema';
+import {
+  PatientAdministrationSession,
+  PatientAdministrationSessionDocument,
+} from '../schemas/patient-administration-session.schema';
 import { ScaleResponseType } from '../../scales/schemas/scale-version.schema';
 import type {
   AssessmentVisitExecutionDetailResponse,
   ScaleInstanceListItemResponse,
   ScaleInstanceProgressResponse,
+  VisitMaintenanceStateResponse,
 } from '../types/assessment-execution-response.types';
 import type {
   AssessmentVisitDetailResponse,
@@ -87,6 +94,8 @@ export type AssessmentVisitSummary = {
   completedAt: Date | null;
   lockedAt: Date | null;
   voidedAt: Date | null;
+  voidedBy: AssessmentOperatorSnapshotSummary | null;
+  voidReason?: string;
   operatorSnapshot: AssessmentOperatorSnapshotSummary | null;
   clinicalContext: AssessmentClinicalContext;
   notes?: string;
@@ -247,6 +256,16 @@ export type CreateVisitOperatorSnapshot = {
 
 export type CreateVisitForPatientInput = CreateAssessmentVisitDto & {
   operatorSnapshot: CreateVisitOperatorSnapshot;
+};
+
+export type VoidVisitForPatientInput = VoidAssessmentVisitDto & {
+  operatorSnapshot: CreateVisitOperatorSnapshot;
+};
+
+type VisitMaintenanceContext = {
+  visit: AssessmentVisitSummary;
+  scaleInstances: ScaleInstanceSummary[];
+  visitMaintenance: VisitMaintenanceStateResponse;
 };
 
 type MongoDuplicateKeyError = {
@@ -444,6 +463,8 @@ export class AssessmentsService {
     private readonly scaleInstanceModel: Model<ScaleInstanceDocument>,
     @InjectModel(ItemResponse.name)
     private readonly itemResponseModel: Model<ItemResponseDocument>,
+    @InjectModel(PatientAdministrationSession.name)
+    private readonly patientAdministrationSessionModel: Model<PatientAdministrationSessionDocument>,
     private readonly patientsService: PatientsService,
   ) {}
 
@@ -798,31 +819,22 @@ export class AssessmentsService {
     const normalizedPatientId = this.requireObjectId(patientId, 'patientId');
     const normalizedVisitId = this.requireObjectId(visitId, 'visitId');
     await this.requirePatient(normalizedPatientId);
-    const visit = await this.findVisitByPatientAndId(
+    const context = await this.requireVisitMaintenanceContext(
       normalizedPatientId,
       normalizedVisitId,
     );
 
-    if (!visit) {
-      throw new NotFoundException({
-        code: 'VISIT_NOT_FOUND',
-        message: 'Assessment visit not found',
-      });
-    }
-
-    const scaleInstances =
-      await this.listScaleInstancesByVisitId(normalizedVisitId);
-
     const publicScaleInstances = await Promise.all(
-      scaleInstances.map(async (scaleInstance) => {
+      context.scaleInstances.map(async (scaleInstance) => {
         const progress = await this.countItemResponseProgress(scaleInstance.id);
         return this.toPublicScaleInstanceResponse(scaleInstance, progress);
       }),
     );
 
     return {
-      visit: this.toAssessmentVisitDetailResponse(visit),
+      visit: this.toAssessmentVisitDetailResponse(context.visit),
       scaleInstances: publicScaleInstances,
+      visitMaintenance: context.visitMaintenance,
     };
   }
 
@@ -931,6 +943,7 @@ export class AssessmentsService {
         completedAt: null,
         lockedAt: null,
         voidedAt: null,
+        voidedBy: null,
         operatorSnapshot: {
           operatorId,
           operatorName: input.operatorSnapshot.operatorName.trim(),
@@ -951,6 +964,235 @@ export class AssessmentsService {
     }
   }
 
+  async updateVisitForPatient(
+    patientId: Types.ObjectId | string,
+    visitId: Types.ObjectId | string,
+    input: UpdateAssessmentVisitDto,
+  ): Promise<AssessmentVisitExecutionDetailResponse> {
+    if (!this.hasVisitUpdateField(input)) {
+      throw new BadRequestException({
+        code: 'VISIT_UPDATE_EMPTY_PATCH',
+        message: 'At least one visit field must be provided',
+      });
+    }
+
+    const normalizedPatientId = this.requireObjectId(patientId, 'patientId');
+    const normalizedVisitId = this.requireObjectId(visitId, 'visitId');
+    await this.requirePatient(normalizedPatientId);
+    const context = await this.requireVisitMaintenanceContext(
+      normalizedPatientId,
+      normalizedVisitId,
+    );
+
+    if (!context.visitMaintenance.canEdit) {
+      this.throwVisitNotEditable();
+    }
+
+    const setFields: Record<string, unknown> = {};
+    const unsetFields: Record<string, 1> = {};
+
+    if (input.visitCode !== undefined) {
+      const visitCode = this.normalizeVisitCode(input.visitCode);
+      const conflictingVisit = await this.assessmentVisitModel
+        .findOne({
+          _id: { $ne: normalizedVisitId },
+          visitCode,
+        })
+        .exec();
+
+      if (conflictingVisit) {
+        this.throwVisitCodeConflict();
+      }
+
+      setFields.visitCode = visitCode;
+    }
+
+    if (input.visitType !== undefined) {
+      setFields.visitType = input.visitType;
+    }
+
+    if (input.assessmentDate !== undefined) {
+      setFields.assessmentDate = input.assessmentDate;
+    }
+
+    if (input.notes !== undefined) {
+      if (input.notes === '') {
+        unsetFields.notes = 1;
+      } else {
+        setFields.notes = input.notes;
+      }
+    }
+
+    const update = {
+      ...(Object.keys(setFields).length > 0 ? { $set: setFields } : {}),
+      ...(Object.keys(unsetFields).length > 0 ? { $unset: unsetFields } : {}),
+    };
+
+    try {
+      const updated = await this.assessmentVisitModel
+        .findOneAndUpdate(
+          { _id: normalizedVisitId, patientId: normalizedPatientId },
+          update,
+          { returnDocument: 'after', runValidators: true },
+        )
+        .exec();
+
+      if (!updated) {
+        throw new NotFoundException({
+          code: 'VISIT_NOT_FOUND',
+          message: 'Assessment visit not found',
+        });
+      }
+    } catch (error: unknown) {
+      if (isMongoDuplicateKeyError(error)) {
+        this.throwVisitCodeConflict();
+      }
+
+      throw error;
+    }
+
+    return this.getVisitExecutionDetail(normalizedPatientId, normalizedVisitId);
+  }
+
+  async deleteVisitForPatient(
+    patientId: Types.ObjectId | string,
+    visitId: Types.ObjectId | string,
+  ): Promise<void> {
+    const normalizedPatientId = this.requireObjectId(patientId, 'patientId');
+    const normalizedVisitId = this.requireObjectId(visitId, 'visitId');
+    await this.requirePatient(normalizedPatientId);
+    const context = await this.requireVisitMaintenanceContext(
+      normalizedPatientId,
+      normalizedVisitId,
+    );
+
+    if (!context.visitMaintenance.canDelete) {
+      throw new ConflictException({
+        code: 'VISIT_NOT_DELETABLE',
+        message: 'Assessment visit cannot be physically deleted',
+      });
+    }
+
+    const scaleInstanceIds = context.scaleInstances.map(
+      (scaleInstance) => new Types.ObjectId(scaleInstance.id),
+    );
+
+    if (scaleInstanceIds.length > 0) {
+      await this.itemResponseModel
+        .deleteMany({
+          assessmentVisitId: normalizedVisitId,
+          patientId: normalizedPatientId,
+          scaleInstanceId: { $in: scaleInstanceIds },
+        })
+        .exec();
+      await this.scaleInstanceModel
+        .deleteMany({
+          _id: { $in: scaleInstanceIds },
+          assessmentVisitId: normalizedVisitId,
+          patientId: normalizedPatientId,
+        })
+        .exec();
+    }
+
+    const result = await this.assessmentVisitModel
+      .deleteOne({ _id: normalizedVisitId, patientId: normalizedPatientId })
+      .exec();
+
+    if (result.deletedCount !== 1) {
+      throw new NotFoundException({
+        code: 'VISIT_NOT_FOUND',
+        message: 'Assessment visit not found',
+      });
+    }
+  }
+
+  async voidVisitForPatient(
+    patientId: Types.ObjectId | string,
+    visitId: Types.ObjectId | string,
+    input: VoidVisitForPatientInput,
+  ): Promise<AssessmentVisitExecutionDetailResponse> {
+    if (input.confirm !== true) {
+      throw new BadRequestException({
+        code: 'VISIT_VOID_CONFIRMATION_REQUIRED',
+        message: 'Visit void confirmation is required',
+      });
+    }
+
+    const normalizedPatientId = this.requireObjectId(patientId, 'patientId');
+    const normalizedVisitId = this.requireObjectId(visitId, 'visitId');
+    await this.requirePatient(normalizedPatientId);
+    const context = await this.requireVisitMaintenanceContext(
+      normalizedPatientId,
+      normalizedVisitId,
+    );
+
+    if (context.visit.status === 'voided' || context.visit.voidedAt !== null) {
+      return this.getVisitExecutionDetail(
+        normalizedPatientId,
+        normalizedVisitId,
+      );
+    }
+
+    if (!context.visitMaintenance.canVoid) {
+      throw new ConflictException({
+        code: 'VISIT_NOT_VOIDABLE',
+        message: 'Assessment visit should be deleted instead of voided',
+      });
+    }
+
+    const operatorId = this.requireObjectId(
+      input.operatorSnapshot.operatorId,
+      'operatorSnapshot.operatorId',
+    );
+    const voidedAt = new Date();
+    const updated = await this.assessmentVisitModel
+      .findOneAndUpdate(
+        {
+          _id: normalizedVisitId,
+          patientId: normalizedPatientId,
+          status: { $ne: 'voided' },
+          $or: [{ voidedAt: null }, { voidedAt: { $exists: false } }],
+        },
+        {
+          $set: {
+            status: 'voided',
+            voidedAt,
+            voidedBy: {
+              operatorId,
+              operatorName: input.operatorSnapshot.operatorName.trim(),
+              operatorRole: input.operatorSnapshot.operatorRole,
+            },
+            voidReason: input.reason.trim(),
+          },
+        },
+        { returnDocument: 'after', runValidators: true },
+      )
+      .exec();
+
+    if (!updated) {
+      const latest = await this.findVisitByPatientAndId(
+        normalizedPatientId,
+        normalizedVisitId,
+      );
+
+      if (!latest) {
+        throw new NotFoundException({
+          code: 'VISIT_NOT_FOUND',
+          message: 'Assessment visit not found',
+        });
+      }
+
+      if (latest.status !== 'voided' && latest.voidedAt === null) {
+        throw new ConflictException({
+          code: 'VISIT_NOT_VOIDABLE',
+          message: 'Assessment visit cannot be voided',
+        });
+      }
+    }
+
+    return this.getVisitExecutionDetail(normalizedPatientId, normalizedVisitId);
+  }
+
   toAssessmentVisitListItemResponse(
     visit: AssessmentVisitSummary,
   ): AssessmentVisitListItemResponse {
@@ -966,6 +1208,8 @@ export class AssessmentsService {
       completedAt: visit.completedAt,
       lockedAt: visit.lockedAt,
       voidedAt: visit.voidedAt,
+      voidedBy: visit.voidedBy ? { ...visit.voidedBy } : null,
+      voidReason: visit.voidReason,
       operatorSnapshot: visit.operatorSnapshot
         ? { ...visit.operatorSnapshot }
         : null,
@@ -1804,6 +2048,191 @@ export class AssessmentsService {
     });
   }
 
+  private throwVisitNotEditable(): never {
+    throw new ConflictException({
+      code: 'VISIT_NOT_EDITABLE',
+      message: 'Assessment visit is not editable',
+    });
+  }
+
+  private hasVisitUpdateField(input: UpdateAssessmentVisitDto): boolean {
+    return (
+      input.visitCode !== undefined ||
+      input.visitType !== undefined ||
+      input.assessmentDate !== undefined ||
+      input.notes !== undefined
+    );
+  }
+
+  private async requireVisitMaintenanceContext(
+    patientId: Types.ObjectId,
+    visitId: Types.ObjectId,
+  ): Promise<VisitMaintenanceContext> {
+    const visit = await this.findVisitByPatientAndId(patientId, visitId);
+
+    if (!visit) {
+      throw new NotFoundException({
+        code: 'VISIT_NOT_FOUND',
+        message: 'Assessment visit not found',
+      });
+    }
+
+    const scaleInstances = await this.listScaleInstancesByVisitId(visitId);
+    const initializedScaleCount = scaleInstances.length;
+
+    if (visit.status === 'voided' || visit.voidedAt !== null) {
+      return {
+        visit,
+        scaleInstances,
+        visitMaintenance: {
+          canEdit: false,
+          canDelete: false,
+          canVoid: false,
+          initializedScaleCount,
+        },
+      };
+    }
+
+    const scaleInstanceIds = scaleInstances.map(
+      (scaleInstance) => new Types.ObjectId(scaleInstance.id),
+    );
+    const [itemResponses, patientAdministrationSession] =
+      scaleInstanceIds.length === 0
+        ? [[], null]
+        : await Promise.all([
+            this.itemResponseModel
+              .find({
+                assessmentVisitId: visitId,
+                patientId,
+                scaleInstanceId: { $in: scaleInstanceIds },
+              })
+              .exec(),
+            this.patientAdministrationSessionModel
+              .exists({ scaleInstanceId: { $in: scaleInstanceIds } })
+              .exec(),
+          ]);
+    const isPreAssessment =
+      patientAdministrationSession === null &&
+      this.isPristineVisit(visit) &&
+      scaleInstances.every((scaleInstance) =>
+        this.isPristineScaleInstance(scaleInstance),
+      ) &&
+      itemResponses.every((itemResponse) =>
+        this.isPristineItemResponse(itemResponse),
+      );
+
+    return {
+      visit,
+      scaleInstances,
+      visitMaintenance: {
+        canEdit: isPreAssessment,
+        canDelete: isPreAssessment,
+        canVoid: !isPreAssessment,
+        initializedScaleCount,
+      },
+    };
+  }
+
+  private isPristineVisit(visit: AssessmentVisitSummary): boolean {
+    return (
+      visit.status === 'draft' &&
+      visit.startedAt === null &&
+      visit.completedAt === null &&
+      visit.lockedAt === null &&
+      visit.voidedAt === null
+    );
+  }
+
+  private isPristineScaleInstance(
+    scaleInstance: ScaleInstanceSummary,
+  ): boolean {
+    return (
+      scaleInstance.status === 'draft' &&
+      scaleInstance.startedAt === null &&
+      scaleInstance.completedAt === null &&
+      scaleInstance.lockedAt === null &&
+      scaleInstance.voidedAt === null &&
+      scaleInstance.durationMs === null &&
+      scaleInstance.submissionWriteBarrier == null
+    );
+  }
+
+  private isPristineItemResponse(itemResponse: ItemResponseDocument): boolean {
+    const score = itemResponse.score;
+
+    return (
+      itemResponse.status === 'not_started' &&
+      itemResponse.draftRevision === 0 &&
+      itemResponse.draftSavedAt == null &&
+      itemResponse.rawResponse == null &&
+      itemResponse.structuredResponse == null &&
+      this.isEmptyText(itemResponse.responseText) &&
+      this.isEmptyText(itemResponse.responseSummary) &&
+      itemResponse.isMissing === false &&
+      itemResponse.missingReason == null &&
+      itemResponse.operatorNote == null &&
+      itemResponse.submissionWriteBarrier == null &&
+      itemResponse.lockedAt == null &&
+      itemResponse.voidedAt == null &&
+      score != null &&
+      score.scoreValue == null &&
+      score.scoreStatus === 'not_scored' &&
+      score.scoreSource === 'none' &&
+      score.scoredAt == null &&
+      score.scoredBy == null &&
+      score.scoringNote == null &&
+      (itemResponse.stepResults ?? []).every(
+        (step) =>
+          step.actualValue == null &&
+          step.isCorrect == null &&
+          step.scoreValue == null &&
+          this.isEmptyText(step.note),
+      ) &&
+      (itemResponse.promptResponses ?? []).every(
+        (prompt) =>
+          prompt.responseAfterPrompt == null &&
+          prompt.isCorrect == null &&
+          this.isAllowedSeedNote(
+            prompt.note,
+            'Initialized from seed prompt record.',
+          ),
+      ) &&
+      this.isPristineTiming(itemResponse.timing) &&
+      (itemResponse.evidenceRefs ?? []).every(
+        (evidenceRef) =>
+          evidenceRef.mediaEvidenceId == null &&
+          evidenceRef.status === 'pending' &&
+          this.isAllowedSeedNote(
+            evidenceRef.note,
+            'Initialized from scale seed.',
+          ),
+      )
+    );
+  }
+
+  private isPristineTiming(timing?: ItemTimingSnapshot | null): boolean {
+    return (
+      timing == null ||
+      (timing.timerState === 'idle' &&
+        timing.startedAt == null &&
+        timing.lastResumedAt == null &&
+        timing.completedAt == null &&
+        timing.durationMs == null &&
+        timing.timerSource === 'none')
+    );
+  }
+
+  private isEmptyText(value?: string | null): boolean {
+    return value == null || value.trim() === '';
+  }
+
+  private isAllowedSeedNote(
+    value: string | null | undefined,
+    seedNote: string,
+  ): boolean {
+    return this.isEmptyText(value) || value === seedNote;
+  }
+
   private toPublicScaleInstanceProgress(
     progress: ScaleInstanceProgress,
   ): ScaleInstanceProgressResponse {
@@ -1873,6 +2302,8 @@ export class AssessmentsService {
       completedAt: visit.completedAt ?? null,
       lockedAt: visit.lockedAt ?? null,
       voidedAt: visit.voidedAt ?? null,
+      voidedBy: this.mapOperatorSnapshot(visit.voidedBy),
+      voidReason: visit.voidReason,
       operatorSnapshot: this.mapOperatorSnapshot(visit.operatorSnapshot),
       clinicalContext: visit.clinicalContext ?? null,
       notes: visit.notes,

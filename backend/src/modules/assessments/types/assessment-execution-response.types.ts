@@ -23,6 +23,13 @@ export type ScaleInstanceProgressResponse = {
   answeredItemCount: number;
 };
 
+export type VisitMaintenanceStateResponse = {
+  canEdit: boolean;
+  canDelete: boolean;
+  canVoid: boolean;
+  initializedScaleCount: number;
+};
+
 export type ScaleInstanceListItemResponse = {
   id: string;
   assessmentVisitId: string;
@@ -47,6 +54,7 @@ export type ScaleInstanceListItemResponse = {
 export type AssessmentVisitExecutionDetailResponse = {
   visit: AssessmentVisitDetailResponse;
   scaleInstances: ScaleInstanceListItemResponse[];
+  visitMaintenance: VisitMaintenanceStateResponse;
 };
 
 export type InitializeScaleInstanceResponse = {
