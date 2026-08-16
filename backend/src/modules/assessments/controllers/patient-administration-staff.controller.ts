@@ -43,6 +43,7 @@ import { PATIENT_ADMINISTRATION_COOKIE_NAME } from '../patient-administration.co
 import { PatientAdministrationSessionService } from '../services/patient-administration-session.service';
 import type {
   PatientAdministrationEntryCodeResponse,
+  PatientAdministrationSessionCreateResponse,
   PatientAdministrationSessionSummaryResponse,
 } from '../types/patient-administration-response.types';
 import { buildPatientAdministrationCookieOptions } from '../utils/patient-administration-cookie.util';
@@ -63,13 +64,13 @@ export class PatientAdministrationStaffController {
   createSession(
     @Param() params: ScaleInstanceExecutionParamDto,
     @CurrentUser() currentUser: AuthenticatedUserContext | undefined,
-    @Body() _input: CreatePatientAdministrationSessionDto,
-  ): Promise<PatientAdministrationEntryCodeResponse> {
-    void _input;
+    @Body() input: CreatePatientAdministrationSessionDto,
+  ): Promise<PatientAdministrationSessionCreateResponse> {
     return this.patientAdministrationSessionService.createSession(
       params.patientId,
       params.visitId,
       params.scaleInstanceId,
+      input.deviceMode,
       this.patientAdministrationSessionService.buildOperatorSnapshot(
         currentUser,
       ),

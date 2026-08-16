@@ -448,7 +448,10 @@ describe('patient administration 19-step flow APIs (e2e)', () => {
         .exec(),
     );
 
-    const createResponse = await staff.post(base).send({}).expect(201);
+    const createResponse = await staff
+      .post(base)
+      .send({ deviceMode: 'cross_device' })
+      .expect(201);
     const createBody = bodyOf(createResponse);
     const sessionId = stringOf(createBody, 'id');
     const patientAgent = request.agent(httpServer);

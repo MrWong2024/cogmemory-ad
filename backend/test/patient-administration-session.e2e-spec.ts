@@ -550,6 +550,59 @@ describe('patient administration session APIs (e2e)', () => {
     await app.close();
   });
 
+  it('validates deviceMode and creates same-device sessions without entry codes', async () => {
+    const fixture = await createFixture('DEVICE-MODE');
+    const base = staffBase(fixture);
+    const doctor = requireAgent(ACCOUNTS.doctor);
+
+    await doctor.post(base).send({}).expect(400);
+    await doctor
+      .post(base)
+      .send({ deviceMode: 'unsupported_device' })
+      .expect(400);
+    expect(
+      await administrationSessionModel
+        .countDocuments({ scaleInstanceId: fixture.scaleInstance._id })
+        .exec(),
+    ).toBe(0);
+
+    const createResponse = await doctor
+      .post(base)
+      .send({ deviceMode: 'same_device' })
+      .expect(201);
+    const createBody = readBody(createResponse);
+    expect(createBody).toEqual(
+      expect.objectContaining({
+        deviceMode: 'same_device',
+        entryCode: null,
+        entryCodeExpiresAt: null,
+        hasPatientCredential: false,
+        status: 'prepared',
+        revision: 0,
+      }),
+    );
+    const stored = await administrationSessionModel
+      .findById(readString(createBody, 'id'))
+      .select('+entryCodeHash +sessionTokenHash')
+      .exec();
+    expect(stored?.deviceMode).toBe('same_device');
+    expect(stored?.entryCodeHash).toBeUndefined();
+    expect(stored?.entryCodeExpiresAt).toBeUndefined();
+    expect(stored?.sessionTokenHash).toBeUndefined();
+
+    await doctor
+      .post(`${base}/entry-code/reissue`)
+      .send({ expectedRevision: 0, reason: 'must not switch mode' })
+      .expect(409)
+      .expect((response: Response) => {
+        expect(readBody(response)).toEqual(
+          expect.objectContaining({
+            code: 'PATIENT_ADMINISTRATION_SESSION_CONFLICT',
+          }),
+        );
+      });
+  });
+
   it('allows every workflow role, rejects other roles, and enforces one open session under concurrency', async () => {
     const roleCases = [
       [ACCOUNTS.admin, 'ROLE-ADMIN'],
@@ -561,7 +614,7 @@ describe('patient administration session APIs (e2e)', () => {
       const fixture = await createFixture(suffix);
       const response = await requireAgent(accountName)
         .post(staffBase(fixture))
-        .send({})
+        .send({ deviceMode: 'cross_device' })
         .expect(201);
       expect(readString(readBody(response), 'entryCode')).toMatch(/^\d{6}$/);
     }
@@ -569,13 +622,17 @@ describe('patient administration session APIs (e2e)', () => {
     const forbidden = await createFixture('ROLE-SYSTEM');
     await requireAgent(ACCOUNTS.system)
       .post(staffBase(forbidden))
-      .send({})
+      .send({ deviceMode: 'cross_device' })
       .expect(403);
 
     const concurrent = await createFixture('CONCURRENT');
     const results = await Promise.all([
-      requireAgent(ACCOUNTS.doctor).post(staffBase(concurrent)).send({}),
-      requireAgent(ACCOUNTS.nurse).post(staffBase(concurrent)).send({}),
+      requireAgent(ACCOUNTS.doctor)
+        .post(staffBase(concurrent))
+        .send({ deviceMode: 'cross_device' }),
+      requireAgent(ACCOUNTS.nurse)
+        .post(staffBase(concurrent))
+        .send({ deviceMode: 'cross_device' }),
     ]);
     expect(results.map((result) => result.status).sort()).toEqual([201, 409]);
     expect(
@@ -589,13 +646,17 @@ describe('patient administration session APIs (e2e)', () => {
     const fixture = await createFixture('MAIN');
     const base = staffBase(fixture);
     const doctor = requireAgent(ACCOUNTS.doctor);
-    const createResponse = await doctor.post(base).send({}).expect(201);
+    const createResponse = await doctor
+      .post(base)
+      .send({ deviceMode: 'cross_device' })
+      .expect(201);
     const createBody = readBody(createResponse);
     const entryCode = readString(createBody, 'entryCode');
     const sessionId = readString(createBody, 'id');
     expect(entryCode).toMatch(/^\d{6}$/);
     expect(createBody).toEqual(
       expect.objectContaining({
+        deviceMode: 'cross_device',
         status: 'prepared',
         revision: 0,
         hasPatientCredential: false,
@@ -613,6 +674,25 @@ describe('patient administration session APIs (e2e)', () => {
     );
     expect(storedBeforeEnter?.entryCodeHash).not.toBe(entryCode);
     expect(storedBeforeEnter?.sessionTokenHash).toBeUndefined();
+
+    await doctor
+      .post(`${base}/preparation/confirm`)
+      .send({ expectedRevision: 0, impactFactorCodes: [] })
+      .expect(409);
+    await doctor
+      .post(`${base}/handoff`)
+      .send({ expectedRevision: 0 })
+      .expect(409);
+    await doctor.get('/auth/me').expect(200);
+    const storedAfterModeGate = await administrationSessionModel
+      .findById(sessionId)
+      .select('+entryCodeHash +sessionTokenHash')
+      .exec();
+    expect(storedAfterModeGate?.revision).toBe(0);
+    expect(storedAfterModeGate?.entryCodeHash).toBe(
+      authService.hashSessionToken(entryCode),
+    );
+    expect(storedAfterModeGate?.sessionTokenHash).toBeUndefined();
 
     const patient = request.agent(httpServer);
     const enterResponse = await patient
@@ -856,7 +936,10 @@ describe('patient administration session APIs (e2e)', () => {
     const unpreparedFixture = await createFixture('UNPREPARED-HANDOFF');
     const unpreparedBase = staffBase(unpreparedFixture);
     const unpreparedCreated = readBody(
-      await doctor.post(unpreparedBase).send({}).expect(201),
+      await doctor
+        .post(unpreparedBase)
+        .send({ deviceMode: 'same_device' })
+        .expect(201),
     );
     const unpreparedSessionId = readString(unpreparedCreated, 'id');
     const unpreparedBefore = await administrationSessionModel
@@ -890,10 +973,16 @@ describe('patient administration session APIs (e2e)', () => {
       .lean()
       .exec();
     const created = readBody(
-      await handoffDoctor.post(handoffBase).send({}).expect(201),
+      await handoffDoctor
+        .post(handoffBase)
+        .send({ deviceMode: 'same_device' })
+        .expect(201),
     );
     expect(created).toEqual(
       expect.objectContaining({
+        deviceMode: 'same_device',
+        entryCode: null,
+        entryCodeExpiresAt: null,
         status: 'prepared',
         revision: 0,
         hasPatientCredential: false,
@@ -927,7 +1016,8 @@ describe('patient administration session APIs (e2e)', () => {
     expect(storedBeforeHandoff?.status).toBe('prepared');
     expect(storedBeforeHandoff?.revision).toBe(1);
     expect(storedBeforeHandoff?.startedAt).toBeUndefined();
-    expect(storedBeforeHandoff?.entryCodeHash).toBeDefined();
+    expect(storedBeforeHandoff?.entryCodeHash).toBeUndefined();
+    expect(storedBeforeHandoff?.entryCodeExpiresAt).toBeUndefined();
     expect(storedBeforeHandoff?.sessionTokenHash).toBeUndefined();
     expect(
       storedBeforeHandoff?.controlEvents.map((event) => event.action),
@@ -998,7 +1088,10 @@ describe('patient administration session APIs (e2e)', () => {
     const conflictFixture = await createFixture('STAFF-CONFLICT');
     const conflictBase = staffBase(conflictFixture);
     const conflictCreated = readBody(
-      await doctor.post(conflictBase).send({}).expect(201),
+      await doctor
+        .post(conflictBase)
+        .send({ deviceMode: 'cross_device' })
+        .expect(201),
     );
     const conflictCode = readString(conflictCreated, 'entryCode');
     await doctor
@@ -1032,22 +1125,28 @@ describe('patient administration session APIs (e2e)', () => {
     const base = staffBase(fixture);
     const nurse = requireAgent(ACCOUNTS.nurse);
     const doctor = requireAgent(ACCOUNTS.doctor);
-    const created = readBody(await nurse.post(base).send({}).expect(201));
-    const patient = request.agent(httpServer);
-    await patient
-      .post('/patient-administration/enter')
-      .send({ code: readString(created, 'entryCode') })
-      .expect(200);
-    await nurse
-      .post(`${base}/preparation/confirm`)
-      .send({
-        expectedRevision: 1,
-        impactFactorCodes: ['environment'],
-        impactFactorNote: 'quiet room',
-      })
-      .expect(200);
+    const admin = requireAgent(ACCOUNTS.admin);
+    const created = readBody(
+      await nurse.post(base).send({ deviceMode: 'same_device' }).expect(201),
+    );
+    const confirmed = readBody(
+      await nurse
+        .post(`${base}/preparation/confirm`)
+        .send({
+          expectedRevision: 0,
+          impactFactorCodes: ['environment'],
+          impactFactorNote: 'quiet room',
+        })
+        .expect(200),
+    );
+    const initialHandoff = readBody(
+      await nurse
+        .post(`${base}/handoff`)
+        .send({ expectedRevision: readNumber(confirmed, 'revision') })
+        .expect(200),
+    );
     const activeCurrent = readBody(
-      await patient.get('/patient-administration/current').expect(200),
+      await nurse.get('/patient-administration/current').expect(200),
     );
     if (!isRecord(activeCurrent.currentStep)) {
       throw new Error('Expected an active step before paused handoff');
@@ -1061,16 +1160,19 @@ describe('patient administration session APIs (e2e)', () => {
       activeSession?.preparationConfirmedAt;
     expect(originalStartedAt).toBeInstanceOf(Date);
 
-    await nurse
+    await doctor
       .post(`${base}/pause`)
-      .send({ expectedRevision: 2, reason: 'device transfer' })
+      .send({
+        expectedRevision: readNumber(initialHandoff, 'revision'),
+        reason: 'device transfer',
+      })
       .expect(200)
       .expect((response: Response) => {
         expect(readBody(response)).toEqual(
           expect.objectContaining({ status: 'paused', revision: 3 }),
         );
       });
-    const handoffResponse = await nurse
+    const handoffResponse = await doctor
       .post(`${base}/handoff`)
       .send({ expectedRevision: 3 })
       .expect(200);
@@ -1081,10 +1183,10 @@ describe('patient administration session APIs (e2e)', () => {
         startedAt: originalStartedAt?.toISOString(),
       }),
     );
-    await nurse.get('/auth/me').expect(401);
-    await patient.get('/patient-administration/current').expect(401);
+    await doctor.get('/auth/me').expect(401);
+    await nurse.get('/patient-administration/current').expect(401);
     expect(
-      readBody(await nurse.get('/patient-administration/current').expect(200)),
+      readBody(await doctor.get('/patient-administration/current').expect(200)),
     ).toEqual(
       expect.objectContaining({
         status: 'paused',
@@ -1103,7 +1205,7 @@ describe('patient administration session APIs (e2e)', () => {
     expect(storedAfterHandoff?.impactFactorCodes).toEqual(['environment']);
     expect(storedAfterHandoff?.impactFactorNote).toBe('quiet room');
 
-    await doctor
+    await admin
       .post(`${base}/resume`)
       .send({ expectedRevision: 4, reason: 'continue after transfer' })
       .expect(200)
@@ -1113,7 +1215,7 @@ describe('patient administration session APIs (e2e)', () => {
         );
       });
     const resumedCurrent = readBody(
-      await nurse.get('/patient-administration/current').expect(200),
+      await doctor.get('/patient-administration/current').expect(200),
     );
     if (!isRecord(resumedCurrent.currentStep)) {
       throw new Error('Expected the same active step after resume');
@@ -1126,12 +1228,13 @@ describe('patient administration session APIs (e2e)', () => {
       .exec();
     expect(resumedSession?.startedAt).toEqual(originalStartedAt);
     expect(resumedSession?.controlEvents.map((event) => event.action)).toEqual([
-      'entry_redeemed',
       'preparation_confirmed',
+      'same_device_handoff',
       'paused',
       'same_device_handoff',
       'resumed',
     ]);
+    await login(ACCOUNTS.doctor);
   });
 
   it('fails closed for mode, lock, barrier, ownership, DTO, and still permits safety pause/terminate', async () => {
@@ -1140,7 +1243,10 @@ describe('patient administration session APIs (e2e)', () => {
       'CLINICIAN',
       'clinician_administered',
     );
-    await doctor.post(staffBase(clinician)).send({}).expect(409);
+    await doctor
+      .post(staffBase(clinician))
+      .send({ deviceMode: 'same_device' })
+      .expect(409);
 
     const locked = await createFixture('LOCKED-CREATE');
     await scaleInstanceModel
@@ -1149,7 +1255,10 @@ describe('patient administration session APIs (e2e)', () => {
         { $set: { lockedAt: new Date() } },
       )
       .exec();
-    await doctor.post(staffBase(locked)).send({}).expect(409);
+    await doctor
+      .post(staffBase(locked))
+      .send({ deviceMode: 'same_device' })
+      .expect(409);
 
     const barrier = await createFixture('BARRIER-CREATE');
     await scaleInstanceModel
@@ -1158,12 +1267,18 @@ describe('patient administration session APIs (e2e)', () => {
         { $set: { submissionWriteBarrier: { broken: true } } },
       )
       .exec();
-    await doctor.post(staffBase(barrier)).send({}).expect(409);
+    await doctor
+      .post(staffBase(barrier))
+      .send({ deviceMode: 'same_device' })
+      .expect(409);
 
     const safety = await createFixture('SAFETY');
     const safetyBase = staffBase(safety);
     const safetyCreated = readBody(
-      await doctor.post(safetyBase).send({}).expect(201),
+      await doctor
+        .post(safetyBase)
+        .send({ deviceMode: 'cross_device' })
+        .expect(201),
     );
     const safetyPatient = request.agent(httpServer);
     await safetyPatient
@@ -1224,7 +1339,11 @@ describe('patient administration session APIs (e2e)', () => {
     const forged = await createFixture('FORGED-BODY');
     await doctor
       .post(staffBase(forged))
-      .send({ status: 'active', patientId: new Types.ObjectId().toString() })
+      .send({
+        deviceMode: 'same_device',
+        status: 'active',
+        patientId: new Types.ObjectId().toString(),
+      })
       .expect(400);
     expect(
       await administrationSessionModel

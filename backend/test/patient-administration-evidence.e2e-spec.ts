@@ -591,7 +591,10 @@ describe('patient administration evidence APIs (e2e)', () => {
     const scaleInstanceId = stringOf(initializedInstance, 'id');
     ownedScaleInstanceIds.add(scaleInstanceId);
     const base = `/patients/${patient._id.toString()}/visits/${visit._id.toString()}/scale-instances/${scaleInstanceId}/patient-administration`;
-    const createResponse = await staff.post(base).send({}).expect(201);
+    const createResponse = await staff
+      .post(base)
+      .send({ deviceMode: 'cross_device' })
+      .expect(201);
     const createBody = bodyOf(createResponse);
     const patientAgent = request.agent(httpServer);
     const entered = await patientAgent

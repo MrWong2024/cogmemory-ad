@@ -222,6 +222,7 @@ describe('PatientAdministrationSessionService', () => {
     return {
       _id: new Types.ObjectId('507f1f77bcf86cd799439017'),
       scaleInstanceId: new Types.ObjectId(scaleInstanceId),
+      deviceMode: 'cross_device',
       status: 'prepared',
       currentStepKey: 'first',
       revision: 0,
@@ -408,6 +409,14 @@ describe('PatientAdministrationSessionService', () => {
       PatientAdministrationSessionSchema.path('sessionTokenHash').options
         .select,
     ).toBe(false);
+    const deviceModePath =
+      PatientAdministrationSessionSchema.path('deviceMode');
+    expect(deviceModePath.instance).toBe('String');
+    expect(deviceModePath.options.enum).toEqual([
+      'same_device',
+      'cross_device',
+    ]);
+    expect(deviceModePath.options.required).toBe(true);
     for (const embeddedPath of [
       'stepCaptures',
       'playbackFacts',
@@ -446,10 +455,18 @@ describe('PatientAdministrationSessionService', () => {
   });
 
   it('confirms preparation before patient credential issuance without activating the session', async () => {
-    const prepared = sessionDocument({ revision: 0 });
+    const prepared = sessionDocument({
+      deviceMode: 'same_device',
+      revision: 0,
+      entryCodeHash: undefined,
+      entryCodeExpiresAt: undefined,
+    });
     const confirmedAt = new Date('2026-08-07T01:00:00.000Z');
     const updated = sessionDocument({
+      deviceMode: 'same_device',
       revision: 1,
+      entryCodeHash: undefined,
+      entryCodeExpiresAt: undefined,
       preparationConfirmedAt: confirmedAt,
       preparationConfirmedBy: operator,
       impactFactorCodes: ['sensory', 'device_network'],
@@ -472,6 +489,7 @@ describe('PatientAdministrationSessionService', () => {
       expect.objectContaining({
         status: 'prepared',
         revision: 1,
+        deviceMode: 'same_device',
         hasPatientCredential: false,
         startedAt: null,
         impactFactorCodes: ['sensory', 'device_network'],
@@ -519,6 +537,7 @@ describe('PatientAdministrationSessionService', () => {
 
   it('activates a cross-device prepared session after its credential is issued', async () => {
     const prepared = sessionDocument({
+      deviceMode: 'cross_device',
       revision: 1,
       sessionTokenHash: 'existing-patient-token-hash',
       entryCodeHash: undefined,
@@ -527,6 +546,7 @@ describe('PatientAdministrationSessionService', () => {
     const confirmedAt = new Date('2026-08-07T01:00:00.000Z');
     const startedAt = new Date('2026-08-07T01:00:00.000Z');
     const updated = sessionDocument({
+      deviceMode: 'cross_device',
       status: 'active',
       revision: 2,
       sessionTokenHash: 'existing-patient-token-hash',
@@ -556,6 +576,7 @@ describe('PatientAdministrationSessionService', () => {
       expect.objectContaining({
         status: 'active',
         revision: 2,
+        deviceMode: 'cross_device',
         hasPatientCredential: true,
         startedAt,
       }),
@@ -581,6 +602,45 @@ describe('PatientAdministrationSessionService', () => {
     expect(
       requireRecord(update.$set, 'cross-device preparation set'),
     ).not.toHaveProperty('sessionTokenHash');
+  });
+
+  it('fails preparation closed for inconsistent or legacy device contracts', async () => {
+    arrangeEditableBusiness();
+    const invalidSessions = [
+      sessionDocument({
+        deviceMode: 'same_device',
+        sessionTokenHash: 'unexpected-token-hash',
+        entryCodeHash: undefined,
+        entryCodeExpiresAt: undefined,
+      }),
+      sessionDocument({
+        deviceMode: 'cross_device',
+        sessionTokenHash: undefined,
+      }),
+      sessionDocument({
+        deviceMode: undefined,
+        sessionTokenHash: undefined,
+      }),
+    ];
+
+    for (const invalidSession of invalidSessions) {
+      sessionModel.findOne.mockReturnValueOnce(createQuery(invalidSession));
+      await expectHttpException(
+        service.confirmPreparation(
+          patientId,
+          visitId,
+          scaleInstanceId,
+          0,
+          [],
+          undefined,
+          operator,
+        ),
+        409,
+        'PATIENT_ADMINISTRATION_SESSION_CONFLICT',
+      );
+    }
+
+    expect(sessionModel.findOneAndUpdate).not.toHaveBeenCalled();
   });
 
   it('rejects repeated or stale preparation confirmation without writing', async () => {
@@ -629,7 +689,15 @@ describe('PatientAdministrationSessionService', () => {
 
   it('rejects an unprepared same-device handoff during read-only validation', async () => {
     arrangeEditableBusiness();
-    sessionModel.findOne.mockReturnValue(createQuery(sessionDocument()));
+    sessionModel.findOne.mockReturnValue(
+      createQuery(
+        sessionDocument({
+          deviceMode: 'same_device',
+          entryCodeHash: undefined,
+          entryCodeExpiresAt: undefined,
+        }),
+      ),
+    );
 
     await expectHttpException(
       service.validateSameDeviceHandoff(patientId, visitId, scaleInstanceId, 0),
@@ -647,13 +715,17 @@ describe('PatientAdministrationSessionService', () => {
   it('activates a prepared session when issuing its same-device credential', async () => {
     const preparationConfirmedAt = new Date('2026-08-07T01:00:00.000Z');
     const prepared = sessionDocument({
+      deviceMode: 'same_device',
       revision: 1,
+      entryCodeHash: undefined,
+      entryCodeExpiresAt: undefined,
       preparationConfirmedAt,
       preparationConfirmedBy: operator,
       impactFactorCodes: ['upper_limb'],
       impactFactorNote: 'practice completed',
     });
     const updated = sessionDocument({
+      deviceMode: 'same_device',
       status: 'active',
       revision: 2,
       sessionTokenHash: 'hash:raw-patient-token',
@@ -727,6 +799,7 @@ describe('PatientAdministrationSessionService', () => {
     const preparationConfirmedAt = new Date('2026-08-07T01:00:00.000Z');
     const startedAt = new Date('2026-08-07T00:55:00.000Z');
     const paused = sessionDocument({
+      deviceMode: 'same_device',
       status: 'paused',
       revision: 3,
       sessionTokenHash: 'old-patient-token-hash',
@@ -741,6 +814,7 @@ describe('PatientAdministrationSessionService', () => {
     });
     const updated = sessionDocument({
       ...paused,
+      deviceMode: 'same_device',
       status: 'paused',
       revision: 4,
       sessionTokenHash: 'hash:raw-patient-token',
@@ -781,7 +855,10 @@ describe('PatientAdministrationSessionService', () => {
     sessionModel.findOne.mockReturnValue(
       createQuery(
         sessionDocument({
+          deviceMode: 'same_device',
           revision: 1,
+          entryCodeHash: undefined,
+          entryCodeExpiresAt: undefined,
           preparationConfirmedAt: new Date(),
           preparationConfirmedBy: operator,
         }),
@@ -793,6 +870,55 @@ describe('PatientAdministrationSessionService', () => {
       409,
       'PATIENT_ADMINISTRATION_SESSION_CONFLICT',
     );
+
+    expect(authService.generateSessionToken).not.toHaveBeenCalled();
+    expect(sessionModel.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('rejects cross-device and legacy handoff before credential issuance', async () => {
+    arrangeEditableBusiness();
+    const confirmedAt = new Date();
+    const forbiddenSessions = [
+      sessionDocument({
+        deviceMode: 'cross_device',
+        preparationConfirmedAt: confirmedAt,
+        preparationConfirmedBy: operator,
+      }),
+      sessionDocument({
+        deviceMode: undefined,
+        preparationConfirmedAt: confirmedAt,
+        preparationConfirmedBy: operator,
+      }),
+    ];
+
+    for (const forbiddenSession of forbiddenSessions) {
+      sessionModel.findOne.mockReturnValueOnce(createQuery(forbiddenSession));
+      await expectHttpException(
+        service.validateSameDeviceHandoff(
+          patientId,
+          visitId,
+          scaleInstanceId,
+          0,
+        ),
+        409,
+        'PATIENT_ADMINISTRATION_SESSION_CONFLICT',
+      );
+    }
+
+    for (const forbiddenSession of forbiddenSessions) {
+      sessionModel.findOne.mockReturnValueOnce(createQuery(forbiddenSession));
+      await expectHttpException(
+        service.issueSameDeviceCredential(
+          patientId,
+          visitId,
+          scaleInstanceId,
+          0,
+          operator,
+        ),
+        409,
+        'PATIENT_ADMINISTRATION_SESSION_CONFLICT',
+      );
+    }
 
     expect(authService.generateSessionToken).not.toHaveBeenCalled();
     expect(sessionModel.findOneAndUpdate).not.toHaveBeenCalled();
@@ -989,7 +1115,53 @@ describe('PatientAdministrationSessionService', () => {
     },
   );
 
-  it('creates prepared state from the minimum ordered step and persists only the code hash', async () => {
+  it('creates same-device prepared state without generating or persisting an entry code', async () => {
+    arrangeEditableBusiness();
+    sessionModel.findOne
+      .mockReturnValueOnce(createQuery(null))
+      .mockReturnValueOnce(createQuery(null));
+    sessionModel.create.mockImplementation((input: Record<string, unknown>) =>
+      Promise.resolve(
+        sessionDocument({
+          ...input,
+          entryCodeHash: undefined,
+          entryCodeExpiresAt: undefined,
+        }),
+      ),
+    );
+
+    const response = await service.createSession(
+      patientId,
+      visitId,
+      scaleInstanceId,
+      'same_device',
+      operator,
+    );
+
+    expect(response).toEqual(
+      expect.objectContaining({
+        deviceMode: 'same_device',
+        entryCode: null,
+        entryCodeExpiresAt: null,
+        hasPatientCredential: false,
+        status: 'prepared',
+        revision: 0,
+      }),
+    );
+    const persisted = requireRecord(
+      readMockCallArgument(sessionModel.create, 0),
+      'same-device create input',
+    );
+    expect(persisted.deviceMode).toBe('same_device');
+    expect(persisted).not.toHaveProperty('entryCode');
+    expect(persisted).not.toHaveProperty('entryCodeHash');
+    expect(persisted).not.toHaveProperty('entryCodeExpiresAt');
+    expect(persisted).not.toHaveProperty('sessionTokenHash');
+    expect(authService.hashSessionToken).not.toHaveBeenCalled();
+    expect(sessionModel.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('creates cross-device prepared state from the minimum ordered step and persists only the code hash', async () => {
     arrangeEditableBusiness();
     sessionModel.findOne
       .mockReturnValueOnce(createQuery(null))
@@ -1002,15 +1174,19 @@ describe('PatientAdministrationSessionService', () => {
       patientId,
       visitId,
       scaleInstanceId,
+      'cross_device',
       operator,
     );
 
     expect(response.entryCode).toMatch(/^\d{6}$/);
+    expect(response.deviceMode).toBe('cross_device');
+    expect(response.entryCodeExpiresAt).toBeInstanceOf(Date);
     expect(response.currentStepKey).toBe('first');
     const persisted = requireRecord(
       readMockCallArgument(sessionModel.create, 0),
       'create input',
     );
+    expect(persisted.deviceMode).toBe('cross_device');
     expect(persisted.entryCodeHash).toBe(`hash:${response.entryCode}`);
     expect(persisted).not.toHaveProperty('entryCode');
     expect(persisted).not.toHaveProperty('sessionTokenHash');
@@ -1037,6 +1213,7 @@ describe('PatientAdministrationSessionService', () => {
       patientId,
       visitId,
       scaleInstanceId,
+      'cross_device',
       operator,
     );
 
@@ -1051,9 +1228,185 @@ describe('PatientAdministrationSessionService', () => {
     scalesService.findVersionByScaleCodeAndVersion.mockResolvedValue(invalid);
 
     await expect(
-      service.createSession(patientId, visitId, scaleInstanceId, operator),
+      service.createSession(
+        patientId,
+        visitId,
+        scaleInstanceId,
+        'cross_device',
+        operator,
+      ),
     ).rejects.toMatchObject({ status: 500 });
     expect(sessionModel.create).not.toHaveBeenCalled();
+  });
+
+  it('maps a legacy session without deviceMode to a readable null summary', async () => {
+    arrangeEditableBusiness();
+    sessionModel.findOne.mockReturnValue(
+      createQuery(sessionDocument({ deviceMode: undefined })),
+    );
+
+    const response = await service.getLatestSession(
+      patientId,
+      visitId,
+      scaleInstanceId,
+    );
+
+    expect(response.deviceMode).toBeNull();
+  });
+
+  it('still permits terminating a legacy open session', async () => {
+    arrangeEditableBusiness();
+    const legacy = sessionDocument({ deviceMode: undefined });
+    const terminated = sessionDocument({
+      deviceMode: undefined,
+      status: 'terminated',
+      revision: 1,
+      terminatedAt: new Date(),
+      entryCodeHash: undefined,
+      entryCodeExpiresAt: undefined,
+      sessionTokenHash: undefined,
+    });
+    sessionModel.findOne.mockReturnValue(createQuery(legacy));
+    sessionModel.findOneAndUpdate.mockReturnValue(createQuery(terminated));
+
+    const response = await service.terminateSession(
+      patientId,
+      visitId,
+      scaleInstanceId,
+      0,
+      'replace legacy session',
+      operator,
+    );
+
+    expect(response).toEqual(
+      expect.objectContaining({
+        deviceMode: null,
+        status: 'terminated',
+        revision: 1,
+      }),
+    );
+  });
+
+  it('reissues entry codes only for cross-device sessions', async () => {
+    arrangeEditableBusiness();
+    const crossDevice = sessionDocument({ deviceMode: 'cross_device' });
+    const reissued = sessionDocument({
+      deviceMode: 'cross_device',
+      revision: 1,
+      entryCodeHash: 'reissued-hash',
+      entryCodeExpiresAt: new Date(Date.now() + 30_000),
+    });
+    sessionModel.findOne.mockReturnValue(createQuery(crossDevice));
+    sessionModel.findOneAndUpdate.mockReturnValue(createQuery(reissued));
+
+    const response = await service.reissueEntryCode(
+      patientId,
+      visitId,
+      scaleInstanceId,
+      0,
+      'replace device',
+      operator,
+    );
+
+    expect(response.entryCode).toMatch(/^\d{6}$/);
+    expect(response.deviceMode).toBe('cross_device');
+    expect(
+      requireRecord(
+        readMockCallArgument(sessionModel.findOneAndUpdate, 0),
+        'reissue filter',
+      ).deviceMode,
+    ).toBe('cross_device');
+  });
+
+  it('rejects same-device and legacy entry-code reissue before hashing', async () => {
+    arrangeEditableBusiness();
+    for (const deviceMode of ['same_device', undefined] as const) {
+      sessionModel.findOne.mockReturnValueOnce(
+        createQuery(
+          sessionDocument({
+            deviceMode,
+            entryCodeHash: undefined,
+            entryCodeExpiresAt: undefined,
+          }),
+        ),
+      );
+      await expectHttpException(
+        service.reissueEntryCode(
+          patientId,
+          visitId,
+          scaleInstanceId,
+          0,
+          'must not switch mode',
+          operator,
+        ),
+        409,
+        'PATIENT_ADMINISTRATION_SESSION_CONFLICT',
+      );
+    }
+
+    expect(authService.hashSessionToken).not.toHaveBeenCalled();
+    expect(sessionModel.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('redeems only a cross-device entry code and keeps the public credential minimal', async () => {
+    arrangeEditableBusiness();
+    scaleInstanceModel.findOne.mockReturnValue(
+      createQuery({
+        _id: new Types.ObjectId(scaleInstanceId),
+        patientId: new Types.ObjectId(patientId),
+        assessmentVisitId: new Types.ObjectId(visitId),
+      }),
+    );
+    const crossDevice = sessionDocument({
+      deviceMode: 'cross_device',
+      entryCodeHash: 'hash:123456',
+      entryCodeExpiresAt: new Date(Date.now() + 30_000),
+    });
+    const redeemed = sessionDocument({
+      deviceMode: 'cross_device',
+      revision: 1,
+      entryCodeHash: undefined,
+      entryCodeExpiresAt: undefined,
+      sessionTokenHash: 'hash:raw-patient-token',
+    });
+    sessionModel.findOne.mockReturnValue(createQuery(crossDevice));
+    sessionModel.findOneAndUpdate.mockReturnValue(createQuery(redeemed));
+
+    const credential = await service.redeemEntryCode('123456', 'client');
+
+    expect(credential.response).toEqual({
+      status: 'prepared',
+      revision: 1,
+      expiresAt: redeemed.expiresAt,
+    });
+    expect(
+      requireRecord(
+        readMockCallArgument(sessionModel.findOne, 0),
+        'redeem query',
+      ).deviceMode,
+    ).toBe('cross_device');
+    expect(
+      requireRecord(
+        readMockCallArgument(sessionModel.findOneAndUpdate, 0),
+        'redeem filter',
+      ).deviceMode,
+    ).toBe('cross_device');
+  });
+
+  it('does not query same-device or legacy sessions as redeemable entries', async () => {
+    sessionModel.findOne.mockImplementation(
+      (filter: Record<string, unknown>) => {
+        expect(filter.deviceMode).toBe('cross_device');
+        return createQuery(null);
+      },
+    );
+
+    await expectHttpException(
+      service.redeemEntryCode('123456', 'same-or-legacy-client'),
+      401,
+      'PATIENT_ADMINISTRATION_ENTRY_INVALID',
+    );
+    expect(sessionModel.findOneAndUpdate).not.toHaveBeenCalled();
   });
 
   it('rate limits repeated invalid entry attempts with the same stable code', async () => {

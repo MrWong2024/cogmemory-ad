@@ -38,6 +38,7 @@ import {
 } from '../patient-administration.constants';
 import type {
   PatientAdministrationControlEventAction,
+  PatientAdministrationDeviceMode,
   PatientAdministrationEvidenceType,
   PatientAdministrationImpactFactorCode,
   PatientAdministrationOpenStatus,
@@ -71,6 +72,7 @@ import type {
   PatientAdministrationOperatorResponse,
   PatientAdministrationPlayedAudio,
   PatientAdministrationRequestContext,
+  PatientAdministrationSessionCreateResponse,
   PatientAdministrationSessionSummaryResponse,
 } from '../types/patient-administration-response.types';
 
@@ -226,8 +228,9 @@ export class PatientAdministrationSessionService {
     patientId: string,
     visitId: string,
     scaleInstanceId: string,
+    deviceMode: PatientAdministrationDeviceMode,
     operatorSnapshot: AssessmentOperatorSnapshot,
-  ): Promise<PatientAdministrationEntryCodeResponse> {
+  ): Promise<PatientAdministrationSessionCreateResponse> {
     const business = await this.requireBusinessContinuation(
       patientId,
       visitId,
@@ -251,6 +254,33 @@ export class PatientAdministrationSessionService {
     const expiresAt = new Date(
       now.getTime() + PATIENT_ADMINISTRATION_SESSION_TTL_MS,
     );
+
+    if (deviceMode === 'same_device') {
+      try {
+        const session = await this.patientAdministrationSessionModel.create({
+          scaleInstanceId: new Types.ObjectId(business.scaleInstance.id),
+          deviceMode,
+          status: 'prepared',
+          currentStepKey: business.orderedSteps[0].stepKey,
+          revision: 0,
+          expiresAt,
+          impactFactorCodes: [],
+          createdBy: operatorSnapshot,
+          controlEvents: [],
+        });
+
+        return {
+          ...this.toSessionSummary(session),
+          entryCode: null,
+        };
+      } catch (error: unknown) {
+        if (isMongoDuplicateKeyError(error)) {
+          this.throwSessionConflict();
+        }
+        throw error;
+      }
+    }
+
     const entryCodeExpiresAt = new Date(
       Math.min(
         now.getTime() + PATIENT_ADMINISTRATION_ENTRY_CODE_TTL_MS,
@@ -268,6 +298,7 @@ export class PatientAdministrationSessionService {
       try {
         const session = await this.patientAdministrationSessionModel.create({
           scaleInstanceId: new Types.ObjectId(business.scaleInstance.id),
+          deviceMode,
           status: 'prepared',
           currentStepKey: business.orderedSteps[0].stepKey,
           revision: 0,
@@ -433,6 +464,7 @@ export class PatientAdministrationSessionService {
         {
           _id: session._id,
           scaleInstanceId: session.scaleInstanceId,
+          deviceMode: 'same_device',
           status: session.status,
           revision: expectedRevision,
           expiresAt: { $gt: now },
@@ -491,8 +523,16 @@ export class PatientAdministrationSessionService {
     if (session.preparationConfirmedAt) {
       this.throwSessionConflict();
     }
+    if (
+      (session.deviceMode === 'same_device' && session.sessionTokenHash) ||
+      (session.deviceMode === 'cross_device' && !session.sessionTokenHash) ||
+      (session.deviceMode !== 'same_device' &&
+        session.deviceMode !== 'cross_device')
+    ) {
+      this.throwSessionConflict();
+    }
     const now = new Date();
-    const activatesSession = Boolean(session.sessionTokenHash);
+    const activatesSession = session.deviceMode === 'cross_device';
     const setValues: Record<string, unknown> = {
       preparationConfirmedAt: now,
       preparationConfirmedBy: operatorSnapshot,
@@ -511,6 +551,7 @@ export class PatientAdministrationSessionService {
         {
           _id: session._id,
           scaleInstanceId: session.scaleInstanceId,
+          deviceMode: session.deviceMode,
           status: 'prepared',
           revision: expectedRevision,
           expiresAt: { $gt: now },
@@ -666,6 +707,9 @@ export class PatientAdministrationSessionService {
       ['prepared', 'active', 'paused'],
       true,
     );
+    if (session.deviceMode !== 'cross_device') {
+      this.throwSessionConflict();
+    }
     const now = new Date();
     const entryCodeExpiresAt = new Date(
       Math.min(
@@ -687,6 +731,7 @@ export class PatientAdministrationSessionService {
             {
               _id: session._id,
               scaleInstanceId: session.scaleInstanceId,
+              deviceMode: 'cross_device',
               status: { $in: ['prepared', 'active', 'paused'] },
               revision: expectedRevision,
               expiresAt: { $gt: now },
@@ -801,7 +846,7 @@ export class PatientAdministrationSessionService {
     this.assertEntryAttemptAllowed(clientKey, now);
     const entryCodeHash = this.authService.hashSessionToken(entryCode);
     const session = await this.patientAdministrationSessionModel
-      .findOne({ entryCodeHash })
+      .findOne({ entryCodeHash, deviceMode: 'cross_device' })
       .select('+entryCodeHash +sessionTokenHash')
       .exec();
 
@@ -839,6 +884,7 @@ export class PatientAdministrationSessionService {
       .findOneAndUpdate(
         {
           _id: current._id,
+          deviceMode: 'cross_device',
           entryCodeHash,
           entryCodeExpiresAt: { $gt: now },
           expiresAt: { $gt: now },
@@ -2018,6 +2064,7 @@ export class PatientAdministrationSessionService {
     session: PatientAdministrationSessionDocument,
   ): void {
     if (
+      session.deviceMode !== 'same_device' ||
       !session.preparationConfirmedAt ||
       !session.preparationConfirmedBy ||
       (session.status === 'prepared' && session.sessionTokenHash) ||
@@ -2366,6 +2413,7 @@ export class PatientAdministrationSessionService {
   ): PatientAdministrationSessionSummaryResponse {
     return {
       id: session._id.toString(),
+      deviceMode: session.deviceMode ?? null,
       status: session.status,
       currentStepKey: session.currentStepKey,
       revision: session.revision,

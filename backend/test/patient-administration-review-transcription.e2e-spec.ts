@@ -531,7 +531,10 @@ describe('patient administration review and transcription APIs (e2e)', () => {
     const scaleInstanceId = stringOf(initialized, 'id');
     ownedScaleInstanceIds.add(scaleInstanceId);
     const administrationBase = `/patients/${patient._id.toString()}/visits/${visit._id.toString()}/scale-instances/${scaleInstanceId}/patient-administration`;
-    const created = await staff.post(administrationBase).send({}).expect(201);
+    const created = await staff
+      .post(administrationBase)
+      .send({ deviceMode: 'cross_device' })
+      .expect(201);
     const createdBody = bodyOf(created);
     const patientAgent = request.agent(httpServer);
     await patientAgent
@@ -715,6 +718,7 @@ describe('patient administration review and transcription APIs (e2e)', () => {
     const now = new Date('2026-08-06T02:00:00.000Z');
     const administration = await administrationSessionModel.create({
       scaleInstanceId: scaleInstance._id,
+      deviceMode: 'cross_device',
       status: 'active',
       currentStepKey: firstStep.stepKey,
       revision: 7,

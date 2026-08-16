@@ -7,6 +7,7 @@ import type {
 } from '../../scales/schemas/scale-version.schema';
 import type { AssessmentOperatorRole } from '../schemas/assessment-visit.schema';
 import type {
+  PatientAdministrationDeviceMode,
   PatientAdministrationEvidenceType,
   PatientAdministrationImpactFactorCode,
   PatientAdministrationStatus,
@@ -20,6 +21,7 @@ export type PatientAdministrationOperatorResponse = {
 
 export type PatientAdministrationSessionSummaryResponse = {
   id: string;
+  deviceMode: PatientAdministrationDeviceMode | null;
   status: PatientAdministrationStatus;
   currentStepKey: string;
   revision: number;
@@ -39,6 +41,11 @@ export type PatientAdministrationSessionSummaryResponse = {
   createdAt: Date;
   updatedAt: Date;
 };
+
+export type PatientAdministrationSessionCreateResponse =
+  PatientAdministrationSessionSummaryResponse & {
+    entryCode: string | null;
+  };
 
 export type PatientAdministrationEntryCodeResponse =
   PatientAdministrationSessionSummaryResponse & {

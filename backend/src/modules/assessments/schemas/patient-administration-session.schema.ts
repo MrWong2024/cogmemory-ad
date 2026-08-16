@@ -3,6 +3,7 @@ import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
 import {
   PATIENT_ADMINISTRATION_CAPTURED_BY_VALUES,
   PATIENT_ADMINISTRATION_CONTROL_EVENT_ACTIONS,
+  PATIENT_ADMINISTRATION_DEVICE_MODES,
   PATIENT_ADMINISTRATION_EVIDENCE_TYPES,
   PATIENT_ADMINISTRATION_IMPACT_FACTOR_CODES,
   PATIENT_ADMINISTRATION_OPEN_STATUSES,
@@ -11,6 +12,7 @@ import {
 import type {
   PatientAdministrationCapturedBy,
   PatientAdministrationControlEventAction,
+  PatientAdministrationDeviceMode,
   PatientAdministrationEvidenceType,
   PatientAdministrationImpactFactorCode,
   PatientAdministrationStatus,
@@ -199,6 +201,13 @@ export const PatientAdministrationStepEvidenceRefSchema =
 export class PatientAdministrationSession {
   @Prop({ type: SchemaTypes.ObjectId, ref: ScaleInstance.name, required: true })
   scaleInstanceId!: Types.ObjectId;
+
+  @Prop({
+    type: String,
+    enum: PATIENT_ADMINISTRATION_DEVICE_MODES,
+    required: true,
+  })
+  deviceMode!: PatientAdministrationDeviceMode;
 
   @Prop({
     type: String,

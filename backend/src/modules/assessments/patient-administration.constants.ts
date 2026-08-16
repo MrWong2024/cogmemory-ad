@@ -17,6 +17,11 @@ export const PATIENT_ADMINISTRATION_OPEN_STATUSES = [
   'paused',
 ] as const;
 
+export const PATIENT_ADMINISTRATION_DEVICE_MODES = [
+  'same_device',
+  'cross_device',
+] as const;
+
 export const PATIENT_ADMINISTRATION_STATUSES = [
   ...PATIENT_ADMINISTRATION_OPEN_STATUSES,
   'completed',
@@ -63,6 +68,8 @@ export type PatientAdministrationStatus =
   (typeof PATIENT_ADMINISTRATION_STATUSES)[number];
 export type PatientAdministrationOpenStatus =
   (typeof PATIENT_ADMINISTRATION_OPEN_STATUSES)[number];
+export type PatientAdministrationDeviceMode =
+  (typeof PATIENT_ADMINISTRATION_DEVICE_MODES)[number];
 export type PatientAdministrationImpactFactorCode =
   (typeof PATIENT_ADMINISTRATION_IMPACT_FACTOR_CODES)[number];
 export type PatientAdministrationControlEventAction =

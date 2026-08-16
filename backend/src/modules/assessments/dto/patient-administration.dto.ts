@@ -13,13 +13,22 @@ import {
   Min,
 } from 'class-validator';
 import { ScaleInstanceExecutionParamDto } from './scale-instance-execution-param.dto';
-import { PATIENT_ADMINISTRATION_IMPACT_FACTOR_CODES } from '../patient-administration.constants';
-import type { PatientAdministrationImpactFactorCode } from '../patient-administration.constants';
+import {
+  PATIENT_ADMINISTRATION_DEVICE_MODES,
+  PATIENT_ADMINISTRATION_IMPACT_FACTOR_CODES,
+} from '../patient-administration.constants';
+import type {
+  PatientAdministrationDeviceMode,
+  PatientAdministrationImpactFactorCode,
+} from '../patient-administration.constants';
 
 const trimString = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
 
-export class CreatePatientAdministrationSessionDto {}
+export class CreatePatientAdministrationSessionDto {
+  @IsEnum(PATIENT_ADMINISTRATION_DEVICE_MODES)
+  deviceMode!: PatientAdministrationDeviceMode;
+}
 
 export class EnterPatientAdministrationDto {
   @Transform(trimString)
