@@ -2,6 +2,7 @@ import { frontendEnv } from '@/src/lib/env';
 
 import type {
   PatientAdministrationControlInput,
+  PatientAdministrationCreateInput,
   PatientAdministrationCredentialResponse,
   PatientAdministrationCurrentResponse,
   PatientAdministrationBinaryAsset,
@@ -13,6 +14,7 @@ import type {
   PatientAdministrationReviewResponse,
   PatientAdministrationRequiredReasonInput,
   PatientAdministrationRouteIds,
+  PatientAdministrationSessionCreateResponse,
   PatientAdministrationSessionSummary,
   PatientAdministrationStaffCompleteInput,
   PatientAdministrationTakeoverInput,
@@ -227,13 +229,14 @@ export async function getPatientAdministrationReview(
 
 export async function createPatientAdministrationSession(
   ids: PatientAdministrationRouteIds,
-): Promise<PatientAdministrationEntryCodeResponse> {
+  input: PatientAdministrationCreateInput,
+): Promise<PatientAdministrationSessionCreateResponse> {
   const response = await patientAdministrationFetch(
     buildStaffRoot(ids),
-    jsonPost({}),
+    jsonPost(input),
     true,
   );
-  return readJson<PatientAdministrationEntryCodeResponse>(response, true);
+  return readJson<PatientAdministrationSessionCreateResponse>(response, true);
 }
 
 export function confirmPatientAdministrationPreparation(

@@ -51,9 +51,14 @@ function countCurrentUnauthorized(ledger: NetworkLedger): number {
 }
 
 type StaffSessionBody = {
+  deviceMode?: unknown;
   status?: unknown;
   preparationConfirmedAt?: unknown;
   hasPatientCredential?: unknown;
+};
+
+type CreateSessionBody = StaffSessionBody & {
+  entryCode?: unknown;
 };
 
 async function enterOnPatientDevice(
@@ -112,14 +117,73 @@ test.describe('WP-10 F1-P2 cross-device entry and staff control', () => {
       await staffPage.getByRole('radio', { name: /跨设备/ }).check();
       const createResponsePromise = waitForPost(staffPage, '/patient-administration');
       await staffPage.getByRole('button', { name: '创建患者施测会话' }).click();
-      expect((await createResponsePromise).status()).toBe(201);
+      const createResponse = await createResponsePromise;
+      expect(createResponse.status()).toBe(201);
+      expect(createResponse.request().postDataJSON()).toEqual({
+        deviceMode: 'cross_device',
+      });
+      const createBody = (await createResponse.json()) as CreateSessionBody;
+      expect(createBody.deviceMode).toBe('cross_device');
+      expect(typeof createBody.entryCode).toBe('string');
       const codeLocator = staffPage.getByTestId('patient-administration-entry-code');
       await expect(codeLocator).toBeVisible();
       const firstCode = (await codeLocator.innerText()).replace(/\s/g, '');
       invariant(/^\d{6}$/.test(firstCode), 'Initial entry code shape is invalid');
+      await expect(staffPage.getByText('跨设备', { exact: true })).toBeVisible();
+      await expect(
+        staffPage.getByRole('heading', { name: '本地设备准备与不计分练习' }),
+      ).toHaveCount(0);
+      await expect(
+        staffPage.getByRole('checkbox', {
+          name: '患者已当面告知本机准备与不计分练习完成',
+        }),
+      ).toBeVisible();
+      await expect(
+        staffPage.getByRole('heading', { name: '重新签发跨设备进入码' }),
+      ).toBeVisible();
+      await expect(
+        staffPage.getByRole('button', { name: '安全交接给患者' }),
+      ).toHaveCount(0);
+      await expect(
+        staffPage.getByRole('button', { name: '同一设备准备' }),
+      ).toHaveCount(0);
+      await expect(
+        staffPage.getByRole('button', { name: '跨设备准备' }),
+      ).toHaveCount(0);
       await expect(
         staffPage.getByRole('button', { name: '确认准备与影响因素' }),
       ).toBeDisabled();
+
+      const initialStaffReloadResponsePromise = staffPage.waitForResponse(
+        (response) =>
+          new URL(response.url()).origin === environment.backendOrigin &&
+          new URL(response.url()).pathname ===
+            `${descriptor.scenario.navigationPath}/patient-administration` &&
+          response.request().method() === 'GET' &&
+          response.status() === 200,
+      );
+      await staffPage.reload({ waitUntil: 'domcontentloaded' });
+      const initialStaffReloadResponse = await initialStaffReloadResponsePromise;
+      const initialReloadedSession =
+        (await initialStaffReloadResponse.json()) as StaffSessionBody;
+      expect(initialReloadedSession.deviceMode).toBe('cross_device');
+      expect(initialReloadedSession.status).toBe('prepared');
+      expect(initialReloadedSession.hasPatientCredential).toBe(false);
+      await expect(codeLocator).toHaveCount(0);
+      await expect(
+        staffPage.getByText(
+          '当前跨设备会话没有可显示的进入码。进入码不会在页面刷新后恢复；如患者尚未进入，请重新签发进入码。',
+          { exact: true },
+        ),
+      ).toBeVisible();
+      await expect(
+        staffPage.getByRole('heading', { name: '重新签发跨设备进入码' }),
+      ).toBeVisible();
+      await expect(
+        staffPage.getByRole('checkbox', {
+          name: '我确认原进入码（如仍有效）将失效，并需要把新码当面告知患者',
+        }),
+      ).toBeVisible();
 
       await firstPatientPage.goto(`${environment.frontendOrigin}/`, {
         waitUntil: 'domcontentloaded',
@@ -181,6 +245,7 @@ test.describe('WP-10 F1-P2 cross-device entry and staff control', () => {
       await executionReloadResponsePromise;
       const staffReloadResponse = await staffReloadResponsePromise;
       const reloadedSession = (await staffReloadResponse.json()) as StaffSessionBody;
+      expect(reloadedSession.deviceMode).toBe('cross_device');
       expect(reloadedSession.status).toBe('prepared');
       expect(reloadedSession.preparationConfirmedAt).toBeNull();
       expect(reloadedSession.hasPatientCredential).toBe(true);
@@ -190,10 +255,10 @@ test.describe('WP-10 F1-P2 cross-device entry and staff control', () => {
       await expect(staffPage.getByText('患者设备已进入', { exact: true })).toBeVisible();
       await expect(
         staffPage.getByRole('button', { name: '同一设备准备' }),
-      ).toBeDisabled();
+      ).toHaveCount(0);
       await expect(
         staffPage.getByRole('button', { name: '跨设备准备' }),
-      ).toBeEnabled();
+      ).toHaveCount(0);
       await expect(
         staffPage.getByRole('checkbox', {
           name: '患者已当面告知本机准备与不计分练习完成',
@@ -202,6 +267,9 @@ test.describe('WP-10 F1-P2 cross-device entry and staff control', () => {
       await expect(
         staffPage.getByRole('button', { name: '确认准备与影响因素' }),
       ).toBeDisabled();
+      await expect(
+        staffPage.getByRole('button', { name: '安全交接给患者' }),
+      ).toHaveCount(0);
 
       await staffPage
         .getByRole('checkbox', { name: '环境干扰因素' })

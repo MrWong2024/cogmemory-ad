@@ -37,13 +37,12 @@ import {
   patientAdministrationStatusTones,
 } from '@/src/features/patient-administration/lib/patient-administration-display';
 import type {
+  PatientAdministrationDeviceMode,
   PatientAdministrationEntryCodeResponse,
   PatientAdministrationRouteIds,
   PatientAdministrationSessionSummary,
   PatientAdministrationStatus,
 } from '@/src/features/patient-administration/types/patient-administration';
-
-type FlowChoice = 'same_device' | 'cross_device';
 
 type Props = PatientAdministrationRouteIds & {
   onSessionStatusChange?: (status: PatientAdministrationStatus | null) => void;
@@ -56,26 +55,10 @@ const inputClassName =
   'min-h-11 w-full rounded-md border border-[var(--cma-line-strong)] bg-white px-3 py-2 text-[var(--cma-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cma-ring)]';
 const checkboxClassName =
   'mt-1 h-5 w-5 shrink-0 accent-[var(--cma-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cma-ring)]';
-
-function inferFlowChoiceFromSession(
-  session: PatientAdministrationSessionSummary,
-): FlowChoice | null {
-  if (
-    session.status === 'prepared' &&
-    session.preparationConfirmedAt &&
-    !session.hasPatientCredential
-  ) {
-    return 'same_device';
-  }
-  if (
-    session.status === 'prepared' &&
-    !session.preparationConfirmedAt &&
-    session.hasPatientCredential
-  ) {
-    return 'cross_device';
-  }
-  return null;
-}
+const deviceModeLabels: Record<PatientAdministrationDeviceMode, string> = {
+  same_device: '同一设备',
+  cross_device: '跨设备',
+};
 
 function getPanelErrorMessage(error: unknown): string {
   if (!(error instanceof PatientAdministrationApiError)) {
@@ -85,7 +68,7 @@ function getPanelErrorMessage(error: unknown): string {
     return '当前账号没有患者施测会话的操作权限。';
   }
   if (error.kind === 'validation') {
-    return '提交内容不符合要求，请检查原因和备注长度。';
+    return '提交内容不符合要求，请检查设备方式、原因或备注内容。';
   }
   if (error.kind === 'session_not_found') {
     return '当前量表实例尚未创建患者施测会话。';
@@ -109,7 +92,8 @@ export function PatientAdministrationStaffPanel({
   const [session, setSession] =
     useState<PatientAdministrationSessionSummary | null>(null);
   const [entryCode, setEntryCode] = useState<string | null>(null);
-  const [flowChoice, setFlowChoice] = useState<FlowChoice | null>(null);
+  const [deviceModeChoice, setDeviceModeChoice] =
+    useState<PatientAdministrationDeviceMode | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [writeAction, setWriteAction] = useState<string | null>(null);
@@ -154,10 +138,6 @@ export function PatientAdministrationStaffPanel({
       sessionRef.current = response;
       setSession(response);
       onSessionStatusChange?.(response.status);
-      const inferredFlowChoice = inferFlowChoiceFromSession(response);
-      if (inferredFlowChoice) {
-        setFlowChoice(inferredFlowChoice);
-      }
     },
     [onSessionStatusChange],
   );
@@ -245,7 +225,7 @@ export function PatientAdministrationStaffPanel({
       setEntryCode(null);
     }
     if (terminalStatuses.has(session.status)) {
-      setFlowChoice(null);
+      setDeviceModeChoice(null);
       setCrossDevicePreparationConfirmed(false);
       setPreparationResetKey(`terminal:${session.id}:${session.revision}`);
     }
@@ -320,17 +300,28 @@ export function PatientAdministrationStaffPanel({
   }
 
   async function handleCreate() {
-    if (!flowChoice || !beginWrite('create')) return;
+    const selectedDeviceMode = deviceModeChoice;
+    if (!selectedDeviceMode || !beginWrite('create')) return;
     setEntryCode(null);
     try {
-      const response = await createPatientAdministrationSession(ids);
+      const response = await createPatientAdministrationSession(ids, {
+        deviceMode: selectedDeviceMode,
+      });
       applySession(response);
-      setEntryCode(response.entryCode);
+      setEntryCode(
+        response.deviceMode === 'cross_device' ? response.entryCode : null,
+      );
       setPreparationResetKey(`create:${response.id}:${response.revision}`);
       setCrossDevicePreparationConfirmed(false);
-      setMessage('患者施测会话已创建。进入码只在当前页面内存中临时显示。');
+      setMessage(
+        response.deviceMode === 'same_device'
+          ? '同一设备患者施测会话已创建，请完成设备准备与影响因素确认。'
+          : response.entryCode
+            ? '跨设备患者施测会话已创建，请将六位进入码当面告知患者。'
+            : '跨设备患者施测会话已创建，但当前没有可显示的进入码；如患者尚未进入，请显式重新签发进入码。',
+      );
     } catch (error: unknown) {
-      await handleWriteFailure(error, true);
+      await handleWriteFailure(error, selectedDeviceMode === 'cross_device');
     } finally {
       finishWrite();
     }
@@ -414,7 +405,6 @@ export function PatientAdministrationStaffPanel({
           reason,
         });
       applySession(response);
-      setFlowChoice('cross_device');
       setEntryCode(response.entryCode);
       setReissueReason('');
       setReissueConfirmed(false);
@@ -546,13 +536,16 @@ export function PatientAdministrationStaffPanel({
   }
 
   const canCreate = !session || terminalStatuses.has(session.status);
+  const isLegacyOpenSession = Boolean(
+    session && openStatuses.has(session.status) && session.deviceMode === null,
+  );
   const canConfirmPreparation = Boolean(
     session?.status === 'prepared' &&
       !session.preparationConfirmedAt &&
-      ((flowChoice === 'same_device' &&
+      ((session.deviceMode === 'same_device' &&
         !session.hasPatientCredential &&
         preparationValue.ready) ||
-        (flowChoice === 'cross_device' &&
+        (session.deviceMode === 'cross_device' &&
           session.hasPatientCredential &&
           crossDevicePreparationConfirmed)),
   );
@@ -560,7 +553,7 @@ export function PatientAdministrationStaffPanel({
     session?.status === 'prepared' &&
       session.preparationConfirmedAt &&
       !session.hasPatientCredential &&
-      flowChoice === 'same_device' &&
+      session.deviceMode === 'same_device' &&
       handoffConfirmed,
   );
 
@@ -605,6 +598,14 @@ export function PatientAdministrationStaffPanel({
               </dd>
             </div>
             <div>
+              <dt className="text-sm font-semibold text-[var(--cma-muted)]">设备方式</dt>
+              <dd className="mt-1 text-base">
+                {session.deviceMode
+                  ? deviceModeLabels[session.deviceMode]
+                  : '未记录'}
+              </dd>
+            </div>
+            <div>
               <dt className="text-sm font-semibold text-[var(--cma-muted)]">服务端 revision</dt>
               <dd className="mt-1 text-lg font-semibold">{session.revision}</dd>
             </div>
@@ -623,7 +624,16 @@ export function PatientAdministrationStaffPanel({
           </dl>
         ) : null}
 
-        {entryCode ? (
+        {isLegacyOpenSession ? (
+          <p
+            className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] px-4 py-3 text-base leading-7 text-[var(--cma-warning)]"
+            role="alert"
+          >
+            当前会话缺少设备方式信息，无法安全继续设备准备。请终止本次会话后重新创建，并重新选择同一设备或跨设备。
+          </p>
+        ) : null}
+
+        {session?.deviceMode === 'cross_device' && entryCode ? (
           <section
             aria-labelledby="entry-code-title"
             className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] p-5"
@@ -644,6 +654,15 @@ export function PatientAdministrationStaffPanel({
           </section>
         ) : null}
 
+        {session?.deviceMode === 'cross_device' &&
+        session.status === 'prepared' &&
+        !session.hasPatientCredential &&
+        entryCode === null ? (
+          <p className="rounded-md border border-[var(--cma-line)] px-4 py-3 text-sm leading-6 text-[var(--cma-muted)]">
+            当前跨设备会话没有可显示的进入码。进入码不会在页面刷新后恢复；如患者尚未进入，请重新签发进入码。
+          </p>
+        ) : null}
+
         {canCreate ? (
           <section className="grid gap-4" aria-labelledby="create-session-title">
             <div>
@@ -651,17 +670,17 @@ export function PatientAdministrationStaffPanel({
                 选择本次设备流程
               </h3>
               <p className="mt-1 text-base text-[var(--cma-muted)]">
-                此选择只存在当前页面内存，不会写入服务端。
+                设备方式会在创建会话时确定，创建后不可切换；如选择错误，请终止当前会话后重新创建。
               </p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="flex gap-3 rounded-md border border-[var(--cma-line)] p-4">
                 <input
-                  checked={flowChoice === 'same_device'}
+                  checked={deviceModeChoice === 'same_device'}
                   className={checkboxClassName}
                   disabled={Boolean(writeAction)}
                   name="patient-administration-flow"
-                  onChange={() => setFlowChoice('same_device')}
+                  onChange={() => setDeviceModeChoice('same_device')}
                   type="radio"
                 />
                 <span>
@@ -673,11 +692,11 @@ export function PatientAdministrationStaffPanel({
               </label>
               <label className="flex gap-3 rounded-md border border-[var(--cma-line)] p-4">
                 <input
-                  checked={flowChoice === 'cross_device'}
+                  checked={deviceModeChoice === 'cross_device'}
                   className={checkboxClassName}
                   disabled={Boolean(writeAction)}
                   name="patient-administration-flow"
-                  onChange={() => setFlowChoice('cross_device')}
+                  onChange={() => setDeviceModeChoice('cross_device')}
                   type="radio"
                 />
                 <span>
@@ -690,7 +709,7 @@ export function PatientAdministrationStaffPanel({
             </div>
             <Button
               className="min-h-12 sm:w-fit"
-              disabled={!flowChoice || Boolean(writeAction)}
+              disabled={!deviceModeChoice || Boolean(writeAction)}
               onClick={() => void handleCreate()}
               size="lg"
             >
@@ -699,37 +718,11 @@ export function PatientAdministrationStaffPanel({
           </section>
         ) : null}
 
-        {session?.status === 'prepared' && !session.preparationConfirmedAt ? (
+        {session?.status === 'prepared' &&
+        !session.preparationConfirmedAt &&
+        session.deviceMode !== null ? (
           <section className="grid gap-5 border-t border-[var(--cma-line)] pt-6">
-            {!flowChoice ? (
-              <p className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] px-4 py-3 text-[var(--cma-warning)]">
-                当前页面未保留设备流程选择。请根据患者所在设备重新选择；该选择不会改变服务端状态。
-              </p>
-            ) : null}
-            <div className="flex flex-wrap gap-3">
-              <Button
-                disabled={session.hasPatientCredential || Boolean(writeAction)}
-                onClick={() => {
-                  setFlowChoice('same_device');
-                  setCrossDevicePreparationConfirmed(false);
-                }}
-                variant={flowChoice === 'same_device' ? 'primary' : 'secondary'}
-              >
-                同一设备准备
-              </Button>
-              <Button
-                disabled={Boolean(writeAction)}
-                onClick={() => {
-                  setFlowChoice('cross_device');
-                  setPreparationResetKey(`cross:${session.id}:${session.revision}`);
-                }}
-                variant={flowChoice === 'cross_device' ? 'primary' : 'secondary'}
-              >
-                跨设备准备
-              </Button>
-            </div>
-
-            {flowChoice === 'same_device' ? (
+            {session.deviceMode === 'same_device' ? (
               <PatientAdministrationPreparation
                 disabled={Boolean(writeAction)}
                 onChange={setPreparationValue}
@@ -738,7 +731,7 @@ export function PatientAdministrationStaffPanel({
               />
             ) : null}
 
-            {flowChoice === 'cross_device' ? (
+            {session.deviceMode === 'cross_device' ? (
               <div className="grid gap-5">
                 <p className="rounded-md border border-[var(--cma-line)] px-4 py-3">
                   {session.hasPatientCredential
@@ -782,7 +775,7 @@ export function PatientAdministrationStaffPanel({
 
         {session?.status === 'prepared' &&
         session.preparationConfirmedAt &&
-        flowChoice === 'same_device' ? (
+        session.deviceMode === 'same_device' ? (
           <section className="grid gap-4 border-t border-[var(--cma-line)] pt-6">
             <h3 className="text-xl font-semibold">同设备不可逆安全交接</h3>
             <p className="text-base leading-7 text-[var(--cma-warning)]">
@@ -856,41 +849,49 @@ export function PatientAdministrationStaffPanel({
               ) : null}
             </div>
 
-            <div className="grid gap-3 rounded-md border border-[var(--cma-line)] p-4">
-              <h4 className="font-semibold">换设备并重新签发进入码</h4>
-              <label className="grid gap-2 font-semibold">
-                重新签发原因（必填，最多 500 字）
-                <input
-                  className={inputClassName}
-                  disabled={Boolean(writeAction)}
-                  maxLength={500}
-                  onChange={(event) => setReissueReason(event.target.value)}
-                  value={reissueReason}
-                />
-              </label>
-              <label className="flex gap-3">
-                <input
-                  checked={reissueConfirmed}
-                  className={checkboxClassName}
-                  disabled={Boolean(writeAction)}
-                  onChange={(event) => setReissueConfirmed(event.target.checked)}
-                  type="checkbox"
-                />
-                <span>我确认旧患者设备凭证将失效，并需要把新码当面告知患者</span>
-              </label>
-              <Button
-                className="sm:w-fit"
-                disabled={
-                  !reissueReason.trim() ||
-                  !reissueConfirmed ||
-                  Boolean(writeAction)
-                }
-                onClick={() => void handleReissue()}
-                variant="secondary"
-              >
-                {writeAction === 'reissue' ? '正在重新签发…' : '重新签发进入码'}
-              </Button>
-            </div>
+            {session.deviceMode === 'cross_device' ? (
+              <div className="grid gap-3 rounded-md border border-[var(--cma-line)] p-4">
+                <h4 className="font-semibold">重新签发跨设备进入码</h4>
+                <label className="grid gap-2 font-semibold">
+                  重新签发原因（必填，最多 500 字）
+                  <input
+                    className={inputClassName}
+                    disabled={Boolean(writeAction)}
+                    maxLength={500}
+                    onChange={(event) => setReissueReason(event.target.value)}
+                    value={reissueReason}
+                  />
+                </label>
+                <label className="flex gap-3">
+                  <input
+                    checked={reissueConfirmed}
+                    className={checkboxClassName}
+                    disabled={Boolean(writeAction)}
+                    onChange={(event) => setReissueConfirmed(event.target.checked)}
+                    type="checkbox"
+                  />
+                  <span>
+                    {session.hasPatientCredential
+                      ? '我确认旧患者设备凭证将失效，并需要把新码当面告知患者'
+                      : '我确认原进入码（如仍有效）将失效，并需要把新码当面告知患者'}
+                  </span>
+                </label>
+                <Button
+                  className="sm:w-fit"
+                  disabled={
+                    !reissueReason.trim() ||
+                    !reissueConfirmed ||
+                    Boolean(writeAction)
+                  }
+                  onClick={() => void handleReissue()}
+                  variant="secondary"
+                >
+                  {writeAction === 'reissue'
+                    ? '正在重新签发…'
+                    : '重新签发进入码'}
+                </Button>
+              </div>
+            ) : null}
 
             <div className="grid gap-3 rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] p-4">
               <h4 className="font-semibold text-[var(--cma-warning)]">终止本次患者施测</h4>

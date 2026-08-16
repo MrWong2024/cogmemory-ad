@@ -710,7 +710,7 @@
 
 ### 6.80 WP-10-F1/F2 医护发起、准备与步骤控制组件
 
-- `PatientAdministrationStaffPanel.tsx`：在既有 MMSE 实例页读取 / 创建最新短期会话，5 秒串行轮询并提供准备确认、同 / 跨设备交接、暂停、恢复、换设备重签和终止；F2 继续组合 staff step complete、paused takeover、直接前一步 redo 与 stimulus technical replay authorize。每次采用新的服务端权威 session 时通过可选 callback 仅通知 status，无 session 时通知 `null`，不把 session 对象上提。写入使用最新 revision、全局单写锁且不自动重放。revision stale 屏障只比较同一 Session ID；服务端事实已唯一确定时可在刷新后恢复 same-device / cross-device，患者 credential 已存在时禁止 same-device。flowChoice 与入口码仍只存在当前 React 内存，不新增后端字段或 Storage。
+- `PatientAdministrationStaffPanel.tsx`：在既有 MMSE 实例页读取 / 创建最新短期会话，创建前只选择一次同一设备或跨设备，并把 `deviceMode` 明确写入 create request；创建后只使用服务端 `session.deviceMode` 恢复设备方式，刷新不依赖页面内存或 credential / preparation 字段推断，也不提供设备方式切换。same-device 只进入本机准备与不可逆 handoff，不展示或重签进入码；cross-device 才展示当前 React 内存中的 raw code、允许显式重签并隐藏 handoff；open legacy `deviceMode=null` 不推断模式，只显示终止后重新创建引导并保留终止能力。5 秒串行轮询、最新 revision、全局单写锁、请求结果只读核对与可选 status callback 保持；F2 staff step complete、paused takeover、直接前一步 redo 与 stimulus technical replay authorize 保持。
 - 轮询边界：每次 GET 使用 AbortController，下一轮在当前请求完成后调度；组件卸载、实例身份改变或进入写入时取消旧读取。响应以请求 generation、Session ID 与服务端 revision 判定，过时结果不得覆盖新状态。
 - `PatientAdministrationPreparation.tsx`：管理七项本地准备事实、八类影响因素和最长 500 字备注；WebAudio 只播放合成测试音，MediaRecorder 只生成最长 10 秒本地试听 Blob，Canvas 只记录 Pointer 练习。reset、重启或卸载会淘汰旧麦克风 run，迟到 stream 立即停止且不创建 recorder 或写状态；Blob URL 与持有的 track 在替换 / 卸载时释放。不上传、不创建 `MediaEvidence`、不修改 `ItemResponse`。
 - `PatientAdministrationStaffStepControls.tsx`：根据 19 步静态安全摘要与最新 staff session 展示当前步骤进度；MMSE 三个目标步骤当前均显示“由患者推进”，active 时不呈现医护观察 complete。paused patient 步骤可填写原因与观察后接管，paused 且有直接前一步时可填写原因 redo，paused stimulus 可填写原因授权一次技术重播。组件不自行生成 revision、stepRun、播放事实或正式答案；staff-complete API 仍保留供其他配置步骤使用。
@@ -725,8 +725,8 @@
 
 ### 6.82 WP-10-F1/F2 类型、Client 与展示纯函数
 
-- `types/patient-administration.ts`：只建模公开 staff / patient 会话、revision、准备 / 控制、current step / asset、evidence response 与写请求白名单；current asset 含 `technicalReplayAuthorized:boolean`。不定义后端内部 token、hash、Session、asset file path、授权 count / history / reason / operator、审计对象或正式评分字段。
-- `api/patient-administration-api.ts`：唯一 patient-administration fetch 所在；F2 增加 current private image、audio play、multipart evidence、patient / staff complete、takeover、redo 与 replay authorize。全部路径 ID 编码，统一 `credentials: include` / `no-store`，GET 接收 AbortSignal，写请求结果不确定映射为只读核对语义且不自动 retry。
+- `types/patient-administration.ts`：只建模公开 staff / patient 会话、nullable summary `deviceMode`、required create input、nullable create `entryCode`、non-null reissue `entryCode`、revision、准备 / 控制、current step / asset、evidence response 与写请求白名单；current asset 含 `technicalReplayAuthorized:boolean`。不定义后端内部 token、hash、Session、asset file path、授权 count / history / reason / operator、审计对象或正式评分字段。
+- `api/patient-administration-api.ts`：唯一 patient-administration fetch 所在；create 必须发送调用方明确选择的 `deviceMode`，不提供默认或旧 backend fallback；F2 增加 current private image、audio play、multipart evidence、patient / staff complete、takeover、redo 与 replay authorize。全部路径 ID 编码，统一 `credentials: include` / `no-store`，GET 接收 AbortSignal，写请求结果不确定映射为只读核对语义且不自动 retry。
 - `lib/patient-administration-display.ts`：集中把公开状态与稳定错误 kind 映射为安全中文文案；不透传后端英文 message、完整 response、进入码或内部技术字段。
 - `lib/mmse-patient-administration.ts`：只维护 MMSE 19 步 order / label / advanceBy 与三个受控 stimulus assetKey 的前端展示摘要；不复制 patientText、完整资产清单、答案或评分规则，服务端 currentStep 仍是权威进度。当前 `naming`、`reading-command`、`three-step-command` 的 advanceBy 均为 patient，order / label / stimulusAssetKey 不变。
 - 当前完成边界：WP-10 的 F1、F2、F3 与最终收口均已完成；F2 正常 19 步、F2-P2 recovery、staff Axe 分类及 completed gate 后的 F3 正常作答复核 Browser / post verifier 均已通过。active / paused / terminated F2 不挂载 ReviewPanel，也不调用 F3；动态证据见 testing playbook。

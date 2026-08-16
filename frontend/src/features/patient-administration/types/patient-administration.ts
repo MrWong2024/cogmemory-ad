@@ -6,6 +6,10 @@ export type PatientAdministrationStatus =
   | 'terminated'
   | 'expired';
 
+export type PatientAdministrationDeviceMode =
+  | 'same_device'
+  | 'cross_device';
+
 export type PatientAdministrationResponseMode =
   | 'speech'
   | 'writing'
@@ -39,6 +43,7 @@ export type PatientAdministrationOperator = {
 
 export type PatientAdministrationSessionSummary = {
   id: string;
+  deviceMode: PatientAdministrationDeviceMode | null;
   status: PatientAdministrationStatus;
   currentStepKey: string;
   revision: number;
@@ -58,6 +63,15 @@ export type PatientAdministrationSessionSummary = {
   createdAt: string;
   updatedAt: string;
 };
+
+export type PatientAdministrationCreateInput = {
+  deviceMode: PatientAdministrationDeviceMode;
+};
+
+export type PatientAdministrationSessionCreateResponse =
+  PatientAdministrationSessionSummary & {
+    entryCode: string | null;
+  };
 
 export type PatientAdministrationEntryCodeResponse =
   PatientAdministrationSessionSummary & {

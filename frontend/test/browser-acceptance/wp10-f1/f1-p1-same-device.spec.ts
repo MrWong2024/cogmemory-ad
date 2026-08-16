@@ -36,9 +36,14 @@ type CurrentBody = {
 };
 
 type StaffSessionBody = {
+  deviceMode?: unknown;
   status?: unknown;
   preparationConfirmedAt?: unknown;
   hasPatientCredential?: unknown;
+};
+
+type CreateSessionBody = StaffSessionBody & {
+  entryCode?: unknown;
 };
 
 function patientCookieMetadata(context: BrowserContext, backendOrigin: string) {
@@ -96,11 +101,32 @@ test.describe('WP-10 F1-P1 same-device preparation and safe handoff', () => {
       }
       throw new Error(`Patient administration create failed with safe code ${safeCode}`);
     }
-    await expect(page.getByTestId('patient-administration-entry-code')).toBeVisible();
-    const storageWhileCodeVisible = await auditRuntimeStorage(page);
-    expect(storageWhileCodeVisible.localStorageKeys).toEqual([]);
-    expect(storageWhileCodeVisible.sessionStorageKeys).toEqual([]);
-    expect(storageWhileCodeVisible.indexedDbNames).toEqual([]);
+    expect(createResponse.request().postDataJSON()).toEqual({
+      deviceMode: 'same_device',
+    });
+    const createBody = (await createResponse.json()) as CreateSessionBody;
+    expect(createBody.deviceMode).toBe('same_device');
+    expect(createBody.entryCode).toBeNull();
+    await expect(page.getByText('设备方式', { exact: true })).toBeVisible();
+    await expect(page.getByText('同一设备', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('patient-administration-entry-code')).toHaveCount(0);
+    await expect(
+      page.getByRole('heading', { name: '本地设备准备与不计分练习' }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('checkbox', {
+        name: '患者已当面告知本机准备与不计分练习完成',
+      }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole('heading', { name: '重新签发跨设备进入码' }),
+    ).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '同一设备准备' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '跨设备准备' })).toHaveCount(0);
+    const storageAfterCreate = await auditRuntimeStorage(page);
+    expect(storageAfterCreate.localStorageKeys).toEqual([]);
+    expect(storageAfterCreate.sessionStorageKeys).toEqual([]);
+    expect(storageAfterCreate.indexedDbNames).toEqual([]);
 
     await expect(page.getByRole('button', { name: '安全交接给患者' })).toHaveCount(
       0,
@@ -144,17 +170,22 @@ test.describe('WP-10 F1-P1 same-device preparation and safe handoff', () => {
     await executionReloadResponsePromise;
     const staffReloadResponse = await staffReloadResponsePromise;
     const reloadedSession = (await staffReloadResponse.json()) as StaffSessionBody;
+    expect(reloadedSession.deviceMode).toBe('same_device');
     expect(reloadedSession.status).toBe('prepared');
     expect(typeof reloadedSession.preparationConfirmedAt).toBe('string');
     expect(reloadedSession.hasPatientCredential).toBe(false);
     await expect(page.getByTestId('patient-administration-staff-panel')).toBeVisible();
     await expect(page.getByText('等待准备', { exact: true })).toBeVisible();
+    await expect(page.getByText('同一设备', { exact: true })).toBeVisible();
     await expect(page.getByText('同设备不可逆安全交接', { exact: true })).toBeVisible();
     await expect(page.getByTestId('patient-administration-preparation')).toHaveCount(0);
     await expect(page.getByRole('button', { name: '确认准备与影响因素' })).toHaveCount(
       0,
     );
     await expect(page.getByRole('button', { name: '安全交接给患者' })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: '重新签发跨设备进入码' }),
+    ).toHaveCount(0);
 
     const staffAuthStatus = await page.evaluate(async (backendOrigin) => {
       const response = await fetch(`${backendOrigin}/auth/me`, {
