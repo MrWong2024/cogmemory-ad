@@ -603,6 +603,107 @@ describe('patient administration session APIs (e2e)', () => {
       });
   });
 
+  it('rejects recreate after completed history without adding or changing terminal sessions', async () => {
+    const fixture = await createFixture('COMPLETED-RECREATE');
+    const base = staffBase(fixture);
+    const doctor = requireAgent(ACCOUNTS.doctor);
+    const createdBy = {
+      operatorId: new Types.ObjectId(),
+      operatorName: 'B1 Completed Gate Doctor',
+      operatorRole: 'doctor' as const,
+    };
+    const expiresAt = new Date(Date.now() + 60_000);
+    const completed = await administrationSessionModel.create({
+      scaleInstanceId: fixture.scaleInstance._id,
+      deviceMode: 'same_device',
+      status: 'completed',
+      currentStepKey: 'completed-gate-step',
+      revision: 19,
+      expiresAt,
+      completedAt: new Date(),
+      impactFactorCodes: [],
+      createdBy,
+    });
+    const laterTerminated = await administrationSessionModel.create({
+      scaleInstanceId: fixture.scaleInstance._id,
+      deviceMode: 'cross_device',
+      status: 'terminated',
+      currentStepKey: 'completed-gate-step',
+      revision: 1,
+      expiresAt,
+      terminatedAt: new Date(),
+      impactFactorCodes: [],
+      createdBy,
+    });
+    const countBefore = await administrationSessionModel
+      .countDocuments({ scaleInstanceId: fixture.scaleInstance._id })
+      .exec();
+
+    await doctor
+      .post(base)
+      .send({ deviceMode: 'same_device' })
+      .expect(409)
+      .expect((response: Response) => {
+        expect(readBody(response)).toEqual(
+          expect.objectContaining({
+            code: 'PATIENT_ADMINISTRATION_SESSION_CONFLICT',
+          }),
+        );
+      });
+
+    expect(
+      await administrationSessionModel
+        .countDocuments({ scaleInstanceId: fixture.scaleInstance._id })
+        .exec(),
+    ).toBe(countBefore);
+    expect(
+      (await administrationSessionModel.findById(completed._id).exec())?.status,
+    ).toBe('completed');
+    expect(
+      (await administrationSessionModel.findById(laterTerminated._id).exec())
+        ?.status,
+    ).toBe('terminated');
+  });
+
+  it('allows recreate after termination while preserving the terminated session', async () => {
+    const fixture = await createFixture('TERMINATED-RECREATE');
+    const base = staffBase(fixture);
+    const doctor = requireAgent(ACCOUNTS.doctor);
+    const firstCreate = readBody(
+      await doctor.post(base).send({ deviceMode: 'same_device' }).expect(201),
+    );
+    const firstSessionId = readString(firstCreate, 'id');
+
+    await doctor
+      .post(`${base}/terminate`)
+      .send({
+        expectedRevision: 0,
+        reason: 'retry after interrupted assessment',
+      })
+      .expect(200)
+      .expect((response: Response) => {
+        expect(readBody(response)).toEqual(
+          expect.objectContaining({ status: 'terminated', revision: 1 }),
+        );
+      });
+
+    const secondCreate = readBody(
+      await doctor.post(base).send({ deviceMode: 'cross_device' }).expect(201),
+    );
+    const secondSessionId = readString(secondCreate, 'id');
+
+    expect(secondSessionId).not.toBe(firstSessionId);
+    expect(
+      (await administrationSessionModel.findById(firstSessionId).exec())
+        ?.status,
+    ).toBe('terminated');
+    expect(
+      await administrationSessionModel
+        .countDocuments({ scaleInstanceId: fixture.scaleInstance._id })
+        .exec(),
+    ).toBe(2);
+  });
+
   it('allows every workflow role, rejects other roles, and enforces one open session under concurrency', async () => {
     const roleCases = [
       [ACCOUNTS.admin, 'ROLE-ADMIN'],

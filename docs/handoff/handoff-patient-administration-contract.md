@@ -136,13 +136,14 @@ manifest 不承担独立资产数据库、资产管理后台、多级审批、TT
 ### 8.1 最低充分会话语义
 
 - 不创建患者长期账号或 patient 角色。同设备和跨设备都使用短期受控患者施测会话。
-- `supervised_patient_input` 的设备方式必须在创建 `PatientAdministrationSession` 时由客户端明确选择并持久化为 `same_device` 或 `cross_device`；两者是同级正常方式，创建后不可修改，也不存在第三种设备方式。选择错误时终止当前会话并重新创建，不提供 switch / change-flow 接口。
+- `supervised_patient_input` 的设备方式必须在创建 `PatientAdministrationSession` 时由客户端明确选择并持久化为 `same_device` 或 `cross_device`；两者是同级正常方式，创建后不可修改，也不存在第三种设备方式。选择错误时可终止当前开放会话，并仅在该 `ScaleInstance` 不存在 completed 历史时重新创建；不提供 switch / change-flow 接口。
 - `same_device` 创建时不生成、不持久化也不返回六位进入码；完成准备确认后通过同设备安全 handoff 签发患者凭证。只有 `cross_device` 创建、重签和兑换六位进入码。
 - 同设备安全交接进入患者模式后，当前浏览器的 staff Session 必须失效，浏览器只持有 patient 身份；患者不能通过后退、刷新、历史记录或普通导航进入临床工作端。医护现实中一直在患者旁边，不等于浏览器中的 staff Session 可以继续保留。
 - 跨设备使用六位数字的一次性短期进入码：十分钟有效，只能成功兑换一次。进入码不是患者账号或长期凭据；患者设备持有 patient Session，独立医护设备继续保留 staff Session。
 - 同一 `ScaleInstance` 同时只允许一个有效患者设备。换设备时旧患者凭证立即失效。
 - 患者会话绝对有效期为两小时，不做空闲心跳、滑动续期或自动续期。
 - 会话必须表达准备、活动、暂停、完成、终止和过期语义；这些是业务语义，不预先规定最终枚举名或 Schema。
+- `completed` 是同一 `ScaleInstance` 患者施测成功完成的永久终点；历史中存在任意 completed `PatientAdministrationSession` 时，不得再次创建患者施测会话。`terminated` / `expired` 表示未成功完成，只有在不存在 completed 历史时才允许重新创建；terminate + recreate 仅用于失败、中止或设备方式选择错误后的恢复，不是 completed 后重测。
 - 患者只能读取和完成服务端当前步骤，不能自行跳题；但正常 happy path 应由患者端连续推进整个正常题目主链。条件提示等合同明确的受控步骤仍由医护解锁，不能把“需要医护临床观察”机械等同为“需要 staff 同步系统写入才能进入下一题”。
 - cross-device 存在保持有效 staff Session 的独立医护终端时，医护可通过该终端执行暂停、接管、纠正、恢复、换设备或终止等已存在控制操作。
 - same-device 安全交接后，当前浏览器 staff Session 已失效，患者施测期间不保留隐藏 staff 权限，也不承诺医护可以在同一设备上无须重新认证就实时执行 staff 控制。正常 happy path 由患者连续完成主链，医护进行现实观察和必要辅助。
@@ -310,7 +311,7 @@ F3 的组织原则是“正常复核优先，重点项目适度提示”。系�
 - 三类存储、唯一私有资产目录、图片提取规则、冻结女声 MP3、单一 manifest 及 released 不可覆盖。
 - 当前步骤最小授权、提示不预加载、刺激 / guidance / prompt 的播放和重播边界。
 - 两张逐题矩阵，以及口头回答默认短录音、非语音不默认录音、动作由医护观察、绘图不默认全事件回放。
-- 准备练习隔离、短期患者会话、创建时持久化且不可切换的 same-device / cross-device、same-device 不签发进入码、cross-device 六位一次性进入码十分钟、选择错误时 terminate + recreate、legacy 模式不推断且 mode-specific mutation fail closed、同一 `ScaleInstance` 同时只允许一个有效患者设备、两小时绝对有效期、same-device staff Session 失效与重新认证、cross-device staff Session 保留、服务端权威步骤和安全退出。
+- 准备练习隔离、短期患者会话、创建时持久化且不可切换的 same-device / cross-device、same-device 不签发进入码、cross-device 六位一次性进入码十分钟、无 completed 历史时可因失败 / 中止 / 选择错误 terminate 或 expire 后 recreate、任意 completed 历史永久禁止同一 `ScaleInstance` 再次 create、legacy 模式不推断且 mode-specific mutation fail closed、同一 `ScaleInstance` 同时只允许一个有效患者设备、两小时绝对有效期、same-device staff Session 失效与重新认证、cross-device staff Session 保留、服务端权威步骤和安全退出。
 - 患者正常题目主链连续推进，医护现场观察与后续复核记录解耦；双设备不等于双写者，独立患者 / 独立 `ScaleInstance` 正常并行，同一评估不默认多人实时协同编辑。
 - 患者原始事实、ASR 候选、现场医护观察的事实来源、量表作答复核草稿和整体正式提交结果的五层语义；现场观察可在 F3 直接形成现有 `ItemResponse`，不默认要求独立 Observation 数据层。F3 正常复核优先、原始证据按需查看，患者已有有效 `MediaEvidence` 可经明确采用受控进入现有 `evidenceRefs` 而不重新上传或复制；第 4 层由现有 A14 `ItemResponse` 单题草稿与 `markAsAnswered` 承载，第 5 层通过 readiness 后的现有 A16 整体提交使同一批 `ItemResponse` 成为正式作答结果，不创建第二套答案、复核状态或批量确认写协议，A14 / A16 技术权限继续服从当前 backend 授权合同。
 - 一种基础 ASR、上传门禁、内存重试和人工降级；ASR 不阻断。

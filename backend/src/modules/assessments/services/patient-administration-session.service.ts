@@ -238,6 +238,12 @@ export class PatientAdministrationSessionService {
       undefined,
       true,
     );
+    if (
+      await this.hasCompletedSessionByScaleInstance(business.scaleInstance.id)
+    ) {
+      this.throwSessionConflict();
+    }
+
     const now = new Date();
     await this.expireOpenSessionForScaleInstance(
       business.scaleInstance.id,
@@ -2283,6 +2289,18 @@ export class PatientAdministrationSessionService {
       .sort({ createdAt: -1, _id: -1 })
       .select('+entryCodeHash +sessionTokenHash')
       .exec();
+  }
+
+  private async hasCompletedSessionByScaleInstance(
+    scaleInstanceId: string,
+  ): Promise<boolean> {
+    const completedSession = await this.patientAdministrationSessionModel
+      .exists({
+        scaleInstanceId: new Types.ObjectId(scaleInstanceId),
+        status: 'completed',
+      })
+      .exec();
+    return completedSession !== null;
   }
 
   private async findOpenSessionByScaleInstance(

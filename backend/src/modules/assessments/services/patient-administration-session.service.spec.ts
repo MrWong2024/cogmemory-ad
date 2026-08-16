@@ -89,6 +89,7 @@ describe('PatientAdministrationSessionService', () => {
   const scaleVersionId = '507f1f77bcf86cd799439015';
   let service: PatientAdministrationSessionService;
   let sessionModel: {
+    exists: jest.Mock;
     findOne: jest.Mock;
     findOneAndUpdate: jest.Mock;
     findById: jest.Mock;
@@ -261,6 +262,7 @@ describe('PatientAdministrationSessionService', () => {
 
   beforeEach(async () => {
     sessionModel = {
+      exists: jest.fn().mockReturnValue(createQuery(null)),
       findOne: jest.fn(),
       findOneAndUpdate: jest.fn(),
       findById: jest.fn(),
@@ -1159,7 +1161,143 @@ describe('PatientAdministrationSessionService', () => {
     expect(persisted).not.toHaveProperty('sessionTokenHash');
     expect(authService.hashSessionToken).not.toHaveBeenCalled();
     expect(sessionModel.create).toHaveBeenCalledTimes(1);
+    expect(sessionModel.exists).toHaveBeenCalledWith({
+      scaleInstanceId: new Types.ObjectId(scaleInstanceId),
+      status: 'completed',
+    });
   });
+
+  it.each(['prepared', 'active', 'paused'] as const)(
+    'keeps the existing open-session conflict for %s sessions',
+    async (status) => {
+      arrangeEditableBusiness();
+      sessionModel.findOne
+        .mockReturnValueOnce(createQuery(null))
+        .mockReturnValueOnce(createQuery(sessionDocument({ status })));
+
+      await expectHttpException(
+        service.createSession(
+          patientId,
+          visitId,
+          scaleInstanceId,
+          'same_device',
+          operator,
+        ),
+        409,
+        'PATIENT_ADMINISTRATION_SESSION_CONFLICT',
+      );
+
+      expect(sessionModel.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rejects create when a completed session exists before inspecting or expiring open sessions', async () => {
+    arrangeEditableBusiness();
+    sessionModel.exists.mockReturnValue(
+      createQuery({ _id: new Types.ObjectId('507f1f77bcf86cd799439020') }),
+    );
+    sessionModel.findOne.mockReturnValue(
+      createQuery(
+        sessionDocument({
+          status: 'prepared',
+          expiresAt: new Date(Date.now() - 1_000),
+        }),
+      ),
+    );
+
+    await expectHttpException(
+      service.createSession(
+        patientId,
+        visitId,
+        scaleInstanceId,
+        'same_device',
+        operator,
+      ),
+      409,
+      'PATIENT_ADMINISTRATION_SESSION_CONFLICT',
+    );
+
+    expect(sessionModel.findOne).not.toHaveBeenCalled();
+    expect(sessionModel.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(sessionModel.create).not.toHaveBeenCalled();
+  });
+
+  it.each(['terminated', 'expired'] as const)(
+    'rejects completed history even when a later %s session is present',
+    async (laterStatus) => {
+      arrangeEditableBusiness();
+      sessionModel.exists.mockReturnValue(
+        createQuery({ _id: new Types.ObjectId('507f1f77bcf86cd799439020') }),
+      );
+      sessionModel.findOne.mockReturnValue(
+        createQuery(sessionDocument({ status: laterStatus })),
+      );
+
+      await expectHttpException(
+        service.createSession(
+          patientId,
+          visitId,
+          scaleInstanceId,
+          'same_device',
+          operator,
+        ),
+        409,
+        'PATIENT_ADMINISTRATION_SESSION_CONFLICT',
+      );
+
+      expect(sessionModel.exists).toHaveBeenCalledWith({
+        scaleInstanceId: new Types.ObjectId(scaleInstanceId),
+        status: 'completed',
+      });
+      expect(sessionModel.findOne).not.toHaveBeenCalled();
+      expect(sessionModel.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['terminated', 'expired'] as const)(
+    'allows recreate after %s when no completed history or open session exists',
+    async (historicalStatus) => {
+      arrangeEditableBusiness();
+      sessionModel.findOne
+        .mockReturnValueOnce(createQuery(null))
+        .mockReturnValueOnce(createQuery(null));
+      sessionModel.create.mockImplementation((input: Record<string, unknown>) =>
+        Promise.resolve(
+          sessionDocument({
+            ...input,
+            deviceMode: 'same_device',
+            entryCodeHash: undefined,
+            entryCodeExpiresAt: undefined,
+          }),
+        ),
+      );
+
+      await expect(
+        service.createSession(
+          patientId,
+          visitId,
+          scaleInstanceId,
+          'same_device',
+          operator,
+        ),
+      ).resolves.toEqual(
+        expect.objectContaining({
+          status: 'prepared',
+          deviceMode: 'same_device',
+        }),
+      );
+
+      const openStatusFilter = requireRecord(
+        requireRecord(
+          readMockCallArgument(sessionModel.findOne, 0, 1),
+          'open-session filter',
+        ).status,
+        'open-session status filter',
+      );
+      expect(openStatusFilter.$in).not.toContain(historicalStatus);
+      expect(sessionModel.create).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it('creates cross-device prepared state from the minimum ordered step and persists only the code hash', async () => {
     arrangeEditableBusiness();

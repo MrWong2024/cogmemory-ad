@@ -51,6 +51,7 @@ type Props = PatientAdministrationRouteIds & {
 
 const openStatuses = new Set(['prepared', 'active', 'paused']);
 const terminalStatuses = new Set(['completed', 'terminated', 'expired']);
+const recreatableStatuses = new Set(['terminated', 'expired']);
 const inputClassName =
   'min-h-11 w-full rounded-md border border-[var(--cma-line-strong)] bg-white px-3 py-2 text-[var(--cma-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cma-ring)]';
 const checkboxClassName =
@@ -81,7 +82,6 @@ function getPanelErrorMessage(error: unknown): string {
   }
   return '患者施测服务暂不可用，请稍后手动刷新。';
 }
-
 export function PatientAdministrationStaffPanel({
   patientId,
   visitId,
@@ -535,7 +535,7 @@ export function PatientAdministrationStaffPanel({
     );
   }
 
-  const canCreate = !session || terminalStatuses.has(session.status);
+  const canCreate = !session || recreatableStatuses.has(session.status);
   const isLegacyOpenSession = Boolean(
     session && openStatuses.has(session.status) && session.deviceMode === null,
   );
@@ -630,6 +630,15 @@ export function PatientAdministrationStaffPanel({
             role="alert"
           >
             当前会话缺少设备方式信息，无法安全继续设备准备。请终止本次会话后重新创建，并重新选择同一设备或跨设备。
+          </p>
+        ) : null}
+
+        {session?.status === 'completed' ? (
+          <p
+            className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-info-soft)] px-4 py-3 text-base leading-7 text-[var(--cma-info)]"
+            role="status"
+          >
+            本次患者施测已完成，不能再次创建施测会话。请继续复核患者原始作答并完成正式结果流程；如需再次进行正式量表评估，请新建访视后初始化新的量表实例。
           </p>
         ) : null}
 
