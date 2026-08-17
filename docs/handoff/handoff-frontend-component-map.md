@@ -750,7 +750,7 @@
 
 - 路径：`frontend/src/features/patient-administration/components/PatientAdministrationReviewPanel.tsx`。仅在 MMSE `supervised_patient_input` 且 StaffPanel 回传的最新 patient-administration status=`completed` 时，于现有 `ScaleInstanceExecutionPage` 信息区之后、`ScaleInstanceSubmissionPanel` 之前挂载；prepared / active / paused / terminated / expired 均不进入。Panel 的一次加载 + 手动刷新、无轮询逻辑不变；不新增路由或 workspace，原 `PatientAdministrationStaffPanel`、分组导航和编辑器保持。
 - 读取职责：首次加载一次 completed patient administration review，展示 session / impact factors / reviewEvents、权威 item / step / run、responseMode、当前 ItemResponse status / revision、capture 与媒体摘要；允许显式刷新且不轮询。404 安静表示尚无复核，409 作为完整性冲突，不伪造正常 `staffObservation` 前置。
-- 媒体职责：原始媒体默认折叠；用户明确操作后才请求 access URL。URL 只在当前 React 内存中绑定 audio / image viewer，关闭、实例身份变化或卸载时清除。ASR 仅为显式辅助候选并持续标注“不是正式答案”。
+- 媒体职责：原始媒体默认折叠；用户明确操作后才请求 access URL。audio / image viewer 与 access URL 获取错误均在当前 Evidence 卡片内联展示，并按 mediaEvidenceId 切换；页面一次仍只有一个 viewer。signed URL 只驻留当前 React 内存，关闭、实例身份变化或卸载时清除。ASR 仅为显式辅助候选并持续标注“不是正式答案”。
 - adoption / 定位职责：仅对后端合同允许的 completed session、有效 capture、stored/attached photo 或 handwriting、且父页面 requirement 仍 pending/missing 的证据开放显式采用；成功把同一 Evidence requirement 回传父页面并标记 readiness stale。定位按钮复用父页 itemResponseId -> 分组 -> scroll -> focus，不在 panel 内保存答案。
 - 边界：`ItemResponseEditor` 继续独占正式作答、A14 与 `markAsAnswered`；`ScaleInstanceSubmissionPanel` 继续独占 readiness / A16。实例 completed 后 panel 保持可读，transcribe / adopt 禁用；不新增 Review / Anomaly / StaffObservation 模型、批量写、自动 ASR、自动 adoption 或自动提交。
 

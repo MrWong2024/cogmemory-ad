@@ -98,6 +98,11 @@ type ViewerState = {
   url: string;
 };
 
+type EvidenceAccessFeedback = {
+  mediaEvidenceId: string;
+  message: string;
+};
+
 function reviewErrorMessage(error: PatientAdministrationApiError): string {
   if (error.kind === 'forbidden') {
     return '当前账号无权读取患者施测作答复核。';
@@ -210,7 +215,8 @@ export function PatientAdministrationReviewPanel({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [viewer, setViewer] = useState<ViewerState | null>(null);
   const [viewerLoadingId, setViewerLoadingId] = useState<string | null>(null);
-  const [accessFeedback, setAccessFeedback] = useState<string | null>(null);
+  const [accessFeedback, setAccessFeedback] =
+    useState<EvidenceAccessFeedback | null>(null);
   const [transcribingIds, setTranscribingIds] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -386,7 +392,10 @@ export function PatientAdministrationReviewPanel({
         onUnauthorized();
         return;
       }
-      setAccessFeedback(accessErrorMessage(error));
+      setAccessFeedback({
+        mediaEvidenceId: evidence.mediaEvidenceId,
+        message: accessErrorMessage(error),
+      });
     } finally {
       if (accessControllerRef.current === controller) {
         accessControllerRef.current = null;
@@ -523,6 +532,12 @@ export function PatientAdministrationReviewPanel({
     evidence: PatientAdministrationReviewEvidence,
   ) {
     const feedback = feedbacks[evidence.mediaEvidenceId];
+    const currentAccessFeedback =
+      accessFeedback?.mediaEvidenceId === evidence.mediaEvidenceId
+        ? accessFeedback
+        : null;
+    const currentViewer =
+      viewer?.mediaEvidenceId === evidence.mediaEvidenceId ? viewer : null;
     const transcription = evidence.transcription;
     const canTranscribe =
       !readOnlyReason &&
@@ -612,6 +627,49 @@ export function PatientAdministrationReviewPanel({
             </Button>
           ) : null}
         </div>
+        {currentAccessFeedback ? (
+          <p
+            className="rounded-md border border-[var(--cma-danger)] bg-[var(--cma-danger-soft)] p-4 text-sm leading-6 text-[var(--cma-danger)]"
+            role="alert"
+          >
+            {currentAccessFeedback.message}
+          </p>
+        ) : null}
+        {currentViewer ? (
+          <section
+            aria-label="患者原始证据查看器"
+            className="grid gap-3 rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-surface-muted)] p-5"
+            data-testid="patient-administration-review-viewer"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h3 className="text-xl font-semibold text-[var(--cma-text-strong)]">
+                原始证据查看器
+              </h3>
+              <Button onClick={clearViewer} size="sm" variant="secondary">
+                关闭查看器
+              </Button>
+            </div>
+            {currentViewer.evidenceType === 'audio' ? (
+              <audio
+                className="w-full"
+                controls
+                data-testid="patient-administration-review-audio"
+                preload="none"
+                src={currentViewer.url}
+              >
+                当前浏览器不支持音频播放。
+              </audio>
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element -- signed clinical evidence URL is memory-only and is not an optimizable public asset.
+              <img
+                alt="患者原始书写或照片证据"
+                className="h-auto max-h-[70vh] w-full object-contain"
+                data-testid="patient-administration-review-image"
+                src={currentViewer.url}
+              />
+            )}
+          </section>
+        ) : null}
         {feedback ? (
           <p
             className={
@@ -930,50 +988,6 @@ export function PatientAdministrationReviewPanel({
               </div>
             </section>
 
-            {accessFeedback ? (
-              <p
-                className="rounded-md border border-[var(--cma-danger)] bg-[var(--cma-danger-soft)] p-4 text-sm leading-6 text-[var(--cma-danger)]"
-                role="alert"
-              >
-                {accessFeedback}
-              </p>
-            ) : null}
-
-            {viewer ? (
-              <section
-                aria-label="患者原始证据查看器"
-                className="grid gap-3 rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-surface-muted)] p-5"
-                data-testid="patient-administration-review-viewer"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <h3 className="text-xl font-semibold text-[var(--cma-text-strong)]">
-                    原始证据查看器
-                  </h3>
-                  <Button onClick={clearViewer} size="sm" variant="secondary">
-                    关闭查看器
-                  </Button>
-                </div>
-                {viewer.evidenceType === 'audio' ? (
-                  <audio
-                    className="w-full"
-                    controls
-                    data-testid="patient-administration-review-audio"
-                    preload="none"
-                    src={viewer.url}
-                  >
-                    当前浏览器不支持音频播放。
-                  </audio>
-                ) : (
-                  // eslint-disable-next-line @next/next/no-img-element -- signed clinical evidence URL is memory-only and is not an optimizable public asset.
-                  <img
-                    alt="患者原始书写或照片证据"
-                    className="h-auto max-h-[70vh] w-full object-contain"
-                    data-testid="patient-administration-review-image"
-                    src={viewer.url}
-                  />
-                )}
-              </section>
-            ) : null}
           </>
         ) : null}
       </CardContent>
