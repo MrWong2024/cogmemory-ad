@@ -1,4 +1,8 @@
 import type { ItemResponseSummary } from '../../assessments/services/assessments.service';
+import {
+  calculateStructuredManualScore,
+  parseStructuredManualFields,
+} from '../../assessments/lib/structured-manual-response';
 import type {
   ScaleItemConfigSummary,
   ScaleVersionSummary,
@@ -298,6 +302,32 @@ function reviewItem(
   };
 }
 
+function autoScoredItem(
+  item: ScaleItemConfigSummary,
+  response: ItemResponseSummary,
+  scoreValue: number,
+): ProvisionalItemScore {
+  return {
+    itemResponseId: response.id,
+    itemCode: item.code,
+    crfCode: item.crfCode,
+    groupCode: item.groupCode,
+    itemTitle: item.title,
+    itemOrder: item.order,
+    responseType: item.responseType,
+    countsTowardTotal: true,
+    includedInTotal: true,
+    scoreValue,
+    maxScore: item.scoreRange.max,
+    minScore: item.scoreRange.min,
+    scoreStatus: 'auto_scored',
+    scoreSource: 'auto_rule',
+    isMissing: false,
+    cognitiveDomainCodes: [...item.cognitiveDomainCodes],
+    note: undefined,
+  };
+}
+
 export function evaluateProvisionalItems(
   versionItems: ScaleItemConfigSummary[],
   itemResponses: ItemResponseSummary[],
@@ -334,6 +364,23 @@ export function evaluateProvisionalItems(
     if (!isPlainRecord(rule) || typeof rule.mode !== 'string') {
       return reviewItem(item, response, 'UNSUPPORTED_SCORING_MODE');
     }
+    if (rule.mode === 'structured_manual') {
+      const fields = parseStructuredManualFields(rule);
+      if (!fields) {
+        return reviewItem(item, response, 'MANUAL_SCORING_REQUIRED');
+      }
+      const scoreValue = calculateStructuredManualScore(
+        response.structuredResponse,
+        fields,
+      );
+      if (scoreValue === null) {
+        return reviewItem(item, response, 'STRUCTURED_RESPONSE_INVALID');
+      }
+      const normalizedScore = normalizeScoreToRange(scoreValue, item);
+      return normalizedScore === null
+        ? reviewItem(item, response, 'AUTO_SCORE_RESULT_INVALID')
+        : autoScoredItem(item, response, normalizedScore);
+    }
     if (rule.mode !== 'multi_step_manual') {
       return reviewItem(
         item,
@@ -347,25 +394,7 @@ export function evaluateProvisionalItems(
     if ('reasonCode' in autoScore) {
       return reviewItem(item, response, autoScore.reasonCode);
     }
-    return {
-      itemResponseId: response.id,
-      itemCode: item.code,
-      crfCode: item.crfCode,
-      groupCode: item.groupCode,
-      itemTitle: item.title,
-      itemOrder: item.order,
-      responseType: item.responseType,
-      countsTowardTotal: true,
-      includedInTotal: true,
-      scoreValue: autoScore.scoreValue,
-      maxScore: item.scoreRange.max,
-      minScore: item.scoreRange.min,
-      scoreStatus: 'auto_scored',
-      scoreSource: 'auto_rule',
-      isMissing: false,
-      cognitiveDomainCodes: [...item.cognitiveDomainCodes],
-      note: undefined,
-    };
+    return autoScoredItem(item, response, autoScore.scoreValue);
   });
 
   return { itemScores, warningCodes: [] };

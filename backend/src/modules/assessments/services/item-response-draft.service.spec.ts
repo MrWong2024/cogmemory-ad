@@ -106,6 +106,29 @@ function createItemResponseSummary(
   };
 }
 
+function createStructuredManualItem(
+  overrides: Partial<ItemResponseSummary> = {},
+): ItemResponseSummary {
+  return createItemResponseSummary({
+    itemCode: 'test.structured',
+    itemTitle: 'Structured item',
+    responseType: 'multi_choice',
+    itemConfigSnapshot: {
+      scoreRange: { min: 0, max: 2, step: 1 },
+      scoringRule: {
+        mode: 'structured_manual',
+        subItems: [
+          { code: 'year', title: 'Year', maxScore: 1 },
+          { code: 'month', title: 'Month', maxScore: 1 },
+        ],
+      },
+    },
+    stepResults: [],
+    promptResponses: [],
+    ...overrides,
+  });
+}
+
 async function expectHttpExceptionCode(
   promise: Promise<unknown>,
   status: number,
@@ -706,6 +729,160 @@ describe('ItemResponseDraftService', () => {
     await save({ rawResponse: false, markAsAnswered: true });
     expect(readUpdateSet(itemResponseModel.findOneAndUpdate).status).toBe(
       'answered',
+    );
+  });
+
+  it('saves partial structured manual drafts without marking them answered', async () => {
+    currentItemResponse = createStructuredManualItem();
+    const structuredResponse = {
+      subItems: {
+        year: { responseText: '2026', isCorrect: null },
+      },
+    };
+
+    await save({ structuredResponse });
+
+    expect(readUpdateSet(itemResponseModel.findOneAndUpdate)).toEqual(
+      expect.objectContaining({
+        structuredResponse,
+        status: 'in_progress',
+      }),
+    );
+  });
+
+  it.each([
+    [
+      'unknown field code',
+      { subItems: { unknown: { responseText: 'x', isCorrect: true } } },
+    ],
+    [
+      'forged max score',
+      {
+        subItems: {
+          year: { responseText: 'x', isCorrect: true, maxScore: 99 },
+        },
+      },
+    ],
+    [
+      'forged score value',
+      {
+        subItems: {
+          year: { responseText: 'x', isCorrect: true, scoreValue: 1 },
+        },
+      },
+    ],
+    [
+      'forged reference answer',
+      {
+        subItems: {
+          year: {
+            responseText: 'x',
+            isCorrect: true,
+            referenceAnswer: 'x',
+          },
+        },
+      },
+    ],
+    [
+      'invalid correctness string',
+      { subItems: { year: { responseText: 'x', isCorrect: 'true' } } },
+    ],
+    [
+      'invalid correctness number',
+      { subItems: { year: { responseText: 'x', isCorrect: 1 } } },
+    ],
+  ])('rejects structured manual payload with %s', async (_label, payload) => {
+    currentItemResponse = createStructuredManualItem();
+    await expectHttpExceptionCode(
+      save({ structuredResponse: payload }),
+      400,
+      'ITEM_RESPONSE_PAYLOAD_INVALID',
+    );
+    expect(itemResponseModel.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      'a missing field',
+      {
+        subItems: { year: { responseText: '2026', isCorrect: true } },
+      },
+    ],
+    [
+      'an empty response',
+      {
+        subItems: {
+          year: { responseText: ' ', isCorrect: true },
+          month: { responseText: 'August', isCorrect: true },
+        },
+      },
+    ],
+    [
+      'a null confirmation',
+      {
+        subItems: {
+          year: { responseText: '2026', isCorrect: null },
+          month: { responseText: 'August', isCorrect: true },
+        },
+      },
+    ],
+    [
+      'a missing confirmation',
+      {
+        subItems: {
+          year: { responseText: '2026' },
+          month: { responseText: 'August', isCorrect: true },
+        },
+      },
+    ],
+  ])(
+    'cannot mark structured manual answered with %s',
+    async (_label, value) => {
+      currentItemResponse = createStructuredManualItem({
+        status: 'in_progress',
+        structuredResponse: value,
+        responseText: 'legacy free text must not bypass the gate',
+      });
+      await expectHttpExceptionCode(
+        save({ markAsAnswered: true }),
+        409,
+        'ITEM_RESPONSE_CANNOT_MARK_ANSWERED',
+      );
+    },
+  );
+
+  it('marks a complete structured manual response answered', async () => {
+    currentItemResponse = createStructuredManualItem({
+      status: 'in_progress',
+      structuredResponse: {
+        subItems: {
+          year: { responseText: '2026', isCorrect: true },
+          month: { responseText: 'July', isCorrect: false },
+        },
+      },
+    });
+
+    await save({ markAsAnswered: true });
+    expect(readUpdateSet(itemResponseModel.findOneAndUpdate).status).toBe(
+      'answered',
+    );
+  });
+
+  it('allows a structured manual item to be completed as missing', async () => {
+    currentItemResponse = createStructuredManualItem();
+
+    await save({
+      isMissing: true,
+      missingReason: 'Unable to assess',
+      markAsAnswered: true,
+    });
+
+    expect(readUpdateSet(itemResponseModel.findOneAndUpdate)).toEqual(
+      expect.objectContaining({
+        status: 'answered',
+        isMissing: true,
+        structuredResponse: null,
+      }),
     );
   });
 

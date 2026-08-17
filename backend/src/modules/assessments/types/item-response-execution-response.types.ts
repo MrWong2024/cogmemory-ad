@@ -13,6 +13,7 @@ import type {
   ScaleInstanceProgressResponse,
 } from './assessment-execution-response.types';
 import type { AssessmentVisitDetailResponse } from './assessment-visit-response.types';
+import type { StructuredManualField } from '../lib/structured-manual-response';
 
 export type ItemResponseDraftJsonValue =
   | null
@@ -56,6 +57,7 @@ export type ItemExecutionConfigResponse = {
   supportsPhotoUpload: boolean;
   supportsHandwriting: boolean;
   requiresOperatorNote: boolean;
+  structuredManualFields?: StructuredManualField[];
 };
 
 export type ItemResponseVersionTraceResponse = {

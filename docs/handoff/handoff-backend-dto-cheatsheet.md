@@ -213,8 +213,8 @@
 - 文件：`backend\src\modules\assessments\dto\update-item-response-draft.dto.ts`
 - 用途：A14 单题草稿 PATCH body DTO。
 - 控制字段：`expectedRevision` 必填，必须是 0 到 `Number.MAX_SAFE_INTEGER` 的安全非负整数，不允许字符串隐式转换；仅用于 CAS，不写入草稿 Mixed 字段，单独提交不构成有效草稿变更。
-- 允许业务字段：rawResponse、structuredResponse、responseText（nullable，最大 10000）、isMissing、missingReason（nullable，最大 1000）、stepResponses、promptResponses、timing（nullable）、operatorNote（nullable，最大 4000）、markAsAnswered。
-- 白名单边界：不声明 item 身份 / 配置 / 版本、status、answerSource、score / 正确性、evidence、metadata、锁定 / 作废、所有权 ID 或 timestamps；非白名单字段由全局 ValidationPipe 拒绝。
+- 允许业务字段：rawResponse、structuredResponse、responseText（nullable，最大 10000）、isMissing、missingReason（nullable，最大 1000）、stepResponses、promptResponses、timing（nullable）、operatorNote（nullable，最大 4000）、markAsAnswered。可执行 structured_manual 的 structuredResponse 固定为 `{ subItems: { [fieldCode]: { responseText?: string, isCorrect?: boolean | null } } }`；草稿允许部分字段，完成时服务层要求全部字段、非空 responseText 与 boolean isCorrect。
+- 白名单边界：不声明 item 身份 / 配置 / 版本、status、answerSource、score、evidence、metadata、锁定 / 作废、所有权 ID 或 timestamps；structured sub-item 除医护确认的 responseText / isCorrect 外不接受任何评分或参考字段；非白名单 DTO 字段由全局 ValidationPipe 拒绝，Mixed 内部结构由服务端配置驱动 validator 拒绝。
 
 - 名称：`UpdateItemStepDraftDto`
 - 文件：`backend\src\modules\assessments\dto\update-item-response-draft.dto.ts`
@@ -236,8 +236,8 @@
 - 名称：`ScaleExecutionIdentityResponse`、`ScaleExecutionGroupResponse`、`ItemExecutionConfigResponse`、`ItemResponseExecutionResponse`
 - 文件：`backend\src\modules\assessments\types\item-response-execution-response.types.ts`
 - 用途：A14 执行详情与 PATCH 成功响应的安全公开结构。
-- 字段摘要：安全量表身份与分组；题目身份、作答类型、计分参与 / 认知域、显式 config、版本追溯、`draftRevision` / `draftSavedAt`、草稿值、step / prompt 槽位、含 timerState / lastResumedAt 的 timing、证据要求和 operatorNote。legacy revision / 保存时间安全归一为 0 / null，legacy timing 只读规范化。
-- 安全边界：不包含完整 Mixed 配置、scoringRule、expectedValue、正确答案、score / isCorrect / scoreValue、metadata、qualityControlHints、内部 ObjectId 或 Mongoose document。
+- 字段摘要：安全量表身份与分组；题目身份、作答类型、计分参与 / 认知域、显式 config、版本追溯、`draftRevision` / `draftSavedAt`、草稿值、step / prompt 槽位、含 timerState / lastResumedAt 的 timing、证据要求和 operatorNote。可执行 structured_manual 的 config 可选 `structuredManualFields[] { code, label, maxScore, referenceAnswer? }`，referenceAnswer 仅为 primitive 安全参考；legacy revision / 保存时间安全归一为 0 / null，legacy timing 只读规范化。
+- 安全边界：不包含完整 Mixed 配置、scoringRule、原始 expectedValue、score / scoreValue、metadata、qualityControlHints、内部 ObjectId 或 Mongoose document；structuredResponse 内的 isCorrect 是医护已提交事实，不是系统判断。
 
 - 名称：`ScaleInstanceExecutionDetailResponse`、`UpdateItemResponseDraftResponse`
 - 文件：`backend\src\modules\assessments\types\item-response-execution-response.types.ts`
@@ -451,6 +451,7 @@
 
 - 名称：`ScaleSubmissionIssueResponse`
 - 字段：code、severity(blocking / warning)、scope(scale_instance / item)、安全题目标识 / 顺序、可选 missingItemCodes / unexpectedItemCodes / missingStepCodes / requiredEvidenceMode / requiredEvidenceTypes、稳定 message。
+- structured_manual：非 missing 且 structuredResponse 非法或不完整时返回 blocking `ITEM_STRUCTURED_SUBITEMS_INCOMPLETE`，不额外返回缺失 code 数组。
 - 隐私：不含作答、missingReason / operatorNote 原文、expectedValue、scoringRule、score / isCorrect / scoreValue、mediaEvidenceId 或 metadata。
 
 - 名称：`ScaleSubmissionReadinessSummaryResponse`
@@ -477,7 +478,7 @@
 - 字段：groupCode、可选 groupTitle / order、provisionalScoreValue、minScore、maxScore、scored / unscored / needsReview / missing 计数、isComplete；不是 CognitiveDomainResult。
 
 - 名称：`ProvisionalScoreItemResponse`
-- 字段：安全 itemResponseId / itemCode / CRF / group / title / order / responseType、countsTowardTotal、includedInTotal、provisionalScoreValue、scoreRange、scoreStatus / source、isMissing、cognitiveDomainCodes、reviewRequired 和受控 reason；不含作答、expectedValue、scoringRule、isCorrect 或 ItemResponse.score。
+- 字段：安全 itemResponseId / itemCode / CRF / group / title / order / responseType、countsTowardTotal、includedInTotal、provisionalScoreValue、scoreRange、scoreStatus / source、isMissing、cognitiveDomainCodes、reviewRequired 和受控 reason（含 `STRUCTURED_RESPONSE_INVALID`）；不含作答、expectedValue、scoringRule、isCorrect 或 ItemResponse.score。
 
 - 名称：`ProvisionalScoreComputationResponse` / `ProvisionalScoreReviewResponse`
 - 字段：computedAt、engineVersion、scoringRuleVersion、auto / pending / excluded 计数、受控 warningCodes；review 仅含 status 与 pendingItemCount，不含 reviewer / note / reviewedAt。

@@ -16,6 +16,11 @@ import {
   hasMeaningfulJsonValue,
   isPlainRecord,
 } from './item-response-answer-content';
+import {
+  isCompleteStructuredManualResponse,
+  resolveStructuredManualFields,
+  type StructuredManualField,
+} from './structured-manual-response';
 
 const COMPLETED_ITEM_STATUSES = new Set(['answered', 'scored']);
 const EDITABLE_STATUSES = new Set(['draft', 'in_progress']);
@@ -51,6 +56,7 @@ type EffectiveItemConfig = {
   supportsHandwriting: boolean;
   requiresOperatorNote: boolean;
   qualityControlRule: Record<string, unknown> | null;
+  structuredManualFields: StructuredManualField[] | null;
 };
 
 type MediaRequirement = {
@@ -127,6 +133,10 @@ function readEffectiveItemConfig(
       : isPlainRecord(versionQualityRule)
         ? versionQualityRule
         : null,
+    structuredManualFields: resolveStructuredManualFields(
+      itemResponse.itemConfigSnapshot,
+      versionItem?.scoringRule,
+    ),
   };
 }
 
@@ -384,6 +394,21 @@ export function evaluateScaleInstanceSubmissionReadiness(
         code: 'ITEM_STALE_MISSING_REASON',
         severity: 'warning',
         message: 'Non-missing item retains a missing reason',
+      });
+    }
+
+    if (
+      config.structuredManualFields &&
+      !isCompleteStructuredManualResponse(
+        itemResponse.structuredResponse,
+        config.structuredManualFields,
+      )
+    ) {
+      blockingIssues.push({
+        ...itemBase,
+        code: 'ITEM_STRUCTURED_SUBITEMS_INCOMPLETE',
+        severity: 'blocking',
+        message: 'Structured manual item has incomplete sub-item responses',
       });
     }
 

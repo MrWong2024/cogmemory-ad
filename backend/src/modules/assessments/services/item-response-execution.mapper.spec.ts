@@ -231,4 +231,58 @@ describe('item response execution mapper', () => {
     expect(response.timing?.timerState).toBe('paused');
     expect(response.timing?.lastResumedAt).toBeNull();
   });
+
+  it('projects only executable structured manual fields from the snapshot', () => {
+    const source = createItemResponseSummary();
+    source.itemConfigSnapshot = {
+      prompt: 'Naming prompt',
+      scoreRange: { min: 0, max: 2, step: 1 },
+      scoringRule: {
+        mode: 'structured_manual',
+        sourceDocument: 'private.pdf',
+        subItems: [
+          { code: 'watch', expected: '手表', maxScore: 1 },
+          { code: 'pencil', title: '铅笔', expected: '铅笔', maxScore: 1 },
+        ],
+      },
+      qualityControlRule: { requireStructuredSubItems: true },
+    };
+
+    const response = toItemResponseExecutionResponse(source);
+
+    expect(response.config.structuredManualFields).toEqual([
+      {
+        code: 'watch',
+        label: '手表',
+        maxScore: 1,
+        referenceAnswer: '手表',
+      },
+      {
+        code: 'pencil',
+        label: '铅笔',
+        maxScore: 1,
+        referenceAnswer: '铅笔',
+      },
+    ]);
+    expect(response.config).not.toHaveProperty('scoringRule');
+    expect(response.config).not.toHaveProperty('qualityControlRule');
+    expect(response.config).not.toHaveProperty('sourceDocument');
+  });
+
+  it('omits structured manual fields for non-structured and malformed rules', () => {
+    const source = createItemResponseSummary();
+    expect(toItemResponseExecutionResponse(source).config).not.toHaveProperty(
+      'structuredManualFields',
+    );
+
+    source.itemConfigSnapshot = {
+      scoringRule: {
+        mode: 'structured_manual',
+        subItems: [{ code: 'missing-label', maxScore: 1 }],
+      },
+    };
+    expect(toItemResponseExecutionResponse(source).config).not.toHaveProperty(
+      'structuredManualFields',
+    );
+  });
 });

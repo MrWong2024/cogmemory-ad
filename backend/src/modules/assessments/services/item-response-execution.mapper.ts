@@ -8,6 +8,7 @@ import {
   validateAndCloneStructuredDraft,
 } from '../lib/item-response-draft-json';
 import { normalizeItemResponseTiming } from '../lib/item-response-timing';
+import { readStructuredManualFieldsFromSnapshot } from '../lib/structured-manual-response';
 import type { ItemResponseSummary } from './assessments.service';
 import type {
   ItemExecutionConfigResponse,
@@ -96,6 +97,8 @@ function toExecutionConfig(
     ? itemResponse.itemConfigSnapshot
     : {};
 
+  const structuredManualFields = readStructuredManualFieldsFromSnapshot(config);
+
   return {
     prompt: readOptionalString(config, 'prompt'),
     instruction: readOptionalString(config, 'instruction'),
@@ -105,6 +108,13 @@ function toExecutionConfig(
     supportsPhotoUpload: readBoolean(config, 'supportsPhotoUpload'),
     supportsHandwriting: readBoolean(config, 'supportsHandwriting'),
     requiresOperatorNote: readBoolean(config, 'requiresOperatorNote'),
+    ...(structuredManualFields
+      ? {
+          structuredManualFields: structuredManualFields.map((field) => ({
+            ...field,
+          })),
+        }
+      : {}),
   };
 }
 

@@ -321,6 +321,7 @@ describe('scale instance submission APIs (e2e)', () => {
       const item = record(value, 'item response');
       const itemId = stringValue(item.id, 'item response id');
       const itemCode = stringValue(item.itemCode, 'item code');
+      const config = record(item.config, 'item config');
       const initialRevision = item.draftRevision;
       if (
         typeof initialRevision !== 'number' ||
@@ -340,6 +341,27 @@ describe('scale instance submission APIs (e2e)', () => {
         };
       });
       const itemPath = `${instancePath(fixture)}/item-responses/${itemId}`;
+      const structuredManualFields = Array.isArray(
+        config.structuredManualFields,
+      )
+        ? config.structuredManualFields.map((field) =>
+            record(field, 'structured manual field'),
+          )
+        : [];
+      const structuredResponse =
+        structuredManualFields.length > 0
+          ? {
+              subItems: Object.fromEntries(
+                structuredManualFields.map((field) => [
+                  stringValue(field.code, 'structured manual field code'),
+                  {
+                    responseText: 'A16 de-identified response',
+                    isCorrect: false,
+                  },
+                ]),
+              ),
+            }
+          : undefined;
       let savedRevision = initialRevision;
       if (stepResponses.length > 0) {
         const answerResponse = await doctorAgent
@@ -347,6 +369,7 @@ describe('scale instance submission APIs (e2e)', () => {
           .send({
             expectedRevision: savedRevision,
             rawResponse: false,
+            ...(structuredResponse ? { structuredResponse } : {}),
             operatorNote: 'A16 de-identified operator note',
             markAsAnswered: true,
           })
@@ -396,6 +419,7 @@ describe('scale instance submission APIs (e2e)', () => {
           .send({
             expectedRevision: savedRevision,
             rawResponse: false,
+            ...(structuredResponse ? { structuredResponse } : {}),
             operatorNote: 'A16 de-identified operator note',
             markAsAnswered: true,
           })
@@ -418,7 +442,6 @@ describe('scale instance submission APIs (e2e)', () => {
         drawingItemId = itemId;
         drawingDraftRevision = savedRevision;
       }
-      const config = record(item.config, 'item config');
       if (config.supportsPhotoUpload === true) {
         mediaItemIds.push(itemId);
       }
@@ -749,6 +772,46 @@ describe('scale instance submission APIs (e2e)', () => {
     expect(body(await doctorAgent.get(crossPath).expect(404)).code).toBe(
       'SCALE_INSTANCE_NOT_FOUND',
     );
+  });
+
+  it('blocks a legacy free-text-only answered structured manual item', async () => {
+    const fixture = await createFixture('STRUCTURED-INCOMPLETE');
+    const item = await itemModel
+      .findOne({
+        scaleInstanceId: fixture.scaleInstanceId,
+        itemCode: 'mmse.orientation.time',
+      })
+      .exec();
+    if (!item) {
+      throw new Error('Expected MMSE time orientation item response');
+    }
+
+    await itemModel
+      .updateOne(
+        { _id: item._id },
+        {
+          $set: {
+            status: 'answered',
+            rawResponse: null,
+            responseText: 'Legacy free-text-only answer',
+            structuredResponse: null,
+          },
+        },
+      )
+      .exec();
+
+    const readiness = body(
+      await doctorAgent.get(readinessPath(fixture)).expect(200),
+    );
+    expect(
+      arrayValue(readiness.blockingIssues, 'blocking issues').some(
+        (issue) =>
+          isRecord(issue) &&
+          issue.itemCode === 'mmse.orientation.time' &&
+          issue.code === 'ITEM_STRUCTURED_SUBITEMS_INCOMPLETE',
+      ),
+    ).toBe(true);
+    expect(readiness.ready).toBe(false);
   });
 
   it('completes through A14/A15, freezes edits and repeats idempotently', async () => {

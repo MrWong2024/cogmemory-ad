@@ -21,6 +21,8 @@ import type {
 
 const REASON_MESSAGES: Record<ScoreReviewReasonCode, string> = {
   MANUAL_SCORING_REQUIRED: 'This item requires manual scoring review.',
+  STRUCTURED_RESPONSE_INVALID:
+    'The structured item response requires manual review.',
   UNSUPPORTED_SCORING_MODE: 'This item uses an unsupported scoring mode.',
   MISSING_RESPONSE_REQUIRES_REVIEW:
     'A missing response requires manual review.',

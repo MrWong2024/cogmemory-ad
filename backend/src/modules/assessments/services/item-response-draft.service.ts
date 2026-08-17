@@ -33,6 +33,11 @@ import {
   validateItemResponseTimingUpdate,
 } from '../lib/item-response-timing';
 import {
+  isCompleteStructuredManualResponse,
+  isValidStructuredManualDraft,
+  readStructuredManualFieldsFromSnapshot,
+} from '../lib/structured-manual-response';
+import {
   ItemResponse,
   type ItemResponseDocument,
 } from '../schemas/item-response.schema';
@@ -287,6 +292,9 @@ export class ItemResponseDraftService {
     let promptResponses = itemResponse.promptResponses.map(
       (promptResponse) => ({ ...promptResponse }),
     );
+    const structuredManualFields = readStructuredManualFieldsFromSnapshot(
+      itemResponse.itemConfigSnapshot,
+    );
     let hasDraftMutation = false;
     let submittedMeaningfulAnswer = false;
 
@@ -299,6 +307,20 @@ export class ItemResponseDraftService {
 
     if (this.isProvided(input, 'structuredResponse')) {
       structuredResponse = this.cloneStructuredDraft(input.structuredResponse);
+
+      if (
+        structuredManualFields &&
+        !isValidStructuredManualDraft(
+          structuredResponse,
+          structuredManualFields,
+        )
+      ) {
+        throw new BadRequestException({
+          code: 'ITEM_RESPONSE_PAYLOAD_INVALID',
+          message: 'Item response draft payload is invalid',
+        });
+      }
+
       setFields.structuredResponse = structuredResponse;
       hasDraftMutation = true;
       submittedMeaningfulAnswer ||=
@@ -427,6 +449,20 @@ export class ItemResponseDraftService {
     }
 
     if (input.markAsAnswered === true) {
+      if (
+        !isMissing &&
+        structuredManualFields &&
+        !isCompleteStructuredManualResponse(
+          structuredResponse,
+          structuredManualFields,
+        )
+      ) {
+        throw new ConflictException({
+          code: 'ITEM_RESPONSE_CANNOT_MARK_ANSWERED',
+          message: 'Structured manual item responses are incomplete',
+        });
+      }
+
       if (
         !this.hasMeaningfulAnswer({
           rawResponse,

@@ -223,6 +223,7 @@ describe('provisional scoring APIs (e2e)', () => {
     for (const value of items) {
       const item = record(value, 'item response');
       const itemId = stringValue(item.id, 'item id');
+      const itemCode = stringValue(item.itemCode, 'item code');
       const config = record(item.config, 'item config');
       const expectedRevision = item.draftRevision;
       if (
@@ -239,11 +240,34 @@ describe('provisional scoring APIs (e2e)', () => {
         stepCode: stringValue(record(stepValue, 'step').stepCode, 'step code'),
         actualValue: serialValues[index] ?? 0,
       }));
+      const structuredManualFields = Array.isArray(
+        config.structuredManualFields,
+      )
+        ? config.structuredManualFields.map((field) =>
+            record(field, 'structured manual field'),
+          )
+        : [];
+      const structuredResponse =
+        structuredManualFields.length > 0
+          ? {
+              subItems: Object.fromEntries(
+                structuredManualFields.map((field, index) => [
+                  stringValue(field.code, 'structured manual field code'),
+                  {
+                    responseText: 'A17 de-identified response',
+                    isCorrect:
+                      itemCode === 'mmse.orientation.time' && index !== 3,
+                  },
+                ]),
+              ),
+            }
+          : undefined;
       await doctorAgent
         .patch(`${instancePath(fixture)}/item-responses/${itemId}`)
         .send({
           expectedRevision,
           rawResponse: false,
+          ...(structuredResponse ? { structuredResponse } : {}),
           operatorNote: 'A17 de-identified operator note',
           ...(stepResponses.length > 0 ? { stepResponses } : {}),
           ...(config.requiresTimer === true
@@ -294,12 +318,8 @@ describe('provisional scoring APIs (e2e)', () => {
     await app.init();
     connection = app.get<Connection>(getConnectionToken());
     const databaseName = connection.name.toLowerCase();
-    if (
-      !databaseName.includes('_test') ||
-      databaseName.includes('_dev') ||
-      databaseName.includes('_prod')
-    ) {
-      throw new Error('E2E database isolation is not active');
+    if (databaseName !== 'cogmemory_ad_test') {
+      throw new Error('E2E database name must be cogmemory_ad_test');
     }
     const config = app.get(ConfigService);
     if (
@@ -456,7 +476,7 @@ describe('provisional scoring APIs (e2e)', () => {
     expect(result.qualityStatus).toBe('needs_review');
     expect(result.isFinal).toBe(false);
     const total = record(result.totalScore, 'total score');
-    expect(total.provisionalScoreValue).toBe(2);
+    expect(total.provisionalScoreValue).toBe(6);
     expect(total.scorePercent).toBeNull();
     expect(total.isComplete).toBe(false);
     const itemScores = arrayValue(result.itemScores, 'item scores');
@@ -467,6 +487,16 @@ describe('provisional scoring APIs (e2e)', () => {
     expect(serial).toEqual(
       expect.objectContaining({
         provisionalScoreValue: 2,
+        scoreStatus: 'auto_scored',
+        scoreSource: 'auto_rule',
+      }),
+    );
+    const timeOrientation = itemScores.find(
+      (item) => isRecord(item) && item.itemCode === 'mmse.orientation.time',
+    );
+    expect(timeOrientation).toEqual(
+      expect.objectContaining({
+        provisionalScoreValue: 4,
         scoreStatus: 'auto_scored',
         scoreSource: 'auto_rule',
       }),

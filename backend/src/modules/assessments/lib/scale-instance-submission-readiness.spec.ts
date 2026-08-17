@@ -222,6 +222,73 @@ describe('scale instance submission readiness', () => {
     ]);
   });
 
+  it('fails closed on incomplete non-missing structured manual responses', () => {
+    const versionItem = createVersionItem({
+      responseType: 'multi_choice',
+      scoreRange: { min: 0, max: 2, step: 1 },
+      scoringRule: {
+        mode: 'structured_manual',
+        subItems: [
+          { code: 'year', title: 'Year', maxScore: 1 },
+          { code: 'month', title: 'Month', maxScore: 1 },
+        ],
+      },
+    });
+    const complete = evaluate(
+      [versionItem],
+      [
+        createItemResponse({
+          structuredResponse: {
+            subItems: {
+              year: { responseText: '2026', isCorrect: true },
+              month: { responseText: 'July', isCorrect: false },
+            },
+          },
+        }),
+      ],
+    );
+    expect(complete.blockingIssues.map((issue) => issue.code)).not.toContain(
+      'ITEM_STRUCTURED_SUBITEMS_INCOMPLETE',
+    );
+
+    const legacyFreeTextOnly = evaluate(
+      [versionItem],
+      [
+        createItemResponse({
+          rawResponse: null,
+          responseText: 'Legacy free-text answer',
+          structuredResponse: {
+            subItems: {
+              year: { responseText: '2026', isCorrect: true },
+            },
+          },
+        }),
+      ],
+    );
+    expect(
+      legacyFreeTextOnly.blockingIssues.map((issue) => issue.code),
+    ).toContain('ITEM_STRUCTURED_SUBITEMS_INCOMPLETE');
+
+    const missing = evaluate(
+      [versionItem],
+      [
+        createItemResponse({
+          isMissing: true,
+          missingReason: 'Unable to assess',
+          rawResponse: null,
+          structuredResponse: null,
+        }),
+      ],
+    );
+    expect(missing.blockingIssues.map((issue) => issue.code)).not.toContain(
+      'ITEM_STRUCTURED_SUBITEMS_INCOMPLETE',
+    );
+
+    expect(
+      evaluate([createVersionItem()], [createItemResponse()]).blockingIssues,
+    ).toEqual([]);
+  });
+
   it('checks timing duration, order and incomplete points', () => {
     const versionItem = createVersionItem({
       requiresTimer: true,

@@ -37,6 +37,7 @@ import {
   ScaleVersionDocument,
 } from '../src/modules/scales/schemas/scale-version.schema';
 import { User, UserDocument } from '../src/modules/users/schemas/user.schema';
+import { readStructuredManualFieldsFromSnapshot } from '../src/modules/assessments/lib/structured-manual-response';
 
 jest.setTimeout(30000);
 
@@ -378,6 +379,9 @@ describe('item response execution detail and draft APIs (e2e)', () => {
       .exec();
 
     for (const item of items) {
+      const structuredManualFields = readStructuredManualFieldsFromSnapshot(
+        item.itemConfigSnapshot,
+      );
       await itemResponseModel
         .updateOne(
           { _id: item._id },
@@ -385,6 +389,18 @@ describe('item response execution detail and draft APIs (e2e)', () => {
             $set: {
               status: 'answered',
               rawResponse: false,
+              ...(structuredManualFields
+                ? {
+                    structuredResponse: {
+                      subItems: Object.fromEntries(
+                        structuredManualFields.map((field) => [
+                          field.code,
+                          { responseText: 'test response', isCorrect: false },
+                        ]),
+                      ),
+                    },
+                  }
+                : {}),
               operatorNote: 'A30 deterministic concurrency fixture',
             },
           },
@@ -628,6 +644,7 @@ describe('item response execution detail and draft APIs (e2e)', () => {
     expect(typeof config.supportsPhotoUpload).toBe('boolean');
     expect(typeof config.supportsHandwriting).toBe('boolean');
     expect(typeof config.requiresOperatorNote).toBe('boolean');
+    expect(readArray(config, 'structuredManualFields')).toHaveLength(5);
 
     const keys = collectKeys(detail);
     for (const forbiddenKey of [
@@ -658,7 +675,7 @@ describe('item response execution detail and draft APIs (e2e)', () => {
     }
   });
 
-  it('saves a normal draft, marks it answered, preserves answered, and updates A13 progress', async () => {
+  it('saves a partial structured draft, requires completeness, and marks the complete response answered', async () => {
     const fixture = await createExecution('DRAFT', 'mmse');
     const item = await findItem(fixture, 'mmse.memory.immediate_recall');
     const path = itemPath(fixture, item._id.toString());
@@ -673,6 +690,14 @@ describe('item response execution detail and draft APIs (e2e)', () => {
       .send({
         expectedRevision: initialRevision,
         rawResponse: { recalledWords: ['de-identified-word'] },
+        structuredResponse: {
+          subItems: {
+            'mmse.memory.immediate_recall.ball': {
+              responseText: '皮球',
+              isCorrect: null,
+            },
+          },
+        },
         responseText: 'de-identified response',
       })
       .expect(200);
@@ -694,6 +719,14 @@ describe('item response execution detail and draft APIs (e2e)', () => {
         status: 'in_progress',
         draftRevision: initialRevision + 1,
         rawResponse: { recalledWords: ['de-identified-word'] },
+        structuredResponse: {
+          subItems: {
+            'mmse.memory.immediate_recall.ball': {
+              responseText: '皮球',
+              isCorrect: null,
+            },
+          },
+        },
         responseText: 'de-identified response',
       }),
     );
@@ -701,10 +734,37 @@ describe('item response execution detail and draft APIs (e2e)', () => {
       Number.isFinite(Date.parse(readString(draftItem, 'draftSavedAt'))),
     ).toBe(true);
 
+    const incompleteResponse = await doctorAgent
+      .patch(path)
+      .send({
+        expectedRevision: readSafeInteger(draftItem, 'draftRevision'),
+        markAsAnswered: true,
+      })
+      .expect(409);
+    expect(readString(readResponseBody(incompleteResponse), 'code')).toBe(
+      'ITEM_RESPONSE_CANNOT_MARK_ANSWERED',
+    );
+
     const answeredResponse = await doctorAgent
       .patch(path)
       .send({
         expectedRevision: readSafeInteger(draftItem, 'draftRevision'),
+        structuredResponse: {
+          subItems: {
+            'mmse.memory.immediate_recall.ball': {
+              responseText: '皮球',
+              isCorrect: true,
+            },
+            'mmse.memory.immediate_recall.flag': {
+              responseText: '国旗',
+              isCorrect: true,
+            },
+            'mmse.memory.immediate_recall.tree': {
+              responseText: '木头',
+              isCorrect: false,
+            },
+          },
+        },
         markAsAnswered: true,
       })
       .expect(200);

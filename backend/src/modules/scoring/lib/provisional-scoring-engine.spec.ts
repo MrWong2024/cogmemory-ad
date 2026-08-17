@@ -326,8 +326,124 @@ describe('provisional scoring engine', () => {
     );
   });
 
+  it('sums clinician-confirmed structured manual correctness deterministically', () => {
+    const item = mmse.items.find(
+      (candidate) => candidate.code === 'mmse.orientation.time',
+    );
+    if (!item) throw new Error('Expected MMSE time orientation item');
+    const response = responseFor(item, {
+      structuredResponse: {
+        subItems: {
+          'mmse.orientation.year': {
+            responseText: 'clearly not the reference answer',
+            isCorrect: true,
+          },
+          'mmse.orientation.season': {
+            responseText: 'summer',
+            isCorrect: true,
+          },
+          'mmse.orientation.month': {
+            responseText: 'July',
+            isCorrect: true,
+          },
+          'mmse.orientation.date': {
+            responseText: '1',
+            isCorrect: false,
+          },
+          'mmse.orientation.weekday': {
+            responseText: 'Monday',
+            isCorrect: true,
+          },
+        },
+      },
+    });
+
+    expect(evaluateProvisionalItems([item], [response]).itemScores[0]).toEqual(
+      expect.objectContaining({
+        scoreValue: 4,
+        scoreStatus: 'auto_scored',
+        scoreSource: 'auto_rule',
+        includedInTotal: true,
+        note: undefined,
+      }),
+    );
+  });
+
+  it('scores a complete all-false structured response as zero', () => {
+    const item = mmse.items.find(
+      (candidate) => candidate.code === 'mmse.language.naming',
+    );
+    if (!item) throw new Error('Expected MMSE naming item');
+
+    const score = evaluateProvisionalItems(
+      [item],
+      [
+        responseFor(item, {
+          structuredResponse: {
+            subItems: {
+              'mmse.language.naming.watch': {
+                responseText: 'watch response',
+                isCorrect: false,
+              },
+              'mmse.language.naming.pencil': {
+                responseText: 'pencil response',
+                isCorrect: false,
+              },
+            },
+          },
+        }),
+      ],
+    ).itemScores[0];
+
+    expect(score).toEqual(
+      expect.objectContaining({ scoreValue: 0, scoreStatus: 'auto_scored' }),
+    );
+  });
+
+  it('reviews invalid stored structured responses and unparseable definitions', () => {
+    const item = mmse.items.find(
+      (candidate) => candidate.code === 'mmse.orientation.time',
+    );
+    if (!item) throw new Error('Expected MMSE time orientation item');
+
+    expect(
+      evaluateProvisionalItems(
+        [item],
+        [
+          responseFor(item, {
+            structuredResponse: {
+              subItems: {
+                'mmse.orientation.year': {
+                  responseText: '2026',
+                  isCorrect: true,
+                },
+              },
+            },
+          }),
+        ],
+      ).itemScores[0],
+    ).toEqual(
+      expect.objectContaining({
+        scoreValue: null,
+        scoreStatus: 'needs_review',
+        note: 'STRUCTURED_RESPONSE_INVALID',
+      }),
+    );
+
+    const unparseable = {
+      ...item,
+      scoringRule: {
+        mode: 'structured_manual',
+        subItems: [{ code: 'no-stable-label', maxScore: 1 }],
+      },
+    };
+    expect(
+      evaluateProvisionalItems([unparseable], [responseFor(unparseable)])
+        .itemScores[0].note,
+    ).toBe('MANUAL_SCORING_REQUIRED');
+  });
+
   it.each([
-    'structured_manual',
     'manual_exact_match',
     'manual_observation',
     'manual_drawing_review',
