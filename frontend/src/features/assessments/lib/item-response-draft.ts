@@ -1,9 +1,12 @@
 import type {
+  ItemExecutionConfig,
   ItemPromptDraft,
   ItemResponseDraftJsonValue,
   ItemResponseExecution,
   ItemStepDraft,
   ItemTimingDraft,
+  StructuredManualField,
+  StructuredManualResponse,
   UpdateItemResponseDraftRequest,
   UpdateItemStepDraftRequest,
   UpdatePromptResponseDraftRequest,
@@ -29,6 +32,7 @@ export type ItemDraftState = {
   rawResponse: ItemResponseDraftJsonValue;
   rawResponseInput: string;
   rawResponseTouched: boolean;
+  structuredResponse: StructuredManualResponse | null;
   responseText: string;
   isMissing: boolean;
   missingReason: string;
@@ -53,6 +57,130 @@ type ValueConversionResult =
   | { ok: true; value: ItemResponseDraftJsonValue }
   | { ok: false; message: string };
 
+export type StructuredManualScorePreview = {
+  score: number;
+  maxScore: number;
+  confirmedCount: number;
+  totalCount: number;
+  incompleteCount: number;
+};
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+export function getStructuredManualFields(
+  config: ItemExecutionConfig,
+): StructuredManualField[] | null {
+  return Array.isArray(config.structuredManualFields) &&
+    config.structuredManualFields.length > 0
+    ? config.structuredManualFields
+    : null;
+}
+
+export function createStructuredManualDraft(
+  fields: readonly StructuredManualField[],
+  storedResponse: ItemResponseExecution['structuredResponse'],
+): StructuredManualResponse {
+  const storedSubItems =
+    isPlainRecord(storedResponse) && isPlainRecord(storedResponse.subItems)
+      ? storedResponse.subItems
+      : {};
+
+  return {
+    subItems: Object.fromEntries(
+      fields.map((field) => {
+        const storedSubItem = storedSubItems[field.code];
+        const responseText =
+          isPlainRecord(storedSubItem) &&
+          typeof storedSubItem.responseText === 'string'
+            ? storedSubItem.responseText
+            : '';
+        const isCorrect =
+          isPlainRecord(storedSubItem) &&
+          typeof storedSubItem.isCorrect === 'boolean'
+            ? storedSubItem.isCorrect
+            : null;
+
+        return [field.code, { responseText, isCorrect }];
+      }),
+    ),
+  };
+}
+
+export function isStructuredManualDraftComplete(
+  fields: readonly StructuredManualField[],
+  draft: StructuredManualResponse | null,
+): boolean {
+  return (
+    fields.length > 0 &&
+    draft !== null &&
+    fields.every((field) => {
+      const subItem = draft.subItems[field.code];
+      return (
+        Boolean(subItem?.responseText.trim()) &&
+        typeof subItem?.isCorrect === 'boolean'
+      );
+    })
+  );
+}
+
+export function getStructuredManualScorePreview(
+  fields: readonly StructuredManualField[],
+  draft: StructuredManualResponse | null,
+): StructuredManualScorePreview {
+  return fields.reduce<StructuredManualScorePreview>(
+    (preview, field) => {
+      const subItem = draft?.subItems[field.code];
+      const isComplete =
+        Boolean(subItem?.responseText.trim()) &&
+        typeof subItem?.isCorrect === 'boolean';
+
+      return {
+        score:
+          preview.score +
+          (subItem?.isCorrect === true ? field.maxScore : 0),
+        maxScore: preview.maxScore + field.maxScore,
+        confirmedCount:
+          preview.confirmedCount +
+          (typeof subItem?.isCorrect === 'boolean' ? 1 : 0),
+        totalCount: preview.totalCount + 1,
+        incompleteCount: preview.incompleteCount + (isComplete ? 0 : 1),
+      };
+    },
+    {
+      score: 0,
+      maxScore: 0,
+      confirmedCount: 0,
+      totalCount: 0,
+      incompleteCount: 0,
+    },
+  );
+}
+
+export function serializeStructuredManualDraft(
+  fields: readonly StructuredManualField[],
+  draft: StructuredManualResponse | null,
+): StructuredManualResponse {
+  const subItems: StructuredManualResponse['subItems'] = {};
+
+  fields.forEach((field) => {
+    const subItem = draft?.subItems[field.code];
+
+    if (
+      subItem &&
+      (subItem.responseText.trim().length > 0 || subItem.isCorrect !== null)
+    ) {
+      subItems[field.code] = {
+        responseText: subItem.responseText,
+        isCorrect: subItem.isCorrect,
+      };
+    }
+  });
+
+  return { subItems };
+}
+
 function draftValueToInput(value: ItemResponseDraftJsonValue): string {
   if (value === null || typeof value === 'object') {
     return '';
@@ -70,10 +198,18 @@ export function hasNonPrimitiveDraftValue(
 export function createItemDraftState(
   item: ItemResponseExecution,
 ): ItemDraftState {
+  const structuredManualFields = getStructuredManualFields(item.config);
+
   return {
     rawResponse: item.rawResponse,
     rawResponseInput: draftValueToInput(item.rawResponse),
     rawResponseTouched: false,
+    structuredResponse: structuredManualFields
+      ? createStructuredManualDraft(
+          structuredManualFields,
+          item.structuredResponse,
+        )
+      : null,
     responseText: item.responseText ?? '',
     isMissing: item.isMissing,
     missingReason: item.missingReason ?? '',
@@ -263,6 +399,15 @@ export function itemDraftHasValidAnswer(
 ): boolean {
   if (draft.isMissing) {
     return draft.missingReason.trim().length > 0;
+  }
+
+  const structuredManualFields = getStructuredManualFields(item.config);
+
+  if (structuredManualFields) {
+    return isStructuredManualDraftComplete(
+      structuredManualFields,
+      draft.structuredResponse,
+    );
   }
 
   if (item.responseType === 'boolean' && draft.rawResponse !== null) {
@@ -502,6 +647,7 @@ export function buildItemResponseDraftRequest(
   const input: UpdateItemResponseDraftRequest = {
     expectedRevision: item.draftRevision,
   };
+  const structuredManualFields = getStructuredManualFields(item.config);
 
   if (item.responseType === 'number' && draft.rawResponseTouched) {
     const rawResponse = convertInputValue(
@@ -523,6 +669,25 @@ export function buildItemResponseDraftRequest(
 
   if (draft.responseText !== (item.responseText ?? '')) {
     input.responseText = draft.responseText === '' ? null : draft.responseText;
+  }
+
+  if (structuredManualFields && !draft.isMissing) {
+    const originalStructuredDraft = createStructuredManualDraft(
+      structuredManualFields,
+      item.structuredResponse,
+    );
+
+    if (
+      !areDraftValuesEqual(
+        draft.structuredResponse,
+        originalStructuredDraft,
+      )
+    ) {
+      input.structuredResponse = serializeStructuredManualDraft(
+        structuredManualFields,
+        draft.structuredResponse,
+      );
+    }
   }
 
   if (draft.isMissing !== item.isMissing) {

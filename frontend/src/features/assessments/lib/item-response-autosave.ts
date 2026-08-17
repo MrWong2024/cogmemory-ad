@@ -11,6 +11,7 @@ import type {
   ItemResponseExecution,
   ItemStepDraft,
   ItemTimingDraft,
+  StructuredManualResponse,
   UpdateItemResponseDraftRequest,
   UpdateItemResponseDraftResponse,
   UpdateItemStepDraftRequest,
@@ -181,10 +182,58 @@ function cloneJsonValue(
   return value;
 }
 
+function cloneStructuredManualResponse(
+  response: StructuredManualResponse | null,
+): StructuredManualResponse | null {
+  return response
+    ? {
+        subItems: Object.fromEntries(
+          Object.entries(response.subItems).map(([code, subItem]) => [
+            code,
+            { ...subItem },
+          ]),
+        ),
+      }
+    : null;
+}
+
+function structuredManualResponsesEqual(
+  left: StructuredManualResponse | null,
+  right: StructuredManualResponse | null,
+): boolean {
+  if (left === right) {
+    return true;
+  }
+
+  if (left === null || right === null) {
+    return false;
+  }
+
+  const leftCodes = Object.keys(left.subItems);
+  const rightCodes = Object.keys(right.subItems);
+
+  return (
+    leftCodes.length === rightCodes.length &&
+    leftCodes.every((code) => {
+      const leftSubItem = left.subItems[code];
+      const rightSubItem = right.subItems[code];
+      return (
+        leftSubItem !== undefined &&
+        rightSubItem !== undefined &&
+        leftSubItem.responseText === rightSubItem.responseText &&
+        leftSubItem.isCorrect === rightSubItem.isCorrect
+      );
+    })
+  );
+}
+
 export function cloneItemDraftState(draft: ItemDraftState): ItemDraftState {
   return {
     ...draft,
     rawResponse: cloneJsonValue(draft.rawResponse),
+    structuredResponse: cloneStructuredManualResponse(
+      draft.structuredResponse,
+    ),
     stepResponses: draft.stepResponses.map((step) => ({ ...step })),
     promptResponses: draft.promptResponses.map((prompt) => ({ ...prompt })),
     timing: draft.timing ? { ...draft.timing } : null,
@@ -248,6 +297,12 @@ export function rebaseItemDraftAfterSave(input: {
       input.currentDraft.responseText === input.attemptDraft.responseText
         ? serverDraft.responseText
         : input.currentDraft.responseText,
+    structuredResponse: structuredManualResponsesEqual(
+      input.currentDraft.structuredResponse,
+      input.attemptDraft.structuredResponse,
+    )
+      ? serverDraft.structuredResponse
+      : cloneStructuredManualResponse(input.currentDraft.structuredResponse),
     isMissing:
       input.currentDraft.isMissing === input.attemptDraft.isMissing
         ? serverDraft.isMissing

@@ -90,6 +90,22 @@ export type ItemExecutionScoreRange = {
   step?: number;
 };
 
+export type StructuredManualField = {
+  code: string;
+  label: string;
+  maxScore: number;
+  referenceAnswer?: string | number | boolean;
+};
+
+export type StructuredManualSubItemResponse = {
+  responseText: string;
+  isCorrect: boolean | null;
+};
+
+export type StructuredManualResponse = {
+  subItems: Record<string, StructuredManualSubItemResponse>;
+};
+
 export type ItemExecutionConfig = {
   prompt?: string;
   instruction?: string;
@@ -99,6 +115,7 @@ export type ItemExecutionConfig = {
   supportsPhotoUpload: boolean;
   supportsHandwriting: boolean;
   requiresOperatorNote: boolean;
+  structuredManualFields?: StructuredManualField[];
 };
 
 export type ItemResponseVersionTrace = {

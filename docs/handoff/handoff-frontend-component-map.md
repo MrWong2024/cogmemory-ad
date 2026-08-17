@@ -227,11 +227,14 @@
 
 ### 6.9 `ItemResponseEditor`
 
-- 路径：`frontend\src\features\assessments\components\ItemResponseEditor.tsx`
+- 路径：`frontend\src\features\assessments\components\ItemResponseEditor.tsx`；局部逐项组件为 `StructuredManualResponseEditor.tsx`
 - 职责：展示题目标题、CRF、指导语、操作说明、认知域编码、计入总分标识、状态、证据要求与已有草稿；提供类型对应编辑、missing、operatorNote、保存草稿和标记本题完成，并组合 `ItemResponseSaveStatus` 的低干扰状态 / 冲突恢复 UI
-- 普通类型：boolean 保存 null / boolean；number 保存有限 number；text 与 single / multi choice 保存 responseText；single / multi choice 只提供原始回答转录，不生成选项或判分
+- structured manual：仅当 `config.structuredManualFields` 存在且非空时配置驱动渲染逐子项正式复核；每项显示 label、可选 referenceAnswer 评分参考、患者实际回答 / 观察，以及三态中的明确“正确 / 错误”选择或“尚未判断”。referenceAnswer 不参与自动比较，也不会自动选择正确性
+- structured manual 预览与完成：前端仅按当前 `isCorrect===true` 与服务端公开 field.maxScore 显示“当前确认得分 X / Y”和已确认项数，不提交预览分值、maxScore 或 referenceAnswer；最终权威 provisional scoring 仍由 backend 重算。保存草稿允许 partial，标记完成要求全部 configured fields 具有非空 responseText 和 boolean isCorrect；正式答案为 `structuredResponse.subItems`，不再依赖整题 responseText
+- 普通类型：boolean 保存 null / boolean；number 保存有限 number；text 与未配置 structuredManualFields 的 single / multi choice 保存 responseText；这些 single / multi choice 仍只提供原始回答转录，不生成选项或判分。连续减 7 继续使用 `multi_step_calculation` 与既有五个 stepResponses，不进入 structured manual editor
+- missing：structured 子项在 missing 时禁用，当前页面内尚未提交的逐项输入可在取消 missing 后继续使用；按 missing 合同保存时仍要求 missingReason，且不要求逐项完整
 - 媒体类型：继续保留 drawing / photo_upload / handwriting 的原始文字说明；另将归属 ID、只读状态、媒体草稿、写锁和回调传给 `ItemEvidenceRequirements`，媒体操作不触发 `onChange(draft)` 或 A14 保存
-- 安全边界：不显示 scoringRule、expectedValue、正确答案、score、isCorrect、scoreValue；已有 structuredResponse 仅显示存在性提示，不提供 JSON 编辑器
+- 安全边界：不显示 scoringRule、未公开 expectedValue、score 或 scoreValue，不提供 JSON 编辑器；structured manual 只展示 backend 安全公开的 referenceAnswer，并由医护手工填写 responseText 与 isCorrect。repetition、reading_command、writing_sentence、copy_drawing 等未配置 structuredManualFields 的项目保持既有 singleton/manual UI 与后续 `ManualScoreReviewForm` 合同
 
 ### 6.10 `ItemStepEditor`
 
@@ -260,10 +263,10 @@
 ### 6.14 A14 类型与草稿纯函数
 
 - 类型路径：`frontend\src\features\assessments\types\item-response-execution.ts`
-- 类型职责：严格定义 A14 安全执行响应、JsonValue、response / status / prompt / `ItemTimerState` / evidence 枚举、`draftRevision` / `draftSavedAt` 和 PATCH 白名单；`expectedRevision` 必填，timing 非 null 为六字段完整快照，Date JSON 使用 string / null
+- 类型职责：严格定义 A14 安全执行响应、JsonValue、response / status / prompt / `ItemTimerState` / evidence 枚举、`draftRevision` / `draftSavedAt` 和 PATCH 白名单；`ItemExecutionConfig` 对齐安全公开的 `structuredManualFields`，正式逐项草稿类型为 `{ subItems: Record<code, { responseText: string; isCorrect: boolean | null }> }`；`expectedRevision` 必填，timing 非 null 为六字段完整快照，Date JSON 使用 string / null
 - 纯函数路径：`frontend\src\features\assessments\lib\item-response-draft.ts`
-- 纯函数职责：服务端 ItemResponse 到本地 draft、missing 清空、字段级和递归值 dirty 比较、数值转换、基础有效作答判断、step / prompt / 完整 timing 差异与基于服务器 revision 的 PATCH 构建
-- 边界：不修改原响应对象，不使用 any，不以整对象 JSON.stringify 作为 dirty 策略，不定义评分规则、答案或任意 JSON 编辑能力
+- 纯函数职责：服务端 ItemResponse 到本地 draft、structured configured field 初始化与 partial 恢复、unknown stored field 过滤、逐项完整性 / 预览 / 请求序列化、missing、字段级和递归值 dirty 比较、数值转换、基础有效作答判断、step / prompt / 完整 timing 差异与基于服务器 revision 的 PATCH 构建；structuredResponse 继续进入同一个 autosave rebase / conflict / write barrier
+- 边界：不修改原响应对象，不使用 any，不以整对象 JSON.stringify 作为 dirty 策略，不定义自动判分规则或任意 JSON 编辑能力；structured serialization 只包含 configured field 的 responseText / isCorrect，不包含 label、referenceAnswer、maxScore 或预览分值
 
 ### 6.15 `MediaEvidencePanel`
 
@@ -752,7 +755,7 @@
 - 读取职责：首次加载一次 completed patient administration review，展示 session / impact factors / reviewEvents、权威 item / step / run、responseMode、当前 ItemResponse status / revision、capture 与媒体摘要；允许显式刷新且不轮询。404 安静表示尚无复核，409 作为完整性冲突，不伪造正常 `staffObservation` 前置。
 - 媒体职责：原始媒体默认折叠；用户明确操作后才请求 access URL。audio / image viewer 与 access URL 获取错误均在当前 Evidence 卡片内联展示，并按 mediaEvidenceId 切换；页面一次仍只有一个 viewer。signed URL 只驻留当前 React 内存，关闭、实例身份变化或卸载时清除。ASR 仅为显式辅助候选并持续标注“不是正式答案”。
 - adoption / 定位职责：仅对后端合同允许的 completed session、有效 capture、stored/attached photo 或 handwriting、且父页面 requirement 仍 pending/missing 的证据开放显式采用；成功把同一 Evidence requirement 回传父页面并标记 readiness stale。定位按钮复用父页 itemResponseId -> 分组 -> scroll -> focus，不在 panel 内保存答案。
-- 边界：`ItemResponseEditor` 继续独占正式作答、A14 与 `markAsAnswered`；`ScaleInstanceSubmissionPanel` 继续独占 readiness / A16。实例 completed 后 panel 保持可读，transcribe / adopt 禁用；不新增 Review / Anomaly / StaffObservation 模型、批量写、自动 ASR、自动 adoption 或自动提交。
+- 边界：`ItemResponseEditor` 继续独占正式作答（包括 structuredResponse）、A14 与 `markAsAnswered`；ASR transcription、患者 step capture 与 Evidence 均不自动写入正式 structured response。`ScaleInstanceSubmissionPanel` 继续独占 readiness / A16。实例 completed 后 panel 保持可读，transcribe / adopt 禁用；不新增 Review / Anomaly / StaffObservation 模型、批量写、自动 ASR、自动 adoption 或自动提交。
 
 ## 7. 后续同步规则
 

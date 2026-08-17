@@ -7,6 +7,7 @@ import { ItemPromptEditor } from '@/src/features/assessments/components/ItemProm
 import { ItemResponseSaveStatus } from '@/src/features/assessments/components/ItemResponseSaveStatus';
 import { ItemStepEditor } from '@/src/features/assessments/components/ItemStepEditor';
 import { ItemTimingEditor } from '@/src/features/assessments/components/ItemTimingEditor';
+import { StructuredManualResponseEditor } from '@/src/features/assessments/components/StructuredManualResponseEditor';
 import {
   getItemResponseReadOnlyReason,
   itemResponseAnswerSourceLabels,
@@ -14,6 +15,8 @@ import {
   scaleResponseTypeLabels,
 } from '@/src/features/assessments/lib/assessment-execution-display';
 import {
+  getStructuredManualFields,
+  isStructuredManualDraftComplete,
   itemAllowsTiming,
   setItemDraftMissing,
   type ItemDraftState,
@@ -153,9 +156,17 @@ export function ItemResponseEditor({
     autosaveSnapshot.state === 'reconciling' ||
     autosaveSnapshot.state === 'blocked';
   const answerInputsDisabled = controlsDisabled || draft.isMissing;
-  const hasStructuredResponse =
+  const structuredManualFields = getStructuredManualFields(item.config);
+  const hasUneditableStructuredResponse =
+    structuredManualFields === null &&
     item.structuredResponse !== null &&
     Object.keys(item.structuredResponse).length > 0;
+  const structuredManualComplete = structuredManualFields
+    ? isStructuredManualDraftComplete(
+        structuredManualFields,
+        draft.structuredResponse,
+      )
+    : true;
   const hasPreservedRawResponse =
     item.rawResponse !== null &&
     item.responseType !== 'boolean' &&
@@ -276,7 +287,7 @@ export function ItemResponseEditor({
         </p>
       ) : null}
 
-      {hasStructuredResponse ? (
+      {hasUneditableStructuredResponse ? (
         <p className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-info-soft)] px-4 py-3 text-sm leading-6 text-[var(--cma-info)]">
           服务端已返回非空结构化草稿记录。本页不展示或编辑原始 JSON，普通保存也不会回传该字段，因此未编辑时由服务端原样保留。
         </p>
@@ -288,10 +299,21 @@ export function ItemResponseEditor({
         </p>
       ) : null}
 
-      <section
-        aria-labelledby={`${fieldIdPrefix}-answer-title`}
-        className="grid gap-4"
-      >
+      {structuredManualFields ? (
+        <StructuredManualResponseEditor
+          completionRequired={!draft.isMissing}
+          disabled={answerInputsDisabled}
+          draft={draft.structuredResponse}
+          fields={structuredManualFields}
+          onChange={(structuredResponse) =>
+            updateDraft({ ...draft, structuredResponse })
+          }
+        />
+      ) : (
+        <section
+          aria-labelledby={`${fieldIdPrefix}-answer-title`}
+          className="grid gap-4"
+        >
         <div>
           <h4
             className="text-lg font-semibold text-[var(--cma-text-strong)]"
@@ -391,7 +413,8 @@ export function ItemResponseEditor({
               : '最多 10000 个字符，仅作为原始文字记录。'}
           </p>
         </div>
-      </section>
+        </section>
+      )}
 
       <ItemStepEditor
         answerDisabled={answerInputsDisabled}
@@ -438,7 +461,9 @@ export function ItemResponseEditor({
               本题无法完成 / 缺失记录
             </label>
             <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-              开启后会清空本地实际作答、分步实际值和提示后回答；分步 / 提示备注、计时草稿和操作者备注会保留。
+              {structuredManualFields
+                ? '开启后逐子项内容会保留在当前页面内存，但按缺失合同保存时不作为正式答案提交；取消缺失可继续编辑。'
+                : '开启后会清空本地实际作答、分步实际值和提示后回答；分步 / 提示备注、计时草稿和操作者备注会保留。'}
             </p>
           </div>
         </div>
@@ -503,7 +528,12 @@ export function ItemResponseEditor({
           {isSaving ? '正在保存...' : saveDraftLabel}
         </Button>
         <Button
-          disabled={saveActionsDisabled}
+          disabled={
+            saveActionsDisabled ||
+            (structuredManualFields !== null &&
+              !draft.isMissing &&
+              !structuredManualComplete)
+          }
           onClick={() => onSave(true)}
         >
           {isSaving ? '正在保存...' : markAnsweredLabel}
