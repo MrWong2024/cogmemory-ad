@@ -317,14 +317,15 @@
 ### 6.21 `ScaleSubmissionIssueList`
 
 - 路径：`frontend\src\features\assessments\components\ScaleSubmissionIssueList.tsx`
-- 职责：语义化展示 blocking / warning 列表，按受控 code 使用稳定中文标题和说明，仅附加允许的安全字段
+- 职责：语义化展示 blocking / warning 列表，按受控 code 使用稳定中文标题和说明；结构化题目子项未完成时明确引导医护定位题目并补齐患者实际回答与正确性确认，仅附加允许的安全字段
+- 兼容边界：正式 issue code 继续由完整 typed Record 约束映射；运行时收到前端尚未识别的 code 时使用通用 fail-safe 标题和说明，不抛错、不忽略该阻断问题
 - 定位：只为 item scope 且含 itemResponseId 的 issue 提供 button；scale_instance scope 不提供虚假跳转
 - 安全边界：不把后端 message 当主文案，不展示或推断作答、正确答案、expectedValue 或评分
 
 ### 6.22 A16 类型与 submission 展示纯函数
 
 - 类型路径：`frontend\src\features\assessments\types\scale-instance-submission.ts`
-- 类型职责：严格定义 15 个 issue code、severity / scope、summary、8 个 submissionState、安全 operator / audit、严格 `{ confirm: true }` 和两个 A16 响应；Date JSON 使用 string
+- 类型职责：严格定义 16 个 issue code、severity / scope、summary、8 个 submissionState、安全 operator / audit、严格 `{ confirm: true }` 和两个 A16 响应；Date JSON 使用 string
 - 纯函数路径：`frontend\src\features\assessments\lib\scale-instance-submission-display.ts`
 - 纯函数职责：issue、severity、submissionState、durationSource、required evidence 和提交 API 错误的稳定中文映射，以及安全 issue 辅助详情构建
 - 边界：不定义或读取作答原文、评分、expectedValue、mediaEvidenceId 或 metadata，不将 warning 降级 / 升级为其他 severity

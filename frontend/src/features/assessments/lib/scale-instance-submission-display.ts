@@ -62,6 +62,11 @@ const issueDisplays: Record<ScaleSubmissionIssueCode, IssueDisplay> = {
     title: '缺少有效作答内容',
     description: '本题虽已标记完成，但没有有效作答内容。',
   },
+  ITEM_STRUCTURED_SUBITEMS_INCOMPLETE: {
+    title: '结构化子项尚未完成',
+    description:
+      '本题仍有患者实际回答或正确性尚未确认的子项，请定位题目并逐项补齐。',
+  },
   ITEM_MISSING_REASON_REQUIRED: {
     title: '缺失原因未填写',
     description: '本题标记为缺失，但尚未填写缺失原因。',
@@ -104,10 +109,24 @@ const issueDisplays: Record<ScaleSubmissionIssueCode, IssueDisplay> = {
   },
 };
 
+const unknownIssueDisplay: IssueDisplay = {
+  title: '存在未识别的提交问题',
+  description:
+    '服务器返回了当前页面尚未识别的提交阻断信息，请刷新页面；如仍存在，请联系管理员。',
+};
+
+function isKnownScaleSubmissionIssueCode(
+  code: string,
+): code is ScaleSubmissionIssueCode {
+  return Object.prototype.hasOwnProperty.call(issueDisplays, code);
+}
+
 export function getScaleSubmissionIssueDisplay(
-  code: ScaleSubmissionIssueCode,
+  code: string,
 ): IssueDisplay {
-  return issueDisplays[code];
+  return isKnownScaleSubmissionIssueCode(code)
+    ? issueDisplays[code]
+    : unknownIssueDisplay;
 }
 
 export function getRequiredEvidenceModeLabel(mode: 'one_of' | 'all'): string {
