@@ -231,7 +231,7 @@
 
 - 路径：`frontend\src\features\assessments\components\ItemResponseEditor.tsx`；局部逐项组件为 `StructuredManualResponseEditor.tsx`
 - 职责：展示题目标题、CRF、指导语、操作说明、认知域编码、计入总分标识、状态、证据要求与已有草稿；提供类型对应编辑、missing、operatorNote、保存草稿和标记本题完成，并组合 `ItemResponseSaveStatus` 的低干扰状态 / 冲突恢复 UI
-- structured manual：仅当 `config.structuredManualFields` 存在且非空时配置驱动渲染逐子项正式复核；每项显示 label、可选 referenceAnswer 评分参考、患者实际回答 / 观察，以及三态中的明确“正确 / 错误”选择或“尚未判断”。referenceAnswer 不参与自动比较，也不会自动选择正确性
+- structured manual：仅当 `config.structuredManualFields` 存在且非空时配置驱动渲染逐子项正式复核；医生操作一级术语统一为“评分判断”，每项显示 label、可选 referenceAnswer 评分参考、患者实际回答 / 观察，以及三态“尚未判断 / 正确（field.maxScore 分）/ 错误（0 分）”。正确分值只使用 backend 安全公开的 server-owned field.maxScore；系统不自动判断正确性，仅根据医护确认结果确定性汇总得分。binary manual 继续使用“符合 / 不符合评分标准”的 0/1 表达
 - patient reference slots：`ItemResponseEditor` 只接收可选 React 展示 slot，不把它们放入 draft、dirty、autosave 或 API request。`StructuredManualResponseEditor` 在顶部一次展示 shared patient reference，并把 single-field reference 放在对应 field 的评分参考与正式输入之间；非 structured Item 在原始作答区域展示一次 item-level reference。所有参考内容自身继续使用默认关闭的原生 details。
 - structured manual 预览与完成：前端仅按当前 `isCorrect===true` 与服务端公开 field.maxScore 显示“当前确认得分 X / Y”和已确认项数，不提交预览分值、maxScore 或 referenceAnswer；最终权威 provisional scoring 仍由 backend 重算。保存草稿允许 partial，标记完成要求全部 configured fields 具有非空 responseText 和 boolean isCorrect；正式答案为 `structuredResponse.subItems`，不再依赖整题 responseText
 - binary manual：仅当 backend 安全 config 存在 `binaryManualDecision` 时，在既有原始回答 / 观察区后配置驱动显示三态评分判断（未判断、符合评分标准、不符合评分标准）；明确提示正确性由医护确认、系统仅据此计算 0/1。第 7/10 题继续保留 responseText，第 8 题保留独立 boolean 原始事实，第 11 题保留 Evidence；Evidence / ASR / rawResponse 均不自动选择 decision。null 可保存为 partial，非 missing 标记完成要求原始作答与 boolean decision 同时完整

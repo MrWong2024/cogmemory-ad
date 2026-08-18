@@ -65,7 +65,7 @@ export function StructuredManualResponseEditor({
           逐子项正式作答复核
         </h4>
         <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-          逐项记录患者实际回答或观察，并由医护明确确认正确或错误。系统不会自动比较或判分。
+          逐项记录患者实际回答或观察，并由医护完成评分判断。系统不会自动判断正确性，仅根据医护确认结果计算得分。
         </p>
         <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-base font-semibold text-[var(--cma-text-strong)]">
           <span>
@@ -146,7 +146,7 @@ export function StructuredManualResponseEditor({
 
             <div className="grid gap-2">
               <p className="font-semibold text-[var(--cma-text-strong)]">
-                正确性
+                评分判断
               </p>
               <div className="flex flex-wrap gap-x-6 gap-y-3">
                 <label
@@ -164,7 +164,7 @@ export function StructuredManualResponseEditor({
                     }
                     type="radio"
                   />
-                  正确
+                  正确（{field.maxScore} 分）
                 </label>
                 <label
                   className="flex min-h-11 items-center gap-2 text-base text-[var(--cma-text-strong)]"
@@ -181,7 +181,7 @@ export function StructuredManualResponseEditor({
                     }
                     type="radio"
                   />
-                  错误
+                  错误（0 分）
                 </label>
               </div>
               <p className="text-sm leading-6 text-[var(--cma-muted)]">
@@ -189,8 +189,8 @@ export function StructuredManualResponseEditor({
                 {subItem.isCorrect === null
                   ? '尚未判断'
                   : subItem.isCorrect
-                    ? '正确'
-                    : '错误'}
+                    ? `正确（${field.maxScore} 分）`
+                    : '错误（0 分）'}
               </p>
             </div>
           </fieldset>
@@ -203,7 +203,7 @@ export function StructuredManualResponseEditor({
           role="status"
         >
           还需完成 {preview.incompleteCount}{' '}
-          个子项的实际回答和正确性确认。
+          个子项的实际回答和评分判断。
         </p>
       ) : null}
     </section>
