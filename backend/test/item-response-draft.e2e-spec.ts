@@ -38,6 +38,7 @@ import {
 } from '../src/modules/scales/schemas/scale-version.schema';
 import { User, UserDocument } from '../src/modules/users/schemas/user.schema';
 import { readStructuredManualFieldsFromSnapshot } from '../src/modules/assessments/lib/structured-manual-response';
+import { readBinaryManualDecisionConfigFromSnapshot } from '../src/modules/assessments/lib/binary-manual-decision';
 
 jest.setTimeout(30000);
 
@@ -382,6 +383,9 @@ describe('item response execution detail and draft APIs (e2e)', () => {
       const structuredManualFields = readStructuredManualFieldsFromSnapshot(
         item.itemConfigSnapshot,
       );
+      const binaryManualDecision = readBinaryManualDecisionConfigFromSnapshot(
+        item.itemConfigSnapshot,
+      );
       await itemResponseModel
         .updateOne(
           { _id: item._id },
@@ -400,7 +404,13 @@ describe('item response execution detail and draft APIs (e2e)', () => {
                       ),
                     },
                   }
-                : {}),
+                : binaryManualDecision
+                  ? {
+                      structuredResponse: {
+                        binaryManualDecision: { isCorrect: false },
+                      },
+                    }
+                  : {}),
               operatorNote: 'A30 deterministic concurrency fixture',
             },
           },
@@ -850,6 +860,91 @@ describe('item response execution detail and draft APIs (e2e)', () => {
     expect(
       readRecord(readResponseBody(missingResponse), 'itemResponse'),
     ).not.toHaveProperty('responseText');
+  });
+
+  it('saves partial and complete binary manual decisions without accepting decision-only completion', async () => {
+    const fixture = await createExecution('BINARY', 'mmse');
+    const repetition = await findItem(fixture, 'mmse.language.repetition');
+    const repetitionPath = itemPath(fixture, repetition._id.toString());
+
+    const partial = await doctorAgent
+      .patch(repetitionPath)
+      .send({
+        expectedRevision: 0,
+        responseText: 'patient repetition',
+        structuredResponse: {
+          binaryManualDecision: { isCorrect: null },
+        },
+      })
+      .expect(200);
+    const partialItem = readRecord(readResponseBody(partial), 'itemResponse');
+    expect(partialItem).toEqual(
+      expect.objectContaining({
+        status: 'in_progress',
+        structuredResponse: {
+          binaryManualDecision: { isCorrect: null },
+        },
+      }),
+    );
+
+    const complete = await doctorAgent
+      .patch(repetitionPath)
+      .send({
+        expectedRevision: readSafeInteger(partialItem, 'draftRevision'),
+        structuredResponse: {
+          binaryManualDecision: { isCorrect: true },
+        },
+        markAsAnswered: true,
+      })
+      .expect(200);
+    expect(readRecord(readResponseBody(complete), 'itemResponse')).toEqual(
+      expect.objectContaining({ status: 'answered' }),
+    );
+
+    const reading = await findItem(fixture, 'mmse.language.reading_command');
+    await doctorAgent
+      .patch(itemPath(fixture, reading._id.toString()))
+      .send({
+        expectedRevision: 0,
+        rawResponse: false,
+        structuredResponse: {
+          binaryManualDecision: { isCorrect: false },
+        },
+        markAsAnswered: true,
+      })
+      .expect(200);
+
+    const drawing = await findItem(fixture, 'mmse.visuospatial.copy_drawing');
+    await doctorAgent
+      .patch(itemPath(fixture, drawing._id.toString()))
+      .send({
+        expectedRevision: 0,
+        structuredResponse: {
+          binaryManualDecision: { isCorrect: true },
+        },
+        markAsAnswered: true,
+      })
+      .expect(409)
+      .expect((response: Response) => {
+        expect(readString(readResponseBody(response), 'code')).toBe(
+          'ITEM_RESPONSE_CANNOT_MARK_ANSWERED',
+        );
+      });
+
+    await doctorAgent
+      .patch(itemPath(fixture, drawing._id.toString()))
+      .send({
+        expectedRevision: 0,
+        structuredResponse: {
+          binaryManualDecision: { isCorrect: true, scoreValue: 1 },
+        },
+      })
+      .expect(400)
+      .expect((response: Response) => {
+        expect(readString(readResponseBody(response), 'code')).toBe(
+          'ITEM_RESPONSE_PAYLOAD_INVALID',
+        );
+      });
   });
 
   it('persists an explicit same-value save as a new draft revision', async () => {

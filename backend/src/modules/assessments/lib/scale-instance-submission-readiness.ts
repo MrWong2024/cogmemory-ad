@@ -21,6 +21,11 @@ import {
   resolveStructuredManualFields,
   type StructuredManualField,
 } from './structured-manual-response';
+import {
+  readCompleteBinaryManualDecision,
+  resolveBinaryManualDecisionConfig,
+  type BinaryManualDecisionConfig,
+} from './binary-manual-decision';
 
 const COMPLETED_ITEM_STATUSES = new Set(['answered', 'scored']);
 const EDITABLE_STATUSES = new Set(['draft', 'in_progress']);
@@ -57,6 +62,7 @@ type EffectiveItemConfig = {
   requiresOperatorNote: boolean;
   qualityControlRule: Record<string, unknown> | null;
   structuredManualFields: StructuredManualField[] | null;
+  binaryManualDecision: BinaryManualDecisionConfig | null;
 };
 
 type MediaRequirement = {
@@ -136,6 +142,11 @@ function readEffectiveItemConfig(
     structuredManualFields: resolveStructuredManualFields(
       itemResponse.itemConfigSnapshot,
       versionItem?.scoringRule,
+    ),
+    binaryManualDecision: resolveBinaryManualDecisionConfig(
+      itemResponse.itemConfigSnapshot,
+      versionItem?.scoringRule,
+      versionItem?.scoreRange,
     ),
   };
 }
@@ -413,6 +424,18 @@ export function evaluateScaleInstanceSubmissionReadiness(
     }
 
     if (
+      config.binaryManualDecision &&
+      readCompleteBinaryManualDecision(itemResponse.structuredResponse) === null
+    ) {
+      blockingIssues.push({
+        ...itemBase,
+        code: 'ITEM_BINARY_MANUAL_DECISION_INCOMPLETE',
+        severity: 'blocking',
+        message: 'Binary manual scoring decision is incomplete',
+      });
+    }
+
+    if (
       !hasMeaningfulItemResponseAnswer({
         rawResponse: itemResponse.rawResponse,
         structuredResponse: itemResponse.structuredResponse,
@@ -422,6 +445,7 @@ export function evaluateScaleInstanceSubmissionReadiness(
         promptValues: itemResponse.promptResponses.map(
           (prompt) => prompt.responseAfterPrompt,
         ),
+        ignoreBinaryManualDecision: Boolean(config.binaryManualDecision),
       })
     ) {
       blockingIssues.push({

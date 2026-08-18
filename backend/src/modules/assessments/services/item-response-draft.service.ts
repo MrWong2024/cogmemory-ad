@@ -38,6 +38,11 @@ import {
   readStructuredManualFieldsFromSnapshot,
 } from '../lib/structured-manual-response';
 import {
+  isValidBinaryManualDecisionDraft,
+  readBinaryManualDecisionConfigFromSnapshot,
+  readCompleteBinaryManualDecision,
+} from '../lib/binary-manual-decision';
+import {
   ItemResponse,
   type ItemResponseDocument,
 } from '../schemas/item-response.schema';
@@ -295,6 +300,9 @@ export class ItemResponseDraftService {
     const structuredManualFields = readStructuredManualFieldsFromSnapshot(
       itemResponse.itemConfigSnapshot,
     );
+    const binaryManualDecision = readBinaryManualDecisionConfigFromSnapshot(
+      itemResponse.itemConfigSnapshot,
+    );
     let hasDraftMutation = false;
     let submittedMeaningfulAnswer = false;
 
@@ -321,11 +329,26 @@ export class ItemResponseDraftService {
         });
       }
 
+      if (
+        binaryManualDecision &&
+        !isValidBinaryManualDecisionDraft(structuredResponse)
+      ) {
+        throw new BadRequestException({
+          code: 'ITEM_RESPONSE_PAYLOAD_INVALID',
+          message: 'Item response draft payload is invalid',
+        });
+      }
+
       setFields.structuredResponse = structuredResponse;
       hasDraftMutation = true;
-      submittedMeaningfulAnswer ||=
-        structuredResponse !== null &&
-        Object.keys(structuredResponse).length > 0;
+      submittedMeaningfulAnswer ||= hasMeaningfulItemResponseAnswer({
+        rawResponse: null,
+        structuredResponse,
+        isMissing: false,
+        stepValues: [],
+        promptValues: [],
+        ignoreBinaryManualDecision: Boolean(binaryManualDecision),
+      });
     }
 
     if (this.isProvided(input, 'responseText')) {
@@ -471,11 +494,23 @@ export class ItemResponseDraftService {
           isMissing,
           stepResults,
           promptResponses,
+          ignoreBinaryManualDecision: Boolean(binaryManualDecision),
         })
       ) {
         throw new ConflictException({
           code: 'ITEM_RESPONSE_CANNOT_MARK_ANSWERED',
           message: 'Item response has no answer to mark as answered',
+        });
+      }
+
+      if (
+        !isMissing &&
+        binaryManualDecision &&
+        readCompleteBinaryManualDecision(structuredResponse) === null
+      ) {
+        throw new ConflictException({
+          code: 'ITEM_RESPONSE_CANNOT_MARK_ANSWERED',
+          message: 'Binary manual scoring decision is incomplete',
         });
       }
 
@@ -663,6 +698,7 @@ export class ItemResponseDraftService {
     isMissing: boolean;
     stepResults: ItemStepResultSummary[];
     promptResponses: PromptResponseRecordSummary[];
+    ignoreBinaryManualDecision: boolean;
   }): boolean {
     return hasMeaningfulItemResponseAnswer({
       rawResponse: input.rawResponse,
@@ -673,6 +709,7 @@ export class ItemResponseDraftService {
       promptValues: input.promptResponses.map(
         (promptResponse) => promptResponse.responseAfterPrompt,
       ),
+      ignoreBinaryManualDecision: input.ignoreBinaryManualDecision,
     });
   }
 

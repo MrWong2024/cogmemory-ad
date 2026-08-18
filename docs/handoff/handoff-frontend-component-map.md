@@ -234,10 +234,11 @@
 - structured manual：仅当 `config.structuredManualFields` 存在且非空时配置驱动渲染逐子项正式复核；每项显示 label、可选 referenceAnswer 评分参考、患者实际回答 / 观察，以及三态中的明确“正确 / 错误”选择或“尚未判断”。referenceAnswer 不参与自动比较，也不会自动选择正确性
 - patient reference slots：`ItemResponseEditor` 只接收可选 React 展示 slot，不把它们放入 draft、dirty、autosave 或 API request。`StructuredManualResponseEditor` 在顶部一次展示 shared patient reference，并把 single-field reference 放在对应 field 的评分参考与正式输入之间；非 structured Item 在原始作答区域展示一次 item-level reference。所有参考内容自身继续使用默认关闭的原生 details。
 - structured manual 预览与完成：前端仅按当前 `isCorrect===true` 与服务端公开 field.maxScore 显示“当前确认得分 X / Y”和已确认项数，不提交预览分值、maxScore 或 referenceAnswer；最终权威 provisional scoring 仍由 backend 重算。保存草稿允许 partial，标记完成要求全部 configured fields 具有非空 responseText 和 boolean isCorrect；正式答案为 `structuredResponse.subItems`，不再依赖整题 responseText
-- 普通类型：boolean 保存 null / boolean；number 保存有限 number；text 与未配置 structuredManualFields 的 single / multi choice 保存 responseText；这些 single / multi choice 仍只提供原始回答转录，不生成选项或判分。连续减 7 继续使用 `multi_step_calculation` 与既有五个 stepResponses，不进入 structured manual editor
+- binary manual：仅当 backend 安全 config 存在 `binaryManualDecision` 时，在既有原始回答 / 观察区后配置驱动显示三态评分判断（未判断、符合评分标准、不符合评分标准）；明确提示正确性由医护确认、系统仅据此计算 0/1。第 7/10 题继续保留 responseText，第 8 题保留独立 boolean 原始事实，第 11 题保留 Evidence；Evidence / ASR / rawResponse 均不自动选择 decision。null 可保存为 partial，非 missing 标记完成要求原始作答与 boolean decision 同时完整
+- 普通类型：boolean 保存 null / boolean，标题为“原始观察 / 回答”，选项为未记录 / 是 / 否，并说明该值是原始事实而非最终评分判断；number 保存有限 number；text 与未配置 structuredManualFields 的 single / multi choice 保存 responseText。连续减 7 继续使用 `multi_step_calculation` 与既有五个 stepResponses，不进入 structured 或 binary manual editor
 - missing：structured 子项在 missing 时禁用，当前页面内尚未提交的逐项输入可在取消 missing 后继续使用；按 missing 合同保存时仍要求 missingReason，且不要求逐项完整
 - 媒体类型：继续保留 drawing / photo_upload / handwriting 的原始文字说明；另将归属 ID、只读状态、媒体草稿、写锁和回调传给 `ItemEvidenceRequirements`，媒体操作不触发 `onChange(draft)` 或 A14 保存
-- 安全边界：不显示 scoringRule、未公开 expectedValue、score 或 scoreValue，不提供 JSON 编辑器；structured manual 只展示 backend 安全公开的 referenceAnswer，并由医护手工填写 responseText 与 isCorrect。repetition、reading_command、writing_sentence、copy_drawing 等未配置 structuredManualFields 的项目保持既有 singleton/manual UI 与后续 `ManualScoreReviewForm` 合同
+- 安全边界：不显示 scoringRule、未公开 expectedValue、score 或 scoreValue，不提供 JSON 编辑器；structured manual 只展示 backend 安全公开的 referenceAnswer，并由医护手工填写 responseText 与 isCorrect；binary manual 只发送 `{ binaryManualDecision: { isCorrect } }`，不发送 server config / preview score。历史无 decision、missing 与其他 needs_review 仍走既有 `ManualScoreReviewForm`，组件 / API / audit 不删除
 
 ### 6.10 `ItemStepEditor`
 
@@ -266,10 +267,10 @@
 ### 6.14 A14 类型与草稿纯函数
 
 - 类型路径：`frontend\src\features\assessments\types\item-response-execution.ts`
-- 类型职责：严格定义 A14 安全执行响应、JsonValue、response / status / prompt / `ItemTimerState` / evidence 枚举、`draftRevision` / `draftSavedAt` 和 PATCH 白名单；`ItemExecutionConfig` 对齐安全公开的 `structuredManualFields`，正式逐项草稿类型为 `{ subItems: Record<code, { responseText: string; isCorrect: boolean | null }> }`；`expectedRevision` 必填，timing 非 null 为六字段完整快照，Date JSON 使用 string / null
+- 类型职责：严格定义 A14 安全执行响应、JsonValue、response / status / prompt / `ItemTimerState` / evidence 枚举、`draftRevision` / `draftSavedAt` 和 PATCH 白名单；`ItemExecutionConfig` 对齐安全公开的 `structuredManualFields` 与可选 `binaryManualDecision { incorrectScore, correctScore }`，正式 binary 草稿只保留 `isCorrect: boolean | null`；`expectedRevision` 必填，timing 非 null 为六字段完整快照，Date JSON 使用 string / null
 - 纯函数路径：`frontend\src\features\assessments\lib\item-response-draft.ts`
-- 纯函数职责：服务端 ItemResponse 到本地 draft、structured configured field 初始化与 partial 恢复、unknown stored field 过滤、逐项完整性 / 预览 / 请求序列化、missing、字段级和递归值 dirty 比较、数值转换、基础有效作答判断、step / prompt / 完整 timing 差异与基于服务器 revision 的 PATCH 构建；structuredResponse 继续进入同一个 autosave rebase / conflict / write barrier
-- 边界：不修改原响应对象，不使用 any，不以整对象 JSON.stringify 作为 dirty 策略，不定义自动判分规则或任意 JSON 编辑能力；structured serialization 只包含 configured field 的 responseText / isCorrect，不包含 label、referenceAnswer、maxScore 或预览分值
+- 纯函数职责：服务端 ItemResponse 到本地 draft、structured configured field 初始化与 partial 恢复、binary null / true / false 恢复、unknown stored field 过滤、逐项完整性 / 预览 / 请求序列化、missing、字段级和递归值 dirty 比较、数值转换、基础有效作答判断、step / prompt / 完整 timing 差异与基于服务器 revision 的 PATCH 构建；structured 与 binary response 继续进入同一个 autosave rebase / conflict / write barrier
+- 边界：不修改原响应对象，不使用 any，不以整对象 JSON.stringify 作为 dirty 策略，不定义自动临床判分规则或任意 JSON 编辑能力；structured serialization 只包含 configured field 的 responseText / isCorrect；binary serialization 只包含 `binaryManualDecision.isCorrect`，均不包含 server config、referenceAnswer、maxScore 或预览分值
 
 ### 6.15 `MediaEvidencePanel`
 
@@ -321,8 +322,8 @@
 ### 6.21 `ScaleSubmissionIssueList`
 
 - 路径：`frontend\src\features\assessments\components\ScaleSubmissionIssueList.tsx`
-- 职责：语义化展示 blocking / warning 列表，按受控 code 使用稳定中文标题和说明；结构化题目子项未完成时明确引导医护定位题目并补齐患者实际回答与正确性确认，仅附加允许的安全字段
-- 展示复用：逐题工作单元复用同一 title / description 映射但隐藏“定位题目”；普通全局模式仍保留定位入口。
+- 职责：语义化展示 blocking / warning 列表，按受控 code 使用稳定中文标题和说明；正式支持 `ITEM_BINARY_MANUAL_DECISION_INCOMPLETE` 的临床文案。结构化或 binary 题未完成时明确引导医护补齐原始事实、评分确认并完成题目，仅附加允许的安全字段
+- 展示复用：逐题工作单元复用同一 title / description 映射但隐藏“定位题目”；blocking 可启用纯 `buildInlineActionableIssuePresentations()`，将 structured+answer+not-completed、binary+answer+not-completed、answer+not-completed 三类同根因分别折叠为一个医生动作。required step / timing / media / evidence consistency / configuration / operator note / missing reason / 未知 code 不被吸收；warning 原样逐条展示。inline details 省略 itemOrder / title / code / CRF / group，保留 missingStepCodes / evidence 要求 / mismatch codes；普通全局模式仍保留完整定位与 metadata
 - 兼容边界：正式 issue code 继续由完整 typed Record 约束映射；运行时收到前端尚未识别的 code 时使用通用 fail-safe 标题和说明，不抛错、不忽略该阻断问题
 - 定位：只为 item scope 且含 itemResponseId 的 issue 提供 button；scale_instance scope 不提供虚假跳转
 - 安全边界：不把后端 message 当主文案，不展示或推断作答、正确答案、expectedValue 或评分
@@ -330,7 +331,7 @@
 ### 6.22 A16 类型与 submission 展示纯函数
 
 - 类型路径：`frontend\src\features\assessments\types\scale-instance-submission.ts`
-- 类型职责：严格定义 16 个 issue code、severity / scope、summary、8 个 submissionState、安全 operator / audit、严格 `{ confirm: true }` 和两个 A16 响应；Date JSON 使用 string
+- 类型职责：严格定义 17 个 issue code（含 `ITEM_BINARY_MANUAL_DECISION_INCOMPLETE`）、severity / scope、summary、8 个 submissionState、安全 operator / audit、严格 `{ confirm: true }` 和两个 A16 响应；Date JSON 使用 string
 - 纯函数路径：`frontend\src\features\assessments\lib\scale-instance-submission-display.ts`
 - 纯函数职责：issue、severity、submissionState、durationSource、required evidence 和提交 API 错误的稳定中文映射，以及安全 issue 辅助详情构建
 - 边界：不定义或读取作答原文、评分、expectedValue、mediaEvidenceId 或 metadata，不将 warning 降级 / 升级为其他 severity
@@ -760,7 +761,7 @@
 - 路径：`frontend/src/features/patient-administration/components/PatientAdministrationReviewPanel.tsx`。仅在 MMSE `supervised_patient_input` 且 StaffPanel 回传的最新 patient-administration status=`completed` 时，作为当前分组逐题“医护复核与正式作答”控制器挂载；prepared / active / paused / terminated / expired 均不进入。Panel 首次只 GET 一次整份 review projection，切组只过滤已加载数据；手动刷新才再次 GET，仍无轮询或 Evidence URL 预取。
 - 组合职责：formal execution ItemResponse 是每题主骨架；review item 优先以 itemResponseId、缺失时以唯一 itemCode 作为附加事实匹配。Panel 将 patient reference 作为纯 React slot 交给既有 `ItemResponseEditor`：单 code step 嵌入对应 structured field，多 code step 只在 structured editor 顶部展示一次“共享患者施测参考”，无 code、未知 code 或无 structured fields 时作为整题共享参考，不复制或丢弃 step / Evidence。每个 patient step 使用默认关闭的原生 `details / summary`：摘要显示步骤顺序、response mode、运行数、有效采集数、Evidence 数和已完成辅助转写数；多次运行、非首个 run 或作废 capture 以“含重做记录”提示。展开后仍展示全部 run / capture / staffObservation / Evidence / ASR / action，不建立 primary/latest run。review loading、404 或 error 只影响患者事实，正式编辑器保持可用。
 - routing helper：`patient-review-reference-routing.ts` 只消费 formal `structuredManualFields` 与 backend review projection 的 `structuredFieldCodes`；frontend 不维护 MMSE stepKey → fieldCode 表，也不按后缀、顺序或 label 推断。每个输入 step 精确进入一个 field-specific slot 或 shared slot；runtime mismatch 安全退化 shared。
-- 展示职责：逐题 inline readiness 使用 `ScaleSubmissionIssueList` 的 compact presentation，仍保留 blocker / warning severity、正式 title、description、details 与 stale snapshot 语义；默认 presentation 和全局 `ScaleInstanceSubmissionPanel` 保持原完整样式、汇总与提交资格。
+- 展示职责：逐题 inline readiness 的 blocking 使用 `ScaleSubmissionIssueList` compact actionable presentation，仅把同题同根因 server blockers 归并成医生动作；warning 与不可归并 issue 保持逐条，compact details 省略当前卡片已知的题目定位 metadata。归并不 mutation / 回写 backend issue 数组；默认 presentation 和全局 `ScaleInstanceSubmissionPanel` 继续使用 server 原始 issue、blockingIssueCount、ready、canSubmitNow 与 submit gate，保持完整样式、汇总与提交资格。
 - 媒体职责：完整原始事实随对应就近 step reference 按需展开；用户明确操作后才请求 access URL。audio / image viewer 与 access URL 获取错误均在当前 Evidence 卡片内联展示，并按 mediaEvidenceId 切换；页面一次仍只有一个 viewer。signed URL 只驻留当前 React 内存，关闭、实例身份变化或卸载时清除。ASR 只显示“辅助转写候选”，不自动写入、拆分或判断正式答案；placement 唯一权威来自 backend review projection。
 - adoption 职责：仅对后端合同允许的 completed session、有效 capture、stored/attached photo 或 handwriting、且父页面 requirement 仍 pending/missing 的证据开放显式采用；成功把同一 Evidence requirement 回传父页面并标记 readiness stale，不自动采用。
 - 写入边界：`PatientAdministrationReviewPanel` 继续拥有 review GET、Evidence access、显式 ASR、adoption 和 viewer 状态；`ScaleInstanceExecutionPage` → `ItemResponseEditor` → autosave coordinator 继续独占全部正式写入。已映射 item issue 就地展示且无“定位题目 / 定位正式作答”；`ScaleInstanceSubmissionPanel` 只承担完整 summary、全局 / 异常 issue 与最终提交。服务器确认 `mark_answered` 后自动刷新一次 readiness，普通 autosave / 保存草稿只标 stale。

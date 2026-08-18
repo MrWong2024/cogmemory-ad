@@ -58,6 +58,10 @@ export type ItemExecutionConfigResponse = {
   supportsHandwriting: boolean;
   requiresOperatorNote: boolean;
   structuredManualFields?: StructuredManualField[];
+  binaryManualDecision?: {
+    incorrectScore: number;
+    correctScore: number;
+  };
 };
 
 export type ItemResponseVersionTraceResponse = {

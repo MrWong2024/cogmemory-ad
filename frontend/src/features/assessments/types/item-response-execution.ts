@@ -106,6 +106,11 @@ export type StructuredManualResponse = {
   subItems: Record<string, StructuredManualSubItemResponse>;
 };
 
+export type BinaryManualDecisionConfig = {
+  incorrectScore: number;
+  correctScore: number;
+};
+
 export type ItemExecutionConfig = {
   prompt?: string;
   instruction?: string;
@@ -116,6 +121,7 @@ export type ItemExecutionConfig = {
   supportsHandwriting: boolean;
   requiresOperatorNote: boolean;
   structuredManualFields?: StructuredManualField[];
+  binaryManualDecision?: BinaryManualDecisionConfig;
 };
 
 export type ItemResponseVersionTrace = {

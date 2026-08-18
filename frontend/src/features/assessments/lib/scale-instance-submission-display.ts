@@ -67,6 +67,11 @@ const issueDisplays: Record<ScaleSubmissionIssueCode, IssueDisplay> = {
     description:
       '本题仍有患者实际回答或正确性尚未确认的子项，请定位题目并逐项补齐。',
   },
+  ITEM_BINARY_MANUAL_DECISION_INCOMPLETE: {
+    title: '人工评分判断尚未完成',
+    description:
+      '请核对本题患者原始回答或观察，并确认是否符合评分标准。',
+  },
   ITEM_MISSING_REASON_REQUIRED: {
     title: '缺失原因未填写',
     description: '本题标记为缺失，但尚未填写缺失原因。',
@@ -141,22 +146,24 @@ export function getRequiredEvidenceTypeLabel(
 
 export function buildScaleSubmissionIssueDetails(
   issue: ScaleSubmissionIssue,
+  options: { includeItemIdentity?: boolean } = {},
 ): string[] {
   const details: string[] = [];
+  const includeItemIdentity = options.includeItemIdentity !== false;
 
-  if (issue.itemOrder !== undefined) {
+  if (includeItemIdentity && issue.itemOrder !== undefined) {
     details.push(`题目顺序：${issue.itemOrder}`);
   }
-  if (issue.itemTitle) {
+  if (includeItemIdentity && issue.itemTitle) {
     details.push(`题目：${issue.itemTitle}`);
   }
-  if (issue.itemCode) {
+  if (includeItemIdentity && issue.itemCode) {
     details.push(`题目编码：${issue.itemCode}`);
   }
-  if (issue.crfCode) {
+  if (includeItemIdentity && issue.crfCode) {
     details.push(`CRF：${issue.crfCode}`);
   }
-  if (issue.groupCode) {
+  if (includeItemIdentity && issue.groupCode) {
     details.push(`分组编码：${issue.groupCode}`);
   }
   if (issue.missingItemCodes?.length) {

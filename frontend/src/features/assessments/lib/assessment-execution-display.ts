@@ -57,7 +57,7 @@ export const assessmentOperatorRoleLabels: Record<
 };
 
 export const scaleResponseTypeLabels: Record<ScaleResponseType, string> = {
-  boolean: '原始布尔记录',
+  boolean: '原始观察 / 回答',
   single_choice: '单选原始回答转录',
   multi_choice: '多选原始回答转录',
   number: '原始数值记录',

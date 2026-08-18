@@ -289,6 +289,108 @@ describe('scale instance submission readiness', () => {
     ).toEqual([]);
   });
 
+  it('requires binary manual decisions without treating them as answer content', () => {
+    const versionItem = createVersionItem({
+      scoringRule: { mode: 'manual_observation' },
+      scoreRange: { min: 0, max: 1, step: 1 },
+    });
+
+    const complete = evaluate(
+      [versionItem],
+      [
+        createItemResponse({
+          rawResponse: false,
+          structuredResponse: {
+            binaryManualDecision: { isCorrect: false },
+          },
+        }),
+      ],
+    );
+    expect(complete.blockingIssues).toEqual([]);
+
+    const historicalAnswered = evaluate(
+      [versionItem],
+      [createItemResponse({ status: 'answered', structuredResponse: null })],
+    );
+    expect(
+      historicalAnswered.blockingIssues.map((issue) => issue.code),
+    ).toContain('ITEM_BINARY_MANUAL_DECISION_INCOMPLETE');
+
+    const decisionOnly = evaluate(
+      [versionItem],
+      [
+        createItemResponse({
+          rawResponse: null,
+          structuredResponse: {
+            binaryManualDecision: { isCorrect: true },
+          },
+        }),
+      ],
+    );
+    expect(decisionOnly.blockingIssues.map((issue) => issue.code)).toContain(
+      'ITEM_ANSWER_CONTENT_MISSING',
+    );
+    expect(
+      decisionOnly.blockingIssues.map((issue) => issue.code),
+    ).not.toContain('ITEM_BINARY_MANUAL_DECISION_INCOMPLETE');
+
+    const missing = evaluate(
+      [versionItem],
+      [
+        createItemResponse({
+          isMissing: true,
+          missingReason: 'Unable to assess',
+          rawResponse: null,
+          structuredResponse: null,
+        }),
+      ],
+    );
+    expect(missing.blockingIssues.map((issue) => issue.code)).not.toContain(
+      'ITEM_BINARY_MANUAL_DECISION_INCOMPLETE',
+    );
+  });
+
+  it('does not apply binary decision readiness to structured or multi-step manual items', () => {
+    const structured = createVersionItem({
+      scoringRule: {
+        mode: 'structured_manual',
+        subItems: [{ code: 'field', title: 'Field', maxScore: 1 }],
+      },
+      scoreRange: { min: 0, max: 1, step: 1 },
+    });
+    const multiStep = createVersionItem({
+      code: 'scale.item.2',
+      order: 2,
+      responseType: 'multi_step_calculation',
+      scoringRule: { mode: 'multi_step_manual' },
+      scoreRange: { min: 0, max: 1, step: 1 },
+    });
+    const result = evaluate(
+      [structured, multiStep],
+      [
+        createItemResponse({
+          rawResponse: 'raw',
+          structuredResponse: {
+            subItems: {
+              field: { responseText: 'answer', isCorrect: true },
+            },
+          },
+        }),
+        createItemResponse({
+          id: '507f1f77bcf86cd799439017',
+          itemCode: multiStep.code,
+          itemOrder: multiStep.order,
+          responseType: multiStep.responseType,
+          rawResponse: 'raw',
+        }),
+      ],
+    );
+
+    expect(result.blockingIssues.map((issue) => issue.code)).not.toContain(
+      'ITEM_BINARY_MANUAL_DECISION_INCOMPLETE',
+    );
+  });
+
   it('checks timing duration, order and incomplete points', () => {
     const versionItem = createVersionItem({
       requiresTimer: true,

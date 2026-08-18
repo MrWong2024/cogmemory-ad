@@ -4,6 +4,7 @@ import {
   getScaleSubmissionIssueDisplay,
   scaleSubmissionSeverityLabels,
 } from '@/src/features/assessments/lib/scale-instance-submission-display';
+import { buildInlineActionableIssuePresentations } from '@/src/features/assessments/lib/scale-submission-inline-presentation';
 import type {
   ScaleSubmissionIssue,
   ScaleSubmissionIssueSeverity,
@@ -11,16 +12,20 @@ import type {
 
 export function ScaleSubmissionIssueList({
   compact = false,
+  inlineActionable = false,
   issues,
   onLocateIssue,
   severity,
   showLocateActions = true,
+  suppressItemIdentity = false,
 }: {
   compact?: boolean;
+  inlineActionable?: boolean;
   issues: ScaleSubmissionIssue[];
   onLocateIssue: (issue: ScaleSubmissionIssue) => void;
   severity: ScaleSubmissionIssueSeverity;
   showLocateActions?: boolean;
+  suppressItemIdentity?: boolean;
 }) {
   if (issues.length === 0) {
     return (
@@ -30,11 +35,29 @@ export function ScaleSubmissionIssueList({
     );
   }
 
+  const presentations = inlineActionable
+    ? buildInlineActionableIssuePresentations(issues)
+    : issues.map((issue, index) => {
+        const display = getScaleSubmissionIssueDisplay(issue.code);
+        return {
+          key: `${issue.code}:${issue.itemResponseId ?? 'scale'}:${index}`,
+          title: display.title,
+          description: display.description,
+          details: buildScaleSubmissionIssueDetails(issue, {
+            includeItemIdentity: !suppressItemIdentity,
+          }),
+          sourceIssues: [issue],
+        };
+      });
+
   return (
     <ul className={compact ? 'grid gap-1.5' : 'grid gap-3'}>
-      {issues.map((issue, index) => {
-        const display = getScaleSubmissionIssueDisplay(issue.code);
-        const details = buildScaleSubmissionIssueDetails(issue);
+      {presentations.map((presentation) => {
+        const issue = presentation.sourceIssues[0];
+
+        if (!issue) {
+          return null;
+        }
 
         return (
           <li
@@ -47,7 +70,7 @@ export function ScaleSubmissionIssueList({
                   ? 'grid gap-3 rounded-md border border-[var(--cma-danger)] bg-[var(--cma-danger-soft)] p-4'
                   : 'grid gap-3 rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] p-4'
             }
-            key={`${issue.code}:${issue.itemResponseId ?? 'scale'}:${index}`}
+            key={presentation.key}
           >
             <div>
               <p
@@ -57,7 +80,7 @@ export function ScaleSubmissionIssueList({
                     : 'font-semibold text-[var(--cma-warning)]'
                 }
               >
-                {display.title}
+                {presentation.title}
               </p>
               <p
                 className={
@@ -66,10 +89,10 @@ export function ScaleSubmissionIssueList({
                     : 'mt-1 text-sm leading-6 text-[var(--cma-text-strong)]'
                 }
               >
-                {display.description}
+                {presentation.description}
               </p>
             </div>
-            {details.length > 0 ? (
+            {presentation.details.length > 0 ? (
               <ul
                 className={
                   severity === 'blocking'
@@ -81,7 +104,7 @@ export function ScaleSubmissionIssueList({
                       : 'grid gap-1 text-sm leading-6 text-[var(--cma-warning)]'
                 }
               >
-                {details.map((detail) => (
+                {presentation.details.map((detail) => (
                   <li key={detail}>{detail}</li>
                 ))}
               </ul>

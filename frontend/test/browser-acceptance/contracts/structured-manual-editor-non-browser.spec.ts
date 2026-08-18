@@ -79,6 +79,25 @@ function completeDraft(correctness: boolean[]): StructuredManualResponse {
   };
 }
 
+function createBinaryItem(
+  overrides: Partial<ItemResponseExecution> = {},
+): ItemResponseExecution {
+  return createItem({
+    itemCode: 'CONFIG_DRIVEN_BINARY_ITEM',
+    responseType: 'boolean',
+    config: {
+      scoreRange: { min: 0, max: 1, step: 1 },
+      evidenceTypes: [],
+      requiresTimer: false,
+      supportsPhotoUpload: false,
+      supportsHandwriting: false,
+      requiresOperatorNote: false,
+      binaryManualDecision: { incorrectScore: 0, correctScore: 1 },
+    },
+    ...overrides,
+  });
+}
+
 test('configured fields initialize as empty three-state draft entries', () => {
   expect(createStructuredManualDraft(fields, null)).toEqual({
     subItems: Object.fromEntries(
@@ -299,4 +318,92 @@ test('a config without structuredManualFields does not enable structured draft e
 
   expect(getStructuredManualFields(item.config)).toBeNull();
   expect(createItemDraftState(item).structuredResponse).toBeNull();
+});
+
+test('binary decision restores null, true and false without using item-code rules', () => {
+  expect(createItemDraftState(createBinaryItem()).binaryManualDecision).toBeNull();
+  expect(
+    createItemDraftState(
+      createBinaryItem({
+        structuredResponse: {
+          binaryManualDecision: { isCorrect: true },
+        },
+      }),
+    ).binaryManualDecision,
+  ).toBe(true);
+  expect(
+    createItemDraftState(
+      createBinaryItem({
+        structuredResponse: {
+          binaryManualDecision: { isCorrect: false },
+        },
+      }),
+    ).binaryManualDecision,
+  ).toBe(false);
+});
+
+test('binary draft serializes only the decision and keeps raw false independent', () => {
+  const item = createBinaryItem({ rawResponse: false });
+  const draft = {
+    ...createItemDraftState(item),
+    binaryManualDecision: false,
+  };
+  const result = buildItemResponseDraftRequest(item, draft, true);
+
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.input).toEqual({
+    expectedRevision: 3,
+    structuredResponse: {
+      binaryManualDecision: { isCorrect: false },
+    },
+    markAsAnswered: true,
+  });
+  expect(JSON.stringify(result.input)).not.toMatch(
+    /correctScore|incorrectScore|maxScore|scoreValue|scoringRule/,
+  );
+});
+
+test('binary decision alone is not a valid answer and null cannot complete', () => {
+  const item = createBinaryItem({ rawResponse: null });
+  const decisionOnly = {
+    ...createItemDraftState(item),
+    binaryManualDecision: true,
+  };
+  expect(buildItemResponseDraftRequest(item, decisionOnly, true).ok).toBe(
+    false,
+  );
+
+  const nullDecision = createItemDraftState(
+    createBinaryItem({ rawResponse: false }),
+  );
+  expect(buildItemResponseDraftRequest(item, nullDecision, true).ok).toBe(
+    false,
+  );
+});
+
+test('binary edits participate in dirty detection and preserve post-save edits on rebase', () => {
+  const item = createBinaryItem({ rawResponse: false });
+  const baseline = createItemDraftState(item);
+  expect(itemDraftHasChanges(item, baseline)).toBe(false);
+
+  const attemptDraft = { ...baseline, binaryManualDecision: true };
+  expect(itemDraftHasChanges(item, attemptDraft)).toBe(true);
+
+  const currentDraft = { ...attemptDraft, binaryManualDecision: false };
+  const serverItem = createBinaryItem({
+    rawResponse: false,
+    draftRevision: 4,
+    structuredResponse: {
+      binaryManualDecision: { isCorrect: true },
+    },
+  });
+  const rebased = rebaseItemDraftAfterSave({
+    attemptDraft,
+    currentDraft,
+    serverItem,
+  });
+
+  expect(rebased.binaryManualDecision).toBe(false);
+  expect(itemDraftHasChanges(serverItem, rebased)).toBe(true);
 });

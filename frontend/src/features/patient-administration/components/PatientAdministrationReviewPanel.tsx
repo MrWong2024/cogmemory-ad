@@ -1159,10 +1159,12 @@ export function PatientAdministrationReviewPanel({
                             </h6>
                             <ScaleSubmissionIssueList
                               compact
+                              inlineActionable
                               issues={itemIssues.blockingIssues}
                               onLocateIssue={() => undefined}
                               severity="blocking"
                               showLocateActions={false}
+                              suppressItemIdentity
                             />
                           </div>
                         ) : null}
@@ -1177,6 +1179,7 @@ export function PatientAdministrationReviewPanel({
                               onLocateIssue={() => undefined}
                               severity="warning"
                               showLocateActions={false}
+                              suppressItemIdentity
                             />
                           </div>
                         ) : null}

@@ -10,6 +10,7 @@ import type {
   UpdateItemResponseDraftRequest,
   UpdateItemStepDraftRequest,
   UpdatePromptResponseDraftRequest,
+  BinaryManualDecisionConfig,
 } from '@/src/features/assessments/types/item-response-execution';
 import { validateItemTimingSnapshot } from '@/src/features/assessments/lib/item-response-timer';
 
@@ -33,6 +34,7 @@ export type ItemDraftState = {
   rawResponseInput: string;
   rawResponseTouched: boolean;
   structuredResponse: StructuredManualResponse | null;
+  binaryManualDecision: boolean | null;
   responseText: string;
   isMissing: boolean;
   missingReason: string;
@@ -76,6 +78,26 @@ export function getStructuredManualFields(
     config.structuredManualFields.length > 0
     ? config.structuredManualFields
     : null;
+}
+
+export function getBinaryManualDecisionConfig(
+  config: ItemExecutionConfig,
+): BinaryManualDecisionConfig | null {
+  return config.binaryManualDecision ?? null;
+}
+
+export function readStoredBinaryManualDecision(
+  storedResponse: ItemResponseExecution['structuredResponse'],
+): boolean | null {
+  if (
+    !isPlainRecord(storedResponse) ||
+    !isPlainRecord(storedResponse.binaryManualDecision)
+  ) {
+    return null;
+  }
+
+  const decision = storedResponse.binaryManualDecision.isCorrect;
+  return typeof decision === 'boolean' ? decision : null;
 }
 
 export function createStructuredManualDraft(
@@ -209,6 +231,9 @@ export function createItemDraftState(
           structuredManualFields,
           item.structuredResponse,
         )
+      : null,
+    binaryManualDecision: getBinaryManualDecisionConfig(item.config)
+      ? readStoredBinaryManualDecision(item.structuredResponse)
       : null,
     responseText: item.responseText ?? '',
     isMissing: item.isMissing,
@@ -386,10 +411,15 @@ function getCurrentPromptValue(
   );
 }
 
-function hasNonEmptyStructuredResponse(item: ItemResponseExecution): boolean {
+function hasNonEmptyStructuredResponse(
+  item: ItemResponseExecution,
+  ignoreBinaryManualDecision: boolean,
+): boolean {
   return (
     item.structuredResponse !== null &&
-    Object.keys(item.structuredResponse).length > 0
+    Object.keys(item.structuredResponse).some(
+      (key) => !(ignoreBinaryManualDecision && key === 'binaryManualDecision'),
+    )
   );
 }
 
@@ -402,6 +432,7 @@ export function itemDraftHasValidAnswer(
   }
 
   const structuredManualFields = getStructuredManualFields(item.config);
+  const binaryManualDecision = getBinaryManualDecisionConfig(item.config);
 
   if (structuredManualFields) {
     return isStructuredManualDraftComplete(
@@ -410,8 +441,10 @@ export function itemDraftHasValidAnswer(
     );
   }
 
+  let hasAnswerContent = false;
+
   if (item.responseType === 'boolean' && draft.rawResponse !== null) {
-    return true;
+    hasAnswerContent = true;
   }
 
   if (item.responseType === 'number') {
@@ -420,12 +453,12 @@ export function itemDraftHasValidAnswer(
       : { ok: true as const, value: draft.rawResponse };
 
     if (rawResponse.ok && rawResponse.value !== null) {
-      return true;
+      hasAnswerContent = true;
     }
   }
 
   if (draft.responseText.trim().length > 0) {
-    return true;
+    hasAnswerContent = true;
   }
 
   if (
@@ -434,7 +467,7 @@ export function itemDraftHasValidAnswer(
       return value.ok && value.value !== null;
     })
   ) {
-    return true;
+    hasAnswerContent = true;
   }
 
   if (
@@ -443,10 +476,16 @@ export function itemDraftHasValidAnswer(
       return value.ok && value.value !== null;
     })
   ) {
-    return true;
+    hasAnswerContent = true;
   }
 
-  return hasNonEmptyStructuredResponse(item);
+  hasAnswerContent ||=
+    hasNonEmptyStructuredResponse(item, Boolean(binaryManualDecision));
+
+  return (
+    hasAnswerContent &&
+    (!binaryManualDecision || typeof draft.binaryManualDecision === 'boolean')
+  );
 }
 
 export function itemAllowsTiming(item: ItemResponseExecution): boolean {
@@ -648,6 +687,7 @@ export function buildItemResponseDraftRequest(
     expectedRevision: item.draftRevision,
   };
   const structuredManualFields = getStructuredManualFields(item.config);
+  const binaryManualDecision = getBinaryManualDecisionConfig(item.config);
 
   if (item.responseType === 'number' && draft.rawResponseTouched) {
     const rawResponse = convertInputValue(
@@ -687,6 +727,20 @@ export function buildItemResponseDraftRequest(
         structuredManualFields,
         draft.structuredResponse,
       );
+    }
+  }
+
+  if (binaryManualDecision && !draft.isMissing) {
+    const originalDecision = readStoredBinaryManualDecision(
+      item.structuredResponse,
+    );
+
+    if (draft.binaryManualDecision !== originalDecision) {
+      input.structuredResponse = {
+        binaryManualDecision: {
+          isCorrect: draft.binaryManualDecision,
+        },
+      };
     }
   }
 
@@ -737,7 +791,9 @@ export function buildItemResponseDraftRequest(
     if (!itemDraftHasValidAnswer(item, draft)) {
       return {
         ok: false,
-        message: '请先记录有效作答或缺失原因，再标记本题完成。',
+        message: binaryManualDecision
+          ? '请先记录有效作答并完成评分判断，或填写缺失原因，再标记本题完成。'
+          : '请先记录有效作答或缺失原因，再标记本题完成。',
       };
     }
 

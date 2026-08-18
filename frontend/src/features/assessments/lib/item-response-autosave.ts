@@ -308,6 +308,11 @@ export function rebaseItemDraftAfterSave(input: {
     )
       ? serverDraft.structuredResponse
       : cloneStructuredManualResponse(input.currentDraft.structuredResponse),
+    binaryManualDecision:
+      input.currentDraft.binaryManualDecision ===
+      input.attemptDraft.binaryManualDecision
+        ? serverDraft.binaryManualDecision
+        : input.currentDraft.binaryManualDecision,
     isMissing:
       input.currentDraft.isMissing === input.attemptDraft.isMissing
         ? serverDraft.isMissing

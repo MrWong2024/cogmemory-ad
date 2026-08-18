@@ -261,7 +261,11 @@ describe('provisional scoring APIs (e2e)', () => {
                 ]),
               ),
             }
-          : undefined;
+          : isRecord(config.binaryManualDecision)
+            ? {
+                binaryManualDecision: { isCorrect: false },
+              }
+            : undefined;
       await doctorAgent
         .patch(`${instancePath(fixture)}/item-responses/${itemId}`)
         .send({
@@ -470,15 +474,15 @@ describe('provisional scoring APIs (e2e)', () => {
     expect(first.alreadyComputed).toBe(false);
     const result = record(first.scoreResult, 'score result');
     expect(result.runNo).toBe(1);
-    expect(result.status).toBe('needs_review');
-    expect(result.scoringSource).toBe('mixed');
+    expect(result.status).toBe('computed');
+    expect(result.scoringSource).toBe('auto_rule');
     expect(result.scoringMode).toBe('rule_based');
-    expect(result.qualityStatus).toBe('needs_review');
+    expect(result.qualityStatus).toBe('unchecked');
     expect(result.isFinal).toBe(false);
     const total = record(result.totalScore, 'total score');
     expect(total.provisionalScoreValue).toBe(6);
-    expect(total.scorePercent).toBeNull();
-    expect(total.isComplete).toBe(false);
+    expect(total.scorePercent).toBe(20);
+    expect(total.isComplete).toBe(true);
     const itemScores = arrayValue(result.itemScores, 'item scores');
     const serial = itemScores.find(
       (item) =>
@@ -501,9 +505,23 @@ describe('provisional scoring APIs (e2e)', () => {
         scoreSource: 'auto_rule',
       }),
     );
-    expect(
-      arrayValue(first.reviewQueue, 'review queue').length,
-    ).toBeGreaterThan(0);
+    for (const itemCode of [
+      'mmse.language.repetition',
+      'mmse.language.reading_command',
+      'mmse.language.writing_sentence',
+      'mmse.visuospatial.copy_drawing',
+    ]) {
+      expect(
+        itemScores.find((item) => isRecord(item) && item.itemCode === itemCode),
+      ).toEqual(
+        expect.objectContaining({
+          provisionalScoreValue: 0,
+          scoreStatus: 'auto_scored',
+          scoreSource: 'auto_rule',
+        }),
+      );
+    }
+    expect(arrayValue(first.reviewQueue, 'review queue')).toEqual([]);
     const keys = collectKeys(first);
     for (const forbidden of [
       'rawResponse',
@@ -568,6 +586,48 @@ describe('provisional scoring APIs (e2e)', () => {
         scaleInstanceId: fixture.scaleInstanceId,
       }),
     ).toBe(1);
+  });
+
+  it('keeps legacy binary manual responses without a decision in review fallback', async () => {
+    const fixture = await createFixture('MMSE-BINARY-LEGACY', 'mmse');
+    await completeAndSubmit(fixture);
+    await itemModel
+      .updateOne(
+        {
+          scaleInstanceId: fixture.scaleInstanceId,
+          itemCode: 'mmse.language.repetition',
+        },
+        { $set: { structuredResponse: null } },
+      )
+      .exec();
+
+    const response = body(
+      await doctorAgent
+        .post(computePath(fixture))
+        .send({ confirm: true })
+        .expect(200),
+    );
+    const result = record(response.scoreResult, 'score result');
+    const repetition = arrayValue(result.itemScores, 'item scores').find(
+      (item) => isRecord(item) && item.itemCode === 'mmse.language.repetition',
+    );
+
+    expect(result.status).toBe('needs_review');
+    expect(repetition).toEqual(
+      expect.objectContaining({
+        provisionalScoreValue: null,
+        scoreStatus: 'needs_review',
+        scoreSource: 'none',
+      }),
+    );
+    expect(
+      arrayValue(response.reviewQueue, 'review queue').some(
+        (item) =>
+          isRecord(item) &&
+          item.itemCode === 'mmse.language.repetition' &&
+          item.reasonCode === 'MANUAL_SCORING_REQUIRED',
+      ),
+    ).toBe(true);
   });
 
   it('uses MoCA aggregation and excludes immediate-memory raw records', async () => {

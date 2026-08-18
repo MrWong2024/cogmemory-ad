@@ -40,7 +40,21 @@ export type MeaningfulItemResponseAnswerInput = {
   isMissing: boolean;
   stepValues: unknown[];
   promptValues: unknown[];
+  ignoreBinaryManualDecision?: boolean;
 };
+
+function hasMeaningfulStructuredAnswerContent(
+  structuredResponse: Record<string, unknown> | null,
+  ignoreBinaryManualDecision: boolean,
+): boolean {
+  if (!isPlainRecord(structuredResponse)) {
+    return false;
+  }
+
+  return Object.keys(structuredResponse).some(
+    (key) => !(ignoreBinaryManualDecision && key === 'binaryManualDecision'),
+  );
+}
 
 export function hasMeaningfulItemResponseAnswer(
   input: MeaningfulItemResponseAnswerInput,
@@ -48,8 +62,10 @@ export function hasMeaningfulItemResponseAnswer(
   return (
     input.isMissing ||
     hasMeaningfulJsonValue(input.rawResponse) ||
-    (isPlainRecord(input.structuredResponse) &&
-      Object.keys(input.structuredResponse).length > 0) ||
+    hasMeaningfulStructuredAnswerContent(
+      input.structuredResponse,
+      input.ignoreBinaryManualDecision === true,
+    ) ||
     Boolean(input.responseText?.trim()) ||
     input.stepValues.some(hasMeaningfulJsonValue) ||
     input.promptValues.some(hasMeaningfulJsonValue)

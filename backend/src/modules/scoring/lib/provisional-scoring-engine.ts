@@ -3,6 +3,10 @@ import {
   calculateStructuredManualScore,
   parseStructuredManualFields,
 } from '../../assessments/lib/structured-manual-response';
+import {
+  calculateBinaryManualDecisionScore,
+  isBinaryManualDecisionEligible,
+} from '../../assessments/lib/binary-manual-decision';
 import type {
   ScaleItemConfigSummary,
   ScaleVersionSummary,
@@ -375,6 +379,18 @@ export function evaluateProvisionalItems(
       );
       if (scoreValue === null) {
         return reviewItem(item, response, 'STRUCTURED_RESPONSE_INVALID');
+      }
+      const normalizedScore = normalizeScoreToRange(scoreValue, item);
+      return normalizedScore === null
+        ? reviewItem(item, response, 'AUTO_SCORE_RESULT_INVALID')
+        : autoScoredItem(item, response, normalizedScore);
+    }
+    if (isBinaryManualDecisionEligible(rule, item.scoreRange)) {
+      const scoreValue = calculateBinaryManualDecisionScore(
+        response.structuredResponse,
+      );
+      if (scoreValue === null) {
+        return reviewItem(item, response, 'MANUAL_SCORING_REQUIRED');
       }
       const normalizedScore = normalizeScoreToRange(scoreValue, item);
       return normalizedScore === null

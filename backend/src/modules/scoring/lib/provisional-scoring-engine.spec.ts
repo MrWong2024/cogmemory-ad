@@ -400,6 +400,77 @@ describe('provisional scoring engine', () => {
     );
   });
 
+  it('maps a clinician-confirmed binary decision to deterministic 1 or 0', () => {
+    const item = mmse.items.find(
+      (candidate) => candidate.scoringRule?.mode === 'manual_exact_match',
+    );
+    if (!item) throw new Error('Expected binary exact-match item');
+
+    const correct = evaluateProvisionalItems(
+      [item],
+      [
+        responseFor(item, {
+          responseText: 'arbitrary patient repetition',
+          structuredResponse: {
+            binaryManualDecision: { isCorrect: true },
+          },
+        }),
+      ],
+    ).itemScores[0];
+    const incorrect = evaluateProvisionalItems(
+      [item],
+      [
+        responseFor(item, {
+          responseText: 'same arbitrary patient repetition',
+          structuredResponse: {
+            binaryManualDecision: { isCorrect: false },
+          },
+        }),
+      ],
+    ).itemScores[0];
+
+    expect(correct).toEqual(
+      expect.objectContaining({
+        scoreValue: 1,
+        scoreStatus: 'auto_scored',
+        scoreSource: 'auto_rule',
+        includedInTotal: true,
+        note: undefined,
+      }),
+    );
+    expect(incorrect).toEqual(
+      expect.objectContaining({
+        scoreValue: 0,
+        scoreStatus: 'auto_scored',
+        scoreSource: 'auto_rule',
+        includedInTotal: true,
+      }),
+    );
+  });
+
+  it('scores only the clinician decision when boolean observation and judgment differ', () => {
+    const item = mmse.items.find(
+      (candidate) => candidate.scoringRule?.mode === 'manual_observation',
+    );
+    if (!item) throw new Error('Expected binary observation item');
+
+    const score = evaluateProvisionalItems(
+      [item],
+      [
+        responseFor(item, {
+          rawResponse: true,
+          structuredResponse: {
+            binaryManualDecision: { isCorrect: false },
+          },
+        }),
+      ],
+    ).itemScores[0];
+
+    expect(score).toEqual(
+      expect.objectContaining({ scoreValue: 0, scoreStatus: 'auto_scored' }),
+    );
+  });
+
   it('reviews invalid stored structured responses and unparseable definitions', () => {
     const item = mmse.items.find(
       (candidate) => candidate.code === 'mmse.orientation.time',

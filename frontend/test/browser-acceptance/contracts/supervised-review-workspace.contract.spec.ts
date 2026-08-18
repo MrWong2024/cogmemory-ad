@@ -4,6 +4,7 @@ import {
   getInlineSubmissionIssueSnapshotLabel,
   routeScaleSubmissionIssues,
 } from '@/src/features/assessments/lib/scale-submission-issue-routing';
+import { buildInlineActionableIssuePresentations } from '@/src/features/assessments/lib/scale-submission-inline-presentation';
 import { routePatientReviewReferences } from '@/src/features/patient-administration/lib/patient-review-reference-routing';
 import type {
   ScaleSubmissionIssue,
@@ -174,4 +175,117 @@ test('routes all patient steps to shared when the formal item has no structured 
 
   expect(routing.fieldSpecificStepsByCode).toEqual({});
   expect(routing.sharedSteps).toEqual(steps);
+});
+
+test('collapses structured incompleteness into one actionable inline presentation', () => {
+  const issues = [
+    createIssue({
+      code: 'ITEM_STRUCTURED_SUBITEMS_INCOMPLETE',
+      severity: 'blocking',
+      itemResponseId: 'item-a',
+    }),
+    createIssue({
+      code: 'ITEM_ANSWER_CONTENT_MISSING',
+      severity: 'blocking',
+      itemResponseId: 'item-a',
+    }),
+    createIssue({
+      code: 'ITEM_NOT_COMPLETED',
+      severity: 'blocking',
+      itemResponseId: 'item-a',
+    }),
+  ];
+  const snapshot = structuredClone(issues);
+  const presentations = buildInlineActionableIssuePresentations(issues);
+
+  expect(presentations).toHaveLength(1);
+  expect(presentations[0]?.title).toBe('本题结构化复核尚未完成');
+  expect(presentations[0]?.sourceIssues).toHaveLength(3);
+  expect(issues).toEqual(snapshot);
+});
+
+test('collapses binary decision incompleteness without swallowing media blockers', () => {
+  const issues = [
+    createIssue({
+      code: 'ITEM_BINARY_MANUAL_DECISION_INCOMPLETE',
+      severity: 'blocking',
+      itemResponseId: 'item-a',
+    }),
+    createIssue({
+      code: 'ITEM_ANSWER_CONTENT_MISSING',
+      severity: 'blocking',
+      itemResponseId: 'item-a',
+    }),
+    createIssue({
+      code: 'ITEM_NOT_COMPLETED',
+      severity: 'blocking',
+      itemResponseId: 'item-a',
+    }),
+    createIssue({
+      code: 'ITEM_REQUIRED_MEDIA_MISSING',
+      severity: 'blocking',
+      itemResponseId: 'item-a',
+    }),
+  ];
+  const presentations = buildInlineActionableIssuePresentations(issues);
+
+  expect(presentations).toHaveLength(2);
+  expect(presentations[0]?.title).toBe('本题人工评分判断尚未完成');
+  expect(presentations[1]?.sourceIssues[0]?.code).toBe(
+    'ITEM_REQUIRED_MEDIA_MISSING',
+  );
+});
+
+test('collapses answer missing plus not completed while leaving warnings unchanged', () => {
+  const blockers = [
+    createIssue({
+      code: 'ITEM_ANSWER_CONTENT_MISSING',
+      severity: 'blocking',
+      itemResponseId: 'item-a',
+    }),
+    createIssue({
+      code: 'ITEM_NOT_COMPLETED',
+      severity: 'blocking',
+      itemResponseId: 'item-a',
+    }),
+  ];
+  const warnings = [
+    createIssue({
+      code: 'ITEM_STALE_MISSING_REASON',
+      severity: 'warning',
+      itemResponseId: 'item-a',
+    }),
+  ];
+
+  expect(buildInlineActionableIssuePresentations(blockers)).toEqual([
+    expect.objectContaining({
+      title: '本题尚未完成',
+      sourceIssues: blockers,
+    }),
+  ]);
+  expect(buildInlineActionableIssuePresentations(warnings)).toEqual([
+    expect.objectContaining({
+      title: '仍保留历史缺失原因',
+      sourceIssues: warnings,
+    }),
+  ]);
+});
+
+test('inline presentations omit repeated item identity but retain actionable metadata', () => {
+  const issue: ScaleSubmissionIssue = {
+    ...createIssue({
+      code: 'ITEM_REQUIRED_STEP_MISSING',
+      severity: 'blocking',
+      itemResponseId: 'item-a',
+      itemCode: 'CONFIG_DRIVEN_ITEM',
+    }),
+    itemOrder: 7,
+    itemTitle: 'Configured item',
+    crfCode: 'CRF.7',
+    groupCode: 'group-a',
+    missingStepCodes: ['step-a'],
+  };
+  const [presentation] = buildInlineActionableIssuePresentations([issue]);
+
+  expect(presentation?.details).toEqual(['缺少分步编码：step-a']);
 });

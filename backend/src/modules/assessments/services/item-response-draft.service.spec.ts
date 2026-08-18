@@ -129,6 +129,23 @@ function createStructuredManualItem(
   });
 }
 
+function createBinaryManualItem(
+  overrides: Partial<ItemResponseSummary> = {},
+): ItemResponseSummary {
+  return createItemResponseSummary({
+    itemCode: 'test.binary.manual',
+    itemTitle: 'Binary manual item',
+    responseType: 'text',
+    itemConfigSnapshot: {
+      scoreRange: { min: 0, max: 1, step: 1 },
+      scoringRule: { mode: 'manual_exact_match' },
+    },
+    stepResults: [],
+    promptResponses: [],
+    ...overrides,
+  });
+}
+
 async function expectHttpExceptionCode(
   promise: Promise<unknown>,
   status: number,
@@ -884,6 +901,172 @@ describe('ItemResponseDraftService', () => {
         structuredResponse: null,
       }),
     );
+  });
+
+  it('marks a binary manual text response answered with a complete decision', async () => {
+    currentItemResponse = createBinaryManualItem();
+
+    await save({
+      responseText: 'patient repetition',
+      structuredResponse: {
+        binaryManualDecision: { isCorrect: true },
+      },
+      markAsAnswered: true,
+    });
+
+    expect(readUpdateSet(itemResponseModel.findOneAndUpdate).status).toBe(
+      'answered',
+    );
+  });
+
+  it('does not let a binary decision replace the original answer', async () => {
+    currentItemResponse = createBinaryManualItem();
+
+    await expectHttpExceptionCode(
+      save({
+        structuredResponse: {
+          binaryManualDecision: { isCorrect: true },
+        },
+        markAsAnswered: true,
+      }),
+      409,
+      'ITEM_RESPONSE_CANNOT_MARK_ANSWERED',
+    );
+  });
+
+  it('accepts false as a recorded boolean fact independently from a false decision', async () => {
+    currentItemResponse = createBinaryManualItem({
+      responseType: 'boolean',
+      itemConfigSnapshot: {
+        scoreRange: { min: 0, max: 1, step: 1 },
+        scoringRule: { mode: 'manual_observation' },
+      },
+    });
+
+    await save({
+      rawResponse: false,
+      structuredResponse: {
+        binaryManualDecision: { isCorrect: false },
+      },
+      markAsAnswered: true,
+    });
+
+    expect(readUpdateSet(itemResponseModel.findOneAndUpdate)).toEqual(
+      expect.objectContaining({ rawResponse: false, status: 'answered' }),
+    );
+  });
+
+  it('requires a boolean original fact even when the decision is complete', async () => {
+    currentItemResponse = createBinaryManualItem({
+      responseType: 'boolean',
+      itemConfigSnapshot: {
+        scoreRange: { min: 0, max: 1, step: 1 },
+        scoringRule: { mode: 'manual_observation' },
+      },
+    });
+
+    await expectHttpExceptionCode(
+      save({
+        structuredResponse: {
+          binaryManualDecision: { isCorrect: false },
+        },
+        markAsAnswered: true,
+      }),
+      409,
+      'ITEM_RESPONSE_CANNOT_MARK_ANSWERED',
+    );
+  });
+
+  it('keeps writing and drawing answer content separate from the decision', async () => {
+    currentItemResponse = createBinaryManualItem({
+      responseType: 'drawing',
+      itemConfigSnapshot: {
+        scoreRange: { min: 0, max: 1, step: 1 },
+        scoringRule: { mode: 'manual_drawing_review' },
+      },
+    });
+
+    await expectHttpExceptionCode(
+      save({
+        structuredResponse: {
+          binaryManualDecision: { isCorrect: true },
+        },
+        markAsAnswered: true,
+      }),
+      409,
+      'ITEM_RESPONSE_CANNOT_MARK_ANSWERED',
+    );
+
+    await save({
+      responseText: 'drawing evidence reviewed',
+      structuredResponse: {
+        binaryManualDecision: { isCorrect: true },
+      },
+      markAsAnswered: true,
+    });
+    expect(readUpdateSet(itemResponseModel.findOneAndUpdate).status).toBe(
+      'answered',
+    );
+  });
+
+  it('allows partial binary drafts but requires a complete decision to finish', async () => {
+    currentItemResponse = createBinaryManualItem({
+      responseText: 'existing raw answer',
+    });
+
+    await save({
+      structuredResponse: {
+        binaryManualDecision: { isCorrect: null },
+      },
+    });
+    expect(
+      readUpdateSet(itemResponseModel.findOneAndUpdate).structuredResponse,
+    ).toEqual({ binaryManualDecision: { isCorrect: null } });
+
+    currentItemResponse = createBinaryManualItem({
+      responseText: 'existing raw answer',
+      structuredResponse: {
+        binaryManualDecision: { isCorrect: null },
+      },
+    });
+    await expectHttpExceptionCode(
+      save({ markAsAnswered: true }),
+      409,
+      'ITEM_RESPONSE_CANNOT_MARK_ANSWERED',
+    );
+  });
+
+  it('allows a binary manual item to be completed as missing', async () => {
+    currentItemResponse = createBinaryManualItem();
+
+    await save({
+      isMissing: true,
+      missingReason: 'Unable to assess',
+      markAsAnswered: true,
+    });
+
+    expect(readUpdateSet(itemResponseModel.findOneAndUpdate)).toEqual(
+      expect.objectContaining({
+        status: 'answered',
+        isMissing: true,
+        structuredResponse: null,
+      }),
+    );
+  });
+
+  it.each([
+    { binaryManualDecision: { isCorrect: true }, scoreValue: 1 },
+    { binaryManualDecision: { isCorrect: true, maxScore: 1 } },
+    { binaryManualDecision: { isCorrect: true, note: 'forged' } },
+  ])('rejects forged binary manual payloads', async (structuredResponse) => {
+    currentItemResponse = createBinaryManualItem();
+
+    await expectHttpExceptionCode(
+      save({ structuredResponse }),
+      400,
+      'ITEM_RESPONSE_PAYLOAD_INVALID',
+    );
+    expect(itemResponseModel.findOneAndUpdate).not.toHaveBeenCalled();
   });
 
   it('keeps an answered item answered while editing its draft', async () => {

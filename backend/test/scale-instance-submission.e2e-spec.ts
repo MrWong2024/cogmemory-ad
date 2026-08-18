@@ -361,7 +361,11 @@ describe('scale instance submission APIs (e2e)', () => {
                 ]),
               ),
             }
-          : undefined;
+          : isRecord(config.binaryManualDecision)
+            ? {
+                binaryManualDecision: { isCorrect: false },
+              }
+            : undefined;
       let savedRevision = initialRevision;
       if (stepResponses.length > 0) {
         const answerResponse = await doctorAgent
@@ -812,6 +816,67 @@ describe('scale instance submission APIs (e2e)', () => {
       ),
     ).toBe(true);
     expect(readiness.ready).toBe(false);
+  });
+
+  it('fails historical answered binary items closed until a complete decision is saved', async () => {
+    const fixture = await createFixture('BINARY-HISTORICAL');
+    const item = await itemModel
+      .findOne({
+        scaleInstanceId: fixture.scaleInstanceId,
+        itemCode: 'mmse.language.repetition',
+      })
+      .exec();
+    if (!item) {
+      throw new Error('Expected MMSE repetition item response');
+    }
+
+    await itemModel
+      .updateOne(
+        { _id: item._id },
+        {
+          $set: {
+            status: 'answered',
+            responseText: 'Historical patient repetition',
+            structuredResponse: null,
+          },
+        },
+      )
+      .exec();
+
+    const historicalReadiness = body(
+      await doctorAgent.get(readinessPath(fixture)).expect(200),
+    );
+    expect(
+      arrayValue(historicalReadiness.blockingIssues, 'blocking issues').some(
+        (issue) =>
+          isRecord(issue) &&
+          issue.itemCode === 'mmse.language.repetition' &&
+          issue.code === 'ITEM_BINARY_MANUAL_DECISION_INCOMPLETE',
+      ),
+    ).toBe(true);
+
+    await doctorAgent
+      .patch(`${instancePath(fixture)}/item-responses/${item._id.toString()}`)
+      .send({
+        expectedRevision: 0,
+        structuredResponse: {
+          binaryManualDecision: { isCorrect: true },
+        },
+        markAsAnswered: true,
+      })
+      .expect(200);
+
+    const completedReadiness = body(
+      await doctorAgent.get(readinessPath(fixture)).expect(200),
+    );
+    expect(
+      arrayValue(completedReadiness.blockingIssues, 'blocking issues').some(
+        (issue) =>
+          isRecord(issue) &&
+          issue.itemCode === 'mmse.language.repetition' &&
+          issue.code === 'ITEM_BINARY_MANUAL_DECISION_INCOMPLETE',
+      ),
+    ).toBe(false);
   });
 
   it('completes through A14/A15, freezes edits and repeats idempotently', async () => {

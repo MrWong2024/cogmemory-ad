@@ -285,4 +285,31 @@ describe('item response execution mapper', () => {
       'structuredManualFields',
     );
   });
+
+  it('projects only safe binary manual decision score metadata', () => {
+    const source = createItemResponseSummary();
+    source.itemConfigSnapshot = {
+      scoreRange: { min: 0, max: 1, step: 1 },
+      scoringRule: {
+        mode: 'manual_observation',
+        scoringSummary: 'private clinical criteria',
+      },
+    };
+
+    const response = toItemResponseExecutionResponse(source);
+
+    expect(response.config.binaryManualDecision).toEqual({
+      incorrectScore: 0,
+      correctScore: 1,
+    });
+    expect(response.config).not.toHaveProperty('scoringRule');
+
+    source.itemConfigSnapshot = {
+      scoreRange: { min: 0, max: 2, step: 1 },
+      scoringRule: { mode: 'manual_observation' },
+    };
+    expect(toItemResponseExecutionResponse(source).config).not.toHaveProperty(
+      'binaryManualDecision',
+    );
+  });
 });

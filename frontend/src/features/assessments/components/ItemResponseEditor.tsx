@@ -16,6 +16,7 @@ import {
 } from '@/src/features/assessments/lib/assessment-execution-display';
 import {
   getStructuredManualFields,
+  getBinaryManualDecisionConfig,
   isStructuredManualDraftComplete,
   itemAllowsTiming,
   setItemDraftMissing,
@@ -165,6 +166,7 @@ export function ItemResponseEditor({
     autosaveSnapshot.state === 'blocked';
   const answerInputsDisabled = controlsDisabled || draft.isMissing;
   const structuredManualFields = getStructuredManualFields(item.config);
+  const binaryManualDecision = getBinaryManualDecisionConfig(item.config);
   const hasUneditableStructuredResponse =
     structuredManualFields === null &&
     item.structuredResponse !== null &&
@@ -363,7 +365,7 @@ export function ItemResponseEditor({
               className="font-semibold text-[var(--cma-text-strong)]"
               htmlFor={`${fieldIdPrefix}-boolean-response`}
             >
-              原始布尔记录
+              原始观察 / 回答
             </label>
             <select
               className={inputClassName}
@@ -385,7 +387,7 @@ export function ItemResponseEditor({
               <option value="false">否</option>
             </select>
             <p className="text-sm leading-6 text-[var(--cma-muted)]">
-              “是 / 否”仅表示原始布尔记录，不代表正确或错误。
+              记录患者实际回答或观察结果；此处是原始事实，不代表最终评分判断。
             </p>
           </div>
         ) : null}
@@ -446,6 +448,52 @@ export function ItemResponseEditor({
         </div>
         </section>
       )}
+
+      {binaryManualDecision ? (
+        <fieldset
+          className="grid gap-3 rounded-md border border-[var(--cma-line-strong)] p-4"
+          disabled={answerInputsDisabled}
+        >
+          <legend className="px-1 text-lg font-semibold text-[var(--cma-text-strong)]">
+            评分判断
+          </legend>
+          <div className="grid gap-3">
+            {[
+              { label: '未判断', value: null },
+              {
+                label: `符合评分标准（${binaryManualDecision.correctScore} 分）`,
+                value: true,
+              },
+              {
+                label: `不符合评分标准（${binaryManualDecision.incorrectScore} 分）`,
+                value: false,
+              },
+            ].map((option) => (
+              <label
+                className="flex items-start gap-3 text-base text-[var(--cma-text-strong)]"
+                key={String(option.value)}
+              >
+                <input
+                  checked={draft.binaryManualDecision === option.value}
+                  className="mt-1 h-5 w-5 shrink-0 accent-[var(--cma-primary)]"
+                  name={`${fieldIdPrefix}-binary-manual-decision`}
+                  onChange={() =>
+                    updateDraft({
+                      ...draft,
+                      binaryManualDecision: option.value,
+                    })
+                  }
+                  type="radio"
+                />
+                <span>{option.label}</span>
+              </label>
+            ))}
+          </div>
+          <p className="text-sm leading-6 text-[var(--cma-muted)]">
+            正确性由医护人员根据本题评分标准确认；系统仅据此计算 0/1 分。
+          </p>
+        </fieldset>
+      ) : null}
 
       <ItemStepEditor
         answerDisabled={answerInputsDisabled}
@@ -563,7 +611,10 @@ export function ItemResponseEditor({
             saveActionsDisabled ||
             (structuredManualFields !== null &&
               !draft.isMissing &&
-              !structuredManualComplete)
+              !structuredManualComplete) ||
+            (binaryManualDecision !== null &&
+              !draft.isMissing &&
+              typeof draft.binaryManualDecision !== 'boolean')
           }
           onClick={() => onSave(true)}
         >
