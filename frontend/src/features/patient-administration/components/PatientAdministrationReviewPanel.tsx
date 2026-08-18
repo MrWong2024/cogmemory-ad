@@ -953,19 +953,31 @@ export function PatientAdministrationReviewPanel({
                     {hasInlineIssues && itemIssues ? (
                       <section
                         aria-label="本题提交检查问题"
-                        className="grid gap-3 rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-surface-muted)] p-4"
+                        className="grid gap-2 border-l-2 border-[var(--cma-line-strong)] pl-3"
                       >
-                        <p className="text-sm font-semibold text-[var(--cma-warning)]">
-                          {getInlineSubmissionIssueSnapshotLabel(
-                            readinessStale,
-                          )}
-                        </p>
+                        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                          <h5 className="font-semibold text-[var(--cma-text-strong)]">
+                            本题待处理
+                          </h5>
+                          <p
+                            className={
+                              readinessStale
+                                ? 'text-sm font-semibold text-[var(--cma-warning)]'
+                                : 'text-sm text-[var(--cma-muted)]'
+                            }
+                          >
+                            {getInlineSubmissionIssueSnapshotLabel(
+                              readinessStale,
+                            )}
+                          </p>
+                        </div>
                         {itemIssues.blockingIssues.length > 0 ? (
-                          <div className="grid gap-2">
-                            <h5 className="font-semibold text-[var(--cma-danger)]">
-                              本题阻断问题
-                            </h5>
+                          <div className="grid gap-1">
+                            <h6 className="text-sm font-semibold text-[var(--cma-danger)]">
+                              阻断
+                            </h6>
                             <ScaleSubmissionIssueList
+                              compact
                               issues={itemIssues.blockingIssues}
                               onLocateIssue={() => undefined}
                               severity="blocking"
@@ -974,11 +986,12 @@ export function PatientAdministrationReviewPanel({
                           </div>
                         ) : null}
                         {itemIssues.warnings.length > 0 ? (
-                          <div className="grid gap-2">
-                            <h5 className="font-semibold text-[var(--cma-warning)]">
-                              本题警告
-                            </h5>
+                          <div className="grid gap-1">
+                            <h6 className="text-sm font-semibold text-[var(--cma-warning)]">
+                              提醒
+                            </h6>
                             <ScaleSubmissionIssueList
+                              compact
                               issues={itemIssues.warnings}
                               onLocateIssue={() => undefined}
                               severity="warning"
@@ -988,9 +1001,14 @@ export function PatientAdministrationReviewPanel({
                         ) : null}
                       </section>
                     ) : null}
-                    <h5 className="font-semibold text-[var(--cma-text-strong)]">
-                      患者施测事实
-                    </h5>
+                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                      <h5 className="font-semibold text-[var(--cma-text-strong)]">
+                        患者施测参考
+                      </h5>
+                      <p className="text-sm text-[var(--cma-muted)]">
+                        按需展开步骤查看原始记录与证据。
+                      </p>
+                    </div>
                     {!item.hasReviewFacts ? (
                       <p
                         className={
@@ -1012,93 +1030,149 @@ export function PatientAdministrationReviewPanel({
                     <div className="grid gap-3">
                       {[...item.steps]
                         .sort((left, right) => left.order - right.order)
-                        .map((step) => (
-                          <div
-                            className="grid gap-3 rounded-md bg-[var(--cma-surface-muted)] p-4"
-                            data-testid={`patient-administration-review-step-${step.stepKey}`}
-                            key={step.stepKey}
-                          >
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="font-semibold text-[var(--cma-text-strong)]">
-                                第 {step.order} 步 · {step.stepKey}
-                              </span>
-                              <Badge tone="info">
-                                {responseModeLabels[step.responseMode]}
-                              </Badge>
-                              <Badge tone="neutral">
-                                {advanceByLabels[step.advanceBy]}
-                              </Badge>
-                            </div>
-                            {step.runs.length === 0 ? (
-                              <p className="text-sm text-[var(--cma-muted)]">
-                                当前步骤尚无采集运行事实。
-                              </p>
-                            ) : (
-                              step.runs.map((run) => (
-                                <div
-                                  className="grid gap-3 border-l-2 border-[var(--cma-line-strong)] pl-4"
-                                  key={run.stepRun}
-                                >
-                                  <div className="flex flex-wrap items-center gap-2 text-sm">
-                                    <span className="font-semibold text-[var(--cma-text-strong)]">
-                                      第 {run.stepRun} 次运行
-                                    </span>
-                                    {run.capture ? (
-                                      <>
-                                        <Badge
-                                          tone={run.capture.invalidatedAt ? 'warning' : 'success'}
-                                        >
-                                          {run.capture.invalidatedAt
-                                            ? '已作废 / 已重做'
-                                            : '有效采集'}
-                                        </Badge>
-                                        <span className="text-[var(--cma-muted)]">
-                                          {run.capture.capturedBy === 'patient'
-                                            ? '患者采集'
-                                            : '医护采集'}{' '}
-                                          ·{' '}
-                                          {formatPatientAdministrationDate(
-                                            run.capture.capturedAt,
-                                          )}
+                        .map((step) => {
+                          const validCaptureCount = step.runs.filter(
+                            (run) =>
+                              run.capture !== null &&
+                              run.capture.invalidatedAt === null,
+                          ).length;
+                          const evidenceCount = step.runs.reduce(
+                            (count, run) => count + run.evidence.length,
+                            0,
+                          );
+                          const succeededTranscriptionCount = step.runs.reduce(
+                            (count, run) =>
+                              count +
+                              run.evidence.filter(
+                                (evidence) =>
+                                  evidence.transcription?.status === 'succeeded',
+                              ).length,
+                            0,
+                          );
+                          const hasRedoHistory =
+                            step.runs.length > 1 ||
+                            step.runs.some((run) =>
+                              Boolean(
+                                run.stepRun > 1 || run.capture?.invalidatedAt,
+                              ),
+                            );
+
+                          return (
+                            <details
+                              className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)]"
+                              data-testid={`patient-administration-review-step-${step.stepKey}`}
+                              key={step.stepKey}
+                            >
+                              <summary className="cursor-pointer px-4 py-3 text-[var(--cma-text-strong)]">
+                                <span className="ml-1 inline-flex flex-wrap items-center gap-x-2 gap-y-1 align-middle">
+                                  <span className="font-semibold">
+                                    第 {step.order} 步 ·{' '}
+                                    {responseModeLabels[step.responseMode]}
+                                  </span>
+                                  <span className="text-sm text-[var(--cma-muted)]">
+                                    {step.runs.length === 0
+                                      ? '无采集运行'
+                                      : `${step.runs.length} 次运行`}{' '}
+                                    · {validCaptureCount} 个有效采集 ·{' '}
+                                    {evidenceCount} 条证据 ·{' '}
+                                    {succeededTranscriptionCount}{' '}
+                                    条辅助转写已完成
+                                  </span>
+                                  {hasRedoHistory ? (
+                                    <Badge tone="warning">含重做记录</Badge>
+                                  ) : null}
+                                </span>
+                              </summary>
+                              <div className="grid gap-3 border-t border-[var(--cma-line)] px-4 pb-4 pt-3">
+                                <div className="flex flex-wrap items-center gap-2 text-sm">
+                                  <span className="text-[var(--cma-muted)]">
+                                    步骤标识：{step.stepKey}
+                                  </span>
+                                  <Badge tone="neutral">
+                                    {advanceByLabels[step.advanceBy]}
+                                  </Badge>
+                                </div>
+                                {step.runs.length === 0 ? (
+                                  <p className="text-sm text-[var(--cma-muted)]">
+                                    当前步骤尚无采集运行事实。
+                                  </p>
+                                ) : (
+                                  step.runs.map((run) => (
+                                    <div
+                                      className="grid gap-3 border-l-2 border-[var(--cma-line-strong)] pl-4"
+                                      key={run.stepRun}
+                                    >
+                                      <div className="flex flex-wrap items-center gap-2 text-sm">
+                                        <span className="font-semibold text-[var(--cma-text-strong)]">
+                                          第 {run.stepRun} 次运行
                                         </span>
-                                      </>
-                                    ) : (
-                                      <span className="text-[var(--cma-muted)]">
-                                        无采集摘要
-                                      </span>
-                                    )}
-                                  </div>
-                                  {run.capture?.invalidatedReason ? (
-                                    <p className="text-sm leading-6 text-[var(--cma-warning)]">
-                                      作废 / 重做原因：{run.capture.invalidatedReason}
-                                    </p>
-                                  ) : null}
-                                  {run.capture?.staffObservation ? (
-                                    <div className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface)] p-3">
-                                      <p className="text-sm font-semibold text-[var(--cma-muted)]">
-                                        现场医护观察
-                                      </p>
-                                      <p className="mt-1 whitespace-pre-wrap text-base leading-7 text-[var(--cma-text-strong)]">
-                                        {run.capture.staffObservation}
-                                      </p>
-                                    </div>
-                                  ) : null}
-                                  {run.evidence.length > 0 ? (
-                                    <div className="grid gap-3">
-                                      {run.evidence.map((evidence) =>
-                                        renderEvidence(item.itemResponseId, run, evidence),
+                                        {run.capture ? (
+                                          <>
+                                            <Badge
+                                              tone={
+                                                run.capture.invalidatedAt
+                                                  ? 'warning'
+                                                  : 'success'
+                                              }
+                                            >
+                                              {run.capture.invalidatedAt
+                                                ? '已作废 / 已重做'
+                                                : '有效采集'}
+                                            </Badge>
+                                            <span className="text-[var(--cma-muted)]">
+                                              {run.capture.capturedBy === 'patient'
+                                                ? '患者采集'
+                                                : '医护采集'}{' '}
+                                              ·{' '}
+                                              {formatPatientAdministrationDate(
+                                                run.capture.capturedAt,
+                                              )}
+                                            </span>
+                                          </>
+                                        ) : (
+                                          <span className="text-[var(--cma-muted)]">
+                                            无采集摘要
+                                          </span>
+                                        )}
+                                      </div>
+                                      {run.capture?.invalidatedReason ? (
+                                        <p className="text-sm leading-6 text-[var(--cma-warning)]">
+                                          作废 / 重做原因：
+                                          {run.capture.invalidatedReason}
+                                        </p>
+                                      ) : null}
+                                      {run.capture?.staffObservation ? (
+                                        <div className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface)] p-3">
+                                          <p className="text-sm font-semibold text-[var(--cma-muted)]">
+                                            现场医护观察
+                                          </p>
+                                          <p className="mt-1 whitespace-pre-wrap text-base leading-7 text-[var(--cma-text-strong)]">
+                                            {run.capture.staffObservation}
+                                          </p>
+                                        </div>
+                                      ) : null}
+                                      {run.evidence.length > 0 ? (
+                                        <div className="grid gap-3">
+                                          {run.evidence.map((evidence) =>
+                                            renderEvidence(
+                                              item.itemResponseId,
+                                              run,
+                                              evidence,
+                                            ),
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <p className="text-sm text-[var(--cma-muted)]">
+                                          本次运行没有媒体证据。
+                                        </p>
                                       )}
                                     </div>
-                                  ) : (
-                                    <p className="text-sm text-[var(--cma-muted)]">
-                                      本次运行没有媒体证据。
-                                    </p>
-                                  )}
-                                </div>
-                              ))
-                            )}
-                          </div>
-                        ))}
+                                  ))
+                                )}
+                              </div>
+                            </details>
+                          );
+                        })}
                     </div>
                     {renderFormalEditor(item.formalItem)}
                   </article>

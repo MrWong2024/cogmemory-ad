@@ -10,11 +10,13 @@ import type {
 } from '@/src/features/assessments/types/scale-instance-submission';
 
 export function ScaleSubmissionIssueList({
+  compact = false,
   issues,
   onLocateIssue,
   severity,
   showLocateActions = true,
 }: {
+  compact?: boolean;
   issues: ScaleSubmissionIssue[];
   onLocateIssue: (issue: ScaleSubmissionIssue) => void;
   severity: ScaleSubmissionIssueSeverity;
@@ -29,7 +31,7 @@ export function ScaleSubmissionIssueList({
   }
 
   return (
-    <ul className="grid gap-3">
+    <ul className={compact ? 'grid gap-1.5' : 'grid gap-3'}>
       {issues.map((issue, index) => {
         const display = getScaleSubmissionIssueDisplay(issue.code);
         const details = buildScaleSubmissionIssueDetails(issue);
@@ -37,9 +39,13 @@ export function ScaleSubmissionIssueList({
         return (
           <li
             className={
-              severity === 'blocking'
-                ? 'grid gap-3 rounded-md border border-[var(--cma-danger)] bg-[var(--cma-danger-soft)] p-4'
-                : 'grid gap-3 rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] p-4'
+              compact
+                ? severity === 'blocking'
+                  ? 'grid gap-1 border-l-2 border-[var(--cma-danger)] py-1 pl-3 pr-1'
+                  : 'grid gap-1 border-l-2 border-[var(--cma-warning)] py-1 pl-3 pr-1'
+                : severity === 'blocking'
+                  ? 'grid gap-3 rounded-md border border-[var(--cma-danger)] bg-[var(--cma-danger-soft)] p-4'
+                  : 'grid gap-3 rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] p-4'
             }
             key={`${issue.code}:${issue.itemResponseId ?? 'scale'}:${index}`}
           >
@@ -53,7 +59,13 @@ export function ScaleSubmissionIssueList({
               >
                 {display.title}
               </p>
-              <p className="mt-1 text-sm leading-6 text-[var(--cma-text-strong)]">
+              <p
+                className={
+                  compact
+                    ? 'mt-0.5 text-sm leading-5 text-[var(--cma-text-strong)]'
+                    : 'mt-1 text-sm leading-6 text-[var(--cma-text-strong)]'
+                }
+              >
                 {display.description}
               </p>
             </div>
@@ -61,8 +73,12 @@ export function ScaleSubmissionIssueList({
               <ul
                 className={
                   severity === 'blocking'
-                    ? 'grid gap-1 text-sm leading-6 text-[var(--cma-text-strong)]'
-                    : 'grid gap-1 text-sm leading-6 text-[var(--cma-warning)]'
+                    ? compact
+                      ? 'grid gap-0.5 text-xs leading-5 text-[var(--cma-text-strong)]'
+                      : 'grid gap-1 text-sm leading-6 text-[var(--cma-text-strong)]'
+                    : compact
+                      ? 'grid gap-0.5 text-xs leading-5 text-[var(--cma-warning)]'
+                      : 'grid gap-1 text-sm leading-6 text-[var(--cma-warning)]'
                 }
               >
                 {details.map((detail) => (
