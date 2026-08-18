@@ -46,10 +46,11 @@ const itemStatusTones: Record<ItemResponseStatus, BadgeTone> = {
 };
 
 function getResponseTextLabel(item: ItemResponseExecution): string {
-  if (
-    item.responseType === 'boolean' ||
-    item.responseType === 'number'
-  ) {
+  if (item.responseType === 'boolean') {
+    return '补充说明 / 原始转录（可选）';
+  }
+
+  if (item.responseType === 'number') {
     return '补充原始回答转录（可选）';
   }
 
@@ -343,7 +344,9 @@ export function ItemResponseEditor({
             原始作答记录
           </h4>
           <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-            本页只保存原始作答草稿，不执行自动匹配、正确性判断或评分。
+            {binaryManualDecision
+              ? '本区域记录患者原始回答或观察；评分判断由医护人员在下方完成，系统仅根据医护确认结果计算 0/1 分。'
+              : '本页只保存原始作答草稿，不执行自动匹配、正确性判断或评分。'}
           </p>
         </div>
 

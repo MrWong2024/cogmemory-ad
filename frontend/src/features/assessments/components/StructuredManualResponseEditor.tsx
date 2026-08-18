@@ -69,10 +69,10 @@ export function StructuredManualResponseEditor({
         </p>
         <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-base font-semibold text-[var(--cma-text-strong)]">
           <span>
-            当前确认得分：{preview.score} / {preview.maxScore}
+            当前评分判断得分（草稿）：{preview.score} / {preview.maxScore}
           </span>
           <span>
-            已确认 {preview.confirmedCount} / {preview.totalCount} 项
+            已判断 {preview.confirmedCount} / {preview.totalCount} 项
           </span>
         </div>
       </div>
@@ -95,6 +95,7 @@ export function StructuredManualResponseEditor({
           isCorrect: null,
         };
         const responseId = `${fieldIdPrefix}-response-${index}`;
+        const undecidedId = `${fieldIdPrefix}-undecided-${index}`;
         const correctId = `${fieldIdPrefix}-correct-${index}`;
         const incorrectId = `${fieldIdPrefix}-incorrect-${index}`;
 
@@ -151,6 +152,23 @@ export function StructuredManualResponseEditor({
               <div className="flex flex-wrap gap-x-6 gap-y-3">
                 <label
                   className="flex min-h-11 items-center gap-2 text-base text-[var(--cma-text-strong)]"
+                  htmlFor={undecidedId}
+                >
+                  <input
+                    checked={subItem.isCorrect === null}
+                    className="h-5 w-5 accent-[var(--cma-primary)]"
+                    disabled={disabled}
+                    id={undecidedId}
+                    name={`${fieldIdPrefix}-correctness-${index}`}
+                    onChange={() =>
+                      updateSubItem(field.code, { isCorrect: null })
+                    }
+                    type="radio"
+                  />
+                  未判断
+                </label>
+                <label
+                  className="flex min-h-11 items-center gap-2 text-base text-[var(--cma-text-strong)]"
                   htmlFor={correctId}
                 >
                   <input
@@ -184,14 +202,6 @@ export function StructuredManualResponseEditor({
                   错误（0 分）
                 </label>
               </div>
-              <p className="text-sm leading-6 text-[var(--cma-muted)]">
-                当前：
-                {subItem.isCorrect === null
-                  ? '尚未判断'
-                  : subItem.isCorrect
-                    ? `正确（${field.maxScore} 分）`
-                    : '错误（0 分）'}
-              </p>
             </div>
           </fieldset>
         );
