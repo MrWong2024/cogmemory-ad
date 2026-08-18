@@ -16,6 +16,7 @@ import {
   scaleSubmissionDurationSourceLabels,
   scaleSubmissionStateLabels,
 } from '@/src/features/assessments/lib/scale-instance-submission-display';
+import type { ScaleSubmissionIssueRouting } from '@/src/features/assessments/lib/scale-submission-issue-routing';
 import type {
   ScaleInstanceSubmissionAudit,
   ScaleSubmissionIssue,
@@ -46,6 +47,8 @@ export function ScaleInstanceSubmissionPanel({
   activeMediaWriteCount,
   completedAt,
   confirmationVisible,
+  issueDisplayMode = 'all',
+  issueRouting,
   localUnsavedAnswerCount,
   onConfirmSubmit,
   onLocateIssue,
@@ -66,6 +69,8 @@ export function ScaleInstanceSubmissionPanel({
   activeMediaWriteCount: number;
   completedAt: string | null;
   confirmationVisible: boolean;
+  issueDisplayMode?: 'all' | 'global_with_unmapped';
+  issueRouting?: ScaleSubmissionIssueRouting | null;
   localUnsavedAnswerCount: number;
   onConfirmSubmit: () => void;
   onLocateIssue: (issue: ScaleSubmissionIssue) => void;
@@ -134,6 +139,14 @@ export function ScaleInstanceSubmissionPanel({
         { label: '警告', value: readiness.summary.warningCount },
       ]
     : [];
+  const displayedBlockingIssues =
+    issueDisplayMode === 'global_with_unmapped' && issueRouting
+      ? issueRouting.globalBlockingIssues
+      : (readiness?.blockingIssues ?? []);
+  const displayedWarnings =
+    issueDisplayMode === 'global_with_unmapped' && issueRouting
+      ? issueRouting.globalWarnings
+      : (readiness?.warnings ?? []);
 
   return (
     <Card>
@@ -213,29 +226,37 @@ export function ScaleInstanceSubmissionPanel({
               ))}
             </dl>
 
+            {issueDisplayMode === 'global_with_unmapped' ? (
+              <p className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] p-4 text-sm leading-6 text-[var(--cma-muted)]">
+                题目级问题已显示在对应复核题目中。这里仅保留量表级问题和无法映射到正式题目的异常问题；上方汇总与最终提交资格仍使用完整服务器检查结果。
+              </p>
+            ) : null}
+
             <section className="grid gap-3" aria-labelledby="blocking-issues-title">
               <h3
                 className="text-lg font-semibold text-[var(--cma-text-strong)]"
                 id="blocking-issues-title"
               >
-                阻断问题（{readiness.blockingIssues.length}）
+                阻断问题（{displayedBlockingIssues.length}）
               </h3>
               <ScaleSubmissionIssueList
-                issues={readiness.blockingIssues}
+                issues={displayedBlockingIssues}
                 onLocateIssue={onLocateIssue}
                 severity="blocking"
+                showLocateActions={issueDisplayMode === 'all'}
               />
             </section>
 
             <details className="rounded-md border border-[var(--cma-line)] p-4">
               <summary className="cursor-pointer font-semibold text-[var(--cma-text-strong)]">
-                警告（{readiness.warnings.length}，不阻断提交）
+                警告（{displayedWarnings.length}，不阻断提交）
               </summary>
               <div className="mt-3">
                 <ScaleSubmissionIssueList
-                  issues={readiness.warnings}
+                  issues={displayedWarnings}
                   onLocateIssue={onLocateIssue}
                   severity="warning"
+                  showLocateActions={issueDisplayMode === 'all'}
                 />
               </div>
             </details>

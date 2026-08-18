@@ -16,6 +16,8 @@ import {
   getAutosaveScheduleDelay,
   mergeDraftSaveMediaState,
   rebaseItemDraftAfterSave,
+  shouldRefreshSubmissionReadinessAfterItemAcceptance,
+  type ItemResponseAcceptedMode,
   type ItemResponseAutosaveClock,
   type ItemResponseAutosaveSnapshot,
   type ItemResponseAutosaveState,
@@ -322,6 +324,7 @@ function createHarness(input: {
   onServerItemAccepted?: (
     item: ItemResponseExecution,
     response: UpdateItemResponseDraftResponse | null,
+    acceptedMode: ItemResponseAcceptedMode,
   ) => void;
   onExecutionSummaryRefreshed?: (
     detail: ScaleInstanceExecutionDetailResponse,
@@ -544,6 +547,102 @@ test('explicit completion cancels debounce and uses the same queue with markAsAn
     responseText: 'complete answer',
     markAsAnswered: true,
   });
+});
+
+test('successful automatic, explicit, and mark-as-answered writes report their accepted modes', async () => {
+  for (const scenario of [
+    {
+      expectedMode: 'automatic' as const,
+      start: async (harness: Harness) => {
+        updateText(harness, 'automatic');
+        await harness.clock.advance(ITEM_RESPONSE_AUTOSAVE_DEBOUNCE_MS);
+      },
+    },
+    {
+      expectedMode: 'explicit' as const,
+      start: (harness: Harness) => {
+        updateText(harness, 'explicit');
+        harness.coordinator.saveNow('item-response-a');
+      },
+    },
+    {
+      expectedMode: 'mark_answered' as const,
+      start: (harness: Harness) =>
+        harness.coordinator.markAsAnswered('item-response-a'),
+    },
+  ]) {
+    const acceptedModes: ItemResponseAcceptedMode[] = [];
+    const harness = createHarness({
+      onServerItemAccepted: (_item, _response, acceptedMode) => {
+        acceptedModes.push(acceptedMode);
+      },
+    });
+
+    await scenario.start(harness);
+    await expectState(harness, 'clean');
+    expect(acceptedModes).toEqual([scenario.expectedMode]);
+  }
+});
+
+test('an uncertain committed mark-as-answered write preserves its accepted mode', async () => {
+  const committed = createItem({
+    draftRevision: 5,
+    status: 'answered',
+  });
+  const acceptedModes: ItemResponseAcceptedMode[] = [];
+  const harness = createHarness({
+    save: async () => {
+      throw new AssessmentExecutionApiError('request_outcome_uncertain');
+    },
+    readLatest: async () => createDetail(committed),
+    onServerItemAccepted: (_item, _response, acceptedMode) => {
+      acceptedModes.push(acceptedMode);
+    },
+  });
+
+  harness.coordinator.markAsAnswered('item-response-a');
+  await expectState(harness, 'clean');
+  expect(harness.requests).toHaveLength(1);
+  expect(harness.readCount()).toBe(1);
+  expect(acceptedModes).toEqual(['mark_answered']);
+});
+
+test('conflict reads and server-only conflict resolution report no accepted write mode', async () => {
+  const latest = createItem({ draftRevision: 8, responseText: 'remote' });
+  const acceptedModes: ItemResponseAcceptedMode[] = [];
+  const harness = createHarness({
+    save: async () => {
+      throw new AssessmentExecutionApiError(
+        'item_response_draft_conflict',
+        409,
+      );
+    },
+    readLatest: async () => createDetail(latest),
+    onServerItemAccepted: (_item, _response, acceptedMode) => {
+      acceptedModes.push(acceptedMode);
+    },
+  });
+
+  updateText(harness, 'local', true);
+  await expectState(harness, 'conflict');
+  harness.coordinator.useServerConflictVersion('item-response-a');
+  expect(acceptedModes).toEqual([null, null]);
+});
+
+test('only a server-accepted mark-as-answered write requests readiness refresh', () => {
+  expect(
+    shouldRefreshSubmissionReadinessAfterItemAcceptance('mark_answered'),
+  ).toBe(true);
+  expect(
+    shouldRefreshSubmissionReadinessAfterItemAcceptance('automatic'),
+  ).toBe(false);
+  expect(
+    shouldRefreshSubmissionReadinessAfterItemAcceptance('explicit'),
+  ).toBe(false);
+  expect(
+    shouldRefreshSubmissionReadinessAfterItemAcceptance('conflict_local'),
+  ).toBe(false);
+  expect(shouldRefreshSubmissionReadinessAfterItemAcceptance(null)).toBe(false);
 });
 
 test('continuous input cannot move the first save beyond the max wait', async () => {

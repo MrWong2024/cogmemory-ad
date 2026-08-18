@@ -9,6 +9,7 @@ import {
 } from '@/src/features/assessments/api/assessment-execution-api';
 import {
   ItemResponseAutosaveCoordinator,
+  type ItemResponseAcceptedMode,
   type ItemResponseAutosaveSnapshot,
   type ItemResponseAutosaveState,
   type ItemResponseAutosaveSummary,
@@ -51,6 +52,7 @@ export type UseItemResponseAutosaveCoordinatorOptions = {
   onItemResponseAccepted: (
     item: ItemResponseExecution,
     response: UpdateItemResponseDraftResponse | null,
+    acceptedMode: ItemResponseAcceptedMode,
   ) => void;
   onExecutionSummaryRefreshed: (
     detail: ScaleInstanceExecutionDetailResponse,
@@ -106,8 +108,12 @@ export function useItemResponseAutosaveCoordinator(
           setSnapshots(nextSnapshots);
           setSummary(nextSummary);
         },
-        onServerItemAccepted: (item, response) =>
-          callbacksRef.current.onItemResponseAccepted(item, response),
+        onServerItemAccepted: (item, response, acceptedMode) =>
+          callbacksRef.current.onItemResponseAccepted(
+            item,
+            response,
+            acceptedMode,
+          ),
         onExecutionSummaryRefreshed: (detail) =>
           callbacksRef.current.onExecutionSummaryRefreshed(detail),
         onUnauthorized: () => callbacksRef.current.onUnauthorized(),

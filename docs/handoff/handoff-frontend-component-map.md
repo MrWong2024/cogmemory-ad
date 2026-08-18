@@ -208,10 +208,12 @@
 
 - 路径：`frontend\src\features\assessments\components\ScaleInstanceExecutionPage.tsx`
 - WP-10-F1/F2/F3 组合边界：只在服务端实例摘要明确为 MMSE 1.0、`supervised_patient_input` 时渲染一个 `PatientAdministrationStaffPanel`；面板只把最新服务端权威 patient-administration status 最小回传父页面。patient / visit / scaleInstance 身份变化时父页面先重置为 `null`，且仅在 status=`completed` 时挂载 `PatientAdministrationReviewPanel`；不新增父页面 GET、轮询或全局状态。StaffPanel 不接管既有 A14–A19 作答、媒体、提交、评分或认知域状态。
+- completed supervised MMSE 信息架构：仅 `scale.code=mmse`、`administrationMode=supervised_patient_input` 且 PatientAdministrationSession status=`completed` 时，页面依次组合紧凑复核分组导航、当前分组逐题“医护复核与正式作答”、全局提交汇总 / 最终提交，再进入既有评分与认知域区域。其它 administration mode 和尚未 completed 的 patient session 继续使用原分组导航与正式作答布局。
 - 职责：接收 patientId / visitId / scaleInstanceId，加载 A14 安全执行详情，管理 invalid / loading / 401 / 403 / not-found / configuration-unavailable / retry、动态分组、逐题 autosave snapshot、`${itemResponseId}:${evidenceType}` 媒体草稿、未收口统计、beforeunload、页面级显示 tick、实时 progress，以及 B6 独立 readiness / stale / error、题目定位、本地阻断、提交确认、submit 写锁和当前会话 receipt
 - 保存：所有作答、立即保存、标记完成、计时动作与 checkpoint 进入 `useItemResponseAutosaveCoordinator`；页面不再用单一 saving 集合表达保存状态。切组立即 flush 离开组内合法 queued 项但不等待完成，也不清除其他组状态。
 - 媒体父级职责：分组切换不清除 JPEG Blob / strokes；持有跨分组媒体写锁；A15 返回 requirement 时通知协调器推进媒体 generation，旧 A14 响应仅在 generation 未变化时采用自身 evidenceRequirements；A15 不改作答 draft / revision / progress
 - B6 合并边界：readiness 成功只替换 ScaleInstance；submit 成功只替换 ScaleInstance、readiness 与 receipt，不修改 Visit、itemResponses 或 drafts。completed 由服务端响应驱动；历史操作者不从 operatorSnapshot 推断
+- readiness 收敛：同一 server snapshot 的 item issue 优先按 itemResponseId、缺失时才按唯一 itemCode 映射到逐题工作单元；scale_instance 与无法映射的异常 issue 留在全局提交区。summary、ready、canSubmitNow 与最终 gate 始终使用完整 readiness。服务器确认的 `mark_answered` 保存自动刷新一次 readiness；automatic、保存草稿和 conflict/server-only 同步只保持 stale 语义。
 - B7 评分职责：仅在 completed / locked / voided 自动查询 latest；管理独立 AbortController、no_result / forbidden / error、compute 确认 / 写锁 / 幂等回执和稳定错误。submit 成功只触发 latest，不自动 compute
 - B7 合并边界：latest / compute 成功使用服务端 ScoreResult 并只同步 ScaleInstance；不修改 Visit、ItemResponse、answer / media drafts、progress 或 readiness，不调用 A14 / A15 写接口
 - B9 有限编排：向独立 `useCognitiveDomainResult` 传递来源 ScoreResult、实例 / 访视状态、全部 dirty / writing 阻断、401 回调与评分 latest 刷新回调；在评分面板之后渲染认知域面板。
@@ -311,6 +313,7 @@
 
 - 路径：`frontend\src\features\assessments\components\ScaleInstanceSubmissionPanel.tsx`
 - 职责：展示 submissionState、ready / canSubmitNow、checkedAt、九项 summary、独立 loading / error / retry、readiness stale、全部非 clean 作答状态 / 媒体写入的未收口计数、阻断问题、可展开 warning、内联二次确认、提交中状态与当前会话回执
+- completed supervised MMSE 使用 `global_with_unmapped` 展示模式：题目级已映射 issue 不在全局重复，scale-instance 与无法映射的异常 issue 仍显示；完整 summary、readiness 与提交资格不被过滤。其它路径继续显示全部 issue。
 - 确认：readiness / dirty / 写请求 / 页面状态 / submitting 变化时重置 checkbox；只有最新服务器条件和本地条件同时满足才允许确认按钮，warning 数量明确显示但不阻断
 - 历史边界：completed 无当前会话回执时只展示 ScaleInstance.completedAt，并说明只读 API 未提供历史提交操作者；不自动调用 submit POST 获取审计
 
@@ -318,6 +321,7 @@
 
 - 路径：`frontend\src\features\assessments\components\ScaleSubmissionIssueList.tsx`
 - 职责：语义化展示 blocking / warning 列表，按受控 code 使用稳定中文标题和说明；结构化题目子项未完成时明确引导医护定位题目并补齐患者实际回答与正确性确认，仅附加允许的安全字段
+- 展示复用：逐题工作单元复用同一 title / description 映射但隐藏“定位题目”；普通全局模式仍保留定位入口。
 - 兼容边界：正式 issue code 继续由完整 typed Record 约束映射；运行时收到前端尚未识别的 code 时使用通用 fail-safe 标题和说明，不抛错、不忽略该阻断问题
 - 定位：只为 item scope 且含 itemResponseId 的 issue 提供 button；scale_instance scope 不提供虚假跳转
 - 安全边界：不把后端 message 当主文案，不展示或推断作答、正确答案、expectedValue 或评分
@@ -752,11 +756,11 @@
 
 ### 6.84 WP-10-F3 `PatientAdministrationReviewPanel`
 
-- 路径：`frontend/src/features/patient-administration/components/PatientAdministrationReviewPanel.tsx`。仅在 MMSE `supervised_patient_input` 且 StaffPanel 回传的最新 patient-administration status=`completed` 时，于现有 `ScaleInstanceExecutionPage` 信息区之后、`ScaleInstanceSubmissionPanel` 之前挂载；prepared / active / paused / terminated / expired 均不进入。Panel 的一次加载 + 手动刷新、无轮询逻辑不变；不新增路由或 workspace，原 `PatientAdministrationStaffPanel`、分组导航和编辑器保持。
-- 读取职责：首次加载一次 completed patient administration review，展示 session / impact factors / reviewEvents、权威 item / step / run、responseMode、当前 ItemResponse status / revision、capture 与媒体摘要；允许显式刷新且不轮询。404 安静表示尚无复核，409 作为完整性冲突，不伪造正常 `staffObservation` 前置。
-- 媒体职责：原始媒体默认折叠；用户明确操作后才请求 access URL。audio / image viewer 与 access URL 获取错误均在当前 Evidence 卡片内联展示，并按 mediaEvidenceId 切换；页面一次仍只有一个 viewer。signed URL 只驻留当前 React 内存，关闭、实例身份变化或卸载时清除。ASR 仅为显式辅助候选并持续标注“不是正式答案”。
-- adoption / 定位职责：仅对后端合同允许的 completed session、有效 capture、stored/attached photo 或 handwriting、且父页面 requirement 仍 pending/missing 的证据开放显式采用；成功把同一 Evidence requirement 回传父页面并标记 readiness stale。定位按钮复用父页 itemResponseId -> 分组 -> scroll -> focus，不在 panel 内保存答案。
-- 边界：`ItemResponseEditor` 继续独占正式作答（包括 structuredResponse）、A14 与 `markAsAnswered`；ASR transcription、患者 step capture 与 Evidence 均不自动写入正式 structured response。`ScaleInstanceSubmissionPanel` 继续独占 readiness / A16。实例 completed 后 panel 保持可读，transcribe / adopt 禁用；不新增 Review / Anomaly / StaffObservation 模型、批量写、自动 ASR、自动 adoption 或自动提交。
+- 路径：`frontend/src/features/patient-administration/components/PatientAdministrationReviewPanel.tsx`。仅在 MMSE `supervised_patient_input` 且 StaffPanel 回传的最新 patient-administration status=`completed` 时，作为当前分组逐题“医护复核与正式作答”控制器挂载；prepared / active / paused / terminated / expired 均不进入。Panel 首次只 GET 一次整份 review projection，切组只过滤已加载数据；手动刷新才再次 GET，仍无轮询或 Evidence URL 预取。
+- 组合职责：formal execution ItemResponse 是主列表；review item 优先以 itemResponseId、缺失时以唯一 itemCode 作为附加事实匹配。每题依次展示正式状态、同一 readiness snapshot 的 blocker / warning、patient step / run / capture / staffObservation / Evidence / viewer / ASR，再由父页面 render callback 放置既有 `ItemResponseEditor`。review loading、404 或 error 只影响患者事实，正式编辑器保持可用。
+- 媒体职责：原始媒体默认折叠；用户明确操作后才请求 access URL。audio / image viewer 与 access URL 获取错误均在当前 Evidence 卡片内联展示，并按 mediaEvidenceId 切换；页面一次仍只有一个 viewer。signed URL 只驻留当前 React 内存，关闭、实例身份变化或卸载时清除。ASR 只显示“辅助转写候选”，不自动写入正式答案，也不推测 step → structured field。
+- adoption 职责：仅对后端合同允许的 completed session、有效 capture、stored/attached photo 或 handwriting、且父页面 requirement 仍 pending/missing 的证据开放显式采用；成功把同一 Evidence requirement 回传父页面并标记 readiness stale，不自动采用。
+- 写入边界：`PatientAdministrationReviewPanel` 继续拥有 review GET、Evidence access、显式 ASR、adoption 和 viewer 状态；`ScaleInstanceExecutionPage` → `ItemResponseEditor` → autosave coordinator 继续独占全部正式写入。已映射 item issue 就地展示且无“定位题目 / 定位正式作答”；`ScaleInstanceSubmissionPanel` 只承担完整 summary、全局 / 异常 issue 与最终提交。服务器确认 `mark_answered` 后自动刷新一次 readiness，普通 autosave / 保存草稿只标 stale。
 
 ## 7. 后续同步规则
 

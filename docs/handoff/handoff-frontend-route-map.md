@@ -144,21 +144,23 @@
 - 页面名称：量表实例施测执行、媒体证据、正式提交、评分确认与认知域结果
 - 页面职责：在既有 A14-A18 能力上接入 A19 认知域 latest / compute、安全结果展示与贡献定位；不新增独立评分或认知域路由。
 - F1/F2 条件组合：仅服务端详情明确为 MMSE 1.0 且 `administrationMode=supervised_patient_input` 时渲染 `PatientAdministrationStaffPanel`；其他量表、版本和施测方式不显示该面板。
+- completed supervised MMSE 信息架构：仅 `scale.code=mmse`、`administrationMode=supervised_patient_input` 且 PatientAdministrationSession status=`completed` 时，当前页依次显示紧凑 group navigation、当前分组逐题 unified review、全局 submission summary / final submit，之后继续既有 scoring / domain 区域。clinician administered、无 Session、prepared / active / paused / terminated / expired 和非 MMSE 仍沿用普通正式作答布局。
 - 动态参数：Server Component 按 Next 16 `params: Promise<{ patientId: string; visitId: string; scaleInstanceId: string }>` 等待参数后传给 `ScaleInstanceExecutionPage`；route 不 fetch、不保存表单状态
 - 访问边界：继续复用 `/patients/**` 的 `PatientsWorkspaceShell`；不新增 middleware、BFF 或 Provider，不读取 Cookie；后端 Guard 是最终权限边界
 - 数据来源：既有 A14-A18 请求与 A19 cognitive-domain latest GET / compute POST；另由医护面板读取 / 创建 patient-administration 会话，并调用准备、交接、暂停 / 恢复 / 重签 / 终止、staff complete / takeover / redo / technical replay authorize。评分和认知域只读刷新各自只使用 latest GET。
 - loading / 取消：执行详情 GET 使用 AbortController；重试和卸载取消旧请求，被取消请求不显示服务错误；任一动态 ID 无效时不发请求
 - 401 / 403 / 404 / 409：401 返回 `/login`；403 展示无权限与返回 / 退出入口；患者、访视、实例不存在分别使用稳定状态；配置不可用不渲染空白题目页
 - 分组：groups 按 order、题目按 itemOrder 排序，使用 groupCode 动态归组；无匹配分组题目进入“其他项目”；button 导航显示每组完成数并支持键盘 focus
+- 逐题复核：completed supervised MMSE 以 formal ItemResponse 为主列表，同题按“正式状态 → readiness blocker / warning → patient step / run / capture / Evidence / viewer / ASR → 正式 ItemResponseEditor”排列。review projection 一次整份加载，切组不重新请求；review loading / error 不隐藏或禁用正式编辑。
 - 草稿状态：作答以 itemResponseId 为 key、媒体以 `${itemResponseId}:${evidenceType}` 为 key 存于父级组件内存，切换分组不丢失；顶部区分未保存作答与未上传证据，任一非零时注册 beforeunload，不写 localStorage / sessionStorage
 - 作答：支持 boolean、number、text、single / multi choice 原始转录、分步实际回答、提示后表现、媒体类文字说明、缺失原因、计时草稿和操作者备注；不生成选项、答案或评分
 - 保存：每题提供保存草稿与保存并标记本题完成；只 PATCH 变化白名单，无变化不请求；成功以服务端 itemResponse 覆盖当前题并用 progress 更新页面，不重新加载整页
 - 媒体：photo 支持本地选择和移动端 capture 提示，源图经 Canvas 重新编码为 JPEG；handwriting 支持响应式 1200 × 800 逻辑画布、Pointer Events、最终 PNG 和默认 strokes JSON；证据列表保留 attached / locked / voided 历史，按点击获取短期 URL，attached 可内联确认后作废并重传
 - 只读：completed / locked / voided 访视或实例全页只读；scored / locked / voided 题目只读；保留历史安全草稿、证据列表和 attached / locked 预览，但禁用媒体采集、上传和作废
 - 隔离：媒体操作不触发 A14 PATCH，不改变作答 dirty、progress、题目完成状态或访视 / 实例 / 题目状态；后端 Guard 与状态校验仍是最终边界
-- readiness：执行详情成功后独立加载；失败只在提交区域显示并可重试。A14 保存、A15 上传 / 作废成功后标记 stale；重新检查取消旧 GET，不自动轮询或重试
+- readiness：执行详情成功后独立加载；失败只在提交区域显示并可重试。服务器确认的 `mark_answered` 在成功合并 ItemResponse 后自动刷新一次；automatic autosave、显式保存草稿、conflict/server-only 同步与 A15 上传 / 作废成功只标记 stale。自动刷新失败不回滚已成功作答，仍可手工重新检查；不轮询或自动重试。
 - 本地阻断：未保存作答、未上传媒体、题目保存中或媒体写入中均阻止确认和 POST；服务器 readiness 仍可查看，且明确不包含本地内容
-- 问题定位：带 itemResponseId 的 issue 在当前内存中切换分组、滚动并聚焦题目容器，不修改 URL 或路由参数，不清除其他分组草稿；scale_instance scope issue 不提供定位按钮
+- issue 路由：completed supervised MMSE 对同一 readiness snapshot 优先按 itemResponseId、缺失时按唯一 itemCode 将 item issue 内联到题目；scale_instance 与无法映射的异常 issue 留在全局提交区，完整 summary / ready / canSubmitNow / submit gate 不过滤。普通布局仍可由带 itemResponseId 的 issue 切组、滚动并聚焦题目；scale_instance scope 不提供定位按钮。
 - 提交：只有最新 readiness 的 ready / canSubmitNow 为 true、无 blocking 且无本地阻断时展开内联 checkbox；POST 只发送 confirm=true，不自动重试。warning 可展开查看但不阻断
 - 成功 / 历史：提交响应或 readiness 服务端状态驱动 completed 只读；不模拟状态，不修改 Visit / ItemResponse。`alreadySubmitted=true` 作为成功处理；completed 初始加载不自动 POST，也不以施测 operatorSnapshot 冒充历史提交操作者
 - 阶段性评分查询：仅 completed / locked / voided 实例自动查询一次 latest；draft / in_progress 不请求。查询状态独立于执行详情，失败保留题目、提交回执与媒体历史，支持手工重新加载但不轮询或自动重试
@@ -186,7 +188,7 @@
 - 报告入口：单量表页面不生成访视级报告；完成评分确认与认知域计算后返回访视详情页，在独立报告区域选择多实例 scope。
 - 产品文案：页面顶部概括当前页的施测记录、媒体证据、正式提交、评分复核与认知域结果，并说明临床报告工作流位于访视详情；认知域人工确认和 AI 临床解释仍未实现
 - 当前非目标：不提供批量评分、评分 lock / void / 撤销确认 / reopen / rerun / runNo=2 / 完整历史；不提供认知域人工修改 / 确认 / 锁定 / 作废 / 重算 / weighted mapping 编辑；不在单量表页提供报告生成、诊断、OCR 或 AI。
-- 关联组件：既有执行与评分组件、`PatientAdministrationStaffPanel`、`PatientAdministrationStaffStepControls`，以及 `useCognitiveDomainResult`、`CognitiveDomainResultPanel`、`CognitiveDomainScoreList`、`CognitiveDomainContributionList`、`CognitiveDomainMappingSummary`。
+- 关联组件：既有执行与评分组件、`PatientAdministrationStaffPanel`、`PatientAdministrationStaffStepControls`、`PatientAdministrationReviewPanel`、`ItemResponseEditor`、`ScaleInstanceSubmissionPanel`，以及 `useCognitiveDomainResult`、`CognitiveDomainResultPanel`、`CognitiveDomainScoreList`、`CognitiveDomainContributionList`、`CognitiveDomainMappingSummary`。
 
 ### 3.10 `/patient-administration/enter`
 

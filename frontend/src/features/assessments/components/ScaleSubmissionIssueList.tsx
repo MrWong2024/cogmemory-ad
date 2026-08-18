@@ -13,10 +13,12 @@ export function ScaleSubmissionIssueList({
   issues,
   onLocateIssue,
   severity,
+  showLocateActions = true,
 }: {
   issues: ScaleSubmissionIssue[];
   onLocateIssue: (issue: ScaleSubmissionIssue) => void;
   severity: ScaleSubmissionIssueSeverity;
+  showLocateActions?: boolean;
 }) {
   if (issues.length === 0) {
     return (
@@ -68,7 +70,9 @@ export function ScaleSubmissionIssueList({
                 ))}
               </ul>
             ) : null}
-            {issue.scope === 'item' && issue.itemResponseId ? (
+            {showLocateActions &&
+            issue.scope === 'item' &&
+            issue.itemResponseId ? (
               <div>
                 <Button
                   onClick={() => onLocateIssue(issue)}

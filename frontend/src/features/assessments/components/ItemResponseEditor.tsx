@@ -99,6 +99,7 @@ export function ItemResponseEditor({
   isDirty,
   isSaving,
   item,
+  layout = 'standalone',
   mediaDrafts,
   mediaWritingTypes,
   onChange,
@@ -122,6 +123,7 @@ export function ItemResponseEditor({
   isDirty: boolean;
   isSaving: boolean;
   item: ItemResponseExecution;
+  layout?: 'standalone' | 'embedded';
   mediaDrafts: ItemMediaDrafts;
   mediaWritingTypes: ReadonlySet<SupportedMediaEvidenceType>;
   onChange: (draft: ItemDraftState, immediate?: boolean) => void;
@@ -183,28 +185,35 @@ export function ItemResponseEditor({
 
   return (
     <article
-      className="grid min-w-0 gap-5 rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface)] p-5 shadow-[var(--cma-shadow-soft)]"
+      className={
+        layout === 'embedded'
+          ? 'grid min-w-0 gap-5 border-t border-[var(--cma-line)] pt-5'
+          : 'grid min-w-0 gap-5 rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface)] p-5 shadow-[var(--cma-shadow-soft)]'
+      }
     >
-      <header className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--cma-line)] pb-4">
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-[var(--cma-primary)]">
-            第 {item.itemOrder} 题 · {scaleResponseTypeLabels[item.responseType]}
-          </p>
-          <h3 className="mt-2 text-2xl font-semibold leading-9 text-[var(--cma-text-strong)]">
-            {item.itemTitle || item.itemCode}
-          </h3>
-          <p className="mt-2 break-words text-sm leading-6 text-[var(--cma-muted)]">
-            题目编码：{item.itemCode}
-            {item.crfCode ? ` · CRF：${item.crfCode}` : ''}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          {isDirty ? <Badge tone="warning">有未保存修改</Badge> : null}
-          <Badge tone={itemStatusTones[item.status]}>
-            {itemResponseStatusLabels[item.status]}
-          </Badge>
-        </div>
-      </header>
+      {layout === 'standalone' ? (
+        <header className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--cma-line)] pb-4">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-[var(--cma-primary)]">
+              第 {item.itemOrder} 题 ·{' '}
+              {scaleResponseTypeLabels[item.responseType]}
+            </p>
+            <h3 className="mt-2 text-2xl font-semibold leading-9 text-[var(--cma-text-strong)]">
+              {item.itemTitle || item.itemCode}
+            </h3>
+            <p className="mt-2 break-words text-sm leading-6 text-[var(--cma-muted)]">
+              题目编码：{item.itemCode}
+              {item.crfCode ? ` · CRF：${item.crfCode}` : ''}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {isDirty ? <Badge tone="warning">有未保存修改</Badge> : null}
+            <Badge tone={itemStatusTones[item.status]}>
+              {itemResponseStatusLabels[item.status]}
+            </Badge>
+          </div>
+        </header>
+      ) : null}
 
       <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
         <div>

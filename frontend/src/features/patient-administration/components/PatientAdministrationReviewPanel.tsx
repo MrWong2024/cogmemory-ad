@@ -1,6 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import { Badge } from '@/src/components/ui/Badge';
 import { Button } from '@/src/components/ui/Button';
@@ -11,6 +18,12 @@ import {
   CardHeader,
   CardTitle,
 } from '@/src/components/ui/Card';
+import { ScaleSubmissionIssueList } from '@/src/features/assessments/components/ScaleSubmissionIssueList';
+import {
+  getInlineSubmissionIssueSnapshotLabel,
+  type ScaleSubmissionIssueRouting,
+} from '@/src/features/assessments/lib/scale-submission-issue-routing';
+import type { ItemResponseExecution } from '@/src/features/assessments/types/item-response-execution';
 import {
   adoptPatientAdministrationEvidence,
   getMediaEvidenceAccessUrl,
@@ -31,6 +44,7 @@ import {
 import type {
   PatientAdministrationControlEventAction,
   PatientAdministrationReviewEvidence,
+  PatientAdministrationReviewItem,
   PatientAdministrationReviewResponse,
   PatientAdministrationReviewRun,
   PatientAdministrationReviewTranscription,
@@ -177,27 +191,29 @@ function durationLabel(durationMs: number | null): string {
 
 export function PatientAdministrationReviewPanel({
   evidenceRequirementsByItem,
-  locateError,
-  onClearLocateError,
+  formalItems,
+  issueRouting,
   onEvidenceAdopted,
-  onLocateItemResponse,
   onUnauthorized,
   patientId,
+  readinessStale,
   readOnlyReason,
+  renderFormalEditor,
   scaleInstanceId,
   visitId,
 }: {
   evidenceRequirementsByItem: Record<string, EvidenceRequirementState[]>;
-  locateError: string | null;
-  onClearLocateError: () => void;
+  formalItems: ItemResponseExecution[];
+  issueRouting: ScaleSubmissionIssueRouting | null;
   onEvidenceAdopted: (
     itemResponseId: string,
     requirement: EvidenceRequirementState,
   ) => void;
-  onLocateItemResponse: (itemResponseId: string) => boolean;
   onUnauthorized: () => void;
   patientId: string;
+  readinessStale: boolean;
   readOnlyReason: string | null;
+  renderFormalEditor: (item: ItemResponseExecution) => ReactNode;
   scaleInstanceId: string;
   visitId: string;
 }) {
@@ -306,21 +322,69 @@ export function PatientAdministrationReviewPanel({
     setAdoptingIds(new Set());
   }, [clearViewer, patientId, scaleInstanceId, visitId]);
 
-  const orderedItems = useMemo(
-    () =>
-      review
-        ? [...review.items].sort(
-            (left, right) =>
-              (left.steps[0]?.order ?? Number.MAX_SAFE_INTEGER) -
-              (right.steps[0]?.order ?? Number.MAX_SAFE_INTEGER),
-          )
-        : [],
-    [review],
-  );
-  const stepCount = orderedItems.reduce(
+  const reviewItemsByFormalItemId = useMemo(() => {
+    const matched = new Map<string, PatientAdministrationReviewItem>();
+    if (!review) {
+      return matched;
+    }
+
+    const reviewItemsById = new Map(
+      review.items.map((item) => [item.itemResponseId, item]),
+    );
+    const reviewItemsByCode = new Map<
+      string,
+      PatientAdministrationReviewItem | null
+    >();
+    const formalItemCodeCounts = new Map<string, number>();
+    review.items.forEach((item) => {
+      reviewItemsByCode.set(
+        item.itemCode,
+        reviewItemsByCode.has(item.itemCode) ? null : item,
+      );
+    });
+    formalItems.forEach((item) => {
+      formalItemCodeCounts.set(
+        item.itemCode,
+        (formalItemCodeCounts.get(item.itemCode) ?? 0) + 1,
+      );
+    });
+
+    formalItems.forEach((formalItem) => {
+      const reviewItem =
+        reviewItemsById.get(formalItem.id) ??
+        (formalItemCodeCounts.get(formalItem.itemCode) === 1
+          ? reviewItemsByCode.get(formalItem.itemCode)
+          : null) ??
+        null;
+      if (reviewItem) {
+        matched.set(formalItem.id, reviewItem);
+      }
+    });
+    return matched;
+  }, [formalItems, review]);
+  const stepCount = (review?.items ?? []).reduce(
     (count, item) => count + item.steps.length,
     0,
   );
+  const orderedItems = formalItems.map((formalItem) => {
+    const reviewItem = reviewItemsByFormalItemId.get(formalItem.id);
+    return {
+      ...(reviewItem ?? {
+        itemResponseId: formalItem.id,
+        itemCode: formalItem.itemCode,
+        itemTitle: formalItem.itemTitle,
+        status: formalItem.status,
+        draftRevision: formalItem.draftRevision,
+        steps: [],
+      }),
+      itemResponseId: formalItem.id,
+      itemCode: formalItem.itemCode,
+      itemTitle: formalItem.itemTitle,
+      status: formalItem.status,
+      formalItem,
+      hasReviewFacts: Boolean(reviewItem),
+    };
+  });
 
   function setEvidenceFeedback(
     mediaEvidenceId: string,
@@ -581,7 +645,7 @@ export function PatientAdministrationReviewPanel({
               {transcriptionSummary(transcription)}
             </p>
             <p className="mt-2 text-sm leading-6 text-[var(--cma-warning)]">
-              辅助转写不是正式答案，请由医护人员核对。
+              辅助转写候选，请医护核对后填写下方正式作答。
             </p>
           </div>
         ) : null}
@@ -691,9 +755,9 @@ export function PatientAdministrationReviewPanel({
       <CardHeader className="border-b border-[var(--cma-line)]">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <CardTitle>患者施测复核</CardTitle>
+            <CardTitle>医护复核与正式作答</CardTitle>
             <CardDescription className="mt-2">
-              汇总患者施测原始事实并定位到现有正式作答编辑器；本面板不直接形成答案、评分或报告。
+              按正式题目合并患者施测事实、原始证据、辅助转写、提交检查问题与既有正式作答编辑器。
             </CardDescription>
           </div>
           <Button
@@ -830,43 +894,50 @@ export function PatientAdministrationReviewPanel({
                 )}
               </div>
             </section>
+          </>
+        ) : null}
 
-            {readOnlyReason ? (
-              <p
-                className="rounded-md border border-[var(--cma-warning)] bg-[var(--cma-warning-soft)] p-4 text-sm leading-6 text-[var(--cma-warning)]"
-                role="status"
-              >
-                {readOnlyReason} 复核摘要和原始证据仍可读取，但辅助转写与证据采用已禁用。
-              </p>
-            ) : null}
-
-            {locateError ? (
-              <p
-                className="rounded-md border border-[var(--cma-danger)] bg-[var(--cma-danger-soft)] p-4 text-sm leading-6 text-[var(--cma-danger)]"
-                role="alert"
-              >
-                {locateError}
-              </p>
-            ) : null}
+        {readOnlyReason ? (
+          <p
+            className="rounded-md border border-[var(--cma-warning)] bg-[var(--cma-warning-soft)] p-4 text-sm leading-6 text-[var(--cma-warning)]"
+            role="status"
+          >
+            {readOnlyReason} 复核摘要和原始证据仍可读取，但辅助转写与证据采用已禁用。
+          </p>
+        ) : null}
 
             <section aria-labelledby="patient-administration-review-items-heading">
               <h3
                 className="text-xl font-semibold text-[var(--cma-text-strong)]"
                 id="patient-administration-review-items-heading"
               >
-                按量表项目整理的施测结果
+                当前分组逐题工作区
               </h3>
               <div className="mt-4 grid gap-4">
-                {orderedItems.map((item) => (
+                {orderedItems.map((item) => {
+                  const itemIssues =
+                    issueRouting?.inlineByItemResponseId.get(
+                      item.itemResponseId,
+                    );
+                  const hasInlineIssues = Boolean(
+                    itemIssues &&
+                      (itemIssues.blockingIssues.length > 0 ||
+                        itemIssues.warnings.length > 0),
+                  );
+
+                  return (
                   <article
-                    className="grid gap-4 rounded-md border border-[var(--cma-line-strong)] p-5"
+                    aria-label={`第 ${item.formalItem.itemOrder} 题复核与正式作答`}
+                    className="grid scroll-mt-4 gap-4 rounded-md border border-[var(--cma-line-strong)] p-5 outline-none focus-visible:ring-2 focus-visible:ring-[var(--cma-ring)]"
                     data-testid={`patient-administration-review-item-${item.itemCode}`}
+                    id={`submission-item-${item.itemResponseId}`}
                     key={item.itemResponseId}
+                    tabIndex={-1}
                   >
                     <header className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <p className="text-sm font-semibold text-[var(--cma-primary)]">
-                          {item.itemCode}
+                          第 {item.formalItem.itemOrder} 题 · {item.itemCode}
                         </p>
                         <h4 className="mt-1 text-lg font-semibold text-[var(--cma-text-strong)]">
                           {item.itemTitle || '未命名项目'}
@@ -879,6 +950,65 @@ export function PatientAdministrationReviewPanel({
                         <Badge tone="neutral">草稿修订 {item.draftRevision}</Badge>
                       </div>
                     </header>
+                    {hasInlineIssues && itemIssues ? (
+                      <section
+                        aria-label="本题提交检查问题"
+                        className="grid gap-3 rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-surface-muted)] p-4"
+                      >
+                        <p className="text-sm font-semibold text-[var(--cma-warning)]">
+                          {getInlineSubmissionIssueSnapshotLabel(
+                            readinessStale,
+                          )}
+                        </p>
+                        {itemIssues.blockingIssues.length > 0 ? (
+                          <div className="grid gap-2">
+                            <h5 className="font-semibold text-[var(--cma-danger)]">
+                              本题阻断问题
+                            </h5>
+                            <ScaleSubmissionIssueList
+                              issues={itemIssues.blockingIssues}
+                              onLocateIssue={() => undefined}
+                              severity="blocking"
+                              showLocateActions={false}
+                            />
+                          </div>
+                        ) : null}
+                        {itemIssues.warnings.length > 0 ? (
+                          <div className="grid gap-2">
+                            <h5 className="font-semibold text-[var(--cma-warning)]">
+                              本题警告
+                            </h5>
+                            <ScaleSubmissionIssueList
+                              issues={itemIssues.warnings}
+                              onLocateIssue={() => undefined}
+                              severity="warning"
+                              showLocateActions={false}
+                            />
+                          </div>
+                        ) : null}
+                      </section>
+                    ) : null}
+                    <h5 className="font-semibold text-[var(--cma-text-strong)]">
+                      患者施测事实
+                    </h5>
+                    {!item.hasReviewFacts ? (
+                      <p
+                        className={
+                          loadError || (review && !isLoading)
+                            ? 'rounded-md border border-[var(--cma-danger)] bg-[var(--cma-danger-soft)] p-4 text-sm leading-6 text-[var(--cma-danger)]'
+                            : 'rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] p-4 text-sm leading-6 text-[var(--cma-muted)]'
+                        }
+                        role={loadError || (review && !isLoading) ? 'alert' : 'status'}
+                      >
+                        {isLoading
+                          ? '患者施测事实正在加载；下方正式作答仍可编辑。'
+                          : isEmpty
+                            ? '尚无可用患者施测事实；下方正式作答仍可编辑。'
+                            : loadError
+                              ? '患者施测事实暂不可用；下方正式作答仍可编辑。'
+                              : '该正式题目未能匹配患者施测事实；请刷新复核摘要，正式作答仍可编辑。'}
+                      </p>
+                    ) : null}
                     <div className="grid gap-3">
                       {[...item.steps]
                         .sort((left, right) => left.order - right.order)
@@ -970,26 +1100,12 @@ export function PatientAdministrationReviewPanel({
                           </div>
                         ))}
                     </div>
-                    <div>
-                      <Button
-                        onClick={() => {
-                          onClearLocateError();
-                          if (!onLocateItemResponse(item.itemResponseId)) {
-                            // The parent reports the failure inside this F3 panel.
-                          }
-                        }}
-                        variant="secondary"
-                      >
-                        定位正式作答
-                      </Button>
-                    </div>
+                    {renderFormalEditor(item.formalItem)}
                   </article>
-                ))}
+                  );
+                })}
               </div>
             </section>
-
-          </>
-        ) : null}
       </CardContent>
     </Card>
   );

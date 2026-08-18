@@ -47,6 +47,11 @@ import {
 } from '@/src/features/assessments/lib/assessment-execution-display';
 import type { ItemDraftState } from '@/src/features/assessments/lib/item-response-draft';
 import {
+  shouldRefreshSubmissionReadinessAfterItemAcceptance,
+  type ItemResponseAcceptedMode,
+} from '@/src/features/assessments/lib/item-response-autosave';
+import { routeScaleSubmissionIssues } from '@/src/features/assessments/lib/scale-submission-issue-routing';
+import {
   mediaDraftHasPendingContent,
   type ItemMediaDrafts,
   type MediaEvidenceDraft,
@@ -254,6 +259,9 @@ export function ScaleInstanceExecutionPage({
   const readinessControllerRef = useRef<AbortController | null>(null);
   const scoreResultControllerRef = useRef<AbortController | null>(null);
   const readinessRef = useRef<ScaleSubmissionReadinessResponse | null>(null);
+  const loadSubmissionReadinessRef = useRef<
+    () => Promise<ScaleSubmissionReadinessResponse | null>
+  >(async () => null);
   const localBlockersRef = useRef({
     unsettledAnswerItemCount: 0,
     pendingMediaItemCount: 0,
@@ -297,11 +305,8 @@ export function ScaleInstanceExecutionPage({
     null,
   );
   const [pendingFocusSource, setPendingFocusSource] = useState<
-    'submission' | 'scoring' | 'review' | null
+    'submission' | 'scoring' | null
   >(null);
-  const [reviewLocateError, setReviewLocateError] = useState<string | null>(
-    null,
-  );
   const [patientAdministrationStatus, setPatientAdministrationStatus] =
     useState<PatientAdministrationStatus | null>(null);
   const [scoreResult, setScoreResult] =
@@ -355,6 +360,7 @@ export function ScaleInstanceExecutionPage({
     (
       item: ItemResponseExecution,
       response: UpdateItemResponseDraftResponse | null,
+      acceptedMode: ItemResponseAcceptedMode,
     ) => {
       setDetail((current) => {
         if (!current) {
@@ -383,12 +389,18 @@ export function ScaleInstanceExecutionPage({
         };
       });
 
-      if (response) {
+      if (acceptedMode) {
         if (readinessRef.current) {
           setReadinessStale(true);
         }
         setConfirmationVisible(false);
         setSubmissionError(null);
+
+        if (
+          shouldRefreshSubmissionReadinessAfterItemAcceptance(acceptedMode)
+        ) {
+          void loadSubmissionReadinessRef.current();
+        }
       }
     },
     [],
@@ -485,7 +497,6 @@ export function ScaleInstanceExecutionPage({
 
       applyScoreResultDetail(response);
       setConfirmationSafetyBlock(null);
-      setReviewLocateError(null);
       setScoreQueryStatus('loaded');
       setScoreConfirmationVisible(false);
       return response;
@@ -588,6 +599,10 @@ export function ScaleInstanceExecutionPage({
   }, [patientId, router, scaleInstanceId, visitId]);
 
   useEffect(() => {
+    loadSubmissionReadinessRef.current = loadSubmissionReadiness;
+  }, [loadSubmissionReadiness]);
+
+  useEffect(() => {
     mountedRef.current = true;
 
     return () => {
@@ -667,8 +682,6 @@ export function ScaleInstanceExecutionPage({
     setScoreWriteState('idle');
     setScoreWriteSafetyBlock(null);
     setConfirmationSafetyBlock(null);
-    setReviewLocateError(null);
-
     void getScaleInstanceExecutionDetail(
       patientId,
       visitId,
@@ -744,6 +757,13 @@ export function ScaleInstanceExecutionPage({
   const activeSection =
     sections.find((section) => section.code === activeGroupCode) ?? sections[0];
   const effectiveActiveGroupCode = activeSection?.code ?? '';
+  const submissionIssueRouting = useMemo(
+    () =>
+      readiness && detail
+        ? routeScaleSubmissionIssues(readiness, detail.itemResponses)
+        : null,
+    [detail, readiness],
+  );
   const reviewEvidenceRequirementsByItem = useMemo<
     Record<string, EvidenceRequirementState[]>
   >(
@@ -819,8 +839,6 @@ export function ScaleInstanceExecutionPage({
       if (!element) {
         if (pendingFocusSource === 'scoring') {
           setScoreComputationStatus('未能定位该题目，请重新加载量表后再试。');
-        } else if (pendingFocusSource === 'review') {
-          setReviewLocateError('未能定位正式作答编辑器，请重新加载量表后再试。');
         } else {
           setSubmissionStatus('未能定位该题目，请重新加载量表后再试。');
         }
@@ -1125,7 +1143,7 @@ export function ScaleInstanceExecutionPage({
 
   function locateItemResponse(
     itemResponseId: string,
-    source: 'submission' | 'scoring' | 'review',
+    source: 'submission' | 'scoring',
   ): boolean {
     const section = sections.find((candidate) =>
       candidate.itemResponses.some((item) => item.id === itemResponseId),
@@ -1134,8 +1152,6 @@ export function ScaleInstanceExecutionPage({
     if (!section) {
       if (source === 'scoring') {
         setScoreComputationStatus('未能定位该题目，请重新加载量表后再试。');
-      } else if (source === 'review') {
-        setReviewLocateError('未能定位正式作答编辑器，请重新加载量表后再试。');
       } else {
         setSubmissionStatus('未能定位该题目，请重新加载量表后再试。');
       }
@@ -1144,8 +1160,6 @@ export function ScaleInstanceExecutionPage({
 
     if (source === 'scoring') {
       setScoreComputationStatus(null);
-    } else if (source === 'review') {
-      setReviewLocateError(null);
     } else {
       setSubmissionStatus(null);
     }
@@ -1873,6 +1887,10 @@ export function ScaleInstanceExecutionPage({
   }
 
   const { scale, scaleInstance, visit } = detail;
+  const isCompletedSupervisedPatientReview =
+    scale.code === 'mmse' &&
+    scaleInstance.administrationMode === 'supervised_patient_input' &&
+    patientAdministrationStatus === 'completed';
   const readOnlyReason = getScaleExecutionReadOnlyReason(
     visit.status,
     scaleInstance.status,
@@ -1898,6 +1916,102 @@ export function ScaleInstanceExecutionPage({
           ),
         )
       : 0;
+
+  function renderFormalItemEditor(
+    item: ItemResponseExecution,
+    layout: 'standalone' | 'embedded' = 'standalone',
+    includeLocator = true,
+  ) {
+    const draft = drafts[item.id];
+    const autosaveSnapshot = autosave.snapshots[item.id];
+
+    if (!draft || !autosaveSnapshot) {
+      return null;
+    }
+
+    const editor = (
+      <ItemResponseEditor
+        autosaveSnapshot={autosaveSnapshot}
+        displayNow={autosave.displayNow}
+        draft={draft}
+        isDirty={autosaveSnapshot.hasLocalChanges}
+        isSaving={savingItemIds.has(item.id)}
+        item={item}
+        layout={layout}
+        mediaDrafts={getItemMediaDrafts(mediaDrafts, item.id)}
+        mediaWritingTypes={getItemMediaWritingTypes(mediaWritingKeys, item.id)}
+        onChange={(nextDraft, immediate) =>
+          handleDraftChange(item.id, nextDraft, immediate)
+        }
+        onEvidenceRequirementChange={(requirement) =>
+          handleEvidenceRequirementChange(item.id, requirement)
+        }
+        onEvidencePersisted={(requirement) =>
+          handleEvidencePersisted(item.id, requirement)
+        }
+        onEndMediaWrite={(evidenceType) =>
+          handleEndMediaWrite(item.id, evidenceType)
+        }
+        onMediaDraftChange={(evidenceType, mediaDraft) =>
+          handleMediaDraftChange(item.id, evidenceType, mediaDraft ?? null)
+        }
+        onRetryServerCheck={() => autosave.retryServerCheck(item.id)}
+        onSave={(markAsAnswered) => handleSaveItem(item.id, markAsAnswered)}
+        onTryBeginMediaWrite={(evidenceType) =>
+          handleBeginMediaWrite(item.id, evidenceType)
+        }
+        onUseLocalVersion={() => autosave.useLocalConflictVersion(item.id)}
+        onUseServerVersion={() => autosave.useServerConflictVersion(item.id)}
+        pageReadOnlyReason={effectiveReadOnlyReason}
+        patientId={patientId}
+        scaleInstanceId={scaleInstanceId}
+        visitId={visitId}
+      />
+    );
+
+    if (!includeLocator) {
+      return editor;
+    }
+
+    return (
+      <div
+        aria-label={`第 ${item.itemOrder} 题定位区域`}
+        className="scroll-mt-4 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-[var(--cma-ring)]"
+        id={`submission-item-${item.id}`}
+        key={item.id}
+        tabIndex={-1}
+      >
+        {editor}
+      </div>
+    );
+  }
+
+  const activeGroupSummary = activeSection ? (
+    <header className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] p-5">
+      <p className="text-sm font-semibold text-[var(--cma-primary)]">当前分组</p>
+      <h2 className="mt-2 text-3xl font-semibold text-[var(--cma-text-strong)]">
+        {activeSection.title}
+      </h2>
+      {activeSection.description ? (
+        <p className="mt-2 text-base leading-7 text-[var(--cma-muted)]">
+          {activeSection.description}
+        </p>
+      ) : null}
+      {activeSection.instruction ? (
+        <div className="mt-4 rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-info-soft)] p-4">
+          <h3 className="font-semibold text-[var(--cma-info)]">分组指导语</h3>
+          <p className="mt-2 whitespace-pre-wrap text-lg leading-8 text-[var(--cma-text-strong)]">
+            {activeSection.instruction}
+          </p>
+        </div>
+      ) : null}
+      {activeSection.cognitiveDomainCodes.length > 0 ? (
+        <p className="mt-3 text-sm leading-6 text-[var(--cma-muted)]">
+          认知域编码：{activeSection.cognitiveDomainCodes.join('、')}
+        </p>
+      ) : null}
+    </header>
+  ) : null;
 
   return (
     <div className="grid gap-6">
@@ -2117,26 +2231,70 @@ export function ScaleInstanceExecutionPage({
         </Card>
       </div>
 
-      {scale.code === 'mmse' &&
-      scaleInstance.administrationMode === 'supervised_patient_input' &&
-      patientAdministrationStatus === 'completed' ? (
-        <PatientAdministrationReviewPanel
-          evidenceRequirementsByItem={reviewEvidenceRequirementsByItem}
-          locateError={reviewLocateError}
-          onClearLocateError={() => setReviewLocateError(null)}
-          onEvidenceAdopted={(itemResponseId, requirement) => {
-            handleEvidenceRequirementChange(itemResponseId, requirement);
-            handleEvidencePersisted(itemResponseId, requirement);
-          }}
-          onLocateItemResponse={(itemResponseId) =>
-            locateItemResponse(itemResponseId, 'review')
-          }
-          onUnauthorized={handlePatientAdministrationUnauthorized}
-          patientId={patientId}
-          readOnlyReason={effectiveReadOnlyReason}
-          scaleInstanceId={scaleInstanceId}
-          visitId={visitId}
-        />
+      {isCompletedSupervisedPatientReview ? (
+        <>
+          <section
+            aria-labelledby="supervised-review-group-navigation"
+            className="grid gap-4"
+          >
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h2
+                  className="text-xl font-semibold text-[var(--cma-text-strong)]"
+                  id="supervised-review-group-navigation"
+                >
+                  复核分组导航
+                </h2>
+                <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
+                  按服务端顺序切换分组；切换不会清除本地未保存输入。
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Badge tone={unsavedAnswerItemCount > 0 ? 'warning' : 'success'}>
+                  未收口作答：{unsavedAnswerItemCount}
+                </Badge>
+                <Badge tone={pendingMediaItemCount > 0 ? 'warning' : 'success'}>
+                  未上传证据：{pendingMediaItemCount}
+                </Badge>
+              </div>
+            </div>
+            {sections.length > 0 ? (
+              <ScaleExecutionGroupNavigation
+                activeGroupCode={effectiveActiveGroupCode}
+                onSelectGroup={handleSelectGroup}
+                sections={sections}
+              />
+            ) : (
+              <p className="py-6 text-center text-base text-[var(--cma-muted)]">
+                当前量表没有可展示的安全分组或题目。
+              </p>
+            )}
+          </section>
+
+          {activeSection ? (
+            <section className="grid gap-5">
+              {activeGroupSummary}
+              <PatientAdministrationReviewPanel
+                evidenceRequirementsByItem={reviewEvidenceRequirementsByItem}
+                formalItems={activeSection.itemResponses}
+                issueRouting={submissionIssueRouting}
+                onEvidenceAdopted={(itemResponseId, requirement) => {
+                  handleEvidenceRequirementChange(itemResponseId, requirement);
+                  handleEvidencePersisted(itemResponseId, requirement);
+                }}
+                onUnauthorized={handlePatientAdministrationUnauthorized}
+                patientId={patientId}
+                readinessStale={readinessStale}
+                readOnlyReason={effectiveReadOnlyReason}
+                renderFormalEditor={(item) =>
+                  renderFormalItemEditor(item, 'embedded', false)
+                }
+                scaleInstanceId={scaleInstanceId}
+                visitId={visitId}
+              />
+            </section>
+          ) : null}
+        </>
       ) : null}
 
       <ScaleInstanceSubmissionPanel
@@ -2164,6 +2322,10 @@ export function ScaleInstanceExecutionPage({
         }
         readinessLoading={isReadinessLoading}
         readinessStale={readinessStale}
+        issueDisplayMode={
+          isCompletedSupervisedPatientReview ? 'global_with_unmapped' : 'all'
+        }
+        issueRouting={submissionIssueRouting}
         statusMessage={submissionStatus}
         submissionError={submissionError}
         submissionReceipt={submissionReceipt}
@@ -2245,7 +2407,9 @@ export function ScaleInstanceExecutionPage({
         state={cognitiveDomainState}
       />
 
-      <Card>
+      {!isCompletedSupervisedPatientReview ? (
+        <>
+          <Card>
         <CardHeader className="border-b border-[var(--cma-line)]">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -2279,121 +2443,29 @@ export function ScaleInstanceExecutionPage({
             </p>
           )}
         </CardContent>
-      </Card>
+          </Card>
 
-      {activeSection ? (
-        <section className="grid gap-5" key={activeSection.code}>
-          <header className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] p-5">
-            <p className="text-sm font-semibold text-[var(--cma-primary)]">
-              当前分组
-            </p>
-            <h2 className="mt-2 text-3xl font-semibold text-[var(--cma-text-strong)]">
-              {activeSection.title}
-            </h2>
-            {activeSection.description ? (
-              <p className="mt-2 text-base leading-7 text-[var(--cma-muted)]">
-                {activeSection.description}
-              </p>
-            ) : null}
-            {activeSection.instruction ? (
-              <div className="mt-4 rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-info-soft)] p-4">
-                <h3 className="font-semibold text-[var(--cma-info)]">
-                  分组指导语
-                </h3>
-                <p className="mt-2 whitespace-pre-wrap text-lg leading-8 text-[var(--cma-text-strong)]">
-                  {activeSection.instruction}
-                </p>
-              </div>
-            ) : null}
-            {activeSection.cognitiveDomainCodes.length > 0 ? (
-              <p className="mt-3 text-sm leading-6 text-[var(--cma-muted)]">
-                认知域编码：{activeSection.cognitiveDomainCodes.join('、')}
-              </p>
-            ) : null}
-          </header>
+          {activeSection ? (
+            <section className="grid gap-5" key={activeSection.code}>
+              {activeGroupSummary}
 
-          {activeSection.itemResponses.length > 0 ? (
-            activeSection.itemResponses.map((item) => {
-              const draft = drafts[item.id];
-              const autosaveSnapshot = autosave.snapshots[item.id];
-
-              if (!draft || !autosaveSnapshot) {
-                return null;
-              }
-
-              return (
-                <div
-                  aria-label={`第 ${item.itemOrder} 题定位区域`}
-                  className="scroll-mt-4 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-[var(--cma-ring)]"
-                  id={`submission-item-${item.id}`}
-                  key={item.id}
-                  tabIndex={-1}
-                >
-                  <ItemResponseEditor
-                    autosaveSnapshot={autosaveSnapshot}
-                    displayNow={autosave.displayNow}
-                    draft={draft}
-                    isDirty={autosaveSnapshot.hasLocalChanges}
-                    isSaving={savingItemIds.has(item.id)}
-                    item={item}
-                    mediaDrafts={getItemMediaDrafts(mediaDrafts, item.id)}
-                    mediaWritingTypes={getItemMediaWritingTypes(
-                      mediaWritingKeys,
-                      item.id,
-                    )}
-                    onChange={(nextDraft, immediate) =>
-                      handleDraftChange(item.id, nextDraft, immediate)
-                    }
-                    onEvidenceRequirementChange={(requirement) =>
-                      handleEvidenceRequirementChange(item.id, requirement)
-                    }
-                    onEvidencePersisted={(requirement) =>
-                      handleEvidencePersisted(item.id, requirement)
-                    }
-                    onEndMediaWrite={(evidenceType) =>
-                      handleEndMediaWrite(item.id, evidenceType)
-                    }
-                    onMediaDraftChange={(evidenceType, mediaDraft) =>
-                      handleMediaDraftChange(
-                        item.id,
-                        evidenceType,
-                        mediaDraft ?? null,
-                      )
-                    }
-                    onTryBeginMediaWrite={(evidenceType) =>
-                      handleBeginMediaWrite(item.id, evidenceType)
-                    }
-                    onSave={(markAsAnswered) =>
-                      handleSaveItem(item.id, markAsAnswered)
-                    }
-                    onRetryServerCheck={() =>
-                      autosave.retryServerCheck(item.id)
-                    }
-                    onUseLocalVersion={() =>
-                      autosave.useLocalConflictVersion(item.id)
-                    }
-                    onUseServerVersion={() =>
-                      autosave.useServerConflictVersion(item.id)
-                    }
-                    pageReadOnlyReason={effectiveReadOnlyReason}
-                    patientId={patientId}
-                    scaleInstanceId={scaleInstanceId}
-                    visitId={visitId}
-                  />
-                </div>
-              );
-            })
-          ) : (
-            <Card>
-              <CardHeader>
-                <CardTitle>该分组暂无题目</CardTitle>
-                <CardDescription>
-                  服务端当前未返回属于该分组的安全题目。
-                </CardDescription>
-              </CardHeader>
-            </Card>
-          )}
-        </section>
+              {activeSection.itemResponses.length > 0 ? (
+                activeSection.itemResponses.map((item) =>
+                  renderFormalItemEditor(item),
+                )
+              ) : (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>该分组暂无题目</CardTitle>
+                    <CardDescription>
+                      服务端当前未返回属于该分组的安全题目。
+                    </CardDescription>
+                  </CardHeader>
+                </Card>
+              )}
+            </section>
+          ) : null}
+        </>
       ) : null}
     </div>
   );

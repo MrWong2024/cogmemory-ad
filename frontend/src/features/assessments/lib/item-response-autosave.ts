@@ -43,6 +43,10 @@ export type ItemResponseSaveAttempt = Readonly<{
   mode: 'automatic' | 'explicit' | 'mark_answered' | 'conflict_local';
 }>;
 
+export type ItemResponseAcceptedMode =
+  | ItemResponseSaveAttempt['mode']
+  | null;
+
 export type ItemResponseAutosaveSnapshot = {
   state: ItemResponseAutosaveState;
   draft: ItemDraftState;
@@ -84,6 +88,7 @@ export type ItemResponseAutosaveCoordinatorOptions = {
   onServerItemAccepted: (
     item: ItemResponseExecution,
     response: UpdateItemResponseDraftResponse | null,
+    acceptedMode: ItemResponseAcceptedMode,
   ) => void;
   onExecutionSummaryRefreshed: (
     detail: ScaleInstanceExecutionDetailResponse,
@@ -529,6 +534,12 @@ export function classifyDraftSaveReconciliation(
   return 'conflict';
 }
 
+export function shouldRefreshSubmissionReadinessAfterItemAcceptance(
+  acceptedMode: ItemResponseAcceptedMode,
+): boolean {
+  return acceptedMode === 'mark_answered';
+}
+
 export function autosaveStateBlocksSubmission(
   state: ItemResponseAutosaveState,
   hasLocalChanges: boolean,
@@ -774,7 +785,7 @@ export class ItemResponseAutosaveCoordinator {
     entry.validationMessage = null;
     entry.message = '已采用最新服务器版本，未发送保存请求。';
     entry.state = 'clean';
-    this.options.onServerItemAccepted(entry.serverItem, null);
+    this.options.onServerItemAccepted(entry.serverItem, null, null);
     this.emit();
   }
 
@@ -791,7 +802,7 @@ export class ItemResponseAutosaveCoordinator {
     entry.firstDirtyAt = this.options.clock.now();
     entry.lastEditedAt = entry.firstDirtyAt;
     entry.state = 'dirty';
-    this.options.onServerItemAccepted(entry.serverItem, null);
+    this.options.onServerItemAccepted(entry.serverItem, null, null);
     this.evaluateEntry(entry, 'conflict_local');
   }
 
@@ -1074,7 +1085,7 @@ export class ItemResponseAutosaveCoordinator {
       attempt.mode === 'mark_answered'
         ? '本题已由服务器保存并标记完成。'
         : '草稿已由服务器确认保存。';
-    this.options.onServerItemAccepted(mergedItem, response);
+    this.options.onServerItemAccepted(mergedItem, response, attempt.mode);
     this.evaluateEntry(entry, entry.pendingExplicitMode);
   }
 
@@ -1205,7 +1216,7 @@ export class ItemResponseAutosaveCoordinator {
       entry.firstDirtyAt = this.options.clock.now();
       entry.lastEditedAt = entry.firstDirtyAt;
       entry.state = 'dirty';
-      this.options.onServerItemAccepted(latest, null);
+      this.options.onServerItemAccepted(latest, null, null);
       this.evaluateEntry(entry, null);
       return;
     }
@@ -1218,7 +1229,7 @@ export class ItemResponseAutosaveCoordinator {
     }
     entry.state = 'conflict';
     entry.message = '服务器事实与本次保存尝试不一致，系统没有自动覆盖任何一方。';
-    this.options.onServerItemAccepted(latest, null);
+    this.options.onServerItemAccepted(latest, null, null);
     this.emit();
   }
 
@@ -1250,7 +1261,7 @@ export class ItemResponseAutosaveCoordinator {
       entry.serverItem = latest;
       entry.conflictServerItem = latest;
       entry.message = '服务器版本已发生变化；本地修改仍被保留，系统不会自动覆盖任何一方。';
-      this.options.onServerItemAccepted(latest, null);
+      this.options.onServerItemAccepted(latest, null, null);
     } else {
       entry.conflictServerItem = null;
       entry.message = '发现版本冲突，但暂时无法读取最新服务器版本。';
@@ -1264,7 +1275,7 @@ export class ItemResponseAutosaveCoordinator {
 
     if (latest) {
       entry.serverItem = latest;
-      this.options.onServerItemAccepted(latest, null);
+      this.options.onServerItemAccepted(latest, null, null);
     }
 
     entry.state = 'blocked';
@@ -1332,7 +1343,7 @@ export class ItemResponseAutosaveCoordinator {
 
       entry.serverItem = item;
       entry.draft = createItemDraftState(item);
-      this.options.onServerItemAccepted(item, null);
+      this.options.onServerItemAccepted(item, null, null);
     });
   }
 
