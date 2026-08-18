@@ -1,13 +1,17 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import type { ItemResponseSummary } from '../../assessments/services/assessments.service';
 import { AssessmentsService } from '../../assessments/services/assessments.service';
+import { parseStructuredManualFields } from '../../assessments/lib/structured-manual-response';
 import type {
   PatientAdministrationReviewCaptureFact,
   PatientAdministrationReviewEvidenceRefFact,
   PatientAdministrationReviewFacts,
 } from '../../assessments/services/patient-administration-session.service';
 import { PatientAdministrationSessionService } from '../../assessments/services/patient-administration-session.service';
-import type { PatientAdministrationStepConfigSummary } from '../../scales/services/scales.service';
+import type {
+  PatientAdministrationStepConfigSummary,
+  ScaleItemConfigSummary,
+} from '../../scales/services/scales.service';
 import { ScalesService } from '../../scales/services/scales.service';
 import type { ScaleInstanceExecutionParamDto } from '../../assessments/dto/scale-instance-execution-param.dto';
 import { toMediaEvidenceTranscriptionResponse } from './media-evidence-public.mapper';
@@ -22,6 +26,7 @@ import type {
   PatientAdministrationReviewResponse,
   PatientAdministrationReviewRunResponse,
 } from '../types/patient-administration-review-response.types';
+import { resolvePatientAdministrationReviewStructuredFieldCodes } from '../lib/patient-administration-review-structured-bindings';
 
 type StepFacts = {
   captures: PatientAdministrationReviewCaptureFact[];
@@ -117,12 +122,22 @@ export class PatientAdministrationReviewService {
         return this.throwStepInvalid();
       }
       const itemSteps = steps.filter((step) => step.itemCode === itemCode);
+      const itemConfig = scaleVersion.items.find(
+        (item) => item.code === itemCode,
+      );
+      const structuredFieldCodesByStep = this.resolveStructuredFieldCodesByStep(
+        facts.scaleCode,
+        facts.scaleVersion,
+        itemConfig,
+        itemSteps,
+      );
       return this.buildItem(
         itemResponse,
         itemSteps,
         facts,
         evidenceById,
-        scaleVersion.items.find((item) => item.code === itemCode)?.title,
+        itemConfig?.title,
+        structuredFieldCodesByStep,
       );
     });
 
@@ -221,6 +236,7 @@ export class PatientAdministrationReviewService {
     facts: PatientAdministrationReviewFacts,
     evidenceById: Map<string, MediaEvidenceSummary>,
     configuredTitle: string | undefined,
+    structuredFieldCodesByStep: ReadonlyMap<string, readonly string[]>,
   ): PatientAdministrationReviewItemResponse {
     return {
       itemResponseId: itemResponse.id,
@@ -233,9 +249,65 @@ export class PatientAdministrationReviewService {
         order: step.order,
         responseMode: step.responseMode,
         advanceBy: step.advanceBy,
+        structuredFieldCodes: [
+          ...(structuredFieldCodesByStep.get(step.stepKey) ?? []),
+        ],
         runs: this.buildRuns(step, facts, evidenceById),
       })),
     };
+  }
+
+  private resolveStructuredFieldCodesByStep(
+    scaleCode: string,
+    scaleVersion: string,
+    itemConfig: ScaleItemConfigSummary | undefined,
+    steps: PatientAdministrationStepConfigSummary[],
+  ): ReadonlyMap<string, readonly string[]> {
+    const empty = new Map(
+      steps.map((step) => [step.stepKey, [] as readonly string[]]),
+    );
+    const bindings = steps.map((step) => ({
+      stepKey: step.stepKey,
+      fieldCodes: resolvePatientAdministrationReviewStructuredFieldCodes(
+        scaleCode,
+        scaleVersion,
+        step.stepKey,
+      ),
+    }));
+
+    if (bindings.every((binding) => binding.fieldCodes === null)) {
+      return empty;
+    }
+
+    const fields = parseStructuredManualFields(itemConfig?.scoringRule);
+    if (!fields) {
+      return empty;
+    }
+
+    const configuredCodes = new Set(fields.map((field) => field.code));
+    const mappedCodes = new Set<string>();
+    for (const binding of bindings) {
+      if (binding.fieldCodes === null) {
+        continue;
+      }
+      for (const fieldCode of binding.fieldCodes) {
+        if (!configuredCodes.has(fieldCode) || mappedCodes.has(fieldCode)) {
+          return empty;
+        }
+        mappedCodes.add(fieldCode);
+      }
+    }
+
+    if (mappedCodes.size !== configuredCodes.size) {
+      return empty;
+    }
+
+    return new Map(
+      bindings.map((binding) => [
+        binding.stepKey,
+        binding.fieldCodes ?? ([] as readonly string[]),
+      ]),
+    );
   }
 
   private buildRuns(

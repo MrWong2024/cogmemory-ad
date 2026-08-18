@@ -536,8 +536,9 @@
 
 - `GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/patient-administration/review`：`SessionAuthGuard` + `RolesGuard`，角色固定 admin / doctor / nurse / research_assistant；三个路径 ID 使用 `ScaleInstanceExecutionParamDto`，无 Query / Body。
 - 只读取该 ownership 下按 createdAt、_id 倒序的最新患者施测会话，并联合其权威 ScaleVersion 步骤、该实例全部 ItemResponse 与会话引用的 MediaEvidence；不延长、过期或改写会话。
-- 响应为 `PatientAdministrationReviewResponse { session, reviewEvents, items }`：session 只含状态、准备 / 影响因素及有限生命周期时间；reviewEvents 只含受控 action / 时间 / 原因 / 安全操作者；item 按权威步骤顺序分组，含安全 status / draftRevision、step / run、capture、evidence、audioMetadata 与 transcription。redo 的 invalidated run 和只有 evidence 的 run 均保留。
+- 响应为 `PatientAdministrationReviewResponse { session, reviewEvents, items }`：session 只含状态、准备 / 影响因素及有限生命周期时间；reviewEvents 只含受控 action / 时间 / 原因 / 安全操作者；item 按权威步骤顺序分组，含安全 status / draftRevision、step / run、capture、evidence、audioMetadata 与 transcription。每个 `PatientAdministrationReviewStepResponse` 还返回 `structuredFieldCodes: string[]`，只表示 review-only 展示位置关联，不是正式答案、Evidence adoption、正确性或评分；`[]` 表示没有可安全使用的具体字段关联。redo 的 invalidated run 和只有 evidence 的 run 均保留。
 - 完整性检查要求 ScaleVersion identity、连续唯一步骤、ItemResponse 精确集合 / ownership / version，以及每个 evidence ref 的 patient / visit / instance / item / session / step / run / type 全部匹配；损坏事实 fail closed 为 409 `PATIENT_ADMINISTRATION_STEP_INVALID`。不存在会话沿用 404 `PATIENT_ADMINISTRATION_SESSION_NOT_FOUND`。
+- placement metadata 仅使用 `scaleCode + exact scaleVersion + exact stepKey` 的显式 registry 候选，并按当前 stored ScaleVersion Item 的 `scoringRule` 解析 structured fields 后二次验证；无绑定返回 `[]`，绑定缺失、额外、重复或覆盖不完整时整 Item 的所有 step 都退化为 `[]`，review 仍正常返回且不暴露评分配置。
 - 不生成或返回签名 URL，不返回 patientText、资产、播放事实、credential / hash、Storage 路径、评分、完整 controlEvents、ItemResponse 答案 payload 或正式答案变更；review 本身只读。
 
 ## A27 WP-04 后端阶段一历史读取

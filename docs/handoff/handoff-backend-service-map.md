@@ -161,8 +161,10 @@
 
 - Service 名称：`PatientAdministrationReviewService`
 - 文件路径：`backend\src\modules\media\services\patient-administration-review.service.ts`
-- 职责边界：组合 `PatientAdministrationSessionService.getLatestReviewFacts()`、权威 ScaleVersion 步骤、完整 ItemResponse 集合与会话引用的 MediaEvidence，按 item / step / run 输出安全只读复核投影；保留 invalidated capture 与 evidence-only run。
+- 职责边界：组合 `PatientAdministrationSessionService.getLatestReviewFacts()`、权威 ScaleVersion 步骤、完整 ItemResponse 集合与会话引用的 MediaEvidence，按 item / step / run 输出安全只读复核投影；保留 invalidated capture 与 evidence-only run。review-only placement 使用 `patient-administration-review-structured-bindings.ts` 中仅维护 `mmse@1.0` 的 exact scaleCode + version + stepKey registry，不使用后缀、顺序、文本或 label 推断。
+- placement 校验：registry 只提供候选 codes；Service 必须用当前 stored ScaleVersion 对应 Item 的 `scoringRule` 经 `parseStructuredManualFields()` 解析正式字段，验证 mapped code 全部属于本 Item、不同 step 不重复占用字段，且 mapped union 精确覆盖全部字段。无显式 binding 正常返回空数组；任一无效、额外、重复或覆盖不完整时整 Item 的所有 step 都 fail-safe 退化为 `structuredFieldCodes=[]`，不返回部分映射，也不阻断整份 review。
 - 完整性与非职责：逐项验证 version identity、唯一步骤顺序、ItemResponse ownership / 集合 / version，以及 evidence 的 patient / visit / instance / item / session / step / run / type；任何损坏统一 fail closed。它不写会话或答案、不生成签名 URL、不返回资产 / patientText / playback / hash / Storage / scoring / 完整 controlEvents，也不引入 collection、缓存或投影队列。
+- catalog 边界：placement registry 是版本绑定的 review projection 文件，不修改 released MMSE 1.0 ScaleVersion schema、seed、scoringRule、version、fingerprint 或 catalog materialization。
 
 - Controller 名称：`PatientAdministrationReviewController`
 - 文件路径：`backend\src\modules\media\controllers\patient-administration-review.controller.ts`

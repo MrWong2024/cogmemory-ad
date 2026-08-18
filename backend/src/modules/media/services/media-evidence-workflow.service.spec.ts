@@ -252,6 +252,7 @@ function patientReview(
             order: 19,
             responseMode: 'drawing',
             advanceBy: 'patient',
+            structuredFieldCodes: [],
             runs: [{ stepRun: 1, capture, evidence: reviewEvidence }],
           },
         ],

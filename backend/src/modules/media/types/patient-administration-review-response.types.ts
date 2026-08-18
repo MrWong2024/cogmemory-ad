@@ -70,6 +70,7 @@ export type PatientAdministrationReviewStepResponse = {
   order: number;
   responseMode: PatientAdministrationResponseMode;
   advanceBy: PatientAdministrationAdvanceBy;
+  structuredFieldCodes: string[];
   runs: PatientAdministrationReviewRunResponse[];
 };
 

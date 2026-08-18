@@ -191,6 +191,30 @@ function numberOf(value: Record<string, unknown>, key: string): number {
   return result;
 }
 
+function reviewStepByKey(
+  review: Record<string, unknown>,
+  stepKey: string,
+): Record<string, unknown> {
+  const items = review.items;
+  if (!Array.isArray(items)) {
+    throw new Error('Expected review items array');
+  }
+
+  for (const item of items) {
+    if (!isRecord(item) || !Array.isArray(item.steps)) {
+      continue;
+    }
+    const steps: unknown[] = item.steps;
+    for (const step of steps) {
+      if (isRecord(step) && step.stepKey === stepKey) {
+        return step;
+      }
+    }
+  }
+
+  throw new Error(`Expected review step ${stepKey}`);
+}
+
 function jsonSnapshot(value: unknown): unknown {
   return JSON.parse(JSON.stringify(value)) as unknown;
 }
@@ -873,6 +897,20 @@ describe('patient administration review and transcription APIs (e2e)', () => {
         impactFactorCodes: ['sensory'],
       }),
     );
+    expect(
+      reviewStepByKey(reviewBody, 'mmse-orientation-year').structuredFieldCodes,
+    ).toEqual(['mmse.orientation.year']);
+    expect(
+      reviewStepByKey(reviewBody, 'mmse-immediate-recall').structuredFieldCodes,
+    ).toEqual([
+      'mmse.memory.immediate_recall.ball',
+      'mmse.memory.immediate_recall.flag',
+      'mmse.memory.immediate_recall.tree',
+    ]);
+    expect(
+      reviewStepByKey(reviewBody, 'mmse-attention-calculation')
+        .structuredFieldCodes,
+    ).toEqual([]);
     const serializedReview = JSON.stringify(reviewBody);
     expect(serializedReview).toContain('repeat requested');
     expect(serializedReview).toContain('manual observation');
@@ -971,7 +1009,30 @@ describe('patient administration review and transcription APIs (e2e)', () => {
       )
       .send({
         expectedRevision: fixture.itemResponse.draftRevision ?? 0,
-        responseText: '医生人工确认文本',
+        structuredResponse: {
+          subItems: {
+            'mmse.orientation.year': {
+              responseText: '医生人工确认：年',
+              isCorrect: true,
+            },
+            'mmse.orientation.season': {
+              responseText: '医生人工确认：季节',
+              isCorrect: true,
+            },
+            'mmse.orientation.month': {
+              responseText: '医生人工确认：月',
+              isCorrect: true,
+            },
+            'mmse.orientation.date': {
+              responseText: '医生人工确认：日期',
+              isCorrect: true,
+            },
+            'mmse.orientation.weekday': {
+              responseText: '医生人工确认：星期',
+              isCorrect: true,
+            },
+          },
+        },
         markAsAnswered: true,
       })
       .expect(200);
@@ -980,9 +1041,21 @@ describe('patient administration review and transcription APIs (e2e)', () => {
       expect.objectContaining({
         status: 'answered',
         draftRevision: 1,
-        responseText: '医生人工确认文本',
       }),
     );
+    if (
+      !isRecord(manualItem) ||
+      !isRecord(manualItem.structuredResponse) ||
+      !isRecord(manualItem.structuredResponse.subItems)
+    ) {
+      throw new Error('Expected structured manual item response');
+    }
+    expect(
+      manualItem.structuredResponse.subItems['mmse.orientation.year'],
+    ).toEqual({
+      responseText: '医生人工确认：年',
+      isCorrect: true,
+    });
     expect(JSON.stringify(manualItem)).not.toContain('测试转写候选');
   });
 

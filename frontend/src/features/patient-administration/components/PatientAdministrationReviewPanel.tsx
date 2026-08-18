@@ -23,6 +23,7 @@ import {
   getInlineSubmissionIssueSnapshotLabel,
   type ScaleSubmissionIssueRouting,
 } from '@/src/features/assessments/lib/scale-submission-issue-routing';
+import { getStructuredManualFields } from '@/src/features/assessments/lib/item-response-draft';
 import type { ItemResponseExecution } from '@/src/features/assessments/types/item-response-execution';
 import {
   adoptPatientAdministrationEvidence,
@@ -41,12 +42,14 @@ import {
   patientAdministrationStatusLabels,
   patientAdministrationStatusTones,
 } from '@/src/features/patient-administration/lib/patient-administration-display';
+import { routePatientReviewReferences } from '@/src/features/patient-administration/lib/patient-review-reference-routing';
 import type {
   PatientAdministrationControlEventAction,
   PatientAdministrationReviewEvidence,
   PatientAdministrationReviewItem,
   PatientAdministrationReviewResponse,
   PatientAdministrationReviewRun,
+  PatientAdministrationReviewStep,
   PatientAdministrationReviewTranscription,
   PatientAdministrationRouteIds,
 } from '@/src/features/patient-administration/types/patient-administration';
@@ -115,6 +118,12 @@ type ViewerState = {
 type EvidenceAccessFeedback = {
   mediaEvidenceId: string;
   message: string;
+};
+
+export type PatientAdministrationReviewReferenceSlots = {
+  itemSharedReference?: ReactNode;
+  structuredSharedReference?: ReactNode;
+  structuredFieldReferencesByCode?: Readonly<Record<string, ReactNode>>;
 };
 
 function reviewErrorMessage(error: PatientAdministrationApiError): string {
@@ -213,7 +222,10 @@ export function PatientAdministrationReviewPanel({
   patientId: string;
   readinessStale: boolean;
   readOnlyReason: string | null;
-  renderFormalEditor: (item: ItemResponseExecution) => ReactNode;
+  renderFormalEditor: (
+    item: ItemResponseExecution,
+    references: PatientAdministrationReviewReferenceSlots,
+  ) => ReactNode;
   scaleInstanceId: string;
   visitId: string;
 }) {
@@ -750,6 +762,147 @@ export function PatientAdministrationReviewPanel({
     );
   }
 
+  function renderStepReference(
+    itemResponseId: string,
+    step: PatientAdministrationReviewStep,
+  ) {
+    const validCaptureCount = step.runs.filter(
+      (run) => run.capture !== null && run.capture.invalidatedAt === null,
+    ).length;
+    const evidenceCount = step.runs.reduce(
+      (count, run) => count + run.evidence.length,
+      0,
+    );
+    const succeededTranscriptionCount = step.runs.reduce(
+      (count, run) =>
+        count +
+        run.evidence.filter(
+          (evidence) => evidence.transcription?.status === 'succeeded',
+        ).length,
+      0,
+    );
+    const hasRedoHistory =
+      step.runs.length > 1 ||
+      step.runs.some((run) =>
+        Boolean(run.stepRun > 1 || run.capture?.invalidatedAt),
+      );
+
+    return (
+      <details
+        className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)]"
+        data-testid={`patient-administration-review-step-${step.stepKey}`}
+        key={step.stepKey}
+      >
+        <summary className="cursor-pointer px-4 py-3 text-[var(--cma-text-strong)]">
+          <span className="ml-1 inline-flex flex-wrap items-center gap-x-2 gap-y-1 align-middle">
+            <span className="font-semibold">
+              第 {step.order} 步 · {responseModeLabels[step.responseMode]}
+            </span>
+            <span className="text-sm text-[var(--cma-muted)]">
+              {step.runs.length === 0
+                ? '无采集运行'
+                : `${step.runs.length} 次运行`}{' '}
+              · {validCaptureCount} 个有效采集 · {evidenceCount} 条证据 ·{' '}
+              {succeededTranscriptionCount} 条辅助转写已完成
+            </span>
+            {hasRedoHistory ? <Badge tone="warning">含重做记录</Badge> : null}
+          </span>
+        </summary>
+        <div className="grid gap-3 border-t border-[var(--cma-line)] px-4 pb-4 pt-3">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="text-[var(--cma-muted)]">
+              步骤标识：{step.stepKey}
+            </span>
+            <Badge tone="neutral">{advanceByLabels[step.advanceBy]}</Badge>
+          </div>
+          {step.runs.length === 0 ? (
+            <p className="text-sm text-[var(--cma-muted)]">
+              当前步骤尚无采集运行事实。
+            </p>
+          ) : (
+            step.runs.map((run) => (
+              <div
+                className="grid gap-3 border-l-2 border-[var(--cma-line-strong)] pl-4"
+                key={run.stepRun}
+              >
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="font-semibold text-[var(--cma-text-strong)]">
+                    第 {run.stepRun} 次运行
+                  </span>
+                  {run.capture ? (
+                    <>
+                      <Badge
+                        tone={run.capture.invalidatedAt ? 'warning' : 'success'}
+                      >
+                        {run.capture.invalidatedAt
+                          ? '已作废 / 已重做'
+                          : '有效采集'}
+                      </Badge>
+                      <span className="text-[var(--cma-muted)]">
+                        {run.capture.capturedBy === 'patient'
+                          ? '患者采集'
+                          : '医护采集'}{' '}
+                        ·{' '}
+                        {formatPatientAdministrationDate(
+                          run.capture.capturedAt,
+                        )}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-[var(--cma-muted)]">无采集摘要</span>
+                  )}
+                </div>
+                {run.capture?.invalidatedReason ? (
+                  <p className="text-sm leading-6 text-[var(--cma-warning)]">
+                    作废 / 重做原因：{run.capture.invalidatedReason}
+                  </p>
+                ) : null}
+                {run.capture?.staffObservation ? (
+                  <div className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface)] p-3">
+                    <p className="text-sm font-semibold text-[var(--cma-muted)]">
+                      现场医护观察
+                    </p>
+                    <p className="mt-1 whitespace-pre-wrap text-base leading-7 text-[var(--cma-text-strong)]">
+                      {run.capture.staffObservation}
+                    </p>
+                  </div>
+                ) : null}
+                {run.evidence.length > 0 ? (
+                  <div className="grid gap-3">
+                    {run.evidence.map((evidence) =>
+                      renderEvidence(itemResponseId, run, evidence),
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm text-[var(--cma-muted)]">
+                    本次运行没有媒体证据。
+                  </p>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      </details>
+    );
+  }
+
+  function renderStepReferenceGroup(
+    itemResponseId: string,
+    steps: readonly PatientAdministrationReviewStep[],
+  ): ReactNode | undefined {
+    if (steps.length === 0) {
+      return undefined;
+    }
+
+    return (
+      <div className="grid gap-3">
+        {[...steps]
+          .sort((left, right) => left.order - right.order)
+          .map((step) => renderStepReference(itemResponseId, step))}
+      </div>
+    );
+  }
+
   return (
     <Card data-testid="patient-administration-review-panel">
       <CardHeader className="border-b border-[var(--cma-line)]">
@@ -924,6 +1077,34 @@ export function PatientAdministrationReviewPanel({
                       (itemIssues.blockingIssues.length > 0 ||
                         itemIssues.warnings.length > 0),
                   );
+                  const structuredManualFields = getStructuredManualFields(
+                    item.formalItem.config,
+                  );
+                  const referenceRouting = routePatientReviewReferences(
+                    structuredManualFields,
+                    item.steps,
+                  );
+                  const sharedReference = renderStepReferenceGroup(
+                    item.itemResponseId,
+                    referenceRouting.sharedSteps,
+                  );
+                  const reviewReferences: PatientAdministrationReviewReferenceSlots =
+                    structuredManualFields
+                      ? {
+                          structuredSharedReference: sharedReference,
+                          structuredFieldReferencesByCode: Object.fromEntries(
+                            Object.entries(
+                              referenceRouting.fieldSpecificStepsByCode,
+                            ).map(([fieldCode, steps]) => [
+                              fieldCode,
+                              renderStepReferenceGroup(
+                                item.itemResponseId,
+                                steps,
+                              ),
+                            ]),
+                          ),
+                        }
+                      : { itemSharedReference: sharedReference };
 
                   return (
                   <article
@@ -1001,14 +1182,6 @@ export function PatientAdministrationReviewPanel({
                         ) : null}
                       </section>
                     ) : null}
-                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                      <h5 className="font-semibold text-[var(--cma-text-strong)]">
-                        患者施测参考
-                      </h5>
-                      <p className="text-sm text-[var(--cma-muted)]">
-                        按需展开步骤查看原始记录与证据。
-                      </p>
-                    </div>
                     {!item.hasReviewFacts ? (
                       <p
                         className={
@@ -1027,154 +1200,7 @@ export function PatientAdministrationReviewPanel({
                               : '该正式题目未能匹配患者施测事实；请刷新复核摘要，正式作答仍可编辑。'}
                       </p>
                     ) : null}
-                    <div className="grid gap-3">
-                      {[...item.steps]
-                        .sort((left, right) => left.order - right.order)
-                        .map((step) => {
-                          const validCaptureCount = step.runs.filter(
-                            (run) =>
-                              run.capture !== null &&
-                              run.capture.invalidatedAt === null,
-                          ).length;
-                          const evidenceCount = step.runs.reduce(
-                            (count, run) => count + run.evidence.length,
-                            0,
-                          );
-                          const succeededTranscriptionCount = step.runs.reduce(
-                            (count, run) =>
-                              count +
-                              run.evidence.filter(
-                                (evidence) =>
-                                  evidence.transcription?.status === 'succeeded',
-                              ).length,
-                            0,
-                          );
-                          const hasRedoHistory =
-                            step.runs.length > 1 ||
-                            step.runs.some((run) =>
-                              Boolean(
-                                run.stepRun > 1 || run.capture?.invalidatedAt,
-                              ),
-                            );
-
-                          return (
-                            <details
-                              className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)]"
-                              data-testid={`patient-administration-review-step-${step.stepKey}`}
-                              key={step.stepKey}
-                            >
-                              <summary className="cursor-pointer px-4 py-3 text-[var(--cma-text-strong)]">
-                                <span className="ml-1 inline-flex flex-wrap items-center gap-x-2 gap-y-1 align-middle">
-                                  <span className="font-semibold">
-                                    第 {step.order} 步 ·{' '}
-                                    {responseModeLabels[step.responseMode]}
-                                  </span>
-                                  <span className="text-sm text-[var(--cma-muted)]">
-                                    {step.runs.length === 0
-                                      ? '无采集运行'
-                                      : `${step.runs.length} 次运行`}{' '}
-                                    · {validCaptureCount} 个有效采集 ·{' '}
-                                    {evidenceCount} 条证据 ·{' '}
-                                    {succeededTranscriptionCount}{' '}
-                                    条辅助转写已完成
-                                  </span>
-                                  {hasRedoHistory ? (
-                                    <Badge tone="warning">含重做记录</Badge>
-                                  ) : null}
-                                </span>
-                              </summary>
-                              <div className="grid gap-3 border-t border-[var(--cma-line)] px-4 pb-4 pt-3">
-                                <div className="flex flex-wrap items-center gap-2 text-sm">
-                                  <span className="text-[var(--cma-muted)]">
-                                    步骤标识：{step.stepKey}
-                                  </span>
-                                  <Badge tone="neutral">
-                                    {advanceByLabels[step.advanceBy]}
-                                  </Badge>
-                                </div>
-                                {step.runs.length === 0 ? (
-                                  <p className="text-sm text-[var(--cma-muted)]">
-                                    当前步骤尚无采集运行事实。
-                                  </p>
-                                ) : (
-                                  step.runs.map((run) => (
-                                    <div
-                                      className="grid gap-3 border-l-2 border-[var(--cma-line-strong)] pl-4"
-                                      key={run.stepRun}
-                                    >
-                                      <div className="flex flex-wrap items-center gap-2 text-sm">
-                                        <span className="font-semibold text-[var(--cma-text-strong)]">
-                                          第 {run.stepRun} 次运行
-                                        </span>
-                                        {run.capture ? (
-                                          <>
-                                            <Badge
-                                              tone={
-                                                run.capture.invalidatedAt
-                                                  ? 'warning'
-                                                  : 'success'
-                                              }
-                                            >
-                                              {run.capture.invalidatedAt
-                                                ? '已作废 / 已重做'
-                                                : '有效采集'}
-                                            </Badge>
-                                            <span className="text-[var(--cma-muted)]">
-                                              {run.capture.capturedBy === 'patient'
-                                                ? '患者采集'
-                                                : '医护采集'}{' '}
-                                              ·{' '}
-                                              {formatPatientAdministrationDate(
-                                                run.capture.capturedAt,
-                                              )}
-                                            </span>
-                                          </>
-                                        ) : (
-                                          <span className="text-[var(--cma-muted)]">
-                                            无采集摘要
-                                          </span>
-                                        )}
-                                      </div>
-                                      {run.capture?.invalidatedReason ? (
-                                        <p className="text-sm leading-6 text-[var(--cma-warning)]">
-                                          作废 / 重做原因：
-                                          {run.capture.invalidatedReason}
-                                        </p>
-                                      ) : null}
-                                      {run.capture?.staffObservation ? (
-                                        <div className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface)] p-3">
-                                          <p className="text-sm font-semibold text-[var(--cma-muted)]">
-                                            现场医护观察
-                                          </p>
-                                          <p className="mt-1 whitespace-pre-wrap text-base leading-7 text-[var(--cma-text-strong)]">
-                                            {run.capture.staffObservation}
-                                          </p>
-                                        </div>
-                                      ) : null}
-                                      {run.evidence.length > 0 ? (
-                                        <div className="grid gap-3">
-                                          {run.evidence.map((evidence) =>
-                                            renderEvidence(
-                                              item.itemResponseId,
-                                              run,
-                                              evidence,
-                                            ),
-                                          )}
-                                        </div>
-                                      ) : (
-                                        <p className="text-sm text-[var(--cma-muted)]">
-                                          本次运行没有媒体证据。
-                                        </p>
-                                      )}
-                                    </div>
-                                  ))
-                                )}
-                              </div>
-                            </details>
-                          );
-                        })}
-                    </div>
-                    {renderFormalEditor(item.formalItem)}
+                    {renderFormalEditor(item.formalItem, reviewReferences)}
                   </article>
                   );
                 })}

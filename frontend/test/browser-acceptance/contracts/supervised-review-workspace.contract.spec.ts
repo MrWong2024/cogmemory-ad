@@ -4,11 +4,27 @@ import {
   getInlineSubmissionIssueSnapshotLabel,
   routeScaleSubmissionIssues,
 } from '@/src/features/assessments/lib/scale-submission-issue-routing';
+import { routePatientReviewReferences } from '@/src/features/patient-administration/lib/patient-review-reference-routing';
 import type {
   ScaleSubmissionIssue,
   ScaleSubmissionIssueSeverity,
   ScaleSubmissionIssueScope,
 } from '@/src/features/assessments/types/scale-instance-submission';
+import type { PatientAdministrationReviewStep } from '@/src/features/patient-administration/types/patient-administration';
+
+function createReviewStep(
+  stepKey: string,
+  structuredFieldCodes: string[],
+): PatientAdministrationReviewStep {
+  return {
+    stepKey,
+    order: 1,
+    responseMode: 'speech',
+    advanceBy: 'patient',
+    structuredFieldCodes,
+    runs: [],
+  };
+}
 
 function createIssue(input: {
   code: ScaleSubmissionIssue['code'];
@@ -116,4 +132,46 @@ test('inline readiness labels distinguish a stale snapshot from the latest check
   expect(getInlineSubmissionIssueSnapshotLabel(false)).toBe(
     '最新提交检查结果',
   );
+});
+
+test('routes a single known code to its field and every other placement to shared exactly once', () => {
+  const fieldSpecific = createReviewStep('single', ['field-a']);
+  const multiField = createReviewStep('multi', ['field-a', 'field-b']);
+  const unmapped = createReviewStep('unmapped', []);
+  const runtimeMismatch = createReviewStep('mismatch', ['unknown-field']);
+  const input = [fieldSpecific, multiField, unmapped, runtimeMismatch];
+
+  const routing = routePatientReviewReferences(
+    [{ code: 'field-a' }, { code: 'field-b' }],
+    input,
+  );
+
+  expect(routing.fieldSpecificStepsByCode).toEqual({
+    'field-a': [fieldSpecific],
+  });
+  expect(routing.sharedSteps).toEqual([
+    multiField,
+    unmapped,
+    runtimeMismatch,
+  ]);
+  const routedSteps = [
+    ...Object.values(routing.fieldSpecificStepsByCode).flat(),
+    ...routing.sharedSteps,
+  ];
+  expect(routedSteps).toHaveLength(input.length);
+  expect(routedSteps.map((step) => step.stepKey).sort()).toEqual(
+    input.map((step) => step.stepKey).sort(),
+  );
+});
+
+test('routes all patient steps to shared when the formal item has no structured fields', () => {
+  const steps = [
+    createReviewStep('single', ['field-a']),
+    createReviewStep('unmapped', []),
+  ];
+
+  const routing = routePatientReviewReferences(null, steps);
+
+  expect(routing.fieldSpecificStepsByCode).toEqual({});
+  expect(routing.sharedSteps).toEqual(steps);
 });

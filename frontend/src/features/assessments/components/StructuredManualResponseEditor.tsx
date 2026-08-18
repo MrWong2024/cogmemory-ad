@@ -1,4 +1,4 @@
-import { useId } from 'react';
+import { type ReactNode, useId } from 'react';
 
 import {
   getStructuredManualScorePreview,
@@ -21,12 +21,16 @@ export function StructuredManualResponseEditor({
   draft,
   fields,
   onChange,
+  patientReferenceByFieldCode,
+  sharedPatientReference,
 }: {
   completionRequired: boolean;
   disabled: boolean;
   draft: StructuredManualResponse | null;
   fields: readonly StructuredManualField[];
   onChange: (draft: StructuredManualResponse) => void;
+  patientReferenceByFieldCode?: Readonly<Record<string, ReactNode>>;
+  sharedPatientReference?: ReactNode;
 }) {
   const fieldIdPrefix = useId();
   const preview = getStructuredManualScorePreview(fields, draft);
@@ -73,6 +77,18 @@ export function StructuredManualResponseEditor({
         </div>
       </div>
 
+      {sharedPatientReference ? (
+        <section
+          aria-label="共享患者施测参考"
+          className="grid gap-2 rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] p-4"
+        >
+          <h5 className="font-semibold text-[var(--cma-text-strong)]">
+            共享患者施测参考
+          </h5>
+          {sharedPatientReference}
+        </section>
+      ) : null}
+
       {fields.map((field, index) => {
         const subItem = draft?.subItems[field.code] ?? {
           responseText: '',
@@ -85,7 +101,6 @@ export function StructuredManualResponseEditor({
         return (
           <fieldset
             className="grid gap-4 rounded-md border border-[var(--cma-line)] p-4"
-            disabled={disabled}
             key={field.code}
           >
             <legend className="px-1 text-lg font-semibold text-[var(--cma-text-strong)]">
@@ -99,6 +114,15 @@ export function StructuredManualResponseEditor({
               </p>
             ) : null}
 
+            {patientReferenceByFieldCode?.[field.code] ? (
+              <div className="grid gap-2">
+                <p className="font-semibold text-[var(--cma-text-strong)]">
+                  患者施测参考
+                </p>
+                {patientReferenceByFieldCode[field.code]}
+              </div>
+            ) : null}
+
             <div className="grid gap-2">
               <label
                 className="font-semibold text-[var(--cma-text-strong)]"
@@ -108,6 +132,7 @@ export function StructuredManualResponseEditor({
               </label>
               <input
                 className={responseInputClassName}
+                disabled={disabled}
                 id={responseId}
                 onChange={(event) =>
                   updateSubItem(field.code, {
@@ -131,6 +156,7 @@ export function StructuredManualResponseEditor({
                   <input
                     checked={subItem.isCorrect === true}
                     className="h-5 w-5 accent-[var(--cma-primary)]"
+                    disabled={disabled}
                     id={correctId}
                     name={`${fieldIdPrefix}-correctness-${index}`}
                     onChange={() =>
@@ -147,6 +173,7 @@ export function StructuredManualResponseEditor({
                   <input
                     checked={subItem.isCorrect === false}
                     className="h-5 w-5 accent-[var(--cma-primary)]"
+                    disabled={disabled}
                     id={incorrectId}
                     name={`${fieldIdPrefix}-correctness-${index}`}
                     onChange={() =>

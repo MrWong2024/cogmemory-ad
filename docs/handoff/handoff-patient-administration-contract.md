@@ -255,7 +255,7 @@ F3 的组织原则是“正常复核优先，重点项目适度提示”。系�
 
 允许汇总呈现多个简单客观项目、减少跳转并提供快速逐项复核，但不建设批量确认写协议。正式答案写入继续使用 A14 单题 PATCH，需要形成有效完成状态时继续使用既有 `markAsAnswered`，提交前完整性继续由 readiness 判断，整份量表最终只由 A16 `submit(confirm=true)` 整体提交；“确认需要确认的项目”仅指这些现有业务动作，不新增 `reviewed`、`confirmed`、`reviewCompleted`、`doctorConfirmed`、`reviewRevision` 等表示“医生看过”的持久状态。
 
-现有 `GET .../patient-administration/review` 只作为患者施测事实的安全只读参考来源，可安全展示 Session 引用的患者 `MediaEvidence`，但不存储正式答案、修改 `ItemResponse.evidenceRefs`、保存复核 / 确认 / 异常状态或扩张为写接口；正式答案仍只进入既有 A14 / readiness / A16 链，采用已有患者 Evidence 的最小写动作也与该只读 projection 分离。医生对正式提交结果承担相应专业责任，患者原始事实、ASR、现场医护观察和需专业判断的书写 / 绘图均不得自动成为正式答案；readiness 必须通过，A16 必须显式整体提交，关键操作与必要原始证据继续留痕和可追溯。
+现有 `GET .../patient-administration/review` 只作为患者施测事实的安全只读参考来源，可安全展示 Session 引用的患者 `MediaEvidence`；其中 step 的 `structuredFieldCodes` 只是可用时用于就近展示的 review placement 关联事实，空数组表示没有安全具体字段关联，不改变患者原始事实、Evidence 或正式答案的权威边界。review 不存储正式答案、修改 `ItemResponse.evidenceRefs`、保存复核 / 确认 / 异常状态或扩张为写接口；正式答案仍只进入既有 A14 / readiness / A16 链，采用已有患者 Evidence 的最小写动作也与该只读 projection 分离。医生对正式提交结果承担相应专业责任，患者原始事实、ASR、现场医护观察和需专业判断的书写 / 绘图均不得自动成为正式答案；readiness 必须通过，A16 必须显式整体提交，关键操作与必要原始证据继续留痕和可追溯。
 
 保留现有 `operatorNote`，但它是按业务需要填写的可选说明，不是正常首次复核的形式性逐题必填项，也不填写“已确认”“正常”“无异常”等无业务价值文字。只有实质纠正需要解释、原始事实与正式答案存在值得说明的明显差异、临床判断需要额外解释，或某题真实业务合同明确要求说明时，才填写必要 note。继续复用现有 `operatorNote`、submission actor / time、Audit 和提交留痕，不新增 `reviewNote`、`correctionReason`、`confirmationReason`、`doctorComment` 等第二套 note / reason 体系。
 

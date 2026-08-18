@@ -90,7 +90,10 @@ import type {
 } from '@/src/features/assessments/types/scale-instance-submission';
 import { logout } from '@/src/features/auth/api/auth-api';
 import { PatientAdministrationStaffPanel } from '@/src/features/patient-administration/components/PatientAdministrationStaffPanel';
-import { PatientAdministrationReviewPanel } from '@/src/features/patient-administration/components/PatientAdministrationReviewPanel';
+import {
+  PatientAdministrationReviewPanel,
+  type PatientAdministrationReviewReferenceSlots,
+} from '@/src/features/patient-administration/components/PatientAdministrationReviewPanel';
 import type { PatientAdministrationStatus } from '@/src/features/patient-administration/types/patient-administration';
 import {
   assessmentVisitStatusLabels,
@@ -205,7 +208,6 @@ function getExecutionDetailErrorState(
     canRetry: true,
   };
 }
-
 function buildMediaDraftKey(
   itemResponseId: string,
   evidenceType: SupportedMediaEvidenceType,
@@ -1921,6 +1923,7 @@ export function ScaleInstanceExecutionPage({
     item: ItemResponseExecution,
     layout: 'standalone' | 'embedded' = 'standalone',
     includeLocator = true,
+    patientReferences: PatientAdministrationReviewReferenceSlots = {},
   ) {
     const draft = drafts[item.id];
     const autosaveSnapshot = autosave.snapshots[item.id];
@@ -1964,7 +1967,14 @@ export function ScaleInstanceExecutionPage({
         onUseServerVersion={() => autosave.useServerConflictVersion(item.id)}
         pageReadOnlyReason={effectiveReadOnlyReason}
         patientId={patientId}
+        patientReference={patientReferences.itemSharedReference}
         scaleInstanceId={scaleInstanceId}
+        structuredPatientReferenceByFieldCode={
+          patientReferences.structuredFieldReferencesByCode
+        }
+        structuredSharedPatientReference={
+          patientReferences.structuredSharedReference
+        }
         visitId={visitId}
       />
     );
@@ -2286,8 +2296,13 @@ export function ScaleInstanceExecutionPage({
                 patientId={patientId}
                 readinessStale={readinessStale}
                 readOnlyReason={effectiveReadOnlyReason}
-                renderFormalEditor={(item) =>
-                  renderFormalItemEditor(item, 'embedded', false)
+                renderFormalEditor={(item, patientReferences) =>
+                  renderFormalItemEditor(
+                    item,
+                    'embedded',
+                    false,
+                    patientReferences,
+                  )
                 }
                 scaleInstanceId={scaleInstanceId}
                 visitId={visitId}

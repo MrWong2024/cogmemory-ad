@@ -1,5 +1,6 @@
 import type { ScaleInstanceExecutionParamDto } from '../../assessments/dto/scale-instance-execution-param.dto';
 import type { PatientAdministrationReviewFacts } from '../../assessments/services/patient-administration-session.service';
+import * as structuredBindings from '../lib/patient-administration-review-structured-bindings';
 import type { MediaEvidenceSummary } from './media-evidence.service';
 import { PatientAdministrationReviewService } from './patient-administration-review.service';
 
@@ -172,7 +173,94 @@ function createSubject() {
   };
 }
 
+type MappingStep = {
+  stepKey: string;
+  order: number;
+};
+
+function structuredScoringRule(fieldCodes: readonly string[]) {
+  return {
+    mode: 'structured_manual',
+    subItems: fieldCodes.map((code) => ({
+      code,
+      title: code,
+      maxScore: 1,
+    })),
+  };
+}
+
+function createMappingSubject(
+  steps: readonly MappingStep[],
+  fieldCodes: readonly string[] | null,
+) {
+  const reviewFacts = facts();
+  reviewFacts.stepCaptures = [];
+  reviewFacts.stepEvidenceRefs = [];
+  const itemCode = 'mapped-item';
+  const sessions = {
+    getLatestReviewFacts: jest.fn().mockResolvedValue(reviewFacts),
+  };
+  const assessments = {
+    listItemResponsesByScaleInstanceId: jest.fn().mockResolvedValue([
+      {
+        id: ids.itemResponseId,
+        patientId: ids.patientId,
+        assessmentVisitId: ids.visitId,
+        scaleInstanceId: ids.scaleInstanceId,
+        scaleDefinitionId: ids.definitionId,
+        scaleVersionId: ids.versionId,
+        scaleCode: 'mmse',
+        scaleVersion: '1.0',
+        itemCode,
+        itemTitle: '映射测试题',
+        status: 'in_progress',
+        draftRevision: 0,
+      },
+    ]),
+  };
+  const scales = {
+    findVersionByScaleCodeAndVersion: jest.fn().mockResolvedValue({
+      id: ids.versionId,
+      scaleDefinitionId: ids.definitionId,
+      items: [
+        {
+          code: itemCode,
+          title: '映射测试题',
+          scoringRule:
+            fieldCodes === null
+              ? { mode: 'manual' }
+              : structuredScoringRule(fieldCodes),
+        },
+      ],
+      patientAdministrationSteps: steps.map((step) => ({
+        ...step,
+        itemCode,
+        patientText: 'must not leak',
+        assetKeys: [],
+        responseMode: 'speech',
+        advanceBy: 'patient',
+      })),
+    }),
+  };
+  const media = {
+    listMediaEvidenceByIds: jest.fn().mockResolvedValue([]),
+  };
+
+  return {
+    service: new PatientAdministrationReviewService(
+      sessions as never,
+      assessments as never,
+      scales as never,
+      media as never,
+    ),
+  };
+}
+
 describe('PatientAdministrationReviewService', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('builds an ordered safe projection with invalidated and takeover runs', async () => {
     const subject = createSubject();
     const result = await subject.service.getReview(params);
@@ -206,6 +294,7 @@ describe('PatientAdministrationReviewService', () => {
       order: 1,
       responseMode: 'speech',
       advanceBy: 'patient',
+      structuredFieldCodes: [],
     });
     expect(result.items[0].steps[0].runs).toHaveLength(2);
     expect(result.items[0].steps[0].runs[0]).toMatchObject({
@@ -274,5 +363,119 @@ describe('PatientAdministrationReviewService', () => {
     await expect(subject.service.getReview(params)).rejects.toMatchObject({
       response: { code: 'PATIENT_ADMINISTRATION_STEP_INVALID' },
     });
+  });
+
+  it('returns one exact structured field for each time-orientation step', async () => {
+    const steps = [
+      { stepKey: 'mmse-orientation-year', order: 1 },
+      { stepKey: 'mmse-orientation-season', order: 2 },
+      { stepKey: 'mmse-orientation-month', order: 3 },
+      { stepKey: 'mmse-orientation-date', order: 4 },
+      { stepKey: 'mmse-orientation-weekday', order: 5 },
+    ];
+    const fieldCodes = [
+      'mmse.orientation.year',
+      'mmse.orientation.season',
+      'mmse.orientation.month',
+      'mmse.orientation.date',
+      'mmse.orientation.weekday',
+    ];
+    const subject = createMappingSubject(steps, fieldCodes);
+
+    const result = await subject.service.getReview(params);
+
+    expect(
+      result.items[0].steps.map((step) => step.structuredFieldCodes),
+    ).toEqual(fieldCodes.map((code) => [code]));
+  });
+
+  it('returns all three immediate-recall fields on the single shared step', async () => {
+    const fieldCodes = [
+      'mmse.memory.immediate_recall.ball',
+      'mmse.memory.immediate_recall.flag',
+      'mmse.memory.immediate_recall.tree',
+    ];
+    const subject = createMappingSubject(
+      [{ stepKey: 'mmse-immediate-recall', order: 1 }],
+      fieldCodes,
+    );
+
+    const result = await subject.service.getReview(params);
+
+    expect(result.items[0].steps[0].structuredFieldCodes).toEqual(fieldCodes);
+  });
+
+  it('returns an empty placement for a non-structured repetition step', async () => {
+    const subject = createMappingSubject(
+      [{ stepKey: 'mmse-repetition', order: 1 }],
+      null,
+    );
+
+    const result = await subject.service.getReview(params);
+
+    expect(result.items[0].steps[0].structuredFieldCodes).toEqual([]);
+  });
+
+  it('fails the whole item placement safe when a mapped code is absent from the stored rule', async () => {
+    const subject = createMappingSubject(
+      [{ stepKey: 'mmse-orientation-year', order: 1 }],
+      ['mmse.orientation.unexpected'],
+    );
+
+    const result = await subject.service.getReview(params);
+
+    expect(result.items[0].steps[0].structuredFieldCodes).toEqual([]);
+  });
+
+  it('fails the whole item placement safe when explicit coverage is incomplete', async () => {
+    const subject = createMappingSubject(
+      [
+        { stepKey: 'mmse-orientation-year', order: 1 },
+        { stepKey: 'mmse-orientation-season', order: 2 },
+        { stepKey: 'mmse-orientation-month', order: 3 },
+        { stepKey: 'mmse-orientation-date', order: 4 },
+      ],
+      [
+        'mmse.orientation.year',
+        'mmse.orientation.season',
+        'mmse.orientation.month',
+        'mmse.orientation.date',
+        'mmse.orientation.weekday',
+      ],
+    );
+
+    const result = await subject.service.getReview(params);
+
+    expect(
+      result.items[0].steps.map((step) => step.structuredFieldCodes),
+    ).toEqual([[], [], [], []]);
+  });
+
+  it('fails the whole item placement safe when two steps bind the same field', async () => {
+    const originalResolver =
+      structuredBindings.resolvePatientAdministrationReviewStructuredFieldCodes;
+    jest
+      .spyOn(
+        structuredBindings,
+        'resolvePatientAdministrationReviewStructuredFieldCodes',
+      )
+      .mockImplementation((scaleCode, scaleVersion, stepKey) =>
+        stepKey === 'mmse-orientation-season'
+          ? ['mmse.orientation.year']
+          : originalResolver(scaleCode, scaleVersion, stepKey),
+      );
+    const subject = createMappingSubject(
+      [
+        { stepKey: 'mmse-orientation-year', order: 1 },
+        { stepKey: 'mmse-orientation-season', order: 2 },
+      ],
+      ['mmse.orientation.year', 'mmse.orientation.season'],
+    );
+
+    const result = await subject.service.getReview(params);
+
+    expect(
+      result.items[0].steps.map((step) => step.structuredFieldCodes),
+    ).toEqual([[], []]);
   });
 });

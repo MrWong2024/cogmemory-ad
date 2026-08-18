@@ -240,6 +240,7 @@ export type PatientAdministrationReviewStep = {
   order: number;
   responseMode: PatientAdministrationResponseMode;
   advanceBy: PatientAdministrationAdvanceBy;
+  structuredFieldCodes: string[];
   runs: PatientAdministrationReviewRun[];
 };
 

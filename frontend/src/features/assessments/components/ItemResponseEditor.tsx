@@ -1,4 +1,4 @@
-import { useId } from 'react';
+import { type ReactNode, useId } from 'react';
 
 import { Badge, type BadgeTone } from '@/src/components/ui/Badge';
 import { Button } from '@/src/components/ui/Button';
@@ -114,7 +114,10 @@ export function ItemResponseEditor({
   onUseServerVersion,
   pageReadOnlyReason,
   patientId,
+  patientReference,
   scaleInstanceId,
+  structuredPatientReferenceByFieldCode,
+  structuredSharedPatientReference,
   visitId,
 }: {
   autosaveSnapshot: ItemResponseAutosaveSnapshot;
@@ -145,7 +148,10 @@ export function ItemResponseEditor({
   onUseServerVersion: () => void;
   pageReadOnlyReason: string | null;
   patientId: string;
+  patientReference?: ReactNode;
   scaleInstanceId: string;
+  structuredPatientReferenceByFieldCode?: Readonly<Record<string, ReactNode>>;
+  structuredSharedPatientReference?: ReactNode;
   visitId: string;
 }) {
   const fieldIdPrefix = useId();
@@ -317,6 +323,10 @@ export function ItemResponseEditor({
           onChange={(structuredResponse) =>
             updateDraft({ ...draft, structuredResponse })
           }
+          patientReferenceByFieldCode={
+            structuredPatientReferenceByFieldCode
+          }
+          sharedPatientReference={structuredSharedPatientReference}
         />
       ) : (
         <section
@@ -334,6 +344,18 @@ export function ItemResponseEditor({
             本页只保存原始作答草稿，不执行自动匹配、正确性判断或评分。
           </p>
         </div>
+
+        {patientReference ? (
+          <section
+            aria-label="本题患者施测参考"
+            className="grid gap-2 rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] p-4"
+          >
+            <h5 className="font-semibold text-[var(--cma-text-strong)]">
+              本题患者施测参考
+            </h5>
+            {patientReference}
+          </section>
+        ) : null}
 
         {item.responseType === 'boolean' ? (
           <div className="grid max-w-xl gap-2">
