@@ -74,6 +74,27 @@ export function buildInlineActionableIssuePresentations(
 
   if (
     remaining.some(
+      (issue) => issue.code === 'ITEM_MANUAL_OBSERVATION_INCOMPLETE',
+    )
+  ) {
+    const grouped = extract(
+      new Set([
+        'ITEM_MANUAL_OBSERVATION_INCOMPLETE',
+        'ITEM_BINARY_MANUAL_DECISION_INCOMPLETE',
+        ...COMMON_INCOMPLETE_CODES,
+      ]),
+    );
+    presentations.push(
+      toPresentation(
+        grouped,
+        '本题复核尚未完成',
+        '请记录患者实际阅读情况和闭眼动作，完成评分判断后标记本题完成。',
+      ),
+    );
+  }
+
+  if (
+    remaining.some(
       (issue) => issue.code === 'ITEM_STRUCTURED_SUBITEMS_INCOMPLETE',
     )
   ) {

@@ -42,6 +42,7 @@ import {
   readBinaryManualDecisionConfigFromSnapshot,
   readCompleteBinaryManualDecision,
 } from '../lib/binary-manual-decision';
+import { resolveManualObservationRecordConfig } from '../lib/manual-observation-record';
 import {
   ItemResponse,
   type ItemResponseDocument,
@@ -303,10 +304,26 @@ export class ItemResponseDraftService {
     const binaryManualDecision = readBinaryManualDecisionConfigFromSnapshot(
       itemResponse.itemConfigSnapshot,
     );
+    const manualObservationRecord = resolveManualObservationRecordConfig({
+      itemCode: itemResponse.itemCode,
+      versionTrace: itemResponse.versionTrace,
+      itemConfigSnapshot: itemResponse.itemConfigSnapshot,
+    });
     let hasDraftMutation = false;
     let submittedMeaningfulAnswer = false;
 
     if (this.isProvided(input, 'rawResponse')) {
+      if (
+        manualObservationRecord &&
+        input.rawResponse !== null &&
+        typeof input.rawResponse !== 'boolean'
+      ) {
+        throw new BadRequestException({
+          code: 'ITEM_RESPONSE_PAYLOAD_INVALID',
+          message: 'Item response draft payload is invalid',
+        });
+      }
+
       rawResponse = this.cloneDraftJson(input.rawResponse);
       setFields.rawResponse = rawResponse;
       hasDraftMutation = true;
@@ -483,6 +500,20 @@ export class ItemResponseDraftService {
         throw new ConflictException({
           code: 'ITEM_RESPONSE_CANNOT_MARK_ANSWERED',
           message: 'Structured manual item responses are incomplete',
+        });
+      }
+
+      if (
+        !isMissing &&
+        manualObservationRecord &&
+        ((manualObservationRecord.requireResponseText &&
+          !responseText?.trim()) ||
+          (manualObservationRecord.requireBooleanResponse &&
+            typeof rawResponse !== 'boolean'))
+      ) {
+        throw new ConflictException({
+          code: 'ITEM_RESPONSE_CANNOT_MARK_ANSWERED',
+          message: 'Manual observation record is incomplete',
         });
       }
 

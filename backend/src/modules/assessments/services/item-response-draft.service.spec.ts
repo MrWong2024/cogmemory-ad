@@ -146,6 +146,25 @@ function createBinaryManualItem(
   });
 }
 
+function createReadingObservationItem(
+  overrides: Partial<ItemResponseSummary> = {},
+): ItemResponseSummary {
+  return createItemResponseSummary({
+    itemCode: 'mmse.language.reading_command',
+    itemTitle: '阅读并执行',
+    responseType: 'boolean',
+    itemConfigSnapshot: {
+      responseType: 'boolean',
+      scoreRange: { min: 0, max: 1, step: 1 },
+      scoringRule: { mode: 'manual_observation' },
+    },
+    versionTrace: { scaleVersion: '1.0' },
+    stepResults: [],
+    promptResponses: [],
+    ...overrides,
+  });
+}
+
 async function expectHttpExceptionCode(
   promise: Promise<unknown>,
   status: number,
@@ -953,6 +972,126 @@ describe('ItemResponseDraftService', () => {
 
     expect(readUpdateSet(itemResponseModel.findOneAndUpdate)).toEqual(
       expect.objectContaining({ rawResponse: false, status: 'answered' }),
+    );
+  });
+
+  it('saves either reading observation fact as a partial draft', async () => {
+    currentItemResponse = createReadingObservationItem();
+    await save({ responseText: '请闭上您的眼睛' });
+    expect(readUpdateSet(itemResponseModel.findOneAndUpdate)).toEqual(
+      expect.objectContaining({
+        responseText: '请闭上您的眼睛',
+        status: 'in_progress',
+      }),
+    );
+
+    itemResponseModel.findOneAndUpdate.mockClear();
+    currentItemResponse = createReadingObservationItem();
+    await save({ rawResponse: true });
+    expect(readUpdateSet(itemResponseModel.findOneAndUpdate)).toEqual(
+      expect.objectContaining({ rawResponse: true, status: 'in_progress' }),
+    );
+
+    itemResponseModel.findOneAndUpdate.mockClear();
+    currentItemResponse = createReadingObservationItem();
+    await save({ rawResponse: false });
+    expect(readUpdateSet(itemResponseModel.findOneAndUpdate)).toEqual(
+      expect.objectContaining({ rawResponse: false, status: 'in_progress' }),
+    );
+  });
+
+  it.each(['yes', 1, [], { observed: true }])(
+    'rejects non-boolean reading observation rawResponse %p',
+    async (rawResponse) => {
+      currentItemResponse = createReadingObservationItem();
+      await expectHttpExceptionCode(
+        save({ rawResponse }),
+        400,
+        'ITEM_RESPONSE_PAYLOAD_INVALID',
+      );
+      expect(itemResponseModel.findOneAndUpdate).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([true, false])(
+    'marks a complete reading observation answered when rawResponse is %s',
+    async (rawResponse) => {
+      currentItemResponse = createReadingObservationItem();
+
+      await save({
+        responseText: '请闭上您的眼睛',
+        rawResponse,
+        structuredResponse: {
+          binaryManualDecision: { isCorrect: rawResponse },
+        },
+        markAsAnswered: true,
+      });
+
+      expect(readUpdateSet(itemResponseModel.findOneAndUpdate)).toEqual(
+        expect.objectContaining({
+          responseText: '请闭上您的眼睛',
+          rawResponse,
+          status: 'answered',
+        }),
+      );
+    },
+  );
+
+  it.each([
+    [
+      'response text',
+      {
+        rawResponse: false,
+        structuredResponse: {
+          binaryManualDecision: { isCorrect: false },
+        },
+      },
+    ],
+    [
+      'boolean observation',
+      {
+        responseText: '未能读出',
+        rawResponse: null,
+        structuredResponse: {
+          binaryManualDecision: { isCorrect: false },
+        },
+      },
+    ],
+    [
+      'scoring decision',
+      {
+        responseText: '请闭上您的眼睛',
+        rawResponse: true,
+      },
+    ],
+  ])(
+    'cannot mark a reading observation answered without %s',
+    async (_label, input) => {
+      currentItemResponse = createReadingObservationItem();
+      await expectHttpExceptionCode(
+        save({ ...input, markAsAnswered: true }),
+        409,
+        'ITEM_RESPONSE_CANNOT_MARK_ANSWERED',
+      );
+    },
+  );
+
+  it('allows the reading observation item to be completed as missing', async () => {
+    currentItemResponse = createReadingObservationItem();
+
+    await save({
+      isMissing: true,
+      missingReason: 'Unable to assess',
+      markAsAnswered: true,
+    });
+
+    expect(readUpdateSet(itemResponseModel.findOneAndUpdate)).toEqual(
+      expect.objectContaining({
+        status: 'answered',
+        isMissing: true,
+        rawResponse: null,
+        structuredResponse: null,
+      }),
     );
   });
 

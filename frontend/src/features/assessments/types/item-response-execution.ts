@@ -111,6 +111,16 @@ export type BinaryManualDecisionConfig = {
   correctScore: number;
 };
 
+export type ManualObservationRecordConfig = {
+  booleanLabel: string;
+  trueLabel: string;
+  falseLabel: string;
+  responseTextLabel: string;
+  responseTextHelp: string;
+  requireBooleanResponse: boolean;
+  requireResponseText: boolean;
+};
+
 export type ItemExecutionConfig = {
   prompt?: string;
   instruction?: string;
@@ -122,6 +132,7 @@ export type ItemExecutionConfig = {
   requiresOperatorNote: boolean;
   structuredManualFields?: StructuredManualField[];
   binaryManualDecision?: BinaryManualDecisionConfig;
+  manualObservationRecord?: ManualObservationRecordConfig;
 };
 
 export type ItemResponseVersionTrace = {

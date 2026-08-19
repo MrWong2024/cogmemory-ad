@@ -11,6 +11,7 @@ import type {
   UpdateItemStepDraftRequest,
   UpdatePromptResponseDraftRequest,
   BinaryManualDecisionConfig,
+  ManualObservationRecordConfig,
 } from '@/src/features/assessments/types/item-response-execution';
 import { validateItemTimingSnapshot } from '@/src/features/assessments/lib/item-response-timer';
 
@@ -84,6 +85,12 @@ export function getBinaryManualDecisionConfig(
   config: ItemExecutionConfig,
 ): BinaryManualDecisionConfig | null {
   return config.binaryManualDecision ?? null;
+}
+
+export function getManualObservationRecordConfig(
+  config: ItemExecutionConfig,
+): ManualObservationRecordConfig | null {
+  return config.manualObservationRecord ?? null;
 }
 
 export function readStoredBinaryManualDecision(
@@ -433,11 +440,25 @@ export function itemDraftHasValidAnswer(
 
   const structuredManualFields = getStructuredManualFields(item.config);
   const binaryManualDecision = getBinaryManualDecisionConfig(item.config);
+  const manualObservationRecord = getManualObservationRecordConfig(
+    item.config,
+  );
 
   if (structuredManualFields) {
     return isStructuredManualDraftComplete(
       structuredManualFields,
       draft.structuredResponse,
+    );
+  }
+
+  if (manualObservationRecord) {
+    return (
+      (!manualObservationRecord.requireResponseText ||
+        draft.responseText.trim().length > 0) &&
+      (!manualObservationRecord.requireBooleanResponse ||
+        typeof draft.rawResponse === 'boolean') &&
+      (!binaryManualDecision ||
+        typeof draft.binaryManualDecision === 'boolean')
     );
   }
 

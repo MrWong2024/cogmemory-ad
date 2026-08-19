@@ -366,6 +366,10 @@ describe('scale instance submission APIs (e2e)', () => {
                 binaryManualDecision: { isCorrect: false },
               }
             : undefined;
+      const manualObservationRecord = isRecord(config.manualObservationRecord);
+      const responseText = manualObservationRecord
+        ? 'A16 patient reading observation'
+        : undefined;
       let savedRevision = initialRevision;
       if (stepResponses.length > 0) {
         const answerResponse = await doctorAgent
@@ -373,6 +377,7 @@ describe('scale instance submission APIs (e2e)', () => {
           .send({
             expectedRevision: savedRevision,
             rawResponse: false,
+            ...(responseText ? { responseText } : {}),
             ...(structuredResponse ? { structuredResponse } : {}),
             operatorNote: 'A16 de-identified operator note',
             markAsAnswered: true,
@@ -423,6 +428,7 @@ describe('scale instance submission APIs (e2e)', () => {
           .send({
             expectedRevision: savedRevision,
             rawResponse: false,
+            ...(responseText ? { responseText } : {}),
             ...(structuredResponse ? { structuredResponse } : {}),
             operatorNote: 'A16 de-identified operator note',
             markAsAnswered: true,
@@ -875,6 +881,80 @@ describe('scale instance submission APIs (e2e)', () => {
           isRecord(issue) &&
           issue.itemCode === 'mmse.language.repetition' &&
           issue.code === 'ITEM_BINARY_MANUAL_DECISION_INCOMPLETE',
+      ),
+    ).toBe(false);
+  });
+
+  it('fails historical reading observations closed until both raw facts are complete', async () => {
+    const fixture = await createFixture('READING-HISTORICAL');
+    const item = await itemModel
+      .findOne({
+        scaleInstanceId: fixture.scaleInstanceId,
+        itemCode: 'mmse.language.reading_command',
+      })
+      .exec();
+    if (!item) {
+      throw new Error('Expected MMSE reading-command item response');
+    }
+
+    await itemModel
+      .updateOne(
+        { _id: item._id },
+        {
+          $set: {
+            status: 'answered',
+            rawResponse: false,
+            structuredResponse: {
+              binaryManualDecision: { isCorrect: false },
+            },
+          },
+          $unset: { responseText: 1 },
+        },
+      )
+      .exec();
+
+    const historicalReadiness = body(
+      await doctorAgent.get(readinessPath(fixture)).expect(200),
+    );
+    const historicalIssues = arrayValue(
+      historicalReadiness.blockingIssues,
+      'blocking issues',
+    );
+    expect(
+      historicalIssues.some(
+        (issue) =>
+          isRecord(issue) &&
+          issue.itemCode === 'mmse.language.reading_command' &&
+          issue.code === 'ITEM_MANUAL_OBSERVATION_INCOMPLETE',
+      ),
+    ).toBe(true);
+    expect(
+      historicalIssues.some(
+        (issue) =>
+          isRecord(issue) &&
+          issue.itemCode === 'mmse.language.reading_command' &&
+          issue.code === 'ITEM_BINARY_MANUAL_DECISION_INCOMPLETE',
+      ),
+    ).toBe(false);
+
+    await doctorAgent
+      .patch(`${instancePath(fixture)}/item-responses/${item._id.toString()}`)
+      .send({
+        expectedRevision: 0,
+        responseText: '未能读出',
+        markAsAnswered: true,
+      })
+      .expect(200);
+
+    const completedReadiness = body(
+      await doctorAgent.get(readinessPath(fixture)).expect(200),
+    );
+    expect(
+      arrayValue(completedReadiness.blockingIssues, 'blocking issues').some(
+        (issue) =>
+          isRecord(issue) &&
+          issue.itemCode === 'mmse.language.reading_command' &&
+          issue.code === 'ITEM_MANUAL_OBSERVATION_INCOMPLETE',
       ),
     ).toBe(false);
   });

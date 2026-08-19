@@ -312,4 +312,36 @@ describe('item response execution mapper', () => {
       'binaryManualDecision',
     );
   });
+
+  it('projects the exact reading-command observation labels without exposing the scoring rule', () => {
+    const source = createItemResponseSummary();
+    source.itemCode = 'mmse.language.reading_command';
+    source.responseType = 'boolean';
+    source.itemConfigSnapshot = {
+      responseType: 'boolean',
+      scoreRange: { min: 0, max: 1, step: 1 },
+      scoringRule: {
+        mode: 'manual_observation',
+        scoringSummary: 'private clinical criteria',
+      },
+    };
+
+    const config = toItemResponseExecutionResponse(source).config;
+
+    expect(config.manualObservationRecord).toEqual({
+      booleanLabel: '闭眼动作',
+      trueLabel: '已按要求闭眼',
+      falseLabel: '未按要求闭眼',
+      responseTextLabel: '患者实际阅读 / 观察',
+      responseTextHelp: '记录患者实际念出的内容；如未能读出，请记录实际情况。',
+      requireBooleanResponse: true,
+      requireResponseText: true,
+    });
+    expect(config).not.toHaveProperty('scoringRule');
+
+    source.itemCode = 'mmse.language.repetition';
+    expect(toItemResponseExecutionResponse(source).config).not.toHaveProperty(
+      'manualObservationRecord',
+    );
+  });
 });

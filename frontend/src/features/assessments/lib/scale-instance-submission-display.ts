@@ -67,6 +67,11 @@ const issueDisplays: Record<ScaleSubmissionIssueCode, IssueDisplay> = {
     description:
       '本题仍有患者实际回答或正确性尚未确认的子项，请定位题目并逐项补齐。',
   },
+  ITEM_MANUAL_OBSERVATION_INCOMPLETE: {
+    title: '患者原始观察尚未完成',
+    description:
+      '请记录患者实际阅读情况和闭眼动作，再完成本题评分判断。',
+  },
   ITEM_BINARY_MANUAL_DECISION_INCOMPLETE: {
     title: '人工评分判断尚未完成',
     description:

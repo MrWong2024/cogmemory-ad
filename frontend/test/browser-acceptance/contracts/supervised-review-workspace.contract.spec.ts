@@ -5,6 +5,7 @@ import {
   routeScaleSubmissionIssues,
 } from '@/src/features/assessments/lib/scale-submission-issue-routing';
 import { buildInlineActionableIssuePresentations } from '@/src/features/assessments/lib/scale-submission-inline-presentation';
+import { getScaleSubmissionIssueDisplay } from '@/src/features/assessments/lib/scale-instance-submission-display';
 import { routePatientReviewReferences } from '@/src/features/patient-administration/lib/patient-review-reference-routing';
 import type {
   ScaleSubmissionIssue,
@@ -234,6 +235,47 @@ test('collapses binary decision incompleteness without swallowing media blockers
   expect(presentations[1]?.sourceIssues[0]?.code).toBe(
     'ITEM_REQUIRED_MEDIA_MISSING',
   );
+});
+
+test('collapses reading observation and scoring blockers into one clinician action', () => {
+  const issues = [
+    createIssue({
+      code: 'ITEM_MANUAL_OBSERVATION_INCOMPLETE',
+      severity: 'blocking',
+      itemResponseId: 'item-a',
+    }),
+    createIssue({
+      code: 'ITEM_BINARY_MANUAL_DECISION_INCOMPLETE',
+      severity: 'blocking',
+      itemResponseId: 'item-a',
+    }),
+    createIssue({
+      code: 'ITEM_ANSWER_CONTENT_MISSING',
+      severity: 'blocking',
+      itemResponseId: 'item-a',
+    }),
+    createIssue({
+      code: 'ITEM_NOT_COMPLETED',
+      severity: 'blocking',
+      itemResponseId: 'item-a',
+    }),
+  ];
+  const presentations = buildInlineActionableIssuePresentations(issues);
+
+  expect(presentations).toEqual([
+    expect.objectContaining({
+      title: '本题复核尚未完成',
+      description:
+        '请记录患者实际阅读情况和闭眼动作，完成评分判断后标记本题完成。',
+      sourceIssues: issues,
+    }),
+  ]);
+  expect(
+    getScaleSubmissionIssueDisplay('ITEM_MANUAL_OBSERVATION_INCOMPLETE'),
+  ).toEqual({
+    title: '患者原始观察尚未完成',
+    description: '请记录患者实际阅读情况和闭眼动作，再完成本题评分判断。',
+  });
 });
 
 test('collapses answer missing plus not completed while leaving warnings unchanged', () => {

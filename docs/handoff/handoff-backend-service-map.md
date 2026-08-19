@@ -197,7 +197,7 @@
 
 - Service 名称：`ItemResponseDraftService`
 - 文件路径：`backend\src\modules\assessments\services\item-response-draft.service.ts`
-- 职责边界：依次校验 Patient / Visit / ScaleInstance / ItemResponse 归属、可编辑状态与父 / 子 submission barrier open，校验 expectedRevision、草稿 JSON、structured_manual 服务端字段白名单、binary manual 精确 shape、完整 timing 快照与状态转换，精确合并既有 step / prompt 槽位，处理 missing / answered 语义，并以单条 `findOneAndUpdate` CAS 原子保存 ItemResponse。structured 草稿可部分保存；非 missing 标记 answered 时必须全部 configured field 具有非空 responseText 与 boolean isCorrect。binary eligible item 可保存 null partial，但标记 answered 时必须同时具备既有有效原始作答与 boolean decision；decision 本身不构成 answer content，missing item 不要求 decision。
+- 职责边界：依次校验 Patient / Visit / ScaleInstance / ItemResponse 归属、可编辑状态与父 / 子 submission barrier open，校验 expectedRevision、草稿 JSON、structured_manual 服务端字段白名单、binary manual 精确 shape、完整 timing 快照与状态转换，精确合并既有 step / prompt 槽位，处理 missing / answered 语义，并以单条 `findOneAndUpdate` CAS 原子保存 ItemResponse。structured 草稿可部分保存；非 missing 标记 answered 时必须全部 configured field 具有非空 responseText 与 boolean isCorrect。binary eligible item 可保存 null partial，但标记 answered 时必须同时具备既有有效原始作答与 boolean decision；MMSE 1.0 reading-command overlay 仍允许 responseText / rawResponse 任意 partial，主动提交 rawResponse 时仅接受 null / boolean，标记 answered 时要求非空阅读观察、boolean 闭眼动作与 boolean decision。decision 本身不构成 answer content，missing item 不要求这些字段。
 - 下游依赖：`PatientsService`、`AssessmentsService`、`ItemResponse` Model；不依赖 Scoring / Media / Reports / Storage。
 - 写库与并发边界：CAS filter 同时包含完整 ownership、可编辑 status、`lockedAt: null`、父 / 子 barrier null / missing 与 expected revision；expectedRevision=0 兼容字段缺失或 0。成功更新同写字段级草稿、`$inc draftRevision: 1` 与服务端 `draftSavedAt`；初始 stale 或普通竞争 miss 返回 `ITEM_RESPONSE_DRAFT_CONFLICT`，不合并、不自动重试。原子 miss 后重读优先把生命周期变化或合法 / 损坏屏障分类为 `SCALE_INSTANCE_NOT_EDITABLE`，其他数据库失败为 `ITEM_RESPONSE_SAVE_FAILED`。
 - 隔离边界：不覆盖 evidenceRefs，不修改 score、expectedValue、step / prompt 正确性、counts 标记、Visit / ScaleInstance 状态或 startedAt；仅把 structuredResponse 中的 isCorrect 作为医护确认事实保存，不自动语义判断或生成客户端 scoreValue；`rawResponse=false` 继续是有效原始事实，ASR / Evidence 不自动写 decision；不使用 transaction。A15 媒体点更新不推进草稿版本，因此不使同版本 A14 保存失效。
@@ -215,13 +215,17 @@
 - 文件路径：`backend\src\modules\assessments\lib\binary-manual-decision.ts`
 - 职责边界：只在 server-owned mode 属于 `manual_exact_match` / `manual_observation` / `manual_drawing_review` 且 scoreRange 精确为 0..1 step=1 时启用；严格接受 `{ binaryManualDecision: { isCorrect: boolean | null } }`，完整 boolean 才提供确定性 0 / 1。无 scaleCode / itemCode allowlist，不访问数据库、网络或环境；不纳入 structured_manual、multi_step_manual 或非 0/1 manual item。
 
+- 纯函数：`resolveManualObservationRecordConfig()`
+- 文件路径：`backend\src\modules\assessments\lib\manual-observation-record.ts`
+- 职责边界：只以 exact itemCode=`mmse.language.reading_command`、`versionTrace.scaleVersion=1.0` 和 ItemResponse snapshot 的 boolean / manual_observation / 0..1 step=1 三重配置解析安全 observation labels / required flags；这是 released 1.0 compatibility overlay，不按 title、prompt、order 或模糊字符串推断，不修改 seed、catalog 或 schema。
+
 - 纯函数：`normalizeItemResponseTiming()` / `validateItemResponseTimingUpdate()`
 - 文件路径：`backend\src\modules\assessments\lib\item-response-timing.ts`
 - 职责边界：规范化 legacy timing、校验 idle / running / paused / completed 完整快照与允许转换；不依赖 Nest、Mongoose、网络、数据库或时钟，GET 规范化不回写。
 
 - Mapper：`toItemResponseExecutionResponse()`
 - 文件路径：`backend\src\modules\assessments\services\item-response-execution.mapper.ts`
-- 职责边界：从内部 ItemResponse summary 和 itemConfigSnapshot 中逐字段提取允许的执行配置与草稿；对可执行 structured_manual 安全投影 `structuredManualFields`，对 binary eligible item 仅投影 `binaryManualDecision { incorrectScore: 0, correctScore: 1 }`，不透传完整 scoringRule；安全规范化 `draftRevision` / `draftSavedAt` 与 legacy timing，invalid legacy Mixed 草稿回退 null；不透传评分结果、metadata、`__v` 或媒体对象标识。
+- 职责边界：从内部 ItemResponse summary 和 itemConfigSnapshot 中逐字段提取允许的执行配置与草稿；对可执行 structured_manual 安全投影 `structuredManualFields`，对 binary eligible item 仅投影 `binaryManualDecision { incorrectScore: 0, correctScore: 1 }`，对 exact reading-command overlay 仅投影 `manualObservationRecord` labels / required flags，不透传完整 scoringRule、registry key 或 allowlist；安全规范化 `draftRevision` / `draftSavedAt` 与 legacy timing，invalid legacy Mixed 草稿回退 null；不透传评分结果、metadata、`__v` 或媒体对象标识。
 
 - Controller 名称：`AssessmentExecutionController`
 - 文件路径：`backend\src\modules\assessments\controllers\assessment-execution.controller.ts`
@@ -374,7 +378,7 @@
 
 - 名称：`evaluateScaleInstanceSubmissionReadiness()`
 - 类型：无 DI、无数据库访问的纯函数。
-- 职责：按 ScaleVersion.items + ItemResponse + 安全 snapshot 白名单计算 item set、有效原始作答、missing、structured_manual 完整性、binary manual 判断完整性、step、timing、media、operatorNote、稳定 issue 排序、summary、earliest timing start、ready / canSubmitNow；非 missing 的历史 free-text-only answered structured item 以 `ITEM_STRUCTURED_SUBITEMS_INCOMPLETE` fail closed，历史 answered binary item 无 boolean decision 以 `ITEM_BINARY_MANUAL_DECISION_INCOMPLETE` fail closed。backend 保留全部独立 issue，不做展示归并。
+- 职责：按 ScaleVersion.items + ItemResponse + 安全 snapshot 白名单计算 item set、有效原始作答、missing、structured_manual 完整性、reading-command 原始观察完整性、binary manual 判断完整性、step、timing、media、operatorNote、稳定 issue 排序、summary、earliest timing start、ready / canSubmitNow；非 missing 的历史 free-text-only answered structured item 以 `ITEM_STRUCTURED_SUBITEMS_INCOMPLETE` fail closed，历史 reading-command 缺少非空 responseText 或 boolean rawResponse 以 `ITEM_MANUAL_OBSERVATION_INCOMPLETE` fail closed，历史 answered binary item 无 boolean decision 以 `ITEM_BINARY_MANUAL_DECISION_INCOMPLETE` fail closed。三层事实不推断、不 backfill，backend 保留全部独立 issue，不做展示归并。
 - 复用：A14 与 A16 共享 `hasMeaningfulItemResponseAnswer()`，false / 0 有效，空字符串 / 数组 / 对象无效；binary eligible 调用明确忽略 `binaryManualDecision` root，使评分判断不能冒充原始 answer content。
 
 - 名称：`AssessmentsService`（A16 扩展）

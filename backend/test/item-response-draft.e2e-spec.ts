@@ -39,6 +39,7 @@ import {
 import { User, UserDocument } from '../src/modules/users/schemas/user.schema';
 import { readStructuredManualFieldsFromSnapshot } from '../src/modules/assessments/lib/structured-manual-response';
 import { readBinaryManualDecisionConfigFromSnapshot } from '../src/modules/assessments/lib/binary-manual-decision';
+import { resolveManualObservationRecordConfig } from '../src/modules/assessments/lib/manual-observation-record';
 
 jest.setTimeout(30000);
 
@@ -386,6 +387,13 @@ describe('item response execution detail and draft APIs (e2e)', () => {
       const binaryManualDecision = readBinaryManualDecisionConfigFromSnapshot(
         item.itemConfigSnapshot,
       );
+      const manualObservationRecord = resolveManualObservationRecordConfig({
+        itemCode: item.itemCode,
+        versionTrace: {
+          scaleVersion: item.versionTrace?.scaleVersion,
+        },
+        itemConfigSnapshot: item.itemConfigSnapshot,
+      });
       await itemResponseModel
         .updateOne(
           { _id: item._id },
@@ -393,6 +401,9 @@ describe('item response execution detail and draft APIs (e2e)', () => {
             $set: {
               status: 'answered',
               rawResponse: false,
+              ...(manualObservationRecord
+                ? { responseText: 'test reading observation' }
+                : {}),
               ...(structuredManualFields
                 ? {
                     structuredResponse: {
@@ -656,6 +667,24 @@ describe('item response execution detail and draft APIs (e2e)', () => {
     expect(typeof config.requiresOperatorNote).toBe('boolean');
     expect(readArray(config, 'structuredManualFields')).toHaveLength(5);
 
+    const readingItem = itemResponses.find(
+      (candidate) =>
+        isRecord(candidate) &&
+        candidate.itemCode === 'mmse.language.reading_command',
+    );
+    if (!isRecord(readingItem)) {
+      throw new Error('Expected reading-command execution response');
+    }
+    expect(readRecord(readingItem, 'config').manualObservationRecord).toEqual({
+      booleanLabel: '闭眼动作',
+      trueLabel: '已按要求闭眼',
+      falseLabel: '未按要求闭眼',
+      responseTextLabel: '患者实际阅读 / 观察',
+      responseTextHelp: '记录患者实际念出的内容；如未能读出，请记录实际情况。',
+      requireBooleanResponse: true,
+      requireResponseText: true,
+    });
+
     const keys = collectKeys(detail);
     for (const forbiddenKey of [
       'itemConfigSnapshot',
@@ -902,10 +931,43 @@ describe('item response execution detail and draft APIs (e2e)', () => {
     );
 
     const reading = await findItem(fixture, 'mmse.language.reading_command');
-    await doctorAgent
+
+    const partialReading = await doctorAgent
       .patch(itemPath(fixture, reading._id.toString()))
       .send({
         expectedRevision: 0,
+        responseText: '未能读出',
+      })
+      .expect(200);
+    const partialReadingItem = readRecord(
+      readResponseBody(partialReading),
+      'itemResponse',
+    );
+    expect(partialReadingItem).toEqual(
+      expect.objectContaining({
+        status: 'in_progress',
+        responseText: '未能读出',
+        rawResponse: null,
+      }),
+    );
+
+    await doctorAgent
+      .patch(itemPath(fixture, reading._id.toString()))
+      .send({
+        expectedRevision: readSafeInteger(partialReadingItem, 'draftRevision'),
+        rawResponse: 'closed',
+      })
+      .expect(400)
+      .expect((response: Response) => {
+        expect(readString(readResponseBody(response), 'code')).toBe(
+          'ITEM_RESPONSE_PAYLOAD_INVALID',
+        );
+      });
+
+    await doctorAgent
+      .patch(itemPath(fixture, reading._id.toString()))
+      .send({
+        expectedRevision: readSafeInteger(partialReadingItem, 'draftRevision'),
         rawResponse: false,
         structuredResponse: {
           binaryManualDecision: { isCorrect: false },
@@ -913,6 +975,39 @@ describe('item response execution detail and draft APIs (e2e)', () => {
         markAsAnswered: true,
       })
       .expect(200);
+
+    const incompleteReading = await findItem(
+      fixture,
+      'mmse.language.reading_command',
+    );
+    await itemResponseModel
+      .updateOne(
+        { _id: incompleteReading._id },
+        {
+          $set: {
+            status: 'in_progress',
+            draftRevision: 0,
+            rawResponse: null,
+            responseText: '请闭上您的眼睛',
+            structuredResponse: {
+              binaryManualDecision: { isCorrect: true },
+            },
+          },
+        },
+      )
+      .exec();
+    await doctorAgent
+      .patch(itemPath(fixture, reading._id.toString()))
+      .send({
+        expectedRevision: 0,
+        markAsAnswered: true,
+      })
+      .expect(409)
+      .expect((response: Response) => {
+        expect(readString(readResponseBody(response), 'code')).toBe(
+          'ITEM_RESPONSE_CANNOT_MARK_ANSWERED',
+        );
+      });
 
     const drawing = await findItem(fixture, 'mmse.visuospatial.copy_drawing');
     await doctorAgent

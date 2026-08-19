@@ -14,6 +14,7 @@ import type {
 } from './assessment-execution-response.types';
 import type { AssessmentVisitDetailResponse } from './assessment-visit-response.types';
 import type { StructuredManualField } from '../lib/structured-manual-response';
+import type { ManualObservationRecordConfig } from '../lib/manual-observation-record';
 
 export type ItemResponseDraftJsonValue =
   | null
@@ -62,6 +63,7 @@ export type ItemExecutionConfigResponse = {
     incorrectScore: number;
     correctScore: number;
   };
+  manualObservationRecord?: ManualObservationRecordConfig;
 };
 
 export type ItemResponseVersionTraceResponse = {

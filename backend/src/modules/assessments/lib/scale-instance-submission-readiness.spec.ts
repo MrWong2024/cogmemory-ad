@@ -104,6 +104,38 @@ function createItemResponse(
   };
 }
 
+function createReadingVersionItem(): ScaleItemConfigSummary {
+  return createVersionItem({
+    code: 'mmse.language.reading_command',
+    title: '阅读并执行',
+    responseType: 'boolean',
+    scoreRange: { min: 0, max: 1, step: 1 },
+    scoringRule: { mode: 'manual_observation' },
+  });
+}
+
+function createReadingItemResponse(
+  overrides: Partial<ItemResponseSummary> = {},
+): ItemResponseSummary {
+  return createItemResponse({
+    itemCode: 'mmse.language.reading_command',
+    itemTitle: '阅读并执行',
+    responseType: 'boolean',
+    itemConfigSnapshot: {
+      responseType: 'boolean',
+      scoreRange: { min: 0, max: 1, step: 1 },
+      scoringRule: { mode: 'manual_observation' },
+    },
+    versionTrace: { scaleVersion: '1.0' },
+    rawResponse: false,
+    responseText: '请闭上您的眼睛',
+    structuredResponse: {
+      binaryManualDecision: { isCorrect: false },
+    },
+    ...overrides,
+  });
+}
+
 function evaluate(
   versionItems: ScaleItemConfigSummary[],
   itemResponses: ItemResponseSummary[],
@@ -347,6 +379,75 @@ describe('scale instance submission readiness', () => {
     );
     expect(missing.blockingIssues.map((issue) => issue.code)).not.toContain(
       'ITEM_BINARY_MANUAL_DECISION_INCOMPLETE',
+    );
+  });
+
+  it('keeps reading observation completeness separate from the scoring decision', () => {
+    const versionItem = createReadingVersionItem();
+
+    const complete = evaluate(
+      [versionItem],
+      [createReadingItemResponse({ rawResponse: false })],
+    );
+    expect(complete.blockingIssues).toEqual([]);
+
+    const missingText = evaluate(
+      [versionItem],
+      [createReadingItemResponse({ responseText: ' ' })],
+    );
+    expect(missingText.blockingIssues.map((issue) => issue.code)).toContain(
+      'ITEM_MANUAL_OBSERVATION_INCOMPLETE',
+    );
+
+    const missingBoolean = evaluate(
+      [versionItem],
+      [createReadingItemResponse({ rawResponse: null })],
+    );
+    expect(missingBoolean.blockingIssues.map((issue) => issue.code)).toContain(
+      'ITEM_MANUAL_OBSERVATION_INCOMPLETE',
+    );
+
+    const decisionMissing = evaluate(
+      [versionItem],
+      [createReadingItemResponse({ structuredResponse: null })],
+    );
+    expect(decisionMissing.blockingIssues.map((issue) => issue.code)).toContain(
+      'ITEM_BINARY_MANUAL_DECISION_INCOMPLETE',
+    );
+    expect(
+      decisionMissing.blockingIssues.map((issue) => issue.code),
+    ).not.toContain('ITEM_MANUAL_OBSERVATION_INCOMPLETE');
+
+    const bothIncomplete = evaluate(
+      [versionItem],
+      [
+        createReadingItemResponse({
+          rawResponse: null,
+          structuredResponse: null,
+        }),
+      ],
+    );
+    expect(bothIncomplete.blockingIssues.map((issue) => issue.code)).toEqual(
+      expect.arrayContaining([
+        'ITEM_MANUAL_OBSERVATION_INCOMPLETE',
+        'ITEM_BINARY_MANUAL_DECISION_INCOMPLETE',
+      ]),
+    );
+
+    const missing = evaluate(
+      [versionItem],
+      [
+        createReadingItemResponse({
+          isMissing: true,
+          missingReason: 'Unable to assess',
+          rawResponse: null,
+          responseText: undefined,
+          structuredResponse: null,
+        }),
+      ],
+    );
+    expect(missing.blockingIssues.map((issue) => issue.code)).not.toContain(
+      'ITEM_MANUAL_OBSERVATION_INCOMPLETE',
     );
   });
 

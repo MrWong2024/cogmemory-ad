@@ -26,6 +26,7 @@ import {
 import {
   buildItemResponseDraftRequest,
   createItemDraftState,
+  getManualObservationRecordConfig,
 } from '@/src/features/assessments/lib/item-response-draft';
 import type {
   ItemResponseExecution,
@@ -420,6 +421,78 @@ test('request construction uses the server revision and automatic saves omit com
   if (!result.ok) return;
   expect(result.input).toEqual({ expectedRevision: 17, responseText: 'local' });
   expect(result.input.markAsAnswered).toBeUndefined();
+});
+
+test('manual observation config preserves generic boolean behavior and requires all three reading facts to complete', () => {
+  const genericBoolean = createItem({
+    responseType: 'boolean',
+    rawResponse: false,
+    responseText: undefined,
+  });
+  expect(getManualObservationRecordConfig(genericBoolean.config)).toBeNull();
+
+  const genericResult = buildItemResponseDraftRequest(
+    genericBoolean,
+    createItemDraftState(genericBoolean),
+    true,
+  );
+  expect(genericResult.ok).toBe(true);
+
+  const reading = createItem({
+    itemCode: 'server-owned-reading-item',
+    responseType: 'boolean',
+    rawResponse: null,
+    responseText: undefined,
+    structuredResponse: null,
+    config: {
+      scoreRange: { min: 0, max: 1, step: 1 },
+      evidenceTypes: [],
+      requiresTimer: false,
+      supportsPhotoUpload: false,
+      supportsHandwriting: false,
+      requiresOperatorNote: false,
+      binaryManualDecision: { incorrectScore: 0, correctScore: 1 },
+      manualObservationRecord: {
+        booleanLabel: '闭眼动作',
+        trueLabel: '已按要求闭眼',
+        falseLabel: '未按要求闭眼',
+        responseTextLabel: '患者实际阅读 / 观察',
+        responseTextHelp:
+          '记录患者实际念出的内容；如未能读出，请记录实际情况。',
+        requireBooleanResponse: true,
+        requireResponseText: true,
+      },
+    },
+  });
+  expect(getManualObservationRecordConfig(reading.config)).toEqual(
+    reading.config.manualObservationRecord,
+  );
+
+  const incompleteDraft = {
+    ...createItemDraftState(reading),
+    responseText: '未能读出',
+    binaryManualDecision: false,
+  };
+  expect(
+    buildItemResponseDraftRequest(reading, incompleteDraft, true).ok,
+  ).toBe(false);
+
+  const completeResult = buildItemResponseDraftRequest(
+    reading,
+    { ...incompleteDraft, rawResponse: false },
+    true,
+  );
+  expect(completeResult.ok).toBe(true);
+  if (!completeResult.ok) return;
+  expect(completeResult.input).toEqual({
+    expectedRevision: 4,
+    rawResponse: false,
+    responseText: '未能读出',
+    structuredResponse: {
+      binaryManualDecision: { isCorrect: false },
+    },
+    markAsAnswered: true,
+  });
 });
 
 test('serialization preserves the full six-field timing snapshot and rejects an unsafe revision', () => {

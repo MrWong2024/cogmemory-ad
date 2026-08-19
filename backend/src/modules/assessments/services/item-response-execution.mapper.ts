@@ -10,6 +10,7 @@ import {
 import { normalizeItemResponseTiming } from '../lib/item-response-timing';
 import { readStructuredManualFieldsFromSnapshot } from '../lib/structured-manual-response';
 import { readBinaryManualDecisionConfigFromSnapshot } from '../lib/binary-manual-decision';
+import { resolveManualObservationRecordConfig } from '../lib/manual-observation-record';
 import type { ItemResponseSummary } from './assessments.service';
 import type {
   ItemExecutionConfigResponse,
@@ -101,6 +102,11 @@ function toExecutionConfig(
   const structuredManualFields = readStructuredManualFieldsFromSnapshot(config);
   const binaryManualDecision =
     readBinaryManualDecisionConfigFromSnapshot(config);
+  const manualObservationRecord = resolveManualObservationRecordConfig({
+    itemCode: itemResponse.itemCode,
+    versionTrace: itemResponse.versionTrace,
+    itemConfigSnapshot: itemResponse.itemConfigSnapshot,
+  });
 
   return {
     prompt: readOptionalString(config, 'prompt'),
@@ -119,6 +125,7 @@ function toExecutionConfig(
         }
       : {}),
     ...(binaryManualDecision ? { binaryManualDecision } : {}),
+    ...(manualObservationRecord ? { manualObservationRecord } : {}),
   };
 }
 

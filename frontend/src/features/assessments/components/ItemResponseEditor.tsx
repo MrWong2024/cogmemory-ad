@@ -17,6 +17,7 @@ import {
 import {
   getStructuredManualFields,
   getBinaryManualDecisionConfig,
+  getManualObservationRecordConfig,
   isStructuredManualDraftComplete,
   itemAllowsTiming,
   setItemDraftMissing,
@@ -46,6 +47,10 @@ const itemStatusTones: Record<ItemResponseStatus, BadgeTone> = {
 };
 
 function getResponseTextLabel(item: ItemResponseExecution): string {
+  if (item.config.manualObservationRecord) {
+    return item.config.manualObservationRecord.responseTextLabel;
+  }
+
   if (item.responseType === 'boolean') {
     return '补充说明 / 原始转录（可选）';
   }
@@ -92,6 +97,49 @@ function getBooleanSelectValue(
   }
 
   return '';
+}
+
+function ResponseTextEditorField({
+  disabled,
+  draft,
+  fieldIdPrefix,
+  item,
+  onChange,
+}: {
+  disabled: boolean;
+  draft: ItemDraftState;
+  fieldIdPrefix: string;
+  item: ItemResponseExecution;
+  onChange: (draft: ItemDraftState) => void;
+}) {
+  return (
+    <div className="grid gap-2">
+      <label
+        className="font-semibold text-[var(--cma-text-strong)]"
+        htmlFor={`${fieldIdPrefix}-response-text`}
+      >
+        {getResponseTextLabel(item)}
+      </label>
+      <textarea
+        className={`${inputClassName} min-h-32 resize-y`}
+        disabled={disabled}
+        id={`${fieldIdPrefix}-response-text`}
+        maxLength={10000}
+        onChange={(event) =>
+          onChange({ ...draft, responseText: event.target.value })
+        }
+        value={draft.responseText}
+      />
+      <p className="text-sm leading-6 text-[var(--cma-muted)]">
+        {item.config.manualObservationRecord
+          ? item.config.manualObservationRecord.responseTextHelp
+          : item.responseType === 'single_choice' ||
+              item.responseType === 'multi_choice'
+            ? 'A14 未返回选项配置，因此这里只转录原始回答，不生成选项，也不把文本解释为评分结果。'
+            : '最多 10000 个字符，仅作为原始文字记录。'}
+      </p>
+    </div>
+  );
 }
 
 export function ItemResponseEditor({
@@ -168,6 +216,9 @@ export function ItemResponseEditor({
   const answerInputsDisabled = controlsDisabled || draft.isMissing;
   const structuredManualFields = getStructuredManualFields(item.config);
   const binaryManualDecision = getBinaryManualDecisionConfig(item.config);
+  const manualObservationRecord = getManualObservationRecordConfig(
+    item.config,
+  );
   const hasUneditableStructuredResponse =
     structuredManualFields === null &&
     item.structuredResponse !== null &&
@@ -177,6 +228,12 @@ export function ItemResponseEditor({
         structuredManualFields,
         draft.structuredResponse,
       )
+    : true;
+  const manualObservationRecordComplete = manualObservationRecord
+    ? (!manualObservationRecord.requireResponseText ||
+        draft.responseText.trim().length > 0) &&
+      (!manualObservationRecord.requireBooleanResponse ||
+        typeof draft.rawResponse === 'boolean')
     : true;
   const hasPreservedRawResponse =
     item.rawResponse !== null &&
@@ -362,13 +419,23 @@ export function ItemResponseEditor({
           </section>
         ) : null}
 
+        {manualObservationRecord ? (
+          <ResponseTextEditorField
+            disabled={answerInputsDisabled}
+            draft={draft}
+            fieldIdPrefix={fieldIdPrefix}
+            item={item}
+            onChange={updateDraft}
+          />
+        ) : null}
+
         {item.responseType === 'boolean' ? (
           <div className="grid max-w-xl gap-2">
             <label
               className="font-semibold text-[var(--cma-text-strong)]"
               htmlFor={`${fieldIdPrefix}-boolean-response`}
             >
-              原始观察 / 回答
+              {manualObservationRecord?.booleanLabel ?? '原始观察 / 回答'}
             </label>
             <select
               className={inputClassName}
@@ -386,11 +453,17 @@ export function ItemResponseEditor({
               value={getBooleanSelectValue(draft.rawResponse)}
             >
               <option value="">未记录</option>
-              <option value="true">是</option>
-              <option value="false">否</option>
+              <option value="true">
+                {manualObservationRecord?.trueLabel ?? '是'}
+              </option>
+              <option value="false">
+                {manualObservationRecord?.falseLabel ?? '否'}
+              </option>
             </select>
             <p className="text-sm leading-6 text-[var(--cma-muted)]">
-              记录患者实际回答或观察结果；此处是原始事实，不代表最终评分判断。
+              {manualObservationRecord
+                ? '记录患者是否实际按照文字要求完成闭眼动作；此处是原始事实，不代表最终评分判断。'
+                : '记录患者实际回答或观察结果；此处是原始事实，不代表最终评分判断。'}
             </p>
           </div>
         ) : null}
@@ -425,30 +498,15 @@ export function ItemResponseEditor({
           </div>
         ) : null}
 
-        <div className="grid gap-2">
-          <label
-            className="font-semibold text-[var(--cma-text-strong)]"
-            htmlFor={`${fieldIdPrefix}-response-text`}
-          >
-            {getResponseTextLabel(item)}
-          </label>
-          <textarea
-            className={`${inputClassName} min-h-32 resize-y`}
+        {manualObservationRecord ? null : (
+          <ResponseTextEditorField
             disabled={answerInputsDisabled}
-            id={`${fieldIdPrefix}-response-text`}
-            maxLength={10000}
-            onChange={(event) =>
-              updateDraft({ ...draft, responseText: event.target.value })
-            }
-            value={draft.responseText}
+            draft={draft}
+            fieldIdPrefix={fieldIdPrefix}
+            item={item}
+            onChange={updateDraft}
           />
-          <p className="text-sm leading-6 text-[var(--cma-muted)]">
-            {item.responseType === 'single_choice' ||
-            item.responseType === 'multi_choice'
-              ? 'A14 未返回选项配置，因此这里只转录原始回答，不生成选项，也不把文本解释为评分结果。'
-              : '最多 10000 个字符，仅作为原始文字记录。'}
-          </p>
-        </div>
+        )}
         </section>
       )}
 
@@ -615,6 +673,9 @@ export function ItemResponseEditor({
             (structuredManualFields !== null &&
               !draft.isMissing &&
               !structuredManualComplete) ||
+            (manualObservationRecord !== null &&
+              !draft.isMissing &&
+              !manualObservationRecordComplete) ||
             (binaryManualDecision !== null &&
               !draft.isMissing &&
               typeof draft.binaryManualDecision !== 'boolean')

@@ -26,6 +26,10 @@ import {
   resolveBinaryManualDecisionConfig,
   type BinaryManualDecisionConfig,
 } from './binary-manual-decision';
+import {
+  resolveManualObservationRecordConfig,
+  type ManualObservationRecordConfig,
+} from './manual-observation-record';
 
 const COMPLETED_ITEM_STATUSES = new Set(['answered', 'scored']);
 const EDITABLE_STATUSES = new Set(['draft', 'in_progress']);
@@ -63,6 +67,7 @@ type EffectiveItemConfig = {
   qualityControlRule: Record<string, unknown> | null;
   structuredManualFields: StructuredManualField[] | null;
   binaryManualDecision: BinaryManualDecisionConfig | null;
+  manualObservationRecord: ManualObservationRecordConfig | null;
 };
 
 type MediaRequirement = {
@@ -148,6 +153,11 @@ function readEffectiveItemConfig(
       versionItem?.scoringRule,
       versionItem?.scoreRange,
     ),
+    manualObservationRecord: resolveManualObservationRecordConfig({
+      itemCode: itemResponse.itemCode,
+      versionTrace: itemResponse.versionTrace,
+      itemConfigSnapshot: itemResponse.itemConfigSnapshot,
+    }),
   };
 }
 
@@ -420,6 +430,21 @@ export function evaluateScaleInstanceSubmissionReadiness(
         code: 'ITEM_STRUCTURED_SUBITEMS_INCOMPLETE',
         severity: 'blocking',
         message: 'Structured manual item has incomplete sub-item responses',
+      });
+    }
+
+    if (
+      config.manualObservationRecord &&
+      ((config.manualObservationRecord.requireResponseText &&
+        !itemResponse.responseText?.trim()) ||
+        (config.manualObservationRecord.requireBooleanResponse &&
+          typeof itemResponse.rawResponse !== 'boolean'))
+    ) {
+      blockingIssues.push({
+        ...itemBase,
+        code: 'ITEM_MANUAL_OBSERVATION_INCOMPLETE',
+        severity: 'blocking',
+        message: 'Manual observation record is incomplete',
       });
     }
 
