@@ -716,6 +716,12 @@ describe('item response execution detail and draft APIs (e2e)', () => {
 
   it('saves a partial structured draft, requires completeness, and marks the complete response answered', async () => {
     const fixture = await createExecution('DRAFT', 'mmse');
+    expect(
+      await assessmentVisitModel.findById(fixture.visitId).lean().exec(),
+    ).toEqual(expect.objectContaining({ status: 'draft', startedAt: null }));
+    expect(
+      await scaleInstanceModel.findById(fixture.scaleInstanceId).lean().exec(),
+    ).toEqual(expect.objectContaining({ status: 'draft', startedAt: null }));
     const item = await findItem(fixture, 'mmse.memory.immediate_recall');
     const path = itemPath(fixture, item._id.toString());
     const initialPublicItem = await readExecutionItem(
@@ -769,9 +775,28 @@ describe('item response execution detail and draft APIs (e2e)', () => {
         responseText: 'de-identified response',
       }),
     );
-    expect(
-      Number.isFinite(Date.parse(readString(draftItem, 'draftSavedAt'))),
-    ).toBe(true);
+    const firstDraftSavedAt = readString(draftItem, 'draftSavedAt');
+    expect(Number.isFinite(Date.parse(firstDraftSavedAt))).toBe(true);
+    const visitAfterFirstDraft = await assessmentVisitModel
+      .findById(fixture.visitId)
+      .lean()
+      .exec();
+    const scaleAfterFirstDraft = await scaleInstanceModel
+      .findById(fixture.scaleInstanceId)
+      .lean()
+      .exec();
+    expect(visitAfterFirstDraft).toEqual(
+      expect.objectContaining({
+        status: 'in_progress',
+        startedAt: new Date(firstDraftSavedAt),
+      }),
+    );
+    expect(scaleAfterFirstDraft).toEqual(
+      expect.objectContaining({
+        status: 'in_progress',
+        startedAt: new Date(firstDraftSavedAt),
+      }),
+    );
 
     const incompleteResponse = await doctorAgent
       .patch(path)
@@ -847,9 +872,25 @@ describe('item response execution detail and draft APIs (e2e)', () => {
       readResponseBody(visitDetailResponse),
       'scaleInstances',
     );
+    expect(readRecord(readResponseBody(visitDetailResponse), 'visit')).toEqual(
+      expect.objectContaining({
+        status: 'in_progress',
+        startedAt: firstDraftSavedAt,
+      }),
+    );
+    expect(
+      readRecord(readResponseBody(visitDetailResponse), 'visitMaintenance'),
+    ).toEqual({
+      canEdit: false,
+      canDelete: false,
+      canVoid: true,
+      initializedScaleCount: 1,
+    });
     expect(scaleInstances).toEqual([
       expect.objectContaining({
         id: fixture.scaleInstanceId,
+        status: 'in_progress',
+        startedAt: firstDraftSavedAt,
         progress: { totalItemCount: 11, answeredItemCount: 1 },
       }),
     ]);
@@ -889,6 +930,73 @@ describe('item response execution detail and draft APIs (e2e)', () => {
     expect(
       readRecord(readResponseBody(missingResponse), 'itemResponse'),
     ).not.toHaveProperty('responseText');
+    expect(
+      (await assessmentVisitModel.findById(fixture.visitId).lean().exec())
+        ?.startedAt,
+    ).toEqual(new Date(firstDraftSavedAt));
+    expect(
+      (await scaleInstanceModel.findById(fixture.scaleInstanceId).lean().exec())
+        ?.startedAt,
+    ).toEqual(new Date(firstDraftSavedAt));
+  });
+
+  it('starts on an answered first write and leaves failed drafts lifecycle-neutral', async () => {
+    const fixture = await createExecution('FIRST-ANSWERED', 'mmse');
+    const item = await findItem(fixture, 'mmse.language.repetition');
+    const path = itemPath(fixture, item._id.toString());
+
+    await doctorAgent
+      .patch(path)
+      .send({
+        expectedRevision: 1,
+        responseText: 'stale draft must not start parents',
+      })
+      .expect(409)
+      .expect((response: Response) => {
+        expect(readString(readResponseBody(response), 'code')).toBe(
+          'ITEM_RESPONSE_DRAFT_CONFLICT',
+        );
+      });
+    expect(
+      await assessmentVisitModel.findById(fixture.visitId).lean().exec(),
+    ).toEqual(expect.objectContaining({ status: 'draft', startedAt: null }));
+    expect(
+      await scaleInstanceModel.findById(fixture.scaleInstanceId).lean().exec(),
+    ).toEqual(expect.objectContaining({ status: 'draft', startedAt: null }));
+
+    const answeredResponse = await doctorAgent
+      .patch(path)
+      .send({
+        expectedRevision: 0,
+        responseText: 'patient repetition',
+        structuredResponse: {
+          binaryManualDecision: { isCorrect: true },
+        },
+        markAsAnswered: true,
+      })
+      .expect(200);
+    const answeredItem = readRecord(
+      readResponseBody(answeredResponse),
+      'itemResponse',
+    );
+    const firstDraftSavedAt = readString(answeredItem, 'draftSavedAt');
+    expect(answeredItem.status).toBe('answered');
+    expect(
+      await assessmentVisitModel.findById(fixture.visitId).lean().exec(),
+    ).toEqual(
+      expect.objectContaining({
+        status: 'in_progress',
+        startedAt: new Date(firstDraftSavedAt),
+      }),
+    );
+    expect(
+      await scaleInstanceModel.findById(fixture.scaleInstanceId).lean().exec(),
+    ).toEqual(
+      expect.objectContaining({
+        status: 'in_progress',
+        startedAt: new Date(firstDraftSavedAt),
+      }),
+    );
   });
 
   it('saves partial and complete binary manual decisions without accepting decision-only completion', async () => {
@@ -1578,6 +1686,7 @@ describe('item response execution detail and draft APIs (e2e)', () => {
       readResponseBody(runningResponse),
       'itemResponse',
     );
+    const firstDraftSavedAt = readString(runningItem, 'draftSavedAt');
     expect(readRecord(runningItem, 'timing')).toEqual(
       expect.objectContaining({
         timerState: 'running',
@@ -1665,11 +1774,21 @@ describe('item response execution detail and draft APIs (e2e)', () => {
       }),
     );
     expect(storedItem?.score?.scoreStatus).toBe('not_scored');
-    expect(storedInstance?.status).toBe('draft');
-    expect(storedVisit?.status).toBe('draft');
+    expect(storedInstance).toEqual(
+      expect.objectContaining({
+        status: 'in_progress',
+        startedAt: new Date(firstDraftSavedAt),
+      }),
+    );
+    expect(storedVisit).toEqual(
+      expect.objectContaining({
+        status: 'in_progress',
+        startedAt: new Date(firstDraftSavedAt),
+      }),
+    );
   });
 
-  it('persists timing null as an explicit reset without changing lifecycle or scoring facts', async () => {
+  it('persists timing null without resetting parent lifecycle or scoring facts', async () => {
     const fixture = await createExecution('TIMING-RESET', 'moca');
     const timedItem = await findItem(
       fixture,
@@ -1714,6 +1833,7 @@ describe('item response execution detail and draft APIs (e2e)', () => {
       readResponseBody(runningResponse),
       'itemResponse',
     );
+    const firstDraftSavedAt = readString(runningItem, 'draftSavedAt');
     expect(runningItem.status).toBe('in_progress');
     expect(runningItem.draftRevision).toBe(initialRevision + 1);
     expect(readRecord(runningItem, 'timing')).toEqual({
@@ -1779,8 +1899,33 @@ describe('item response execution detail and draft APIs (e2e)', () => {
       beforeItem.scaleInstanceId.toString(),
     );
     expect(storedItem.countsTowardTotal).toBe(beforeItem.countsTowardTotal);
-    expect(storedInstance).toEqual(beforeInstance);
-    expect(storedVisit).toEqual(beforeVisit);
+    expect(storedInstance).toEqual(
+      expect.objectContaining({
+        patientId: beforeInstance.patientId,
+        assessmentVisitId: beforeInstance.assessmentVisitId,
+        status: 'in_progress',
+        startedAt: new Date(firstDraftSavedAt),
+        completedAt: beforeInstance.completedAt,
+        lockedAt: beforeInstance.lockedAt,
+        voidedAt: beforeInstance.voidedAt,
+        durationMs: beforeInstance.durationMs,
+        operatorSnapshot: beforeInstance.operatorSnapshot,
+        submissionWriteBarrier: beforeInstance.submissionWriteBarrier,
+        metadata: beforeInstance.metadata,
+      }),
+    );
+    expect(storedVisit).toEqual(
+      expect.objectContaining({
+        patientId: beforeVisit.patientId,
+        status: 'in_progress',
+        startedAt: new Date(firstDraftSavedAt),
+        completedAt: beforeVisit.completedAt,
+        lockedAt: beforeVisit.lockedAt,
+        voidedAt: beforeVisit.voidedAt,
+        operatorSnapshot: beforeVisit.operatorSnapshot,
+        metadata: beforeVisit.metadata,
+      }),
+    );
   });
 
   it('normalizes a legacy timing snapshot through GET without writing defaults', async () => {

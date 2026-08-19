@@ -101,6 +101,7 @@ describe('PatientAdministrationSessionService', () => {
   let assessmentsService: {
     findVisitByPatientAndId: jest.Mock;
     findScaleInstanceByPatientVisitAndId: jest.Mock;
+    ensureVisitAndScaleStarted: jest.Mock;
   };
   let scalesService: { findVersionByScaleCodeAndVersion: jest.Mock };
   let presentationAssetsService: {
@@ -274,6 +275,7 @@ describe('PatientAdministrationSessionService', () => {
     assessmentsService = {
       findVisitByPatientAndId: jest.fn(),
       findScaleInstanceByPatientVisitAndId: jest.fn(),
+      ensureVisitAndScaleStarted: jest.fn().mockResolvedValue(undefined),
     };
     scalesService = { findVersionByScaleCodeAndVersion: jest.fn() };
     presentationAssetsService = {
@@ -525,6 +527,9 @@ describe('PatientAdministrationSessionService', () => {
     expect(set).not.toHaveProperty('status');
     expect(set).not.toHaveProperty('startedAt');
     expect(set).not.toHaveProperty('sessionTokenHash');
+    expect(
+      assessmentsService.ensureVisitAndScaleStarted,
+    ).not.toHaveBeenCalled();
     expect(update.$unset).toEqual({ impactFactorNote: 1 });
     expect(update.$inc).toEqual({ revision: 1 });
     expect(
@@ -604,6 +609,12 @@ describe('PatientAdministrationSessionService', () => {
     expect(
       requireRecord(update.$set, 'cross-device preparation set'),
     ).not.toHaveProperty('sessionTokenHash');
+    expect(assessmentsService.ensureVisitAndScaleStarted).toHaveBeenCalledWith({
+      patientId,
+      assessmentVisitId: visitId,
+      scaleInstanceId,
+      startedAt,
+    });
   });
 
   it('fails preparation closed for inconsistent or legacy device contracts', async () => {
@@ -716,6 +727,7 @@ describe('PatientAdministrationSessionService', () => {
 
   it('activates a prepared session when issuing its same-device credential', async () => {
     const preparationConfirmedAt = new Date('2026-08-07T01:00:00.000Z');
+    const startedAt = new Date('2026-08-07T01:01:00.000Z');
     const prepared = sessionDocument({
       deviceMode: 'same_device',
       revision: 1,
@@ -737,7 +749,7 @@ describe('PatientAdministrationSessionService', () => {
       preparationConfirmedBy: operator,
       impactFactorCodes: ['upper_limb'],
       impactFactorNote: 'practice completed',
-      startedAt: new Date('2026-08-07T01:01:00.000Z'),
+      startedAt,
     });
     arrangeEditableBusiness();
     sessionModel.findOne.mockReturnValue(createQuery(prepared));
@@ -795,6 +807,12 @@ describe('PatientAdministrationSessionService', () => {
     expect(
       requireRecord(update.$push, 'same-device push').controlEvents,
     ).toEqual(expect.objectContaining({ action: 'same_device_handoff' }));
+    expect(assessmentsService.ensureVisitAndScaleStarted).toHaveBeenCalledWith({
+      patientId,
+      assessmentVisitId: visitId,
+      scaleInstanceId,
+      startedAt,
+    });
   });
 
   it('keeps a paused session paused when replacing its same-device credential', async () => {
@@ -850,6 +868,9 @@ describe('PatientAdministrationSessionService', () => {
     expect(
       requireRecord(update.$push, 'paused handoff push').controlEvents,
     ).toEqual(expect.objectContaining({ action: 'same_device_handoff' }));
+    expect(
+      assessmentsService.ensureVisitAndScaleStarted,
+    ).not.toHaveBeenCalled();
   });
 
   it('rejects stale same-device handoff validation without writing', async () => {

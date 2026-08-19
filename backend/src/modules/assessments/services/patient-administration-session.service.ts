@@ -502,6 +502,19 @@ export class PatientAdministrationSessionService {
       throw new Error('Unreachable atomic miss');
     }
 
+    if (
+      session.status === 'prepared' &&
+      updated.status === 'active' &&
+      updated.startedAt
+    ) {
+      await this.assessmentsService.ensureVisitAndScaleStarted({
+        patientId,
+        assessmentVisitId: visitId,
+        scaleInstanceId,
+        startedAt: updated.startedAt,
+      });
+    }
+
     return {
       rawToken,
       expiresAt: updated.expiresAt,
@@ -586,6 +599,15 @@ export class PatientAdministrationSessionService {
     if (!updated) {
       await this.throwAfterAtomicMiss(scaleInstanceId);
       throw new Error('Unreachable atomic miss');
+    }
+
+    if (activatesSession && updated.status === 'active' && updated.startedAt) {
+      await this.assessmentsService.ensureVisitAndScaleStarted({
+        patientId,
+        assessmentVisitId: visitId,
+        scaleInstanceId,
+        startedAt: updated.startedAt,
+      });
     }
 
     return this.toSessionSummary(updated);

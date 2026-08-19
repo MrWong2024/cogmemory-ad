@@ -262,6 +262,13 @@ export type VoidVisitForPatientInput = VoidAssessmentVisitDto & {
   operatorSnapshot: CreateVisitOperatorSnapshot;
 };
 
+export type EnsureVisitAndScaleStartedInput = {
+  patientId: Types.ObjectId | string;
+  assessmentVisitId: Types.ObjectId | string;
+  scaleInstanceId: Types.ObjectId | string;
+  startedAt: Date;
+};
+
 type VisitMaintenanceContext = {
   visit: AssessmentVisitSummary;
   scaleInstances: ScaleInstanceSummary[];
@@ -1309,6 +1316,93 @@ export class AssessmentsService {
       .exec();
 
     return scaleInstance ? this.mapScaleInstance(scaleInstance) : null;
+  }
+
+  async ensureVisitAndScaleStarted(
+    input: EnsureVisitAndScaleStartedInput,
+  ): Promise<void> {
+    const patientId = this.requireObjectId(input.patientId, 'patientId');
+    const assessmentVisitId = this.requireObjectId(
+      input.assessmentVisitId,
+      'assessmentVisitId',
+    );
+    const scaleInstanceId = this.requireObjectId(
+      input.scaleInstanceId,
+      'scaleInstanceId',
+    );
+
+    if (!Number.isFinite(input.startedAt.getTime())) {
+      throw new BadRequestException('startedAt must be a valid Date');
+    }
+
+    const nonTerminalLifecycle = {
+      completedAt: null,
+      lockedAt: null,
+      voidedAt: null,
+    };
+    const scaleOwnership = {
+      _id: scaleInstanceId,
+      assessmentVisitId,
+      patientId,
+    };
+    const visitOwnership = { _id: assessmentVisitId, patientId };
+
+    await this.scaleInstanceModel
+      .updateOne(
+        {
+          ...scaleOwnership,
+          ...nonTerminalLifecycle,
+          status: { $in: ['draft', 'in_progress'] as AssessmentStatus[] },
+          $or: [{ startedAt: null }, { startedAt: { $exists: false } }],
+        },
+        {
+          $set: {
+            status: 'in_progress',
+            startedAt: input.startedAt,
+          },
+        },
+        { runValidators: true },
+      )
+      .exec();
+    await this.scaleInstanceModel
+      .updateOne(
+        {
+          ...scaleOwnership,
+          ...nonTerminalLifecycle,
+          status: 'draft',
+        },
+        { $set: { status: 'in_progress' } },
+        { runValidators: true },
+      )
+      .exec();
+    await this.assessmentVisitModel
+      .updateOne(
+        {
+          ...visitOwnership,
+          ...nonTerminalLifecycle,
+          status: { $in: ['draft', 'in_progress'] as AssessmentStatus[] },
+          $or: [{ startedAt: null }, { startedAt: { $exists: false } }],
+        },
+        {
+          $set: {
+            status: 'in_progress',
+            startedAt: input.startedAt,
+          },
+        },
+        { runValidators: true },
+      )
+      .exec();
+    await this.assessmentVisitModel
+      .updateOne(
+        {
+          ...visitOwnership,
+          ...nonTerminalLifecycle,
+          status: 'draft',
+        },
+        { $set: { status: 'in_progress' } },
+        { runValidators: true },
+      )
+      .exec();
   }
 
   async listScaleInstancesByIds(

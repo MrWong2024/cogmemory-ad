@@ -89,6 +89,19 @@ function readArray(
   return value;
 }
 
+function readRecord(
+  record: Record<string, unknown>,
+  propertyName: string,
+): Record<string, unknown> {
+  const value = record[propertyName];
+
+  if (!isRecord(value)) {
+    throw new Error(`Expected ${propertyName} to be an object`);
+  }
+
+  return value;
+}
+
 describe('assessment execution initialization public APIs (e2e)', () => {
   let app: INestApplication;
   let connection: Connection;
@@ -388,14 +401,19 @@ describe('assessment execution initialization public APIs (e2e)', () => {
     const patientResponse = await createPatient('MAIN').expect(201);
     const patientId = readString(readResponseBody(patientResponse), 'id');
     const visitResponse = await createVisit(patientId, 'MAIN').expect(201);
+    expect(readResponseBody(visitResponse)).toEqual(
+      expect.objectContaining({ status: 'draft', startedAt: null }),
+    );
     const visitId = readString(readResponseBody(visitResponse), 'id');
 
     const initialDetail = await doctorAgent
       .get(`/patients/${patientId}/visits/${visitId}`)
       .expect(200);
-    expect(
-      readArray(readResponseBody(initialDetail), 'scaleInstances'),
-    ).toEqual([]);
+    const initialDetailBody = readResponseBody(initialDetail);
+    expect(readRecord(initialDetailBody, 'visit')).toEqual(
+      expect.objectContaining({ status: 'draft', startedAt: null }),
+    );
+    expect(readArray(initialDetailBody, 'scaleInstances')).toEqual([]);
 
     const mmseResponse = await doctorAgent
       .post(`/patients/${patientId}/visits/${visitId}/scale-instances`)
@@ -472,7 +490,7 @@ describe('assessment execution initialization public APIs (e2e)', () => {
         stepKey: 'mmse-reading-command',
         order: 16,
         assetKeys: [],
-        responseMode: 'staff_observation',
+        responseMode: 'speech',
         advanceBy: 'patient',
       },
       {
@@ -526,12 +544,28 @@ describe('assessment execution initialization public APIs (e2e)', () => {
       .expect(200);
     const detailBody = readResponseBody(detail);
     const scaleInstances = readArray(detailBody, 'scaleInstances');
+    expect(readRecord(detailBody, 'visit')).toEqual(
+      expect.objectContaining({ status: 'draft', startedAt: null }),
+    );
+    expect(readRecord(detailBody, 'visitMaintenance')).toEqual({
+      canEdit: true,
+      canDelete: true,
+      canVoid: false,
+      initializedScaleCount: 2,
+    });
     expect(scaleInstances).toEqual([
-      expect.objectContaining({ scaleCode: 'mmse', instanceNo: 1 }),
+      expect.objectContaining({
+        scaleCode: 'mmse',
+        instanceNo: 1,
+        status: 'draft',
+        startedAt: null,
+      }),
       expect.objectContaining({
         scaleCode: 'moca',
         instanceNo: 1,
         administrationMode: 'supervised_patient_input',
+        status: 'draft',
+        startedAt: null,
       }),
     ]);
     const serializedDetail = JSON.stringify(detailBody).toLowerCase();

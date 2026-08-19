@@ -269,6 +269,13 @@ export class ItemResponseDraftService {
       );
     }
 
+    await this.assessmentsService.ensureVisitAndScaleStarted({
+      patientId,
+      assessmentVisitId: visitId,
+      scaleInstanceId,
+      startedAt: draftSavedAt,
+    });
+
     const summary =
       this.assessmentsService.toItemResponseSummary(updatedItemResponse);
 

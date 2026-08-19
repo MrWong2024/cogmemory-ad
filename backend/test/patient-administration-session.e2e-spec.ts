@@ -765,6 +765,15 @@ describe('patient administration session APIs (e2e)', () => {
     );
     expect(JSON.stringify(createBody)).not.toContain('entryCodeHash');
     expect(JSON.stringify(createBody)).not.toContain('sessionTokenHash');
+    expect(await visitModel.findById(fixture.visit._id).lean().exec()).toEqual(
+      expect.objectContaining({ status: 'draft', startedAt: null }),
+    );
+    expect(
+      await scaleInstanceModel
+        .findById(fixture.scaleInstance._id)
+        .lean()
+        .exec(),
+    ).toEqual(expect.objectContaining({ status: 'draft', startedAt: null }));
 
     const storedBeforeEnter = await administrationSessionModel
       .findById(sessionId)
@@ -859,6 +868,26 @@ describe('patient administration session APIs (e2e)', () => {
         (event) => event.action,
       ),
     ).toEqual(['entry_redeemed', 'preparation_confirmed']);
+    const crossDeviceVisitAfterStart = await visitModel
+      .findById(fixture.visit._id)
+      .lean()
+      .exec();
+    const crossDeviceScaleAfterStart = await scaleInstanceModel
+      .findById(fixture.scaleInstance._id)
+      .lean()
+      .exec();
+    expect(crossDeviceVisitAfterStart).toEqual(
+      expect.objectContaining({
+        status: 'in_progress',
+        startedAt: storedAfterCrossDeviceConfirmation?.startedAt,
+      }),
+    );
+    expect(crossDeviceScaleAfterStart).toEqual(
+      expect.objectContaining({
+        status: 'in_progress',
+        startedAt: storedAfterCrossDeviceConfirmation?.startedAt,
+      }),
+    );
 
     await doctor
       .post(`${base}/preparation/confirm`)
@@ -990,6 +1019,17 @@ describe('patient administration session APIs (e2e)', () => {
       throw new Error('Expected resumed current step');
     }
     expect(readString(resumed.currentStep, 'stepKey')).toBe(firstStepKey);
+    expect(
+      (await visitModel.findById(fixture.visit._id).lean().exec())?.startedAt,
+    ).toEqual(storedAfterCrossDeviceConfirmation?.startedAt);
+    expect(
+      (
+        await scaleInstanceModel
+          .findById(fixture.scaleInstance._id)
+          .lean()
+          .exec()
+      )?.startedAt,
+    ).toEqual(storedAfterCrossDeviceConfirmation?.startedAt);
 
     const reissueResponse = await doctor
       .post(`${base}/entry-code/reissue`)
@@ -1069,6 +1109,10 @@ describe('patient administration session APIs (e2e)', () => {
     const handoffFixture = await createFixture('HANDOFF');
     const handoffBase = staffBase(handoffFixture);
     const handoffDoctor = requireAgent(ACCOUNTS.handoffDoctor);
+    const visitBefore = await visitModel
+      .findById(handoffFixture.visit._id)
+      .lean()
+      .exec();
     const scaleInstanceBefore = await scaleInstanceModel
       .findById(handoffFixture.scaleInstance._id)
       .lean()
@@ -1123,6 +1167,15 @@ describe('patient administration session APIs (e2e)', () => {
     expect(
       storedBeforeHandoff?.controlEvents.map((event) => event.action),
     ).toEqual(['preparation_confirmed']);
+    expect(
+      await visitModel.findById(handoffFixture.visit._id).lean().exec(),
+    ).toEqual(visitBefore);
+    expect(
+      await scaleInstanceModel
+        .findById(handoffFixture.scaleInstance._id)
+        .lean()
+        .exec(),
+    ).toEqual(scaleInstanceBefore);
 
     const handoffResponse = await handoffDoctor
       .post(`${handoffBase}/handoff`)
@@ -1169,12 +1222,26 @@ describe('patient administration session APIs (e2e)', () => {
     expect(
       storedAfterHandoff?.controlEvents.map((event) => event.action),
     ).toEqual(['preparation_confirmed', 'same_device_handoff']);
-    expect(
-      await scaleInstanceModel
-        .findById(handoffFixture.scaleInstance._id)
-        .lean()
-        .exec(),
-    ).toEqual(scaleInstanceBefore);
+    const visitAfterHandoff = await visitModel
+      .findById(handoffFixture.visit._id)
+      .lean()
+      .exec();
+    const scaleInstanceAfterHandoff = await scaleInstanceModel
+      .findById(handoffFixture.scaleInstance._id)
+      .lean()
+      .exec();
+    expect(visitAfterHandoff).toEqual(
+      expect.objectContaining({
+        status: 'in_progress',
+        startedAt: storedAfterHandoff?.startedAt,
+      }),
+    );
+    expect(scaleInstanceAfterHandoff).toEqual(
+      expect.objectContaining({
+        status: 'in_progress',
+        startedAt: storedAfterHandoff?.startedAt,
+      }),
+    );
     expect(
       await itemResponseModel.countDocuments({
         scaleInstanceId: handoffFixture.scaleInstance._id,
@@ -1260,6 +1327,17 @@ describe('patient administration session APIs (e2e)', () => {
     const originalPreparationConfirmedAt =
       activeSession?.preparationConfirmedAt;
     expect(originalStartedAt).toBeInstanceOf(Date);
+    expect(
+      (await visitModel.findById(fixture.visit._id).lean().exec())?.startedAt,
+    ).toEqual(originalStartedAt);
+    expect(
+      (
+        await scaleInstanceModel
+          .findById(fixture.scaleInstance._id)
+          .lean()
+          .exec()
+      )?.startedAt,
+    ).toEqual(originalStartedAt);
 
     await doctor
       .post(`${base}/pause`)
@@ -1335,6 +1413,17 @@ describe('patient administration session APIs (e2e)', () => {
       'same_device_handoff',
       'resumed',
     ]);
+    expect(
+      (await visitModel.findById(fixture.visit._id).lean().exec())?.startedAt,
+    ).toEqual(originalStartedAt);
+    expect(
+      (
+        await scaleInstanceModel
+          .findById(fixture.scaleInstance._id)
+          .lean()
+          .exec()
+      )?.startedAt,
+    ).toEqual(originalStartedAt);
     await login(ACCOUNTS.doctor);
   });
 

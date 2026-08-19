@@ -426,11 +426,13 @@ describe('AssessmentsService', () => {
     countDocuments: jest.Mock;
     create: jest.Mock;
     findOneAndUpdate: jest.Mock;
+    updateOne: jest.Mock;
     deleteOne: jest.Mock;
   };
   let scaleInstanceModel: {
     findOne: jest.Mock;
     findOneAndUpdate: jest.Mock;
+    updateOne: jest.Mock;
     find: jest.Mock;
     deleteMany: jest.Mock;
   };
@@ -455,11 +457,13 @@ describe('AssessmentsService', () => {
       countDocuments: jest.fn(),
       create: jest.fn(),
       findOneAndUpdate: jest.fn(),
+      updateOne: jest.fn(),
       deleteOne: jest.fn(),
     };
     scaleInstanceModel = {
       findOne: jest.fn(),
       findOneAndUpdate: jest.fn(),
+      updateOne: jest.fn(),
       find: jest.fn(),
       deleteMany: jest.fn(),
     };
@@ -525,6 +529,122 @@ describe('AssessmentsService', () => {
     expect(
       service.normalizeItemCode('  MMSE.Attention.Serial_Sevens.Step_1  '),
     ).toBe('mmse.attention.serial_sevens.step_1');
+  });
+
+  it('conditionally starts the owned scale and visit without overwriting lifecycle facts', async () => {
+    const patientId = new Types.ObjectId();
+    const visitId = new Types.ObjectId();
+    const scaleInstanceId = new Types.ObjectId();
+    const startedAt = new Date('2026-08-18T01:00:00.000Z');
+    scaleInstanceModel.updateOne.mockReturnValue(createExecQuery({}));
+    assessmentVisitModel.updateOne.mockReturnValue(createExecQuery({}));
+
+    await service.ensureVisitAndScaleStarted({
+      patientId,
+      assessmentVisitId: visitId,
+      scaleInstanceId,
+      startedAt,
+    });
+
+    const nonTerminalLifecycle = {
+      completedAt: null,
+      lockedAt: null,
+      voidedAt: null,
+    };
+    expect(scaleInstanceModel.updateOne).toHaveBeenNthCalledWith(
+      1,
+      {
+        _id: scaleInstanceId,
+        assessmentVisitId: visitId,
+        patientId,
+        ...nonTerminalLifecycle,
+        status: { $in: ['draft', 'in_progress'] },
+        $or: [{ startedAt: null }, { startedAt: { $exists: false } }],
+      },
+      { $set: { status: 'in_progress', startedAt } },
+      { runValidators: true },
+    );
+    expect(scaleInstanceModel.updateOne).toHaveBeenNthCalledWith(
+      2,
+      {
+        _id: scaleInstanceId,
+        assessmentVisitId: visitId,
+        patientId,
+        ...nonTerminalLifecycle,
+        status: 'draft',
+      },
+      { $set: { status: 'in_progress' } },
+      { runValidators: true },
+    );
+    expect(assessmentVisitModel.updateOne).toHaveBeenNthCalledWith(
+      1,
+      {
+        _id: visitId,
+        patientId,
+        ...nonTerminalLifecycle,
+        status: { $in: ['draft', 'in_progress'] },
+        $or: [{ startedAt: null }, { startedAt: { $exists: false } }],
+      },
+      { $set: { status: 'in_progress', startedAt } },
+      { runValidators: true },
+    );
+    expect(assessmentVisitModel.updateOne).toHaveBeenNthCalledWith(
+      2,
+      {
+        _id: visitId,
+        patientId,
+        ...nonTerminalLifecycle,
+        status: 'draft',
+      },
+      { $set: { status: 'in_progress' } },
+      { runValidators: true },
+    );
+  });
+
+  it('keeps the first visit start while independently starting a later scale', async () => {
+    const patientId = new Types.ObjectId();
+    const visitId = new Types.ObjectId();
+    const firstScaleInstanceId = new Types.ObjectId();
+    const secondScaleInstanceId = new Types.ObjectId();
+    const firstStartedAt = new Date('2026-08-18T01:00:00.000Z');
+    const secondStartedAt = new Date('2026-08-18T02:00:00.000Z');
+    scaleInstanceModel.updateOne.mockReturnValue(createExecQuery({}));
+    assessmentVisitModel.updateOne.mockReturnValue(createExecQuery({}));
+
+    await service.ensureVisitAndScaleStarted({
+      patientId,
+      assessmentVisitId: visitId,
+      scaleInstanceId: firstScaleInstanceId,
+      startedAt: firstStartedAt,
+    });
+    await service.ensureVisitAndScaleStarted({
+      patientId,
+      assessmentVisitId: visitId,
+      scaleInstanceId: secondScaleInstanceId,
+      startedAt: secondStartedAt,
+    });
+
+    expect(scaleInstanceModel.updateOne).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({
+        _id: secondScaleInstanceId,
+        assessmentVisitId: visitId,
+        patientId,
+        $or: [{ startedAt: null }, { startedAt: { $exists: false } }],
+      }),
+      { $set: { status: 'in_progress', startedAt: secondStartedAt } },
+      { runValidators: true },
+    );
+    expect(assessmentVisitModel.updateOne).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({
+        _id: visitId,
+        patientId,
+        $or: [{ startedAt: null }, { startedAt: { $exists: false } }],
+      }),
+      { $set: { status: 'in_progress', startedAt: secondStartedAt } },
+      { runValidators: true },
+    );
   });
 
   it('reads follow-up trend Visits with an ascending bounded lean projection', async () => {

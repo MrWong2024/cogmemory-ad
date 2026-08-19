@@ -143,6 +143,7 @@ manifest 不承担独立资产数据库、资产管理后台、多级审批、TT
 - 同一 `ScaleInstance` 同时只允许一个有效患者设备。换设备时旧患者凭证立即失效。
 - 患者会话绝对有效期为两小时，不做空闲心跳、滑动续期或自动续期。
 - 会话必须表达准备、活动、暂停、完成、终止和过期语义；这些是业务语义，不预先规定最终枚举名或 Schema。
+- `prepared` 仅表示患者施测会话已准备，不代表 Visit 或 ScaleInstance 已真正开始；创建会话、same-device 准备确认、cross-device 进入码创建 / 重发 / 兑换和单纯查看页面都保持父级 `draft / startedAt=null`。same-device 仅在首次安全 handoff 使 Session 从 prepared 转 active 时开始，cross-device 仅在准备确认真正使 Session 从 prepared 转 active 时开始；Session、当前 ScaleInstance 与所属 Visit 必须共用同一个服务端首次 start timestamp，并把父级 draft 推进为 in_progress。pause / resume、换凭证和后续复核不得重置或覆盖该时间。
 - `completed` 是同一 `ScaleInstance` 患者施测成功完成的永久终点；历史中存在任意 completed `PatientAdministrationSession` 时，不得再次创建患者施测会话。`terminated` / `expired` 表示未成功完成，只有在不存在 completed 历史时才允许重新创建；terminate + recreate 仅用于失败、中止或设备方式选择错误后的恢复，不是 completed 后重测。
 - 患者只能读取和完成服务端当前步骤，不能自行跳题；但正常 happy path 应由患者端连续推进整个正常题目主链。条件提示等合同明确的受控步骤仍由医护解锁，不能把“需要医护临床观察”机械等同为“需要 staff 同步系统写入才能进入下一题”。
 - cross-device 存在保持有效 staff Session 的独立医护终端时，医护可通过该终端执行暂停、接管、纠正、恢复、换设备或终止等已存在控制操作。

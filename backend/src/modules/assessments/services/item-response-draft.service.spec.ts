@@ -236,6 +236,7 @@ describe('ItemResponseDraftService', () => {
     findItemResponseByOwnership: jest.Mock;
     countItemResponseProgress: jest.Mock;
     toItemResponseSummary: jest.Mock;
+    ensureVisitAndScaleStarted: jest.Mock;
   };
   let currentItemResponse: ItemResponseSummary;
 
@@ -248,6 +249,7 @@ describe('ItemResponseDraftService', () => {
       findItemResponseByOwnership: jest.fn(),
       countItemResponseProgress: jest.fn(),
       toItemResponseSummary: jest.fn(),
+      ensureVisitAndScaleStarted: jest.fn().mockResolvedValue(undefined),
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -493,6 +495,12 @@ describe('ItemResponseDraftService', () => {
     }
 
     expect(update.$set.draftSavedAt).toBeInstanceOf(Date);
+    expect(assessmentsService.ensureVisitAndScaleStarted).toHaveBeenCalledWith({
+      patientId: PATIENT_ID,
+      assessmentVisitId: VISIT_ID,
+      scaleInstanceId: SCALE_INSTANCE_ID,
+      startedAt: update.$set.draftSavedAt,
+    });
   });
 
   it('saves the same explicit value twice with a new server time and revision each time', async () => {
@@ -596,6 +604,22 @@ describe('ItemResponseDraftService', () => {
     });
     expect(firstServerTime.toISOString()).not.toBe(clientAttemptedTime);
     expect(secondServerTime.toISOString()).not.toBe(clientAttemptedTime);
+    expect(
+      assessmentsService.ensureVisitAndScaleStarted,
+    ).toHaveBeenNthCalledWith(1, {
+      patientId: PATIENT_ID,
+      assessmentVisitId: VISIT_ID,
+      scaleInstanceId: SCALE_INSTANCE_ID,
+      startedAt: firstServerTime,
+    });
+    expect(
+      assessmentsService.ensureVisitAndScaleStarted,
+    ).toHaveBeenNthCalledWith(2, {
+      patientId: PATIENT_ID,
+      assessmentVisitId: VISIT_ID,
+      scaleInstanceId: SCALE_INSTANCE_ID,
+      startedAt: secondServerTime,
+    });
   });
 
   it('treats a missing legacy revision as zero and upgrades it atomically', async () => {
@@ -635,6 +659,9 @@ describe('ItemResponseDraftService', () => {
       'ITEM_RESPONSE_DRAFT_CONFLICT',
     );
     expect(itemResponseModel.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(
+      assessmentsService.ensureVisitAndScaleStarted,
+    ).not.toHaveBeenCalled();
   });
 
   it('classifies a CAS miss with a changed revision as a draft conflict', async () => {
@@ -765,6 +792,9 @@ describe('ItemResponseDraftService', () => {
     await save({ rawResponse: false, markAsAnswered: true });
     expect(readUpdateSet(itemResponseModel.findOneAndUpdate).status).toBe(
       'answered',
+    );
+    expect(assessmentsService.ensureVisitAndScaleStarted).toHaveBeenCalledTimes(
+      1,
     );
   });
 

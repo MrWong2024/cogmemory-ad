@@ -295,6 +295,7 @@ describe('ScaleInstanceSubmissionService', () => {
         (input: {
           barrier: BarrierInput;
           completionTime: Date;
+          startedAtToSet?: Date;
           durationMs: number | null;
         }) => {
           if (currentInstance.status === 'completed') {
@@ -310,7 +311,8 @@ describe('ScaleInstanceSubmissionService', () => {
           currentInstance = {
             ...currentInstance,
             status: 'completed',
-            startedAt: new Date('2026-07-10T06:00:00.000Z'),
+            startedAt:
+              currentInstance.startedAt ?? input.startedAtToSet ?? null,
             completedAt: input.completionTime,
             durationMs: input.durationMs,
             submissionWriteBarrier: parentBarrier(input.barrier, 'completed'),
@@ -441,6 +443,34 @@ describe('ScaleInstanceSubmissionService', () => {
     expect(response.submission.submittedBy?.operatorName).toBe(
       operator.displayName,
     );
+    expect(completionInput.startedAtToSet).toEqual(
+      new Date('2026-07-10T06:00:00.000Z'),
+    );
+    expect(response.submission.durationSource).toBe('earliest_item_timing');
+  });
+
+  it('preserves an existing instance start and uses it for submission duration', async () => {
+    const existingStartedAt = new Date('2026-07-10T05:55:00.000Z');
+    currentInstance = createInstance({
+      status: 'in_progress',
+      startedAt: existingStartedAt,
+    });
+
+    const response = await service.submitScaleInstance(
+      patientId,
+      visitId,
+      instanceId,
+      operator,
+      { confirm: true },
+    );
+    const completionInput = requireRecord(
+      readMockCallArgument(barrierService.completeScaleInstance, 0),
+      'completion input',
+    );
+
+    expect(completionInput).not.toHaveProperty('startedAtToSet');
+    expect(currentInstance.startedAt).toEqual(existingStartedAt);
+    expect(response.submission.durationSource).toBe('existing_instance_start');
   });
 
   it('makes dual submits join the first barrier and preserves its audit actor', async () => {
