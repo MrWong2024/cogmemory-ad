@@ -1,4 +1,4 @@
-import { type ReactNode, useId } from 'react';
+import { type ReactNode, useId, useState } from 'react';
 
 import { Badge, type BadgeTone } from '@/src/components/ui/Badge';
 import { Button } from '@/src/components/ui/Button';
@@ -207,6 +207,9 @@ export function ItemResponseEditor({
   visitId: string;
 }) {
   const fieldIdPrefix = useId();
+  const [operatorNoteExpanded, setOperatorNoteExpanded] = useState(
+    () => draft.operatorNote.trim().length > 0,
+  );
   const itemReadOnlyReason = getItemResponseReadOnlyReason(item.status);
   const readOnlyReason = pageReadOnlyReason ?? itemReadOnlyReason;
   const controlsDisabled = Boolean(readOnlyReason);
@@ -246,6 +249,9 @@ export function ItemResponseEditor({
     item.status === 'answered'
       ? '保存并保持本题完成'
       : '保存并标记本题完成';
+  const showMissingReason =
+    draft.isMissing || draft.missingReason.trim().length > 0;
+  const hasOperatorNote = draft.operatorNote.trim().length > 0;
 
   function updateDraft(nextDraft: ItemDraftState, immediate = false) {
     onChange(nextDraft, immediate);
@@ -604,56 +610,97 @@ export function ItemResponseEditor({
               本题无法完成 / 缺失记录
             </label>
             <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-              {structuredManualFields
-                ? '开启后逐子项内容会保留在当前页面内存，但按缺失合同保存时不作为正式答案提交；取消缺失可继续编辑。'
-                : '开启后会清空本地实际作答、分步实际值和提示后回答；分步 / 提示备注、计时草稿和操作者备注会保留。'}
+              {draft.isMissing
+                ? structuredManualFields
+                  ? '逐子项内容会保留在当前页面内存，但按缺失合同保存时不作为正式答案提交；取消缺失可继续编辑。'
+                  : '已清空本地实际作答、分步实际值和提示后回答；分步 / 提示备注、计时草稿和操作者备注会保留。'
+                : '仅在本题确实无法完成或无法取得有效作答时使用。'}
             </p>
           </div>
         </div>
-        <div className="grid gap-2">
-          <label
-            className="font-semibold text-[var(--cma-text-strong)]"
-            htmlFor={`${fieldIdPrefix}-missing-reason`}
-          >
-            缺失原因{draft.isMissing ? '（必填）' : ''}
-          </label>
-          <textarea
-            className={`${inputClassName} min-h-24 resize-y`}
-            disabled={controlsDisabled || !draft.isMissing}
-            id={`${fieldIdPrefix}-missing-reason`}
-            maxLength={1000}
-            onChange={(event) =>
-              updateDraft({ ...draft, missingReason: event.target.value })
-            }
-            value={draft.missingReason}
-          />
-        </div>
+        {showMissingReason ? (
+          <div className="grid gap-2">
+            <label
+              className="font-semibold text-[var(--cma-text-strong)]"
+              htmlFor={`${fieldIdPrefix}-missing-reason`}
+            >
+              {draft.isMissing ? '缺失原因（必填）' : '缺失原因（已有记录）'}
+            </label>
+            <textarea
+              className={`${inputClassName} min-h-24 resize-y`}
+              disabled={controlsDisabled || !draft.isMissing}
+              id={`${fieldIdPrefix}-missing-reason`}
+              maxLength={1000}
+              onChange={(event) =>
+                updateDraft({ ...draft, missingReason: event.target.value })
+              }
+              value={draft.missingReason}
+            />
+            {!draft.isMissing ? (
+              <p className="text-sm leading-6 text-[var(--cma-muted)]">
+                当前未标记为缺失；该已有原因仅供核对。
+              </p>
+            ) : null}
+          </div>
+        ) : null}
       </section>
 
-      <section className="grid gap-2">
-        <label
-          className="font-semibold text-[var(--cma-text-strong)]"
-          htmlFor={`${fieldIdPrefix}-operator-note`}
-        >
-          操作者备注
-          {item.config.requiresOperatorNote ? '（量表配置要求记录）' : ''}
-        </label>
-        <textarea
-          className={`${inputClassName} min-h-28 resize-y`}
-          disabled={controlsDisabled}
-          id={`${fieldIdPrefix}-operator-note`}
-          maxLength={4000}
-          onChange={(event) =>
-            updateDraft({ ...draft, operatorNote: event.target.value })
+      {item.config.requiresOperatorNote ? (
+        <section className="grid gap-2">
+          <label
+            className="font-semibold text-[var(--cma-text-strong)]"
+            htmlFor={`${fieldIdPrefix}-operator-note`}
+          >
+            操作者备注（量表配置要求记录）
+          </label>
+          <textarea
+            className={`${inputClassName} min-h-28 resize-y`}
+            disabled={controlsDisabled}
+            id={`${fieldIdPrefix}-operator-note`}
+            maxLength={4000}
+            onChange={(event) =>
+              updateDraft({ ...draft, operatorNote: event.target.value })
+            }
+            value={draft.operatorNote}
+          />
+          <p className="text-sm leading-6 text-[var(--cma-muted)]">
+            量表配置标识建议记录操作者备注；本阶段不额外强制前端必填。
+          </p>
+        </section>
+      ) : (
+        <details
+          className="rounded-md border border-[var(--cma-line)] p-4"
+          onToggle={(event) =>
+            setOperatorNoteExpanded(event.currentTarget.open)
           }
-          value={draft.operatorNote}
-        />
-        <p className="text-sm leading-6 text-[var(--cma-muted)]">
-          {item.config.requiresOperatorNote
-            ? '量表配置标识建议记录操作者备注；本阶段不额外强制前端必填。'
-            : '可选，最多 4000 个字符。'}
-        </p>
-      </section>
+          open={operatorNoteExpanded}
+        >
+          <summary className="cursor-pointer rounded-sm font-semibold text-[var(--cma-text-strong)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cma-ring)]">
+            操作者备注（可选）{hasOperatorNote ? ' · 已填写' : ''}
+          </summary>
+          <div className="mt-4 grid gap-2">
+            <label
+              className="sr-only"
+              htmlFor={`${fieldIdPrefix}-operator-note`}
+            >
+              操作者备注（可选）
+            </label>
+            <textarea
+              className={`${inputClassName} min-h-28 resize-y`}
+              disabled={controlsDisabled}
+              id={`${fieldIdPrefix}-operator-note`}
+              maxLength={4000}
+              onChange={(event) =>
+                updateDraft({ ...draft, operatorNote: event.target.value })
+              }
+              value={draft.operatorNote}
+            />
+            <p className="text-sm leading-6 text-[var(--cma-muted)]">
+              可选，最多 4000 个字符。
+            </p>
+          </div>
+        </details>
+      )}
 
       <ItemResponseSaveStatus
         onRetryServerCheck={onRetryServerCheck}

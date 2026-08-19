@@ -408,7 +408,7 @@ export function PatientAdministrationStaffPanel({
       setEntryCode(response.entryCode);
       setReissueReason('');
       setReissueConfirmed(false);
-      setMessage('已按服务端真实状态重新签发进入码；旧患者设备凭证已失效。');
+      setMessage('已按服务端真实状态重新签发进入码；原患者设备已退出。');
     } catch (error: unknown) {
       await handleWriteFailure(error, true);
     } finally {
@@ -605,22 +605,83 @@ export function PatientAdministrationStaffPanel({
                   : '未记录'}
               </dd>
             </div>
-            <div>
-              <dt className="text-sm font-semibold text-[var(--cma-muted)]">服务端 revision</dt>
-              <dd className="mt-1 text-lg font-semibold">{session.revision}</dd>
-            </div>
-            <div>
-              <dt className="text-sm font-semibold text-[var(--cma-muted)]">患者设备凭证</dt>
-              <dd className="mt-1 text-base">
-                {session.hasPatientCredential ? '患者设备已进入' : '尚未进入'}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-sm font-semibold text-[var(--cma-muted)]">会话有效期</dt>
-              <dd className="mt-1 text-base">
-                {formatPatientAdministrationDate(session.expiresAt)}
-              </dd>
-            </div>
+            {openStatuses.has(session.status) && session.startedAt ? (
+              <div>
+                <dt className="text-sm font-semibold text-[var(--cma-muted)]">开始时间</dt>
+                <dd className="mt-1 text-base">
+                  {formatPatientAdministrationDate(session.startedAt)}
+                </dd>
+              </div>
+            ) : null}
+            {openStatuses.has(session.status) &&
+            session.deviceMode === 'cross_device' ? (
+              <div>
+                <dt className="text-sm font-semibold text-[var(--cma-muted)]">患者设备</dt>
+                <dd className="mt-1 text-base">
+                  {session.hasPatientCredential ? '已进入' : '待进入'}
+                </dd>
+              </div>
+            ) : null}
+            {openStatuses.has(session.status) ? (
+              <div>
+                <dt className="text-sm font-semibold text-[var(--cma-muted)]">会话有效期</dt>
+                <dd className="mt-1 text-base">
+                  {formatPatientAdministrationDate(session.expiresAt)}
+                </dd>
+              </div>
+            ) : null}
+            {session.status === 'completed' ? (
+              <>
+                <div>
+                  <dt className="text-sm font-semibold text-[var(--cma-muted)]">开始时间</dt>
+                  <dd className="mt-1 text-base">
+                    {formatPatientAdministrationDate(session.startedAt)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-semibold text-[var(--cma-muted)]">完成时间</dt>
+                  <dd className="mt-1 text-base">
+                    {formatPatientAdministrationDate(session.completedAt)}
+                  </dd>
+                </div>
+              </>
+            ) : null}
+            {session.status === 'terminated' ? (
+              <>
+                {session.startedAt ? (
+                  <div>
+                    <dt className="text-sm font-semibold text-[var(--cma-muted)]">开始时间</dt>
+                    <dd className="mt-1 text-base">
+                      {formatPatientAdministrationDate(session.startedAt)}
+                    </dd>
+                  </div>
+                ) : null}
+                <div>
+                  <dt className="text-sm font-semibold text-[var(--cma-muted)]">终止时间</dt>
+                  <dd className="mt-1 text-base">
+                    {formatPatientAdministrationDate(session.terminatedAt)}
+                  </dd>
+                </div>
+              </>
+            ) : null}
+            {session.status === 'expired' ? (
+              <>
+                {session.startedAt ? (
+                  <div>
+                    <dt className="text-sm font-semibold text-[var(--cma-muted)]">开始时间</dt>
+                    <dd className="mt-1 text-base">
+                      {formatPatientAdministrationDate(session.startedAt)}
+                    </dd>
+                  </div>
+                ) : null}
+                <div>
+                  <dt className="text-sm font-semibold text-[var(--cma-muted)]">过期时间</dt>
+                  <dd className="mt-1 text-base">
+                    {formatPatientAdministrationDate(session.expiredAt)}
+                  </dd>
+                </div>
+              </>
+            ) : null}
           </dl>
         ) : null}
 
@@ -744,8 +805,8 @@ export function PatientAdministrationStaffPanel({
               <div className="grid gap-5">
                 <p className="rounded-md border border-[var(--cma-line)] px-4 py-3">
                   {session.hasPatientCredential
-                    ? '患者设备已兑换凭证。请由患者在其设备完成必要设备检查，并当面告知医护人员。'
-                    : '请先让患者在另一台设备输入进入码。患者凭证出现前不能确认准备。'}
+                    ? '患者已在另一台设备进入。请由患者在其设备完成必要设备检查，并当面告知医护人员。'
+                    : '请先让患者在另一台设备输入进入码。患者进入前不能确认准备。'}
                 </p>
                 <PatientAdministrationPreparation
                   disabled={Boolean(writeAction)}
@@ -881,7 +942,7 @@ export function PatientAdministrationStaffPanel({
                   />
                   <span>
                     {session.hasPatientCredential
-                      ? '我确认旧患者设备凭证将失效，并需要把新码当面告知患者'
+                      ? '我确认原患者设备将退出，并需要把新码当面告知患者'
                       : '我确认原进入码（如仍有效）将失效，并需要把新码当面告知患者'}
                   </span>
                 </label>
@@ -922,7 +983,7 @@ export function PatientAdministrationStaffPanel({
                   onChange={(event) => setTerminateConfirmed(event.target.checked)}
                   type="checkbox"
                 />
-                <span>我确认终止后患者凭证与进入码均不可继续使用</span>
+                <span>我确认终止后患者设备与进入码均不可继续使用</span>
               </label>
               <Button
                 className="sm:w-fit"
