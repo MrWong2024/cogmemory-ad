@@ -62,12 +62,12 @@
 
 - Service 名称：`ScaleSeedDataService`
 - 文件路径：`backend\src\modules\scales\seeds\scale-seed-data.service.ts`
-- 职责边界：提供 MMSE / MoCA 初始配置 seed 的内部只读读取能力，并提供不做 manifest IO 的 `validateScaleSeeds()` 种子数据校验纯函数；MMSE 1.0 含 packageKey 和 19 步，MoCA 当前保持无呈现配置。
+- 职责边界：提供 MMSE / MoCA 初始配置 seed 的内部只读读取能力，并提供不做 manifest IO 的 `validateScaleSeeds()` 种子数据校验纯函数；MMSE 1.0 含 packageKey 和 19 步，其中 reading-command 以空 assetKeys 保持纯视觉题目呈现并复用既有 speech 患者短录音链，MoCA 当前保持无呈现配置。
 - 当前方法：`normalizeScaleCode(code)`、`getAllScaleSeeds()`、`getScaleSeedByCode(scaleCode)`、`getScaleVersionSeed(scaleCode, version)`、`listSeedScaleDefinitions()`、`listSeedScaleVersions()`、`validateScaleSeeds(seeds?)`。
 - 上游调用方：当前由 `ScaleCatalogService`、`AssessmentExecutionService` 与只读 `presentation-assets:verify` CLI 直接调用；没有直接公开 Controller。全量导入脚本或 seed runner 属于未来边界。
 - 下游依赖：MMSE / MoCA seed 常量；不依赖 Mongoose Model，不依赖 `ScalesService`，不依赖数据库、Storage、SMS 或 LLM。
 - 边界：不创建、更新、删除数据库记录；不提供 import / upsert / seed runner；不执行写库；不读取 manifest；不暴露公开 MMSE / MoCA 配置查询 API；不实现评估执行、作答提交、媒体上传、自动计分触发、报告、AI、认证或权限。
-- 测试覆盖口径：`backend\src\modules\scales\seeds\scale-seed-data.service.spec.ts`，覆盖 MMSE / MoCA seed 读取、code 规范化、版本读取、definition / version 列表、内置 seed 校验、总分范围、PDF / CRF 编号修正规则、MoCA 即刻记忆和延迟回忆记录规则、连续减 7 分步规则、图片 / 手写 / 用时证据要求、item code 唯一、groupCode 引用和校验错误分支；不连接真实 MongoDB，不调用 Storage / OSS / SMS / LLM，测试数据为配置样例或脱敏人工样例。
+- 测试覆盖口径：`backend\src\modules\scales\seeds\scale-seed-data.service.spec.ts`，覆盖 MMSE / MoCA seed 读取、code 规范化、版本读取、definition / version 列表、内置 seed 校验、总分范围、PDF / CRF 编号修正规则、MMSE reading-command 的纯视觉呈现、speech 录音响应和正式一分人工观察合同、MoCA 即刻记忆和延迟回忆记录规则、连续减 7 分步规则、图片 / 手写 / 用时证据要求、item code 唯一、groupCode 引用和校验错误分支；不连接真实 MongoDB，不调用 Storage / OSS / SMS / LLM，测试数据为配置样例或脱敏人工样例。
 
 - Service 名称：`ScaleCatalogService`
 - 文件路径：`backend\src\modules\scales\services\scale-catalog.service.ts`

@@ -172,9 +172,10 @@ export const MMSE_SCALE_VERSION_SEED: ScaleSeedVersion = {
       stepKey: 'mmse-reading-command',
       order: 16,
       itemCode: 'mmse.language.reading_command',
-      patientText: '请闭上您的眼睛',
+      patientText:
+        '请您念一念下面这句话，并按照这句话的意思去做：“请闭上您的眼睛”',
       assetKeys: [],
-      responseMode: 'staff_observation',
+      responseMode: 'speech',
       advanceBy: 'patient',
     },
     {

@@ -467,9 +467,13 @@ function validateMmseReadingStep(
     return;
   }
 
-  if (readingStep.patientText !== '请闭上您的眼睛') {
+  if (
+    readingStep.patientText !==
+    '请您念一念下面这句话，并按照这句话的意思去做：“请闭上您的眼睛”'
+  ) {
     addIssue(issues, 'error', 'mmse_reading_patient_text_invalid', {
-      message: 'MMSE reading step patientText must be 请闭上您的眼睛',
+      message:
+        'MMSE reading step patientText must ask the patient to read 请闭上您的眼睛 aloud and follow it',
       scaleCode,
       itemCode: 'mmse.language.reading_command',
     });
@@ -483,9 +487,9 @@ function validateMmseReadingStep(
     });
   }
 
-  if (readingStep.responseMode !== 'staff_observation') {
+  if (readingStep.responseMode !== 'speech') {
     addIssue(issues, 'error', 'mmse_reading_response_mode_invalid', {
-      message: 'MMSE reading step responseMode must be staff_observation',
+      message: 'MMSE reading step responseMode must be speech',
       scaleCode,
       itemCode: 'mmse.language.reading_command',
     });

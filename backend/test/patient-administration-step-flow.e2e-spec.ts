@@ -1024,7 +1024,29 @@ describe('patient administration 19-step flow APIs (e2e)', () => {
     ).toBe(2);
 
     const readingStep = await currentStep(16);
+    expect(readingStep).toEqual(
+      expect.objectContaining({
+        stepKey: 'mmse-reading-command',
+        order: 16,
+        patientText:
+          '请您念一念下面这句话，并按照这句话的意思去做：“请闭上您的眼睛”',
+        responseMode: 'speech',
+        advanceBy: 'patient',
+      }),
+    );
     expect(arrayOf(readingStep, 'assets')).toEqual([]);
+    await patientAgent
+      .post('/patient-administration/current/complete')
+      .send({ expectedRevision: revision })
+      .expect(409)
+      .expect((response: Response) => {
+        expect(bodyOf(response)).toEqual(
+          expect.objectContaining({
+            code: 'PATIENT_ADMINISTRATION_STEP_INVALID',
+          }),
+        );
+      });
+    await uploadCurrentEvidence(readingStep);
     await patientComplete();
     const threeStepCommand = await currentStep(17);
     await patientAgent
@@ -1139,19 +1161,37 @@ describe('patient administration 19-step flow APIs (e2e)', () => {
     expect(
       storedFinal?.stepCaptures.filter((capture) => !capture.invalidatedAt),
     ).toHaveLength(19);
-    expect(storedFinal?.stepEvidenceRefs).toHaveLength(17);
+    expect(storedFinal?.stepEvidenceRefs).toHaveLength(18);
     const step15EvidenceRefs = storedFinal?.stepEvidenceRefs.filter(
       (reference) => reference.stepKey === stringOf(firstRunStep15, 'stepKey'),
     );
     expect(
       step15EvidenceRefs?.map((reference) => reference.stepRun).sort(),
     ).toEqual([1, 2]);
+    expect(
+      storedFinal?.stepEvidenceRefs.filter(
+        (reference) => reference.stepKey === 'mmse-reading-command',
+      ),
+    ).toEqual([expect.objectContaining({ stepRun: 1, evidenceType: 'audio' })]);
     const storedEvidence = await mediaEvidenceModel
       .find({ scaleInstanceId: new Types.ObjectId(scaleInstanceId) })
       .sort({ createdAt: 1 })
       .lean()
       .exec();
-    expect(storedEvidence).toHaveLength(17);
+    expect(storedEvidence).toHaveLength(18);
+    const readingEvidence = storedEvidence.filter(
+      (evidence) =>
+        evidence.patientAdministrationContext?.stepKey ===
+        'mmse-reading-command',
+    );
+    expect(readingEvidence).toEqual([
+      expect.objectContaining({
+        itemCode: 'mmse.language.reading_command',
+        evidenceType: 'audio',
+        captureMode: 'browser_audio_recording',
+      }),
+    ]);
+    expect(readingEvidence[0]?.transcription?.status).toBe('not_requested');
     expect(
       storedEvidence.every(
         (evidence) =>

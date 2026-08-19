@@ -248,7 +248,7 @@ export function PatientAdministrationSpeechResponse({
       <div>
         <h3 className="text-xl font-semibold" id="speech-response-title">录制本题回答</h3>
         <p className="mt-1 text-base leading-7 text-[var(--cma-muted)]">
-          题目语音播放完成后，请点击开始录音；录完可以先试听，再显式保存。
+          请先点击开始录音，再按题目要求作答；录完可以先试听，再显式保存。
         </p>
       </div>
 

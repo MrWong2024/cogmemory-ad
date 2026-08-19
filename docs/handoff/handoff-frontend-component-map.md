@@ -754,7 +754,7 @@
 ### 6.83 WP-10-F2 正式步骤与患者证据组件
 
 - `PatientAdministrationCurrentStep.tsx`：对单一 currentStep 编排 private image Blob、按序 frozen MP3、guidance 重播、显式授权的 stimulus 技术重播、当前 revision、evidence 上传与患者完成。staff_observation 步骤提示患者完成动作并由医护在后续复核记录观察结果，不增加 observation input 或状态。换步 / 卸载释放 audio、object URL、AbortController 与 run 引用；旧异步结果不得覆盖新步骤。
-- `PatientAdministrationSpeechResponse.tsx`：使用浏览器支持的 MediaRecorder MIME 形成单步骤短录音，提供显式开始 / 停止 / 本地回放 / 保存；上传 audio evidence 成功后锁定本题证据。MediaStream tracks、timer 与 object URL 在替换或卸载时精确释放，不整场录音、不自动 ASR。
+- `PatientAdministrationSpeechResponse.tsx`：使用浏览器支持的 MediaRecorder MIME 形成单步骤短录音，提供显式开始 / 停止 / 本地回放 / 保存；上传 audio evidence 成功后锁定本题证据。通用提示不依赖题目语音先播放，因此同时适用于带 guidance / stimulus 的 speech 步骤和无题目音频资产的 reading-command；后者仍保持 `assetKeys=[]`，只把患者录音作为回答 Evidence。MediaStream tracks、timer 与 object URL 在替换或卸载时精确释放，不整场录音、不自动 ASR。
 - `PatientAdministrationWrittenResponse.tsx`：writing / drawing 支持响应式 Canvas handwriting 与纸笔照片两种模式；Canvas 生成 PNG，photo 仅接受 JPEG / PNG / WebP，成功上传后显示“本题内容已保存”。Blob / preview URL 只在当前组件内存，不保存源文件名，不自动完成步骤或形成正式答案。
 
 ### 6.84 WP-10-F3 `PatientAdministrationReviewPanel`

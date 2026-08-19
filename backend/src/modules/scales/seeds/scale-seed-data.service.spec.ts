@@ -113,9 +113,30 @@ describe('ScaleSeedDataService', () => {
     const referencedAssets = steps.flatMap((step) => step.assetKeys);
     expect(referencedAssets).toHaveLength(22);
     expect(new Set(referencedAssets).size).toBe(22);
+    expect(
+      steps
+        .filter((step) => step.responseMode === 'speech')
+        .map((step) => step.stepKey),
+    ).toEqual(steps.slice(0, 16).map((step) => step.stepKey));
+    expect(
+      steps
+        .filter((step) => step.responseMode === 'staff_observation')
+        .map((step) => step.stepKey),
+    ).toEqual(['mmse-three-step-command']);
+    expect(
+      steps
+        .filter((step) => step.responseMode === 'writing')
+        .map((step) => step.stepKey),
+    ).toEqual(['mmse-expression']);
+    expect(
+      steps
+        .filter((step) => step.responseMode === 'drawing')
+        .map((step) => step.stepKey),
+    ).toEqual(['mmse-drawing']);
+    expect(steps.every((step) => step.advanceBy === 'patient')).toBe(true);
   });
 
-  it('keeps the MMSE reading step visual-only, staff-observed, and patient-advanced', () => {
+  it('keeps the MMSE reading prompt visual-only while capturing speech and advancing by patient', () => {
     const mmse = getSeed(service.getAllScaleSeeds(), 'mmse');
     const readingStep = getPatientAdministrationSteps(mmse).find(
       (step) => step.stepKey === 'mmse-reading-command',
@@ -125,11 +146,25 @@ describe('ScaleSeedDataService', () => {
       stepKey: 'mmse-reading-command',
       order: 16,
       itemCode: 'mmse.language.reading_command',
-      patientText: '请闭上您的眼睛',
+      patientText:
+        '请您念一念下面这句话，并按照这句话的意思去做：“请闭上您的眼睛”',
       assetKeys: [],
-      responseMode: 'staff_observation',
+      responseMode: 'speech',
       advanceBy: 'patient',
     });
+  });
+
+  it('keeps the formal MMSE reading item as one-point manual observation with operator-note evidence', () => {
+    const mmse = getSeed(service.getAllScaleSeeds(), 'mmse');
+    const readingItem = getItem(mmse, 'mmse.language.reading_command');
+
+    expect(readingItem.responseType).toBe('boolean');
+    expect(readingItem.scoreRange).toEqual({ min: 0, max: 1, step: 1 });
+    expect(readingItem.countsTowardTotal).toBe(true);
+    expect(readingItem.evidenceTypes).toEqual(['operator_note']);
+    expect(readingItem.scoringRule).toEqual(
+      expect.objectContaining({ mode: 'manual_observation' }),
+    );
   });
 
   it('keeps MoCA valid without patient presentation configuration', () => {
@@ -267,7 +302,7 @@ describe('ScaleSeedDataService', () => {
     );
   });
 
-  it('rejects audio or changed text on the MMSE reading step', () => {
+  it('rejects presentation assets, changed text, or a non-speech MMSE reading response', () => {
     const seeds = service.getAllScaleSeeds();
     const mmse = getSeed(seeds, 'mmse');
     const readingStep = getPatientAdministrationSteps(mmse).find(
@@ -279,7 +314,7 @@ describe('ScaleSeedDataService', () => {
     }
     readingStep.patientText = '请闭上你的眼睛';
     readingStep.assetKeys = ['mmse-reading-guidance'];
-    readingStep.responseMode = 'speech';
+    readingStep.responseMode = 'staff_observation';
 
     const result = validateScaleSeeds(seeds);
     expectValidationIssue(result, 'mmse_reading_patient_text_invalid');
