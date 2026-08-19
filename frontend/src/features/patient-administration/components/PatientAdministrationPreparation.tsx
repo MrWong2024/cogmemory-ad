@@ -38,7 +38,7 @@ const requiredPreparationFacts: ReadonlyArray<{
   { key: 'screen', label: '屏幕显示与方向已确认' },
   { key: 'input', label: '触摸、鼠标等基本操作可用' },
   { key: 'sound', label: '本地测试音已检查' },
-  { key: 'microphone', label: '麦克风已检查，或已明确当前不可用' },
+  { key: 'microphone', label: '麦克风录音已验证可用' },
 ];
 
 const initialFacts: Record<PreparationFact, boolean> = {
@@ -185,10 +185,12 @@ export function PatientAdministrationPreparation({
     stopRecording();
     releaseMicrophone();
     revokeRecordingUrl();
+    updateFact('microphone', false);
     setMicrophoneStatus('正在请求麦克风权限…');
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-      updateFact('microphone', true);
-      setMicrophoneStatus('当前浏览器不支持本地录音，已明确记录麦克风不可用。');
+      setMicrophoneStatus(
+        '当前浏览器不支持本地录音，无法完成语音题录音。请更换支持录音的浏览器或设备后重试。',
+      );
       return;
     }
 
@@ -204,33 +206,65 @@ export function PatientAdministrationPreparation({
       const activeStream = stream;
       const chunks: Blob[] = [];
       const recorder = new MediaRecorder(activeStream);
+      let recorderFailed = false;
       streamRef.current = activeStream;
       recorderRef.current = recorder;
       recorder.addEventListener('dataavailable', (event) => {
         if (event.data.size > 0) chunks.push(event.data);
       });
       recorder.addEventListener(
-        'stop',
+        'error',
         () => {
+          recorderFailed = true;
           for (const track of activeStream.getTracks()) track.stop();
           if (streamRef.current === activeStream) streamRef.current = null;
-          if (recorderRef.current === recorder) recorderRef.current = null;
-          if (timerRef.current !== null) {
+          const isCurrentRecorder = recorderRef.current === recorder;
+          if (isCurrentRecorder) recorderRef.current = null;
+          if (isCurrentRecorder && timerRef.current !== null) {
             window.clearTimeout(timerRef.current);
             timerRef.current = null;
           }
           if (microphoneRun !== microphoneRunRef.current) return;
           setRecording(false);
-          if (chunks.length > 0) {
-            const url = URL.createObjectURL(
-              new Blob(chunks, { type: recorder.mimeType || 'audio/webm' }),
+          updateFact('microphone', false);
+          setMicrophoneStatus(
+            '当前设备无法完成语音题录音，请检查麦克风权限或更换设备后重试。',
+          );
+        },
+        { once: true },
+      );
+      recorder.addEventListener(
+        'stop',
+        () => {
+          for (const track of activeStream.getTracks()) track.stop();
+          if (streamRef.current === activeStream) streamRef.current = null;
+          const isCurrentRecorder = recorderRef.current === recorder;
+          if (isCurrentRecorder) recorderRef.current = null;
+          if (isCurrentRecorder && timerRef.current !== null) {
+            window.clearTimeout(timerRef.current);
+            timerRef.current = null;
+          }
+          if (microphoneRun !== microphoneRunRef.current) return;
+          setRecording(false);
+          if (recorderFailed) {
+            updateFact('microphone', false);
+            setMicrophoneStatus(
+              '当前设备无法完成语音题录音，请检查麦克风权限或更换设备后重试。',
             );
+            return;
+          }
+          const blob = new Blob(chunks, {
+            type: recorder.mimeType || 'audio/webm',
+          });
+          if (blob.size > 0) {
+            const url = URL.createObjectURL(blob);
             recordingUrlRef.current = url;
             setRecordingUrl(url);
             updateFact('microphone', true);
             setMicrophoneStatus('本地录音已完成，可在本设备回放检查。');
           } else {
-            setMicrophoneStatus('未取得可回放的本地录音，请重试或记录不可用。');
+            updateFact('microphone', false);
+            setMicrophoneStatus('没有录到有效内容，请重新检查麦克风后再试。');
           }
         },
         { once: true },
@@ -250,8 +284,10 @@ export function PatientAdministrationPreparation({
         track.stop();
       }
       releaseMicrophone();
-      updateFact('microphone', true);
-      setMicrophoneStatus('麦克风权限或设备不可用，已明确记录当前不可用。');
+      updateFact('microphone', false);
+      setMicrophoneStatus(
+        '当前设备无法完成语音题录音，请检查麦克风权限或更换设备后重试。',
+      );
     }
   }
 
