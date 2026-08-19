@@ -145,6 +145,7 @@ manifest 不承担独立资产数据库、资产管理后台、多级审批、TT
 - 会话必须表达准备、活动、暂停、完成、终止和过期语义；这些是业务语义，不预先规定最终枚举名或 Schema。
 - `prepared` 仅表示患者施测会话已准备，不代表 Visit 或 ScaleInstance 已真正开始；创建会话、same-device 准备确认、cross-device 进入码创建 / 重发 / 兑换和单纯查看页面都保持父级 `draft / startedAt=null`。same-device 仅在首次安全 handoff 使 Session 从 prepared 转 active 时开始，cross-device 仅在准备确认真正使 Session 从 prepared 转 active 时开始；Session、当前 ScaleInstance 与所属 Visit 必须共用同一个服务端首次 start timestamp，并把父级 draft 推进为 in_progress。pause / resume、换凭证和后续复核不得重置或覆盖该时间。
 - `completed` 是同一 `ScaleInstance` 患者施测成功完成的永久终点；历史中存在任意 completed `PatientAdministrationSession` 时，不得再次创建患者施测会话。`terminated` / `expired` 表示未成功完成，只有在不存在 completed 历史时才允许重新创建；terminate + recreate 仅用于失败、中止或设备方式选择错误后的恢复，不是 completed 后重测。
+- 对 MMSE `supervised_patient_input`，completed 是进入正式医护复核与量表提交的唯一成功门槛。无 Session、prepared、active、paused、terminated、expired 都仍属于患者施测阶段：前端不开放正式 ItemResponse、readiness / submit、评分或认知域；后端 A14 正式 draft write 返回 `PATIENT_ADMINISTRATION_NOT_COMPLETED`，A16 readiness 返回 blocking `SCALE_INSTANCE_PATIENT_ADMINISTRATION_INCOMPLETE`，直接 submit 复用同一 evaluation 不能绕过。该门禁只读历史 completed 事实，不改变 Session 生命周期、same-device / cross-device、父级 startedAt 或任何 Session。
 - 患者只能读取和完成服务端当前步骤，不能自行跳题；但正常 happy path 应由患者端连续推进整个正常题目主链。条件提示等合同明确的受控步骤仍由医护解锁，不能把“需要医护临床观察”机械等同为“需要 staff 同步系统写入才能进入下一题”。
 - cross-device 存在保持有效 staff Session 的独立医护终端时，医护可通过该终端执行暂停、接管、纠正、恢复、换设备或终止等已存在控制操作。
 - same-device 安全交接后，当前浏览器 staff Session 已失效，患者施测期间不保留隐藏 staff 权限，也不承诺医护可以在同一设备上无须重新认证就实时执行 staff 控制。正常 happy path 由患者连续完成主链，医护进行现实观察和必要辅助。
@@ -238,7 +239,7 @@ MMSE 的命名、阅读并执行、三步指令等观察型步骤遵循同一正
 4. 医护 / 医生复核过程中人工形成、修订并拟提交的结构化答案；该层通过现有 `ItemResponse` 草稿承载。
 5. 具备现有 A16 权限的临床工作用户对满足既有 readiness 的整份 `ScaleInstance` 执行显式整体提交后形成的正式提交结果。
 
-第 1～3 层不得自动成为 `ItemResponse` 正式答案；患者完成、ASR 候选、原始录音、医护观察、媒体上传成功、自动评分或系统规则均不得自动写入正式答案。医护 / 医生在第 4 层通过现有 A14 revision / CAS 草稿 PATCH 受控录入或修订答案，复用 step、prompt、`operatorNote` 等既有字段，并按既有规则 `markAsAnswered`。第 5 层不创建或复制第二份答案；全部 `ItemResponse` 满足 submission readiness 后，由具备现有权限的临床工作用户使用现有 A16 `submit(confirm=true)` 对整份 `ScaleInstance` 做整体正式提交。提交成功后，这批既有 `ItemResponse` 作为该次已提交 `ScaleInstance` 的正式作答结果，再进入既有评分、认知域和报告链。
+第 1～3 层不得自动成为 `ItemResponse` 正式答案；患者完成、ASR 候选、原始录音、医护观察、媒体上传成功、自动评分或系统规则均不得自动写入正式答案。对 supervised 流程，只有服务端历史 completed PatientAdministrationSession 才允许医护 / 医生进入第 4 层并通过现有 A14 revision / CAS 草稿 PATCH 受控录入或修订答案；其它 Session 状态和无 Session 均 fail closed，且失败不写草稿或启动 Visit / ScaleInstance。第 4 层继续复用 step、prompt、`operatorNote` 等既有字段，并按既有规则 `markAsAnswered`。第 5 层不创建或复制第二份答案；全部 `ItemResponse` 满足包含该 completed 门禁的 submission readiness 后，由具备现有权限的临床工作用户使用现有 A16 `submit(confirm=true)` 对整份 `ScaleInstance` 做整体正式提交。提交成功后，这批既有 `ItemResponse` 作为该次已提交 `ScaleInstance` 的正式作答结果，再进入既有评分、认知域和报告链。
 
 F3 不修改 A14、readiness 或 A16 的当前技术权限模型，具体 role list 只由当前 backend API / `RolesGuard` 合同维护；不新增 F3 专属 role、reviewer、审批人、doctor-confirm 前置状态，也不把 A14 或 A16 改为 doctor-only。医生继续按既有产品 / 临床合同承担临床解释、需要专业判断的题目、下游评分复核、`ClinicalReport` 和医疗业务责任，但专业责任不自动等价于 A16 endpoint 必须 doctor-only；未来如明确要求只有医生可正式提交，必须作为新的权限需求单独治理和实现。
 
@@ -315,6 +316,7 @@ F3 的组织原则是“正常复核优先，重点项目适度提示”。系�
 - 准备练习隔离、短期患者会话、创建时持久化且不可切换的 same-device / cross-device、same-device 不签发进入码、cross-device 六位一次性进入码十分钟、无 completed 历史时可因失败 / 中止 / 选择错误 terminate 或 expire 后 recreate、任意 completed 历史永久禁止同一 `ScaleInstance` 再次 create、legacy 模式不推断且 mode-specific mutation fail closed、同一 `ScaleInstance` 同时只允许一个有效患者设备、两小时绝对有效期、same-device staff Session 失效与重新认证、cross-device staff Session 保留、服务端权威步骤和安全退出。
 - 患者正常题目主链连续推进，医护现场观察与后续复核记录解耦；双设备不等于双写者，独立患者 / 独立 `ScaleInstance` 正常并行，同一评估不默认多人实时协同编辑。
 - 患者原始事实、ASR 候选、现场医护观察的事实来源、量表作答复核草稿和整体正式提交结果的五层语义；现场观察可在 F3 直接形成现有 `ItemResponse`，不默认要求独立 Observation 数据层。F3 正常复核优先、原始证据按需查看，患者已有有效 `MediaEvidence` 可经明确采用受控进入现有 `evidenceRefs` 而不重新上传或复制；第 4 层由现有 A14 `ItemResponse` 单题草稿与 `markAsAnswered` 承载，第 5 层通过 readiness 后的现有 A16 整体提交使同一批 `ItemResponse` 成为正式作答结果，不创建第二套答案、复核状态或批量确认写协议，A14 / A16 技术权限继续服从当前 backend 授权合同。
+- MMSE supervised 执行阶段严格按 server-owned PatientAdministrationSession completed 事实收口：completed 前 UI 只呈现患者施测与基础信息，backend 同时阻断正式 A14 写与 A16 submit；completed 后才开放 unified review / readiness / submission，ScaleInstance completed / locked / voided 后才展示评分，final/history ScoreResult 后才展示认知域。前端 progressive disclosure 不替代后端 invariant。
 - 一种基础 ASR、上传门禁、内存重试和人工降级；ASR 不阻断。
 - 影响因素、无法完成、保留 / 作废 / 删除、WP-09 备份责任和最低审计边界。
 

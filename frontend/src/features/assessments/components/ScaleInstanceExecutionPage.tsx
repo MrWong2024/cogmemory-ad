@@ -41,6 +41,7 @@ import { useItemResponseAutosaveCoordinator } from '@/src/features/assessments/h
 import {
   assessmentOperatorRoleLabels,
   buildScaleExecutionGroupSections,
+  getScaleExecutionProgressiveDisclosure,
   getScaleExecutionReadOnlyReason,
   scaleAdministrationModeLabels,
   scaleInstanceStatusLabels,
@@ -260,6 +261,7 @@ export function ScaleInstanceExecutionPage({
   const mediaWritingKeysRef = useRef(new Set<string>());
   const readinessControllerRef = useRef<AbortController | null>(null);
   const scoreResultControllerRef = useRef<AbortController | null>(null);
+  const completedReviewLoadKeyRef = useRef<string | null>(null);
   const readinessRef = useRef<ScaleSubmissionReadinessResponse | null>(null);
   const loadSubmissionReadinessRef = useRef<
     () => Promise<ScaleSubmissionReadinessResponse | null>
@@ -354,6 +356,15 @@ export function ScaleInstanceExecutionPage({
   const [confirmationSafetyBlock, setConfirmationSafetyBlock] = useState<
     'warnings' | 'audit_unavailable' | null
   >(null);
+  const progressiveDisclosure = detail
+    ? getScaleExecutionProgressiveDisclosure({
+        scaleCode: detail.scale.code,
+        administrationMode: detail.scaleInstance.administrationMode,
+        patientAdministrationStatus,
+        scaleInstanceStatus: detail.scaleInstance.status,
+        scoreResultStatus: scoreResult?.scoreResult.status ?? null,
+      })
+    : null;
   const handlePatientAdministrationUnauthorized = useCallback(() => {
     router.replace('/login');
   }, [router]);
@@ -618,6 +629,7 @@ export function ScaleInstanceExecutionPage({
 
   useEffect(() => {
     setPatientAdministrationStatus(null);
+    completedReviewLoadKeyRef.current = null;
     if (!idsAreValid) {
       readinessControllerRef.current?.abort();
       scoreResultControllerRef.current?.abort();
@@ -703,8 +715,17 @@ export function ScaleInstanceExecutionPage({
         autosave.initialize(response.itemResponses);
         setMediaDrafts({});
         setActiveGroupCode(sections[0]?.code ?? '');
-        void loadSubmissionReadiness();
-        if (scoreQueryableInstanceStatuses.has(response.scaleInstance.status)) {
+        const initialDisclosure = getScaleExecutionProgressiveDisclosure({
+          scaleCode: response.scale.code,
+          administrationMode: response.scaleInstance.administrationMode,
+          patientAdministrationStatus: null,
+          scaleInstanceStatus: response.scaleInstance.status,
+          scoreResultStatus: null,
+        });
+        if (initialDisclosure.shouldLoadSubmissionReadiness) {
+          void loadSubmissionReadiness();
+        }
+        if (initialDisclosure.showScoring) {
           void loadLatestScoreResult();
         }
       })
@@ -745,6 +766,32 @@ export function ScaleInstanceExecutionPage({
     patientId,
     retryKey,
     router,
+    scaleInstanceId,
+    visitId,
+  ]);
+
+  useEffect(() => {
+    if (!detail || !progressiveDisclosure?.isCompletedSupervisedReview) {
+      return;
+    }
+
+    const loadKey = `${patientId}:${visitId}:${scaleInstanceId}`;
+    if (completedReviewLoadKeyRef.current === loadKey) {
+      return;
+    }
+    completedReviewLoadKeyRef.current = loadKey;
+    void loadSubmissionReadiness();
+
+    if (progressiveDisclosure.showScoring) {
+      void loadLatestScoreResult();
+    }
+  }, [
+    detail,
+    loadLatestScoreResult,
+    loadSubmissionReadiness,
+    patientId,
+    progressiveDisclosure?.isCompletedSupervisedReview,
+    progressiveDisclosure?.showScoring,
     scaleInstanceId,
     visitId,
   ]);
@@ -809,6 +856,7 @@ export function ScaleInstanceExecutionPage({
   useEffect(() => {
     autosave.setWritesEnabled(
       Boolean(detail) &&
+        progressiveDisclosure?.showFormalWorkspace === true &&
         getScaleExecutionReadOnlyReason(
           detail?.visit.status ?? 'voided',
           detail?.scaleInstance.status ?? 'voided',
@@ -819,6 +867,7 @@ export function ScaleInstanceExecutionPage({
     detail,
     detail?.scaleInstance.status,
     detail?.visit.status,
+    progressiveDisclosure?.showFormalWorkspace,
   ]);
 
   useEffect(() => {
@@ -1889,10 +1938,17 @@ export function ScaleInstanceExecutionPage({
   }
 
   const { scale, scaleInstance, visit } = detail;
+  const executionDisclosure =
+    progressiveDisclosure ??
+    getScaleExecutionProgressiveDisclosure({
+      scaleCode: scale.code,
+      administrationMode: scaleInstance.administrationMode,
+      patientAdministrationStatus,
+      scaleInstanceStatus: scaleInstance.status,
+      scoreResultStatus: scoreResult?.scoreResult.status ?? null,
+    });
   const isCompletedSupervisedPatientReview =
-    scale.code === 'mmse' &&
-    scaleInstance.administrationMode === 'supervised_patient_input' &&
-    patientAdministrationStatus === 'completed';
+    executionDisclosure.isCompletedSupervisedReview;
   const readOnlyReason = getScaleExecutionReadOnlyReason(
     visit.status,
     scaleInstance.status,
@@ -2034,18 +2090,28 @@ export function ScaleInstanceExecutionPage({
             <Badge tone="info">量表施测执行</Badge>
             {readOnlyReason ? <Badge tone="warning">只读查看</Badge> : null}
             {isSubmitting ? <Badge tone="warning">正在正式提交</Badge> : null}
-            <Badge tone={unsavedAnswerItemCount > 0 ? 'warning' : 'success'}>
-              未收口作答：{unsavedAnswerItemCount} 题
-            </Badge>
-            <Badge tone={pendingMediaItemCount > 0 ? 'warning' : 'success'}>
-              未上传证据：{pendingMediaItemCount} 题
-            </Badge>
-            <Badge tone={manualReviewDraftDirty ? 'warning' : 'success'}>
-              未保存人工评分：{manualReviewDraftDirty ? 1 : 0} 项
-            </Badge>
-            <Badge tone={confirmationDraftDirty ? 'warning' : 'success'}>
-              未保存确认意见：{confirmationDraftDirty ? 1 : 0} 项
-            </Badge>
+            {executionDisclosure.showFormalWorkspace ? (
+              <>
+                <Badge
+                  tone={unsavedAnswerItemCount > 0 ? 'warning' : 'success'}
+                >
+                  未收口作答：{unsavedAnswerItemCount} 题
+                </Badge>
+                <Badge tone={pendingMediaItemCount > 0 ? 'warning' : 'success'}>
+                  未上传证据：{pendingMediaItemCount} 题
+                </Badge>
+              </>
+            ) : null}
+            {executionDisclosure.showScoring ? (
+              <>
+                <Badge tone={manualReviewDraftDirty ? 'warning' : 'success'}>
+                  未保存人工评分：{manualReviewDraftDirty ? 1 : 0} 项
+                </Badge>
+                <Badge tone={confirmationDraftDirty ? 'warning' : 'success'}>
+                  未保存确认意见：{confirmationDraftDirty ? 1 : 0} 项
+                </Badge>
+              </>
+            ) : null}
           </div>
           <h1 className="mt-3 text-3xl font-semibold text-[var(--cma-text-strong)] sm:text-4xl">
             {scale.name}
@@ -2075,10 +2141,16 @@ export function ScaleInstanceExecutionPage({
         </div>
       </header>
 
-      <p className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-info-soft)] px-5 py-4 text-base leading-7 text-[var(--cma-info)]">
-        核心认知量表应由医护或研究人员陪伴或监督完成。当前页支持施测记录、图片与手写等媒体证据、正式提交、评分复核和认知域结果；临床报告工作流位于访视详情。认知域人工确认和
-        AI 临床解释尚未实现。
-      </p>
+      {executionDisclosure.isSupervisedPreReview ? (
+        <p className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-info-soft)] px-5 py-4 text-base leading-7 text-[var(--cma-info)]">
+          当前处于患者施测阶段。请先完成设备流程和患者施测；施测完成后将进入医护复核与量表提交，正式提交后再进入评分和认知域流程。
+        </p>
+      ) : (
+        <p className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-info-soft)] px-5 py-4 text-base leading-7 text-[var(--cma-info)]">
+          核心认知量表应由医护或研究人员陪伴或监督完成。当前页支持施测记录、图片与手写等媒体证据、正式提交、评分复核和认知域结果；临床报告工作流位于访视详情。认知域人工确认和
+          AI 临床解释尚未实现。
+        </p>
+      )}
 
       {readOnlyReason ? (
         <p
@@ -2089,8 +2161,7 @@ export function ScaleInstanceExecutionPage({
         </p>
       ) : null}
 
-      {scale.code === 'mmse' &&
-      scaleInstance.administrationMode === 'supervised_patient_input' ? (
+      {executionDisclosure.isSupervisedPatientFlow ? (
         <PatientAdministrationStaffPanel
           onSessionStatusChange={setPatientAdministrationStatus}
           onUnauthorized={handlePatientAdministrationUnauthorized}
@@ -2323,117 +2394,124 @@ export function ScaleInstanceExecutionPage({
         </>
       ) : null}
 
-      <ScaleInstanceSubmissionPanel
-        activeAnswerWriteCount={savingItemIds.size}
-        activeMediaWriteCount={mediaWritingKeys.size}
-        completedAt={scaleInstance.completedAt}
-        confirmationVisible={confirmationVisible}
-        localUnsavedAnswerCount={unsavedAnswerItemCount}
-        onConfirmSubmit={() => void handleConfirmSubmission()}
-        onLocateIssue={handleLocateSubmissionIssue}
-        onPrepareSubmit={() => void handlePrepareSubmission()}
-        onRefresh={() => {
-          setSubmissionError(null);
-          setSubmissionStatus(null);
-          setConfirmationVisible(false);
-          void loadSubmissionReadiness();
-        }}
-        pendingMediaCount={pendingMediaItemCount}
-        readOnlyReason={readOnlyReason}
-        readiness={readiness}
-        readinessError={
-          readinessError
-            ? getScaleSubmissionApiErrorMessage(readinessError.kind)
-            : null
-        }
-        readinessLoading={isReadinessLoading}
-        readinessStale={readinessStale}
-        issueDisplayMode={
-          isCompletedSupervisedPatientReview ? 'global_with_unmapped' : 'all'
-        }
-        issueRouting={submissionIssueRouting}
-        statusMessage={submissionStatus}
-        submissionError={submissionError}
-        submissionReceipt={submissionReceipt}
-        submitting={isSubmitting}
-      />
+      {executionDisclosure.showSubmission ? (
+        <ScaleInstanceSubmissionPanel
+          activeAnswerWriteCount={savingItemIds.size}
+          activeMediaWriteCount={mediaWritingKeys.size}
+          completedAt={scaleInstance.completedAt}
+          confirmationVisible={confirmationVisible}
+          localUnsavedAnswerCount={unsavedAnswerItemCount}
+          onConfirmSubmit={() => void handleConfirmSubmission()}
+          onLocateIssue={handleLocateSubmissionIssue}
+          onPrepareSubmit={() => void handlePrepareSubmission()}
+          onRefresh={() => {
+            setSubmissionError(null);
+            setSubmissionStatus(null);
+            setConfirmationVisible(false);
+            void loadSubmissionReadiness();
+          }}
+          pendingMediaCount={pendingMediaItemCount}
+          readOnlyReason={readOnlyReason}
+          readiness={readiness}
+          readinessError={
+            readinessError
+              ? getScaleSubmissionApiErrorMessage(readinessError.kind)
+              : null
+          }
+          readinessLoading={isReadinessLoading}
+          readinessStale={readinessStale}
+          issueDisplayMode={
+            isCompletedSupervisedPatientReview ? 'global_with_unmapped' : 'all'
+          }
+          issueRouting={submissionIssueRouting}
+          statusMessage={submissionStatus}
+          submissionError={submissionError}
+          submissionReceipt={submissionReceipt}
+          submitting={isSubmitting}
+        />
+      ) : null}
 
-      <ProvisionalScoringPanel
-        activeManualReviewDraft={manualReviewDraft}
-        alreadyComputed={scoreAlreadyComputed}
-        canCompute={canComputeScore}
-        canLocateItem={(itemResponseId) =>
-          sections.some((section) =>
-            section.itemResponses.some((item) => item.id === itemResponseId),
-          )
-        }
-        canReviewItem={canReviewScoreItem}
-        computationError={scoreComputationError}
-        computationStatus={isComputingScore ? 'computing' : 'idle'}
-        computeBlockReason={scoreComputeBlockReason}
-        confirmationBlockReason={confirmationBlockReason}
-        confirmationDraft={confirmationDraft}
-        confirmationError={confirmationError}
-        confirmationVisible={scoreConfirmationVisible}
-        instanceStatus={scaleInstance.status}
-        latestConfirmationReceipt={latestConfirmationReceipt}
-        latestReviewReceipt={latestReviewReceipt}
-        manualReviewError={manualReviewError}
-        manualReviewStatus={manualReviewStatus}
-        manualReviewWriteBlockedReason={manualReviewWriteBlockedReason}
-        onChangeConfirmationDraft={setConfirmationDraft}
-        onChangeManualReviewDraft={(nextDraft) => {
-          setManualReviewDraft(nextDraft);
-          setManualReviewError(null);
-        }}
-        onCloseConfirmation={() => {
-          setConfirmationDraft(null);
-          setConfirmationError(null);
-        }}
-        onConfirmScoreResult={() => void handleConfirmFinalScoreResult()}
-        onConfirmCompute={() => void handleConfirmScoreComputation()}
-        onDiscardManualReviewDraft={() => {
-          setManualReviewDraft(null);
-          setManualReviewError(null);
-          setManualReviewStatus('已放弃本地人工评分输入。');
-        }}
-        onLocateItem={(itemResponseId) =>
-          locateItemResponse(itemResponseId, 'scoring')
-        }
-        onPrepareCompute={handlePrepareScoreComputation}
-        onPrepareConfirmation={handlePrepareScoreConfirmation}
-        onRefresh={() => {
-          setScoreComputationError(null);
-          setScoreComputationStatus(null);
-          setScoreAlreadyComputed(null);
-          setScoreConfirmationVisible(false);
-          void loadLatestScoreResult();
-        }}
-        onStartManualReview={handleStartManualReview}
-        onSubmitManualReview={() => void handleSubmitManualReview()}
-        onUseLatestForConfirmation={handleUseLatestForConfirmation}
-        onUseLatestForManualReview={handleUseLatestForManualReview}
-        queryError={scoreQueryError}
-        queryStatus={scoreQueryStatus}
-        result={scoreResult}
-        scoreWriteState={scoreWriteState}
-        statusMessage={scoreComputationStatus}
-        visitStatus={visit.status}
-      />
+      {executionDisclosure.showScoring ? (
+        <ProvisionalScoringPanel
+          activeManualReviewDraft={manualReviewDraft}
+          alreadyComputed={scoreAlreadyComputed}
+          canCompute={canComputeScore}
+          canLocateItem={(itemResponseId) =>
+            sections.some((section) =>
+              section.itemResponses.some((item) => item.id === itemResponseId),
+            )
+          }
+          canReviewItem={canReviewScoreItem}
+          computationError={scoreComputationError}
+          computationStatus={isComputingScore ? 'computing' : 'idle'}
+          computeBlockReason={scoreComputeBlockReason}
+          confirmationBlockReason={confirmationBlockReason}
+          confirmationDraft={confirmationDraft}
+          confirmationError={confirmationError}
+          confirmationVisible={scoreConfirmationVisible}
+          instanceStatus={scaleInstance.status}
+          latestConfirmationReceipt={latestConfirmationReceipt}
+          latestReviewReceipt={latestReviewReceipt}
+          manualReviewError={manualReviewError}
+          manualReviewStatus={manualReviewStatus}
+          manualReviewWriteBlockedReason={manualReviewWriteBlockedReason}
+          onChangeConfirmationDraft={setConfirmationDraft}
+          onChangeManualReviewDraft={(nextDraft) => {
+            setManualReviewDraft(nextDraft);
+            setManualReviewError(null);
+          }}
+          onCloseConfirmation={() => {
+            setConfirmationDraft(null);
+            setConfirmationError(null);
+          }}
+          onConfirmScoreResult={() => void handleConfirmFinalScoreResult()}
+          onConfirmCompute={() => void handleConfirmScoreComputation()}
+          onDiscardManualReviewDraft={() => {
+            setManualReviewDraft(null);
+            setManualReviewError(null);
+            setManualReviewStatus('已放弃本地人工评分输入。');
+          }}
+          onLocateItem={(itemResponseId) =>
+            locateItemResponse(itemResponseId, 'scoring')
+          }
+          onPrepareCompute={handlePrepareScoreComputation}
+          onPrepareConfirmation={handlePrepareScoreConfirmation}
+          onRefresh={() => {
+            setScoreComputationError(null);
+            setScoreComputationStatus(null);
+            setScoreAlreadyComputed(null);
+            setScoreConfirmationVisible(false);
+            void loadLatestScoreResult();
+          }}
+          onStartManualReview={handleStartManualReview}
+          onSubmitManualReview={() => void handleSubmitManualReview()}
+          onUseLatestForConfirmation={handleUseLatestForConfirmation}
+          onUseLatestForManualReview={handleUseLatestForManualReview}
+          queryError={scoreQueryError}
+          queryStatus={scoreQueryStatus}
+          result={scoreResult}
+          scoreWriteState={scoreWriteState}
+          statusMessage={scoreComputationStatus}
+          visitStatus={visit.status}
+        />
+      ) : null}
 
-      <CognitiveDomainResultPanel
-        canLocateItem={(itemResponseId) =>
-          sections.some((section) =>
-            section.itemResponses.some((item) => item.id === itemResponseId),
-          )
-        }
-        onLocateItem={(itemResponseId) =>
-          locateItemResponse(itemResponseId, 'scoring')
-        }
-        state={cognitiveDomainState}
-      />
+      {executionDisclosure.showCognitiveDomain ? (
+        <CognitiveDomainResultPanel
+          canLocateItem={(itemResponseId) =>
+            sections.some((section) =>
+              section.itemResponses.some((item) => item.id === itemResponseId),
+            )
+          }
+          onLocateItem={(itemResponseId) =>
+            locateItemResponse(itemResponseId, 'scoring')
+          }
+          state={cognitiveDomainState}
+        />
+      ) : null}
 
-      {!isCompletedSupervisedPatientReview ? (
+      {executionDisclosure.showFormalWorkspace &&
+      !isCompletedSupervisedPatientReview ? (
         <>
           <Card>
         <CardHeader className="border-b border-[var(--cma-line)]">

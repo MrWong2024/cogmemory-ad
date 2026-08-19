@@ -1318,6 +1318,25 @@ export class AssessmentsService {
     return scaleInstance ? this.mapScaleInstance(scaleInstance) : null;
   }
 
+  async hasCompletedPatientAdministrationSessionForScaleInstance(
+    scaleInstanceId: Types.ObjectId | string,
+  ): Promise<boolean> {
+    const normalizedScaleInstanceId = this.normalizeObjectId(scaleInstanceId);
+
+    if (!normalizedScaleInstanceId) {
+      return false;
+    }
+
+    const completedSession = await this.patientAdministrationSessionModel
+      .exists({
+        scaleInstanceId: normalizedScaleInstanceId,
+        status: 'completed',
+      })
+      .exec();
+
+    return completedSession !== null;
+  }
+
   async ensureVisitAndScaleStarted(
     input: EnsureVisitAndScaleStartedInput,
   ): Promise<void> {

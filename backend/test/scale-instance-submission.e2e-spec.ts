@@ -20,6 +20,10 @@ import {
   ScaleInstanceDocument,
 } from '../src/modules/assessments/schemas/scale-instance.schema';
 import {
+  PatientAdministrationSession,
+  PatientAdministrationSessionDocument,
+} from '../src/modules/assessments/schemas/patient-administration-session.schema';
+import {
   Session,
   SessionDocument,
 } from '../src/modules/auth/schemas/session.schema';
@@ -193,6 +197,7 @@ describe('scale instance submission APIs (e2e)', () => {
   let patientModel: Model<PatientDocument>;
   let visitModel: Model<AssessmentVisitDocument>;
   let instanceModel: Model<ScaleInstanceDocument>;
+  let patientAdministrationSessionModel: Model<PatientAdministrationSessionDocument>;
   let itemModel: Model<ItemResponseDocument>;
   let mediaModel: Model<MediaEvidenceDocument>;
   let definitionModel: Model<ScaleDefinitionDocument>;
@@ -243,6 +248,9 @@ describe('scale instance submission APIs (e2e)', () => {
         : [];
     const instanceIds = instances.map((instance) => instance._id);
     if (instanceIds.length > 0) {
+      await patientAdministrationSessionModel
+        .deleteMany({ scaleInstanceId: { $in: instanceIds } })
+        .exec();
       await mediaModel
         .deleteMany({ scaleInstanceId: { $in: instanceIds } })
         .exec();
@@ -276,7 +284,12 @@ describe('scale instance submission APIs (e2e)', () => {
     }
   }
 
-  async function createFixture(suffix: string): Promise<Fixture> {
+  async function createFixture(
+    suffix: string,
+    administrationMode:
+      | 'clinician_administered'
+      | 'supervised_patient_input' = 'clinician_administered',
+  ): Promise<Fixture> {
     const patientResponse = await doctorAgent
       .post('/patients')
       .send({ subjectCode: `${SUBJECT_PREFIX}${suffix}` })
@@ -292,7 +305,7 @@ describe('scale instance submission APIs (e2e)', () => {
     const visitId = stringValue(body(visitResponse).id, 'visit id');
     const instanceResponse = await doctorAgent
       .post(`/patients/${patientId}/visits/${visitId}/scale-instances`)
-      .send({ scaleCode: 'mmse' })
+      .send({ scaleCode: 'mmse', administrationMode })
       .expect(201);
     const scaleInstance = record(
       body(instanceResponse).scaleInstance,
@@ -600,6 +613,9 @@ describe('scale instance submission APIs (e2e)', () => {
     patientModel = app.get(getModelToken(Patient.name));
     visitModel = app.get(getModelToken(AssessmentVisit.name));
     instanceModel = app.get(getModelToken(ScaleInstance.name));
+    patientAdministrationSessionModel = app.get(
+      getModelToken(PatientAdministrationSession.name),
+    );
     itemModel = app.get(getModelToken(ItemResponse.name));
     mediaModel = app.get(getModelToken(MediaEvidence.name));
     definitionModel = app.get(getModelToken(ScaleDefinition.name));
@@ -782,6 +798,42 @@ describe('scale instance submission APIs (e2e)', () => {
     expect(body(await doctorAgent.get(crossPath).expect(404)).code).toBe(
       'SCALE_INSTANCE_NOT_FOUND',
     );
+  });
+
+  it('returns a blocking supervised patient administration readiness issue and rejects direct submit', async () => {
+    const fixture = await createFixture(
+      'SUPERVISED-GATE',
+      'supervised_patient_input',
+    );
+    const readiness = body(
+      await doctorAgent.get(readinessPath(fixture)).expect(200),
+    );
+    const patientAdministrationIssues = arrayValue(
+      readiness.blockingIssues,
+      'blocking issues',
+    ).filter(
+      (issue) =>
+        isRecord(issue) &&
+        issue.code === 'SCALE_INSTANCE_PATIENT_ADMINISTRATION_INCOMPLETE',
+    );
+
+    expect(readiness.ready).toBe(false);
+    expect(readiness.canSubmitNow).toBe(false);
+    expect(patientAdministrationIssues).toEqual([
+      expect.objectContaining({
+        severity: 'blocking',
+        scope: 'scale_instance',
+      }),
+    ]);
+    expect(
+      record(readiness.summary, 'readiness summary').blockingIssueCount,
+    ).toBe(arrayValue(readiness.blockingIssues, 'blocking issues').length);
+
+    const directSubmit = await doctorAgent
+      .post(submitPath(fixture))
+      .send({ confirm: true })
+      .expect(409);
+    expect(body(directSubmit).code).toBe('SCALE_INSTANCE_NOT_READY');
   });
 
   it('blocks a legacy free-text-only answered structured manual item', async () => {

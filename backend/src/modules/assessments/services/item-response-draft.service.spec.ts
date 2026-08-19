@@ -233,6 +233,7 @@ describe('ItemResponseDraftService', () => {
   let assessmentsService: {
     findVisitByPatientAndId: jest.Mock;
     findScaleInstanceByPatientVisitAndId: jest.Mock;
+    hasCompletedPatientAdministrationSessionForScaleInstance: jest.Mock;
     findItemResponseByOwnership: jest.Mock;
     countItemResponseProgress: jest.Mock;
     toItemResponseSummary: jest.Mock;
@@ -246,6 +247,9 @@ describe('ItemResponseDraftService', () => {
     assessmentsService = {
       findVisitByPatientAndId: jest.fn(),
       findScaleInstanceByPatientVisitAndId: jest.fn(),
+      hasCompletedPatientAdministrationSessionForScaleInstance: jest
+        .fn()
+        .mockResolvedValue(true),
       findItemResponseByOwnership: jest.fn(),
       countItemResponseProgress: jest.fn(),
       toItemResponseSummary: jest.fn(),
@@ -277,6 +281,7 @@ describe('ItemResponseDraftService', () => {
     assessmentsService.findScaleInstanceByPatientVisitAndId.mockResolvedValue({
       id: SCALE_INSTANCE_ID,
       status: 'draft',
+      administrationMode: 'clinician_administered',
     });
     assessmentsService.findItemResponseByOwnership.mockImplementation(() =>
       Promise.resolve(currentItemResponse),
@@ -410,6 +415,76 @@ describe('ItemResponseDraftService', () => {
       );
     },
   );
+
+  it.each([
+    'no session',
+    'prepared',
+    'active',
+    'paused',
+    'terminated',
+    'expired',
+  ])(
+    'blocks supervised formal review while patient administration is %s',
+    async () => {
+      assessmentsService.findScaleInstanceByPatientVisitAndId.mockResolvedValueOnce(
+        {
+          id: SCALE_INSTANCE_ID,
+          status: 'draft',
+          administrationMode: 'supervised_patient_input',
+        },
+      );
+      assessmentsService.hasCompletedPatientAdministrationSessionForScaleInstance.mockResolvedValueOnce(
+        false,
+      );
+
+      await expectHttpExceptionCode(
+        save({ responseText: 'must remain blocked' }),
+        409,
+        'PATIENT_ADMINISTRATION_NOT_COMPLETED',
+      );
+      expect(
+        assessmentsService.hasCompletedPatientAdministrationSessionForScaleInstance,
+      ).toHaveBeenCalledWith(SCALE_INSTANCE_ID);
+      expect(
+        assessmentsService.findItemResponseByOwnership,
+      ).not.toHaveBeenCalled();
+      expect(itemResponseModel.findOneAndUpdate).not.toHaveBeenCalled();
+      expect(
+        assessmentsService.ensureVisitAndScaleStarted,
+      ).not.toHaveBeenCalled();
+    },
+  );
+
+  it('allows supervised formal review after completed patient administration', async () => {
+    assessmentsService.findScaleInstanceByPatientVisitAndId.mockResolvedValueOnce(
+      {
+        id: SCALE_INSTANCE_ID,
+        status: 'draft',
+        administrationMode: 'supervised_patient_input',
+      },
+    );
+
+    await expect(
+      save({ responseText: 'formal review' }),
+    ).resolves.toBeDefined();
+    expect(
+      assessmentsService.hasCompletedPatientAdministrationSessionForScaleInstance,
+    ).toHaveBeenCalledWith(SCALE_INSTANCE_ID);
+    expect(itemResponseModel.findOneAndUpdate).toHaveBeenCalledTimes(1);
+    expect(assessmentsService.ensureVisitAndScaleStarted).toHaveBeenCalledTimes(
+      1,
+    );
+  });
+
+  it('does not query patient administration for clinician-administered drafts', async () => {
+    await expect(
+      save({ responseText: 'clinician review' }),
+    ).resolves.toBeDefined();
+    expect(
+      assessmentsService.hasCompletedPatientAdministrationSessionForScaleInstance,
+    ).not.toHaveBeenCalled();
+    expect(itemResponseModel.findOneAndUpdate).toHaveBeenCalledTimes(1);
+  });
 
   it.each(['scored', 'locked', 'voided'])(
     'rejects a %s item response',

@@ -6,6 +6,7 @@ export type ScaleSubmissionIssueScope = 'scale_instance' | 'item';
 
 export type ScaleSubmissionIssueCode =
   | 'SCALE_INSTANCE_ITEM_SET_MISMATCH'
+  | 'SCALE_INSTANCE_PATIENT_ADMINISTRATION_INCOMPLETE'
   | 'SCALE_INSTANCE_DURATION_UNAVAILABLE'
   | 'SCALE_INSTANCE_START_TIME_INVALID'
   | 'ITEM_NOT_COMPLETED'

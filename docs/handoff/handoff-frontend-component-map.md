@@ -201,14 +201,15 @@
 ### 6.6 Assessment Execution 展示纯函数
 
 - 路径：`frontend\src\features\assessments\lib\assessment-execution-display.ts`
-- 职责：集中维护施测方式、实例 / 题目 / responseType / prompt / timer / evidence 中文摘要、动态分组、只读原因、保存错误文案、用时格式化和访视可初始化状态判断
+- 职责：集中维护施测方式、实例 / 题目 / responseType / prompt / timer / evidence 中文摘要、动态分组、只读原因、保存错误文案、用时格式化和访视可初始化状态判断；`getScaleExecutionProgressiveDisclosure()` 以 MMSE supervised status、ScaleInstance status 与已加载 ScoreResult status 纯计算患者施测、复核提交、评分和认知域展示边界，不建立状态机。
 - 边界：纯展示与状态辅助函数，不是权限矩阵；`draft` / `in_progress` 前端判断不替代后端最终校验
 
 ### 6.7 `ScaleInstanceExecutionPage`
 
 - 路径：`frontend\src\features\assessments\components\ScaleInstanceExecutionPage.tsx`
-- WP-10-F1/F2/F3 组合边界：只在服务端实例摘要明确为 MMSE 1.0、`supervised_patient_input` 时渲染一个 `PatientAdministrationStaffPanel`；面板只把最新服务端权威 patient-administration status 最小回传父页面。patient / visit / scaleInstance 身份变化时父页面先重置为 `null`，且仅在 status=`completed` 时挂载 `PatientAdministrationReviewPanel`；不新增父页面 GET、轮询或全局状态。StaffPanel 不接管既有 A14–A19 作答、媒体、提交、评分或认知域状态。
-- completed supervised MMSE 信息架构：仅 `scale.code=mmse`、`administrationMode=supervised_patient_input` 且 PatientAdministrationSession status=`completed` 时，页面依次组合紧凑复核分组导航、当前分组逐题“医护复核与正式作答”、全局提交汇总 / 最终提交，再进入既有评分与认知域区域。当前分组末尾提供返回既有复核分组导航锚点的普通页内链接，不触发切组、保存或其他写入。其它 administration mode 和尚未 completed 的 patient session 继续使用原分组导航与正式作答布局。
+- WP-10-F1/F2/F3 组合边界：只在服务端实例摘要明确为 `scale.code=mmse`、`supervised_patient_input` 时渲染一个 `PatientAdministrationStaffPanel`；面板只把最新服务端权威 patient-administration status 最小回传父页面。patient / visit / scaleInstance 身份变化时父页面先重置为 `null`，且仅在 status=`completed` 时挂载 `PatientAdministrationReviewPanel`；不新增父页面 GET、轮询或全局状态。StaffPanel 不接管既有 A14–A19 作答、媒体、提交、评分或认知域状态。
+- progressive disclosure：MMSE `supervised_patient_input` 在 status=null / prepared / active / paused / terminated / expired 时只显示基础身份与访视 / 量表 / 实例信息、StaffPanel 和患者施测阶段提示；不渲染普通或复核分组导航、正式 ItemResponseEditor、SubmissionPanel、评分或认知域，也不请求 readiness。status 首次回传 completed 后以既有 controller/ref 门禁加载 readiness，并开放紧凑复核分组导航、当前分组逐题“医护复核与正式作答”和全局提交；completed / locked / voided 历史实例同时按既有规则加载 latest score。clinician-administered 保持普通正式作答与首次 readiness；非 MMSE 不扩展为患者施测流程。
+- 后续阶段：`ProvisionalScoringPanel` 仅在 ScaleInstance 为 completed / locked / voided 时挂载；`CognitiveDomainResultPanel` 仅在已加载来源 ScoreResult 为 confirmed / locked / voided 时挂载。`useCognitiveDomainResult` 仍无条件调用并保留其内部 query / compute 门禁。正式复核阶段恢复作答 / Evidence badge，人工评分 / 确认意见 badge 只在评分阶段显示。
 - 职责：接收 patientId / visitId / scaleInstanceId，加载 A14 安全执行详情，管理 invalid / loading / 401 / 403 / not-found / configuration-unavailable / retry、动态分组、逐题 autosave snapshot、`${itemResponseId}:${evidenceType}` 媒体草稿、未收口统计、beforeunload、页面级显示 tick、实时 progress，以及 B6 独立 readiness / stale / error、题目定位、本地阻断、提交确认、submit 写锁和当前会话 receipt
 - 保存：所有作答、立即保存、标记完成、计时动作与 checkpoint 进入 `useItemResponseAutosaveCoordinator`；页面不再用单一 saving 集合表达保存状态。切组立即 flush 离开组内合法 queued 项但不等待完成，也不清除其他组状态。
 - 媒体父级职责：分组切换不清除 JPEG Blob / strokes；持有跨分组媒体写锁；A15 返回 requirement 时通知协调器推进媒体 generation，旧 A14 响应仅在 generation 未变化时采用自身 evidenceRequirements；A15 不改作答 draft / revision / progress
@@ -317,6 +318,7 @@
 - 路径：`frontend\src\features\assessments\components\ScaleInstanceSubmissionPanel.tsx`
 - 职责：展示 submissionState、ready / canSubmitNow、checkedAt、九项 summary、独立 loading / error / retry、readiness stale、全部非 clean 作答状态 / 媒体写入的未收口计数、阻断问题、可展开 warning、内联二次确认、提交中状态与当前会话回执
 - completed supervised MMSE 使用 `global_with_unmapped` 展示模式：题目级已映射 issue 不在全局重复，scale-instance 与无法映射的异常 issue 仍显示；完整 summary、readiness 与提交资格不被过滤。其它路径继续显示全部 issue。
+- 页面只在 completed supervised review 或非 supported-supervised 普通流程挂载本 Panel；隐藏不改变后端 readiness 的 completed Session blocking invariant。`SCALE_INSTANCE_PATIENT_ADMINISTRATION_INCOMPLETE` 使用“患者施测尚未完成”全局展示，不映射到单题。
 - 确认：readiness / dirty / 写请求 / 页面状态 / submitting 变化时重置 checkbox；只有最新服务器条件和本地条件同时满足才允许确认按钮，warning 数量明确显示但不阻断
 - 历史边界：completed 无当前会话回执时只展示 ScaleInstance.completedAt，并说明只读 API 未提供历史提交操作者；不自动调用 submit POST 获取审计
 

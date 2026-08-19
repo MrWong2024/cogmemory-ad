@@ -39,6 +39,7 @@ type MediaEvidenceType = (typeof MEDIA_EVIDENCE_ORDER)[number];
 export type ScaleSubmissionReadinessEvaluationInput = {
   patientStatus: PatientStatus;
   visitStatus: AssessmentStatus;
+  patientAdministrationCompleted: boolean;
   scaleInstance: ScaleInstanceSummary;
   versionItems: ScaleItemConfigSummary[];
   itemResponses: ItemResponseSummary[];
@@ -308,6 +309,20 @@ export function evaluateScaleInstanceSubmissionReadiness(
 ): ScaleSubmissionReadinessEvaluation {
   const blockingIssues: ScaleSubmissionIssueResponse[] = [];
   const warnings: ScaleSubmissionIssueResponse[] = [];
+
+  if (
+    input.scaleInstance.administrationMode === 'supervised_patient_input' &&
+    input.patientAdministrationCompleted !== true
+  ) {
+    blockingIssues.push({
+      code: 'SCALE_INSTANCE_PATIENT_ADMINISTRATION_INCOMPLETE',
+      severity: 'blocking',
+      scope: 'scale_instance',
+      message:
+        'Patient administration must be completed before formal review submission',
+    });
+  }
+
   const expectedByCode = new Map(
     input.versionItems.map((item) => [normalizeCode(item.code), item]),
   );

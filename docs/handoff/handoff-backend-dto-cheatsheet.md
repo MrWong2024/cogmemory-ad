@@ -451,6 +451,7 @@
 
 - 名称：`ScaleSubmissionIssueResponse`
 - 字段：code、severity(blocking / warning)、scope(scale_instance / item)、安全题目标识 / 顺序、可选 missingItemCodes / unexpectedItemCodes / missingStepCodes / requiredEvidenceMode / requiredEvidenceTypes、稳定 message。
+- supervised patient gate：目标实例不存在 completed PatientAdministrationSession 时返回 blocking、scale_instance scope 的 `SCALE_INSTANCE_PATIENT_ADMINISTRATION_INCOMPLETE`；不附 itemResponseId / itemCode，不由 frontend 提供完成事实。
 - structured_manual：非 missing 且 structuredResponse 非法或不完整时返回 blocking `ITEM_STRUCTURED_SUBITEMS_INCOMPLETE`，不额外返回缺失 code 数组。
 - binary manual：eligible、非 missing 且 `binaryManualDecision.isCorrect` 不是 boolean 时返回 blocking `ITEM_BINARY_MANUAL_DECISION_INCOMPLETE`；该 issue 与基于原始事实的 `ITEM_ANSWER_CONTENT_MISSING` 独立，历史 answered 数据同样 fail closed。
 - manual observation record：exact MMSE 1.0 reading-command、非 missing 且 responseText 空白或 rawResponse 不是 boolean 时返回 blocking `ITEM_MANUAL_OBSERVATION_INCOMPLETE`；rawResponse=false 是完整原始事实。该 issue 与 `ITEM_BINARY_MANUAL_DECISION_INCOMPLETE` 独立，历史数据不推断、不 backfill。

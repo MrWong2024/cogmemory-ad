@@ -46,6 +46,10 @@ const issueDisplays: Record<ScaleSubmissionIssueCode, IssueDisplay> = {
     description:
       '当前量表题目记录与所绑定版本不一致，请重新加载；如仍存在，请联系管理员。',
   },
+  SCALE_INSTANCE_PATIENT_ADMINISTRATION_INCOMPLETE: {
+    title: '患者施测尚未完成',
+    description: '请先完成患者施测，再进入医护复核和量表提交。',
+  },
   SCALE_INSTANCE_DURATION_UNAVAILABLE: {
     title: '整份量表总用时不可确定',
     description: '当前无法确定整份量表的总用时，提交后总用时可能为空。',
@@ -202,6 +206,8 @@ export function getScaleSubmissionApiErrorMessage(
     validation: '量表提交请求无效，请重新加载页面后再试。',
     patient_not_found: '未找到该患者档案。',
     patient_not_active: '当前患者不是活动状态，不能提交量表实例。',
+    patient_administration_not_completed:
+      '患者施测尚未完成，暂不能进入正式医护复核或提交。',
     visit_not_found: '未找到该评估访视。',
     visit_not_editable: '当前访视状态不可编辑，不能提交量表实例。',
     scale_instance_not_found: '未找到该量表实例。',

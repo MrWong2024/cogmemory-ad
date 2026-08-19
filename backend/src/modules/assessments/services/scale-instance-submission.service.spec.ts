@@ -168,6 +168,7 @@ describe('ScaleInstanceSubmissionService', () => {
   let assessmentsService: {
     findVisitByPatientAndId: jest.Mock;
     findScaleInstanceByPatientVisitAndId: jest.Mock;
+    hasCompletedPatientAdministrationSessionForScaleInstance: jest.Mock;
     listItemResponsesByScaleInstanceId: jest.Mock;
     toPublicScaleInstanceResponse: jest.Mock;
     readScaleInstanceSubmissionAudit: jest.Mock;
@@ -225,6 +226,9 @@ describe('ScaleInstanceSubmissionService', () => {
       findScaleInstanceByPatientVisitAndId: jest.fn(() =>
         Promise.resolve(currentInstance),
       ),
+      hasCompletedPatientAdministrationSessionForScaleInstance: jest
+        .fn()
+        .mockResolvedValue(true),
       listItemResponsesByScaleInstanceId: jest.fn(() =>
         Promise.resolve(currentItems),
       ),
@@ -406,6 +410,64 @@ describe('ScaleInstanceSubmissionService', () => {
       'SCALE_INSTANCE_NOT_READY',
     );
     expect(barrierService.createParentBarrierIfOpen).not.toHaveBeenCalled();
+  });
+
+  it('loads the completed patient administration fact for supervised readiness', async () => {
+    currentInstance = createInstance({
+      administrationMode: 'supervised_patient_input',
+    });
+    assessmentsService.hasCompletedPatientAdministrationSessionForScaleInstance.mockResolvedValueOnce(
+      false,
+    );
+
+    const response = await service.getSubmissionReadiness(
+      patientId,
+      visitId,
+      instanceId,
+    );
+
+    expect(
+      assessmentsService.hasCompletedPatientAdministrationSessionForScaleInstance,
+    ).toHaveBeenCalledWith(instanceId);
+    expect(response.ready).toBe(false);
+    expect(response.canSubmitNow).toBe(false);
+    expect(response.blockingIssues).toEqual([
+      expect.objectContaining({
+        code: 'SCALE_INSTANCE_PATIENT_ADMINISTRATION_INCOMPLETE',
+        scope: 'scale_instance',
+      }),
+    ]);
+  });
+
+  it('reuses readiness to block direct supervised submission before creating a barrier', async () => {
+    currentInstance = createInstance({
+      administrationMode: 'supervised_patient_input',
+    });
+    assessmentsService.hasCompletedPatientAdministrationSessionForScaleInstance.mockResolvedValue(
+      false,
+    );
+
+    await expectCode(
+      service.submitScaleInstance(patientId, visitId, instanceId, operator, {
+        confirm: true,
+      }),
+      409,
+      'SCALE_INSTANCE_NOT_READY',
+    );
+    expect(barrierService.createParentBarrierIfOpen).not.toHaveBeenCalled();
+  });
+
+  it('does not query patient administration for clinician readiness', async () => {
+    const response = await service.getSubmissionReadiness(
+      patientId,
+      visitId,
+      instanceId,
+    );
+
+    expect(response.ready).toBe(true);
+    expect(
+      assessmentsService.hasCompletedPatientAdministrationSessionForScaleInstance,
+    ).not.toHaveBeenCalled();
   });
 
   it('reuses the first token and actor across fencing and completion', async () => {

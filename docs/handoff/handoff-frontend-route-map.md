@@ -143,8 +143,9 @@
 
 - 页面名称：量表实例施测执行、媒体证据、正式提交、评分确认与认知域结果
 - 页面职责：在既有 A14-A18 能力上接入 A19 认知域 latest / compute、安全结果展示与贡献定位；不新增独立评分或认知域路由。
-- F1/F2 条件组合：仅服务端详情明确为 MMSE 1.0 且 `administrationMode=supervised_patient_input` 时渲染 `PatientAdministrationStaffPanel`；其他量表、版本和施测方式不显示该面板。
-- completed supervised MMSE 信息架构：仅 `scale.code=mmse`、`administrationMode=supervised_patient_input` 且 PatientAdministrationSession status=`completed` 时，当前页依次显示紧凑 group navigation、当前分组逐题 unified review、全局 submission summary / final submit，之后继续既有 scoring / domain 区域。clinician administered、无 Session、prepared / active / paused / terminated / expired 和非 MMSE 仍沿用普通正式作答布局。
+- F1/F2 条件组合：仅服务端详情明确为 `scale.code=mmse` 且 `administrationMode=supervised_patient_input` 时渲染 `PatientAdministrationStaffPanel`；其他量表和施测方式不显示该面板。
+- progressive disclosure：仅 `scale.code=mmse` 且 `administrationMode=supervised_patient_input` 使用患者施测边界。无 Session、prepared / active / paused / terminated / expired 时保留页面身份、StaffPanel、访视 / 量表 / 实例信息与阶段提示，不显示任何分组导航、正式 ItemResponse、readiness / submit、评分或认知域，首次详情加载也不请求 readiness。StaffPanel 首次回传 completed 后才进入既有紧凑 group navigation、当前分组逐题 unified review 与全局 submission；clinician-administered 保持普通正式作答和首次 readiness，非 MMSE 不扩展该流程。
+- 后续阶段：ScaleInstance 仅在 completed / locked / voided 时显示 provisional scoring；只有已加载 ScoreResult status=confirmed / locked / voided 时显示 cognitive-domain panel。认知域 hook 始终按 React 规则调用，查询与首次计算资格继续由既有 hook / backend 决定。
 - completed supervised 复核交互：unified review 内的 handwriting 采集工具默认以原生 details 折叠，已有正式 Evidence 历史保持直接可见；当前分组末尾的“返回复核分组导航”普通锚点只滚动到既有 `supervised-review-group-navigation`，不触发切组、保存、readiness 刷新或其他业务写入。
 - 动态参数：Server Component 按 Next 16 `params: Promise<{ patientId: string; visitId: string; scaleInstanceId: string }>` 等待参数后传给 `ScaleInstanceExecutionPage`；route 不 fetch、不保存表单状态
 - 访问边界：继续复用 `/patients/**` 的 `PatientsWorkspaceShell`；不新增 middleware、BFF 或 Provider，不读取 Cookie；后端 Guard 是最终权限边界
@@ -159,7 +160,7 @@
 - 媒体：photo 支持本地选择和移动端 capture 提示，源图经 Canvas 重新编码为 JPEG；handwriting 支持响应式 1200 × 800 逻辑画布、Pointer Events、最终 PNG 和默认 strokes JSON；证据列表保留 attached / locked / voided 历史，按点击获取短期 URL，attached 可内联确认后作废并重传
 - 只读：completed / locked / voided 访视或实例全页只读；scored / locked / voided 题目只读；保留历史安全草稿、证据列表和 attached / locked 预览，但禁用媒体采集、上传和作废
 - 隔离：媒体操作不触发 A14 PATCH，不改变作答 dirty、progress、题目完成状态或访视 / 实例 / 题目状态；后端 Guard 与状态校验仍是最终边界
-- readiness：执行详情成功后独立加载；失败只在提交区域显示并可重试。服务器确认的 `mark_answered` 在成功合并 ItemResponse 后自动刷新一次；automatic autosave、显式保存草稿、conflict/server-only 同步与 A15 上传 / 作废成功只标记 stale。自动刷新失败不回滚已成功作答，仍可手工重新检查；不轮询或自动重试。
+- readiness：clinician-administered 执行详情成功后继续独立加载；supported supervised pre-review 不请求，Session status 首次回传 completed 时才加载。失败只在已开放的提交区域显示并可重试。服务器确认的 `mark_answered` 在成功合并 ItemResponse 后自动刷新一次；automatic autosave、显式保存草稿、conflict/server-only 同步与 A15 上传 / 作废成功只标记 stale。自动刷新失败不回滚已成功作答，仍可手工重新检查；不轮询或自动重试。
 - 本地阻断：未保存作答、未上传媒体、题目保存中或媒体写入中均阻止确认和 POST；服务器 readiness 仍可查看，且明确不包含本地内容
 - issue 路由：completed supervised MMSE 对同一 readiness snapshot 优先按 itemResponseId、缺失时按唯一 itemCode 将 item issue 内联到题目；scale_instance 与无法映射的异常 issue 留在全局提交区，完整 summary / ready / canSubmitNow / submit gate 不过滤。普通布局仍可由带 itemResponseId 的 issue 切组、滚动并聚焦题目；scale_instance scope 不提供定位按钮。
 - 提交：只有最新 readiness 的 ready / canSubmitNow 为 true、无 blocking 且无本地阻断时展开内联 checkbox；POST 只发送 confirm=true，不自动重试。warning 可展开查看但不阻断

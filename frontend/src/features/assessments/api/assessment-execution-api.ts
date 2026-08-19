@@ -28,6 +28,7 @@ export type AssessmentExecutionApiErrorKind =
   | 'validation'
   | 'patient_not_found'
   | 'patient_not_active'
+  | 'patient_administration_not_completed'
   | 'visit_not_found'
   | 'visit_not_initializable'
   | 'scale_not_available'
@@ -122,6 +123,8 @@ function mapHttpError(
   const businessKinds: Record<string, AssessmentExecutionApiErrorKind> = {
     PATIENT_NOT_FOUND: 'patient_not_found',
     PATIENT_NOT_ACTIVE: 'patient_not_active',
+    PATIENT_ADMINISTRATION_NOT_COMPLETED:
+      'patient_administration_not_completed',
     VISIT_NOT_FOUND: 'visit_not_found',
     VISIT_NOT_INITIALIZABLE: 'visit_not_initializable',
     VISIT_NOT_EDITABLE: 'visit_not_editable',

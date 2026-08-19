@@ -20,6 +20,10 @@ import {
   ScaleInstanceDocument,
 } from '../src/modules/assessments/schemas/scale-instance.schema';
 import {
+  PatientAdministrationSession,
+  PatientAdministrationSessionDocument,
+} from '../src/modules/assessments/schemas/patient-administration-session.schema';
+import {
   Session,
   SessionDocument,
 } from '../src/modules/auth/schemas/session.schema';
@@ -232,6 +236,7 @@ describe('item response execution detail and draft APIs (e2e)', () => {
   let patientModel: Model<PatientDocument>;
   let assessmentVisitModel: Model<AssessmentVisitDocument>;
   let scaleInstanceModel: Model<ScaleInstanceDocument>;
+  let patientAdministrationSessionModel: Model<PatientAdministrationSessionDocument>;
   let itemResponseModel: Model<ItemResponseDocument>;
   let scaleDefinitionModel: Model<ScaleDefinitionDocument>;
   let scaleVersionModel: Model<ScaleVersionDocument>;
@@ -271,6 +276,9 @@ describe('item response execution detail and draft APIs (e2e)', () => {
     const scaleInstanceIds = scaleInstances.map((scale) => scale._id);
 
     if (scaleInstanceIds.length > 0) {
+      await patientAdministrationSessionModel
+        .deleteMany({ scaleInstanceId: { $in: scaleInstanceIds } })
+        .exec();
       await itemResponseModel
         .deleteMany({ scaleInstanceId: { $in: scaleInstanceIds } })
         .exec();
@@ -325,6 +333,9 @@ describe('item response execution detail and draft APIs (e2e)', () => {
   async function createExecution(
     suffix: string,
     scaleCode: 'mmse' | 'moca',
+    administrationMode:
+      | 'clinician_administered'
+      | 'supervised_patient_input' = 'clinician_administered',
   ): Promise<ExecutionFixture> {
     const patientResponse = await createPatient(suffix).expect(201);
     const patientId = readString(readResponseBody(patientResponse), 'id');
@@ -332,7 +343,7 @@ describe('item response execution detail and draft APIs (e2e)', () => {
     const visitId = readString(readResponseBody(visitResponse), 'id');
     const scaleResponse = await doctorAgent
       .post(`/patients/${patientId}/visits/${visitId}/scale-instances`)
-      .send({ scaleCode })
+      .send({ scaleCode, administrationMode })
       .expect(201);
     const scaleInstance = readRecord(
       readResponseBody(scaleResponse),
@@ -518,6 +529,9 @@ describe('item response execution detail and draft APIs (e2e)', () => {
     scaleInstanceModel = app.get<Model<ScaleInstanceDocument>>(
       getModelToken(ScaleInstance.name),
     );
+    patientAdministrationSessionModel = app.get<
+      Model<PatientAdministrationSessionDocument>
+    >(getModelToken(PatientAdministrationSession.name));
     itemResponseModel = app.get<Model<ItemResponseDocument>>(
       getModelToken(ItemResponse.name),
     );
@@ -621,6 +635,66 @@ describe('item response execution detail and draft APIs (e2e)', () => {
       .patch(draftPath)
       .send({ expectedRevision: 0, responseText: 'x' })
       .expect(403);
+  });
+
+  it('fails closed before completed supervised patient administration without starting lifecycle facts', async () => {
+    const fixture = await createExecution(
+      'SUPERVISED-GATE',
+      'mmse',
+      'supervised_patient_input',
+    );
+    const item = await findItem(fixture, 'mmse.language.repetition');
+    const path = itemPath(fixture, item._id.toString());
+
+    const rejected = await doctorAgent
+      .patch(path)
+      .send({
+        expectedRevision: 0,
+        responseText: 'must not become a formal review draft',
+      })
+      .expect(409);
+    expect(readResponseBody(rejected).code).toBe(
+      'PATIENT_ADMINISTRATION_NOT_COMPLETED',
+    );
+
+    const [blockedItem, blockedVisit, blockedInstance] = await Promise.all([
+      itemResponseModel.findById(item._id).exec(),
+      assessmentVisitModel.findById(fixture.visitId).exec(),
+      scaleInstanceModel.findById(fixture.scaleInstanceId).exec(),
+    ]);
+    expect(blockedItem).not.toBeNull();
+    expect(blockedItem?.draftRevision).toBe(0);
+    expect(blockedItem?.draftSavedAt ?? null).toBeNull();
+    expect(blockedItem?.rawResponse ?? null).toBeNull();
+    expect(blockedItem?.structuredResponse ?? null).toBeNull();
+    expect(blockedItem?.responseText ?? null).toBeNull();
+    expect(blockedVisit?.startedAt ?? null).toBeNull();
+    expect(blockedInstance?.startedAt ?? null).toBeNull();
+
+    await patientAdministrationSessionModel.create({
+      scaleInstanceId: new Types.ObjectId(fixture.scaleInstanceId),
+      deviceMode: 'same_device',
+      status: 'completed',
+      currentStepKey: 'completed',
+      revision: 1,
+      expiresAt: new Date('2026-07-01T10:00:00.000Z'),
+      createdBy: {
+        operatorName: 'A14 Doctor Test Operator',
+        operatorRole: 'doctor',
+      },
+      completedAt: new Date('2026-07-01T09:00:00.000Z'),
+    });
+
+    const accepted = await doctorAgent
+      .patch(path)
+      .send({
+        expectedRevision: 0,
+        responseText: 'formal review after completed patient administration',
+      })
+      .expect(200);
+    expect(
+      readRecord(readResponseBody(accepted), 'itemResponse').draftRevision,
+    ).toBe(1);
   });
 
   it('returns safe MMSE execution detail and derives progress from ItemResponse', async () => {

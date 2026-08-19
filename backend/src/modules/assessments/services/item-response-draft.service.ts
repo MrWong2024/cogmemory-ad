@@ -162,6 +162,19 @@ export class ItemResponseDraftService {
       this.throwScaleInstanceNotEditable();
     }
 
+    if (
+      scaleInstance.administrationMode === 'supervised_patient_input' &&
+      !(await this.assessmentsService.hasCompletedPatientAdministrationSessionForScaleInstance(
+        scaleInstance.id,
+      ))
+    ) {
+      throw new ConflictException({
+        code: 'PATIENT_ADMINISTRATION_NOT_COMPLETED',
+        message:
+          'Patient administration must be completed before formal item review',
+      });
+    }
+
     const itemResponse =
       await this.assessmentsService.findItemResponseByOwnership(
         patientId,

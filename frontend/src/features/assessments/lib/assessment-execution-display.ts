@@ -18,6 +18,8 @@ import type {
   AssessmentOperatorRole,
   AssessmentVisitStatus,
 } from '@/src/features/patients/types/patient';
+import type { PatientAdministrationStatus } from '@/src/features/patient-administration/types/patient-administration';
+import type { ScoreResultStatus } from '@/src/features/assessments/types/provisional-scoring';
 
 export const scaleAdministrationModes: readonly ScaleAdministrationMode[] = [
   'clinician_administered',
@@ -127,6 +129,66 @@ export const itemEvidenceStatusLabels: Record<ItemEvidenceStatus, string> = {
   missing: '缺失',
   not_required: '无需记录',
 };
+
+export type ScaleExecutionProgressiveDisclosure = {
+  isSupervisedPatientFlow: boolean;
+  isSupervisedPreReview: boolean;
+  isCompletedSupervisedReview: boolean;
+  showFormalWorkspace: boolean;
+  showSubmission: boolean;
+  shouldLoadSubmissionReadiness: boolean;
+  showScoring: boolean;
+  showCognitiveDomain: boolean;
+};
+
+const scoringScaleInstanceStatuses = new Set<AssessmentVisitStatus>([
+  'completed',
+  'locked',
+  'voided',
+]);
+
+const cognitiveDomainScoreResultStatuses = new Set<ScoreResultStatus>([
+  'confirmed',
+  'locked',
+  'voided',
+]);
+
+export function getScaleExecutionProgressiveDisclosure(input: {
+  scaleCode: string;
+  administrationMode: ScaleAdministrationMode;
+  patientAdministrationStatus: PatientAdministrationStatus | null;
+  scaleInstanceStatus: AssessmentVisitStatus;
+  scoreResultStatus: ScoreResultStatus | null;
+}): ScaleExecutionProgressiveDisclosure {
+  const isSupervisedPatientFlow =
+    input.scaleCode.trim().toLowerCase() === 'mmse' &&
+    input.administrationMode === 'supervised_patient_input';
+  const isCompletedSupervisedReview =
+    isSupervisedPatientFlow &&
+    input.patientAdministrationStatus === 'completed';
+  const isSupervisedPreReview =
+    isSupervisedPatientFlow && !isCompletedSupervisedReview;
+  const showFormalWorkspace =
+    !isSupervisedPatientFlow || isCompletedSupervisedReview;
+  const showScoring =
+    showFormalWorkspace &&
+    scoringScaleInstanceStatuses.has(input.scaleInstanceStatus);
+  const showCognitiveDomain =
+    showFormalWorkspace &&
+    input.scoreResultStatus !== null &&
+    cognitiveDomainScoreResultStatuses.has(input.scoreResultStatus);
+
+  return {
+    isSupervisedPatientFlow,
+    isSupervisedPreReview,
+    isCompletedSupervisedReview,
+    showFormalWorkspace,
+    showSubmission: showFormalWorkspace,
+    shouldLoadSubmissionReadiness: showFormalWorkspace,
+    showScoring,
+    showCognitiveDomain,
+  };
+}
 
 export type ScaleExecutionGroupSection = ScaleExecutionGroup & {
   itemResponses: ItemResponseExecution[];
@@ -293,6 +355,8 @@ export function getItemResponseSaveErrorMessage(
     scale_instance_not_editable: '当前量表实例状态不允许修改作答。',
     scale_instance_configuration_unavailable:
       '该量表实例的版本配置暂时不可用。',
+    patient_administration_not_completed:
+      '患者施测尚未完成，暂不能填写正式医护复核记录。',
     item_response_not_found: '未找到该题目记录，请重新加载量表。',
     item_response_not_editable: '当前题目状态不允许修改。',
     item_response_draft_conflict:

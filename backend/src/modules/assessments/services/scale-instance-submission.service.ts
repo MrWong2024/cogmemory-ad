@@ -47,6 +47,7 @@ const MAX_SUBMISSION_STATE_TRANSITIONS = 12;
 type SubmissionContext = {
   patient: PatientSummary;
   visit: AssessmentVisitSummary;
+  patientAdministrationCompleted: boolean;
   scaleInstance: ScaleInstanceSummary;
   definition: ScaleDefinitionSummary;
   version: ScaleVersionSummary;
@@ -467,16 +468,22 @@ export class ScaleInstanceSubmissionService {
       });
     }
 
-    const [definition, version, itemResponses] = await Promise.all([
-      this.scalesService.findDefinitionByCode(scaleInstance.scaleCode),
-      this.scalesService.findVersionByScaleCodeAndVersion(
-        scaleInstance.scaleCode,
-        scaleInstance.scaleVersion,
-      ),
-      this.assessmentsService.listItemResponsesByScaleInstanceId(
-        scaleInstance.id,
-      ),
-    ]);
+    const [definition, version, itemResponses, patientAdministrationCompleted] =
+      await Promise.all([
+        this.scalesService.findDefinitionByCode(scaleInstance.scaleCode),
+        this.scalesService.findVersionByScaleCodeAndVersion(
+          scaleInstance.scaleCode,
+          scaleInstance.scaleVersion,
+        ),
+        this.assessmentsService.listItemResponsesByScaleInstanceId(
+          scaleInstance.id,
+        ),
+        scaleInstance.administrationMode === 'supervised_patient_input'
+          ? this.assessmentsService.hasCompletedPatientAdministrationSessionForScaleInstance(
+              scaleInstance.id,
+            )
+          : Promise.resolve(true),
+      ]);
 
     if (
       !definition ||
@@ -506,6 +513,7 @@ export class ScaleInstanceSubmissionService {
     return {
       patient,
       visit,
+      patientAdministrationCompleted,
       scaleInstance,
       definition,
       version,
@@ -520,6 +528,7 @@ export class ScaleInstanceSubmissionService {
     return evaluateScaleInstanceSubmissionReadiness({
       patientStatus: context.patient.status,
       visitStatus: context.visit.status,
+      patientAdministrationCompleted: context.patientAdministrationCompleted,
       scaleInstance: context.scaleInstance,
       versionItems: context.version.items,
       itemResponses: context.itemResponses,

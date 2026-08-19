@@ -531,6 +531,47 @@ describe('AssessmentsService', () => {
     ).toBe('mmse.attention.serial_sevens.step_1');
   });
 
+  it('finds a historical completed patient administration session only', async () => {
+    const scaleInstanceId = new Types.ObjectId();
+    patientAdministrationSessionModel.exists.mockReturnValue(
+      createExecQuery({ _id: new Types.ObjectId() }),
+    );
+
+    await expect(
+      service.hasCompletedPatientAdministrationSessionForScaleInstance(
+        scaleInstanceId,
+      ),
+    ).resolves.toBe(true);
+    expect(patientAdministrationSessionModel.exists).toHaveBeenCalledWith({
+      scaleInstanceId,
+      status: 'completed',
+    });
+  });
+
+  it.each([
+    'prepared',
+    'active',
+    'paused',
+    'terminated',
+    'expired',
+    'no session',
+  ])('does not treat %s as completed patient administration', async () => {
+    const scaleInstanceId = new Types.ObjectId();
+    patientAdministrationSessionModel.exists.mockReturnValue(
+      createExecQuery(null),
+    );
+
+    await expect(
+      service.hasCompletedPatientAdministrationSessionForScaleInstance(
+        scaleInstanceId,
+      ),
+    ).resolves.toBe(false);
+    expect(patientAdministrationSessionModel.exists).toHaveBeenCalledWith({
+      scaleInstanceId,
+      status: 'completed',
+    });
+  });
+
   it('conditionally starts the owned scale and visit without overwriting lifecycle facts', async () => {
     const patientId = new Types.ObjectId();
     const visitId = new Types.ObjectId();

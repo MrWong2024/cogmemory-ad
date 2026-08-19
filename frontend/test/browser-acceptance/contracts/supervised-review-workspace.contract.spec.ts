@@ -6,6 +6,7 @@ import {
 } from '@/src/features/assessments/lib/scale-submission-issue-routing';
 import { buildInlineActionableIssuePresentations } from '@/src/features/assessments/lib/scale-submission-inline-presentation';
 import { getScaleSubmissionIssueDisplay } from '@/src/features/assessments/lib/scale-instance-submission-display';
+import { getScaleExecutionProgressiveDisclosure } from '@/src/features/assessments/lib/assessment-execution-display';
 import { routePatientReviewReferences } from '@/src/features/patient-administration/lib/patient-review-reference-routing';
 import type {
   ScaleSubmissionIssue,
@@ -44,6 +45,160 @@ function createIssue(input: {
     message: input.code,
   };
 }
+
+test('keeps every non-completed supervised MMSE session in the patient administration phase', () => {
+  for (const patientAdministrationStatus of [
+    null,
+    'prepared',
+    'active',
+    'paused',
+    'terminated',
+    'expired',
+  ] as const) {
+    const disclosure = getScaleExecutionProgressiveDisclosure({
+      scaleCode: 'mmse',
+      administrationMode: 'supervised_patient_input',
+      patientAdministrationStatus,
+      scaleInstanceStatus: 'completed',
+      scoreResultStatus: 'confirmed',
+    });
+
+    expect(disclosure).toEqual({
+      isSupervisedPatientFlow: true,
+      isSupervisedPreReview: true,
+      isCompletedSupervisedReview: false,
+      showFormalWorkspace: false,
+      showSubmission: false,
+      shouldLoadSubmissionReadiness: false,
+      showScoring: false,
+      showCognitiveDomain: false,
+    });
+  }
+});
+
+test('opens completed supervised review before later scoring and cognitive-domain phases', () => {
+  const review = getScaleExecutionProgressiveDisclosure({
+    scaleCode: 'mmse',
+    administrationMode: 'supervised_patient_input',
+    patientAdministrationStatus: 'completed',
+    scaleInstanceStatus: 'in_progress',
+    scoreResultStatus: 'draft',
+  });
+  expect(review).toEqual(
+    expect.objectContaining({
+      isSupervisedPreReview: false,
+      isCompletedSupervisedReview: true,
+      showFormalWorkspace: true,
+      showSubmission: true,
+      shouldLoadSubmissionReadiness: true,
+      showScoring: false,
+      showCognitiveDomain: false,
+    }),
+  );
+
+  const scoring = getScaleExecutionProgressiveDisclosure({
+    scaleCode: 'mmse',
+    administrationMode: 'supervised_patient_input',
+    patientAdministrationStatus: 'completed',
+    scaleInstanceStatus: 'completed',
+    scoreResultStatus: 'needs_review',
+  });
+  expect(scoring.showScoring).toBe(true);
+  expect(scoring.showCognitiveDomain).toBe(false);
+
+  for (const scoreResultStatus of ['confirmed', 'locked', 'voided'] as const) {
+    expect(
+      getScaleExecutionProgressiveDisclosure({
+        scaleCode: 'mmse',
+        administrationMode: 'supervised_patient_input',
+        patientAdministrationStatus: 'completed',
+        scaleInstanceStatus: 'completed',
+        scoreResultStatus,
+      }).showCognitiveDomain,
+    ).toBe(true);
+  }
+
+  for (const scoreResultStatus of [
+    'draft',
+    'computed',
+    'needs_review',
+  ] as const) {
+    expect(
+      getScaleExecutionProgressiveDisclosure({
+        scaleCode: 'mmse',
+        administrationMode: 'supervised_patient_input',
+        patientAdministrationStatus: 'completed',
+        scaleInstanceStatus: 'completed',
+        scoreResultStatus,
+      }).showCognitiveDomain,
+    ).toBe(false);
+  }
+});
+
+test('preserves the clinician workspace while progressively disclosing later phases', () => {
+  const execution = getScaleExecutionProgressiveDisclosure({
+    scaleCode: 'mmse',
+    administrationMode: 'clinician_administered',
+    patientAdministrationStatus: null,
+    scaleInstanceStatus: 'in_progress',
+    scoreResultStatus: 'computed',
+  });
+  expect(execution).toEqual(
+    expect.objectContaining({
+      isSupervisedPatientFlow: false,
+      showFormalWorkspace: true,
+      showSubmission: true,
+      shouldLoadSubmissionReadiness: true,
+      showScoring: false,
+      showCognitiveDomain: false,
+    }),
+  );
+
+  for (const scaleInstanceStatus of [
+    'completed',
+    'locked',
+    'voided',
+  ] as const) {
+    const history = getScaleExecutionProgressiveDisclosure({
+      scaleCode: 'mmse',
+      administrationMode: 'clinician_administered',
+      patientAdministrationStatus: null,
+      scaleInstanceStatus,
+      scoreResultStatus: 'locked',
+    });
+    expect(history.showScoring).toBe(true);
+    expect(history.showCognitiveDomain).toBe(true);
+  }
+
+  const unsupportedMocaSupervised = getScaleExecutionProgressiveDisclosure({
+    scaleCode: 'moca',
+    administrationMode: 'supervised_patient_input',
+    patientAdministrationStatus: null,
+    scaleInstanceStatus: 'in_progress',
+    scoreResultStatus: null,
+  });
+  expect(unsupportedMocaSupervised.isSupervisedPatientFlow).toBe(false);
+  expect(unsupportedMocaSupervised.showFormalWorkspace).toBe(true);
+  expect(unsupportedMocaSupervised.showSubmission).toBe(true);
+});
+
+test('shows the patient administration readiness blocker as a global issue', () => {
+  const issue = createIssue({
+    code: 'SCALE_INSTANCE_PATIENT_ADMINISTRATION_INCOMPLETE',
+    severity: 'blocking',
+    scope: 'scale_instance',
+  });
+  const routing = routeScaleSubmissionIssues(
+    { blockingIssues: [issue], warnings: [] },
+    [{ id: 'item-a', itemCode: 'CODE_A' }],
+  );
+
+  expect(routing.globalBlockingIssues).toEqual([issue]);
+  expect(getScaleSubmissionIssueDisplay(issue.code)).toEqual({
+    title: '患者施测尚未完成',
+    description: '请先完成患者施测，再进入医护复核和量表提交。',
+  });
+});
 
 test('item response id is authoritative and uniquely matched item code is only a fallback', () => {
   const idIssue = createIssue({

@@ -140,10 +140,12 @@ function evaluate(
   versionItems: ScaleItemConfigSummary[],
   itemResponses: ItemResponseSummary[],
   scaleInstance = createScaleInstance(),
+  patientAdministrationCompleted = true,
 ) {
   return evaluateScaleInstanceSubmissionReadiness({
     patientStatus: 'active',
     visitStatus: 'draft',
+    patientAdministrationCompleted,
     scaleInstance,
     versionItems,
     itemResponses,
@@ -152,6 +154,72 @@ function evaluate(
 }
 
 describe('scale instance submission readiness', () => {
+  it('adds one scale-level blocker until supervised patient administration is completed', () => {
+    const supervisedInstance = createScaleInstance({
+      administrationMode: 'supervised_patient_input',
+    });
+    const incomplete = evaluate(
+      [createVersionItem()],
+      [createItemResponse()],
+      supervisedInstance,
+      false,
+    );
+
+    expect(
+      incomplete.blockingIssues.filter(
+        (issue) => issue.scope === 'scale_instance',
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        code: 'SCALE_INSTANCE_PATIENT_ADMINISTRATION_INCOMPLETE',
+        severity: 'blocking',
+        scope: 'scale_instance',
+      }),
+    ]);
+    expect(incomplete.ready).toBe(false);
+    expect(incomplete.canSubmitNow).toBe(false);
+    expect(incomplete.summary.blockingIssueCount).toBe(1);
+
+    const completed = evaluate(
+      [createVersionItem()],
+      [createItemResponse()],
+      supervisedInstance,
+      true,
+    );
+    expect(completed.blockingIssues.map((issue) => issue.code)).not.toContain(
+      'SCALE_INSTANCE_PATIENT_ADMINISTRATION_INCOMPLETE',
+    );
+    expect(completed.ready).toBe(true);
+
+    const clinician = evaluate(
+      [createVersionItem()],
+      [createItemResponse()],
+      createScaleInstance({ administrationMode: 'clinician_administered' }),
+      false,
+    );
+    expect(clinician.blockingIssues).toHaveLength(0);
+    expect(clinician.ready).toBe(true);
+  });
+
+  it('keeps existing item-level blockers while adding the supervised gate', () => {
+    const result = evaluate(
+      [createVersionItem()],
+      [createItemResponse({ status: 'in_progress', rawResponse: null })],
+      createScaleInstance({
+        administrationMode: 'supervised_patient_input',
+      }),
+      false,
+    );
+
+    expect(result.blockingIssues.map((issue) => issue.code)).toEqual(
+      expect.arrayContaining([
+        'SCALE_INSTANCE_PATIENT_ADMINISTRATION_INCOMPLETE',
+        'ITEM_NOT_COMPLETED',
+        'ITEM_ANSWER_CONTENT_MISSING',
+      ]),
+    );
+  });
+
   it('accepts false and zero but rejects empty JSON answer values', () => {
     for (const value of [false, 0]) {
       expect(
