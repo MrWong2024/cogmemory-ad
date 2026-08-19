@@ -144,6 +144,7 @@ function ResponseTextEditorField({
 
 export function ItemResponseEditor({
   autosaveSnapshot,
+  collapseHandwritingCapture = false,
   displayNow,
   draft,
   isDirty,
@@ -171,6 +172,7 @@ export function ItemResponseEditor({
   visitId,
 }: {
   autosaveSnapshot: ItemResponseAutosaveSnapshot;
+  collapseHandwritingCapture?: boolean;
   displayNow: number;
   draft: ItemDraftState;
   isDirty: boolean;
@@ -339,6 +341,7 @@ export function ItemResponseEditor({
       ) : null}
 
       <ItemEvidenceRequirements
+        collapseHandwritingCapture={collapseHandwritingCapture}
         drafts={mediaDrafts}
         item={item}
         onDraftChange={onMediaDraftChange}

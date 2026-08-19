@@ -208,7 +208,7 @@
 
 - 路径：`frontend\src\features\assessments\components\ScaleInstanceExecutionPage.tsx`
 - WP-10-F1/F2/F3 组合边界：只在服务端实例摘要明确为 MMSE 1.0、`supervised_patient_input` 时渲染一个 `PatientAdministrationStaffPanel`；面板只把最新服务端权威 patient-administration status 最小回传父页面。patient / visit / scaleInstance 身份变化时父页面先重置为 `null`，且仅在 status=`completed` 时挂载 `PatientAdministrationReviewPanel`；不新增父页面 GET、轮询或全局状态。StaffPanel 不接管既有 A14–A19 作答、媒体、提交、评分或认知域状态。
-- completed supervised MMSE 信息架构：仅 `scale.code=mmse`、`administrationMode=supervised_patient_input` 且 PatientAdministrationSession status=`completed` 时，页面依次组合紧凑复核分组导航、当前分组逐题“医护复核与正式作答”、全局提交汇总 / 最终提交，再进入既有评分与认知域区域。其它 administration mode 和尚未 completed 的 patient session 继续使用原分组导航与正式作答布局。
+- completed supervised MMSE 信息架构：仅 `scale.code=mmse`、`administrationMode=supervised_patient_input` 且 PatientAdministrationSession status=`completed` 时，页面依次组合紧凑复核分组导航、当前分组逐题“医护复核与正式作答”、全局提交汇总 / 最终提交，再进入既有评分与认知域区域。当前分组末尾提供返回既有复核分组导航锚点的普通页内链接，不触发切组、保存或其他写入。其它 administration mode 和尚未 completed 的 patient session 继续使用原分组导航与正式作答布局。
 - 职责：接收 patientId / visitId / scaleInstanceId，加载 A14 安全执行详情，管理 invalid / loading / 401 / 403 / not-found / configuration-unavailable / retry、动态分组、逐题 autosave snapshot、`${itemResponseId}:${evidenceType}` 媒体草稿、未收口统计、beforeunload、页面级显示 tick、实时 progress，以及 B6 独立 readiness / stale / error、题目定位、本地阻断、提交确认、submit 写锁和当前会话 receipt
 - 保存：所有作答、立即保存、标记完成、计时动作与 checkpoint 进入 `useItemResponseAutosaveCoordinator`；页面不再用单一 saving 集合表达保存状态。切组立即 flush 离开组内合法 queued 项但不等待完成，也不清除其他组状态。
 - 媒体父级职责：分组切换不清除 JPEG Blob / strokes；持有跨分组媒体写锁；A15 返回 requirement 时通知协调器推进媒体 generation，旧 A14 响应仅在 generation 未变化时采用自身 evidenceRequirements；A15 不改作答 draft / revision / progress
@@ -261,7 +261,7 @@
 ### 6.13 `ItemEvidenceRequirements`
 
 - 路径：`frontend\src\features\assessments\components\ItemEvidenceRequirements.tsx`
-- 职责：保留服务端全部 evidenceRequirements 的类型、状态与 attached 安全文字展示；对 photo / handwriting requirement 挂载真实 `MediaEvidencePanel`，audio 与其他类型仍仅展示状态
+- 职责：以“正式题目证据要求”区分患者施测参考中的原始 Evidence；保留服务端全部 evidenceRequirements 的类型与状态，并以“待记录 / 已关联 / 缺失 / 无需记录”等业务可读文案展示，不再向用户显示“服务端标识”。对 photo / handwriting requirement 挂载真实 `MediaEvidencePanel`，audio 与其他类型仍仅展示状态
 - 边界：不修改作答草稿，不为 duration / raw_text / operator_note / audio / other 编造媒体接口；明确上传不代表题目完成或评分
 
 ### 6.14 A14 类型与草稿纯函数
@@ -278,6 +278,7 @@
 - 职责：识别 photo / handwriting requirement，组件实际渲染时按题加载 A15 列表，管理 loading / error / retry、上传 / 作废调用、临时 URL 内存缓存和稳定错误文案
 - 写入：调用父级同题同类型写锁；成功以服务端 mediaEvidence 合并列表、以 evidenceRequirement 通知父级并清除对应媒体草稿；重复 attached 冲突刷新列表且不自动重传
 - 读取：access-url 按 evidenceId + asset 缓存，按 expiresAt 与 30 秒余量复用；组件卸载取消 GET 并清理内存状态，不取消已到达后端的 POST
+- 展示：completed supervised unified review 由调用层显式传入 presentation-only flag，仅把 handwriting 采集画布与上传工具放入默认关闭的原生 details；summary 区分补充 / 重新采集并提示未上传草稿。已有 Evidence 历史、访问、作废状态、错误与反馈始终在折叠区外可见；photo 和其它施测模式保持原有直接展示。
 - 边界：不触发 A14 PATCH，不保存 token、文件 URL 或后端大对象到持久化存储，不泛化为全站上传框架
 
 ### 6.16 `MediaEvidenceList` / `MediaEvidencePreview`

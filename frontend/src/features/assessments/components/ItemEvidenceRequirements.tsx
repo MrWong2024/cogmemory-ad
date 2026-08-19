@@ -20,6 +20,7 @@ const mediaResponseTypes = new Set([
 ]);
 
 export function ItemEvidenceRequirements({
+  collapseHandwritingCapture = false,
   drafts,
   item,
   onDraftChange,
@@ -33,6 +34,7 @@ export function ItemEvidenceRequirements({
   visitId,
   writingTypes,
 }: {
+  collapseHandwritingCapture?: boolean;
   drafts: ItemMediaDrafts;
   item: ItemResponseExecution;
   onDraftChange: (
@@ -68,7 +70,7 @@ export function ItemEvidenceRequirements({
         className="font-semibold text-[var(--cma-text-strong)]"
         id={sectionTitleId}
       >
-        证据要求
+        正式题目证据要求
       </h4>
       {item.evidenceRequirements.length > 0 ? (
         <ul className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -79,22 +81,17 @@ export function ItemEvidenceRequirements({
             >
               <span>{itemEvidenceTypeLabels[requirement.evidenceType]}</span>
               <Badge>{itemEvidenceStatusLabels[requirement.status]}</Badge>
-              <span className="text-[var(--cma-muted)]">
-                {requirement.attached
-                  ? '服务端标识：已关联'
-                  : '服务端标识：未关联'}
-              </span>
             </li>
           ))}
         </ul>
       ) : (
         <p className="mt-2 text-sm leading-6 text-[var(--cma-muted)]">
-          服务端未返回本题证据要求。
+          本题当前没有正式证据要求。
         </p>
       )}
       {hasMediaRequirement ? (
         <p className="mt-3 rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-info-soft)] px-3 py-2 text-sm leading-6 text-[var(--cma-info)]">
-          photo 与 handwriting 已支持采集、预览和作废；audio 与其他媒体类型尚未开放。上传证据不代表本题已完成或已评分。
+          图片与手写已支持采集、预览和作废；音频与其他媒体类型尚未开放。上传证据不代表本题已完成或已评分。
         </p>
       ) : null}
       {item.evidenceRequirements.some(
@@ -103,6 +100,7 @@ export function ItemEvidenceRequirements({
           requirement.evidenceType === 'handwriting',
       ) ? (
         <MediaEvidencePanel
+          collapseHandwritingCapture={collapseHandwritingCapture}
           drafts={drafts}
           item={item}
           onDraftChange={onDraftChange}

@@ -21,7 +21,10 @@ import {
   isMediaEvidenceActive,
   sortMediaEvidences,
 } from '@/src/features/assessments/lib/media-evidence-display';
-import type { ItemMediaDrafts } from '@/src/features/assessments/types/media-evidence-draft';
+import {
+  mediaDraftHasPendingContent,
+  type ItemMediaDrafts,
+} from '@/src/features/assessments/types/media-evidence-draft';
 import type {
   EvidenceRequirementState,
   MediaEvidence,
@@ -62,6 +65,7 @@ function mergeEvidence(
 }
 
 export function MediaEvidencePanel({
+  collapseHandwritingCapture = false,
   drafts,
   item,
   onDraftChange,
@@ -75,6 +79,7 @@ export function MediaEvidencePanel({
   visitId,
   writingTypes,
 }: {
+  collapseHandwritingCapture?: boolean;
   drafts: ItemMediaDrafts;
   item: ItemResponseExecution;
   onDraftChange: (
@@ -526,6 +531,24 @@ export function MediaEvidencePanel({
                 : null;
         const captureDisabled = Boolean(disabledReason);
         const feedback = feedbacks[requirement.evidenceType];
+        const handwritingDraft =
+          drafts.handwriting?.kind === 'handwriting'
+            ? drafts.handwriting
+            : undefined;
+        const hasPendingHandwritingDraft = handwritingDraft
+          ? mediaDraftHasPendingContent(handwritingDraft)
+          : false;
+        const handwritingCanvas = (
+          <HandwritingEvidenceCanvas
+            disabled={captureDisabled}
+            disabledReason={disabledReason}
+            draft={handwritingDraft}
+            inputIdPrefix={`${item.id}-handwriting-evidence`}
+            isUploading={writingTypes.has('handwriting')}
+            onDraftChange={(draft) => onDraftChange('handwriting', draft)}
+            onUpload={(input) => handleUpload('handwriting', input)}
+          />
+        );
 
         return (
           <div className="grid gap-3" key={requirement.evidenceType}>
@@ -555,20 +578,20 @@ export function MediaEvidencePanel({
                 onDraftChange={(draft) => onDraftChange('photo', draft)}
                 onUpload={(input) => handleUpload('photo', input)}
               />
+            ) : collapseHandwritingCapture ? (
+              <details className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface)]">
+                <summary className="cursor-pointer px-4 py-3 font-semibold text-[var(--cma-text-strong)] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--cma-ring)]">
+                  {hasCurrentEvidence
+                    ? '补充 / 重新采集手写证据'
+                    : '补充手写证据'}
+                  {hasPendingHandwritingDraft ? ' · 有未上传草稿' : ''}
+                </summary>
+                <div className="border-t border-[var(--cma-line)] p-4">
+                  {handwritingCanvas}
+                </div>
+              </details>
             ) : (
-              <HandwritingEvidenceCanvas
-                disabled={captureDisabled}
-                disabledReason={disabledReason}
-                draft={
-                  drafts.handwriting?.kind === 'handwriting'
-                    ? drafts.handwriting
-                    : undefined
-                }
-                inputIdPrefix={`${item.id}-handwriting-evidence`}
-                isUploading={writingTypes.has('handwriting')}
-                onDraftChange={(draft) => onDraftChange('handwriting', draft)}
-                onUpload={(input) => handleUpload('handwriting', input)}
-              />
+              handwritingCanvas
             )}
           </div>
         );

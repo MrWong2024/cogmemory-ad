@@ -1935,6 +1935,9 @@ export function ScaleInstanceExecutionPage({
     const editor = (
       <ItemResponseEditor
         autosaveSnapshot={autosaveSnapshot}
+        collapseHandwritingCapture={
+          isCompletedSupervisedPatientReview && layout === 'embedded'
+        }
         displayNow={autosave.displayNow}
         draft={draft}
         isDirty={autosaveSnapshot.hasLocalChanges}
@@ -2250,7 +2253,7 @@ export function ScaleInstanceExecutionPage({
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
                 <h2
-                  className="text-xl font-semibold text-[var(--cma-text-strong)]"
+                  className="scroll-mt-6 text-xl font-semibold text-[var(--cma-text-strong)]"
                   id="supervised-review-group-navigation"
                 >
                   复核分组导航
@@ -2307,6 +2310,14 @@ export function ScaleInstanceExecutionPage({
                 scaleInstanceId={scaleInstanceId}
                 visitId={visitId}
               />
+              <div className="flex justify-end">
+                <a
+                  className="rounded-sm text-sm font-semibold text-[var(--cma-primary)] underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cma-ring)]"
+                  href="#supervised-review-group-navigation"
+                >
+                  ↑ 返回复核分组导航
+                </a>
+              </div>
             </section>
           ) : null}
         </>

@@ -145,6 +145,7 @@
 - 页面职责：在既有 A14-A18 能力上接入 A19 认知域 latest / compute、安全结果展示与贡献定位；不新增独立评分或认知域路由。
 - F1/F2 条件组合：仅服务端详情明确为 MMSE 1.0 且 `administrationMode=supervised_patient_input` 时渲染 `PatientAdministrationStaffPanel`；其他量表、版本和施测方式不显示该面板。
 - completed supervised MMSE 信息架构：仅 `scale.code=mmse`、`administrationMode=supervised_patient_input` 且 PatientAdministrationSession status=`completed` 时，当前页依次显示紧凑 group navigation、当前分组逐题 unified review、全局 submission summary / final submit，之后继续既有 scoring / domain 区域。clinician administered、无 Session、prepared / active / paused / terminated / expired 和非 MMSE 仍沿用普通正式作答布局。
+- completed supervised 复核交互：unified review 内的 handwriting 采集工具默认以原生 details 折叠，已有正式 Evidence 历史保持直接可见；当前分组末尾的“返回复核分组导航”普通锚点只滚动到既有 `supervised-review-group-navigation`，不触发切组、保存、readiness 刷新或其他业务写入。
 - 动态参数：Server Component 按 Next 16 `params: Promise<{ patientId: string; visitId: string; scaleInstanceId: string }>` 等待参数后传给 `ScaleInstanceExecutionPage`；route 不 fetch、不保存表单状态
 - 访问边界：继续复用 `/patients/**` 的 `PatientsWorkspaceShell`；不新增 middleware、BFF 或 Provider，不读取 Cookie；后端 Guard 是最终权限边界
 - 数据来源：既有 A14-A18 请求与 A19 cognitive-domain latest GET / compute POST；另由医护面板读取 / 创建 patient-administration 会话，并调用准备、交接、暂停 / 恢复 / 重签 / 终止、staff complete / takeover / redo / technical replay authorize。评分和认知域只读刷新各自只使用 latest GET。

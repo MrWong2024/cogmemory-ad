@@ -123,7 +123,7 @@ export const itemEvidenceTypeLabels: Record<ItemEvidenceType, string> = {
 
 export const itemEvidenceStatusLabels: Record<ItemEvidenceStatus, string> = {
   pending: '待记录',
-  attached: '服务端已关联',
+  attached: '已关联',
   missing: '缺失',
   not_required: '无需记录',
 };
