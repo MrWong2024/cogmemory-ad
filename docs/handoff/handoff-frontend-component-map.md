@@ -732,9 +732,9 @@
 
 ### 6.80 WP-10-F1/F2 医护发起、准备与步骤控制组件
 
-- `PatientAdministrationStaffPanel.tsx`：在既有 MMSE 实例页读取 / 创建最新短期会话；`canCreate` 只对无 Session、terminated 或 expired 为 true，completed 与 prepared / active / paused 均不显示设备方式选择或“创建患者施测会话”。正常 latest=completed 时显示成功终点说明，引导医护继续当前页面已有的患者原始作答复核和正式结果流程；如需再次正式评估则新建访视并初始化新量表实例，不新增复核按钮或 route。创建前只选择一次同一设备或跨设备，并把 `deviceMode` 明确写入 create request；创建后只使用服务端 `session.deviceMode` 恢复设备方式，刷新不依赖页面内存或 credential / preparation 字段推断，也不提供设备方式切换。same-device 只进入本机准备与不可逆 handoff，不展示或重签进入码；cross-device 才展示当前 React 内存中的 raw code、允许显式重签并隐藏 handoff；open legacy `deviceMode=null` 不推断模式，只显示终止后重新创建引导并保留终止能力。既有 terminal 集合继续负责 entryCode 清理、设备方式 UI reset 和准备状态 reset；5 秒串行轮询、最新 revision、全局单写锁、请求结果只读核对与可选 status callback 保持；F2 staff step complete、paused takeover、直接前一步 redo 与 stimulus technical replay authorize 保持。
+- `PatientAdministrationStaffPanel.tsx`：在既有 MMSE 实例页读取 / 创建最新短期会话；`canCreate` 只对无 Session、terminated 或 expired 为 true，completed 与 prepared / active / paused 均不显示设备方式选择或“创建患者施测会话”。正常 latest=completed 时显示成功终点说明，引导医护继续当前页面已有的患者原始作答复核和正式结果流程；如需再次正式评估则新建访视并初始化新量表实例，不新增复核按钮或 route。创建前只选择一次同一设备或跨设备，并把 `deviceMode` 明确写入 create request；创建后只使用服务端 `session.deviceMode` 恢复设备方式，刷新不依赖页面内存或 credential / preparation 字段推断，也不提供设备方式切换。same-device 的 preparation confirm 由同一组件四项必要设备检查 `ready` 控制；cross-device staff 只显式确认患者本机必要设备检查完成，不要求患者报告可选练习。same-device 随后进入不可逆 handoff，不展示或重签进入码；cross-device 才展示当前 React 内存中的 raw code、允许显式重签并隐藏 handoff；open legacy `deviceMode=null` 不推断模式，只显示终止后重新创建引导并保留终止能力。既有 terminal 集合继续负责 entryCode 清理、设备方式 UI reset 和准备状态 reset；5 秒串行轮询、最新 revision、全局单写锁、请求结果只读核对与可选 status callback 保持；F2 staff step complete、paused takeover、直接前一步 redo 与 stimulus technical replay authorize 保持。
 - 轮询边界：每次 GET 使用 AbortController，下一轮在当前请求完成后调度；组件卸载、实例身份改变或进入写入时取消旧读取。响应以请求 generation、Session ID 与服务端 revision 判定，过时结果不得覆盖新状态。
-- `PatientAdministrationPreparation.tsx`：管理七项本地准备事实、八类影响因素和最长 500 字备注；WebAudio 只播放合成测试音，MediaRecorder 只生成最长 10 秒本地试听 Blob，Canvas 只记录 Pointer 练习。reset、重启或卸载会淘汰旧麦克风 run，迟到 stream 立即停止且不创建 recorder 或写状态；Blob URL 与持有的 track 在替换 / 卸载时释放。不上传、不创建 `MediaEvidence`、不修改 `ItemResponse`。
+- `PatientAdministrationPreparation.tsx`：管理 `screen`、`input`、`sound`、`microphone` 四项 required device facts、八类影响因素和最长 500 字备注；四项只在组件内存中决定 `ready`。WebAudio 只播放合成测试音，MediaRecorder 只生成最长 10 秒本地试听 Blob；默认折叠的“设备操作练习（可选）”保留 Canvas Pointer 练习，但不参与 `ready`。reset、重启或卸载会淘汰旧麦克风 run，迟到 stream 立即停止且不创建 recorder 或写状态；Blob URL 与持有的 track 在替换 / 卸载时释放。same-device staff 与 cross-device patient 共用该组件；检查和练习均不上传、不保存、不创建 `MediaEvidence`、不修改 `ItemResponse`。
 - `PatientAdministrationStaffStepControls.tsx`：根据 19 步静态安全摘要与最新 staff session 展示当前步骤进度；MMSE 三个目标步骤当前均显示“由患者推进”，active 时不呈现医护观察 complete。paused patient 步骤可填写原因与观察后接管，paused 且有直接前一步时可填写原因 redo，paused stimulus 可填写原因授权一次技术重播。组件不自行生成 revision、stepRun、播放事实或正式答案；staff-complete API 仍保留供其他配置步骤使用。
 - 同设备交接成功后使用 `window.location.replace` 清除 staff 页面历史并进入患者 Shell；若安全导航不能完成则保持 fail-closed 状态，不把 staff UI 重新视为可继续操作。跨设备只展示一次性码与等待兑换状态。
 
@@ -742,7 +742,7 @@
 
 - `PatientAdministrationShell.tsx`：为 `/patient-administration/**` 提供独立视觉与最少导航；不 import `PatientsWorkspaceShell`、`useAuth` 或 staff Context，不触发 `/auth/me`。
 - `PatientAdministrationEnterPage.tsx`：仅接受六位 ASCII 数字，显式提交一次 enter；成功 replace 到 current 页。code 不写 React 长期 store、URL、storage、日志或技术摘要，错误只映射稳定患者文案。
-- `PatientAdministrationPage.tsx`：3 秒串行轮询 current，使用 AbortController、generation 与 revision 防旧响应覆盖；cleanup 对称释放 controller / in-flight 读取状态。无患者凭证时返回进入页；active 时只把服务端 currentStep 交给 `PatientAdministrationCurrentStep`，prepared / paused 显示等待医护，terminated / expired / completed 显示最小安全状态。
+- `PatientAdministrationPage.tsx`：3 秒串行轮询 current，使用 AbortController、generation 与 revision 防旧响应覆盖；cleanup 对称释放 controller / in-flight 读取状态。无患者凭证时返回进入页；prepared 患者端完成四项必要设备检查后即可得到 `localReady` 并告知医护，可选练习不阻断；active 时只把服务端 currentStep 交给 `PatientAdministrationCurrentStep`，paused 显示等待医护，terminated / expired / completed 显示最小安全状态。
 - 状态边界：患者页不显示患者标识、访视、量表分数、报告、诊断、staff 身份、其他患者或 Cookie 信息；completed 后不保留题目、资产或作答预览。F2 页面不调用 F3 review / ASR / ItemResponse / submit / scoring / report。
 
 ### 6.82 WP-10-F1/F2 类型、Client 与展示纯函数

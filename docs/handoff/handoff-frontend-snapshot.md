@@ -82,7 +82,7 @@
 
 - `ScaleInstanceExecutionPage` 只在 MMSE 1.0、`supervised_patient_input` 实例上组合 `PatientAdministrationStaffPanel`；既有作答、媒体、提交、评分和认知域职责不迁移。
 - 医护面板以 5 秒 GET 轮询最新会话，使用 AbortController、single-flight 和同一 Session ID 内的 revision 屏障防旧响应覆盖；不同 Session 的权威响应可替换旧终态。服务端已唯一确定时，刷新后从 prepared / preparation / credential 事实恢复 same-device 或 cross-device，本地 flowChoice 仍不写后端或 Storage；已有患者 credential 时禁止切回 same-device。
-- `PatientAdministrationPreparation` 的七项确认、WebAudio 测试音、最长 10 秒的本地 MediaRecorder 回放、Canvas Pointer 练习和八类影响因素都只服务准备阶段；Blob 与 object URL 在 React 内存中形成并精确撤销。麦克风异步 run 在 reset、重启或卸载后失效，迟到的 MediaStream 会立即停止且不创建 recorder 或写状态；练习不写正式作答或证据。
+- `PatientAdministrationPreparation` 的 `screen`、`input`、`sound`、`microphone` 四项必要设备检查决定本地 `ready`；WebAudio 测试音、最长 10 秒的本地 MediaRecorder 回放、默认折叠的可选 Canvas Pointer 练习和八类影响因素都只服务准备阶段。Blob 与 object URL 在 React 内存中形成并精确撤销；麦克风异步 run 在 reset、重启或卸载后失效，迟到的 MediaStream 会立即停止且不创建 recorder 或写状态。可选练习不参与 `ready`，检查与练习均不上传、不保存、不写正式作答或证据。
 - `/patient-administration/**` 使用独立 `PatientAdministrationShell`，不挂载 staff shell、`useAuth()` 或 `/auth/me`。进入码仅在 React / 表单即时内存中存在，不写 URL、storage 或日志；患者 current GET 以 3 秒间隔串行轮询。
 - `PatientAdministrationPage` 的读取 cleanup 对称 abort 并释放 controller / in-flight 引用；active 时把服务端 currentStep 交给 `PatientAdministrationCurrentStep`，prepared / paused 显示安全等待，terminated / expired / completed 显示最小安全结束状态。
 - F2 按服务端权威 currentStep 逐步呈现 MMSE 19 步一步一屏。当前步骤只读取获准 private image，按顺序播放 frozen MP3；guidance 可受控重播，stimulus 只在服务端当前 run 明确 `technicalReplayAuthorized=true` 时允许一次技术重播。

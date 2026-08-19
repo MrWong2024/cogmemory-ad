@@ -178,9 +178,11 @@ export function PatientAdministrationPage() {
           </Badge>
           {current.status === 'prepared' ? (
             <>
-              <CardTitle className="text-3xl">请先完成本机设备准备</CardTitle>
+              <CardTitle className="text-3xl">
+                请先完成本机必要设备检查
+              </CardTitle>
               <CardDescription className="text-lg">
-                这些操作只是设备检查和不计分练习。完成后请告知医护人员。
+                请完成必要设备检查；如不熟悉触摸或书写操作，可按需展开不计分练习。完成检查后请告知医护人员。
               </CardDescription>
             </>
           ) : null}
@@ -231,7 +233,7 @@ export function PatientAdministrationPage() {
                   className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-success-soft)] px-5 py-4 text-lg font-semibold text-[var(--cma-success)]"
                   role="status"
                 >
-                  本机准备已完成，请告知医护人员确认。
+                  本机必要设备检查已完成，请告知医护人员确认。
                 </p>
               ) : null}
             </div>

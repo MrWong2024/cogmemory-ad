@@ -21,14 +21,7 @@ export type PatientAdministrationPreparationValue = {
   impactFactorNote: string;
 };
 
-type PreparationFact =
-  | 'screen'
-  | 'input'
-  | 'sound'
-  | 'microphone'
-  | 'writing'
-  | 'chinese'
-  | 'practiceOnly';
+type PreparationFact = 'screen' | 'input' | 'sound' | 'microphone';
 
 type Props = {
   disabled?: boolean;
@@ -38,14 +31,14 @@ type Props = {
   onChange?: (value: PatientAdministrationPreparationValue) => void;
 };
 
-const factLabels: ReadonlyArray<{ key: PreparationFact; label: string }> = [
-  { key: 'screen', label: '屏幕内容可见，横竖屏方向合适' },
-  { key: 'input', label: '触摸、鼠标或手写输入可用' },
+const requiredPreparationFacts: ReadonlyArray<{
+  key: PreparationFact;
+  label: string;
+}> = [
+  { key: 'screen', label: '屏幕显示与方向已确认' },
+  { key: 'input', label: '触摸、鼠标等基本操作可用' },
   { key: 'sound', label: '本地测试音已检查' },
-  { key: 'microphone', label: '麦克风已检查，或已明确记录当前不可用' },
-  { key: 'writing', label: '触摸 / 书写练习已完成' },
-  { key: 'chinese', label: '确认使用中文施测' },
-  { key: 'practiceOnly', label: '已明确这是不计分练习' },
+  { key: 'microphone', label: '麦克风已检查，或已明确当前不可用' },
 ];
 
 const initialFacts: Record<PreparationFact, boolean> = {
@@ -53,9 +46,6 @@ const initialFacts: Record<PreparationFact, boolean> = {
   input: false,
   sound: false,
   microphone: false,
-  writing: false,
-  chinese: false,
-  practiceOnly: false,
 };
 
 const checkboxClassName =
@@ -87,7 +77,11 @@ export function PatientAdministrationPreparation({
   const microphoneRunRef = useRef(0);
 
   const ready =
-    !showLocalPreparation || factLabels.every(({ key }) => facts[key]);
+    !showLocalPreparation ||
+    requiredPreparationFacts.every(({ key }) => facts[key]);
+  const completedPreparationFactCount = requiredPreparationFacts.filter(
+    ({ key }) => facts[key],
+  ).length;
 
   const releaseMicrophone = useCallback(() => {
     if (timerRef.current !== null) {
@@ -290,7 +284,6 @@ export function PatientAdministrationPreparation({
       context.moveTo(previous.x, previous.y);
       context.lineTo(current.x, current.y);
       context.stroke();
-      updateFact('writing', true);
     }
     lastPointRef.current = current;
   }
@@ -306,7 +299,6 @@ export function PatientAdministrationPreparation({
   function clearCanvas() {
     const canvas = canvasRef.current;
     canvas?.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
-    updateFact('writing', false);
   }
 
   function toggleImpactFactor(code: PatientAdministrationImpactFactorCode) {
@@ -320,134 +312,152 @@ export function PatientAdministrationPreparation({
   return (
     <div className="grid gap-6" data-testid="patient-administration-preparation">
       {showLocalPreparation ? (
-      <section aria-labelledby="local-preparation-title" className="grid gap-4">
-        <div>
-          <h3
-            className="text-xl font-semibold text-[var(--cma-text-strong)]"
-            id="local-preparation-title"
-          >
-            本地设备准备与不计分练习
-          </h3>
-          <p className="mt-1 text-base leading-7 text-[var(--cma-muted)]">
-            以下检查只保留在当前页面内存，不上传、不计分，也不会写入正式作答。
-          </p>
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-2">
-          {factLabels.map(({ key, label }) => (
-            <label
-              className="flex min-h-12 gap-3 rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] px-4 py-3 text-base leading-7"
-              key={key}
+        <section aria-labelledby="local-preparation-title" className="grid gap-4">
+          <div>
+            <h3
+              className="text-xl font-semibold text-[var(--cma-text-strong)]"
+              id="local-preparation-title"
             >
-              <input
-                checked={facts[key]}
-                className={checkboxClassName}
-                disabled={
-                  disabled ||
-                  key === 'writing' ||
-                  key === 'sound' ||
-                  key === 'microphone'
-                }
-                onChange={(event) => updateFact(key, event.target.checked)}
-                type="checkbox"
-              />
-              <span>{label}</span>
-            </label>
-          ))}
-        </div>
-
-        <div className="grid gap-4 lg:grid-cols-2">
-          <div className="rounded-md border border-[var(--cma-line)] p-4">
-            <h4 className="font-semibold text-[var(--cma-text-strong)]">音量检查</h4>
-            <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-              点击后播放约 0.35 秒、低音量的本地合成音。
+              施测前设备检查
+            </h3>
+            <p className="mt-1 text-base leading-7 text-[var(--cma-muted)]">
+              以下检查仅用于确认当前设备可正常施测；测试内容只保留在本机，不上传、不计分。
             </p>
-            <Button
-              className="mt-3"
-              disabled={disabled}
-              onClick={() => void playTestTone()}
-              variant="secondary"
-            >
-              播放本地测试音
-            </Button>
-            {soundStatus ? (
-              <p aria-live="polite" className="mt-3 text-sm leading-6" role="status">
-                {soundStatus}
-              </p>
-            ) : null}
           </div>
 
-          <div className="rounded-md border border-[var(--cma-line)] p-4">
-            <h4 className="font-semibold text-[var(--cma-text-strong)]">麦克风检查</h4>
-            <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-              最长录制 10 秒，仅生成当前页面可回放的临时 Blob。
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button
-                disabled={disabled || recording}
-                onClick={() => void startMicrophoneCheck()}
-                variant="secondary"
+          <div className="grid gap-3 sm:grid-cols-2">
+            {requiredPreparationFacts.map(({ key, label }) => (
+              <label
+                className="flex min-h-12 gap-3 rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] px-4 py-3 text-base leading-7"
+                key={key}
               >
-                {recording ? '正在录音…' : '开始本地录音检查'}
-              </Button>
-              {recording ? (
-                <Button onClick={stopRecording} variant="secondary">
-                  停止录音
-                </Button>
-              ) : null}
-            </div>
-            {microphoneStatus ? (
-              <p aria-live="polite" className="mt-3 text-sm leading-6" role="status">
-                {microphoneStatus}
-              </p>
-            ) : null}
-            {recordingUrl ? (
-              <audio
-                aria-label="本地麦克风检查回放"
-                className="mt-3 w-full"
-                controls
-                src={recordingUrl}
-              />
-            ) : null}
+                <input
+                  checked={facts[key]}
+                  className={checkboxClassName}
+                  disabled={
+                    disabled || key === 'sound' || key === 'microphone'
+                  }
+                  onChange={(event) => updateFact(key, event.target.checked)}
+                  type="checkbox"
+                />
+                <span>{label}</span>
+              </label>
+            ))}
           </div>
-        </div>
 
-        <div className="rounded-md border border-[var(--cma-line)] p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="rounded-md border border-[var(--cma-line)] p-4">
               <h4 className="font-semibold text-[var(--cma-text-strong)]">
-                触摸 / 书写练习区
+                音量检查
               </h4>
               <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-                请随意画一条线。画布内容不导出、不上传、不保存。
+                点击后播放约 0.35 秒、低音量的本地合成音。
               </p>
+              <Button
+                className="mt-3"
+                disabled={disabled}
+                onClick={() => void playTestTone()}
+                variant="secondary"
+              >
+                播放本地测试音
+              </Button>
+              {soundStatus ? (
+                <p
+                  aria-live="polite"
+                  className="mt-3 text-sm leading-6"
+                  role="status"
+                >
+                  {soundStatus}
+                </p>
+              ) : null}
             </div>
-            <Button disabled={disabled} onClick={clearCanvas} variant="secondary">
-              清空练习
-            </Button>
-          </div>
-          <canvas
-            aria-label="不计分触摸和书写练习画布"
-            className="mt-4 h-56 w-full touch-none rounded-md border border-dashed border-[var(--cma-line-strong)] bg-white"
-            height={240}
-            onPointerCancel={endDrawing}
-            onPointerDown={beginDrawing}
-            onPointerMove={continueDrawing}
-            onPointerUp={endDrawing}
-            ref={canvasRef}
-            width={720}
-          />
-        </div>
 
-        <div aria-live="polite" className="flex flex-wrap items-center gap-3" role="status">
-          <Badge tone={ready ? 'success' : 'neutral'}>
-            {ready ? '七项本地准备已完成' : '本地准备尚未完成'}
-          </Badge>
-          <span className="text-sm text-[var(--cma-muted)]">
-            已完成 {factLabels.filter(({ key }) => facts[key]).length} / 7 项
-          </span>
-        </div>
-      </section>
+            <div className="rounded-md border border-[var(--cma-line)] p-4">
+              <h4 className="font-semibold text-[var(--cma-text-strong)]">
+                麦克风检查
+              </h4>
+              <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
+                最长录制 10 秒，仅生成当前页面可回放的临时 Blob。
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  disabled={disabled || recording}
+                  onClick={() => void startMicrophoneCheck()}
+                  variant="secondary"
+                >
+                  {recording ? '正在录音…' : '开始本地录音检查'}
+                </Button>
+                {recording ? (
+                  <Button onClick={stopRecording} variant="secondary">
+                    停止录音
+                  </Button>
+                ) : null}
+              </div>
+              {microphoneStatus ? (
+                <p
+                  aria-live="polite"
+                  className="mt-3 text-sm leading-6"
+                  role="status"
+                >
+                  {microphoneStatus}
+                </p>
+              ) : null}
+              {recordingUrl ? (
+                <audio
+                  aria-label="本地麦克风检查回放"
+                  className="mt-3 w-full"
+                  controls
+                  src={recordingUrl}
+                />
+              ) : null}
+            </div>
+          </div>
+
+          <details className="rounded-md border border-[var(--cma-line)] p-4">
+            <summary className="cursor-pointer font-semibold text-[var(--cma-text-strong)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cma-ring)]">
+              设备操作练习（可选）
+            </summary>
+            <div className="mt-4 grid gap-4">
+              <p className="text-sm leading-6 text-[var(--cma-muted)]">
+                患者不熟悉触摸或书写操作时可先练习；如已熟悉设备，可直接跳过。练习不使用正式刺激，不上传、不保存、不计分。
+              </p>
+              <div className="flex justify-end">
+                <Button
+                  disabled={disabled}
+                  onClick={clearCanvas}
+                  variant="secondary"
+                >
+                  清空练习
+                </Button>
+              </div>
+              <canvas
+                aria-label="不计分触摸和书写练习画布"
+                className="h-56 w-full touch-none rounded-md border border-dashed border-[var(--cma-line-strong)] bg-white"
+                height={240}
+                onPointerCancel={endDrawing}
+                onPointerDown={beginDrawing}
+                onPointerMove={continueDrawing}
+                onPointerUp={endDrawing}
+                ref={canvasRef}
+                width={720}
+              />
+            </div>
+          </details>
+
+          <div
+            aria-live="polite"
+            className="flex flex-wrap items-center gap-3"
+            role="status"
+          >
+            <Badge tone={ready ? 'success' : 'neutral'}>
+              {ready ? '必要设备检查已完成' : '必要设备检查尚未完成'}
+            </Badge>
+            <span className="text-sm text-[var(--cma-muted)]">
+              已完成 {completedPreparationFactCount} /{' '}
+              {requiredPreparationFacts.length} 项
+            </span>
+          </div>
+        </section>
       ) : null}
 
       {showImpactFactors ? (

@@ -315,7 +315,7 @@ export function PatientAdministrationStaffPanel({
       setCrossDevicePreparationConfirmed(false);
       setMessage(
         response.deviceMode === 'same_device'
-          ? '同一设备患者施测会话已创建，请完成设备准备与影响因素确认。'
+          ? '同一设备患者施测会话已创建，请完成必要设备检查与影响因素确认。'
           : response.entryCode
             ? '跨设备患者施测会话已创建，请将六位进入码当面告知患者。'
             : '跨设备患者施测会话已创建，但当前没有可显示的进入码；如患者尚未进入，请显式重新签发进入码。',
@@ -343,8 +343,8 @@ export function PatientAdministrationStaffPanel({
       setCrossDevicePreparationConfirmed(false);
       setMessage(
         response.status === 'active'
-          ? '患者设备准备已确认，会话已进入施测状态。'
-          : '设备准备与影响因素已确认。请核对后执行同设备安全交接。',
+          ? '患者设备必要检查已确认，会话已进入施测状态。'
+          : '必要设备检查与影响因素已确认。请核对后执行同设备安全交接。',
       );
     } catch (error: unknown) {
       await handleWriteFailure(error);
@@ -744,7 +744,7 @@ export function PatientAdministrationStaffPanel({
               <div className="grid gap-5">
                 <p className="rounded-md border border-[var(--cma-line)] px-4 py-3">
                   {session.hasPatientCredential
-                    ? '患者设备已兑换凭证。请由患者在其设备完成本地准备，并当面告知医护人员。'
+                    ? '患者设备已兑换凭证。请由患者在其设备完成必要设备检查，并当面告知医护人员。'
                     : '请先让患者在另一台设备输入进入码。患者凭证出现前不能确认准备。'}
                 </p>
                 <PatientAdministrationPreparation
@@ -764,7 +764,7 @@ export function PatientAdministrationStaffPanel({
                     }
                     type="checkbox"
                   />
-                  <span>患者已当面告知本机准备与不计分练习完成</span>
+                  <span>患者已当面确认本机必要设备检查完成</span>
                 </label>
               </div>
             ) : null}

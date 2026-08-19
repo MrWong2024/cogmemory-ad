@@ -121,15 +121,16 @@ manifest 不承担独立资产数据库、资产管理后台、多级审批、TT
 正式开始前由医护完成并确认：
 
 1. 当前患者、访视和量表实例核对。
-2. 设备与受支持浏览器提示，屏幕方向和有效触控区域确认。
+2. 屏幕显示与基本操作确认。
 3. 音量试听。
-4. 适用时完成麦克风录制及患者设备本地回放。
-5. 触摸、书写或绘图试操作。
-6. 中文施测确认。
-7. 记录明显影响因素。
-8. 至少完成一个不使用正式刺激的不计分练习。
+4. 适用的麦克风本地检查。
+5. 记录明显影响因素。
 
-练习录音和练习绘图只存在于当前患者设备内存，完成或离开准备流程后清除；不上传 OSS，不进入 `ItemResponse`，不进入评分、报告、正式计时或正式播放次数。不得建设麦克风分贝分析、噪声评分、设备质量报告或练习历史系统。
+本地 `PatientAdministrationPreparation` 的 `ready` 只承担 `screen`、`input`、`sound`、`microphone` 四项必要设备检查。四项全部完成后，same-device 可继续既有 preparation confirm；cross-device 患者可告知医护本机必要设备检查已完成，再由医护按既有合同显式确认。具体检查结果只存在于当前页面内存，不上传，也不建立 checklist Schema 或设备可信历史。
+
+触摸 / 书写不计分操作练习推荐给不熟悉设备的患者，按需展开使用，不是每次正式施测的强制门槛，也不影响 preparation `ready`。患者已熟悉设备时可以完全跳过练习。练习不使用正式刺激，画布只存在于当前患者设备内存；不上传、不计分、不保存，不进入正式 timing、`ItemResponse`、`MediaEvidence`、报告或正式播放次数，离开或 reset 后自然丢弃。
+
+当前一期中文量表的施测语言由既定 `ScaleVersion` 与呈现资产合同决定，准备页不通过本地 checkbox 选择或改变施测语言；未来多语言能力另行设计。不得建设麦克风分贝分析、噪声评分、设备质量报告或练习历史系统。
 
 ## 8. 患者施测会话与控制权
 
@@ -167,7 +168,7 @@ manifest 不承担独立资产数据库、资产管理后台、多级审批、TT
 
 医护登录
 → 选择患者 / 访视 / 量表
-→ 完成设备准备
+→ 完成必要设备检查；患者需要时可先进行不计分操作练习
 → same-device 安全交接
 → staff Session 失效，浏览器进入 patient 身份
 → 患者在医护现场监督下连续完成正常正式施测
@@ -313,7 +314,7 @@ F3 的组织原则是“正常复核优先，重点项目适度提示”。系�
 - 三类存储、唯一私有资产目录、图片提取规则、冻结女声 MP3、单一 manifest 及 released 不可覆盖。
 - 当前步骤最小授权、提示不预加载、刺激 / guidance / prompt 的播放和重播边界。
 - 两张逐题矩阵，以及口头回答默认短录音、非语音不默认录音、动作由医护观察、绘图不默认全事件回放。
-- 准备练习隔离、短期患者会话、创建时持久化且不可切换的 same-device / cross-device、same-device 不签发进入码、cross-device 六位一次性进入码十分钟、无 completed 历史时可因失败 / 中止 / 选择错误 terminate 或 expire 后 recreate、任意 completed 历史永久禁止同一 `ScaleInstance` 再次 create、legacy 模式不推断且 mode-specific mutation fail closed、同一 `ScaleInstance` 同时只允许一个有效患者设备、两小时绝对有效期、same-device staff Session 失效与重新认证、cross-device staff Session 保留、服务端权威步骤和安全退出。
+- 四项必要设备检查门槛、可选不计分操作练习隔离、既定 `ScaleVersion` / 呈现资产决定当前施测语言、短期患者会话、创建时持久化且不可切换的 same-device / cross-device、same-device 不签发进入码、cross-device 六位一次性进入码十分钟、无 completed 历史时可因失败 / 中止 / 选择错误 terminate 或 expire 后 recreate、任意 completed 历史永久禁止同一 `ScaleInstance` 再次 create、legacy 模式不推断且 mode-specific mutation fail closed、同一 `ScaleInstance` 同时只允许一个有效患者设备、两小时绝对有效期、same-device staff Session 失效与重新认证、cross-device staff Session 保留、服务端权威步骤和安全退出。
 - 患者正常题目主链连续推进，医护现场观察与后续复核记录解耦；双设备不等于双写者，独立患者 / 独立 `ScaleInstance` 正常并行，同一评估不默认多人实时协同编辑。
 - 患者原始事实、ASR 候选、现场医护观察的事实来源、量表作答复核草稿和整体正式提交结果的五层语义；现场观察可在 F3 直接形成现有 `ItemResponse`，不默认要求独立 Observation 数据层。F3 正常复核优先、原始证据按需查看，患者已有有效 `MediaEvidence` 可经明确采用受控进入现有 `evidenceRefs` 而不重新上传或复制；第 4 层由现有 A14 `ItemResponse` 单题草稿与 `markAsAnswered` 承载，第 5 层通过 readiness 后的现有 A16 整体提交使同一批 `ItemResponse` 成为正式作答结果，不创建第二套答案、复核状态或批量确认写协议，A14 / A16 技术权限继续服从当前 backend 授权合同。
 - MMSE supervised 执行阶段严格按 server-owned PatientAdministrationSession completed 事实收口：completed 前 UI 只呈现患者施测与基础信息，backend 同时阻断正式 A14 写与 A16 submit；completed 后才开放 unified review / readiness / submission，ScaleInstance completed / locked / voided 后才展示评分，final/history ScoreResult 后才展示认知域。前端 progressive disclosure 不替代后端 invariant。
