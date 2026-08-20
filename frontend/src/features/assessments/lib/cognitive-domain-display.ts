@@ -5,6 +5,8 @@ import type {
   CognitiveDomainMappingMode,
   CognitiveDomainMappingSource,
   CognitiveDomainQualityStatus,
+  CognitiveDomainItemContribution,
+  CognitiveDomainScore,
   CognitiveDomainResultStatus,
   CognitiveDomainReviewStatus,
 } from '@/src/features/assessments/types/cognitive-domain-result';
@@ -106,9 +108,60 @@ const warningMessages: Record<string, string> = {
 };
 
 export const cognitiveDomainNonDiagnosticStatements = [
-  '认知域结果用于展示量表项目在不同认知维度中的表现，不能脱离量表、临床访谈和其他检查单独形成诊断结论。',
-  '认知域之间可能存在重叠；各域得分不可相加解释为量表总分，得分比例也不是正常率、疾病概率或风险值。',
+  '认知域映射结果用于展示本量表项目在不同认知维度中的表现，仅用于临床辅助，不应脱离量表、临床访谈和其他检查单独形成诊断结论。',
 ];
+
+export const cognitiveDomainInterpretationStatements = [
+  '一个项目可以映射到多个认知域。',
+  '当前规则按完整项目分值计入对应认知域，不做跨域平均拆分。',
+  '因此各认知域映射得分不能相加解释为量表总分。',
+  '本量表映射得分比例不是正常率、疾病概率或风险值。',
+];
+
+export type CognitiveDomainSourceScoreSummary = {
+  scaleLabel: string;
+  scoreValue: number | null;
+  maxScore: number | null;
+  isFinal: boolean;
+};
+
+type CognitiveDomainSourceScoreSummaryInput = {
+  scale: {
+    name: string;
+    shortName?: string;
+  };
+  scoreResult: {
+    isFinal: boolean;
+    totalScore: {
+      provisionalScoreValue: number | null;
+      maxScore: number | null;
+    };
+  };
+};
+
+export type CognitiveDomainScoreCardPresentation = {
+  title: string;
+  scoreText: string;
+  rangeText: string | null;
+  percentText: string | null;
+  itemSummary: string;
+  scoredSummary: string;
+  abnormalSummaries: string[];
+};
+
+export type CognitiveDomainScoreTechnicalValues = Pick<
+  CognitiveDomainScore,
+  'domainCode' | 'weightedScore' | 'weightedMaxScore'
+>;
+
+export type CognitiveDomainContributionPresentation = {
+  itemLabel: string;
+  domainLabel: string;
+  scoreText: string;
+  scoreNotices: string[];
+  contributionText: string;
+  contributionNote: string | null;
+};
 
 export function getCognitiveDomainTitle(
   domainCode: string,
@@ -121,6 +174,143 @@ export function getCognitiveDomainTitle(
 
   const normalizedCode = domainCode.trim().toLowerCase();
   return domainLabels[normalizedCode] ?? domainCode;
+}
+
+function isFiniteCognitiveDomainNumber(
+  value: number | null | undefined,
+): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+export function buildCognitiveDomainSourceScoreSummary(
+  result: CognitiveDomainSourceScoreSummaryInput | null,
+): CognitiveDomainSourceScoreSummary | null {
+  if (!result) {
+    return null;
+  }
+
+  return {
+    scaleLabel: result.scale.shortName?.trim() || result.scale.name,
+    scoreValue: result.scoreResult.totalScore.provisionalScoreValue,
+    maxScore: result.scoreResult.totalScore.maxScore,
+    isFinal: result.scoreResult.isFinal,
+  };
+}
+
+export function formatCognitiveDomainSourceScoreSummary(
+  summary: CognitiveDomainSourceScoreSummary | null,
+): string | null {
+  const scaleLabel = summary?.scaleLabel.trim();
+  if (!summary || !scaleLabel) {
+    return null;
+  }
+
+  const scorePair =
+    isFiniteCognitiveDomainNumber(summary.scoreValue) &&
+    isFiniteCognitiveDomainNumber(summary.maxScore)
+      ? ` ${summary.scoreValue} / ${summary.maxScore}`
+      : '';
+  const finalLabel = summary.isFinal ? '（已最终确认）' : '';
+  return `来源评分：${scaleLabel}${scorePair}${finalLabel}`;
+}
+
+export function formatCognitiveDomainScoreFraction(
+  scoreValue: number | null | undefined,
+  maxScore: number | null | undefined,
+): string | null {
+  if (!isFiniteCognitiveDomainNumber(scoreValue)) {
+    return null;
+  }
+
+  return isFiniteCognitiveDomainNumber(maxScore)
+    ? `${scoreValue} / ${maxScore}`
+    : String(scoreValue);
+}
+
+export function getCognitiveDomainScoreCardPresentation(
+  score: CognitiveDomainScore,
+): CognitiveDomainScoreCardPresentation {
+  const scoreText = formatCognitiveDomainScoreFraction(
+    score.scoreValue,
+    score.maxScore,
+  );
+  const rangeText =
+    isFiniteCognitiveDomainNumber(score.minScore) &&
+    score.minScore !== 0 &&
+    isFiniteCognitiveDomainNumber(score.maxScore)
+      ? `${score.minScore}–${score.maxScore}`
+      : null;
+  const abnormalSummaries = [
+    score.unscoredItemCount > 0
+      ? `未评分 ${score.unscoredItemCount}`
+      : null,
+    score.missingItemCount > 0 ? `缺失 ${score.missingItemCount}` : null,
+    score.needsReviewItemCount > 0
+      ? `待核对 ${score.needsReviewItemCount}`
+      : null,
+    score.excludedItemCount > 0 ? `已排除 ${score.excludedItemCount}` : null,
+  ].filter((item): item is string => item !== null);
+
+  return {
+    title: getCognitiveDomainTitle(score.domainCode, score.domainTitle),
+    scoreText: scoreText ?? '暂无可用映射得分',
+    rangeText,
+    percentText: isFiniteCognitiveDomainNumber(score.scorePercent)
+      ? `${score.scorePercent}%`
+      : null,
+    itemSummary: `映射项目：${score.itemCount} 项`,
+    scoredSummary: `${score.scoredItemCount} / ${score.itemCount} 项已评分`,
+    abnormalSummaries,
+  };
+}
+
+export function getCognitiveDomainScoreTechnicalValues(
+  score: CognitiveDomainScore,
+): CognitiveDomainScoreTechnicalValues {
+  return {
+    domainCode: score.domainCode,
+    weightedScore: score.weightedScore,
+    weightedMaxScore: score.weightedMaxScore,
+  };
+}
+
+export function getCognitiveDomainContributionSummary(
+  contributions: readonly CognitiveDomainItemContribution[],
+): string {
+  return `题目贡献明细（${contributions.length} 条映射记录）`;
+}
+
+export function getCognitiveDomainContributionPresentation(
+  contribution: CognitiveDomainItemContribution,
+): CognitiveDomainContributionPresentation {
+  const scoreNotices = [
+    contribution.isMissing ? '来源记录为缺失' : null,
+    contribution.scoreStatus === 'needs_review' ? '来源评分需核对' : null,
+  ].filter((item): item is string => item !== null);
+  const contributionScore = formatCognitiveDomainScoreFraction(
+    contribution.weightedScore,
+    contribution.weightedMaxScore,
+  );
+
+  return {
+    itemLabel: `第 ${contribution.itemOrder} 题 · ${contribution.itemTitle?.trim() || '题目名称未提供'}`,
+    domainLabel: getCognitiveDomainTitle(
+      contribution.domainCode,
+      contribution.domainTitle,
+    ),
+    scoreText:
+      formatCognitiveDomainScoreFraction(
+        contribution.scoreValue,
+        contribution.maxScore,
+      ) ?? '暂无可用题目得分',
+    scoreNotices,
+    contributionText: contribution.countsTowardDomain
+      ? `计入本域：${contributionScore ?? '暂无可用贡献分值'}`
+      : '不计入本域得分',
+    contributionNote: contribution.countsTowardDomain
+      ? null
+      : '过程记录 / 已排除',
+  };
 }
 
 export function getCognitiveDomainScoreSourceLabel(

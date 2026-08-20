@@ -1,16 +1,10 @@
-import { Badge } from '@/src/components/ui/Badge';
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from '@/src/components/ui/Card';
-import {
-  formatCognitiveDomainNumber,
-  formatCognitiveDomainPercent,
-  getCognitiveDomainTitle,
-} from '@/src/features/assessments/lib/cognitive-domain-display';
+import { getCognitiveDomainScoreCardPresentation } from '@/src/features/assessments/lib/cognitive-domain-display';
 import type { CognitiveDomainScore } from '@/src/features/assessments/types/cognitive-domain-result';
 
 export function CognitiveDomainScoreList({
@@ -28,111 +22,66 @@ export function CognitiveDomainScoreList({
           className="text-2xl font-semibold text-[var(--cma-text-strong)]"
           id="cognitive-domain-score-heading"
         >
-          认知域得分总览
+          认知域映射得分
         </h3>
         <p className="mt-2 text-base leading-7 text-[var(--cma-muted)]">
-          按服务端返回顺序展示认知域结果，不按得分高低排名，也不生成跨域总分。
+          以下结果反映本量表项目映射到各认知域后的得分情况，不等同于独立认知功能测验结果。
         </p>
       </div>
 
       {scores.length > 0 ? (
         <div className="grid min-w-0 max-w-full gap-4 xl:grid-cols-2 [&>*]:min-w-0">
-          {scores.map((score) => (
-            <Card key={score.domainCode}>
-              <CardHeader className="border-b border-[var(--cma-line)]">
-                <div className="flex flex-wrap items-start justify-between gap-3">
+          {scores.map((score) => {
+            const presentation = getCognitiveDomainScoreCardPresentation(score);
+
+            return (
+              <Card key={score.domainCode}>
+                <CardHeader className="border-b border-[var(--cma-line)]">
+                  <CardTitle>{presentation.title}</CardTitle>
+                </CardHeader>
+                <CardContent className="grid gap-5 pt-5">
                   <div>
-                    <CardTitle>
-                      {getCognitiveDomainTitle(
-                        score.domainCode,
-                        score.domainTitle,
-                      )}
-                    </CardTitle>
-                    <CardDescription>
-                      domainCode：{score.domainCode}
-                    </CardDescription>
-                  </div>
-                  <Badge tone="info">服务端认知域结果</Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="grid gap-5 pt-5">
-                <div>
-                  <p className="text-sm font-semibold text-[var(--cma-muted)]">
-                    认知域得分
-                  </p>
-                  {score.scoreValue === null ? (
-                    <p className="mt-1 text-lg font-semibold text-[var(--cma-text-strong)]">
-                      当前无可用认知域得分
+                    <p className="text-sm font-semibold text-[var(--cma-muted)]">
+                      本量表映射得分
                     </p>
-                  ) : (
                     <p className="mt-1 text-2xl font-semibold text-[var(--cma-text-strong)]">
-                      {formatCognitiveDomainNumber(score.scoreValue)}
+                      {presentation.scoreText}
                     </p>
-                  )}
-                  <p className="mt-2 text-sm leading-6 text-[var(--cma-muted)]">
-                    服务端范围：{formatCognitiveDomainNumber(score.minScore)}–
-                    {formatCognitiveDomainNumber(score.maxScore)}
-                  </p>
-                  {score.scorePercent !== null ? (
-                    <p className="mt-2 text-base text-[var(--cma-text-strong)]">
-                      映射项目得分比例：
-                      {formatCognitiveDomainPercent(score.scorePercent)}
-                    </p>
+                    {presentation.rangeText ? (
+                      <p className="mt-2 text-sm leading-6 text-[var(--cma-muted)]">
+                        映射分值范围：{presentation.rangeText}
+                      </p>
+                    ) : null}
+                    {presentation.percentText ? (
+                      <p className="mt-2 text-base text-[var(--cma-text-strong)]">
+                        本量表映射得分比例：{presentation.percentText}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-[var(--cma-text-strong)]">
+                    <span>{presentation.itemSummary}</span>
+                    <span>{presentation.scoredSummary}</span>
+                  </div>
+
+                  {presentation.abnormalSummaries.length > 0 ? (
+                    <div
+                      className="flex flex-wrap gap-2 rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] p-3 text-sm font-semibold text-[var(--cma-warning)]"
+                      role="status"
+                    >
+                      {presentation.abnormalSummaries.map((summary) => (
+                        <span key={summary}>{summary}</span>
+                      ))}
+                    </div>
                   ) : null}
-                </div>
-
-                <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  <div>
-                    <dt className="text-sm text-[var(--cma-muted)]">项目数</dt>
-                    <dd className="font-semibold text-[var(--cma-text-strong)]">
-                      {score.itemCount}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-sm text-[var(--cma-muted)]">已评分</dt>
-                    <dd className="font-semibold text-[var(--cma-text-strong)]">
-                      {score.scoredItemCount}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-sm text-[var(--cma-muted)]">未评分</dt>
-                    <dd className="font-semibold text-[var(--cma-text-strong)]">
-                      {score.unscoredItemCount}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-sm text-[var(--cma-muted)]">缺失</dt>
-                    <dd className="font-semibold text-[var(--cma-text-strong)]">
-                      {score.missingItemCount}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-sm text-[var(--cma-muted)]">待复核</dt>
-                    <dd className="font-semibold text-[var(--cma-text-strong)]">
-                      {score.needsReviewItemCount}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-sm text-[var(--cma-muted)]">已排除</dt>
-                    <dd className="font-semibold text-[var(--cma-text-strong)]">
-                      {score.excludedItemCount}
-                    </dd>
-                  </div>
-                </dl>
-
-                <div className="rounded-md bg-[var(--cma-surface-muted)] p-3 text-sm leading-6 text-[var(--cma-muted)]">
-                  映射技术值：weightedScore ={' '}
-                  {formatCognitiveDomainNumber(score.weightedScore)}；
-                  weightedMaxScore ={' '}
-                  {formatCognitiveDomainNumber(score.weightedMaxScore)}。这些值直接来自服务端，前端未重新计算。
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       ) : (
         <p className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] p-5 text-base text-[var(--cma-muted)]">
-          服务端当前未返回认知域得分记录。
+          当前没有可展示的认知域映射得分记录。
         </p>
       )}
     </section>

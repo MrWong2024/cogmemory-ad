@@ -68,6 +68,7 @@ import type {
   UpdateItemResponseDraftResponse,
 } from '@/src/features/assessments/types/item-response-execution';
 import { getProvisionalScoringApiErrorMessage } from '@/src/features/assessments/lib/provisional-scoring-display';
+import { buildCognitiveDomainSourceScoreSummary } from '@/src/features/assessments/lib/cognitive-domain-display';
 import {
   buildManualScoreReviewRequest,
   buildScoreResultConfirmationRequest,
@@ -985,6 +986,10 @@ export function ScaleInstanceExecutionPage({
     onUnauthorized: handleCognitiveDomainUnauthorized,
     onRefreshSourceScoreResult: handleRefreshCognitiveDomainSourceScore,
   });
+  const cognitiveDomainSourceScoreSummary = useMemo(
+    () => buildCognitiveDomainSourceScoreSummary(scoreResult),
+    [scoreResult],
+  );
 
   useEffect(() => {
     if (
@@ -2454,6 +2459,7 @@ export function ScaleInstanceExecutionPage({
           onLocateItem={(itemResponseId) =>
             locateItemResponse(itemResponseId, 'scoring')
           }
+          sourceScoreSummary={cognitiveDomainSourceScoreSummary}
           state={cognitiveDomainState}
         />
       ) : null}

@@ -3,6 +3,9 @@ import {
   cognitiveDomainMappingSourceLabels,
   cognitiveDomainReviewStatusLabels,
   formatCognitiveDomainDate,
+  formatCognitiveDomainNumber,
+  getCognitiveDomainScoreTechnicalValues,
+  getCognitiveDomainTitle,
   getCognitiveDomainWarningMessage,
   isCognitiveDomainInterpretationSafe,
 } from '@/src/features/assessments/lib/cognitive-domain-display';
@@ -26,21 +29,9 @@ export function CognitiveDomainMappingSummary({
 
   return (
     <section
-      aria-labelledby="cognitive-domain-mapping-heading"
+      aria-label="认知域映射规则与技术信息"
       className="min-w-0 max-w-full"
     >
-      <div className="mb-4">
-        <h3
-          className="text-2xl font-semibold text-[var(--cma-text-strong)]"
-          id="cognitive-domain-mapping-heading"
-        >
-          映射与计算信息
-        </h3>
-        <p className="mt-2 text-base leading-7 text-[var(--cma-muted)]">
-          这些信息用于追溯服务端映射口径和计算版本，不是临床分级或诊断解释。
-        </p>
-      </div>
-
       {!interpretationSafe ? (
         <p
           className="mb-4 rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] p-4 text-base leading-7 text-[var(--cma-warning)]"
@@ -69,106 +60,156 @@ export function CognitiveDomainMappingSummary({
         </div>
       ) : null}
 
-      <div className="grid min-w-0 max-w-full gap-4 lg:grid-cols-2 [&>*]:min-w-0">
-        <div className="rounded-md border border-[var(--cma-line)] p-4">
-          <h4 className="text-lg font-semibold text-[var(--cma-text-strong)]">
-            映射口径
-          </h4>
-          <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
-            <div>
-              <dt className="text-[var(--cma-muted)]">mappingVersion</dt>
-              <dd className="font-semibold text-[var(--cma-text-strong)]">
-                {displayOptional(result.mapping.mappingVersion)}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-[var(--cma-muted)]">mappingSource</dt>
-              <dd className="font-semibold text-[var(--cma-text-strong)]">
-                {cognitiveDomainMappingSourceLabels[result.mapping.mappingSource]}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-[var(--cma-muted)]">mappingMode</dt>
-              <dd className="font-semibold text-[var(--cma-text-strong)]">
-                {cognitiveDomainMappingModeLabels[result.mapping.mappingMode]}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-[var(--cma-muted)]">domainCodes</dt>
-              <dd className="break-words font-semibold text-[var(--cma-text-strong)]">
-                {result.mapping.domainCodes.length > 0
-                  ? result.mapping.domainCodes.join('、')
-                  : '—'}
-              </dd>
-            </div>
-          </dl>
-          <div className="mt-4 rounded-md bg-[var(--cma-surface-muted)] p-3 text-sm leading-6 text-[var(--cma-text-strong)]">
-            <p>
-              strategy：{result.mapping.policy.strategy}；weight：
-              {result.mapping.policy.weight}
-            </p>
-            <p className="mt-1">
-              deduplicatePerItem：
-              {result.mapping.policy.deduplicatePerItem ? 'true' : 'false'}；
-              overlappingDomains：
-              {result.mapping.policy.overlappingDomains ? 'true' : 'false'}
-            </p>
-            <p className="mt-2 text-[var(--cma-muted)]">
-              完整项目分值归入每个映射认知域；同一题目在同一认知域中只计一次；多认知域之间允许重叠。
-            </p>
-          </div>
-        </div>
+      <details className="min-w-0 max-w-full rounded-md border border-[var(--cma-line)] p-4">
+        <summary className="cursor-pointer text-lg font-semibold text-[var(--cma-text-strong)]">
+          映射规则与技术信息
+        </summary>
+        <p className="mt-3 text-base leading-7 text-[var(--cma-muted)]">
+          以下信息用于追溯映射口径、计算版本和来源记录，不是临床分级或诊断解释。
+        </p>
 
-        <div className="rounded-md border border-[var(--cma-line)] p-4">
-          <h4 className="text-lg font-semibold text-[var(--cma-text-strong)]">
-            映射解释
-          </h4>
-          {interpretationSafe ? (
-            <dl className="mt-3 grid gap-3 text-sm">
+        <div className="mt-4 grid min-w-0 max-w-full gap-5 lg:grid-cols-2 [&>*]:min-w-0">
+          <div className="rounded-md border border-[var(--cma-line)] p-4">
+            <h4 className="text-lg font-semibold text-[var(--cma-text-strong)]">
+              映射口径
+            </h4>
+            <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
               <div>
-                <dt className="text-[var(--cma-muted)]">attribution</dt>
+                <dt className="text-[var(--cma-muted)]">mappingVersion</dt>
                 <dd className="font-semibold text-[var(--cma-text-strong)]">
-                  overlapping_full_item_scores（重叠完整分值归因）
+                  {displayOptional(result.mapping.mappingVersion)}
                 </dd>
               </div>
               <div>
-                <dt className="text-[var(--cma-muted)]">
-                  domainScoresAreScaleTotalPartition
-                </dt>
+                <dt className="text-[var(--cma-muted)]">mappingSource</dt>
                 <dd className="font-semibold text-[var(--cma-text-strong)]">
-                  false（各认知域不是量表总分的互斥拆分）
+                  {cognitiveDomainMappingSourceLabels[result.mapping.mappingSource]}
                 </dd>
               </div>
               <div>
-                <dt className="text-[var(--cma-muted)]">
-                  scorePercentIsDiagnosticProbability
-                </dt>
+                <dt className="text-[var(--cma-muted)]">mappingMode</dt>
                 <dd className="font-semibold text-[var(--cma-text-strong)]">
-                  false（映射项目得分比例不是疾病概率）
+                  {cognitiveDomainMappingModeLabels[result.mapping.mappingMode]}
                 </dd>
               </div>
               <div>
-                <dt className="text-[var(--cma-muted)]">
-                  isDiagnosticConclusion
-                </dt>
-                <dd className="font-semibold text-[var(--cma-text-strong)]">
-                  false（认知域结果不是诊断结论）
+                <dt className="text-[var(--cma-muted)]">domainCodes</dt>
+                <dd className="break-words font-semibold text-[var(--cma-text-strong)]">
+                  {result.mapping.domainCodes.length > 0
+                    ? result.mapping.domainCodes.join('、')
+                    : '—'}
                 </dd>
               </div>
             </dl>
-          ) : (
-            <p className="mt-3 text-sm leading-6 text-[var(--cma-muted)]">
-              认知域映射解释信息不符合当前安全规则，页面不将异常值扩展为新的业务含义。
-            </p>
-          )}
-        </div>
-      </div>
+            <div className="mt-4 rounded-md bg-[var(--cma-surface-muted)] p-3 text-sm leading-6 text-[var(--cma-text-strong)]">
+              <p>
+                strategy：{result.mapping.policy.strategy}；weight：
+                {result.mapping.policy.weight}
+              </p>
+              <p className="mt-1">
+                deduplicatePerItem：
+                {result.mapping.policy.deduplicatePerItem ? 'true' : 'false'}；
+                overlappingDomains：
+                {result.mapping.policy.overlappingDomains ? 'true' : 'false'}
+              </p>
+              <p className="mt-2 text-[var(--cma-muted)]">
+                完整项目分值归入每个映射认知域；同一题目在同一认知域中只计一次；多认知域之间允许重叠。
+              </p>
+            </div>
+          </div>
 
-      <details className="mt-4 min-w-0 max-w-full rounded-md border border-[var(--cma-line)] p-4">
-        <summary className="cursor-pointer font-semibold text-[var(--cma-text-strong)]">
-          展开技术追溯信息
-        </summary>
-        <div className="mt-4 grid min-w-0 max-w-full gap-5 lg:grid-cols-2 [&>*]:min-w-0">
+          <div className="rounded-md border border-[var(--cma-line)] p-4">
+            <h4 className="text-lg font-semibold text-[var(--cma-text-strong)]">
+              映射解释
+            </h4>
+            {interpretationSafe ? (
+              <dl className="mt-3 grid gap-3 text-sm">
+                <div>
+                  <dt className="text-[var(--cma-muted)]">attribution</dt>
+                  <dd className="font-semibold text-[var(--cma-text-strong)]">
+                    overlapping_full_item_scores（重叠完整分值归因）
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-[var(--cma-muted)]">
+                    domainScoresAreScaleTotalPartition
+                  </dt>
+                  <dd className="font-semibold text-[var(--cma-text-strong)]">
+                    false（各认知域不是量表总分的互斥拆分）
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-[var(--cma-muted)]">
+                    scorePercentIsDiagnosticProbability
+                  </dt>
+                  <dd className="font-semibold text-[var(--cma-text-strong)]">
+                    false（本量表映射得分比例不是疾病概率）
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-[var(--cma-muted)]">
+                    isDiagnosticConclusion
+                  </dt>
+                  <dd className="font-semibold text-[var(--cma-text-strong)]">
+                    false（认知域映射结果不是诊断结论）
+                  </dd>
+                </div>
+              </dl>
+            ) : (
+              <p className="mt-3 text-sm leading-6 text-[var(--cma-muted)]">
+                认知域映射解释信息不符合当前安全规则，页面不将异常值扩展为新的业务含义。
+              </p>
+            )}
+          </div>
+
+          <div className="rounded-md border border-[var(--cma-line)] p-4 lg:col-span-2">
+            <h4 className="text-lg font-semibold text-[var(--cma-text-strong)]">
+              各认知域技术值
+            </h4>
+            <div className="mt-3 overflow-x-auto">
+              <table className="min-w-[680px] border-collapse text-left text-sm">
+                <thead className="bg-[var(--cma-surface-muted)] text-[var(--cma-text-strong)]">
+                  <tr>
+                    <th className="px-3 py-2" scope="col">认知域</th>
+                    <th className="px-3 py-2" scope="col">domainCode</th>
+                    <th className="px-3 py-2" scope="col">weightedScore</th>
+                    <th className="px-3 py-2" scope="col">weightedMaxScore</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.domainScores.map((score) => {
+                    const technical =
+                      getCognitiveDomainScoreTechnicalValues(score);
+                    return (
+                      <tr
+                        className="border-t border-[var(--cma-line)]"
+                        key={technical.domainCode}
+                      >
+                        <td className="px-3 py-2">
+                          {getCognitiveDomainTitle(
+                            score.domainCode,
+                            score.domainTitle,
+                          )}
+                        </td>
+                        <td className="px-3 py-2">{technical.domainCode}</td>
+                        <td className="px-3 py-2">
+                          {formatCognitiveDomainNumber(
+                            technical.weightedScore,
+                          )}
+                        </td>
+                        <td className="px-3 py-2">
+                          {formatCognitiveDomainNumber(
+                            technical.weightedMaxScore,
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           <div>
             <h4 className="font-semibold text-[var(--cma-text-strong)]">
               计算摘要
@@ -203,7 +244,7 @@ export function CognitiveDomainMappingSummary({
 
           <div>
             <h4 className="font-semibold text-[var(--cma-text-strong)]">
-              来源评分安全摘要
+              来源评分技术摘要
             </h4>
             <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
               <div><dt className="text-[var(--cma-muted)]">scoreResultCode</dt><dd>{displayOptional(sourceScoreResult.scoreResultCode)}</dd></div>

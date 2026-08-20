@@ -12,11 +12,14 @@ import { CognitiveDomainMappingSummary } from '@/src/features/assessments/compon
 import { CognitiveDomainScoreList } from '@/src/features/assessments/components/CognitiveDomainScoreList';
 import type { UseCognitiveDomainResultValue } from '@/src/features/assessments/hooks/useCognitiveDomainResult';
 import {
+  cognitiveDomainInterpretationStatements,
   cognitiveDomainNonDiagnosticStatements,
   cognitiveDomainQualityStatusLabels,
   cognitiveDomainResultStatusBadgeLabels,
   cognitiveDomainResultStatusLabels,
+  formatCognitiveDomainSourceScoreSummary,
   getCognitiveDomainApiErrorMessage,
+  type CognitiveDomainSourceScoreSummary,
 } from '@/src/features/assessments/lib/cognitive-domain-display';
 
 function CognitiveDomainSafetyBoundary() {
@@ -38,9 +41,9 @@ function OverlappingAttributionNotice() {
         认知域结果如何解释
       </summary>
       <ul className="mt-2 list-disc space-y-1 pl-5 text-[var(--cma-muted)]">
-        <li>一个项目可以归入多个认知域。</li>
-        <li>每个认知域按当前映射规则获得该项目的完整分值，不进行平均拆分。</li>
-        <li>因此各认知域得分不能相加解释为量表总分。</li>
+        {cognitiveDomainInterpretationStatements.map((statement) => (
+          <li key={statement}>{statement}</li>
+        ))}
       </ul>
     </details>
   );
@@ -60,14 +63,19 @@ function CognitiveDomainLocalSafetyBlock({ reason }: { reason: string }) {
 
 export function CognitiveDomainResultPanel({
   state,
+  sourceScoreSummary,
   canLocateItem,
   onLocateItem,
 }: {
   state: UseCognitiveDomainResultValue;
+  sourceScoreSummary: CognitiveDomainSourceScoreSummary | null;
   canLocateItem: (itemResponseId: string) => boolean;
   onLocateItem: (itemResponseId: string) => void;
 }) {
   const result = state.detail?.cognitiveDomainResult ?? null;
+  const sourceScoreLabel = formatCognitiveDomainSourceScoreSummary(
+    sourceScoreSummary,
+  );
   const localSafetyBlockVisible =
     state.localBlockReason !== null &&
     (state.status === 'waiting_for_score' ||
@@ -108,9 +116,6 @@ export function CognitiveDomainResultPanel({
       </CardHeader>
 
       <CardContent className="grid min-w-0 max-w-full gap-5 pt-5 [&>*]:min-w-0">
-        <CognitiveDomainSafetyBoundary />
-        <OverlappingAttributionNotice />
-
         <div aria-live="polite">
           {localSafetyBlockVisible && state.localBlockReason ? (
             <CognitiveDomainLocalSafetyBlock reason={state.localBlockReason} />
@@ -244,6 +249,13 @@ export function CognitiveDomainResultPanel({
           </section>
         ) : null}
 
+        {!result ? (
+          <>
+            <CognitiveDomainSafetyBoundary />
+            <OverlappingAttributionNotice />
+          </>
+        ) : null}
+
         {result && state.detail ? (
           <div className="grid min-w-0 max-w-full gap-6 [&>*]:min-w-0">
             <section className="rounded-md border border-[var(--cma-line)] p-4">
@@ -252,6 +264,11 @@ export function CognitiveDomainResultPanel({
                   <h3 className="text-xl font-semibold text-[var(--cma-text-strong)]">
                     {cognitiveDomainResultStatusLabels[result.status]}
                   </h3>
+                  {sourceScoreLabel ? (
+                    <p className="mt-2 text-base font-semibold leading-7 text-[var(--cma-text-strong)]">
+                      {sourceScoreLabel}
+                    </p>
+                  ) : null}
                 </div>
                 <Badge tone={resultStatusTone}>
                   {cognitiveDomainResultStatusBadgeLabels[result.status]}
@@ -273,11 +290,13 @@ export function CognitiveDomainResultPanel({
             </section>
 
             <CognitiveDomainScoreList scores={result.domainScores} />
+            <CognitiveDomainSafetyBoundary />
             <CognitiveDomainContributionList
               canLocateItem={canLocateItem}
               contributions={result.itemContributions}
               onLocateItem={onLocateItem}
             />
+            <OverlappingAttributionNotice />
             <CognitiveDomainMappingSummary detail={state.detail} />
           </div>
         ) : null}

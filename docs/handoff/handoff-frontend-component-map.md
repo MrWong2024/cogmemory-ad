@@ -454,36 +454,36 @@
 ### 6.40 `CognitiveDomainResultPanel`
 
 - 路径：`frontend\src\features\assessments\components\CognitiveDomainResultPanel.tsx`
-- 职责：组合来源评分依赖、latest 状态、not_found、forbidden / error、单一“生成认知域结果”动作、compute 写入 / 幂等回执、业务化 result status、非诊断声明和三个结果子组件。not_found 只显示一次“尚未生成认知域结果”，loaded 只提供“刷新认知域结果” GET。
+- 职责：组合来源评分依赖、latest 状态、not_found、forbidden / error、单一“生成认知域结果”动作、compute 写入 / 幂等回执、业务化 result status、来源最终评分摘要、非诊断声明和三个结果子组件。主摘要只复用页面已加载的 ScoreResult 总分与量表名称，不扩展 CognitiveDomain DTO；not_found 只显示一次“尚未生成认知域结果”，loaded 只提供“刷新认知域结果” GET。
 - 当前一期状态语义：`computed` 直接展示为“认知域分析结果已生成”与“已生成”，不显示虚假的“尚未独立确认”或 `isFinal` / computed / confirmed / locked 技术关系，也不新增第二套医生独立确认动作；backend status enum 中 confirmed / locked 等历史兼容与后续治理值原样保留。
-- 安全说明：主界面常驻两条核心边界，覆盖非独立诊断、认知域重叠 / 不可求和及 scorePercent 非概率；“认知域结果如何解释”使用默认折叠的原生 details，保留完整分值重叠归因。正常 passed / 无实际 warning 的 unchecked 不常驻显示质量块，needs_review / failed 和 computation warning 继续突出。
+- 安全说明：主界面只常驻临床辅助 / 非独立诊断核心边界；认知域重叠、完整分值归因、不可跨域求和及 scorePercent 非正常率 / 概率 / 风险值统一放入默认折叠的“认知域结果如何解释”。正常 passed / 无实际 warning 的 unchecked 不常驻显示质量块，needs_review / failed 和 computation warning 继续突出。
 - 可访问性：error / 异常质量使用 alert，loading / success 使用 polite live region，disabled 生成按钮有文字状态；不使用雷达图或诊断式颜色。
 
 ### 6.41 `CognitiveDomainScoreList`
 
 - 路径：`frontend\src\features\assessments\components\CognitiveDomainScoreList.tsx`
-- 职责：按 domainCode 排序响应副本，展示安全标题、domainCode、scoreValue、min / max、服务端 scorePercent、weighted 技术值和 item / scored / unscored / missing / review / excluded 全部计数。
-- 边界：null 不显示为 0；不求和、平均、排名、归一化、补算比例或生成风险等级。domainTitle 优先后端，再使用集中 domain code 标签，最后原 code。
+- 职责：以“认知域映射得分 / 本量表映射得分”展示服务端 scoreValue / maxScore 和 scorePercent；主卡只显示业务标题、映射项目数与已评分数，minScore 为非零时才低调显示范围，零值异常统计不渲染。
+- 边界：主卡不显示 domainCode、weightedScore / weightedMaxScore 或服务端术语；这些字段保留在统一技术区。null 不显示为 0；不求和、平均、排名、归一化、补算比例或生成风险等级。domainTitle 优先后端，再使用集中 domain code 标签，最后原 code。
 
 ### 6.42 `CognitiveDomainContributionList`
 
 - 路径：`frontend\src\features\assessments\components\CognitiveDomainContributionList.tsx`
-- 职责：按 itemOrder / itemCode / domainCode 排序响应副本，展示 item / CRF / group / domain、weight、countsTowardDomain、score / max、weighted、score status / source、isMissing 和原题核对。
+- 职责：整个题目贡献区域使用默认折叠的原生 details，摘要按贡献数组长度显示“N 条映射记录”；展开后的医生表格只突出“题目 → 映射认知域 → 题目得分 → 本域贡献 → 原题核对”，正常项不显示 identity / weight / score source 技术字段。
 - 定位：仅非空 itemResponseId 可匹配安全题目时回调父级统一定位；null / 无法匹配显示稳定说明，不按 itemCode 猜测。
-- 边界：保留同题多 domain 多条合法记录，不合并后计算；排除项明确不计入，scoreValue null 不显示为 0；不显示正确 / 错误，不定义 contribution minScore。
+- 边界：保留同题多 domain 多条合法记录，不去重、不合并后计算；缺失和待核对来源保持可见，排除项明确不计入，scoreValue null 不显示为 0；原始 itemCode / CRF / groupCode / domainCode 等仍保留在 DTO，不显示正确 / 错误，不定义 contribution minScore。
 
 ### 6.43 `CognitiveDomainMappingSummary`
 
 - 路径：`frontend\src\features\assessments\components\CognitiveDomainMappingSummary.tsx`
-- 职责：展示 mappingVersion / source / mode / domainCodes、严格 policy、四项 interpretation、computation、warning、versionTrace、来源 ScoreResult 安全摘要和弱化结果技术编号。
-- 异常：interpretation 不符合 A19 安全字面值时显示 alert，继续展示技术性结果但不扩展临床解释；warning 仅作为内部计算提示，不渲染为患者风险。
+- 职责：正常 mapping、interpretation、各域 domainCode / weighted 技术值、computation、versionTrace、来源 ScoreResult 和结果技术摘要统一收进单一默认折叠的“映射规则与技术信息”；不再嵌套第二层技术 details。
+- 异常：interpretation 不符合 A19 安全字面值或 computation.warningCount 大于 0 时，alert 始终位于折叠区外；warning 仅作为内部计算提示，不渲染为患者风险。
 - 边界：不编辑 mapping / weight / domainCodes，不模拟 weighted mapping，不重新计算 count / policy / isFinal，不显示原始 Mixed mappingRules。
 
 ### 6.44 B9 类型、API 与 display 纯函数
 
 - `types/cognitive-domain-result.ts`：严格对齐 A19 JSON response 与真实 enum；Date 为 string / null，不含原始作答、评分意见、expectedValue、scoringRule、metadata、qualityHints、computedBy 或 contribution minScore。
 - `api/cognitive-domain-api.ts`：仅提供 `getLatestCognitiveDomainResult()` 与 `computeCognitiveDomainResult()`；credentials / no-store、Path 编码、GET AbortSignal、完整错误映射、POST `{ confirm: true }` 白名单且不重试。
-- `lib/cognitive-domain-display.ts`：集中维护 7 个真实 seed domain code 标签、result / mapping / item / review / quality / score source / warning / error 文案、日期 / 有限数值格式与 interpretation 安全检查。
+- `lib/cognitive-domain-display.ts`：集中维护 7 个真实 seed domain code 标签、result / mapping / item / review / quality / score source / warning / error 文案、来源评分摘要、映射得分 / 贡献展示纯函数、日期 / 有限数值格式与 interpretation 安全检查。
 - 边界：display 不按 scaleCode / itemCode 推断 domain，不计算分数、比例、贡献或诊断，不直接输出未知内部 code。
 
 ### 6.45 `useClinicalReport`

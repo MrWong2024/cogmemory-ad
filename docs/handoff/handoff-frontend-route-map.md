@@ -178,9 +178,9 @@
 - 最终只读：confirmed / locked 不显示人工评分输入或确认按钮；按 isFinal / totalScore.isFinal 显示确认得分、确认分组得分与确认项目分值，并展示确认时间 / 操作者。空确认意见不显示占位，confirmationId 仅在默认折叠技术信息中显示。
 - 认知域依赖：实例 completed / locked / voided 且来源 ScoreResult confirmed / locked / voided 时才查询 A19 latest。评分不存在、评分 latest 失败、draft / computed / needs_review 时显示依赖状态；B8 confirm 成功后只自动 GET 一次，不自动 compute。
 - 认知域首次生成：最终评分确认后才开放；confirmed / locked 来源评分还必须 isFinal=true，实例只能为 completed，Visit 为 draft / in_progress / completed，latest 必须 not_found，且所有作答 / 媒体 / 人工评分 / 确认草稿和题目 / 媒体 / submit / 评分写请求均为空闲。用户显式点击唯一“生成认知域结果”按钮后，POST 仍只发送 confirm=true；不自动生成、不自动重试、不支持重新生成，也不再设置前端 checkbox / 二级确认。
-- 认知域结果：`computed` 作为最终评分与既定映射的确定性派生分析直接显示“认知域分析结果已生成”，随后按 domainCode 升序展示 domain score、范围、映射项目得分比例、weighted 技术字段和全部项目计数，并按 itemOrder / itemCode / domainCode 展示贡献。null 不显示为 0，不排名、不跨域求和、不重新计算任何服务端值。
-- 重叠归因：主界面以两条说明覆盖非独立诊断、认知域重叠 / 不可求和和 scorePercent 非概率；详细的完整项目分值归因规则放入默认折叠的“认知域结果如何解释”。
-- 认知域映射：展示 mapping version / source / mode / domainCodes、policy、interpretation、computation、warning、versionTrace、来源 ScoreResult 与弱化技术编号；interpretation 异常时提示安全异常且不扩展临床解释。
+- 认知域结果：`computed` 作为最终评分与既定映射的确定性派生分析直接显示“认知域分析结果已生成”，并在主状态区复用已加载 ScoreResult 展示来源量表、最终得分与满分。随后以“认知域映射得分”展示服务端 domain score / max 和 scorePercent；主卡不显示 domainCode / weighted 技术值，正常零异常统计隐藏。null 不显示为 0，不排名、不跨域求和、不重新计算任何服务端值。
+- 重叠归因：主界面只常驻临床辅助 / 非独立诊断说明；多域映射、完整分值归入、不可跨域求和及 scorePercent 非正常率 / 概率 / 风险值放入默认折叠的“认知域结果如何解释”。
+- 认知域映射与贡献：题目贡献默认折叠，展开后突出题目、映射认知域、题目得分、本域贡献和原题核对；mapping / policy / weighted / computation / version / run 等正常追溯信息统一进入单一默认折叠的“映射规则与技术信息”。interpretation 或 computation warning 始终在折叠区外提示，且不扩展临床解释。
 - 贡献定位：仅 itemResponseId 可匹配当前安全题目时复用既有分组切换、scrollIntoView 与 focus；null / 无法匹配不按 itemCode 猜测，不改 URL、不清除任何本地草稿。
 - 认知域历史：computed / needs_review / confirmed / locked / voided 的 backend status 兼容保留并按业务标签安全展示；当前一期没有认知域第二次人工确认或 lock 动作，不根据 isFinal 把 computed 改写为 confirmed。已有结果只提供刷新 latest，不显示重新生成；locked / voided 实例或 voided 来源评分只能查询历史。
 - 非诊断边界：主区域明确结果仅展示项目在认知维度中的映射，不能脱离量表、临床访谈和其他检查单独形成诊断；不输出阈值、等级、疾病概率、报告或 AI 解读。
