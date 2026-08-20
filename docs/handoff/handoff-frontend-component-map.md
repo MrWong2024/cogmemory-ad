@@ -216,7 +216,7 @@
 - 媒体父级职责：分组切换不清除 JPEG Blob / strokes；持有跨分组媒体写锁；正式上传、患者 Evidence adoption / revoke-adoption 或 direct formal 作废成功后，先应用服务端 authoritative requirement、通知协调器推进媒体 generation、标记 readiness stale，再立即重载一次 server readiness。刷新失败不回滚已成功 mutation，保留 stale / error 与手动刷新入口；普通草稿 autosave 不新增 readiness 请求。旧 A14 响应仅在 generation 未变化时采用自身 evidenceRequirements；A15 不改作答 draft / revision / progress。
 - B6 合并边界：readiness 成功只替换 ScaleInstance；submit 成功只替换 ScaleInstance、readiness 与 receipt，不修改 Visit、itemResponses 或 drafts。completed 由服务端响应驱动；历史操作者不从 operatorSnapshot 推断
 - readiness 收敛：同一 server snapshot 的 item issue 优先按 itemResponseId、缺失时才按唯一 itemCode 映射到逐题工作单元；scale_instance 与无法映射的异常 issue 留在全局提交区。summary、ready、canSubmitNow 与最终 gate 始终使用完整 readiness。服务器确认的 `mark_answered` 保存自动刷新一次 readiness；automatic、保存草稿和 conflict/server-only 同步只保持 stale 语义。
-- B7 评分职责：仅在 completed / locked / voided 自动查询 latest；管理独立 AbortController、no_result / forbidden / error、compute 确认 / 写锁 / 幂等回执和稳定错误。submit 成功只触发 latest，不自动 compute
+- B7 评分职责：仅在 completed / locked / voided 自动查询 latest；管理独立 AbortController、no_result / forbidden / error、首次生成单次显式操作 / 写锁 / 幂等回执和稳定错误。submit 成功只触发 latest，不自动 compute
 - B7 合并边界：latest / compute 成功使用服务端 ScoreResult 并只同步 ScaleInstance；不修改 Visit、ItemResponse、answer / media drafts、progress 或 readiness，不调用 A14 / A15 写接口
 - B9 有限编排：向独立 `useCognitiveDomainResult` 传递来源 ScoreResult、实例 / 访视状态、全部 dirty / writing 阻断、401 回调与评分 latest 刷新回调；在评分面板之后渲染认知域面板。
 - B9 合并边界：认知域 Hook 保存完整 A19 detail 与 alreadyComputed 回执；主页面不覆盖 Visit、ItemResponse、ScoreResult、作答 / 媒体 / 人工评分 / 确认草稿，不调用 A14-A18 写接口。
@@ -324,7 +324,8 @@
 - completed supervised MMSE 使用 `global_with_unmapped` 展示模式：题目级已映射 issue 不在全局重复，scale-instance 与无法映射的异常 issue 仍显示；完整 summary、readiness 与提交资格不被过滤。其它路径继续显示全部 issue。
 - 页面只在 completed supervised review 或非 supported-supervised 普通流程挂载本 Panel；隐藏不改变后端 readiness 的 completed Session blocking invariant。`SCALE_INSTANCE_PATIENT_ADMINISTRATION_INCOMPLETE` 使用“患者施测尚未完成”全局展示，不映射到单题。
 - 确认：readiness / dirty / 写请求 / 页面状态 / submitting 变化时重置 checkbox；只有最新服务器条件和本地条件同时满足才允许确认按钮，warning 数量明确显示但不阻断
-- 历史边界：completed 无当前会话回执时只展示 ScaleInstance.completedAt，并说明只读 API 未提供历史提交操作者；不自动调用 submit POST 获取审计
+- 历史边界：editable / incomplete / ready 等提交前状态保留手动刷新与准备提交；completed / locked / voided 只把 readiness 作为历史信息，不再显示通用“重新检查提交条件”或准备提交入口。readiness error 区域仍保留“重试检查”。
+- 回执展示：主区域只直接显示提交时间与提交操作者；用时来源和实际存在的 submission ID 收入默认折叠的“提交技术信息”。completed 无当前会话回执时只展示 ScaleInstance.completedAt，并说明只读 API 未提供历史提交操作者；不自动调用 submit POST 获取审计。
 
 ### 6.21 `ScaleSubmissionIssueList`
 
@@ -351,9 +352,10 @@
 ### 6.24 `ProvisionalScoringPanel`
 
 - 路径：`frontend\src\features\assessments\components\ProvisionalScoringPanel.tsx`
-- 职责：展示查询 / 首次计算状态，并组合 B8 人工评分表单、回执、显式确认与 final / provisional 子组件。
-- 状态边界：draft / in_progress 只提示先提交；completed 无结果且 Visit / 本地状态允许时才可计算；有结果后严格按服务端状态开放人工复核 / 确认；locked / voided 只读。没有自动 compute、轮询或重算。
-- 可访问性：错误使用 alert，查询 / 计算 / 成功使用 polite live region；checkbox 有可见 label，按钮 disabled 不只依赖颜色
+- 职责：展示查询 / 首次生成状态，并组合 B8 人工评分表单、回执、最终评分强确认与 final / provisional 子组件。
+- 状态边界：draft / in_progress 只提示先提交；completed `no_result` 显示“待生成”和“量表已正式提交，待生成评分结果”，Visit / 本地状态允许时由一次“生成阶段性评分”显式操作直接调用现有 compute handler。前端仍在请求前复查全部安全门禁，API 继续发送 `{ confirm: true }`；没有首次 compute checkbox / 二次确认，也没有自动 compute、轮询或重算。
+- 结果与刷新：已有非 final 结果才显示“阶段性评分，尚未最终确认”，且只有真实 pending / reviewQueue 非空时显示待人工复核数量；final 显示“已确认评分结果”。`no_result` / loading / forbidden 不显示底部刷新，error 保留“重试加载评分结果”，loaded 且 result 存在时显示“刷新评分结果”。`ScoreResultConfirmationPanel` 的最终评分确认仍保持确认草稿、意见、checkbox 和服务端版本保护。
+- 可访问性：错误使用 alert，查询 / 计算 / 成功使用 polite live region；最终评分确认 checkbox 有可见 label，按钮 disabled 不只依赖颜色
 
 ### 6.25 `ProvisionalScoreSummary`
 

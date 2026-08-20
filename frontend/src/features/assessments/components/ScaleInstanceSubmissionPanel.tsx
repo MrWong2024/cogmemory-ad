@@ -335,21 +335,30 @@ export function ScaleInstanceSubmissionPanel({
                     : ''}
                 </dd>
               </div>
-              <div>
-                <dt className="font-semibold">用时来源</dt>
-                <dd>
-                  {scaleSubmissionDurationSourceLabels[
-                    submissionReceipt.durationSource
-                  ]}
-                </dd>
-              </div>
-              {submissionReceipt.submissionId ? (
-                <div className="text-[var(--cma-muted)]">
-                  <dt className="font-semibold">内部回执摘要</dt>
-                  <dd className="break-all">{submissionReceipt.submissionId}</dd>
-                </div>
-              ) : null}
             </dl>
+            <details className="mt-4 rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface)] p-3 text-sm">
+              <summary className="cursor-pointer font-semibold text-[var(--cma-text-strong)]">
+                提交技术信息
+              </summary>
+              <dl className="mt-3 grid gap-2 text-[var(--cma-text-strong)] sm:grid-cols-2">
+                <div>
+                  <dt className="font-semibold">用时来源</dt>
+                  <dd>
+                    {scaleSubmissionDurationSourceLabels[
+                      submissionReceipt.durationSource
+                    ]}
+                  </dd>
+                </div>
+                {submissionReceipt.submissionId ? (
+                  <div className="text-[var(--cma-muted)]">
+                    <dt className="font-semibold">内部回执摘要</dt>
+                    <dd className="break-all">
+                      {submissionReceipt.submissionId}
+                    </dd>
+                  </div>
+                ) : null}
+              </dl>
+            </details>
           </section>
         ) : readiness?.submissionState === 'completed' ? (
           <section className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] p-4">
@@ -368,26 +377,27 @@ export function ScaleInstanceSubmissionPanel({
           </p>
         ) : null}
 
-        <div className="flex flex-wrap gap-3 border-t border-[var(--cma-line)] pt-4">
-          <Button
-            disabled={readinessLoading || submitting}
-            onClick={onRefresh}
-            variant="secondary"
-          >
-            {readinessLoading ? '正在检查...' : '重新检查提交条件'}
-          </Button>
-          {!readinessError &&
-          !isHistoricalState &&
-          !isExternallyUnsubmittable &&
-          !readOnlyReason ? (
+        {!isHistoricalState ? (
+          <div className="flex flex-wrap gap-3 border-t border-[var(--cma-line)] pt-4">
             <Button
               disabled={readinessLoading || submitting}
-              onClick={onPrepareSubmit}
+              onClick={onRefresh}
+              variant="secondary"
             >
-              {readinessLoading ? '正在检查...' : '检查并准备提交'}
+              {readinessLoading ? '正在检查...' : '重新检查提交条件'}
             </Button>
-          ) : null}
-        </div>
+            {!readinessError &&
+            !isExternallyUnsubmittable &&
+            !readOnlyReason ? (
+              <Button
+                disabled={readinessLoading || submitting}
+                onClick={onPrepareSubmit}
+              >
+                {readinessLoading ? '正在检查...' : '检查并准备提交'}
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
 
         {confirmationVisible ? (
           <section className="grid gap-4 rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] p-4" aria-labelledby="submission-confirmation-title">

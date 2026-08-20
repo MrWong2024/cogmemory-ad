@@ -1,7 +1,5 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-
 import { Badge, type BadgeTone } from '@/src/components/ui/Badge';
 import { Button } from '@/src/components/ui/Button';
 import {
@@ -69,7 +67,6 @@ export function ProvisionalScoringPanel({
   confirmationBlockReason,
   confirmationDraft,
   confirmationError,
-  confirmationVisible,
   instanceStatus,
   latestConfirmationReceipt,
   latestReviewReceipt,
@@ -79,11 +76,10 @@ export function ProvisionalScoringPanel({
   onChangeConfirmationDraft,
   onChangeManualReviewDraft,
   onCloseConfirmation,
+  onCompute,
   onConfirmScoreResult,
-  onConfirmCompute,
   onDiscardManualReviewDraft,
   onLocateItem,
-  onPrepareCompute,
   onPrepareConfirmation,
   onRefresh,
   onStartManualReview,
@@ -95,7 +91,6 @@ export function ProvisionalScoringPanel({
   result,
   scoreWriteState,
   statusMessage,
-  visitStatus,
 }: {
   activeManualReviewDraft: ManualScoreReviewDraft | null;
   alreadyComputed: boolean | null;
@@ -108,7 +103,6 @@ export function ProvisionalScoringPanel({
   confirmationBlockReason: string | null;
   confirmationDraft: ScoreResultConfirmationDraft | null;
   confirmationError: string | null;
-  confirmationVisible: boolean;
   instanceStatus: AssessmentVisitStatus;
   latestConfirmationReceipt: ScoreResultConfirmationReceipt | null;
   latestReviewReceipt: ManualScoreReviewReceipt | null;
@@ -118,11 +112,10 @@ export function ProvisionalScoringPanel({
   onChangeConfirmationDraft: (draft: ScoreResultConfirmationDraft) => void;
   onChangeManualReviewDraft: (draft: ManualScoreReviewDraft) => void;
   onCloseConfirmation: () => void;
+  onCompute: () => void;
   onConfirmScoreResult: () => void;
-  onConfirmCompute: () => void;
   onDiscardManualReviewDraft: () => void;
   onLocateItem: (itemResponseId: string) => void;
-  onPrepareCompute: () => void;
   onPrepareConfirmation: () => void;
   onRefresh: () => void;
   onStartManualReview: (itemResponseId: string) => void;
@@ -134,11 +127,15 @@ export function ProvisionalScoringPanel({
   result: ScoreResultDetailResponse | null;
   scoreWriteState: 'idle' | 'reviewing' | 'confirming';
   statusMessage: string | null;
-  visitStatus: AssessmentVisitStatus;
 }) {
-  const [confirmed, setConfirmed] = useState(false);
   const isQueryable = ['completed', 'locked', 'voided'].includes(instanceStatus);
   const isComputing = computationStatus === 'computing';
+  const pendingReviewItemCount = result
+    ? Math.max(
+        result.scoreResult.review.pendingItemCount,
+        result.reviewQueue.length,
+      )
+    : 0;
   const activeReviewItem =
     activeManualReviewDraft && result
       ? result.scoreResult.itemScores.find(
@@ -146,17 +143,6 @@ export function ProvisionalScoringPanel({
             item.itemResponseId === activeManualReviewDraft.itemResponseId,
         )
       : undefined;
-
-  useEffect(() => {
-    setConfirmed(false);
-  }, [
-    canCompute,
-    confirmationVisible,
-    instanceStatus,
-    isComputing,
-    queryStatus,
-    visitStatus,
-  ]);
 
   return (
     <Card>
@@ -166,7 +152,9 @@ export function ProvisionalScoringPanel({
             <CardTitle>
               {result?.scoreResult.isFinal
                 ? '已确认评分结果'
-                : '阶段性评分、人工复核与确认'}
+                : result
+                  ? '阶段性评分、人工复核与确认'
+                  : '阶段性评分'}
             </CardTitle>
             <CardDescription>
               查询既有结果；人工评分与确认均使用服务端版本进行并发保护。
@@ -177,7 +165,7 @@ export function ProvisionalScoringPanel({
               {scoreResultStatusLabels[result.scoreResult.status] ?? '未知状态'}
             </Badge>
           ) : queryStatus === 'no_result' ? (
-            <Badge tone="neutral">尚未计算</Badge>
+            <Badge tone="neutral">待生成</Badge>
           ) : (
             <Badge tone={queryStatus === 'forbidden' ? 'warning' : 'neutral'}>
               {queryStatus === 'loading' ? '正在查询' : '暂无评分结果'}
@@ -187,17 +175,30 @@ export function ProvisionalScoringPanel({
       </CardHeader>
 
       <CardContent className="grid gap-5 pt-5">
-        <div className="grid gap-1 rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-info-soft)] p-4 text-sm leading-6 text-[var(--cma-info)]">
-          <p className="font-semibold">
-            {result?.scoreResult.isFinal
-              ? '服务端已标记为最终评分结果'
-              : '阶段性评分，尚未最终确认'}
-          </p>
-          <p>评分结果不得脱离临床背景单独形成诊断结论。</p>
-          {!result?.scoreResult.isFinal ? (
-            <p>待人工复核项目尚未计入最终得分。</p>
-          ) : null}
-        </div>
+        {queryStatus === 'no_result' && !result ? (
+          <div className="grid gap-1 rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-info-soft)] p-4 text-sm leading-6 text-[var(--cma-info)]">
+            <p className="font-semibold">
+              量表已正式提交，待生成评分结果
+            </p>
+            <p>生成后可核对总分、待复核项目并进行最终确认。</p>
+            <p>评分结果不得脱离临床背景单独形成诊断结论。</p>
+          </div>
+        ) : result ? (
+          <div className="grid gap-1 rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-info-soft)] p-4 text-sm leading-6 text-[var(--cma-info)]">
+            <p className="font-semibold">
+              {result.scoreResult.isFinal
+                ? '已确认评分结果'
+                : '阶段性评分，尚未最终确认'}
+            </p>
+            <p>评分结果不得脱离临床背景单独形成诊断结论。</p>
+            {!result.scoreResult.isFinal && pendingReviewItemCount > 0 ? (
+              <p>
+                仍有 {pendingReviewItemCount}{' '}
+                项待人工复核，处理完成后才能进行最终确认。
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
         {!isQueryable ? (
           <p className="text-base leading-7 text-[var(--cma-muted)]">
@@ -236,14 +237,12 @@ export function ProvisionalScoringPanel({
 
         {queryStatus === 'no_result' ? (
           <section className="grid gap-3 rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] p-4">
-            <div>
-              <h3 className="font-semibold text-[var(--cma-text-strong)]">
-                尚未计算阶段性评分
-              </h3>
-              <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-                页面加载不会自动计算。当前结果一旦生成，现阶段不支持重新计算。
-              </p>
-            </div>
+            <p className="text-sm leading-6 text-[var(--cma-muted)]">
+              系统将根据已经正式提交的题目结果生成阶段性评分。结果生成后再进行核对和最终确认。
+            </p>
+            <p className="text-sm leading-6 text-[var(--cma-muted)]">
+              当前结果一旦生成，现阶段不支持重新计算。
+            </p>
             {instanceStatus === 'locked' ? (
               <p className="text-sm text-[var(--cma-muted)]">
                 该实例已锁定，不能首次计算。
@@ -257,67 +256,16 @@ export function ProvisionalScoringPanel({
                 {computeBlockReason}
               </p>
             ) : null}
-            {canCompute ? (
+            {canCompute || isComputing ? (
               <div>
-                <Button disabled={isComputing} onClick={onPrepareCompute}>
-                  准备计算阶段性评分
+                <Button disabled={isComputing} onClick={onCompute}>
+                  {isComputing
+                    ? '正在生成阶段性评分...'
+                    : '生成阶段性评分'}
                 </Button>
               </div>
             ) : null}
           </section>
-        ) : null}
-
-        {confirmationVisible ? (
-          <section
-            aria-labelledby="score-computation-confirmation-title"
-            className="grid gap-4 rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] p-4"
-          >
-            <div>
-              <h3
-                className="text-lg font-semibold text-[var(--cma-warning)]"
-                id="score-computation-confirmation-title"
-              >
-                确认计算阶段性评分
-              </h3>
-              <ul className="mt-2 grid gap-1 text-sm leading-6 text-[var(--cma-text-strong)]">
-                <li>本次只生成阶段性、未确认评分。</li>
-                <li>部分项目可能只能进入人工复核。</li>
-                <li>阶段性部分得分不得作为最终临床结论。</li>
-                <li>本阶段不会生成认知域结果、报告或诊断。</li>
-                <li>计算结果在现阶段不支持重新计算。</li>
-              </ul>
-            </div>
-            <div className="flex items-start gap-3">
-              <input
-                checked={confirmed}
-                className="mt-1 h-5 w-5 shrink-0 accent-[var(--cma-primary)]"
-                disabled={!canCompute || isComputing}
-                id="confirm-provisional-score-computation"
-                onChange={(event) => setConfirmed(event.target.checked)}
-                type="checkbox"
-              />
-              <label
-                className="font-semibold text-[var(--cma-text-strong)]"
-                htmlFor="confirm-provisional-score-computation"
-              >
-                我已理解以上阶段性边界，并确认开始计算。
-              </label>
-            </div>
-            <div>
-              <Button
-                disabled={!confirmed || !canCompute || isComputing}
-                onClick={onConfirmCompute}
-              >
-                {isComputing ? '正在计算阶段性评分...' : '确认计算'}
-              </Button>
-            </div>
-          </section>
-        ) : null}
-
-        {isComputing ? (
-          <p aria-live="polite" className="font-semibold text-[var(--cma-info)]" role="status">
-            正在计算阶段性评分，请勿重复操作...
-          </p>
         ) : null}
 
         {computationError ? (
@@ -618,20 +566,14 @@ export function ProvisionalScoringPanel({
           </div>
         ) : null}
 
-        {isQueryable ? (
+        {result && queryStatus === 'loaded' ? (
           <div className="border-t border-[var(--cma-line)] pt-4">
             <Button
-              disabled={
-                queryStatus === 'loading' ||
-                isComputing ||
-                scoreWriteState !== 'idle'
-              }
+              disabled={isComputing || scoreWriteState !== 'idle'}
               onClick={onRefresh}
               variant="secondary"
             >
-              {queryStatus === 'loading'
-                ? '正在加载评分结果...'
-                : '重新加载评分结果'}
+              刷新评分结果
             </Button>
           </div>
         ) : null}

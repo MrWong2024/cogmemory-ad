@@ -319,8 +319,6 @@ export function ScaleInstanceExecutionPage({
   const [scoreQueryStatus, setScoreQueryStatus] =
     useState<ProvisionalScoreQueryStatus>('idle');
   const [scoreQueryError, setScoreQueryError] = useState<string | null>(null);
-  const [scoreConfirmationVisible, setScoreConfirmationVisible] =
-    useState(false);
   const [isComputingScore, setIsComputingScore] = useState(false);
   const [scoreComputationError, setScoreComputationError] = useState<
     string | null
@@ -512,7 +510,6 @@ export function ScaleInstanceExecutionPage({
       applyScoreResultDetail(response);
       setConfirmationSafetyBlock(null);
       setScoreQueryStatus('loaded');
-      setScoreConfirmationVisible(false);
       return response;
     } catch (requestError: unknown) {
       if (controller.signal.aborted || !mountedRef.current) {
@@ -525,12 +522,9 @@ export function ScaleInstanceExecutionPage({
           : new ProvisionalScoringApiError('unknown');
 
       if (error.kind === 'unauthenticated') {
-        setScoreConfirmationVisible(false);
         router.replace('/login');
         return null;
       }
-
-      setScoreConfirmationVisible(false);
 
       if (error.kind === 'score_result_not_found') {
         setScoreResult(null);
@@ -645,7 +639,6 @@ export function ScaleInstanceExecutionPage({
       setScoreResult(null);
       setScoreQueryStatus('idle');
       setScoreQueryError(null);
-      setScoreConfirmationVisible(false);
       setScoreComputationError(null);
       setScoreComputationStatus(null);
       setScoreAlreadyComputed(null);
@@ -682,7 +675,6 @@ export function ScaleInstanceExecutionPage({
     setScoreResult(null);
     setScoreQueryStatus('idle');
     setScoreQueryError(null);
-    setScoreConfirmationVisible(false);
     setScoreComputationError(null);
     setScoreComputationStatus(null);
     setScoreAlreadyComputed(null);
@@ -908,30 +900,6 @@ export function ScaleInstanceExecutionPage({
 
     return () => window.cancelAnimationFrame(frame);
   }, [activeGroupCode, pendingFocusItemId, pendingFocusSource]);
-
-  useEffect(() => {
-    if (
-      unsavedAnswerItemCount > 0 ||
-      pendingMediaItemCount > 0 ||
-      savingItemIds.size > 0 ||
-      mediaWritingKeys.size > 0 ||
-      isSubmitting ||
-      detail?.scaleInstance.status !== 'completed' ||
-      !scoreComputableVisitStatuses.has(detail?.visit.status ?? 'voided') ||
-      scoreQueryStatus !== 'no_result'
-    ) {
-      setScoreConfirmationVisible(false);
-    }
-  }, [
-    detail?.scaleInstance.status,
-    detail?.visit.status,
-    isSubmitting,
-    mediaWritingKeys.size,
-    pendingMediaItemCount,
-    savingItemIds.size,
-    scoreQueryStatus,
-    unsavedAnswerItemCount,
-  ]);
 
   useEffect(() => {
     if (
@@ -1415,27 +1383,7 @@ export function ScaleInstanceExecutionPage({
     return null;
   }
 
-  function handlePrepareScoreComputation() {
-    setScoreComputationError(null);
-    setScoreComputationStatus(null);
-
-    const blockReason = getScoreComputeBlockReason();
-    if (
-      computingScoreRef.current ||
-      scoreQueryStatus !== 'no_result' ||
-      blockReason
-    ) {
-      setScoreConfirmationVisible(false);
-      if (blockReason) {
-        setScoreComputationStatus(blockReason);
-      }
-      return;
-    }
-
-    setScoreConfirmationVisible(true);
-  }
-
-  async function handleConfirmScoreComputation() {
+  async function handleComputeProvisionalScore() {
     const blockReason = getScoreComputeBlockReason();
 
     if (
@@ -1444,7 +1392,6 @@ export function ScaleInstanceExecutionPage({
       blockReason ||
       hasLocalScoreBlockers()
     ) {
-      setScoreConfirmationVisible(false);
       setScoreComputationError(
         blockReason ?? '当前评分依据已变化，请重新加载最新评分结果。',
       );
@@ -1453,7 +1400,6 @@ export function ScaleInstanceExecutionPage({
 
     computingScoreRef.current = true;
     setIsComputingScore(true);
-    setScoreConfirmationVisible(false);
     setScoreComputationError(null);
     setScoreComputationStatus(null);
     setScoreAlreadyComputed(null);
@@ -2454,7 +2400,6 @@ export function ScaleInstanceExecutionPage({
           confirmationBlockReason={confirmationBlockReason}
           confirmationDraft={confirmationDraft}
           confirmationError={confirmationError}
-          confirmationVisible={scoreConfirmationVisible}
           instanceStatus={scaleInstance.status}
           latestConfirmationReceipt={latestConfirmationReceipt}
           latestReviewReceipt={latestReviewReceipt}
@@ -2470,8 +2415,8 @@ export function ScaleInstanceExecutionPage({
             setConfirmationDraft(null);
             setConfirmationError(null);
           }}
+          onCompute={() => void handleComputeProvisionalScore()}
           onConfirmScoreResult={() => void handleConfirmFinalScoreResult()}
-          onConfirmCompute={() => void handleConfirmScoreComputation()}
           onDiscardManualReviewDraft={() => {
             setManualReviewDraft(null);
             setManualReviewError(null);
@@ -2480,13 +2425,11 @@ export function ScaleInstanceExecutionPage({
           onLocateItem={(itemResponseId) =>
             locateItemResponse(itemResponseId, 'scoring')
           }
-          onPrepareCompute={handlePrepareScoreComputation}
           onPrepareConfirmation={handlePrepareScoreConfirmation}
           onRefresh={() => {
             setScoreComputationError(null);
             setScoreComputationStatus(null);
             setScoreAlreadyComputed(null);
-            setScoreConfirmationVisible(false);
             void loadLatestScoreResult();
           }}
           onStartManualReview={handleStartManualReview}
@@ -2498,7 +2441,6 @@ export function ScaleInstanceExecutionPage({
           result={scoreResult}
           scoreWriteState={scoreWriteState}
           statusMessage={scoreComputationStatus}
-          visitStatus={visit.status}
         />
       ) : null}
 

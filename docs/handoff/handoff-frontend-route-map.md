@@ -166,7 +166,7 @@
 - 提交：只有最新 readiness 的 ready / canSubmitNow 为 true、无 blocking 且无本地阻断时展开内联 checkbox；POST 只发送 confirm=true，不自动重试。warning 可展开查看但不阻断
 - 成功 / 历史：提交响应或 readiness 服务端状态驱动 completed 只读；不模拟状态，不修改 Visit / ItemResponse。`alreadySubmitted=true` 作为成功处理；completed 初始加载不自动 POST，也不以施测 operatorSnapshot 冒充历史提交操作者
 - 阶段性评分查询：仅 completed / locked / voided 实例自动查询一次 latest；draft / in_progress 不请求。查询状态独立于执行详情，失败保留题目、提交回执与媒体历史，支持手工重新加载但不轮询或自动重试
-- 阶段性评分计算：仅 completed、Visit 为 draft / in_progress / completed 且 latest 无结果时提供入口；本地 dirty、媒体草稿、题目 / 媒体写请求或 submit 阻断。用户必须展开说明并勾选 checkbox，compute 只发送 confirm=true；页面不自动计算、不自动重试、不支持重算
+- 阶段性评分生成：仅 completed、Visit 为 draft / in_progress / completed 且 latest 无结果时提供一次“生成阶段性评分”；本地 dirty、媒体草稿、题目 / 媒体写请求或 submit 继续阻断，点击后 handler 再次复查现有门禁并以 confirm=true 调用 compute。`no_result` 不显示结果刷新；loaded 且已有结果时可“刷新评分结果”。页面不自动计算、不自动重试、不支持重算；最终评分确认仍保持意见、checkbox 与版本保护的强确认
 - 结果展示：直接展示服务端阶段性总分、分组得分、题目分值、结果 / 来源 / review / quality 状态、版本、计算 warning 和 reviewQueue；不重新求和、聚合、补算比例或构造队列。所有结果明确未确认，不输出临床解释
 - 原题定位：reviewQueue 仅在 itemResponseId 能匹配当前安全题目时提供“查看原题”，复用 B6 分组切换、滚动与键盘 focus，不修改 URL、不清理其他分组草稿；null / 无法匹配不虚假跳转
 - 人工评分：needs_review 与确认前 manual_scored 计分项可打开单一活动表单；0 合法，前端校验 finite number 与服务端 min / max，step 不公开且不猜测。reviewNote trim 后 3–2000；auto_scored、not_scored、过程项、空 itemResponseId 与只读结果无入口。
