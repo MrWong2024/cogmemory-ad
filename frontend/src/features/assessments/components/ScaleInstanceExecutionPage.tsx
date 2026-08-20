@@ -43,6 +43,7 @@ import {
   buildScaleExecutionGroupSections,
   getScaleExecutionProgressiveDisclosure,
   getScaleExecutionReadOnlyReason,
+  isHandwritingCaptureAllowed,
   scaleAdministrationModeLabels,
   scaleInstanceStatusLabels,
 } from '@/src/features/assessments/lib/assessment-execution-display';
@@ -1993,10 +1994,11 @@ export function ScaleInstanceExecutionPage({
 
     const editor = (
       <ItemResponseEditor
+        allowHandwritingCapture={isHandwritingCaptureAllowed({
+          isCompletedSupervisedPatientReview,
+          layout,
+        })}
         autosaveSnapshot={autosaveSnapshot}
-        collapseHandwritingCapture={
-          isCompletedSupervisedPatientReview && layout === 'embedded'
-        }
         displayNow={autosave.displayNow}
         draft={draft}
         isDirty={autosaveSnapshot.hasLocalChanges}

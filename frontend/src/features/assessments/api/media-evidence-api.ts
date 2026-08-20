@@ -39,6 +39,7 @@ export type MediaEvidenceApiErrorKind =
   | 'media_evidence_not_voidable'
   | 'media_evidence_adoption_not_revocable'
   | 'media_evidence_patient_origin_requires_adoption_revoke'
+  | 'handwriting_recapture_not_allowed'
   | 'media_trajectory_not_found'
   | 'media_storage_unavailable'
   | 'media_evidence_create_failed'
@@ -127,6 +128,8 @@ function mapHttpError(
       'media_evidence_adoption_not_revocable',
     MEDIA_EVIDENCE_PATIENT_ORIGIN_REQUIRES_ADOPTION_REVOKE:
       'media_evidence_patient_origin_requires_adoption_revoke',
+    MEDIA_EVIDENCE_HANDWRITING_RECAPTURE_NOT_ALLOWED:
+      'handwriting_recapture_not_allowed',
     MEDIA_TRAJECTORY_NOT_FOUND: 'media_trajectory_not_found',
     MEDIA_STORAGE_UNAVAILABLE: 'media_storage_unavailable',
     MEDIA_EVIDENCE_CREATE_FAILED: 'media_evidence_create_failed',

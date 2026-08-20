@@ -964,7 +964,7 @@ describe('patient administration evidence APIs (e2e)', () => {
     const drawing = await currentStep(state, 19);
     expect(stringOf(drawing, 'responseMode')).toBe('drawing');
     await playCurrentAudio(state, drawing);
-    await uploadEvidence(state, 'photo');
+    await uploadEvidence(state, 'handwriting');
     const completed = await completeCurrent(state, drawing);
     expect(completed).toEqual(
       expect.objectContaining({ status: 'completed', currentStep: null }),
@@ -993,7 +993,7 @@ describe('patient administration evidence APIs (e2e)', () => {
     const drawingEvidence = await mediaEvidenceModel
       .findOne({
         scaleInstanceId: new Types.ObjectId(state.scaleInstanceId),
-        evidenceType: 'photo',
+        evidenceType: 'handwriting',
         'patientAdministrationContext.stepKey': 'mmse-drawing',
         'patientAdministrationContext.stepRun': 1,
       })
@@ -1028,6 +1028,75 @@ describe('patient administration evidence APIs (e2e)', () => {
     );
     const drawingItemId = drawingEvidence.itemResponseId.toString();
     const writingItemId = invalidatedWritingEvidence.itemResponseId.toString();
+    const formalDrawingMediaPath = `/patients/${state.patientId}/visits/${state.visitId}/scale-instances/${state.scaleInstanceId}/item-responses/${drawingItemId}/media-evidences`;
+    const evidenceCountBeforeBlockedRecapture =
+      await mediaEvidenceModel.countDocuments({
+        scaleInstanceId: new Types.ObjectId(state.scaleInstanceId),
+      });
+    const drawingRefsBeforeBlockedRecapture = jsonSnapshot(
+      (await itemResponseModel.findById(drawingItemId).lean().exec())
+        ?.evidenceRefs,
+    );
+    const uploadsBeforeBlockedRecapture = trackingStorage.uploadedKeys.length;
+
+    await staff
+      .post(formalDrawingMediaPath)
+      .field('evidenceType', 'handwriting')
+      .field('captureMode', 'tablet_handwriting')
+      .attach('file', PNG, {
+        filename: 'blocked-formal-handwriting.png',
+        contentType: 'image/png',
+      })
+      .expect(409)
+      .expect((response: Response) => {
+        expect(bodyOf(response)).toEqual(
+          expect.objectContaining({
+            code: 'MEDIA_EVIDENCE_HANDWRITING_RECAPTURE_NOT_ALLOWED',
+          }),
+        );
+      });
+    expect(
+      await mediaEvidenceModel.countDocuments({
+        scaleInstanceId: new Types.ObjectId(state.scaleInstanceId),
+      }),
+    ).toBe(evidenceCountBeforeBlockedRecapture);
+    expect(trackingStorage.uploadedKeys).toHaveLength(
+      uploadsBeforeBlockedRecapture,
+    );
+    expect(
+      jsonSnapshot(
+        (await itemResponseModel.findById(drawingItemId).lean().exec())
+          ?.evidenceRefs,
+      ),
+    ).toEqual(drawingRefsBeforeBlockedRecapture);
+
+    const formalWritingMediaPath = `/patients/${state.patientId}/visits/${state.visitId}/scale-instances/${state.scaleInstanceId}/item-responses/${writingItemId}/media-evidences`;
+    const formalPhotoUpload = bodyOf(
+      await staff
+        .post(formalWritingMediaPath)
+        .field('evidenceType', 'photo')
+        .field('captureMode', 'photo_upload')
+        .attach('file', PNG, {
+          filename: 'completed-review-formal-photo.png',
+          contentType: 'image/png',
+        })
+        .expect(201),
+    );
+    expect(formalPhotoUpload.evidenceRequirement).toEqual(
+      expect.objectContaining({
+        evidenceType: 'photo',
+        status: 'attached',
+        attached: true,
+      }),
+    );
+    expect(formalPhotoUpload.mediaEvidence).toEqual(
+      expect.objectContaining({
+        evidenceType: 'photo',
+        patientAdministrationOrigin: false,
+        status: 'attached',
+        storageStatus: 'stored',
+      }),
+    );
     const drawingItemBefore = await itemResponseModel
       .findById(drawingItemId)
       .lean()
@@ -1074,7 +1143,7 @@ describe('patient administration evidence APIs (e2e)', () => {
     const adoptPath = `/patients/${state.patientId}/visits/${state.visitId}/scale-instances/${state.scaleInstanceId}/item-responses/${drawingItemId}/media-evidences/${drawingEvidence._id.toString()}/adopt`;
     const adopted = bodyOf(await staff.post(adoptPath).expect(200));
     expect(adopted.evidenceRequirement).toEqual({
-      evidenceType: 'photo',
+      evidenceType: 'handwriting',
       status: 'attached',
       attached: true,
       mediaEvidenceId: drawingEvidence._id.toString(),
@@ -1120,10 +1189,10 @@ describe('patient administration evidence APIs (e2e)', () => {
     expect(
       arrayOf(reloadedDrawingItem, 'evidenceRequirements').find(
         (candidate) =>
-          isRecord(candidate) && candidate.evidenceType === 'photo',
+          isRecord(candidate) && candidate.evidenceType === 'handwriting',
       ),
     ).toEqual({
-      evidenceType: 'photo',
+      evidenceType: 'handwriting',
       status: 'attached',
       attached: true,
       mediaEvidenceId: drawingEvidence._id.toString(),
@@ -1135,7 +1204,7 @@ describe('patient administration evidence APIs (e2e)', () => {
       .exec();
     expect(
       drawingItemAfter?.evidenceRefs.find(
-        (reference) => reference.evidenceType === 'photo',
+        (reference) => reference.evidenceType === 'handwriting',
       ),
     ).toEqual(
       expect.objectContaining({
@@ -1203,7 +1272,7 @@ describe('patient administration evidence APIs (e2e)', () => {
       .exec();
     const referenceAfterProtectedVoid =
       drawingItemAfterProtectedVoid?.evidenceRefs.find(
-        (reference) => reference.evidenceType === 'photo',
+        (reference) => reference.evidenceType === 'handwriting',
       );
     expect(referenceAfterProtectedVoid).toEqual(
       expect.objectContaining({
@@ -1227,7 +1296,7 @@ describe('patient administration evidence APIs (e2e)', () => {
       await staff.post(`${mediaPath}/revoke-adoption`).expect(200),
     );
     expect(revokeResponse.evidenceRequirement).toEqual({
-      evidenceType: 'photo',
+      evidenceType: 'handwriting',
       status: 'pending',
       attached: false,
       mediaEvidenceId: null,
@@ -1247,7 +1316,7 @@ describe('patient administration evidence APIs (e2e)', () => {
       .lean()
       .exec();
     const referenceAfterRevoke = drawingItemAfterRevoke?.evidenceRefs.find(
-      (reference) => reference.evidenceType === 'photo',
+      (reference) => reference.evidenceType === 'handwriting',
     );
     expect(referenceAfterRevoke?.status).toBe('pending');
     expect(referenceAfterRevoke?.mediaEvidenceId).toBeNull();
@@ -1319,7 +1388,7 @@ describe('patient administration evidence APIs (e2e)', () => {
 
     const readopted = bodyOf(await staff.post(adoptPath).expect(200));
     expect(readopted.evidenceRequirement).toEqual({
-      evidenceType: 'photo',
+      evidenceType: 'handwriting',
       status: 'attached',
       attached: true,
       mediaEvidenceId: drawingEvidence._id.toString(),

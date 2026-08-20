@@ -146,7 +146,7 @@
 - F1/F2 条件组合：仅服务端详情明确为 `scale.code=mmse` 且 `administrationMode=supervised_patient_input` 时渲染 `PatientAdministrationStaffPanel`；其他量表和施测方式不显示该面板。
 - progressive disclosure：仅 `scale.code=mmse` 且 `administrationMode=supervised_patient_input` 使用患者施测边界。无 Session、prepared / active / paused / terminated / expired 时保留页面身份、StaffPanel、访视 / 量表 / 实例信息与阶段提示，不显示任何分组导航、正式 ItemResponse、readiness / submit、评分或认知域，首次详情加载也不请求 readiness。StaffPanel 首次回传 completed 后才进入既有紧凑 group navigation、当前分组逐题 unified review 与全局 submission；clinician-administered 保持普通正式作答和首次 readiness，非 MMSE 不扩展该流程。
 - 后续阶段：ScaleInstance 仅在 completed / locked / voided 时显示 provisional scoring；只有已加载 ScoreResult status=confirmed / locked / voided 时显示 cognitive-domain panel。认知域 hook 始终按 React 规则调用，查询与首次计算资格继续由既有 hook / backend 决定。
-- completed supervised 复核交互：unified review 内的 handwriting 采集工具默认以原生 details 折叠，已有正式 Evidence 历史保持直接可见；当前分组末尾的“返回复核分组导航”普通锚点只滚动到既有 `supervised-review-group-navigation`，不触发切组、保存、readiness 刷新或其他业务写入。
+- completed supervised 复核交互：unified review 不渲染 handwriting 新采集 / 重采集工具；患者原始 handwriting 在施测参考中查看并按需采用，已有正式 Evidence 历史仍直接可见，photo 正式采集保持。当前分组末尾的“返回复核分组导航”普通锚点只滚动到既有 `supervised-review-group-navigation`，不触发切组、保存、readiness 刷新或其他业务写入。
 - 动态参数：Server Component 按 Next 16 `params: Promise<{ patientId: string; visitId: string; scaleInstanceId: string }>` 等待参数后传给 `ScaleInstanceExecutionPage`；route 不 fetch、不保存表单状态
 - 访问边界：继续复用 `/patients/**` 的 `PatientsWorkspaceShell`；不新增 middleware、BFF 或 Provider，不读取 Cookie；后端 Guard 是最终权限边界
 - 数据来源：既有 A14-A18 请求与 A19 cognitive-domain latest GET / compute POST；另由医护面板读取 / 创建 patient-administration 会话，并调用准备、交接、暂停 / 恢复 / 重签 / 终止、staff complete / takeover / redo / technical replay authorize。评分和认知域只读刷新各自只使用 latest GET。

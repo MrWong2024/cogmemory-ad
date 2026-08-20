@@ -254,6 +254,8 @@ Evidence adoption 与答案形成是两个独立动作。采用时必须继续�
 
 患者施测原始 `MediaEvidence` 与正式 `ItemResponse.evidenceRef` 的生命周期必须解耦：采用只建立指向同一 MediaEvidence ID 的正式引用；撤销采用只清除该正式引用，不得把患者原始 MediaEvidence 标记 voided、删除或移出患者复核，也不得删除 / 覆盖 Storage object。撤销后原始 Evidence 仍须保持可访问并可再次采用。只有不具有 patient-administration provenance 的 direct formal upload 才继续使用“清正式引用 + void MediaEvidence”的既有作废语义；generic void 不得绕过该来源保护。正式 readiness 始终只读取 `ItemResponse.evidenceRefs`，不得因保留患者原始 Evidence 而视为已满足。
 
+completed supervised review 中的患者手写 / 绘图事实必须来自患者正式施测阶段；医护在复核阶段查看患者原始 Evidence，并在需要时采用同一个既有 MediaEvidence 到正式 evidenceRef，而不是通过正式编辑器重新绘制或重采集 handwriting。该阶段前端不渲染 handwriting capture / canvas / upload，正式 media upload API 对 `supervised_patient_input + completed PatientAdministrationSession + handwriting` 同样以 409 `MEDIA_EVIDENCE_HANDWRITING_RECAPTURE_NOT_ALLOWED` fail closed；patient Evidence 自身的 capture API、adoption / revoke-adoption 不受该门禁影响。adoption 是建立正式引用，不是重新采集；clinician-administered handwriting 与 completed supervised 的正式 photo 采集继续保留，既有 direct formal handwriting 历史也不因本边界被隐藏或自动作废。
+
 “谁负责临床判定”与“谁推动 patient Session 到下一步”是两个独立职责。正常患者主链由患者端连续推进，医护在现实中观察和辅助；`staff_observation` 首先表示该题的正式临床判断主要来自这种现场观察，不表示 F2 必须持久化独立 `StaffObservation` 记录。正常链为现实观察 → F3 直接填写或修订现有 `ItemResponse`；只有未来某量表明确要求观察事实独立长期留存、审计或跨流程复用时，才另行评估最小持久化。暂停、接管、重做、technical replay、重签和终止只在异常或控制需要时使用。
 
 WP-10 应优先复用现有 `ItemResponse` 的分步、提示、计时、缺失、证据引用和 CAS，以及 `MediaEvidence` 和提交屏障。患者原始事实若不能由当前代码安全表达，只增加本合同所需的最小持久事实，并保持与正式 `ItemResponse` 的边界；不得再建设平行的通用答案、Attempt、Capture、Review、事件溯源或投影平台。

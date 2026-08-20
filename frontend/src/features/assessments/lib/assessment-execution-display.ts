@@ -190,6 +190,15 @@ export function getScaleExecutionProgressiveDisclosure(input: {
   };
 }
 
+export function isHandwritingCaptureAllowed(input: {
+  isCompletedSupervisedPatientReview: boolean;
+  layout: 'standalone' | 'embedded';
+}): boolean {
+  return !(
+    input.isCompletedSupervisedPatientReview && input.layout === 'embedded'
+  );
+}
+
 export type ScaleExecutionGroupSection = ScaleExecutionGroup & {
   itemResponses: ItemResponseExecution[];
   isFallback: boolean;

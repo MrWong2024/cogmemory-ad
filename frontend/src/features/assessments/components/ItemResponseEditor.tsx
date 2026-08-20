@@ -143,8 +143,8 @@ function ResponseTextEditorField({
 }
 
 export function ItemResponseEditor({
+  allowHandwritingCapture = true,
   autosaveSnapshot,
-  collapseHandwritingCapture = false,
   displayNow,
   draft,
   isDirty,
@@ -171,8 +171,8 @@ export function ItemResponseEditor({
   structuredSharedPatientReference,
   visitId,
 }: {
+  allowHandwritingCapture?: boolean;
   autosaveSnapshot: ItemResponseAutosaveSnapshot;
-  collapseHandwritingCapture?: boolean;
   displayNow: number;
   draft: ItemDraftState;
   isDirty: boolean;
@@ -384,7 +384,7 @@ export function ItemResponseEditor({
       ) : null}
 
       <ItemEvidenceRequirements
-        collapseHandwritingCapture={collapseHandwritingCapture}
+        allowHandwritingCapture={allowHandwritingCapture}
         drafts={mediaDrafts}
         item={item}
         onDraftChange={onMediaDraftChange}

@@ -200,6 +200,8 @@ export function getMediaEvidenceErrorMessage(
       '当前患者证据的正式采用关系不能撤销，请重新加载后核对。',
     media_evidence_patient_origin_requires_adoption_revoke:
       '患者原始证据不能作废，请使用“撤销正式采用”。',
+    handwriting_recapture_not_allowed:
+      '患者施测已完成，复核阶段不再重新采集患者手写 / 绘图。请核对患者原始证据并按需采用。',
     media_trajectory_not_found: '当前手写证据没有可访问的轨迹文件。',
     media_storage_unavailable:
       '媒体存储服务暂时不可用，请稍后手工重试。',

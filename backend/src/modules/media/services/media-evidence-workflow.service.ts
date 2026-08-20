@@ -132,6 +132,7 @@ export class MediaEvidenceWorkflowService {
     this.assertEditableChain(chain);
     this.assertCaptureMode(input);
     this.assertEvidenceRequirement(chain.itemResponse, input.evidenceType);
+    await this.assertFormalHandwritingRecaptureAllowed(chain, input);
 
     const activeEvidence =
       await this.mediaEvidenceService.findActiveEvidenceByItemAndType(
@@ -793,6 +794,31 @@ export class MediaEvidenceWorkflowService {
       ['attached', 'locked'].includes(reference.status)
     ) {
       this.throwAlreadyAttached();
+    }
+  }
+
+  private async assertFormalHandwritingRecaptureAllowed(
+    chain: MediaEvidenceOwnershipChain,
+    input: UploadMediaEvidenceDto,
+  ): Promise<void> {
+    if (
+      input.evidenceType !== 'handwriting' ||
+      chain.scaleInstance.administrationMode !== 'supervised_patient_input'
+    ) {
+      return;
+    }
+
+    const hasCompletedPatientAdministration =
+      await this.assessmentsService.hasCompletedPatientAdministrationSessionForScaleInstance(
+        chain.scaleInstance.id,
+      );
+
+    if (hasCompletedPatientAdministration) {
+      throw new ConflictException({
+        code: 'MEDIA_EVIDENCE_HANDWRITING_RECAPTURE_NOT_ALLOWED',
+        message:
+          'Handwriting evidence cannot be recaptured during completed supervised review',
+      });
     }
   }
 

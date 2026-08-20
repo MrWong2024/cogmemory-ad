@@ -201,7 +201,7 @@
 ### 6.6 Assessment Execution 展示纯函数
 
 - 路径：`frontend\src\features\assessments\lib\assessment-execution-display.ts`
-- 职责：集中维护施测方式、实例 / 题目 / responseType / prompt / timer / evidence 中文摘要、动态分组、只读原因、保存错误文案、用时格式化和访视可初始化状态判断；`getScaleExecutionProgressiveDisclosure()` 以 MMSE supervised status、ScaleInstance status 与已加载 ScoreResult status 纯计算患者施测、复核提交、评分和认知域展示边界，不建立状态机。
+- 职责：集中维护施测方式、实例 / 题目 / responseType / prompt / timer / evidence 中文摘要、动态分组、只读原因、保存错误文案、用时格式化和访视可初始化状态判断；`getScaleExecutionProgressiveDisclosure()` 以 MMSE supervised status、ScaleInstance status 与已加载 ScoreResult status 纯计算患者施测、复核提交、评分和认知域展示边界，不建立状态机。`isHandwritingCaptureAllowed()` 只按 completed supervised review 与 embedded layout 计算正式 handwriting 采集能力，不读取 itemCode / itemOrder / title。
 - 边界：纯展示与状态辅助函数，不是权限矩阵；`draft` / `in_progress` 前端判断不替代后端最终校验
 
 ### 6.7 `ScaleInstanceExecutionPage`
@@ -209,6 +209,7 @@
 - 路径：`frontend\src\features\assessments\components\ScaleInstanceExecutionPage.tsx`
 - WP-10-F1/F2/F3 组合边界：只在服务端实例摘要明确为 `scale.code=mmse`、`supervised_patient_input` 时渲染一个 `PatientAdministrationStaffPanel`；面板只把最新服务端权威 patient-administration status 最小回传父页面。patient / visit / scaleInstance 身份变化时父页面先重置为 `null`，且仅在 status=`completed` 时挂载 `PatientAdministrationReviewPanel`；不新增父页面 GET、轮询或全局状态。StaffPanel 不接管既有 A14–A19 作答、媒体、提交、评分或认知域状态。
 - progressive disclosure：MMSE `supervised_patient_input` 在 status=null / prepared / active / paused / terminated / expired 时只显示基础身份与访视 / 量表 / 实例信息、StaffPanel 和患者施测阶段提示；不渲染普通或复核分组导航、正式 ItemResponseEditor、SubmissionPanel、评分或认知域，也不请求 readiness。status 首次回传 completed 后以既有 controller/ref 门禁加载 readiness，并开放紧凑复核分组导航、当前分组逐题“医护复核与正式作答”和全局提交；completed / locked / voided 历史实例同时按既有规则加载 latest score。clinician-administered 保持普通正式作答与首次 readiness；非 MMSE 不扩展为患者施测流程。
+- handwriting 能力：completed supervised 的 embedded 正式编辑器传 `allowHandwritingCapture=false`；其它 layout / 流程传 true。该能力只关闭新建 handwriting 的 UI，不隐藏正式 handwriting Evidence，也不影响患者参考中的原始 Evidence、adoption / revoke-adoption 或 photo 正式采集。
 - 后续阶段：`ProvisionalScoringPanel` 仅在 ScaleInstance 为 completed / locked / voided 时挂载；`CognitiveDomainResultPanel` 仅在已加载来源 ScoreResult 为 confirmed / locked / voided 时挂载。`useCognitiveDomainResult` 仍无条件调用并保留其内部 query / compute 门禁。正式复核阶段恢复作答 / Evidence badge，人工评分 / 确认意见 badge 只在评分阶段显示。
 - 职责：接收 patientId / visitId / scaleInstanceId，加载 A14 安全执行详情，管理 invalid / loading / 401 / 403 / not-found / configuration-unavailable / retry、动态分组、逐题 autosave snapshot、`${itemResponseId}:${evidenceType}` 媒体草稿、未收口统计、beforeunload、页面级显示 tick、实时 progress，以及 B6 独立 readiness / stale / error、题目定位、本地阻断、提交确认、submit 写锁和当前会话 receipt
 - 保存：所有作答、立即保存、标记完成、计时动作与 checkpoint 进入 `useItemResponseAutosaveCoordinator`；页面不再用单一 saving 集合表达保存状态。切组立即 flush 离开组内合法 queued 项但不等待完成，也不清除其他组状态。
@@ -240,7 +241,7 @@
 - 普通类型：没有 `manualObservationRecord` 的 generic boolean 继续保存 null / boolean，标题为“原始观察 / 回答”，选项为未记录 / 是 / 否，可选文本字段为“补充说明 / 原始转录（可选）”，并说明该值是原始事实而非最终评分判断；frontend 不按 itemCode 推断专属 UI。number 保存有限 number 并继续使用“补充原始回答转录（可选）”；text 与未配置 structuredManualFields 的 single / multi choice 保存 responseText。连续减 7 继续使用 `multi_step_calculation` 与既有五个 stepResponses，不进入 structured 或 binary manual editor
 - missing：structured 子项在 missing 时禁用，当前页面内尚未提交的逐项输入可在取消 missing 后继续使用；按 missing 合同保存时仍要求 missingReason，且不要求逐项完整。缺失原因仅在当前标记 missing 或仍有 legacy 非空原因时展示；正常非 missing 空原因不渲染 textarea，legacy 原因保持只读核对且不自动改变 missing 状态
 - operatorNote：`requiresOperatorNote=true` 时继续直接展示 textarea 与“不额外强制前端必填”说明；其它题目的可选备注使用原生 details，空备注初始折叠、已有备注初始展开并显示“已填写”，用户后续展开 / 折叠由题目级本地 UI state 保持。输入、4000 字符限制、autosave、CAS 与 readiness 合同不变
-- 媒体类型：继续保留 drawing / photo_upload / handwriting 的原始文字说明；另将归属 ID、只读状态、媒体草稿、写锁和回调传给 `ItemEvidenceRequirements`，媒体操作不触发 `onChange(draft)` 或 A14 保存
+- 媒体类型：继续保留 drawing / photo_upload / handwriting 的原始文字说明；另将归属 ID、只读状态、`allowHandwritingCapture`、媒体草稿、写锁和回调传给 `ItemEvidenceRequirements`，媒体操作不触发 `onChange(draft)` 或 A14 保存。能力 prop 默认 true，completed supervised embedded review 由页面明确传 false
 - 安全边界：不显示 scoringRule、未公开 expectedValue、score 或 scoreValue，不提供 JSON 编辑器；structured manual 只展示 backend 安全公开的 referenceAnswer，并由医护手工填写 responseText 与 isCorrect；binary manual 只发送 `{ binaryManualDecision: { isCorrect } }`，不发送 server config / preview score。历史无 decision、missing 与其他 needs_review 仍走既有 `ManualScoreReviewForm`，组件 / API / audit 不删除
 
 ### 6.10 `ItemStepEditor`
@@ -264,7 +265,7 @@
 ### 6.13 `ItemEvidenceRequirements`
 
 - 路径：`frontend\src\features\assessments\components\ItemEvidenceRequirements.tsx`
-- 职责：以“正式题目证据要求”区分患者施测参考中的原始 Evidence；保留服务端全部 evidenceRequirements 的类型与状态，并以“待记录 / 已关联 / 缺失 / 无需记录”等业务可读文案展示，不再向用户显示“服务端标识”。对 photo / handwriting requirement 挂载真实 `MediaEvidencePanel`，audio 与其他类型仍仅展示状态
+- 职责：以“正式题目证据要求”区分患者施测参考中的原始 Evidence；保留服务端全部 evidenceRequirements 的类型与状态，并以“待记录 / 已关联 / 缺失 / 无需记录”等业务可读文案展示，不再向用户显示“服务端标识”。对 photo / handwriting requirement 挂载真实 `MediaEvidencePanel`，audio 与其他类型仍仅展示状态。`allowHandwritingCapture=false` 时说明患者原始手写 / 绘图应在患者施测参考中核对并按需采用，且正式 photo 仍按当前流程处理；普通 / clinician 场景保留图片与手写均可采集的说明
 - 边界：不修改作答草稿，不为 duration / raw_text / operator_note / audio / other 编造媒体接口；明确上传不代表题目完成或评分
 
 ### 6.14 A14 类型与草稿纯函数
@@ -282,7 +283,7 @@
 - 写入：调用父级同题同类型写锁；成功以服务端 mediaEvidence 合并列表、以 evidenceRequirement 通知父级并清除对应媒体草稿；重复 attached 冲突刷新列表且不自动重传
 - 读取：access-url 按 evidenceId + asset 缓存，按 expiresAt 与 30 秒余量复用；组件卸载取消 GET 并清理内存状态，不取消已到达后端的 POST
 - 正式关联边界：列表 GET 仍加载全部媒体历史并内部用于 duplicate-upload safety、access state 与写后合并；正常“正式题目媒体证据”只把 requirement 同时满足 status=attached、attached=true、mediaEvidenceId 非空时的精确 ID 与列表相交。active / locked / voided 等 MediaEvidence 状态、同类型或文档存在本身均不能推断 formal；正式 ID 未在列表出现时 fail closed、保持空列表并提示重新加载，不回退任意同类型 Evidence。
-- 展示：正式区只向 `MediaEvidenceList` 传 formal items，未 adoption 的患者原始 Evidence 不出现；空态引导在患者施测参考核对并显式采用。formal linked MediaEvidence 即使自身 locked 仍可见；revoke / void 成功均应用 authoritative requirement 后立即退出正式区并复用现有 readiness refresh。patient-origin revoke 不清 access cache或媒体历史，direct void 才把写后 voided Evidence 合并并清对应 access。completed supervised unified review 仅把 handwriting 采集画布与上传工具放入默认关闭的原生 details，photo 和其它施测模式保持原有直接展示。
+- 展示：正式区只向 `MediaEvidenceList` 传 formal items，未 adoption 的患者原始 Evidence 不出现；空态引导在患者施测参考核对并显式采用。formal linked MediaEvidence 即使自身 locked 仍可见；revoke / void 成功均应用 authoritative requirement 后立即退出正式区并复用现有 readiness refresh。patient-origin revoke 不清 access cache或媒体历史，direct void 才把写后 voided Evidence 合并并清对应 access。`allowHandwritingCapture=false` 时完全不渲染 `HandwritingEvidenceCanvas`、手写草稿 / 上传控件或旧的“补充 / 重新采集手写证据” details，但 requirement、正式 handwriting Evidence 列表、access 与已有动作继续展示；默认 true 的 clinician-administered 等合法场景仍直接渲染画布。photo 分支不受该能力影响。
 - 边界：不触发 A14 PATCH，不保存 token、文件 URL 或后端大对象到持久化存储，不泛化为全站上传框架
 
 ### 6.16 `MediaEvidenceList` / `MediaEvidencePreview`

@@ -20,7 +20,7 @@ const mediaResponseTypes = new Set([
 ]);
 
 export function ItemEvidenceRequirements({
-  collapseHandwritingCapture = false,
+  allowHandwritingCapture = true,
   drafts,
   item,
   onDraftChange,
@@ -34,7 +34,7 @@ export function ItemEvidenceRequirements({
   visitId,
   writingTypes,
 }: {
-  collapseHandwritingCapture?: boolean;
+  allowHandwritingCapture?: boolean;
   drafts: ItemMediaDrafts;
   item: ItemResponseExecution;
   onDraftChange: (
@@ -91,7 +91,9 @@ export function ItemEvidenceRequirements({
       )}
       {hasMediaRequirement ? (
         <p className="mt-3 rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-info-soft)] px-3 py-2 text-sm leading-6 text-[var(--cma-info)]">
-          图片与手写已支持采集、预览和作废；音频与其他媒体类型尚未开放。上传证据不代表本题已完成或已评分。
+          {allowHandwritingCapture
+            ? '图片与手写已支持采集、预览和作废；音频与其他媒体类型尚未开放。上传证据不代表本题已完成或已评分。'
+            : '患者原始手写 / 绘图证据请在患者施测参考中核对并按需采用；本复核阶段不重新采集患者手写 / 绘图。正式图片证据仍按当前流程处理。采用或上传证据不代表本题已完成或已评分。'}
         </p>
       ) : null}
       {item.evidenceRequirements.some(
@@ -100,7 +102,7 @@ export function ItemEvidenceRequirements({
           requirement.evidenceType === 'handwriting',
       ) ? (
         <MediaEvidencePanel
-          collapseHandwritingCapture={collapseHandwritingCapture}
+          allowHandwritingCapture={allowHandwritingCapture}
           drafts={drafts}
           item={item}
           onDraftChange={onDraftChange}

@@ -291,6 +291,7 @@ describe('MediaEvidenceWorkflowService', () => {
     findVisitByPatientAndId: jest.Mock;
     findScaleInstanceByPatientVisitAndId: jest.Mock;
     findItemResponseByOwnership: jest.Mock;
+    hasCompletedPatientAdministrationSessionForScaleInstance: jest.Mock;
     attachItemEvidenceReference: jest.Mock;
     clearItemEvidenceReference: jest.Mock;
     restoreItemEvidenceReference: jest.Mock;
@@ -333,8 +334,12 @@ describe('MediaEvidenceWorkflowService', () => {
       findScaleInstanceByPatientVisitAndId: jest.fn().mockResolvedValue({
         id: ids.scaleInstanceId,
         status: 'draft',
+        administrationMode: 'clinician_administered',
       }),
       findItemResponseByOwnership: jest.fn().mockResolvedValue(itemResponse()),
+      hasCompletedPatientAdministrationSessionForScaleInstance: jest
+        .fn()
+        .mockResolvedValue(false),
       attachItemEvidenceReference: jest
         .fn()
         .mockImplementation(
@@ -517,6 +522,70 @@ describe('MediaEvidenceWorkflowService', () => {
       'photo',
       ids.mediaEvidenceId,
     );
+    expect(
+      assessments.hasCompletedPatientAdministrationSessionForScaleInstance,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('rejects formal handwriting recapture after completed supervised patient administration without writes', async () => {
+    assessments.findScaleInstanceByPatientVisitAndId.mockResolvedValue({
+      id: ids.scaleInstanceId,
+      status: 'draft',
+      administrationMode: 'supervised_patient_input',
+    });
+    assessments.hasCompletedPatientAdministrationSessionForScaleInstance.mockResolvedValue(
+      true,
+    );
+
+    await expectHttpCode(
+      service.uploadEvidence(
+        params,
+        {
+          evidenceType: 'handwriting',
+          captureMode: 'tablet_handwriting',
+        },
+        { file: [primaryFile()] },
+        user,
+      ),
+      409,
+      'MEDIA_EVIDENCE_HANDWRITING_RECAPTURE_NOT_ALLOWED',
+    );
+
+    expect(
+      assessments.hasCompletedPatientAdministrationSessionForScaleInstance,
+    ).toHaveBeenCalledWith(ids.scaleInstanceId);
+    expect(media.findActiveEvidenceByItemAndType).not.toHaveBeenCalled();
+    expect(storage.uploadFile).not.toHaveBeenCalled();
+    expect(media.createEvidence).not.toHaveBeenCalled();
+    expect(assessments.attachItemEvidenceReference).not.toHaveBeenCalled();
+  });
+
+  it('keeps formal photo upload available after completed supervised patient administration', async () => {
+    assessments.findScaleInstanceByPatientVisitAndId.mockResolvedValue({
+      id: ids.scaleInstanceId,
+      status: 'draft',
+      administrationMode: 'supervised_patient_input',
+    });
+    assessments.hasCompletedPatientAdministrationSessionForScaleInstance.mockResolvedValue(
+      true,
+    );
+
+    const result = await service.uploadEvidence(
+      params,
+      { evidenceType: 'photo', captureMode: 'photo_upload' },
+      { file: [primaryFile()] },
+      user,
+    );
+
+    expect(result.evidenceRequirement).toEqual(
+      expect.objectContaining({ evidenceType: 'photo', attached: true }),
+    );
+    expect(
+      assessments.hasCompletedPatientAdministrationSessionForScaleInstance,
+    ).not.toHaveBeenCalled();
+    expect(storage.uploadFile).toHaveBeenCalledTimes(1);
+    expect(media.createEvidence).toHaveBeenCalledTimes(1);
+    expect(assessments.attachItemEvidenceReference).toHaveBeenCalledTimes(1);
   });
 
   it('adopts existing patient evidence from one valid completed run without Storage or evidence creation', async () => {
@@ -545,6 +614,9 @@ describe('MediaEvidenceWorkflowService', () => {
     expect(storage.deleteObject).not.toHaveBeenCalled();
     expect(media.createEvidence).not.toHaveBeenCalled();
     expect(media.deleteEvidenceForCompensation).not.toHaveBeenCalled();
+    expect(
+      assessments.hasCompletedPatientAdministrationSessionForScaleInstance,
+    ).not.toHaveBeenCalled();
   });
 
   it('rejects patient evidence from an invalidated run', async () => {
@@ -810,6 +882,9 @@ describe('MediaEvidenceWorkflowService', () => {
         strokeCount: 1,
       }),
     );
+    expect(
+      assessments.hasCompletedPatientAdministrationSessionForScaleInstance,
+    ).not.toHaveBeenCalled();
   });
 
   it('enforces capture mode, evidence requirement, duplicate and edit states', async () => {

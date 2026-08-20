@@ -6,12 +6,17 @@ import {
 } from '@/src/features/assessments/lib/scale-submission-issue-routing';
 import { buildInlineActionableIssuePresentations } from '@/src/features/assessments/lib/scale-submission-inline-presentation';
 import { getScaleSubmissionIssueDisplay } from '@/src/features/assessments/lib/scale-instance-submission-display';
-import { getScaleExecutionProgressiveDisclosure } from '@/src/features/assessments/lib/assessment-execution-display';
+import {
+  getScaleExecutionProgressiveDisclosure,
+  isHandwritingCaptureAllowed,
+} from '@/src/features/assessments/lib/assessment-execution-display';
 import {
   getFormalMediaEvidenceActionCopy,
   getFormalMediaEvidenceIds,
+  getMediaEvidenceErrorMessage,
   selectFormalMediaEvidences,
 } from '@/src/features/assessments/lib/media-evidence-display';
+import { uploadItemMediaEvidence } from '@/src/features/assessments/api/media-evidence-api';
 import { routePatientReviewReferences } from '@/src/features/patient-administration/lib/patient-review-reference-routing';
 import {
   formatPatientAdministrationReviewDimensions,
@@ -202,6 +207,69 @@ test('keeps patient-origin revoke copy separate from direct formal void copy', (
     confirmationLabel: '确认作废正式证据',
     requiresVoidReason: true,
   });
+});
+
+test('allows formal handwriting capture except in the completed supervised embedded review', () => {
+  expect(
+    isHandwritingCaptureAllowed({
+      isCompletedSupervisedPatientReview: true,
+      layout: 'embedded',
+    }),
+  ).toBe(false);
+  expect(
+    isHandwritingCaptureAllowed({
+      isCompletedSupervisedPatientReview: true,
+      layout: 'standalone',
+    }),
+  ).toBe(true);
+  expect(
+    isHandwritingCaptureAllowed({
+      isCompletedSupervisedPatientReview: false,
+      layout: 'embedded',
+    }),
+  ).toBe(true);
+});
+
+test('maps the completed-review handwriting upload rejection to the review guidance', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        code: 'MEDIA_EVIDENCE_HANDWRITING_RECAPTURE_NOT_ALLOWED',
+      }),
+      {
+        status: 409,
+        headers: { 'Content-Type': 'application/json' },
+      },
+    );
+
+  try {
+    await expect(
+      uploadItemMediaEvidence(
+        'patient-a',
+        'visit-a',
+        'scale-a',
+        'item-a',
+        {
+          evidenceType: 'handwriting',
+          captureMode: 'tablet_handwriting',
+          file: new Blob(['handwriting'], { type: 'image/png' }),
+        },
+      ),
+    ).rejects.toMatchObject({
+      kind: 'handwriting_recapture_not_allowed',
+      status: 409,
+      backendCode: 'MEDIA_EVIDENCE_HANDWRITING_RECAPTURE_NOT_ALLOWED',
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  expect(
+    getMediaEvidenceErrorMessage('handwriting_recapture_not_allowed'),
+  ).toBe(
+    '患者施测已完成，复核阶段不再重新采集患者手写 / 绘图。请核对患者原始证据并按需采用。',
+  );
 });
 
 test('fails closed when the formal reference is absent from media history', () => {
