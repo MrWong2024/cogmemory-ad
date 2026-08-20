@@ -508,7 +508,7 @@
 - 白名单：不声明 item identity / range / status / source、reviewer / reviewedAt、item / group / total、metadata、expectedValue / scoringRule、force / override；字符串数字不转换。
 
 - 名称：`ConfirmScoreResultDto`
-- 字段：`confirm` 仅接受 boolean，业务层要求严格 true；`reviewNote` trim 后 3-2000；`expectedUpdatedAt` 为 strict ISO 8601 string。
+- 字段：`confirm` 仅接受 boolean，业务层要求严格 true；`reviewNote` 保持必填 string，trim 后允许空字符串且最大 2000；`expectedUpdatedAt` 为 strict ISO 8601 string。人工单题评分的 `ReviewScoreItemDto.reviewNote` 仍为 3–2000。
 - 白名单：不声明 status / confirmedAt / lockedAt、reviewer、confirmationId、item / group / total、quality、metadata、force / ignoreWarnings / lockAfterConfirm / downstream create 字段。
 
 - 名称：`ScoreResultActorResponse` / `ManualScoreReviewSummaryResponse`

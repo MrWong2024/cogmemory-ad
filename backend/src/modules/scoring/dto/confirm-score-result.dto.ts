@@ -2,10 +2,8 @@ import { Transform } from 'class-transformer';
 import {
   IsBoolean,
   IsISO8601,
-  IsNotEmpty,
   IsString,
   MaxLength,
-  MinLength,
   ValidateIf,
 } from 'class-validator';
 
@@ -20,8 +18,6 @@ export class ConfirmScoreResultDto {
 
   @Transform(({ value }) => trimString(value))
   @IsString()
-  @IsNotEmpty()
-  @MinLength(3)
   @MaxLength(2000)
   reviewNote!: string;
 

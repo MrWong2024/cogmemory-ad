@@ -137,11 +137,8 @@ export function buildScoreResultConfirmationRequest(
   | { ok: true; input: ConfirmScoreResultRequest }
   | { ok: false; message: string } {
   const reviewNote = draft.reviewNote.trim();
-  if (
-    reviewNote.length < SCORE_REVIEW_NOTE_MIN_LENGTH ||
-    reviewNote.length > SCORE_REVIEW_NOTE_MAX_LENGTH
-  ) {
-    return { ok: false, message: '最终确认意见需填写 3–2000 个字符。' };
+  if (reviewNote.length > SCORE_REVIEW_NOTE_MAX_LENGTH) {
+    return { ok: false, message: '最终确认意见最多填写 2000 个字符。' };
   }
   if (!draft.confirmed) {
     return { ok: false, message: '请勾选最终确认说明。' };
@@ -177,10 +174,10 @@ export function getScoreConfirmationBlockReason({
     return '当前评分结果状态不允许最终确认。';
   }
   if (result.review.pendingItemCount > 0 || reviewQueueLength > 0) {
-    return '仍有待人工复核项目，暂不能确认。';
+    return '仍有待人工评分项，暂不能确认。';
   }
   if (!result.totalScore.isComplete) {
-    return '服务端标记总分尚未完整，暂不能确认。';
+    return '当前总分尚未完整，暂不能确认。';
   }
   if (result.computation.warningCodes.length > 0) {
     return '当前评分结果仍存在计算警告，不能忽略后继续确认。';

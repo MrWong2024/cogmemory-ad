@@ -358,7 +358,7 @@ describe('ScoreReviewWorkflowService', () => {
     expect(scoring.reviewScoreItemIfUnmodified).toHaveBeenCalledTimes(1);
   });
 
-  it('confirms a complete result and preserves confirmation idempotency', async () => {
+  it('confirms a complete result with an empty note and preserves idempotency', async () => {
     scoring.findScoreResultByOwnership.mockResolvedValue(
       resultFixture('computed'),
     );
@@ -370,7 +370,7 @@ describe('ScoreReviewWorkflowService', () => {
         confirmedBy: USER_ID,
         confirmedByName: 'A18 Test Doctor',
         confirmedByRole: 'doctor',
-        reviewNote: 'final confirmation',
+        reviewNote: '',
       },
     };
     scoring.confirmScoreResultIfUnmodified.mockResolvedValue(confirmed);
@@ -383,7 +383,7 @@ describe('ScoreReviewWorkflowService', () => {
       currentUser,
       {
         confirm: true,
-        reviewNote: 'final confirmation',
+        reviewNote: '',
         expectedUpdatedAt: UPDATED_AT.toISOString(),
       },
     );
@@ -412,7 +412,7 @@ describe('ScoreReviewWorkflowService', () => {
       expect.objectContaining({
         confirmationId: 'confirmation-existing',
         alreadyConfirmed: true,
-        reviewNote: 'final confirmation',
+        reviewNote: '',
       }),
     );
     expect(scoring.confirmScoreResultIfUnmodified).toHaveBeenCalledTimes(1);

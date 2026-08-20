@@ -14,7 +14,7 @@ import type {
 export const scoreResultStatusLabels: Record<ScoreResultStatus, string> = {
   draft: '评分结果尚未完成',
   computed: '阶段性评分已计算，尚未最终确认',
-  needs_review: '阶段性计算已完成，存在待人工复核项目',
+  needs_review: '阶段性计算已完成，存在待人工评分项',
   confirmed: '已确认评分结果（本页只读）',
   locked: '已锁定评分结果（本页只读）',
   voided: '评分结果已作废（本页只读）',
@@ -24,7 +24,7 @@ export const scoringSourceLabels: Record<ScoringSource, string> = {
   auto_rule: '规则自动计算',
   manual: '当前项目需人工评分',
   imported: '导入评分',
-  mixed: '自动计算与人工复核并存',
+  mixed: '自动计算与人工评分并存',
 };
 
 export const scoringModeLabels: Record<ScoringMode, string> = {
@@ -36,8 +36,8 @@ export const scoringModeLabels: Record<ScoringMode, string> = {
 export const scoreItemStatusLabels: Record<ScoreItemStatus, string> = {
   not_scored: '尚未评分',
   auto_scored: '已自动计算阶段性分值',
-  manual_scored: '服务端已有人工分值',
-  needs_review: '待人工复核',
+  manual_scored: '已有人工分值',
+  needs_review: '待人工评分',
 };
 
 export const scoreItemSourceLabels: Record<ScoreItemSource, string> = {
@@ -48,10 +48,10 @@ export const scoreItemSourceLabels: Record<ScoreItemSource, string> = {
 };
 
 export const scoreReviewStatusLabels: Record<ScoreReviewStatus, string> = {
-  not_required: '当前无需人工复核',
-  pending: '等待人工复核',
-  reviewed: '服务端标记为已复核',
-  rejected: '服务端标记为复核未通过',
+  not_required: '当前无需人工评分',
+  pending: '等待人工评分',
+  reviewed: '已完成人工评分',
+  rejected: '人工评分未通过',
 };
 
 export const scoreQualityStatusLabels: Record<ScoreQualityStatus, string> = {
@@ -62,25 +62,25 @@ export const scoreQualityStatusLabels: Record<ScoreQualityStatus, string> = {
 };
 
 const reasonMessages: Record<ScoreReviewReasonCode, string> = {
-  MANUAL_SCORING_REQUIRED: '本题需要由专业人员进行人工评分复核。',
+  MANUAL_SCORING_REQUIRED: '本题需要由专业人员进行人工评分。',
   UNSUPPORTED_SCORING_MODE:
-    '当前评分模式暂不支持可靠自动计算，需要人工复核。',
+    '当前评分模式暂不支持可靠自动计算，需要人工评分。',
   MISSING_RESPONSE_REQUIRES_REVIEW:
-    '本题记录为缺失，不能自动按零分处理，需要人工复核。',
+    '本题记录为缺失，不能自动按零分处理，需要人工评分。',
   PREEXISTING_ITEM_SCORE_REQUIRES_REVIEW:
-    '本题存在既有评分记录，需要人工核对后再确认。',
+    '本题存在既有评分记录，需要人工评分后再确认。',
   STEP_CONFIGURATION_INVALID:
-    '本题分步评分配置不完整或不一致，需要人工复核。',
+    '本题分步评分配置不完整或不一致，需要人工评分。',
   STEP_RESPONSE_MISSING:
-    '本题缺少自动评分所需的分步记录，需要人工复核。',
+    '本题缺少自动评分所需的分步记录，需要人工评分。',
   STEP_RESPONSE_TYPE_UNSUPPORTED:
-    '本题分步作答类型无法安全自动计算，需要人工复核。',
+    '本题分步作答类型无法安全自动计算，需要人工评分。',
   AGGREGATION_RULE_UNSUPPORTED:
-    '本题聚合规则暂不支持可靠自动计算，需要人工复核。',
-  AGGREGATION_RULE_INVALID: '本题聚合规则配置异常，需要人工复核。',
-  ITEM_SCORE_RANGE_INVALID: '本题分值范围配置异常，需要人工复核。',
+    '本题聚合规则暂不支持可靠自动计算，需要人工评分。',
+  AGGREGATION_RULE_INVALID: '本题聚合规则配置异常，需要人工评分。',
+  ITEM_SCORE_RANGE_INVALID: '本题分值范围配置异常，需要人工评分。',
   AUTO_SCORE_RESULT_INVALID:
-    '自动计算结果未通过安全校验，需要人工复核。',
+    '自动计算结果未通过安全校验，需要人工评分。',
   NON_SCORING_PROCESS_ITEM: '本题属于过程记录，不计入总分。',
 };
 
@@ -105,7 +105,7 @@ export function isScoreComputationWarningCode(
 export function getScoreReviewReasonMessage(reasonCode: unknown): string {
   return isScoreReviewReasonCode(reasonCode)
     ? reasonMessages[reasonCode]
-    : '本题需要人工评分复核。';
+    : '本题需要人工评分。';
 }
 
 export function getScoreComputationWarningMessage(
@@ -170,7 +170,7 @@ export function getProvisionalScoringApiErrorMessage(
     score_result_incomplete:
       '当前存在未完成的内部评分记录，系统不能自动修复，请联系管理员。',
     score_result_voided: '当前评分结果已作废，现阶段不支持重新计算。',
-    score_result_not_reviewable: '当前评分结果状态不允许继续人工复核。',
+    score_result_not_reviewable: '当前评分结果状态不允许继续人工评分。',
     score_item_not_found: '未找到该评分项目，请重新加载评分结果。',
     score_item_not_reviewable:
       '当前项目不允许人工评分；自动评分和过程记录不能被人工覆盖。',

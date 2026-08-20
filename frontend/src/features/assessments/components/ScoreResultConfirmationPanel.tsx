@@ -4,7 +4,10 @@ import type { FormEvent } from 'react';
 
 import { Button } from '@/src/components/ui/Button';
 import { assessmentOperatorRoleLabels } from '@/src/features/assessments/lib/assessment-execution-display';
-import { formatProvisionalScoreDate } from '@/src/features/assessments/lib/provisional-scoring-display';
+import {
+  formatProvisionalScoreDate,
+  formatProvisionalScoreNumber,
+} from '@/src/features/assessments/lib/provisional-scoring-display';
 import {
   SCORE_REVIEW_NOTE_MAX_LENGTH,
   type ScoreResultConfirmationDraft,
@@ -26,6 +29,7 @@ export function ScoreResultConfirmationPanel({
   onUseLatest,
   receipt,
   result,
+  scaleLabel,
 }: {
   blockReason: string | null;
   draft: ScoreResultConfirmationDraft | null;
@@ -38,9 +42,14 @@ export function ScoreResultConfirmationPanel({
   onUseLatest: () => void;
   receipt: ScoreResultConfirmationReceipt | null;
   result: ProvisionalScoreResult;
+  scaleLabel: string;
 }) {
   const isReadOnlyFinal =
     result.status === 'confirmed' || result.status === 'locked' || result.isFinal;
+  const confirmationReviewNote = result.confirmation?.reviewNote?.trim() ?? '';
+  const receiptReviewNote = receipt?.reviewNote?.trim() ?? '';
+  const confirmationId =
+    receipt?.confirmationId ?? result.confirmation?.confirmationId ?? null;
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -61,7 +70,9 @@ export function ScoreResultConfirmationPanel({
             {result.status === 'locked' ? '已锁定评分结果' : '已确认评分结果'}
           </h3>
           <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-            confirmed 不等于 locked；当前状态与最终性均以服务端事实为准。
+            {result.status === 'locked'
+              ? '评分结果已锁定并进入只读状态。'
+              : '评分结果已完成最终确认。'}
           </p>
         </div>
 
@@ -80,24 +91,20 @@ export function ScoreResultConfirmationPanel({
                   : ''}
               </dd>
             </div>
-            <div className="sm:col-span-2">
-              <dt className="text-[var(--cma-muted)]">确认意见</dt>
-              <dd className="whitespace-pre-wrap break-words">
-                {result.confirmation.reviewNote || '未提供'}
-              </dd>
-            </div>
-            <div className="sm:col-span-2">
-              <dt className="text-[var(--cma-muted)]">确认记录标识（弱化）</dt>
-              <dd className="break-all text-[var(--cma-muted)]">
-                {result.confirmation.confirmationId || '未提供'}
-              </dd>
-            </div>
+            {confirmationReviewNote ? (
+              <div className="sm:col-span-2">
+                <dt className="text-[var(--cma-muted)]">确认意见</dt>
+                <dd className="whitespace-pre-wrap break-words">
+                  {result.confirmation.reviewNote}
+                </dd>
+              </div>
+            ) : null}
           </dl>
-        ) : (
+        ) : !receipt ? (
           <p className="text-sm leading-6 text-[var(--cma-muted)]">
             当前安全查询未提供完整确认审计信息。
           </p>
-        )}
+        ) : null}
 
         {receipt ? (
           <div
@@ -107,15 +114,32 @@ export function ScoreResultConfirmationPanel({
             <p className="font-semibold">
               {receipt.alreadyConfirmed
                 ? '该评分结果此前已经确认，本次未重复写入。'
-                : '评分结果已确认。'}
+                : '评分结果已确认'}
             </p>
             <p>确认时间：{formatProvisionalScoreDate(receipt.confirmedAt)}</p>
-            <p>确认操作者：{receipt.confirmedBy.operatorName || '未提供'}</p>
-            <p className="break-all">确认记录标识：{receipt.confirmationId || '未提供'}</p>
-            <p className="whitespace-pre-wrap break-words">
-              确认意见：{receipt.reviewNote || '未提供'}
+            <p>
+              确认操作者：{receipt.confirmedBy.operatorName || '未提供'}
+              {receipt.confirmedBy.operatorRole
+                ? `（${assessmentOperatorRoleLabels[receipt.confirmedBy.operatorRole]}）`
+                : ''}
             </p>
+            {receiptReviewNote ? (
+              <p className="whitespace-pre-wrap break-words">
+                确认意见：{receipt.reviewNote}
+              </p>
+            ) : null}
           </div>
+        ) : null}
+
+        {confirmationId ? (
+          <details className="rounded-md border border-[var(--cma-line)] p-4 text-sm">
+            <summary className="cursor-pointer font-semibold text-[var(--cma-text-strong)]">
+              确认技术信息
+            </summary>
+            <p className="mt-3 break-all text-[var(--cma-muted)]">
+              确认记录标识：{confirmationId}
+            </p>
+          </details>
         ) : null}
 
         {draft ? (
@@ -124,7 +148,7 @@ export function ScoreResultConfirmationPanel({
             role="status"
           >
             <p>
-              当前仍保留一份未提交的本地确认意见；服务端结果已只读，不会自动补发。
+              当前仍保留一份未提交的本地确认内容；评分结果已只读，不会自动提交。
             </p>
             <div>
               <Button onClick={onClose} size="sm" type="button" variant="secondary">
@@ -135,7 +159,7 @@ export function ScoreResultConfirmationPanel({
         ) : null}
 
         <p className="text-sm leading-6 text-[var(--cma-muted)]">
-          本阶段未自动完成访视，也未生成认知域结果或报告；该结果不得脱离临床背景单独形成诊断结论。
+          评分结果仅用于临床辅助，不应脱离临床背景单独作为诊断结论。
         </p>
       </section>
     );
@@ -154,7 +178,7 @@ export function ScoreResultConfirmationPanel({
           最终确认评分结果
         </h3>
         <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-          后端仍是最终确认边界；不能强制确认，也不能忽略计算警告。
+          请核对当前评分结果。最终确认后，评分将进入只读状态。
         </p>
       </div>
 
@@ -175,7 +199,7 @@ export function ScoreResultConfirmationPanel({
           ) : (
             <>
               <p className="text-sm leading-6 text-[var(--cma-info)]">
-                人工复核项目已全部处理，等待最终确认。
+                当前评分完整，可以进行最终确认。
               </p>
               <div>
                 <Button disabled={isConfirming} onClick={onPrepare} type="button">
@@ -187,28 +211,46 @@ export function ScoreResultConfirmationPanel({
         </div>
       ) : (
         <form className="grid gap-4" onSubmit={handleSubmit}>
-          <div className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] p-4">
-            <ul className="grid gap-1 text-sm leading-6 text-[var(--cma-text-strong)]">
-              <li>当前所有计分项目已完成自动或人工评分。</li>
-              <li>确认后 ScoreResult 将成为最终评分结果，不再允许人工修改题目分值。</li>
-              <li>confirmed 不等于 locked。</li>
-              <li>本阶段不会自动完成访视。</li>
-              <li>本阶段不会自动生成认知域结果、报告或 AI 内容。</li>
-              <li>qualityStatus=passed 仅表示评分复核流程通过，不表示患者正常。</li>
-              <li>评分结果不得脱离临床背景单独形成诊断结论。</li>
-            </ul>
+          <div className="grid gap-1 rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-surface)] p-4">
+            <p className="text-xl font-semibold text-[var(--cma-text-strong)]">
+              {scaleLabel}：
+              {formatProvisionalScoreNumber(
+                result.totalScore.provisionalScoreValue,
+              )}{' '}
+              / {formatProvisionalScoreNumber(result.totalScore.maxScore)}
+            </p>
+            <p className="text-sm leading-6 text-[var(--cma-muted)]">
+              {result.totalScore.scoredItemCount} /{' '}
+              {result.totalScore.totalItemCount} 项已评分 ·{' '}
+              {result.review.pendingItemCount === 0
+                ? '无需额外人工评分'
+                : `待人工评分 ${result.review.pendingItemCount}`} ·{' '}
+              {result.computation.warningCodes.length === 0
+                ? '无计算警告'
+                : `计算警告 ${result.computation.warningCodes.length}`}
+            </p>
           </div>
 
-          <p className="text-sm text-[var(--cma-muted)]">
-            本次确认基线：{formatProvisionalScoreDate(draft.baseUpdatedAt)}
-          </p>
+          <div className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-info-soft)] p-4">
+            <ul className="grid gap-1 text-sm leading-6 text-[var(--cma-text-strong)]">
+              {!blockReason ? (
+                <li>当前评分项目已全部完成，可以进行最终确认。</li>
+              ) : null}
+              <li>
+                确认后，该评分结果将成为最终评分结果，题目分值不能再人工修改。
+              </li>
+              <li>
+                评分结果仅用于临床辅助，不应脱离临床背景单独作为诊断结论。
+              </li>
+            </ul>
+          </div>
 
           <div className="grid gap-2">
             <label
               className="font-semibold text-[var(--cma-text-strong)]"
               htmlFor="score-result-confirmation-note"
             >
-              最终确认意见
+              确认意见（可选）
             </label>
             <textarea
               className="min-h-32 rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-surface)] px-3 py-2 text-base outline-none focus:border-[var(--cma-primary)] focus:ring-2 focus:ring-[var(--cma-ring)] disabled:cursor-not-allowed disabled:opacity-60"
@@ -221,7 +263,7 @@ export function ScoreResultConfirmationPanel({
               value={draft.reviewNote}
             />
             <p className="text-sm text-[var(--cma-muted)]">
-              trim 后需 3–2000 字符；当前 {draft.reviewNote.length} 字符。
+              可选，最多 2000 个字符；如有特殊情况或补充说明可在此记录。
             </p>
           </div>
 
@@ -291,7 +333,7 @@ export function ScoreResultConfirmationPanel({
               {isConfirming ? '正在确认评分结果...' : '确认评分结果'}
             </Button>
             <Button disabled={isConfirming} onClick={onClose} type="button" variant="secondary">
-              取消准备确认
+              取消
             </Button>
           </div>
         </form>

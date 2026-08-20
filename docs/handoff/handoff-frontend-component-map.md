@@ -354,20 +354,20 @@
 - 路径：`frontend\src\features\assessments\components\ProvisionalScoringPanel.tsx`
 - 职责：展示查询 / 首次生成状态，并组合 B8 人工评分表单、回执、最终评分强确认与 final / provisional 子组件。
 - 状态边界：draft / in_progress 只提示先提交；completed `no_result` 显示“待生成”和“量表已正式提交，待生成评分结果”，Visit / 本地状态允许时由一次“生成阶段性评分”显式操作直接调用现有 compute handler。前端仍在请求前复查全部安全门禁，API 继续发送 `{ confirm: true }`；没有首次 compute checkbox / 二次确认，也没有自动 compute、轮询或重算。
-- 结果与刷新：已有非 final 结果才显示“阶段性评分，尚未最终确认”，且只有真实 pending / reviewQueue 非空时显示待人工复核数量；final 显示“已确认评分结果”。`no_result` / loading / forbidden 不显示底部刷新，error 保留“重试加载评分结果”，loaded 且 result 存在时显示“刷新评分结果”。`ScoreResultConfirmationPanel` 的最终评分确认仍保持确认草稿、意见、checkbox 和服务端版本保护。
+- 结果与刷新：已有非 final 结果主标题为“阶段性评分与最终确认”，且只有真实 pending / reviewQueue 非空时显示待人工评分数量；final 显示“已确认评分结果”。`no_result` / loading / forbidden 不显示底部刷新，error 保留“重试加载评分结果”，loaded 且 result 存在时显示“刷新评分结果”。最终确认位于默认折叠的题目评分明细之前，仍保持确认草稿、显式 checkbox 和 expectedUpdatedAt 并发保护。
 - 可访问性：错误使用 alert，查询 / 计算 / 成功使用 polite live region；最终评分确认 checkbox 有可见 label，按钮 disabled 不只依赖颜色
 
 ### 6.25 `ProvisionalScoreSummary`
 
 - 路径：`frontend\src\features\assessments\components\ProvisionalScoreSummary.tsx`
-- 职责：直接展示后端 totalScore 的 provisionalScoreValue、范围、scorePercent、五项计数、isComplete 与 isFinal
-- 边界：不求和、不补算比例；部分得分只写“当前已可靠计算”，null 不显示为 0，结果始终保留未确认声明
+- 职责：突出“阶段性得分：score / max”和计分项目 / 已评分两项核心统计；未评分、待人工评分、缺失和计算警告仅在非零时显示，全部为零时合并为紧凑成功状态。
+- 边界：不求和、不补算比例；null 不显示为 0，异常零值不占据同等统计卡视觉权重。
 
 ### 6.26 `ProvisionalScoreGroupList`
 
 - 路径：`frontend\src\features\assessments\components\ProvisionalScoreGroupList.tsx`
-- 职责：按 order（缺失末尾）/ groupCode 排序副本，展示服务端 groupScores 的标题、编码、分值范围、四项计数和完整性
-- 边界：不重新聚合、不写死 MMSE / MoCA 分组、不称为认知域结果、不输出临床解释
+- 职责：按 order（缺失末尾）/ groupCode 排序副本，正常视图仅展示分组标题与 score / max；未评分、待人工评分、缺失仅在非零时显示。
+- 边界：groupCode 仍用于稳定排序与 key，但不常驻医生视图；不重新聚合、不写死 MMSE / MoCA 分组、不称为认知域结果、不输出临床解释。
 
 ### 6.27 `ProvisionalScoreItemList`
 
@@ -378,7 +378,7 @@
 ### 6.28 `ScoreReviewQueue`
 
 - 路径：`frontend\src\features\assessments\components\ScoreReviewQueue.tsx`
-- 职责：按后端原顺序展示 reviewQueue 安全题目标识与 reason code 中文映射；仅对可匹配 itemResponseId 提供“查看原题”
+- 职责：按后端原顺序展示“待人工评分项”及 reason code 中文映射；仅对可匹配 itemResponseId 提供“查看原题”。队列为零时不渲染独立大区块，由总分摘要统一显示“无需额外人工评分”。
 - 边界：不从 itemScores 构造队列；null / 无法匹配不提供虚假定位；不展示作答、图片 / 轨迹、媒体地址、expectedValue、正确答案、评分规则或内部依据，不提供人工评分输入
 
 ### 6.29 B7 类型
@@ -409,14 +409,14 @@
 ### 6.33 `ScoreResultConfirmationPanel`
 
 - 路径：`frontend\src\features\assessments\components\ScoreResultConfirmationPanel.tsx`
-- 职责：提供“准备确认 → 确认意见 + checkbox → 确认评分结果”两步内联交互，展示 stale、warning / eligibility 阻断、confirmation 安全摘要和当前会话 confirmationReceipt。
-- 最终展示：confirmed / locked 只读；显示确认时间、操作者、角色、意见与弱化 confirmationId。confirmation 缺失时不以施测或 review 操作者冒充。
-- 边界：不 force confirm、不忽略 warning、不自动完成访视、不生成认知域、报告或诊断。
+- 职责：提供“准备确认 → 可选确认意见 + checkbox → 确认评分结果”两步内联交互；展开后先展示动态量表名、score / max、已评分、待人工评分和计算警告摘要，再展示最多三条业务边界及 stale / eligibility 阻断。
+- 最终展示：confirmed / locked 只读；显示确认时间、操作者、角色，确认意见仅在非空时显示；confirmationId 收入默认折叠的“确认技术信息”。confirmation 缺失时不以施测或 review 操作者冒充。
+- 边界：确认意见允许空字符串、最多 2000 字；显式 checkbox、confirm=true、baseUpdatedAt / expectedUpdatedAt、stale 清勾选与“基于最新评分结果重新准备确认”保持。baseUpdatedAt 与 confirmationId 属于并发 / 审计技术信息，不常驻医生主界面；不 force confirm、不忽略 warning、不自动完成访视、不生成认知域、报告或诊断。
 
 ### 6.34 B8 评分草稿纯函数
 
 - 路径：`frontend\src\features\assessments\lib\score-review-draft.ts`
-- 职责：定义人工评分 / 确认 React 内存草稿，处理 dirty、finite number、min / max、reviewNote、expectedUpdatedAt 请求构建与确认资格判断。
+- 职责：定义人工评分 / 确认 React 内存草稿，处理 dirty、finite number、min / max、reviewNote、expectedUpdatedAt 请求构建与确认资格判断；人工单题评分依据保持 3–2000 字，最终确认意见允许空字符串且最多 2000 字。
 - 修订口径：一致预填当前服务端公开人工分值与最新 reviewNote，便于小修；初始预填本身不计 dirty，用户修改后才计入 beforeunload。
 - 边界：不推导 score step，不计算题目、分组、总分、百分比或 reviewQueue，不修改后端响应，不使用浏览器持久化存储。
 
@@ -428,7 +428,7 @@
 
 ### 6.36 B8 `ProvisionalScoringPanel`
 
-- 职责：组合人工评分表单、人工回执、确认面板、确认回执与 provisional / final 文案；final 时主标题切换为已确认评分结果。
+- 职责：组合人工评分表单、人工回执、确认面板、确认回执与 provisional / final 文案；非 final 主标题为“阶段性评分与最终确认”，final 时切换为“已确认评分结果”，确认面板排在默认折叠的题目评分明细之前。
 - 边界：底层 fetch 和写状态仍由 `ScaleInstanceExecutionPage` 管理；面板不在 JSX 中求和或构造汇总。
 
 ### 6.37 B8 `ScaleInstanceExecutionPage`

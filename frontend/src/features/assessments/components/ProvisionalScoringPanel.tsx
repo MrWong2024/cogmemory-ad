@@ -153,11 +153,11 @@ export function ProvisionalScoringPanel({
               {result?.scoreResult.isFinal
                 ? '已确认评分结果'
                 : result
-                  ? '阶段性评分、人工复核与确认'
+                  ? '阶段性评分与最终确认'
                   : '阶段性评分'}
             </CardTitle>
             <CardDescription>
-              查询既有结果；人工评分与确认均使用服务端版本进行并发保护。
+              核对阶段性得分，处理必要的人工评分，并完成最终确认。
             </CardDescription>
           </div>
           {result ? (
@@ -180,7 +180,7 @@ export function ProvisionalScoringPanel({
             <p className="font-semibold">
               量表已正式提交，待生成评分结果
             </p>
-            <p>生成后可核对总分、待复核项目并进行最终确认。</p>
+            <p>生成后可核对总分、待人工评分项并进行最终确认。</p>
             <p>评分结果不得脱离临床背景单独形成诊断结论。</p>
           </div>
         ) : result ? (
@@ -194,7 +194,7 @@ export function ProvisionalScoringPanel({
             {!result.scoreResult.isFinal && pendingReviewItemCount > 0 ? (
               <p>
                 仍有 {pendingReviewItemCount}{' '}
-                项待人工复核，处理完成后才能进行最终确认。
+                项待人工评分，处理完成后才能进行最终确认。
               </p>
             ) : null}
           </div>
@@ -301,7 +301,10 @@ export function ProvisionalScoringPanel({
 
         {result ? (
           <div className="grid gap-6">
-            <ProvisionalScoreSummary total={result.scoreResult.totalScore} />
+            <ProvisionalScoreSummary
+              total={result.scoreResult.totalScore}
+              warningCount={result.scoreResult.computation.warningCodes.length}
+            />
             <ProvisionalScoreGroupList
               groups={result.scoreResult.groupScores}
               isFinal={result.scoreResult.isFinal}
@@ -343,7 +346,7 @@ export function ProvisionalScoringPanel({
                   manualReviewWriteBlockedReason ??
                   (scoreWriteState === 'idle' &&
                   !canReviewItem(activeReviewItem)
-                    ? '最新服务端状态不允许继续人工评分，请重新加载并核对。'
+                      ? '最新评分状态不允许继续人工评分，请重新加载并核对。'
                     : null)
                 }
               />
@@ -393,19 +396,14 @@ export function ProvisionalScoringPanel({
                 <p>
                   时间：{formatProvisionalScoreDate(latestReviewReceipt.reviewedAt)}
                 </p>
-                <p>剩余待复核：{latestReviewReceipt.pendingItemCount} 项</p>
+                <p>
+                  剩余待人工评分：{latestReviewReceipt.pendingItemCount} 项
+                </p>
                 <p className="break-all text-[var(--cma-muted)]">
                   当前会话事件标识：{latestReviewReceipt.eventId}
                 </p>
               </div>
             ) : null}
-
-            <ProvisionalScoreItemList
-              canReviewItem={canReviewItem}
-              isFinal={result.scoreResult.isFinal}
-              items={result.scoreResult.itemScores}
-              onReviewItem={onStartManualReview}
-            />
 
             <ScoreResultConfirmationPanel
               blockReason={confirmationBlockReason}
@@ -419,6 +417,14 @@ export function ProvisionalScoringPanel({
               onUseLatest={onUseLatestForConfirmation}
               receipt={latestConfirmationReceipt}
               result={result.scoreResult}
+              scaleLabel={result.scale.shortName || result.scale.name}
+            />
+
+            <ProvisionalScoreItemList
+              canReviewItem={canReviewItem}
+              isFinal={result.scoreResult.isFinal}
+              items={result.scoreResult.itemScores}
+              onReviewItem={onStartManualReview}
             />
 
             <details className="rounded-md border border-[var(--cma-line)] p-4">
@@ -454,7 +460,7 @@ export function ProvisionalScoringPanel({
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-[var(--cma-muted)]">人工复核状态</dt>
+                  <dt className="text-[var(--cma-muted)]">人工评分状态</dt>
                   <dd>
                     {scoreReviewStatusLabels[result.scoreResult.review.status] ??
                       '未知状态'}
@@ -489,7 +495,7 @@ export function ProvisionalScoringPanel({
                   <dd>{result.scoreResult.computation.autoScoredItemCount}</dd>
                 </div>
                 <div>
-                  <dt className="text-[var(--cma-muted)]">待复核项目</dt>
+                  <dt className="text-[var(--cma-muted)]">待人工评分项</dt>
                   <dd>{result.scoreResult.computation.pendingReviewItemCount}</dd>
                 </div>
                 <div>

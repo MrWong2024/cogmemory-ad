@@ -78,7 +78,7 @@ export function ProvisionalScoreItemList({
                   : item.provisionalScoreValue !== null
                     ? `${isFinal ? '确认项目分值' : '阶段性题目分值'}：${formatProvisionalScoreNumber(item.provisionalScoreValue)}`
                     : item.reviewRequired
-                      ? '待人工复核'
+                      ? '待人工评分'
                       : '当前尚未评分'}
               </p>
 
@@ -104,7 +104,7 @@ export function ProvisionalScoreItemList({
                   <dd>{item.isMissing ? '是' : '否'}</dd>
                 </div>
                 <div>
-                  <dt className="text-[var(--cma-muted)]">需要人工复核</dt>
+                  <dt className="text-[var(--cma-muted)]">需要人工评分</dt>
                   <dd>{item.reviewRequired ? '是' : '否'}</dd>
                 </div>
                 <div>
@@ -127,7 +127,7 @@ export function ProvisionalScoreItemList({
               {item.reviewRequired ? (
                 <div className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] p-3 text-sm leading-6 text-[var(--cma-warning)] [overflow-wrap:anywhere]">
                   {isScoreReviewReasonCode(item.reviewReasonCode) ? (
-                    <p>复核原因编码：{item.reviewReasonCode}</p>
+                    <p>人工评分原因编码：{item.reviewReasonCode}</p>
                   ) : null}
                   <p>{getScoreReviewReasonMessage(item.reviewReasonCode)}</p>
                 </div>

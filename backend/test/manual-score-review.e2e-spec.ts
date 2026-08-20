@@ -240,6 +240,7 @@ describe('manual score review and confirmation APIs (e2e)', () => {
     for (const value of items) {
       const item = record(value, 'item response');
       const itemId = stringValue(item.id, 'item id');
+      const itemCode = stringValue(item.itemCode, 'item code');
       const config = record(item.config, 'item config');
       const expectedRevision = item.draftRevision;
       if (
@@ -256,11 +257,37 @@ describe('manual score review and confirmation APIs (e2e)', () => {
         stepCode: stringValue(record(stepValue, 'step').stepCode, 'step code'),
         actualValue: serialValues[index] ?? 0,
       }));
-      await doctorAgent
+      const structuredManualFields = Array.isArray(
+        config.structuredManualFields,
+      )
+        ? config.structuredManualFields.map((field) =>
+            record(field, 'structured manual field'),
+          )
+        : [];
+      const structuredResponse =
+        structuredManualFields.length > 0
+          ? {
+              subItems: Object.fromEntries(
+                structuredManualFields.map((field) => [
+                  stringValue(field.code, 'structured manual field code'),
+                  {
+                    responseText: 'A18 de-identified response',
+                    isCorrect: false,
+                  },
+                ]),
+              ),
+            }
+          : isRecord(config.binaryManualDecision)
+            ? {
+                binaryManualDecision: { isCorrect: false },
+              }
+            : undefined;
+      const saveResponse = await doctorAgent
         .patch(`${instancePath(fixture)}/item-responses/${itemId}`)
         .send({
           expectedRevision,
           rawResponse: false,
+          ...(structuredResponse ? { structuredResponse } : {}),
           operatorNote: 'A18 de-identified operator note',
           ...(stepResponses.length > 0 ? { stepResponses } : {}),
           ...(config.requiresTimer === true
@@ -276,8 +303,15 @@ describe('manual score review and confirmation APIs (e2e)', () => {
               }
             : {}),
           markAsAnswered: true,
-        })
-        .expect(200);
+        });
+      if (saveResponse.status !== 200) {
+        const failure = body(saveResponse);
+        const failureCode =
+          typeof failure.code === 'string' ? failure.code : 'UNKNOWN';
+        throw new Error(
+          `Synthetic item setup failed: itemCode=${itemCode}, status=${saveResponse.status}, code=${failureCode}`,
+        );
+      }
       if (config.supportsPhotoUpload === true) {
         await doctorAgent
           .post(
@@ -311,13 +345,9 @@ describe('manual score review and confirmation APIs (e2e)', () => {
     configureApp(app);
     await app.init();
     connection = app.get<Connection>(getConnectionToken());
-    const databaseName = connection.name.toLowerCase();
-    if (
-      !databaseName.includes('_test') ||
-      databaseName.includes('_dev') ||
-      databaseName.includes('_prod')
-    ) {
-      throw new Error('E2E database isolation is not active');
+    const databaseName = connection.name;
+    if (databaseName !== 'cogmemory_ad_test') {
+      throw new Error('E2E database must be cogmemory_ad_test');
     }
     const config = app.get(ConfigService);
     if (
@@ -491,6 +521,16 @@ describe('manual score review and confirmation APIs (e2e)', () => {
       .patch(reviewPath(fixture, scoreResultId, firstItemId))
       .send({ scoreValue: minScore, expectedUpdatedAt: initialUpdatedAt })
       .expect(400);
+    for (const reviewNote of ['', 'ab']) {
+      await doctorAgent
+        .patch(reviewPath(fixture, scoreResultId, firstItemId))
+        .send({
+          scoreValue: minScore,
+          reviewNote,
+          expectedUpdatedAt: initialUpdatedAt,
+        })
+        .expect(400);
+    }
     await doctorAgent
       .patch(reviewPath(fixture, scoreResultId, firstItemId))
       .send({
@@ -757,7 +797,7 @@ describe('manual score review and confirmation APIs (e2e)', () => {
         .post(confirmPath(fixture, scoreResultId))
         .send({
           confirm: true,
-          reviewNote: 'final score confirmation',
+          reviewNote: '',
           expectedUpdatedAt: currentUpdatedAt,
         })
         .expect(200),
@@ -787,7 +827,7 @@ describe('manual score review and confirmation APIs (e2e)', () => {
     expect(record(receipt.confirmedBy, 'confirmed by').operatorName).toBe(
       'A18 Doctor Test Operator',
     );
-    expect(receipt.reviewNote).toBe('final score confirmation');
+    expect(receipt.reviewNote).toBe('');
     const forbiddenKeys = collectKeys(confirmedResponse);
     for (const forbidden of [
       'rawResponse',
@@ -818,7 +858,7 @@ describe('manual score review and confirmation APIs (e2e)', () => {
       expect.objectContaining({
         confirmationId,
         confirmedAt,
-        reviewNote: 'final score confirmation',
+        reviewNote: '',
         alreadyConfirmed: true,
       }),
     );
@@ -857,7 +897,7 @@ describe('manual score review and confirmation APIs (e2e)', () => {
       initialQueue.length + 1,
     );
     expect(record(metadata.a18Confirmation, 'confirmation audit')).toEqual(
-      expect.objectContaining({ confirmationId }),
+      expect.objectContaining({ confirmationId, reviewNote: '' }),
     );
     expect(
       await patientModel.findById(fixture.patientId).lean().exec(),

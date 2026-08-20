@@ -7,16 +7,22 @@ import type { ProvisionalScoreTotal } from '@/src/features/assessments/types/pro
 
 export function ProvisionalScoreSummary({
   total,
+  warningCount,
 }: {
   total: ProvisionalScoreTotal;
+  warningCount: number;
 }) {
-  const statistics = [
-    { label: '计分项目总数', value: total.totalItemCount },
-    { label: '已可靠计算', value: total.scoredItemCount },
-    { label: '尚未评分', value: total.unscoredItemCount },
-    { label: '需要复核', value: total.needsReviewItemCount },
-    { label: '缺失记录', value: total.missingItemCount },
+  const coreStatistics = [
+    { label: '计分项目', value: total.totalItemCount },
+    { label: '已评分', value: total.scoredItemCount },
   ];
+  const exceptionStatistics = [
+    { label: '未评分', value: total.unscoredItemCount },
+    { label: '待人工评分', value: total.needsReviewItemCount },
+    { label: '缺失', value: total.missingItemCount },
+    { label: '计算警告', value: warningCount },
+  ].filter((statistic) => statistic.value > 0);
+  const scoreLabel = total.isFinal ? '确认得分' : '阶段性得分';
 
   return (
     <section
@@ -29,61 +35,47 @@ export function ProvisionalScoreSummary({
             className="text-xl font-semibold text-[var(--cma-text-strong)]"
             id="provisional-total-title"
           >
-            {total.isFinal ? '确认得分' : '阶段性总分摘要'}
+            {scoreLabel}：
+            {formatProvisionalScoreNumber(total.provisionalScoreValue)} /{' '}
+            {formatProvisionalScoreNumber(total.maxScore)}
           </h3>
           <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-            以下数值直接来自服务端，本页不重新求和或补算比例。
+            核对总分、分值范围和需要处理的异常项。
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Badge tone={total.isComplete ? 'success' : 'warning'}>
-            {total.isComplete ? '阶段性计算完整' : '阶段性计算不完整'}
+            {total.isComplete ? '评分完整' : '评分待完善'}
           </Badge>
           <Badge tone={total.isFinal ? 'success' : 'info'}>
-            {total.isFinal ? '服务端标记为最终' : '尚未最终确认'}
+            {total.isFinal ? '已最终确认' : '待最终确认'}
           </Badge>
         </div>
       </div>
 
       <div className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface)] p-4">
         {total.provisionalScoreValue === null ? (
-          <p className="text-xl font-semibold text-[var(--cma-text-strong)]">
+          <p className="text-sm text-[var(--cma-muted)]">
             当前尚无可可靠计算的阶段性得分
           </p>
-        ) : total.isComplete ? (
-          <p className="text-2xl font-semibold text-[var(--cma-text-strong)]">
-            {total.isFinal ? '确认得分：' : '阶段性计算得分：'}
-            {formatProvisionalScoreNumber(total.provisionalScoreValue)} /{' '}
-            {formatProvisionalScoreNumber(total.maxScore)}
-          </p>
-        ) : (
-          <div>
-            <p className="text-2xl font-semibold text-[var(--cma-text-strong)]">
-              当前已可靠计算：
-              {formatProvisionalScoreNumber(total.provisionalScoreValue)} 分
-            </p>
-            <p className="mt-2 text-base text-[var(--cma-warning)]">
-              仍有 {total.unscoredItemCount} 个计分项目待复核或未评分
-            </p>
-          </div>
-        )}
+        ) : null}
 
         {total.isComplete && total.scorePercent !== null ? (
-          <p className="mt-2 text-sm text-[var(--cma-muted)]">
-            {total.isFinal ? '服务端确认比例：' : '服务端阶段性比例：'}
+          <p className="text-sm text-[var(--cma-muted)]">
+            得分比例：
             {formatProvisionalScorePercent(total.scorePercent)}
           </p>
         ) : null}
 
         <p className="mt-2 text-sm text-[var(--cma-muted)]">
-          服务端分值范围：
+          分值范围：
           {formatProvisionalScoreNumber(total.minScore)} 至{' '}
           {formatProvisionalScoreNumber(total.maxScore)}
         </p>
       </div>
 
-      <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        {statistics.map((statistic) => (
+      <dl className="grid gap-3 sm:grid-cols-2">
+        {coreStatistics.map((statistic) => (
           <div
             className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface)] p-3"
             key={statistic.label}
@@ -97,6 +89,25 @@ export function ProvisionalScoreSummary({
           </div>
         ))}
       </dl>
+
+      {exceptionStatistics.length === 0 ? (
+        <p className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-success-soft)] px-4 py-3 text-sm font-semibold text-[var(--cma-success)]">
+          {total.scoredItemCount} / {total.totalItemCount} 项已评分 ·
+          无需额外人工评分 · 无计算警告
+        </p>
+      ) : (
+        <dl className="flex flex-wrap gap-2">
+          {exceptionStatistics.map((statistic) => (
+            <div
+              className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] px-3 py-2 text-sm text-[var(--cma-warning)]"
+              key={statistic.label}
+            >
+              <dt className="inline font-semibold">{statistic.label}</dt>
+              <dd className="ml-2 inline font-semibold">{statistic.value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
     </section>
   );
 }

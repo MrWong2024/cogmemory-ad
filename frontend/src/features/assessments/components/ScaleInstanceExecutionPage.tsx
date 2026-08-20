@@ -1781,7 +1781,7 @@ export function ScaleInstanceExecutionPage({
       setManualReviewStatus(
         response.confirmationReceipt.alreadyConfirmed
           ? '该评分结果此前已经确认，本次未重复写入。'
-          : '评分结果已确认。confirmed 不等于 locked；认知域区域将查询已有结果，但不会自动计算或生成报告。',
+          : '评分结果已完成最终确认。认知域分析和报告仍按各自流程进行。',
       );
     } catch (requestError: unknown) {
       if (!mountedRef.current) {

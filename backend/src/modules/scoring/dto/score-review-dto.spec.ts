@@ -116,4 +116,66 @@ describe('A18 score review DTOs', () => {
       ).rejects.toBeInstanceOf(BadRequestException);
     }
   });
+
+  it('allows an empty final confirmation note but keeps its maximum length', async () => {
+    await expect(
+      pipe.transform(
+        {
+          confirm: true,
+          reviewNote: '   ',
+          expectedUpdatedAt: '2026-07-11T01:00:00.000Z',
+        },
+        { type: 'body', metatype: ConfirmScoreResultDto },
+      ),
+    ).resolves.toEqual(
+      expect.objectContaining({ confirm: true, reviewNote: '' }),
+    );
+    await expect(
+      pipe.transform(
+        {
+          confirm: true,
+          reviewNote: 'a'.repeat(2000),
+          expectedUpdatedAt: '2026-07-11T01:00:00.000Z',
+        },
+        { type: 'body', metatype: ConfirmScoreResultDto },
+      ),
+    ).resolves.toEqual(
+      expect.objectContaining({ reviewNote: 'a'.repeat(2000) }),
+    );
+    await expect(
+      pipe.transform(
+        {
+          confirm: true,
+          reviewNote: 'a'.repeat(2001),
+          expectedUpdatedAt: '2026-07-11T01:00:00.000Z',
+        },
+        { type: 'body', metatype: ConfirmScoreResultDto },
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('keeps manual score review notes at 3–2000 characters', async () => {
+    for (const reviewNote of ['', 'a', 'ab']) {
+      await expect(
+        pipe.transform(
+          {
+            scoreValue: 1,
+            reviewNote,
+            expectedUpdatedAt: '2026-07-11T01:00:00.000Z',
+          },
+          { type: 'body', metatype: ReviewScoreItemDto },
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    }
+    await expect(
+      pipe.transform(
+        {
+          scoreValue: 1,
+          reviewNote: 'abc',
+          expectedUpdatedAt: '2026-07-11T01:00:00.000Z',
+        },
+        { type: 'body', metatype: ReviewScoreItemDto },
+      ),
+    ).resolves.toEqual(expect.objectContaining({ reviewNote: 'abc' }));
+  });
 });
