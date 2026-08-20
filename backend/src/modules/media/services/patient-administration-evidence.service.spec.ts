@@ -370,8 +370,55 @@ describe('PatientAdministrationEvidenceService', () => {
       expect(createInput.audioMetadata).toBeNull();
       expect(createInput.transcription).toBeUndefined();
       expect(createInput.storage.mimeType).toBe('image/png');
+      expect(createInput.imageMetadata).toBeNull();
+      expect(createInput.handwritingTrace).toBeNull();
     },
   );
+
+  it('persists optional image and handwriting metadata in the existing typed fields', async () => {
+    sessionService.prepareCurrentEvidenceUpload.mockResolvedValue(
+      uploadContext('drawing'),
+    );
+
+    await service.uploadEvidence(
+      requestContext,
+      {
+        expectedRevision: 3,
+        evidenceType: 'handwriting',
+        capturedAt: '2026-08-06T00:00:00.000Z',
+        imageWidth: 1200,
+        imageHeight: 800,
+        strokeCount: 4,
+        trajectoryDurationMs: 3200,
+        canvasWidth: 1200,
+        canvasHeight: 800,
+        inputTool: 'stylus',
+      },
+      pngFile(),
+    );
+
+    const createInput = readMockCallArgument(
+      mediaEvidenceService.createEvidence,
+      0,
+    ) as CreateMediaEvidenceInput;
+    expect(createInput.imageMetadata).toEqual({
+      width: 1200,
+      height: 800,
+      pageNo: null,
+      isColor: false,
+      capturedAt: new Date('2026-08-06T00:00:00.000Z'),
+    });
+    expect(createInput.handwritingTrace).toEqual({
+      hasTrajectory: false,
+      trajectoryFormat: 'unknown',
+      strokeCount: 4,
+      durationMs: 3200,
+      canvasWidth: 1200,
+      canvasHeight: 800,
+      deviceType: 'browser-canvas',
+      inputTool: 'stylus',
+    });
+  });
 
   it('propagates observation rejection and rejects invalid evidence before storage', async () => {
     sessionService.prepareCurrentEvidenceUpload.mockRejectedValueOnce(

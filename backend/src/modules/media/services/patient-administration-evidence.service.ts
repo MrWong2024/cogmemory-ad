@@ -90,6 +90,7 @@ export class PatientAdministrationEvidenceService {
         input.evidenceType,
       );
     this.assertDuration(input);
+    this.assertMediaMetadata(input);
     const capturedAt = this.parseCapturedAt(input.capturedAt);
     const itemResponse =
       await this.assessmentsService.findItemResponseByScaleInstanceAndItemCode(
@@ -215,6 +216,30 @@ export class PatientAdministrationEvidenceService {
       throw new BadRequestException({
         code: 'PATIENT_ADMINISTRATION_STEP_INVALID',
         message: 'Audio duration is invalid',
+      });
+    }
+  }
+
+  private assertMediaMetadata(
+    input: UploadPatientAdministrationEvidenceDto,
+  ): void {
+    const hasImageMetadata =
+      input.imageWidth !== undefined || input.imageHeight !== undefined;
+    const hasHandwritingMetadata =
+      input.strokeCount !== undefined ||
+      input.trajectoryDurationMs !== undefined ||
+      input.canvasWidth !== undefined ||
+      input.canvasHeight !== undefined ||
+      input.inputTool !== undefined;
+
+    if (
+      (input.evidenceType === 'audio' &&
+        (hasImageMetadata || hasHandwritingMetadata)) ||
+      (input.evidenceType === 'photo' && hasHandwritingMetadata)
+    ) {
+      throw new ForbiddenException({
+        code: 'PATIENT_ADMINISTRATION_EVIDENCE_NOT_ALLOWED',
+        message: 'Media metadata is not allowed for this evidence type',
       });
     }
   }
@@ -413,8 +438,36 @@ export class PatientAdministrationEvidenceService {
         args.input.evidenceType === 'audio'
           ? { status: 'not_requested' }
           : undefined,
-      imageMetadata: null,
-      handwritingTrace: null,
+      imageMetadata:
+        args.input.evidenceType !== 'audio' &&
+        (args.input.imageWidth !== undefined ||
+          args.input.imageHeight !== undefined)
+          ? {
+              width: args.input.imageWidth ?? null,
+              height: args.input.imageHeight ?? null,
+              pageNo: null,
+              isColor: args.input.evidenceType === 'handwriting' ? false : null,
+              capturedAt: args.capturedAt,
+            }
+          : null,
+      handwritingTrace:
+        args.input.evidenceType === 'handwriting' &&
+        (args.input.strokeCount !== undefined ||
+          args.input.trajectoryDurationMs !== undefined ||
+          args.input.canvasWidth !== undefined ||
+          args.input.canvasHeight !== undefined ||
+          args.input.inputTool !== undefined)
+          ? {
+              hasTrajectory: false,
+              trajectoryFormat: 'unknown',
+              strokeCount: args.input.strokeCount ?? null,
+              durationMs: args.input.trajectoryDurationMs ?? null,
+              canvasWidth: args.input.canvasWidth ?? null,
+              canvasHeight: args.input.canvasHeight ?? null,
+              deviceType: 'browser-canvas',
+              inputTool: args.input.inputTool ?? 'unknown',
+            }
+          : null,
       captureContext: {
         capturedAt: args.capturedAt,
         uploadedAt: args.uploadedAt,

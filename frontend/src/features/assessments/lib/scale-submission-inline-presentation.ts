@@ -108,7 +108,7 @@ export function buildInlineActionableIssuePresentations(
       toPresentation(
         grouped,
         '本题结构化复核尚未完成',
-        '请补齐各子项的患者实际回答和正确性确认，然后标记本题完成。',
+        '请补齐各子项的患者实际回答和评分判断，然后标记本题完成。',
       ),
     );
   }

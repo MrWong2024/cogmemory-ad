@@ -70,7 +70,7 @@
 
 - 文件：`backend\src\modules\media\dto\upload-patient-administration-evidence.dto.ts`、`types\patient-administration-evidence-response.types.ts`，内部上传上下文位于 assessments 的 `patient-administration-response.types.ts`。
 - `UploadPatientAdministrationEvidenceDto`：multipart Body 必填 `expectedRevision` 与 `evidenceType`；expectedRevision 转 number 后必须为 0 到 `Number.MAX_SAFE_INTEGER` 的整数，evidenceType 只允许 audio / photo / handwriting。
-- 可选 `capturedAt` 必须是严格 ISO 8601，且 Service 拒绝超过服务器时间合理容差的未来值；可选 `durationMs` 转 number 后必须为 1–600000 的整数，且只允许 evidenceType=audio。
+- 可选 `capturedAt` 必须是严格 ISO 8601，且 Service 拒绝超过服务器时间合理容差的未来值；可选 `durationMs` 转 number 后必须为 1–600000 的整数，且只允许 evidenceType=audio。photo / handwriting 可选 imageWidth / imageHeight；handwriting 另可选 strokeCount / trajectoryDurationMs / canvasWidth / canvasHeight / inputTool，全部经数字范围或既有 inputTool enum 校验并写入现有 typed schema 字段；这些字段缺失时上传仍合法。
 - 白名单：不声明 captureMode、stepKey、stepRun、patientId、visitId、scaleInstanceId、itemResponseId、itemCode、sessionId、objectKey、originalFilename、sourceDevice、sourceApp、metadata、operator、status 或 responseMode；全局 whitelist + `forbidNonWhitelisted` 拒绝。
 - 文件字段固定 `file`，最多一个、10 MiB；不接受 trajectory。audio 允许规范化后的 audio/webm、audio/ogg、audio/mp4、audio/mpeg，photo / handwriting 继续使用既有图片白名单。
 - `PatientAdministrationEvidenceResponse` 只含 mediaEvidenceId、evidenceType、revision、uploadedAt；不含 ownership ID、step / run、Storage 信息、文件名、签名 URL、checksum、Token 或完整 `MediaEvidence`。
@@ -82,7 +82,7 @@
 - `TranscribeMediaEvidenceDto` 是空白名单 Body DTO；路由要求 JSON Body 但不接受任何字段，provider、model、language、format、采样率、URL、objectKey、文本或状态均由服务端决定。
 - `MediaEvidenceTranscriptionResponse` 只含 status、可选 text / errorCode / provider / model、requestedAt / completedAt 与安全 requestedBy；requestedBy 只含 operatorId / Name / Role。`MediaEvidenceTranscriptionActionResponse` 只再增加 mediaEvidenceId，不公开 Storage 或上游原始响应。
 - `MediaEvidenceResponse` 在旧图片 / 手写安全摘要上新增 nullable `audioMetadata { durationMs }` 与 nullable transcription；legacy 患者录音映射为 `not_requested`，非音频和 staff 图片 / 手写为 null。
-- `PatientAdministrationReviewResponse` 只含最新会话安全摘要、有限 reviewEvents 与按 item / step / run 排列的复核事实。item 只含 itemResponseId、itemCode、itemTitle、status、draftRevision；run 只含 capture 与 evidence。evidence 只含 ID、类型、captureMode、状态、存储状态、uploadedAt、audioMetadata 与 transcription，不含签名 URL、Storage key、文件名、资产、评分或正式作答 payload。
+- `PatientAdministrationReviewResponse` 只含最新会话安全摘要、有限 reviewEvents 与按 item / step / run 排列的复核事实。item 只含 itemResponseId、itemCode、itemTitle、status、draftRevision；run 只含 capture 与 evidence。evidence 含 ID、类型、captureMode、状态、存储状态、uploadedAt，以及 nullable safe `file { mimeType, fileExtension, sizeBytes }`、imageMetadata、handwritingTrace 摘要、audioMetadata 与 transcription；不含 storageDriver、bucket、objectKey / objectPrefix、publicUrl、checksum / algorithm、trajectoryObjectKey、签名 URL、凭据、评分或正式作答 payload。
 
 - 名称：`PaginationQueryDto`
 - 文件：`backend\src\common\dto\pagination-query.dto.ts`

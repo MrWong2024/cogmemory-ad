@@ -622,11 +622,11 @@ describe('scale instance submission readiness', () => {
         requireEvidence: ['photo', 'handwriting'],
       },
     });
-    const refs = [
+    const pendingRefs = [
       {
         evidenceType: 'photo' as const,
-        mediaEvidenceId: 'media-1',
-        status: 'attached' as const,
+        mediaEvidenceId: null,
+        status: 'pending' as const,
       },
       {
         evidenceType: 'handwriting' as const,
@@ -634,9 +634,59 @@ describe('scale instance submission readiness', () => {
         status: 'pending' as const,
       },
     ];
+    const missing = evaluate(
+      [oneOf],
+      [createItemResponse({ evidenceRefs: pendingRefs })],
+    );
+    expect(missing.blockingIssues.map((issue) => issue.code)).toContain(
+      'ITEM_REQUIRED_MEDIA_MISSING',
+    );
+
+    const photoAttached = evaluate(
+      [oneOf],
+      [
+        createItemResponse({
+          evidenceRefs: [
+            {
+              evidenceType: 'photo',
+              mediaEvidenceId: 'media-photo',
+              status: 'attached',
+            },
+            pendingRefs[1],
+          ],
+        }),
+      ],
+    );
     expect(
-      evaluate([oneOf], [createItemResponse({ evidenceRefs: refs })]).ready,
-    ).toBe(true);
+      photoAttached.blockingIssues.map((issue) => issue.code),
+    ).not.toContain('ITEM_REQUIRED_MEDIA_MISSING');
+
+    const handwritingAttached = evaluate(
+      [oneOf],
+      [
+        createItemResponse({
+          evidenceRefs: [
+            pendingRefs[0],
+            {
+              evidenceType: 'handwriting',
+              mediaEvidenceId: 'media-handwriting',
+              status: 'attached',
+            },
+          ],
+        }),
+      ],
+    );
+    expect(
+      handwritingAttached.blockingIssues.map((issue) => issue.code),
+    ).not.toContain('ITEM_REQUIRED_MEDIA_MISSING');
+
+    const afterUniqueEvidenceVoid = evaluate(
+      [oneOf],
+      [createItemResponse({ evidenceRefs: pendingRefs })],
+    );
+    expect(
+      afterUniqueEvidenceVoid.blockingIssues.map((issue) => issue.code),
+    ).toContain('ITEM_REQUIRED_MEDIA_MISSING');
 
     const photoOnly = createVersionItem({
       evidenceTypes: ['photo'],
@@ -645,7 +695,7 @@ describe('scale instance submission readiness', () => {
     expect(
       evaluate(
         [photoOnly],
-        [createItemResponse({ evidenceRefs: refs.slice(1) })],
+        [createItemResponse({ evidenceRefs: pendingRefs.slice(1) })],
       ).blockingIssues.map((issue) => issue.code),
     ).toEqual(
       expect.arrayContaining([
@@ -664,7 +714,7 @@ describe('scale instance submission readiness', () => {
               mediaEvidenceId: null,
               status: 'attached',
             },
-            refs[1],
+            pendingRefs[1],
           ],
         }),
       ],

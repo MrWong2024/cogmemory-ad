@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/src/components/ui/Button';
 import type {
   PatientAdministrationEvidenceUploadInput,
+  PatientAdministrationHandwritingInputTool,
   PatientAdministrationResponseMode,
 } from '@/src/features/patient-administration/types/patient-administration';
 
@@ -14,6 +15,29 @@ const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
 type InputMode = 'canvas' | 'photo';
+
+type ImageDimensions = { width: number; height: number };
+
+function pointerTypeToInputTool(
+  pointerType: string,
+): PatientAdministrationHandwritingInputTool {
+  if (pointerType === 'pen') return 'stylus';
+  if (pointerType === 'touch') return 'finger';
+  if (pointerType === 'mouse') return 'mouse';
+  return 'unknown';
+}
+
+async function readImageDimensions(blob: Blob): Promise<ImageDimensions | null> {
+  if (typeof createImageBitmap !== 'function') return null;
+  try {
+    const bitmap = await createImageBitmap(blob);
+    const dimensions = { width: bitmap.width, height: bitmap.height };
+    bitmap.close();
+    return dimensions;
+  } catch {
+    return null;
+  }
+}
 
 type Props = {
   disabled: boolean;
@@ -32,12 +56,19 @@ export function PatientAdministrationWrittenResponse({
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const activePointerRef = useRef<number | null>(null);
+  const strokeCountRef = useRef(0);
+  const handwritingStartedAtRef = useRef<number | null>(null);
+  const handwritingLastInkAtRef = useRef<number | null>(null);
+  const handwritingInputToolRef =
+    useRef<PatientAdministrationHandwritingInputTool | null>(null);
   const photoUrlRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
   const savingRef = useRef(false);
   const [mode, setMode] = useState<InputMode>('canvas');
   const [hasInk, setHasInk] = useState(false);
   const [photo, setPhoto] = useState<Blob | null>(null);
+  const [photoDimensions, setPhotoDimensions] =
+    useState<ImageDimensions | null>(null);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -55,6 +86,10 @@ export function PatientAdministrationWrittenResponse({
       context.lineWidth = 8;
     }
     activePointerRef.current = null;
+    strokeCountRef.current = 0;
+    handwritingStartedAtRef.current = null;
+    handwritingLastInkAtRef.current = null;
+    handwritingInputToolRef.current = null;
     setHasInk(false);
   }
 
@@ -63,6 +98,7 @@ export function PatientAdministrationWrittenResponse({
     photoUrlRef.current = null;
     setPhotoUrl(null);
     setPhoto(null);
+    setPhotoDimensions(null);
   }
 
   useEffect(() => {
@@ -91,7 +127,18 @@ export function PatientAdministrationWrittenResponse({
     const context = event.currentTarget.getContext('2d');
     if (!context) return;
     const point = canvasPoint(event);
+    const now = Date.now();
+    const inputTool = pointerTypeToInputTool(event.pointerType);
     activePointerRef.current = event.pointerId;
+    strokeCountRef.current += 1;
+    handwritingStartedAtRef.current ??= now;
+    handwritingLastInkAtRef.current = now;
+    handwritingInputToolRef.current =
+      handwritingInputToolRef.current === null
+        ? inputTool
+        : handwritingInputToolRef.current === inputTool
+          ? inputTool
+          : 'unknown';
     event.currentTarget.setPointerCapture(event.pointerId);
     context.beginPath();
     context.moveTo(point.x, point.y);
@@ -106,6 +153,7 @@ export function PatientAdministrationWrittenResponse({
     const context = event.currentTarget.getContext('2d');
     if (!context) return;
     const point = canvasPoint(event);
+    handwritingLastInkAtRef.current = Date.now();
     context.lineTo(point.x, point.y);
     context.stroke();
   }
@@ -126,7 +174,7 @@ export function PatientAdministrationWrittenResponse({
     else resetCanvas();
   }
 
-  function handlePhotoChange(event: React.ChangeEvent<HTMLInputElement>) {
+  async function handlePhotoChange(event: React.ChangeEvent<HTMLInputElement>) {
     clearPhoto();
     setError(null);
     const selected = event.target.files?.[0];
@@ -138,9 +186,12 @@ export function PatientAdministrationWrittenResponse({
       return;
     }
     const blob = selected.slice(0, selected.size, mimeType);
+    const dimensions = await readImageDimensions(blob);
+    if (!mountedRef.current) return;
     const url = URL.createObjectURL(blob);
     photoUrlRef.current = url;
     setPhoto(blob);
+    setPhotoDimensions(dimensions);
     setPhotoUrl(url);
   }
 
@@ -170,10 +221,36 @@ export function PatientAdministrationWrittenResponse({
         setError('本题内容大小不符合要求，请清空后重试。');
         return;
       }
+      const canvas = canvasRef.current;
+      const handwritingDurationMs =
+        handwritingStartedAtRef.current !== null &&
+        handwritingLastInkAtRef.current !== null
+          ? Math.max(
+              0,
+              handwritingLastInkAtRef.current -
+                handwritingStartedAtRef.current,
+            )
+          : 0;
       const uploaded = await onUpload({
         file,
         evidenceType: mode === 'canvas' ? 'handwriting' : 'photo',
         capturedAt: new Date().toISOString(),
+        ...(mode === 'canvas'
+          ? {
+              imageWidth: canvas?.width ?? CANVAS_WIDTH,
+              imageHeight: canvas?.height ?? CANVAS_HEIGHT,
+              strokeCount: strokeCountRef.current,
+              trajectoryDurationMs: handwritingDurationMs,
+              canvasWidth: canvas?.width ?? CANVAS_WIDTH,
+              canvasHeight: canvas?.height ?? CANVAS_HEIGHT,
+              inputTool: handwritingInputToolRef.current ?? 'unknown',
+            }
+          : photoDimensions
+            ? {
+                imageWidth: photoDimensions.width,
+                imageHeight: photoDimensions.height,
+              }
+            : {}),
       });
       if (uploaded && mountedRef.current) {
         clearPhoto();

@@ -65,7 +65,7 @@ export function StructuredManualResponseEditor({
           逐子项正式作答复核
         </h4>
         <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-          逐项记录患者实际回答或观察，并由医护完成评分判断。系统不会自动判断正确性，仅根据医护确认结果计算得分。
+          逐项记录患者实际回答或观察，并由医护完成评分判断。系统不会自动完成评分判断，仅根据医护确认结果计算得分。
         </p>
         <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-base font-semibold text-[var(--cma-text-strong)]">
           <span>
@@ -182,7 +182,7 @@ export function StructuredManualResponseEditor({
                     }
                     type="radio"
                   />
-                  正确（{field.maxScore} 分）
+                  符合评分标准（{field.maxScore} 分）
                 </label>
                 <label
                   className="flex min-h-11 items-center gap-2 text-base text-[var(--cma-text-strong)]"
@@ -199,7 +199,7 @@ export function StructuredManualResponseEditor({
                     }
                     type="radio"
                   />
-                  错误（0 分）
+                  不符合评分标准（0 分）
                 </label>
               </div>
             </div>

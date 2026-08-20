@@ -5,6 +5,7 @@ import { MediaEvidenceAccessQueryDto } from './media-evidence-access-query.dto';
 import { MediaEvidenceItemParamDto } from './media-evidence-item-param.dto';
 import { MediaEvidenceParamDto } from './media-evidence-param.dto';
 import { UploadMediaEvidenceDto } from './upload-media-evidence.dto';
+import { UploadPatientAdministrationEvidenceDto } from './upload-patient-administration-evidence.dto';
 import { VoidMediaEvidenceDto } from './void-media-evidence.dto';
 
 describe('media evidence DTO validation', () => {
@@ -67,6 +68,34 @@ describe('media evidence DTO validation', () => {
         canvasHeight: 768,
         sourceDevice: 'tablet',
         sourceApp: undefined,
+      }),
+    );
+  });
+
+  it('accepts optional typed patient image and handwriting metadata', async () => {
+    const dto = plainToInstance(UploadPatientAdministrationEvidenceDto, {
+      expectedRevision: '3',
+      evidenceType: 'handwriting',
+      imageWidth: '1200',
+      imageHeight: '800',
+      strokeCount: '12',
+      trajectoryDurationMs: '4300',
+      canvasWidth: '1200',
+      canvasHeight: '800',
+      inputTool: 'stylus',
+    });
+
+    expect(await validate(dto)).toHaveLength(0);
+    expect(dto).toEqual(
+      expect.objectContaining({
+        expectedRevision: 3,
+        imageWidth: 1200,
+        imageHeight: 800,
+        strokeCount: 12,
+        trajectoryDurationMs: 4300,
+        canvasWidth: 1200,
+        canvasHeight: 800,
+        inputTool: 'stylus',
       }),
     );
   });

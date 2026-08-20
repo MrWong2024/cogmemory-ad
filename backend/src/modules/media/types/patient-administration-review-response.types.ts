@@ -12,12 +12,14 @@ import type {
 import type { ItemResponseStatus } from '../../assessments/schemas/item-response.schema';
 import type { PatientAdministrationOperatorResponse } from '../../assessments/types/patient-administration-response.types';
 import type {
+  HandwritingInputTool,
   MediaCaptureMode,
   MediaEvidenceStatus,
   MediaStorageStatus,
 } from '../schemas/media-evidence.schema';
 import type {
   MediaEvidenceAudioMetadataResponse,
+  MediaEvidenceImageMetadataResponse,
   MediaEvidenceTranscriptionResponse,
 } from './media-evidence-response.types';
 
@@ -55,6 +57,19 @@ export type PatientAdministrationReviewEvidenceResponse = {
   status: MediaEvidenceStatus;
   storageStatus: MediaStorageStatus;
   uploadedAt: Date;
+  file: {
+    mimeType: string | null;
+    fileExtension: string | null;
+    sizeBytes: number | null;
+  } | null;
+  imageMetadata: MediaEvidenceImageMetadataResponse | null;
+  handwritingTrace: {
+    strokeCount: number | null;
+    durationMs: number | null;
+    canvasWidth: number | null;
+    canvasHeight: number | null;
+    inputTool: HandwritingInputTool;
+  } | null;
   audioMetadata: MediaEvidenceAudioMetadataResponse | null;
   transcription: MediaEvidenceTranscriptionResponse | null;
 };

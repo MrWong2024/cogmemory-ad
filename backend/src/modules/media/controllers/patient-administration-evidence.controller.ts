@@ -32,7 +32,7 @@ export class PatientAdministrationEvidenceController {
       limits: {
         files: 1,
         fileSize: MAX_PRIMARY_MEDIA_FILE_BYTES,
-        fields: 4,
+        fields: 11,
         fieldNameSize: 120,
         fieldSize: 32 * 1024,
       },

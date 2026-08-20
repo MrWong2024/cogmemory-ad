@@ -136,14 +136,14 @@
 - Service 名称：`PatientAdministrationEvidenceService`
 - 文件路径：`backend\src\modules\media\services\patient-administration-evidence.service.ts`
 - 职责边界：接收 Guard context、C1 DTO 与单个内存文件；调用 SessionService prepare，使用 `AssessmentsService.findItemResponseByScaleInstanceAndItemCode()` 只读解析并复核 ownership / answerSource / lock / void / barrier；按 responseMode 选择 audio 或既有图片纯校验；写私有 Storage、创建权威 `MediaEvidence`、再调用 SessionService attach CAS，最后只返回四字段安全响应。
-- 权威映射：speech audio → `browser_audio_recording`，writing / drawing handwriting → `tablet_handwriting`，photo → `photo_upload`；`patientAdministrationContext` 保存 sessionId / stepKey / stepRun，audioMetadata 只保存可选 durationMs。患者原始文件名、Token、IP、User-Agent、客户端 captureMode 与任意 metadata 均不持久化。
+- 权威映射：speech audio → `browser_audio_recording`，writing / drawing handwriting → `tablet_handwriting`，photo → `photo_upload`；`patientAdministrationContext` 保存 sessionId / stepKey / stepRun，audioMetadata 保存可选 durationMs。图片可选 intrinsic width / height 写入既有 typed imageMetadata；handwriting 可选笔数、书写时长、实际 canvas 尺寸与 inputTool 写入既有 typed handwritingTrace，缺失仍为 null 且不阻断上传。患者原始文件名、Token、IP、User-Agent、客户端 captureMode 与任意通用 metadata 均不持久化。
 - 补偿与非职责：Storage 成功后 MediaEvidence 创建失败删除精确 objectKey；MediaEvidence 成功后 Session CAS 失败删除精确 Evidence ID 与 objectKey。不得调用 ItemResponse evidenceRef attach / clear / restore，不修改 ItemResponse / ScaleInstance，不完成步骤、不实现替换 / void / delete API，也不自行执行 ASR / 转写、评分、报告、队列或 worker；C2 转写由独立编排 Service 读取其产物。
 - 下游依赖：`PatientAdministrationSessionService`、`AssessmentsService` 只读查询、`MediaEvidenceService`、`STORAGE_SERVICE`、`StorageConfigService`；没有 Repository、第二患者媒体 Service 或反向模块依赖。
 - 测试覆盖口径：纯 audio validator unit、患者 evidence 编排 unit、会话 gate / CAS unit、MediaEvidence nullable mapper unit，以及 AppModule + standard_test + 可追踪 fake Storage 的 C1 E2E；真实 OSS、Browser 和真实设备不在 C1 自动化范围。
 
 - Controller 名称：`PatientAdministrationEvidenceController`
 - 文件路径：`backend\src\modules\media\controllers\patient-administration-evidence.controller.ts`
-- 职责边界：仅绑定 `POST /patient-administration/current/evidence`、患者 Guard、multipart 单一 `file`、10 MiB / 四个字段上限、DTO 与现有上传异常拦截器；不推导 item、不生成 objectKey、不操作 Storage / Model / Session。
+- 职责边界：仅绑定 `POST /patient-administration/current/evidence`、患者 Guard、multipart 单一 `file`、10 MiB / 十一个白名单文本字段上限、DTO 与现有上传异常拦截器；不推导 item、不生成 objectKey、不操作 Storage / Model / Session。
 
 - Service 名称：`MediaEvidenceService`（WP-10-C2 扩展）
 - 文件路径：`backend\src\modules\media\services\media-evidence.service.ts`
@@ -164,7 +164,7 @@
 - 文件路径：`backend\src\modules\media\services\patient-administration-review.service.ts`
 - 职责边界：组合 `PatientAdministrationSessionService.getLatestReviewFacts()`、权威 ScaleVersion 步骤、完整 ItemResponse 集合与会话引用的 MediaEvidence，按 item / step / run 输出安全只读复核投影；保留 invalidated capture 与 evidence-only run。review-only placement 使用 `patient-administration-review-structured-bindings.ts` 中仅维护 `mmse@1.0` 的 exact scaleCode + version + stepKey registry，不使用后缀、顺序、文本或 label 推断。
 - placement 校验：registry 只提供候选 codes；Service 必须用当前 stored ScaleVersion 对应 Item 的 `scoringRule` 经 `parseStructuredManualFields()` 解析正式字段，验证 mapped code 全部属于本 Item、不同 step 不重复占用字段，且 mapped union 精确覆盖全部字段。无显式 binding 正常返回空数组；任一无效、额外、重复或覆盖不完整时整 Item 的所有 step 都 fail-safe 退化为 `structuredFieldCodes=[]`，不返回部分映射，也不阻断整份 review。
-- 完整性与非职责：逐项验证 version identity、唯一步骤顺序、ItemResponse ownership / 集合 / version，以及 evidence 的 patient / visit / instance / item / session / step / run / type；任何损坏统一 fail closed。它不写会话或答案、不生成签名 URL、不返回资产 / patientText / playback / hash / Storage / scoring / 完整 controlEvents，也不引入 collection、缓存或投影队列。
+- 完整性与非职责：逐项验证 version identity、唯一步骤顺序、ItemResponse ownership / 集合 / version，以及 evidence 的 patient / visit / instance / item / session / step / run / type；任何损坏统一 fail closed。Evidence 仅白名单投影 file、imageMetadata、handwritingTrace、audioMetadata 与 transcription 的安全只读字段，明确排除 Storage identity、object key / prefix、public URL、checksum、trajectory key、签名 URL 和凭据。它不写会话或答案、不生成签名 URL、不返回资产 / patientText / playback / hash / scoring / 完整 controlEvents，也不引入 collection、缓存或投影队列。
 - catalog 边界：placement registry 是版本绑定的 review projection 文件，不修改 released MMSE 1.0 ScaleVersion schema、seed、scoringRule、version、fingerprint 或 catalog materialization。
 
 - Controller 名称：`PatientAdministrationReviewController`
@@ -340,7 +340,7 @@
 - 下游依赖：`PatientsService`、`AssessmentsService`、`MediaEvidenceService`、`PatientAdministrationReviewService`、`STORAGE_SERVICE`、`StorageConfigService`。
 - 归属 / 状态：统一验证 Patient -> Visit -> ScaleInstance -> ItemResponse -> MediaEvidence 完整链；只读允许历史状态，上传 / 作废要求 Patient active、Visit / ScaleInstance draft 或 in_progress、ItemResponse not_started / in_progress / answered，并要求父 / 子 submission barrier open。
 - 上传编排：校验证据要求、captureMode、主文件和可选轨迹；生成不含患者隐私与原始文件名的 UUID objectKey；依次上传 Storage、创建 MediaEvidence、条件绑定 evidenceRef。绑定仅允许父 / 子 barrier open、同 evidenceType、mediaEvidenceId 空且状态 pending / missing 的数组元素，形成并发边界；miss 后重读屏障并精确归类。
-- 采用既有患者证据：复用 `PatientAdministrationReviewService.getReview()` 的最新 Session、步骤、ItemResponse ownership、step / run、evidence type、invalidated 与 evidence-only 完整性；只允许 completed Session 中唯一、已有有效 capture 的 photo / handwriting，再复用 `AssessmentsService.attachItemEvidenceReference()` 绑定同一个既有 Evidence ID。它不调用 Storage、不创建 / 复制 Evidence，也不自动形成或确认答案。
+- 采用既有患者证据：复用 `PatientAdministrationReviewService.getReview()` 的最新 Session、步骤、ItemResponse ownership、step / run、evidence type、invalidated 与 evidence-only 完整性；只允许 completed Session 中唯一、已有有效 capture 的 photo / handwriting，再复用 `AssessmentsService.attachItemEvidenceReference()` 绑定同一个既有 Evidence ID。它不调用 Storage、不创建 / 复制 Evidence，也不自动形成或确认答案；正式媒体满足性只由 `ItemResponse.evidenceRefs` 决定，媒体文档存在本身不满足 readiness，photo + handwriting 要求继续为 one_of。
 - 补偿边界：上传时轨迹上传失败删除主对象；创建失败删除本次对象；绑定异常 / 冲突先删除本次新建 MediaEvidence 与对象再抛稳定错误。adoption 不创建任何对象，CAS 失败不执行删除、void 或 Storage 补偿。补偿只使用本次上传 ID / key，不使用 transaction，不修改或删除其他业务数据；补偿日志仅记录固定类型、evidenceCode、driver 和成功标记。
 - 访问 / 作废：签名访问固定使用 `DEFAULT_SIGNED_URL_EXPIRES_SECONDS`；作废 clear CAS 要求父 / 子 barrier open，miss 后精确重读分类；再标记 MediaEvidence voided，失败尝试恢复引用。restore 仅针对本次 clear 留下的空 pending 引用，是受控补偿例外，不受普通 barrier 门禁开放；正常作废不调用 deleteObject。
 - 边界：除受控 adoption 写入既有 evidenceRef 外，不改变 ItemResponse / ScaleInstance / AssessmentVisit status、答案、operatorNote、draft revision 或 score；不自动 `markAsAnswered`，不实现前端采集、物理删除、原子替换、批量 / 分片 / 客户端直传、OCR / AI、报告或最终提交。

@@ -98,7 +98,6 @@ export function MediaEvidencePanel({
 }) {
   const router = useRouter();
   const mountedRef = useRef(true);
-  const onRequirementChangeRef = useRef(onRequirementChange);
   const accessControllersRef = useRef(new Map<string, AbortController>());
   const supportedRequirements = useMemo(
     () => item.evidenceRequirements.filter(isSupportedRequirement),
@@ -120,10 +119,6 @@ export function MediaEvidencePanel({
   const [loadingAccessKeys, setLoadingAccessKeys] = useState<
     ReadonlySet<string>
   >(() => new Set());
-
-  useEffect(() => {
-    onRequirementChangeRef.current = onRequirementChange;
-  }, [onRequirementChange]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -161,22 +156,6 @@ export function MediaEvidencePanel({
 
         const nextItems = sortMediaEvidences(response.items);
         setItems(nextItems);
-
-        supportedRequirements.forEach((requirement) => {
-          const hasActiveEvidence = nextItems.some(
-            (evidence) =>
-              evidence.evidenceType === requirement.evidenceType &&
-              isMediaEvidenceActive(evidence),
-          );
-
-          if (hasActiveEvidence && !requirement.attached) {
-            onRequirementChangeRef.current({
-              evidenceType: requirement.evidenceType,
-              status: 'attached',
-              attached: true,
-            });
-          }
-        });
       })
       .catch((requestError: unknown) => {
         if (controller.signal.aborted) {
@@ -276,13 +255,6 @@ export function MediaEvidencePanel({
       });
 
       if (error.kind === 'media_evidence_already_attached') {
-        const attachedRequirement: EvidenceRequirementState = {
-          evidenceType,
-          status: 'attached',
-          attached: true,
-        };
-        onRequirementChange(attachedRequirement);
-        onEvidencePersisted(attachedRequirement);
         setListRetryKey((value) => value + 1);
       }
     } finally {
@@ -527,7 +499,7 @@ export function MediaEvidencePanel({
             : listError
               ? '请先成功加载证据列表，再进行上传。'
               : hasCurrentEvidence
-                ? '已有当前有效证据；如需重传，请先作废 attached 证据。'
+                ? '已有同类型有效媒体记录；如需重传，请先作废该记录。正式关联状态仍以题目证据要求为准。'
                 : null;
         const captureDisabled = Boolean(disabledReason);
         const feedback = feedbacks[requirement.evidenceType];

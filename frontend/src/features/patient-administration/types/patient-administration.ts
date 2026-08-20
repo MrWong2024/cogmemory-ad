@@ -146,7 +146,20 @@ export type PatientAdministrationEvidenceUploadInput = {
   evidenceType: PatientAdministrationEvidenceType;
   capturedAt?: string;
   durationMs?: number;
+  imageWidth?: number;
+  imageHeight?: number;
+  strokeCount?: number;
+  trajectoryDurationMs?: number;
+  canvasWidth?: number;
+  canvasHeight?: number;
+  inputTool?: PatientAdministrationHandwritingInputTool;
 };
+
+export type PatientAdministrationHandwritingInputTool =
+  | 'stylus'
+  | 'finger'
+  | 'mouse'
+  | 'unknown';
 
 export type PatientAdministrationEvidenceUploadResponse = {
   mediaEvidenceId: string;
@@ -216,6 +229,26 @@ export type PatientAdministrationReviewEvidence = {
   status: 'pending' | 'attached' | 'locked' | 'voided' | 'deleted';
   storageStatus: 'pending' | 'stored' | 'missing' | 'deleted';
   uploadedAt: string;
+  file: {
+    mimeType: string | null;
+    fileExtension: string | null;
+    sizeBytes: number | null;
+  } | null;
+  imageMetadata: {
+    width: number | null;
+    height: number | null;
+    orientation?: string;
+    pageNo: number | null;
+    isColor: boolean | null;
+    capturedAt: string | null;
+  } | null;
+  handwritingTrace: {
+    strokeCount: number | null;
+    durationMs: number | null;
+    canvasWidth: number | null;
+    canvasHeight: number | null;
+    inputTool: PatientAdministrationHandwritingInputTool;
+  } | null;
   audioMetadata: { durationMs: number | null } | null;
   transcription: PatientAdministrationReviewTranscription | null;
 };

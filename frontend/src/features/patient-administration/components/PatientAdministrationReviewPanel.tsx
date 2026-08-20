@@ -43,6 +43,13 @@ import {
   patientAdministrationStatusTones,
 } from '@/src/features/patient-administration/lib/patient-administration-display';
 import { routePatientReviewReferences } from '@/src/features/patient-administration/lib/patient-review-reference-routing';
+import {
+  formatPatientAdministrationReviewDimensions,
+  formatPatientAdministrationReviewFileSize,
+  formatPatientAdministrationReviewFileType,
+  getPatientAdministrationReviewEvidenceStatusLabel,
+  patientAdministrationHandwritingInputToolLabels,
+} from '@/src/features/patient-administration/lib/patient-administration-review-display';
 import type {
   PatientAdministrationControlEventAction,
   PatientAdministrationReviewEvidence,
@@ -59,11 +66,6 @@ const responseModeLabels = {
   writing: '书写',
   drawing: '绘图',
   staff_observation: '医护现场观察',
-} as const;
-
-const advanceByLabels = {
-  patient: '患者推进',
-  staff: '医护推进',
 } as const;
 
 const itemStatusLabels = {
@@ -635,16 +637,94 @@ export function PatientAdministrationReviewPanel({
         <div className="flex flex-wrap items-center gap-2">
           <Badge tone="info">{evidenceTypeLabels[evidence.evidenceType]}</Badge>
           <span className="text-sm text-[var(--cma-muted)]">
-            {captureModeLabels[evidence.captureMode]} · 状态 {evidence.status} /{' '}
-            {evidence.storageStatus}
+            {captureModeLabels[evidence.captureMode]} ·{' '}
+            {getPatientAdministrationReviewEvidenceStatusLabel(evidence)}
           </span>
         </div>
         <p className="text-sm leading-6 text-[var(--cma-muted)]">
           上传时间：{formatPatientAdministrationDate(evidence.uploadedAt)}
-          {evidence.audioMetadata
-            ? ` · ${durationLabel(evidence.audioMetadata.durationMs)}`
+          {evidence.evidenceType === 'audio'
+            ? ` · ${durationLabel(evidence.audioMetadata?.durationMs ?? null)}`
             : ''}
         </p>
+        {evidence.evidenceType === 'photo' ||
+        evidence.evidenceType === 'handwriting' ? (
+          <dl className="grid gap-3 text-sm sm:grid-cols-3">
+            <div>
+              <dt className="font-semibold text-[var(--cma-muted)]">
+                文件类型
+              </dt>
+              <dd className="mt-1 text-[var(--cma-text-strong)]">
+                {formatPatientAdministrationReviewFileType(evidence.file)}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-semibold text-[var(--cma-muted)]">
+                文件大小
+              </dt>
+              <dd className="mt-1 text-[var(--cma-text-strong)]">
+                {formatPatientAdministrationReviewFileSize(
+                  evidence.file?.sizeBytes,
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-semibold text-[var(--cma-muted)]">
+                图片尺寸
+              </dt>
+              <dd className="mt-1 text-[var(--cma-text-strong)]">
+                {formatPatientAdministrationReviewDimensions(
+                  evidence.imageMetadata?.width,
+                  evidence.imageMetadata?.height,
+                )}
+              </dd>
+            </div>
+            {evidence.evidenceType === 'handwriting' &&
+            evidence.handwritingTrace ? (
+              <>
+                <div>
+                  <dt className="font-semibold text-[var(--cma-muted)]">
+                    画布尺寸
+                  </dt>
+                  <dd className="mt-1 text-[var(--cma-text-strong)]">
+                    {formatPatientAdministrationReviewDimensions(
+                      evidence.handwritingTrace.canvasWidth,
+                      evidence.handwritingTrace.canvasHeight,
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="font-semibold text-[var(--cma-muted)]">
+                    笔画数
+                  </dt>
+                  <dd className="mt-1 text-[var(--cma-text-strong)]">
+                    {evidence.handwritingTrace.strokeCount ?? '未记录'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="font-semibold text-[var(--cma-muted)]">
+                    书写时长
+                  </dt>
+                  <dd className="mt-1 text-[var(--cma-text-strong)]">
+                    {durationLabel(evidence.handwritingTrace.durationMs)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="font-semibold text-[var(--cma-muted)]">
+                    输入方式
+                  </dt>
+                  <dd className="mt-1 text-[var(--cma-text-strong)]">
+                    {
+                      patientAdministrationHandwritingInputToolLabels[
+                        evidence.handwritingTrace.inputTool
+                      ]
+                    }
+                  </dd>
+                </div>
+              </>
+            ) : null}
+          </dl>
+        ) : null}
         {evidence.evidenceType === 'audio' ? (
           <div className="rounded-md bg-[var(--cma-info-soft)] p-3">
             <p className="font-semibold text-[var(--cma-text-strong)]">
@@ -809,12 +889,6 @@ export function PatientAdministrationReviewPanel({
           </span>
         </summary>
         <div className="grid gap-3 border-t border-[var(--cma-line)] px-4 pb-4 pt-3">
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <span className="text-[var(--cma-muted)]">
-              步骤标识：{step.stepKey}
-            </span>
-            <Badge tone="neutral">{advanceByLabels[step.advanceBy]}</Badge>
-          </div>
           {step.runs.length === 0 ? (
             <p className="text-sm text-[var(--cma-muted)]">
               当前步骤尚无采集运行事实。
@@ -991,61 +1065,64 @@ export function PatientAdministrationReviewPanel({
                     {formatPatientAdministrationDate(review.session.completedAt)}
                   </dd>
                 </div>
-                <div>
-                  <dt className="font-semibold text-[var(--cma-muted)]">终止 / 过期</dt>
-                  <dd className="mt-1 text-[var(--cma-text-strong)]">
-                    {formatPatientAdministrationDate(
-                      review.session.terminatedAt ?? review.session.expiredAt,
-                    )}
-                  </dd>
-                </div>
+                {review.session.terminatedAt ? (
+                  <div>
+                    <dt className="font-semibold text-[var(--cma-muted)]">终止</dt>
+                    <dd className="mt-1 text-[var(--cma-text-strong)]">
+                      {formatPatientAdministrationDate(review.session.terminatedAt)}
+                    </dd>
+                  </div>
+                ) : null}
+                {review.session.expiredAt ? (
+                  <div>
+                    <dt className="font-semibold text-[var(--cma-muted)]">过期</dt>
+                    <dd className="mt-1 text-[var(--cma-text-strong)]">
+                      {formatPatientAdministrationDate(review.session.expiredAt)}
+                    </dd>
+                  </div>
+                ) : null}
               </dl>
-              <div>
+              {review.session.impactFactorCodes.length > 0 ||
+              review.session.impactFactorNote ? (
+                <div>
                 <p className="text-sm font-semibold text-[var(--cma-muted)]">
                   影响因素
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {review.session.impactFactorCodes.length > 0 ? (
-                    review.session.impactFactorCodes.map((code) => (
-                      <Badge key={code} tone="warning">
-                        {patientAdministrationImpactFactorLabels.find(
-                          (candidate) => candidate.code === code,
-                        )?.label ?? code}
-                      </Badge>
-                    ))
-                  ) : (
-                    <span className="text-sm text-[var(--cma-muted)]">未记录</span>
-                  )}
+                  {review.session.impactFactorCodes.map((code) => (
+                    <Badge key={code} tone="warning">
+                      {patientAdministrationImpactFactorLabels.find(
+                        (candidate) => candidate.code === code,
+                      )?.label ?? code}
+                    </Badge>
+                  ))}
                 </div>
                 {review.session.impactFactorNote ? (
                   <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[var(--cma-text-strong)]">
                     {review.session.impactFactorNote}
                   </p>
                 ) : null}
-              </div>
-              <div>
+                </div>
+              ) : null}
+              {review.reviewEvents.length > 0 ? (
+                <div>
                 <h4 className="font-semibold text-[var(--cma-text-strong)]">
                   复核相关控制事件
                 </h4>
-                {review.reviewEvents.length > 0 ? (
-                  <ul className="mt-2 grid gap-2 text-sm leading-6 text-[var(--cma-muted)]">
-                    {review.reviewEvents.map((event, index) => (
-                      <li key={`${event.action}-${event.occurredAt}-${index}`}>
-                        {eventLabels[event.action]} ·{' '}
-                        {formatPatientAdministrationDate(event.occurredAt)}
-                        {event.operatorSnapshot?.operatorName
-                          ? ` · ${event.operatorSnapshot.operatorName}`
-                          : ''}
-                        {event.reason ? ` · ${event.reason}` : ''}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="mt-2 text-sm leading-6 text-[var(--cma-muted)]">
-                    本次正常施测未记录暂停、接管、重做等复核相关控制事件。
-                  </p>
-                )}
-              </div>
+                <ul className="mt-2 grid gap-2 text-sm leading-6 text-[var(--cma-muted)]">
+                  {review.reviewEvents.map((event, index) => (
+                    <li key={`${event.action}-${event.occurredAt}-${index}`}>
+                      {eventLabels[event.action]} ·{' '}
+                      {formatPatientAdministrationDate(event.occurredAt)}
+                      {event.operatorSnapshot?.operatorName
+                        ? ` · ${event.operatorSnapshot.operatorName}`
+                        : ''}
+                      {event.reason ? ` · ${event.reason}` : ''}
+                    </li>
+                  ))}
+                </ul>
+                </div>
+              ) : null}
             </section>
           </>
         ) : null}
@@ -1118,7 +1195,7 @@ export function PatientAdministrationReviewPanel({
                     <header className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <p className="text-sm font-semibold text-[var(--cma-primary)]">
-                          第 {item.formalItem.itemOrder} 题 · {item.itemCode}
+                          第 {item.formalItem.itemOrder} 题
                         </p>
                         <h4 className="mt-1 text-lg font-semibold text-[var(--cma-text-strong)]">
                           {item.itemTitle || '未命名项目'}
@@ -1128,7 +1205,6 @@ export function PatientAdministrationReviewPanel({
                         <Badge tone={item.status === 'answered' ? 'success' : 'warning'}>
                           {itemStatusLabels[item.status]}
                         </Badge>
-                        <Badge tone="neutral">草稿修订 {item.draftRevision}</Badge>
                       </div>
                     </header>
                     {hasInlineIssues && itemIssues ? (

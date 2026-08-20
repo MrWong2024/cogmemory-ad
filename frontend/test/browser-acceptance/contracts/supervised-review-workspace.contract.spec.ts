@@ -8,6 +8,12 @@ import { buildInlineActionableIssuePresentations } from '@/src/features/assessme
 import { getScaleSubmissionIssueDisplay } from '@/src/features/assessments/lib/scale-instance-submission-display';
 import { getScaleExecutionProgressiveDisclosure } from '@/src/features/assessments/lib/assessment-execution-display';
 import { routePatientReviewReferences } from '@/src/features/patient-administration/lib/patient-review-reference-routing';
+import {
+  formatPatientAdministrationReviewDimensions,
+  formatPatientAdministrationReviewFileSize,
+  formatPatientAdministrationReviewFileType,
+  getPatientAdministrationReviewEvidenceStatusLabel,
+} from '@/src/features/patient-administration/lib/patient-administration-review-display';
 import type {
   ScaleSubmissionIssue,
   ScaleSubmissionIssueSeverity,
@@ -466,6 +472,60 @@ test('collapses answer missing plus not completed while leaving warnings unchang
       sourceIssues: warnings,
     }),
   ]);
+});
+
+test('maps review evidence metadata and storage state to compact business labels', () => {
+  expect(
+    getPatientAdministrationReviewEvidenceStatusLabel({
+      status: 'attached',
+      storageStatus: 'stored',
+    }),
+  ).toBe('已保存');
+  expect(
+    getPatientAdministrationReviewEvidenceStatusLabel({
+      status: 'locked',
+      storageStatus: 'stored',
+    }),
+  ).toBe('已保存');
+  expect(
+    getPatientAdministrationReviewEvidenceStatusLabel({
+      status: 'attached',
+      storageStatus: 'missing',
+    }),
+  ).toBe('文件缺失');
+  expect(
+    getPatientAdministrationReviewEvidenceStatusLabel({
+      status: 'voided',
+      storageStatus: 'stored',
+    }),
+  ).toBe('已作废');
+  expect(
+    getPatientAdministrationReviewEvidenceStatusLabel({
+      status: 'deleted',
+      storageStatus: 'deleted',
+    }),
+  ).toBe('已删除');
+  expect(
+    getPatientAdministrationReviewEvidenceStatusLabel({
+      status: 'locked',
+      storageStatus: 'pending',
+    }),
+  ).toBe('待保存');
+
+  expect(
+    formatPatientAdministrationReviewFileType({
+      mimeType: 'image/png',
+      fileExtension: 'png',
+      sizeBytes: 4096,
+    }),
+  ).toBe('PNG（image/png）');
+  expect(formatPatientAdministrationReviewFileSize(4096)).toBe('4.0 KB');
+  expect(formatPatientAdministrationReviewDimensions(1200, 800)).toBe(
+    '1200 × 800 px',
+  );
+  expect(formatPatientAdministrationReviewDimensions(null, null)).toBe(
+    '未记录',
+  );
 });
 
 test('inline presentations omit repeated item identity but retain actionable metadata', () => {

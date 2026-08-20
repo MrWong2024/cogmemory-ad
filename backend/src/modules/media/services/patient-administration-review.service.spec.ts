@@ -333,6 +333,96 @@ describe('PatientAdministrationReviewService', () => {
     ]);
   });
 
+  it('projects only safe file, image and handwriting metadata from MediaEvidence', async () => {
+    const subject = createSubject();
+    const reviewFacts = facts();
+    reviewFacts.stepEvidenceRefs[0] = {
+      ...reviewFacts.stepEvidenceRefs[0],
+      evidenceType: 'handwriting',
+    };
+    subject.sessions.getLatestReviewFacts.mockResolvedValue(reviewFacts);
+    subject.media.listMediaEvidenceByIds.mockResolvedValue([
+      {
+        ...evidence(),
+        evidenceType: 'handwriting',
+        captureMode: 'tablet_handwriting',
+        storage: {
+          storageDriver: 'fake',
+          bucket: 'private-bucket',
+          objectKey: 'private/object.png',
+          objectPrefix: 'private',
+          publicUrl: 'https://must-not-leak.invalid/object.png',
+          mimeType: 'image/png',
+          fileExtension: 'png',
+          sizeBytes: 4096,
+          checksum: 'must-not-leak',
+          checksumAlgorithm: 'sha256',
+          storedAt: now,
+        },
+        imageMetadata: {
+          width: 1200,
+          height: 800,
+          orientation: 'landscape',
+          pageNo: null,
+          isColor: false,
+          capturedAt: now,
+        },
+        handwritingTrace: {
+          hasTrajectory: false,
+          trajectoryObjectKey: 'private/trajectory.json',
+          trajectoryFormat: 'unknown',
+          strokeCount: 7,
+          durationMs: 4500,
+          canvasWidth: 1200,
+          canvasHeight: 800,
+          inputTool: 'stylus',
+        },
+        audioMetadata: null,
+      },
+    ]);
+
+    const result = await subject.service.getReview(params);
+    const projected = result.items[0].steps[0].runs[0].evidence[0];
+
+    expect(projected).toEqual(
+      expect.objectContaining({
+        file: {
+          mimeType: 'image/png',
+          fileExtension: 'png',
+          sizeBytes: 4096,
+        },
+        imageMetadata: {
+          width: 1200,
+          height: 800,
+          orientation: 'landscape',
+          pageNo: null,
+          isColor: false,
+          capturedAt: now,
+        },
+        handwritingTrace: {
+          strokeCount: 7,
+          durationMs: 4500,
+          canvasWidth: 1200,
+          canvasHeight: 800,
+          inputTool: 'stylus',
+        },
+      }),
+    );
+    const serialized = JSON.stringify(projected);
+    for (const privateField of [
+      'storageDriver',
+      'bucket',
+      'objectKey',
+      'objectPrefix',
+      'publicUrl',
+      'checksum',
+      'checksumAlgorithm',
+      'trajectoryObjectKey',
+    ]) {
+      expect(serialized).not.toContain(privateField);
+    }
+  });
+
   it.each([
     { patientId: '64b000000000000000000099' },
     { assessmentVisitId: '64b000000000000000000099' },

@@ -915,6 +915,9 @@ describe('patient administration review and transcription APIs (e2e)', () => {
     expect(serializedReview).toContain('repeat requested');
     expect(serializedReview).toContain('manual observation');
     expect(serializedReview).toContain('not_requested');
+    expect(serializedReview).toContain('"mimeType":"audio/webm"');
+    expect(serializedReview).toContain('"fileExtension":"webm"');
+    expect(serializedReview).toContain(`"sizeBytes":${WEBM.length}`);
     for (const forbidden of [
       'sessionId',
       'entryCode',
@@ -922,9 +925,14 @@ describe('patient administration review and transcription APIs (e2e)', () => {
       'revision',
       'patientText',
       'assetKeys',
+      'storageDriver',
       'objectKey',
+      'objectPrefix',
       'bucket',
       'checksum',
+      'checksumAlgorithm',
+      'trajectoryObjectKey',
+      'publicUrl',
       'scoringRule',
       'scoreValue',
     ]) {
@@ -1003,7 +1011,7 @@ describe('patient administration review and transcription APIs (e2e)', () => {
       ),
     ).toEqual(sessionBefore);
 
-    const manual = await staff
+    await staff
       .patch(
         `/patients/${fixture.patient._id.toString()}/visits/${fixture.visit._id.toString()}/scale-instances/${fixture.scaleInstance._id.toString()}/item-responses/${fixture.itemResponse._id.toString()}`,
       )
@@ -1035,28 +1043,22 @@ describe('patient administration review and transcription APIs (e2e)', () => {
         },
         markAsAnswered: true,
       })
-      .expect(200);
-    const manualItem = bodyOf(manual).itemResponse;
-    expect(manualItem).toEqual(
-      expect.objectContaining({
-        status: 'answered',
-        draftRevision: 1,
-      }),
-    );
-    if (
-      !isRecord(manualItem) ||
-      !isRecord(manualItem.structuredResponse) ||
-      !isRecord(manualItem.structuredResponse.subItems)
-    ) {
-      throw new Error('Expected structured manual item response');
-    }
+      .expect(409)
+      .expect((response: Response) => {
+        expect(bodyOf(response)).toEqual(
+          expect.objectContaining({
+            code: 'PATIENT_ADMINISTRATION_NOT_COMPLETED',
+          }),
+        );
+      });
     expect(
-      manualItem.structuredResponse.subItems['mmse.orientation.year'],
-    ).toEqual({
-      responseText: '医生人工确认：年',
-      isCorrect: true,
-    });
-    expect(JSON.stringify(manualItem)).not.toContain('测试转写候选');
+      jsonSnapshot(
+        await itemResponseModel
+          .findById(fixture.itemResponse._id)
+          .lean()
+          .exec(),
+      ),
+    ).toEqual(itemBefore);
   });
 
   it('allows only one concurrent claim and keeps the succeeded retry idempotent', async () => {

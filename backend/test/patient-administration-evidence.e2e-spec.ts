@@ -666,6 +666,16 @@ describe('patient administration evidence APIs (e2e)', () => {
       .field('evidenceType', evidenceType);
     if (evidenceType === 'audio') {
       upload = upload.field('durationMs', '1800');
+    } else {
+      upload = upload.field('imageWidth', '1200').field('imageHeight', '800');
+      if (evidenceType === 'handwriting') {
+        upload = upload
+          .field('strokeCount', '5')
+          .field('trajectoryDurationMs', '3200')
+          .field('canvasWidth', '1200')
+          .field('canvasHeight', '800')
+          .field('inputTool', 'stylus');
+      }
     }
     const response = await upload
       .attach('file', evidenceType === 'audio' ? WEBM : PNG, {
@@ -866,8 +876,11 @@ describe('patient administration evidence APIs (e2e)', () => {
       await advanceWithEvidence(state, order);
     }
 
-    const observation16 = await currentStep(state, 16);
-    expect(stringOf(observation16, 'responseMode')).toBe('staff_observation');
+    await advanceWithEvidence(state, 16);
+
+    const observation17 = await currentStep(state, 17);
+    expect(stringOf(observation17, 'responseMode')).toBe('staff_observation');
+    await playCurrentAudio(state, observation17);
     const beforeObservationObjects = trackingStorage.objects.size;
     await state.patientAgent
       .post('/patient-administration/current/evidence')
@@ -886,8 +899,7 @@ describe('patient administration evidence APIs (e2e)', () => {
         );
       });
     expect(trackingStorage.objects.size).toBe(beforeObservationObjects);
-    await completeCurrent(state, observation16);
-    await advanceWithEvidence(state, 17);
+    await completeCurrent(state, observation17);
 
     const writingRunOne = await currentStep(state, 18);
     expect(stringOf(writingRunOne, 'responseMode')).toBe('writing');
@@ -999,6 +1011,21 @@ describe('patient administration evidence APIs (e2e)', () => {
     if (!drawingEvidence || !invalidatedWritingEvidence) {
       throw new Error('Expected drawing and invalidated writing evidence');
     }
+    expect(drawingEvidence.imageMetadata).toEqual(
+      expect.objectContaining({ width: 1200, height: 800 }),
+    );
+    expect(invalidatedWritingEvidence.imageMetadata).toEqual(
+      expect.objectContaining({ width: 1200, height: 800 }),
+    );
+    expect(invalidatedWritingEvidence.handwritingTrace).toEqual(
+      expect.objectContaining({
+        strokeCount: 5,
+        durationMs: 3200,
+        canvasWidth: 1200,
+        canvasHeight: 800,
+        inputTool: 'stylus',
+      }),
+    );
     const drawingItemId = drawingEvidence.itemResponseId.toString();
     const writingItemId = invalidatedWritingEvidence.itemResponseId.toString();
     const drawingItemBefore = await itemResponseModel
@@ -1126,6 +1153,31 @@ describe('patient administration evidence APIs (e2e)', () => {
           expect.objectContaining({ code: 'MEDIA_EVIDENCE_ALREADY_ATTACHED' }),
         );
       });
+
+    const voided = bodyOf(
+      await staff
+        .post(
+          `/patients/${state.patientId}/visits/${state.visitId}/scale-instances/${state.scaleInstanceId}/item-responses/${drawingItemId}/media-evidences/${drawingEvidence._id.toString()}/void`,
+        )
+        .send({ reason: 'C1 verify one-of readiness invalidation' })
+        .expect(200),
+    );
+    expect(voided.evidenceRequirement).toEqual({
+      evidenceType: 'photo',
+      status: 'pending',
+      attached: false,
+    });
+    const readinessAfterVoid = bodyOf(
+      await staff.get(readinessPath).expect(200),
+    );
+    expect(
+      arrayOf(readinessAfterVoid, 'blockingIssues').some(
+        (issue) =>
+          isRecord(issue) &&
+          issue.code === 'ITEM_REQUIRED_MEDIA_MISSING' &&
+          issue.itemCode === 'mmse.visuospatial.copy_drawing',
+      ),
+    ).toBe(true);
 
     const invalidatedAdoptPath = `/patients/${state.patientId}/visits/${state.visitId}/scale-instances/${state.scaleInstanceId}/item-responses/${writingItemId}/media-evidences/${invalidatedWritingEvidence._id.toString()}/adopt`;
     await staff

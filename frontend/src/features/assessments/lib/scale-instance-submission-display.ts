@@ -69,7 +69,7 @@ const issueDisplays: Record<ScaleSubmissionIssueCode, IssueDisplay> = {
   ITEM_STRUCTURED_SUBITEMS_INCOMPLETE: {
     title: '结构化子项尚未完成',
     description:
-      '本题仍有患者实际回答或正确性尚未确认的子项，请定位题目并逐项补齐。',
+      '本题仍有患者实际回答或评分判断尚未确认的子项，请定位题目并逐项补齐。',
   },
   ITEM_MANUAL_OBSERVATION_INCOMPLETE: {
     title: '患者原始观察尚未完成',

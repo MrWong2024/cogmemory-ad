@@ -377,17 +377,56 @@ export class PatientAdministrationReviewService {
       status: evidence.status,
       storageStatus: evidence.storageStatus,
       uploadedAt: reference.uploadedAt,
+      file: evidence.storage
+        ? {
+            mimeType: evidence.storage.mimeType ?? null,
+            fileExtension: evidence.storage.fileExtension ?? null,
+            sizeBytes: this.finiteNumberOrNull(evidence.storage.sizeBytes),
+          }
+        : null,
+      imageMetadata: evidence.imageMetadata
+        ? {
+            width: this.finiteNumberOrNull(evidence.imageMetadata.width),
+            height: this.finiteNumberOrNull(evidence.imageMetadata.height),
+            orientation: evidence.imageMetadata.orientation,
+            pageNo: this.finiteNumberOrNull(evidence.imageMetadata.pageNo),
+            isColor:
+              typeof evidence.imageMetadata.isColor === 'boolean'
+                ? evidence.imageMetadata.isColor
+                : null,
+            capturedAt: evidence.imageMetadata.capturedAt,
+          }
+        : null,
+      handwritingTrace: evidence.handwritingTrace
+        ? {
+            strokeCount: this.finiteNumberOrNull(
+              evidence.handwritingTrace.strokeCount,
+            ),
+            durationMs: this.finiteNumberOrNull(
+              evidence.handwritingTrace.durationMs,
+            ),
+            canvasWidth: this.finiteNumberOrNull(
+              evidence.handwritingTrace.canvasWidth,
+            ),
+            canvasHeight: this.finiteNumberOrNull(
+              evidence.handwritingTrace.canvasHeight,
+            ),
+            inputTool: evidence.handwritingTrace.inputTool,
+          }
+        : null,
       audioMetadata: evidence.audioMetadata
         ? {
-            durationMs:
-              typeof evidence.audioMetadata.durationMs === 'number' &&
-              Number.isFinite(evidence.audioMetadata.durationMs)
-                ? evidence.audioMetadata.durationMs
-                : null,
+            durationMs: this.finiteNumberOrNull(
+              evidence.audioMetadata.durationMs,
+            ),
           }
         : null,
       transcription: toMediaEvidenceTranscriptionResponse(evidence),
     };
+  }
+
+  private finiteNumberOrNull(value: number | null | undefined): number | null {
+    return typeof value === 'number' && Number.isFinite(value) ? value : null;
   }
 
   private normalizeDraftRevision(value: unknown): number {

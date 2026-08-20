@@ -407,6 +407,34 @@ export async function uploadCurrentPatientAdministrationEvidence(
   if (input.evidenceType === 'audio' && input.durationMs !== undefined) {
     form.append('durationMs', input.durationMs.toString());
   }
+  if (input.evidenceType !== 'audio') {
+    if (input.imageWidth !== undefined) {
+      form.append('imageWidth', input.imageWidth.toString());
+    }
+    if (input.imageHeight !== undefined) {
+      form.append('imageHeight', input.imageHeight.toString());
+    }
+  }
+  if (input.evidenceType === 'handwriting') {
+    if (input.strokeCount !== undefined) {
+      form.append('strokeCount', input.strokeCount.toString());
+    }
+    if (input.trajectoryDurationMs !== undefined) {
+      form.append(
+        'trajectoryDurationMs',
+        input.trajectoryDurationMs.toString(),
+      );
+    }
+    if (input.canvasWidth !== undefined) {
+      form.append('canvasWidth', input.canvasWidth.toString());
+    }
+    if (input.canvasHeight !== undefined) {
+      form.append('canvasHeight', input.canvasHeight.toString());
+    }
+    if (input.inputTool !== undefined) {
+      form.append('inputTool', input.inputTool);
+    }
+  }
   const response = await patientAdministrationFetch(
     '/patient-administration/current/evidence',
     { method: 'POST', body: form },

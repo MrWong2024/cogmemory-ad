@@ -212,7 +212,7 @@
 - 后续阶段：`ProvisionalScoringPanel` 仅在 ScaleInstance 为 completed / locked / voided 时挂载；`CognitiveDomainResultPanel` 仅在已加载来源 ScoreResult 为 confirmed / locked / voided 时挂载。`useCognitiveDomainResult` 仍无条件调用并保留其内部 query / compute 门禁。正式复核阶段恢复作答 / Evidence badge，人工评分 / 确认意见 badge 只在评分阶段显示。
 - 职责：接收 patientId / visitId / scaleInstanceId，加载 A14 安全执行详情，管理 invalid / loading / 401 / 403 / not-found / configuration-unavailable / retry、动态分组、逐题 autosave snapshot、`${itemResponseId}:${evidenceType}` 媒体草稿、未收口统计、beforeunload、页面级显示 tick、实时 progress，以及 B6 独立 readiness / stale / error、题目定位、本地阻断、提交确认、submit 写锁和当前会话 receipt
 - 保存：所有作答、立即保存、标记完成、计时动作与 checkpoint 进入 `useItemResponseAutosaveCoordinator`；页面不再用单一 saving 集合表达保存状态。切组立即 flush 离开组内合法 queued 项但不等待完成，也不清除其他组状态。
-- 媒体父级职责：分组切换不清除 JPEG Blob / strokes；持有跨分组媒体写锁；A15 返回 requirement 时通知协调器推进媒体 generation，旧 A14 响应仅在 generation 未变化时采用自身 evidenceRequirements；A15 不改作答 draft / revision / progress
+- 媒体父级职责：分组切换不清除 JPEG Blob / strokes；持有跨分组媒体写锁；正式上传、患者 Evidence adoption 或正式作废成功后，先应用服务端 authoritative requirement、通知协调器推进媒体 generation、标记 readiness stale，再立即重载一次 server readiness。刷新失败不回滚已成功 mutation，保留 stale / error 与手动刷新入口；普通草稿 autosave 不新增 readiness 请求。旧 A14 响应仅在 generation 未变化时采用自身 evidenceRequirements；A15 不改作答 draft / revision / progress。
 - B6 合并边界：readiness 成功只替换 ScaleInstance；submit 成功只替换 ScaleInstance、readiness 与 receipt，不修改 Visit、itemResponses 或 drafts。completed 由服务端响应驱动；历史操作者不从 operatorSnapshot 推断
 - readiness 收敛：同一 server snapshot 的 item issue 优先按 itemResponseId、缺失时才按唯一 itemCode 映射到逐题工作单元；scale_instance 与无法映射的异常 issue 留在全局提交区。summary、ready、canSubmitNow 与最终 gate 始终使用完整 readiness。服务器确认的 `mark_answered` 保存自动刷新一次 readiness；automatic、保存草稿和 conflict/server-only 同步只保持 stale 语义。
 - B7 评分职责：仅在 completed / locked / voided 自动查询 latest；管理独立 AbortController、no_result / forbidden / error、compute 确认 / 写锁 / 幂等回执和稳定错误。submit 成功只触发 latest，不自动 compute
@@ -232,7 +232,8 @@
 
 - 路径：`frontend\src\features\assessments\components\ItemResponseEditor.tsx`；局部逐项组件为 `StructuredManualResponseEditor.tsx`
 - 职责：展示题目标题、CRF、指导语、操作说明、认知域编码、计入总分标识、状态、证据要求与已有草稿；提供类型对应编辑、missing、operatorNote、保存草稿和标记本题完成，并组合 `ItemResponseSaveStatus` 的低干扰状态 / 冲突恢复 UI
-- structured manual：仅当 `config.structuredManualFields` 存在且非空时配置驱动渲染逐子项正式复核；医生操作一级术语统一为“评分判断”，每项显示 label、可选 referenceAnswer 评分参考、患者实际回答 / 观察，以及可主动恢复 null 的显式三态“未判断 / 正确（field.maxScore 分）/ 错误（0 分）”。正确分值只使用 backend 安全公开的 server-owned field.maxScore；系统不自动判断正确性，仅根据医护确认结果确定性汇总得分。binary manual 继续使用“符合 / 不符合评分标准”的 0/1 表达
+- structured manual：仅当 `config.structuredManualFields` 存在且非空时配置驱动渲染逐子项正式复核；医生操作一级术语统一为“评分判断”，每项显示 label、可选 referenceAnswer 评分参考、患者实际回答 / 观察，以及可主动恢复 null 的显式三态“未判断 / 符合评分标准（field.maxScore 分）/ 不符合评分标准（0 分）”。分值只使用 backend 安全公开的 server-owned field.maxScore；系统不自动作出评分判断，仅根据医护确认结果确定性汇总得分。binary manual 使用同级三态术语与 0/1 表达，内部 `isCorrect` 合同不变。
+- 展示层级：`layout=embedded` 时把题目编码、可选 CRF、作答类型、计入总分、回答来源与认知域编码放入默认关闭的原生“题目信息” details；`layout=standalone` 保持 metadata 直接可见。两种 layout 的计分标识只显示“计入 / 不计入”，不显示“服务端标识”。
 - patient reference slots：`ItemResponseEditor` 只接收可选 React 展示 slot，不把它们放入 draft、dirty、autosave 或 API request。`StructuredManualResponseEditor` 在顶部一次展示 shared patient reference，并把 single-field reference 放在对应 field 的评分参考与正式输入之间；非 structured Item 在原始作答区域展示一次 item-level reference。所有参考内容自身继续使用默认关闭的原生 details。
 - structured manual 预览与完成：前端仅按当前 `isCorrect===true` 与服务端公开 field.maxScore 显示“当前评分判断得分（草稿）X / Y”和“已判断 N / M 项”，不提交预览分值、maxScore 或 referenceAnswer；最终权威 provisional scoring 仍由 backend 重算。保存草稿允许 partial，标记完成要求全部 configured fields 具有非空 responseText 和 boolean isCorrect；正式答案为 `structuredResponse.subItems`，不再依赖整题 responseText
 - binary manual：仅当 backend 安全 config 存在 `binaryManualDecision` 时，在既有原始回答 / 观察区后配置驱动显示三态评分判断（未判断、符合评分标准、不符合评分标准）；原始作答区域明确其只记录患者原始回答或观察，评分判断由医护在下方完成，系统仅根据确认结果计算 0/1。第 7/10 题继续保留 responseText，第 11 题保留 Evidence；Evidence / ASR / rawResponse 均不自动选择 decision。MMSE 第 8 题仅在 backend 同时返回 `manualObservationRecord` 时，先用既有 responseText textarea 显示 server labels / help 的“患者实际阅读 / 观察”，再用既有 rawResponse select 显示“闭眼动作”及 server true / false labels，且不重复渲染第二个 responseText；下方独立三态“评分判断”保持。三者均可 partial，非 missing 标记完成要求阅读文本、boolean 闭眼动作与 boolean decision 同时完整，原始事实不自动选择 decision
@@ -280,6 +281,7 @@
 - 职责：识别 photo / handwriting requirement，组件实际渲染时按题加载 A15 列表，管理 loading / error / retry、上传 / 作废调用、临时 URL 内存缓存和稳定错误文案
 - 写入：调用父级同题同类型写锁；成功以服务端 mediaEvidence 合并列表、以 evidenceRequirement 通知父级并清除对应媒体草稿；重复 attached 冲突刷新列表且不自动重传
 - 读取：access-url 按 evidenceId + asset 缓存，按 expiresAt 与 30 秒余量复用；组件卸载取消 GET 并清理内存状态，不取消已到达后端的 POST
+- 正式关联边界：列表 GET 只更新媒体历史并继续用于 duplicate-upload safety、access 与 void；active 同类型 `MediaEvidence` 不推断或改写 requirement.attached。正式满足性只来自 server-owned `evidenceRequirement` / `ItemResponse.evidenceRefs` 与刷新后的 readiness。
 - 展示：completed supervised unified review 由调用层显式传入 presentation-only flag，仅把 handwriting 采集画布与上传工具放入默认关闭的原生 details；summary 区分补充 / 重新采集并提示未上传草稿。已有 Evidence 历史、访问、作废状态、错误与反馈始终在折叠区外可见；photo 和其它施测模式保持原有直接展示。
 - 边界：不触发 A14 PATCH，不保存 token、文件 URL 或后端大对象到持久化存储，不泛化为全站上传框架
 
@@ -342,7 +344,7 @@
 
 ### 6.23 B6 媒体写成功回调链
 
-- `ItemResponseEditor` -> `ItemEvidenceRequirements` -> `MediaEvidencePanel` 的 `onEvidencePersisted(requirement)` 在 A15 上传、作废或服务器确认已 attached 后通知父级标记 readiness stale，并让逐题协调器推进媒体 generation
+- `ItemResponseEditor` -> `ItemEvidenceRequirements` -> `MediaEvidencePanel` 的 `onEvidencePersisted(requirement)` 在 A15 正式上传 / 作废的服务端成功响应后应用 authoritative requirement、让逐题协调器推进媒体 generation、标记 readiness stale 并立即重载一次 server readiness；completed patient review 的显式 adoption 成功复用同一父级链。readiness 重载失败不回滚 Evidence mutation，仍可手动刷新。
 - 媒体列表 GET 与 access URL GET 不触发 generation；A14 / A15 继续使用独立公开接口，媒体草稿与同类型写锁保持，A14 自动保存不上传、作废或重传媒体
 
 ### 6.24 `ProvisionalScoringPanel`
@@ -759,16 +761,17 @@
 
 - `PatientAdministrationCurrentStep.tsx`：对单一 currentStep 编排 private image Blob、按序 frozen MP3、guidance 重播、显式授权的 stimulus 技术重播、当前 revision、evidence 上传与患者完成。staff_observation 步骤提示患者完成动作并由医护在后续复核记录观察结果，不增加 observation input 或状态。换步 / 卸载释放 audio、object URL、AbortController 与 run 引用；旧异步结果不得覆盖新步骤。
 - `PatientAdministrationSpeechResponse.tsx`：使用浏览器支持的 MediaRecorder MIME 形成单步骤短录音，提供显式开始 / 停止 / 本地回放 / 保存；上传 audio evidence 成功后锁定本题证据。通用提示不依赖题目语音先播放，因此同时适用于带 guidance / stimulus 的 speech 步骤和无题目音频资产的 reading-command；后者仍保持 `assetKeys=[]`，只把患者录音作为回答 Evidence。MediaStream tracks、timer 与 object URL 在替换或卸载时精确释放，不整场录音、不自动 ASR。
-- `PatientAdministrationWrittenResponse.tsx`：writing / drawing 支持响应式 Canvas handwriting 与纸笔照片两种模式；Canvas 生成 PNG，photo 仅接受 JPEG / PNG / WebP，成功上传后显示“本题内容已保存”。Blob / preview URL 只在当前组件内存，不保存源文件名，不自动完成步骤或形成正式答案。
+- `PatientAdministrationWrittenResponse.tsx`：writing / drawing 支持响应式 Canvas handwriting 与纸笔照片两种模式；Canvas 生成 PNG，photo 仅接受 JPEG / PNG / WebP，成功上传后显示“本题内容已保存”。photo 选择后用标准 `createImageBitmap` 读取可用的 intrinsic width / height；handwriting 复用实际 canvas 尺寸并提交当前笔数、首末笔迹时长与 Pointer Events inputTool。媒体属性全部 optional，读取失败或旧客户端缺失时仍可上传；Blob / preview URL 只在当前组件内存，不保存源文件名，不自动完成步骤或形成正式答案。
 
 ### 6.84 WP-10-F3 `PatientAdministrationReviewPanel`
 
 - 路径：`frontend/src/features/patient-administration/components/PatientAdministrationReviewPanel.tsx`。仅在 MMSE `supervised_patient_input` 且 StaffPanel 回传的最新 patient-administration status=`completed` 时，作为当前分组逐题“医护复核与正式作答”控制器挂载；prepared / active / paused / terminated / expired 均不进入。Panel 首次只 GET 一次整份 review projection，切组只过滤已加载数据；手动刷新才再次 GET，仍无轮询或 Evidence URL 预取。
-- 组合职责：formal execution ItemResponse 是每题主骨架；review item 优先以 itemResponseId、缺失时以唯一 itemCode 作为附加事实匹配。Panel 将 patient reference 作为纯 React slot 交给既有 `ItemResponseEditor`：单 code step 嵌入对应 structured field，多 code step 只在 structured editor 顶部展示一次“共享患者施测参考”，无 code、未知 code 或无 structured fields 时作为整题共享参考，不复制或丢弃 step / Evidence。每个 patient step 使用默认关闭的原生 `details / summary`：摘要显示步骤顺序、response mode、运行数、有效采集数、Evidence 数和已完成辅助转写数；多次运行、非首个 run 或作废 capture 以“含重做记录”提示。展开后仍展示全部 run / capture / staffObservation / Evidence / ASR / action，不建立 primary/latest run。review loading、404 或 error 只影响患者事实，正式编辑器保持可用。
+- 组合职责：formal execution ItemResponse 是每题主骨架；completed unified review 的卡片 header 只常驻题序、题目名称与状态，itemCode / draftRevision 继续保留给 identity、data-testid、autosave、CAS 与诊断但不常驻显示。review item 优先以 itemResponseId、缺失时以唯一 itemCode 作为附加事实匹配。Panel 将 patient reference 作为纯 React slot 交给既有 `ItemResponseEditor`：单 code step 嵌入对应 structured field，多 code step 只在 structured editor 顶部展示一次“共享患者施测参考”，无 code、未知 code 或无 structured fields 时作为整题共享参考，不复制或丢弃 step / Evidence。每个 patient step 使用默认关闭的原生 `details / summary`：摘要显示步骤顺序、response mode、运行数、有效采集数、Evidence 数和已完成辅助转写数；stepKey 与 advanceBy 不常驻展示；多次运行、非首个 run 或作废 capture 以“含重做记录”提示。展开后仍展示全部 run / capture / staffObservation / Evidence / ASR / action，不建立 primary/latest run。review loading、404 或 error 只影响患者事实，正式编辑器保持可用。
 - routing helper：`patient-review-reference-routing.ts` 只消费 formal `structuredManualFields` 与 backend review projection 的 `structuredFieldCodes`；frontend 不维护 MMSE stepKey → fieldCode 表，也不按后缀、顺序或 label 推断。每个输入 step 精确进入一个 field-specific slot 或 shared slot；runtime mismatch 安全退化 shared。
 - 展示职责：逐题 inline readiness 的 blocking 使用 `ScaleSubmissionIssueList` compact actionable presentation，仅把同题同根因 server blockers 归并成医生动作；warning 与不可归并 issue 保持逐条，compact details 省略当前卡片已知的题目定位 metadata。归并不 mutation / 回写 backend issue 数组；默认 presentation 和全局 `ScaleInstanceSubmissionPanel` 继续使用 server 原始 issue、blockingIssueCount、ready、canSubmitNow 与 submit gate，保持完整样式、汇总与提交资格。
-- 媒体职责：完整原始事实随对应就近 step reference 按需展开；用户明确操作后才请求 access URL。audio / image viewer 与 access URL 获取错误均在当前 Evidence 卡片内联展示，并按 mediaEvidenceId 切换；页面一次仍只有一个 viewer。signed URL 只驻留当前 React 内存，关闭、实例身份变化或卸载时清除。ASR 只显示“辅助转写候选”，不自动写入、拆分或判断正式答案；placement 唯一权威来自 backend review projection。
-- adoption 职责：仅对后端合同允许的 completed session、有效 capture、stored/attached photo 或 handwriting、且父页面 requirement 仍 pending/missing 的证据开放显式采用；成功把同一 Evidence requirement 回传父页面并标记 readiness stale，不自动采用。
+- 媒体职责：完整原始事实随对应就近 step reference 按需展开；用户明确操作后才请求 access URL。Evidence 状态通过业务 helper 显示“已保存 / 待保存 / 文件缺失 / 已作废 / 已删除”或保守异常提示，不直出 attached / stored enum；photo / handwriting 固定展示安全文件类型、大小和图片尺寸，未知为“未记录”，handwriting 有摘要时追加画布、笔数、时长与输入方式，audio 保留时长。audio / image viewer 与 access URL 获取错误均在当前 Evidence 卡片内联展示，并按 mediaEvidenceId 切换；页面一次仍只有一个 viewer。signed URL 只驻留当前 React 内存，关闭、实例身份变化或卸载时清除。ASR 只显示“辅助转写候选”，不自动写入、拆分或判断正式答案；placement 唯一权威来自 backend review projection。
+- adoption 职责：仅对后端合同允许的 completed session、有效 capture、stored/attached photo 或 handwriting、且父页面 requirement 仍 pending/missing 的证据开放显式采用；成功把同一 Evidence requirement 回传父页面并通过统一 mutation callback 自动重载 readiness，不自动采用。
+- completed 降噪：会话常规摘要只显示准备确认、开始与完成；真实 terminatedAt / expiredAt 才显示对应字段，影响因素和 reviewEvents 只在有事实时渲染。当前分组在 completed supervised review 不常驻认知域 code；患者 step 的运行、Evidence、ASR、重做与 invalidated 事实保持。
 - 写入边界：`PatientAdministrationReviewPanel` 继续拥有 review GET、Evidence access、显式 ASR、adoption 和 viewer 状态；`ScaleInstanceExecutionPage` → `ItemResponseEditor` → autosave coordinator 继续独占全部正式写入。已映射 item issue 就地展示且无“定位题目 / 定位正式作答”；`ScaleInstanceSubmissionPanel` 只承担完整 summary、全局 / 异常 issue 与最终提交。服务器确认 `mark_answered` 后自动刷新一次 readiness，普通 autosave / 保存草稿只标 stale。
 
 ## 7. 后续同步规则

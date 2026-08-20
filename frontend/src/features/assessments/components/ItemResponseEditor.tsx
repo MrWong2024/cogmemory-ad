@@ -257,6 +257,67 @@ export function ItemResponseEditor({
     onChange(nextDraft, immediate);
   }
 
+  function renderItemMetadata(includeIdentity: boolean) {
+    return (
+      <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
+        {includeIdentity ? (
+          <div>
+            <dt className="text-sm font-semibold text-[var(--cma-muted)]">
+              题目编码
+            </dt>
+            <dd className="mt-1 break-words text-base text-[var(--cma-text-strong)]">
+              {item.itemCode}
+            </dd>
+          </div>
+        ) : null}
+        {includeIdentity && item.crfCode ? (
+          <div>
+            <dt className="text-sm font-semibold text-[var(--cma-muted)]">
+              CRF
+            </dt>
+            <dd className="mt-1 break-words text-base text-[var(--cma-text-strong)]">
+              {item.crfCode}
+            </dd>
+          </div>
+        ) : null}
+        <div>
+          <dt className="text-sm font-semibold text-[var(--cma-muted)]">
+            作答类型
+          </dt>
+          <dd className="mt-1 text-base text-[var(--cma-text-strong)]">
+            {scaleResponseTypeLabels[item.responseType]}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-sm font-semibold text-[var(--cma-muted)]">
+            是否计入总分
+          </dt>
+          <dd className="mt-1 text-base text-[var(--cma-text-strong)]">
+            {item.countsTowardTotal ? '计入' : '不计入'}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-sm font-semibold text-[var(--cma-muted)]">
+            回答来源
+          </dt>
+          <dd className="mt-1 text-base text-[var(--cma-text-strong)]">
+            {itemResponseAnswerSourceLabels[item.answerSource]}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-sm font-semibold text-[var(--cma-muted)]">
+            认知域编码
+          </dt>
+          <dd className="mt-1 break-words text-base text-[var(--cma-text-strong)]">
+            {item.cognitiveDomainCodes.length > 0
+              ? item.cognitiveDomainCodes.join('、')
+              : '—'}
+          </dd>
+        </div>
+      </dl>
+    );
+  }
+
   return (
     <article
       className={
@@ -289,42 +350,18 @@ export function ItemResponseEditor({
         </header>
       ) : null}
 
-      <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
-        <div>
-          <dt className="text-sm font-semibold text-[var(--cma-muted)]">
-            作答类型
-          </dt>
-          <dd className="mt-1 text-base text-[var(--cma-text-strong)]">
-            {scaleResponseTypeLabels[item.responseType]}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-sm font-semibold text-[var(--cma-muted)]">
-            是否计入总分
-          </dt>
-          <dd className="mt-1 text-base text-[var(--cma-text-strong)]">
-            {item.countsTowardTotal ? '服务端标识：计入' : '服务端标识：不计入'}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-sm font-semibold text-[var(--cma-muted)]">
-            回答来源
-          </dt>
-          <dd className="mt-1 text-base text-[var(--cma-text-strong)]">
-            {itemResponseAnswerSourceLabels[item.answerSource]}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-sm font-semibold text-[var(--cma-muted)]">
-            认知域编码
-          </dt>
-          <dd className="mt-1 break-words text-base text-[var(--cma-text-strong)]">
-            {item.cognitiveDomainCodes.length > 0
-              ? item.cognitiveDomainCodes.join('、')
-              : '—'}
-          </dd>
-        </div>
-      </dl>
+      {layout === 'embedded' ? (
+        <details className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)]">
+          <summary className="cursor-pointer px-4 py-3 font-semibold text-[var(--cma-text-strong)] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--cma-ring)]">
+            题目信息
+          </summary>
+          <div className="border-t border-[var(--cma-line)] p-4">
+            {renderItemMetadata(true)}
+          </div>
+        </details>
+      ) : (
+        renderItemMetadata(false)
+      )}
 
       {item.config.prompt ? (
         <section className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-info-soft)] p-4">
@@ -412,7 +449,7 @@ export function ItemResponseEditor({
           <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
             {binaryManualDecision
               ? '本区域记录患者原始回答或观察；评分判断由医护人员在下方完成，系统仅根据医护确认结果计算 0/1 分。'
-              : '本页只保存原始作答草稿，不执行自动匹配、正确性判断或评分。'}
+              : '本页只保存原始作答草稿，不执行自动匹配、评分判断或计分。'}
           </p>
         </div>
 
@@ -560,7 +597,7 @@ export function ItemResponseEditor({
             ))}
           </div>
           <p className="text-sm leading-6 text-[var(--cma-muted)]">
-            正确性由医护人员根据本题评分标准确认；系统仅据此计算 0/1 分。
+            评分判断由医护人员根据本题评分标准作出；系统仅据此计算 0/1 分。
           </p>
         </fieldset>
       ) : null}

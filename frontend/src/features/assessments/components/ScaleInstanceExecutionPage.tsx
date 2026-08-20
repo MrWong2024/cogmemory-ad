@@ -1144,6 +1144,7 @@ export function ScaleInstanceExecutionPage({
 
     autosave.notifyMediaRequirement(itemResponseId, requirement, true);
     markReadinessStale();
+    void loadSubmissionReadiness();
   }
 
   function handleBeginMediaWrite(
@@ -2074,7 +2075,8 @@ export function ScaleInstanceExecutionPage({
           </p>
         </div>
       ) : null}
-      {activeSection.cognitiveDomainCodes.length > 0 ? (
+      {!isCompletedSupervisedPatientReview &&
+      activeSection.cognitiveDomainCodes.length > 0 ? (
         <p className="mt-3 text-sm leading-6 text-[var(--cma-muted)]">
           认知域编码：{activeSection.cognitiveDomainCodes.join('、')}
         </p>
