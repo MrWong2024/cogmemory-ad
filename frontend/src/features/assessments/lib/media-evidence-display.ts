@@ -1,4 +1,5 @@
 import type { MediaEvidenceApiErrorKind } from '@/src/features/assessments/api/media-evidence-api';
+import type { ItemEvidenceRequirement } from '@/src/features/assessments/types/item-response-execution';
 import type {
   HandwritingInputTool,
   HandwritingTrajectoryFormat,
@@ -115,6 +116,27 @@ export function sortMediaEvidences(items: MediaEvidence[]): MediaEvidence[] {
 
     return safeLeftTime - safeRightTime || left.id.localeCompare(right.id);
   });
+}
+
+export function getFormalMediaEvidenceIds(
+  requirements: readonly ItemEvidenceRequirement[],
+): ReadonlySet<string> {
+  return new Set(
+    requirements.flatMap((requirement) =>
+      requirement.status === 'attached' &&
+      requirement.attached &&
+      requirement.mediaEvidenceId !== null
+        ? [requirement.mediaEvidenceId]
+        : [],
+    ),
+  );
+}
+
+export function selectFormalMediaEvidences(
+  formalMediaEvidenceIds: ReadonlySet<string>,
+  items: readonly MediaEvidence[],
+): MediaEvidence[] {
+  return items.filter((item) => formalMediaEvidenceIds.has(item.id));
 }
 
 export function isMediaEvidenceActive(evidence: MediaEvidence): boolean {

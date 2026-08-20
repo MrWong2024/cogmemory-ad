@@ -194,12 +194,12 @@
 - Roles：`admin`、`doctor`、`nurse`、`research_assistant`
 - Param DTO：`ScaleInstanceExecutionParamDto`；patientId / visitId / scaleInstanceId 均使用 `@IsMongoId()`
 - Query / Body DTO：无
-- 响应：200，`ScaleInstanceExecutionDetailResponse`，结构为 `{ visit, scale, scaleInstance, groups, itemResponses }`；scaleInstance.progress 为实际派生进度，每个 itemResponse 安全公开 `draftRevision`、`draftSavedAt` 与规范化 timing
+- 响应：200，`ScaleInstanceExecutionDetailResponse`，结构为 `{ visit, scale, scaleInstance, groups, itemResponses }`；scaleInstance.progress 为实际派生进度，每个 itemResponse 安全公开 `draftRevision`、`draftSavedAt`、规范化 timing，以及 `evidenceRequirements[] { evidenceType, status, attached, mediaEvidenceId }`。其中 mediaEvidenceId 是当前正式 `ItemResponse.evidenceRef` 指向的 MediaEvidence 业务 ID，未指向时为 null
 - 归属与配置：依次确认 Patient、patientId + visitId、patientId + visitId + scaleInstanceId；实例不匹配统一 404，不泄露跨患者 / 跨访视存在性；按实例 scaleCode / scaleVersion 读取已物化 ScaleVersion，缺失或引用不匹配返回 409 / `SCALE_INSTANCE_CONFIGURATION_UNAVAILABLE`
 - 读取状态：允许 draft / in_progress / completed / locked / voided；只读历史不因患者 inactive / archived 被拒绝
 - 题目安全配置：仅返回 itemCode / CRF / title / order / group / responseType / countsTowardTotal / cognitiveDomainCodes、prompt、instruction、scoreRange、evidenceTypes、requiresTimer、photo / handwriting / operator-note flags、草稿、step / prompt 槽位、timing 与 evidenceRequirements。可执行 `structured_manual` 额外返回 `structuredManualFields[] { code, label, maxScore, referenceAnswer? }`；字段从服务端 snapshot 解析，referenceAnswer 仅允许 string / finite number / boolean。server-owned mode 属于 `manual_exact_match` / `manual_observation` / `manual_drawing_review` 且 scoreRange 精确为 0..1 step=1 时，额外安全返回 `binaryManualDecision { incorrectScore: 0, correctScore: 1 }`。仅当 itemCode=`mmse.language.reading_command`、`versionTrace.scaleVersion=1.0` 且 snapshot 仍为 boolean / manual_observation / 0..1 step=1 时，额外返回 `manualObservationRecord { booleanLabel, trueLabel, falseLabel, responseTextLabel, responseTextHelp, requireBooleanResponse, requireResponseText }`；不返回 registry key、allowlist 或 raw scoringRule
 - 错误状态与 code：路径无效 400；未认证 401；角色不足 403；患者不存在 404 / `PATIENT_NOT_FOUND`；访视不存在或不属于患者 404 / `VISIT_NOT_FOUND`；实例不存在或不属于当前链路 404 / `SCALE_INSTANCE_NOT_FOUND`；配置不可用 409 / `SCALE_INSTANCE_CONFIGURATION_UNAVAILABLE`
-- 敏感字段边界：不返回完整 itemConfigSnapshot、scoringRule、qualityControlRule、reportingRule、researchExportField、原始 expectedValue、score、scoreValue、qualityControlHints、metadata、definition / version ObjectId、Mongoose document 或 `__v`；只返回上述安全字段参考值与已保存的正式 structuredResponse
+- 敏感字段边界：不返回完整 itemConfigSnapshot、scoringRule、qualityControlRule、reportingRule、researchExportField、原始 expectedValue、score、scoreValue、qualityControlHints、metadata、definition / version ObjectId、Mongoose document 或 `__v`；只返回上述安全字段参考值、正式 evidenceRef 的业务 ID 与已保存的正式 structuredResponse，不返回 bucket、objectKey、checksum 或 signed URL
 
 - 接口名称：单题作答草稿保存
 - Method：`PATCH`
@@ -227,7 +227,7 @@
 - Controller：`MediaEvidenceController`
 - Guard / Roles：`SessionAuthGuard` + `RolesGuard`；`admin`、`doctor`、`nurse`、`research_assistant`
 - Param DTO：`MediaEvidenceItemParamDto`，四个路径 ID 均使用 `@IsMongoId()`；无 Query / Body
-- 响应：200，`MediaEvidenceListResponse { items }`；按 createdAt、_id 升序返回当前题目下 attached / locked / voided 且未 deleted 的安全摘要
+- 响应：200，`MediaEvidenceListResponse { items }`；按 createdAt、_id 升序返回当前题目下 attached / locked / voided 且未 deleted 的安全历史摘要。列表表示题目媒体记录历史，不等价于当前正式 evidenceRef
 - 读取边界：完整验证 Patient -> Visit -> ScaleInstance -> ItemResponse 归属；允许 inactive / archived 患者和 completed / locked / voided 历史访视 / 实例 / 题目只读
 - 错误：400 路径校验；401 / 403；404 `PATIENT_NOT_FOUND`、`VISIT_NOT_FOUND`、`SCALE_INSTANCE_NOT_FOUND`、`ITEM_RESPONSE_NOT_FOUND`
 - 敏感字段边界：不返回 patient / visit / instance / item 关联 ID、subjectCode、definition / version ID、itemSnapshot、versionTrace、qualityHints、metadata、objectKey、bucket、objectPrefix、originalFilename、checksum、trajectoryObjectKey、deletedAt 或 Storage 凭据
@@ -240,7 +240,7 @@
 - Body 摘要：evidenceType 仅 photo / handwriting；captureMode 矩阵为 photo -> photo_upload / paper_scan、handwriting -> tablet_handwriting；允许受控采集、图片和手写轨迹元数据字段，multipart 数字 / boolean 显式安全转换
 - 文件限制：主图最大 10 MiB且仅 JPEG / PNG / WebP；trajectory 最大 2 MiB、MIME application/json、trajectoryFormat json / strokes。校验非空、魔数、MIME / 签名一致、JPEG EXIF / XMP、PNG eXIf / tEXt / zTXt / iTXt、WebP EXIF / XMP；不接受 SVG / PDF / HEIC / HEIF
 - 状态约束：Patient active；Visit / ScaleInstance draft 或 in_progress；ItemResponse not_started / in_progress / answered；父 / 子 submission barrier 必须 open；evidenceRefs 必须存在同类型 pending / missing 要求且无当前 attached / locked 证据
-- 响应：201，`UploadMediaEvidenceResponse { mediaEvidence, evidenceRequirement }`；绑定后 requirement 为 attached / true，不修改 ItemResponse / ScaleInstance / Visit status，不评分，也不递增 `draftRevision` 或修改 `draftSavedAt`
+- 响应：201，`UploadMediaEvidenceResponse { mediaEvidence, evidenceRequirement }`；`evidenceRequirement { evidenceType, status, attached, mediaEvidenceId }` 从实际写后 ItemResponse evidenceRef 映射，绑定成功时 mediaEvidenceId 与 mediaEvidence.id 相同；不修改 ItemResponse / ScaleInstance / Visit status，不评分，也不递增 `draftRevision` 或修改 `draftSavedAt`
 - 一致性：Storage -> MediaEvidence -> evidenceRef 条件原子绑定；最终 attach CAS 同时要求父 / 子 barrier open。attach miss 后重读并将屏障竞争归类为 409 `SCALE_INSTANCE_NOT_EDITABLE`，且先精确补偿本次 MediaEvidence 和对象；不使用 transaction
 - 错误：400 `MEDIA_PRIMARY_FILE_REQUIRED`、`MEDIA_FILE_EMPTY`、`MEDIA_FILE_TYPE_NOT_ALLOWED`、`MEDIA_FILE_SIGNATURE_INVALID`、`MEDIA_FILE_EMBEDDED_METADATA_NOT_ALLOWED`、`MEDIA_TRAJECTORY_INVALID`、`MEDIA_CAPTURE_MODE_INVALID`；413 `MEDIA_FILE_TOO_LARGE`；404 完整归属错误；409 `PATIENT_NOT_ACTIVE`、`VISIT_NOT_EDITABLE`、`SCALE_INSTANCE_NOT_EDITABLE`、`ITEM_RESPONSE_NOT_EDITABLE`、`ITEM_EVIDENCE_TYPE_NOT_REQUIRED`、`MEDIA_EVIDENCE_ALREADY_ATTACHED`；500 `MEDIA_EVIDENCE_CREATE_FAILED` / `MEDIA_EVIDENCE_ATTACH_FAILED`；503 `MEDIA_STORAGE_UNAVAILABLE`
 - 服务端所有权与隐私：关联字段、evidenceCode、status、storage、checksum、operatorSnapshot、itemSnapshot、versionTrace 和 metadata 均由服务端生成；不保存或响应原始文件名，objectKey 不包含患者姓名 / 编号 / 病历号 / 联系方式 / 备注
@@ -251,7 +251,7 @@
 - Param / Body DTO：复用 `MediaEvidenceParamDto`；无 Body
 - 资格：完整 Patient -> Visit -> ScaleInstance -> ItemResponse -> MediaEvidence ownership，Patient active、Visit / ScaleInstance / ItemResponse 可编辑、未锁定且父 / 子 submission barrier open；Evidence 必须为 attached / stored、未锁定 / 作废 / 删除且具有患者施测上下文，只支持当前 Item 已要求且 ref 仍为 pending / missing + null 的 photo / handwriting
 - 患者 run：仅采用最新患者施测 Session 已 completed 的事实；目标 Evidence 必须在对应 itemResponse 下精确出现一次，所属 step / stepRun 已有 capture 且 `invalidatedAt=null`，evidence type 与 run 事实一致。invalidated、evidence-only、其他 Session / Item / type 或非患者施测 Evidence 均为 409 `MEDIA_EVIDENCE_NOT_ADOPTABLE`
-- 响应：200，沿用 `UploadMediaEvidenceResponse { mediaEvidence, evidenceRequirement }` 同形安全结构；requirement 为 attached / true，不返回 ownership / session / step / Storage 内部字段
+- 响应：200，沿用 `UploadMediaEvidenceResponse { mediaEvidence, evidenceRequirement }` 同形安全结构；requirement 为 attached / true，mediaEvidenceId 为被采用的同一条原 MediaEvidence ID，不返回 ownership / session / step / Storage 内部字段
 - 写入与并发：只调用既有 evidenceRef 条件绑定，复用同一个 MediaEvidence ID；并发时允许一个成功、另一个以 `MEDIA_EVIDENCE_ALREADY_ATTACHED` 等既有稳定错误安全拒绝。adoption 不创建或复制 Evidence / OSS 对象，Storage 调用为 0，CAS 失败不删除或 void 原患者 Evidence
 - 非职责：不修改答案、题目 / 实例 / 访视 status、`draftRevision`、`draftSavedAt`、operatorNote 或 score，不自动 `markAsAnswered`、submit、评分或报告复核
 
@@ -278,7 +278,7 @@
 - Guard / Roles：`SessionAuthGuard` + `RolesGuard`；`admin`、`doctor`、`nurse`、`research_assistant`
 - Param / Body DTO：`MediaEvidenceParamDto`；`VoidMediaEvidenceDto { reason }`，reason trim 后 3-1000；不接受 status、voidedAt、metadata、operatorId、objectKey 或 deleteObject
 - 状态与一致性：同上传可编辑状态且父 / 子 barrier open；仅 attached 且仍由当前 evidenceRef 引用的证据可作废。clear CAS 包含父 / 子 barrier open；miss 后屏障竞争精确返回 409 `SCALE_INSTANCE_NOT_EDITABLE`。先清除 evidenceRef 为 pending / null，再标记 MediaEvidence voided；后者失败只在该空 pending 引用上尝试恢复 attached 引用，restore 是补偿例外，不受普通屏障门禁开放
-- 响应：200，`VoidMediaEvidenceResponse { mediaEvidence, evidenceRequirement }`；metadata 仅写 voidReason / voidedBy / voidedAt；A15 作废不递增 `draftRevision` 或修改 `draftSavedAt`
+- 响应：200，`VoidMediaEvidenceResponse { mediaEvidence, evidenceRequirement }`；evidenceRequirement 从实际 clear 后 ItemResponse evidenceRef 映射，当前实现为 pending / false / mediaEvidenceId=null；metadata 仅写 voidReason / voidedBy / voidedAt；A15 作废不递增 `draftRevision` 或修改 `draftSavedAt`
 - 错误：404 完整归属或 `MEDIA_EVIDENCE_NOT_FOUND`；409 可编辑错误 / `MEDIA_EVIDENCE_NOT_VOIDABLE`；500 `MEDIA_EVIDENCE_VOID_FAILED`
 - 删除边界：正常作废不调用 Storage.deleteObject、不物理删除对象；作废记录保留在列表中且不可签名访问，随后允许重新上传；没有原子替换接口
 

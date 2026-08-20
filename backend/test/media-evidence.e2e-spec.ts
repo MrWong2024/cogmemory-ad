@@ -689,6 +689,7 @@ describe('media evidence APIs (e2e)', () => {
       evidenceType: 'photo',
       status: 'attached',
       attached: true,
+      mediaEvidenceId,
     });
     expect(mediaEvidence).toEqual(
       expect.objectContaining({
@@ -756,9 +757,12 @@ describe('media evidence APIs (e2e)', () => {
     ).find(
       (candidate) => isRecord(candidate) && candidate.evidenceType === 'photo',
     );
-    expect(attachedRequirement).toEqual(
-      expect.objectContaining({ status: 'attached', attached: true }),
-    );
+    expect(attachedRequirement).toEqual({
+      evidenceType: 'photo',
+      status: 'attached',
+      attached: true,
+      mediaEvidenceId,
+    });
     expect(updatedItem.draftRevision).toBe(mediaBaselineRevision);
     expect(updatedItem.draftSavedAt).toBe(mediaBaselineSavedAt);
 
@@ -782,6 +786,7 @@ describe('media evidence APIs (e2e)', () => {
           evidenceType: 'photo',
           status: 'attached',
           attached: true,
+          mediaEvidenceId,
         }),
       ]),
     );
@@ -818,9 +823,8 @@ describe('media evidence APIs (e2e)', () => {
         forbidden,
       );
     }
-    expect(
-      readRecord(readResponseBody(voidResponse), 'mediaEvidence').status,
-    ).toBe('voided');
+    const voidBody = readResponseBody(voidResponse);
+    expect(readRecord(voidBody, 'mediaEvidence').status).toBe('voided');
     const voidedEvidence = await mediaEvidenceModel
       .findById(mediaEvidenceId)
       .exec();
@@ -839,6 +843,12 @@ describe('media evidence APIs (e2e)', () => {
     );
     expect(clearedReference?.status).toBe('pending');
     expect(clearedReference?.mediaEvidenceId).toBeNull();
+    expect(readRecord(voidBody, 'evidenceRequirement')).toEqual({
+      evidenceType: clearedReference?.evidenceType,
+      status: clearedReference?.status,
+      attached: clearedReference?.mediaEvidenceId !== null,
+      mediaEvidenceId: clearedReference?.mediaEvidenceId?.toString() ?? null,
+    });
     expect(clearedItem?.draftRevision).toBe(mediaBaselineRevision + 1);
     expect(clearedItem?.draftSavedAt?.toISOString()).toBe(draftSavedAt);
     const listAfterVoid = readArray(

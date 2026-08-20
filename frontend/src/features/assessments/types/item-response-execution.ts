@@ -175,6 +175,7 @@ export type ItemEvidenceRequirement = {
   evidenceType: ItemEvidenceType;
   status: ItemEvidenceStatus;
   attached: boolean;
+  mediaEvidenceId: string | null;
 };
 
 export type ItemResponseExecution = {

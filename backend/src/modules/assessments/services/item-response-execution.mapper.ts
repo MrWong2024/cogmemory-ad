@@ -233,6 +233,7 @@ export function toItemResponseExecutionResponse(
       evidenceType: evidenceRef.evidenceType,
       status: evidenceRef.status,
       attached: evidenceRef.mediaEvidenceId !== null,
+      mediaEvidenceId: evidenceRef.mediaEvidenceId?.toString() ?? null,
     })),
     operatorNote: itemResponse.operatorNote,
   };

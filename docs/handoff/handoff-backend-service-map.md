@@ -226,7 +226,7 @@
 
 - Mapper：`toItemResponseExecutionResponse()`
 - 文件路径：`backend\src\modules\assessments\services\item-response-execution.mapper.ts`
-- 职责边界：从内部 ItemResponse summary 和 itemConfigSnapshot 中逐字段提取允许的执行配置与草稿；对可执行 structured_manual 安全投影 `structuredManualFields`，对 binary eligible item 仅投影 `binaryManualDecision { incorrectScore: 0, correctScore: 1 }`，对 exact reading-command overlay 仅投影 `manualObservationRecord` labels / required flags，不透传完整 scoringRule、registry key 或 allowlist；安全规范化 `draftRevision` / `draftSavedAt` 与 legacy timing，invalid legacy Mixed 草稿回退 null；不透传评分结果、metadata、`__v` 或媒体对象标识。
+- 职责边界：从内部 ItemResponse summary 和 itemConfigSnapshot 中逐字段提取允许的执行配置与草稿；对可执行 structured_manual 安全投影 `structuredManualFields`，对 binary eligible item 仅投影 `binaryManualDecision { incorrectScore: 0, correctScore: 1 }`，对 exact reading-command overlay 仅投影 `manualObservationRecord` labels / required flags，不透传完整 scoringRule、registry key 或 allowlist；安全规范化 `draftRevision` / `draftSavedAt` 与 legacy timing，invalid legacy Mixed 草稿回退 null；每个 evidenceRef 额外投影当前正式 `mediaEvidenceId` 业务 ID或 null，不透传评分结果、metadata、`__v`、媒体 Storage 定位或签名 URL。
 
 - Controller 名称：`AssessmentExecutionController`
 - 文件路径：`backend\src\modules\assessments\controllers\assessment-execution.controller.ts`
@@ -235,7 +235,7 @@
 
 - Service 名称：`MediaEvidenceService`
 - 文件路径：`backend\src\modules\media\services\media-evidence.service.ts`
-- 职责边界：提供媒体证据内部读取和 A15 完整归属数据访问；规范化 `evidenceCode`；按 mapper 输出 `MediaEvidenceSummary`，不直接返回完整 Mongoose document。
+- 职责边界：提供媒体证据内部读取和 A15 完整归属数据访问；规范化 `evidenceCode`；按 mapper 输出 `MediaEvidenceSummary`，不直接返回完整 Mongoose document。题目列表是 MediaEvidence ownership / history 事实，不等价于 ItemResponse 当前正式 evidenceRef。
 - 当前方法：既有 code / item / instance / visit / patient 读取方法，以及 `findEvidenceByOwnership()`、`listEvidenceByItemOwnership()`、`findActiveEvidenceByItemAndType()`、`createEvidence()`、`markEvidenceVoided()`、`deleteEvidenceForCompensation()`。
 - 上游调用方：`MediaEvidenceWorkflowService`，以及后续计分、报告或科研导出等内部能力。
 - 下游依赖：`MediaEvidence` Mongoose Model。
@@ -339,7 +339,7 @@
 - 当前方法：`listEvidence()`、`uploadEvidence()`、`adoptPatientAdministrationEvidence()`、`createAccessUrl()`、`voidEvidence()`。
 - 下游依赖：`PatientsService`、`AssessmentsService`、`MediaEvidenceService`、`PatientAdministrationReviewService`、`STORAGE_SERVICE`、`StorageConfigService`。
 - 归属 / 状态：统一验证 Patient -> Visit -> ScaleInstance -> ItemResponse -> MediaEvidence 完整链；只读允许历史状态，上传 / 作废要求 Patient active、Visit / ScaleInstance draft 或 in_progress、ItemResponse not_started / in_progress / answered，并要求父 / 子 submission barrier open。
-- 上传编排：校验证据要求、captureMode、主文件和可选轨迹；生成不含患者隐私与原始文件名的 UUID objectKey；依次上传 Storage、创建 MediaEvidence、条件绑定 evidenceRef。绑定仅允许父 / 子 barrier open、同 evidenceType、mediaEvidenceId 空且状态 pending / missing 的数组元素，形成并发边界；miss 后重读屏障并精确归类。
+- 上传编排：校验证据要求、captureMode、主文件和可选轨迹；生成不含患者隐私与原始文件名的 UUID objectKey；依次上传 Storage、创建 MediaEvidence、条件绑定 evidenceRef。绑定仅允许父 / 子 barrier open、同 evidenceType、mediaEvidenceId 空且状态 pending / missing 的数组元素，形成并发边界；miss 后重读屏障并精确归类。upload / adoption / void 的 `EvidenceRequirementStateResponse` 均从对应 attach / clear 返回的实际写后 ItemResponse evidenceRef 映射 status、attached 与 mediaEvidenceId，不另建状态源。
 - 采用既有患者证据：复用 `PatientAdministrationReviewService.getReview()` 的最新 Session、步骤、ItemResponse ownership、step / run、evidence type、invalidated 与 evidence-only 完整性；只允许 completed Session 中唯一、已有有效 capture 的 photo / handwriting，再复用 `AssessmentsService.attachItemEvidenceReference()` 绑定同一个既有 Evidence ID。它不调用 Storage、不创建 / 复制 Evidence，也不自动形成或确认答案；正式媒体满足性只由 `ItemResponse.evidenceRefs` 决定，媒体文档存在本身不满足 readiness，photo + handwriting 要求继续为 one_of。
 - 补偿边界：上传时轨迹上传失败删除主对象；创建失败删除本次对象；绑定异常 / 冲突先删除本次新建 MediaEvidence 与对象再抛稳定错误。adoption 不创建任何对象，CAS 失败不执行删除、void 或 Storage 补偿。补偿只使用本次上传 ID / key，不使用 transaction，不修改或删除其他业务数据；补偿日志仅记录固定类型、evidenceCode、driver 和成功标记。
 - 访问 / 作废：签名访问固定使用 `DEFAULT_SIGNED_URL_EXPIRES_SECONDS`；作废 clear CAS 要求父 / 子 barrier open，miss 后精确重读分类；再标记 MediaEvidence voided，失败尝试恢复引用。restore 仅针对本次 clear 留下的空 pending 引用，是受控补偿例外，不受普通 barrier 门禁开放；正常作废不调用 deleteObject。

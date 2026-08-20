@@ -85,7 +85,12 @@ function createTimedItem(
     promptResponses: [],
     timing,
     evidenceRequirements: [
-      { evidenceType: 'duration', status: 'pending', attached: false },
+      {
+        evidenceType: 'duration',
+        status: 'pending',
+        attached: false,
+        mediaEvidenceId: null,
+      },
     ],
     operatorNote: undefined,
   };

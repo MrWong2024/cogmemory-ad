@@ -7,6 +7,10 @@ import {
 import { buildInlineActionableIssuePresentations } from '@/src/features/assessments/lib/scale-submission-inline-presentation';
 import { getScaleSubmissionIssueDisplay } from '@/src/features/assessments/lib/scale-instance-submission-display';
 import { getScaleExecutionProgressiveDisclosure } from '@/src/features/assessments/lib/assessment-execution-display';
+import {
+  getFormalMediaEvidenceIds,
+  selectFormalMediaEvidences,
+} from '@/src/features/assessments/lib/media-evidence-display';
 import { routePatientReviewReferences } from '@/src/features/patient-administration/lib/patient-review-reference-routing';
 import {
   formatPatientAdministrationReviewDimensions,
@@ -19,6 +23,11 @@ import type {
   ScaleSubmissionIssueSeverity,
   ScaleSubmissionIssueScope,
 } from '@/src/features/assessments/types/scale-instance-submission';
+import type { ItemEvidenceRequirement } from '@/src/features/assessments/types/item-response-execution';
+import type {
+  MediaEvidence,
+  MediaEvidenceStatus,
+} from '@/src/features/assessments/types/media-evidence';
 import type { PatientAdministrationReviewStep } from '@/src/features/patient-administration/types/patient-administration';
 
 function createReviewStep(
@@ -51,6 +60,110 @@ function createIssue(input: {
     message: input.code,
   };
 }
+
+function createMediaEvidence(
+  id: string,
+  status: MediaEvidenceStatus = 'attached',
+): MediaEvidence {
+  return {
+    id,
+    evidenceCode: `EVD-${id}`,
+    evidenceType: 'handwriting',
+    captureMode: 'tablet_handwriting',
+    status,
+    storageStatus: 'stored',
+    itemCode: 'mmse.visuospatial.copy_drawing',
+    file: null,
+    imageMetadata: null,
+    handwritingTrace: null,
+    captureContext: null,
+    operatorSnapshot: null,
+    audioMetadata: null,
+    transcription: null,
+    qualityStatus: 'unchecked',
+    lockedAt: status === 'locked' ? '2026-08-20T00:00:00.000Z' : null,
+    voidedAt: status === 'voided' ? '2026-08-20T00:00:00.000Z' : null,
+    createdAt: '2026-08-20T00:00:00.000Z',
+    updatedAt: '2026-08-20T00:00:00.000Z',
+  };
+}
+
+function createHandwritingRequirement(
+  status: ItemEvidenceRequirement['status'],
+  attached: boolean,
+  mediaEvidenceId: string | null,
+): ItemEvidenceRequirement {
+  return {
+    evidenceType: 'handwriting',
+    status,
+    attached,
+    mediaEvidenceId,
+  };
+}
+
+test('selects only the exact formal evidence reference and keeps locked formal evidence visible', () => {
+  const patientRaw = createMediaEvidence('patient-raw');
+  const formal = createMediaEvidence('formal', 'locked');
+  const oldVoided = createMediaEvidence('old-voided', 'voided');
+  const formalIds = getFormalMediaEvidenceIds([
+    createHandwritingRequirement('attached', true, formal.id),
+  ]);
+
+  expect(
+    selectFormalMediaEvidences(formalIds, [patientRaw, formal, oldVoided]).map(
+      (item) => item.id,
+    ),
+  ).toEqual([formal.id]);
+});
+
+test('does not treat an attached same-type media record as formal evidence', () => {
+  const patientRaw = createMediaEvidence('patient-raw');
+  const formalIds = getFormalMediaEvidenceIds([
+    createHandwritingRequirement('missing', false, null),
+  ]);
+
+  expect(selectFormalMediaEvidences(formalIds, [patientRaw])).toEqual([]);
+});
+
+test('follows authoritative adoption and void requirement transitions without reloading media history', () => {
+  const patientRaw = createMediaEvidence('patient-raw');
+  const items = [patientRaw];
+
+  expect(
+    selectFormalMediaEvidences(
+      getFormalMediaEvidenceIds([
+        createHandwritingRequirement('missing', false, null),
+      ]),
+      items,
+    ),
+  ).toEqual([]);
+  expect(
+    selectFormalMediaEvidences(
+      getFormalMediaEvidenceIds([
+        createHandwritingRequirement('attached', true, patientRaw.id),
+      ]),
+      items,
+    ).map((item) => item.id),
+  ).toEqual([patientRaw.id]);
+  expect(
+    selectFormalMediaEvidences(
+      getFormalMediaEvidenceIds([
+        createHandwritingRequirement('missing', false, patientRaw.id),
+      ]),
+      items,
+    ),
+  ).toEqual([]);
+});
+
+test('fails closed when the formal reference is absent from media history', () => {
+  const sameTypeFallback = createMediaEvidence('same-type-fallback');
+  const formalIds = getFormalMediaEvidenceIds([
+    createHandwritingRequirement('attached', true, 'missing-formal-id'),
+  ]);
+
+  expect([...formalIds]).toEqual(['missing-formal-id']);
+  expect(selectFormalMediaEvidences(formalIds, [sameTypeFallback])).toEqual([]);
+});
 
 test('keeps every non-completed supervised MMSE session in the patient administration phase', () => {
   for (const patientAdministrationStatus of [

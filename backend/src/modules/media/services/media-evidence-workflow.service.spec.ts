@@ -331,17 +331,29 @@ describe('MediaEvidenceWorkflowService', () => {
         status: 'draft',
       }),
       findItemResponseByOwnership: jest.fn().mockResolvedValue(itemResponse()),
-      attachItemEvidenceReference: jest.fn().mockResolvedValue(
-        itemResponse({
-          evidenceRefs: [
-            {
-              evidenceType: 'photo',
-              mediaEvidenceId: ids.mediaEvidenceId,
-              status: 'attached',
-            },
-          ],
-        }),
-      ),
+      attachItemEvidenceReference: jest
+        .fn()
+        .mockImplementation(
+          (
+            _patientId: string,
+            _visitId: string,
+            _scaleInstanceId: string,
+            _itemResponseId: string,
+            evidenceType: 'photo' | 'handwriting',
+            mediaEvidenceId: string,
+          ) =>
+            Promise.resolve(
+              itemResponse({
+                evidenceRefs: [
+                  {
+                    evidenceType,
+                    mediaEvidenceId,
+                    status: 'attached',
+                  },
+                ],
+              }),
+            ),
+        ),
       clearItemEvidenceReference: jest.fn().mockResolvedValue(itemResponse()),
       restoreItemEvidenceReference: jest.fn().mockResolvedValue(itemResponse()),
     };
@@ -463,6 +475,7 @@ describe('MediaEvidenceWorkflowService', () => {
       evidenceType: 'photo',
       status: 'attached',
       attached: true,
+      mediaEvidenceId: ids.mediaEvidenceId,
     });
     expect(storage.uploadFile).toHaveBeenCalledTimes(1);
     const uploadInput = uploadedInputs[0];
@@ -511,6 +524,7 @@ describe('MediaEvidenceWorkflowService', () => {
       evidenceType: 'photo',
       status: 'attached',
       attached: true,
+      mediaEvidenceId: ids.mediaEvidenceId,
     });
     expect(review.getReview).toHaveBeenCalledWith(mediaParams);
     expect(assessments.attachItemEvidenceReference).toHaveBeenCalledTimes(1);
@@ -943,6 +957,7 @@ describe('MediaEvidenceWorkflowService', () => {
       evidenceType: 'photo',
       status: 'pending',
       attached: false,
+      mediaEvidenceId: null,
     });
     expect(assessments.clearItemEvidenceReference).toHaveBeenCalled();
     expect(media.markEvidenceVoided).toHaveBeenCalled();

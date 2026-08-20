@@ -167,6 +167,7 @@ export type EvidenceRequirementState = {
   evidenceType: SupportedMediaEvidenceType;
   status: ItemEvidenceStatus;
   attached: boolean;
+  mediaEvidenceId: string | null;
 };
 
 export type UploadMediaEvidenceResponse = {

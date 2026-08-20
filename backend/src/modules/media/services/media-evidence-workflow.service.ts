@@ -56,6 +56,7 @@ import type {
   MediaOperatorRole,
 } from '../schemas/media-evidence.schema';
 import type {
+  EvidenceRequirementStateResponse,
   MediaEvidenceAccessUrlResponse,
   MediaEvidenceListResponse,
   UploadMediaEvidenceResponse,
@@ -271,11 +272,11 @@ export class MediaEvidenceWorkflowService {
 
     return {
       mediaEvidence: toMediaEvidenceResponse(evidence),
-      evidenceRequirement: {
-        evidenceType: input.evidenceType,
-        status: 'attached',
-        attached: true,
-      },
+      evidenceRequirement: this.toEvidenceRequirementState(
+        attachedItemResponse,
+        input.evidenceType,
+        'MEDIA_EVIDENCE_ATTACH_FAILED',
+      ),
     };
   }
 
@@ -387,11 +388,11 @@ export class MediaEvidenceWorkflowService {
 
     return {
       mediaEvidence: toMediaEvidenceResponse(evidence),
-      evidenceRequirement: {
+      evidenceRequirement: this.toEvidenceRequirementState(
+        attachedItemResponse,
         evidenceType,
-        status: 'attached',
-        attached: true,
-      },
+        'MEDIA_EVIDENCE_ATTACH_FAILED',
+      ),
     };
   }
 
@@ -534,11 +535,35 @@ export class MediaEvidenceWorkflowService {
 
     return {
       mediaEvidence: toMediaEvidenceResponse(voidedEvidence),
-      evidenceRequirement: {
+      evidenceRequirement: this.toEvidenceRequirementState(
+        cleared,
         evidenceType,
-        status: 'pending',
-        attached: false,
-      },
+        'MEDIA_EVIDENCE_VOID_FAILED',
+      ),
+    };
+  }
+
+  private toEvidenceRequirementState(
+    itemResponse: ItemResponseSummary,
+    evidenceType: EvidenceRequirementStateResponse['evidenceType'],
+    failureCode: 'MEDIA_EVIDENCE_ATTACH_FAILED' | 'MEDIA_EVIDENCE_VOID_FAILED',
+  ): EvidenceRequirementStateResponse {
+    const evidenceReference = itemResponse.evidenceRefs.find(
+      (reference) => reference.evidenceType === evidenceType,
+    );
+
+    if (!evidenceReference) {
+      throw new InternalServerErrorException({
+        code: failureCode,
+        message: 'Media evidence requirement state is unavailable',
+      });
+    }
+
+    return {
+      evidenceType,
+      status: evidenceReference.status,
+      attached: evidenceReference.mediaEvidenceId !== null,
+      mediaEvidenceId: evidenceReference.mediaEvidenceId?.toString() ?? null,
     };
   }
 

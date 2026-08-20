@@ -270,7 +270,7 @@
 ### 6.14 A14 类型与草稿纯函数
 
 - 类型路径：`frontend\src\features\assessments\types\item-response-execution.ts`
-- 类型职责：严格定义 A14 安全执行响应、JsonValue、response / status / prompt / `ItemTimerState` / evidence 枚举、`draftRevision` / `draftSavedAt` 和 PATCH 白名单；`ItemExecutionConfig` 对齐安全公开的 `structuredManualFields`、可选 `binaryManualDecision { incorrectScore, correctScore }` 与可选 `manualObservationRecord` labels / required flags，正式 binary 草稿只保留 `isCorrect: boolean | null`；`expectedRevision` 必填，timing 非 null 为六字段完整快照，Date JSON 使用 string / null
+- 类型职责：严格定义 A14 安全执行响应、JsonValue、response / status / prompt / `ItemTimerState` / evidence 枚举、`draftRevision` / `draftSavedAt` 和 PATCH 白名单；`ItemEvidenceRequirement` 额外包含正式 evidenceRef 的 `mediaEvidenceId: string | null`；`ItemExecutionConfig` 对齐安全公开的 `structuredManualFields`、可选 `binaryManualDecision { incorrectScore, correctScore }` 与可选 `manualObservationRecord` labels / required flags，正式 binary 草稿只保留 `isCorrect: boolean | null`；`expectedRevision` 必填，timing 非 null 为六字段完整快照，Date JSON 使用 string / null
 - 纯函数路径：`frontend\src\features\assessments\lib\item-response-draft.ts`
 - 纯函数职责：服务端 ItemResponse 到本地 draft、structured configured field 初始化与 partial 恢复、binary null / true / false 恢复、unknown stored field 过滤、逐项完整性 / 预览 / 请求序列化、missing、字段级和递归值 dirty 比较、数值转换、基础有效作答判断、step / prompt / 完整 timing 差异与基于服务器 revision 的 PATCH 构建；structured 与 binary response 继续进入同一个 autosave rebase / conflict / write barrier
 - 边界：不修改原响应对象，不使用 any，不以整对象 JSON.stringify 作为 dirty 策略，不定义自动临床判分规则或任意 JSON 编辑能力；structured serialization 只包含 configured field 的 responseText / isCorrect；binary serialization 只包含 `binaryManualDecision.isCorrect`，均不包含 server config、referenceAnswer、maxScore 或预览分值
@@ -281,16 +281,16 @@
 - 职责：识别 photo / handwriting requirement，组件实际渲染时按题加载 A15 列表，管理 loading / error / retry、上传 / 作废调用、临时 URL 内存缓存和稳定错误文案
 - 写入：调用父级同题同类型写锁；成功以服务端 mediaEvidence 合并列表、以 evidenceRequirement 通知父级并清除对应媒体草稿；重复 attached 冲突刷新列表且不自动重传
 - 读取：access-url 按 evidenceId + asset 缓存，按 expiresAt 与 30 秒余量复用；组件卸载取消 GET 并清理内存状态，不取消已到达后端的 POST
-- 正式关联边界：列表 GET 只更新媒体历史并继续用于 duplicate-upload safety、access 与 void；active 同类型 `MediaEvidence` 不推断或改写 requirement.attached。正式满足性只来自 server-owned `evidenceRequirement` / `ItemResponse.evidenceRefs` 与刷新后的 readiness。
-- 展示：completed supervised unified review 由调用层显式传入 presentation-only flag，仅把 handwriting 采集画布与上传工具放入默认关闭的原生 details；summary 区分补充 / 重新采集并提示未上传草稿。已有 Evidence 历史、访问、作废状态、错误与反馈始终在折叠区外可见；photo 和其它施测模式保持原有直接展示。
+- 正式关联边界：列表 GET 仍加载全部媒体历史并内部用于 duplicate-upload safety、access state 与写后合并；正常“正式题目媒体证据”只把 requirement 同时满足 status=attached、attached=true、mediaEvidenceId 非空时的精确 ID 与列表相交。active / locked / voided 等 MediaEvidence 状态、同类型或文档存在本身均不能推断 formal；正式 ID 未在列表出现时 fail closed、保持空列表并提示重新加载，不回退任意同类型 Evidence。
+- 展示：正式区只向 `MediaEvidenceList` 传 formal items，未 adoption 的患者原始 Evidence 不出现；空态引导在患者施测参考核对并显式采用。formal linked MediaEvidence 即使自身 locked 仍可见；void 成功应用 authoritative requirement 后立即退出正式区。completed supervised unified review 仅把 handwriting 采集画布与上传工具放入默认关闭的原生 details，photo 和其它施测模式保持原有直接展示。
 - 边界：不触发 A14 PATCH，不保存 token、文件 URL 或后端大对象到持久化存储，不泛化为全站上传框架
 
 ### 6.16 `MediaEvidenceList` / `MediaEvidencePreview`
 
 - 路径：`frontend\src\features\assessments\components\MediaEvidenceList.tsx`、`MediaEvidencePreview.tsx`
-- 列表职责：展示 evidenceCode、类型、采集方式、状态、存储状态、MIME、大小、图片 / 轨迹摘要、时间、操作者、质量、说明与备注；保留 attached / locked / voided 历史
+- 列表职责：展示由 `MediaEvidencePanel` 预先筛选的当前正式 Evidence，包括 evidenceCode、类型、采集方式、状态、存储状态、MIME、大小、图片 / 轨迹摘要、时间、操作者、质量、说明与备注；不自行读取或展示未正式引用的历史
 - 预览职责：点击后请求 primary 或 trajectory；primary 可内联预览和新窗口打开，trajectory 只提供安全外链，不渲染 JSON；链接与图片使用 no-referrer / noreferrer / noopener
-- 作废：仅 attached 且可编辑时显示内联确认，原因必须 3–1000 字符；作废文案明确历史保留，不写成删除
+- 作废：仅 attached 且可编辑的当前正式 Evidence 显示“作废此正式证据”内联确认，原因必须 3–1000 字符；作废文案明确后台历史保留，不写成删除
 - 隐私边界：不展示内部归属、Storage 对象定位、原始文件名、校验和、任意 metadata / qualityHints、凭据或删除时间
 
 ### 6.17 `PhotoEvidenceCapture`
@@ -309,12 +309,12 @@
 
 ### 6.19 B5 类型、API 与纯函数
 
-- `types/media-evidence.ts`：A15 安全公开响应、access、requirement 与 multipart 白名单类型；JSON Date 使用 string / null，不定义 Storage 或内部归属字段
+- `types/media-evidence.ts`：A15 安全公开响应、access、含 authoritative `mediaEvidenceId: string | null` 的 requirement 与 multipart 白名单类型；JSON Date 使用 string / null，不定义 Storage 或其他内部归属字段
 - `types/handwriting-evidence.ts` / `types/media-evidence-draft.ts`：固定 trajectory 结构与 photo / handwriting React 内存草稿；不保存源 File 名称或 signed URL
 - `api/media-evidence-api.ts`：四个 A15 方法、credentials / no-store、GET AbortSignal、FormData 白名单、固定安全文件名和稳定业务错误映射；POST 不重试
 - `lib/media-evidence-image.ts`：白色 Canvas JPEG 重编码、2560 最长边、0.9 初始质量、有界压缩与 10 MiB 限制
 - `lib/handwriting-evidence.ts`：坐标 / 压力归一化、工具 / 时长推导、轨迹验证、Canvas 重绘和 PNG 生成
-- `lib/media-evidence-display.ts`：安全展示字典、文件大小、排序、active / access 有效性和中文错误映射
+- `lib/media-evidence-display.ts`：安全展示字典、文件大小、排序、active / access 有效性、中文错误映射，以及只按 requirement status / attached / mediaEvidenceId 精确筛选正式 Evidence 的纯函数
 
 ### 6.20 `ScaleInstanceSubmissionPanel`
 
@@ -770,7 +770,7 @@
 - routing helper：`patient-review-reference-routing.ts` 只消费 formal `structuredManualFields` 与 backend review projection 的 `structuredFieldCodes`；frontend 不维护 MMSE stepKey → fieldCode 表，也不按后缀、顺序或 label 推断。每个输入 step 精确进入一个 field-specific slot 或 shared slot；runtime mismatch 安全退化 shared。
 - 展示职责：逐题 inline readiness 的 blocking 使用 `ScaleSubmissionIssueList` compact actionable presentation，仅把同题同根因 server blockers 归并成医生动作；warning 与不可归并 issue 保持逐条，compact details 省略当前卡片已知的题目定位 metadata。归并不 mutation / 回写 backend issue 数组；默认 presentation 和全局 `ScaleInstanceSubmissionPanel` 继续使用 server 原始 issue、blockingIssueCount、ready、canSubmitNow 与 submit gate，保持完整样式、汇总与提交资格。
 - 媒体职责：完整原始事实随对应就近 step reference 按需展开；用户明确操作后才请求 access URL。Evidence 状态通过业务 helper 显示“已保存 / 待保存 / 文件缺失 / 已作废 / 已删除”或保守异常提示，不直出 attached / stored enum；photo / handwriting 固定展示安全文件类型、大小和图片尺寸，未知为“未记录”，handwriting 有摘要时追加画布、笔数、时长与输入方式，audio 保留时长。audio / image viewer 与 access URL 获取错误均在当前 Evidence 卡片内联展示，并按 mediaEvidenceId 切换；页面一次仍只有一个 viewer。signed URL 只驻留当前 React 内存，关闭、实例身份变化或卸载时清除。ASR 只显示“辅助转写候选”，不自动写入、拆分或判断正式答案；placement 唯一权威来自 backend review projection。
-- adoption 职责：仅对后端合同允许的 completed session、有效 capture、stored/attached photo 或 handwriting、且父页面 requirement 仍 pending/missing 的证据开放显式采用；成功把同一 Evidence requirement 回传父页面并通过统一 mutation callback 自动重载 readiness，不自动采用。
+- adoption 职责：仅对后端合同允许的 completed session、有效 capture、stored/attached photo 或 handwriting、且父页面 requirement 仍 pending/missing 的证据开放显式采用；成功把同一 Evidence 的 authoritative requirement（含 mediaEvidenceId）回传父页面并通过统一 mutation callback 自动重载 readiness，不自动采用、不复制 Evidence。患者原始 provenance 卡继续保留；同一 Evidence adoption 后可同时出现在患者参考与正式题目媒体区。
 - completed 降噪：会话常规摘要只显示准备确认、开始与完成；真实 terminatedAt / expiredAt 才显示对应字段，影响因素和 reviewEvents 只在有事实时渲染。当前分组在 completed supervised review 不常驻认知域 code；患者 step 的运行、Evidence、ASR、重做与 invalidated 事实保持。
 - 写入边界：`PatientAdministrationReviewPanel` 继续拥有 review GET、Evidence access、显式 ASR、adoption 和 viewer 状态；`ScaleInstanceExecutionPage` → `ItemResponseEditor` → autosave coordinator 继续独占全部正式写入。已映射 item issue 就地展示且无“定位题目 / 定位正式作答”；`ScaleInstanceSubmissionPanel` 只承担完整 summary、全局 / 异常 issue 与最终提交。服务器确认 `mark_answered` 后自动刷新一次 readiness，普通 autosave / 保存草稿只标 stale。
 

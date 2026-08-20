@@ -1077,6 +1077,7 @@ describe('patient administration evidence APIs (e2e)', () => {
       evidenceType: 'photo',
       status: 'attached',
       attached: true,
+      mediaEvidenceId: drawingEvidence._id.toString(),
     });
     const adoptedMediaEvidence = adopted.mediaEvidence;
     if (!isRecord(adoptedMediaEvidence)) {
@@ -1097,6 +1098,34 @@ describe('patient administration evidence APIs (e2e)', () => {
     ]) {
       expect(adoptedMediaEvidence).not.toHaveProperty(protectedKey);
     }
+
+    const executionAfterAdoption = bodyOf(
+      await staff
+        .get(
+          `/patients/${state.patientId}/visits/${state.visitId}/scale-instances/${state.scaleInstanceId}`,
+        )
+        .expect(200),
+    );
+    const reloadedDrawingItem = arrayOf(
+      executionAfterAdoption,
+      'itemResponses',
+    ).find(
+      (candidate) => isRecord(candidate) && candidate.id === drawingItemId,
+    );
+    if (!isRecord(reloadedDrawingItem)) {
+      throw new Error('Expected adopted execution item after reload');
+    }
+    expect(
+      arrayOf(reloadedDrawingItem, 'evidenceRequirements').find(
+        (candidate) =>
+          isRecord(candidate) && candidate.evidenceType === 'photo',
+      ),
+    ).toEqual({
+      evidenceType: 'photo',
+      status: 'attached',
+      attached: true,
+      mediaEvidenceId: drawingEvidence._id.toString(),
+    });
 
     const drawingItemAfter = await itemResponseModel
       .findById(drawingItemId)
@@ -1162,11 +1191,21 @@ describe('patient administration evidence APIs (e2e)', () => {
         .send({ reason: 'C1 verify one-of readiness invalidation' })
         .expect(200),
     );
+    const drawingItemAfterVoid = await itemResponseModel
+      .findById(drawingItemId)
+      .lean()
+      .exec();
+    const referenceAfterVoid = drawingItemAfterVoid?.evidenceRefs.find(
+      (reference) => reference.evidenceType === 'photo',
+    );
     expect(voided.evidenceRequirement).toEqual({
-      evidenceType: 'photo',
-      status: 'pending',
-      attached: false,
+      evidenceType: referenceAfterVoid?.evidenceType,
+      status: referenceAfterVoid?.status,
+      attached: referenceAfterVoid?.mediaEvidenceId !== null,
+      mediaEvidenceId: referenceAfterVoid?.mediaEvidenceId?.toString() ?? null,
     });
+    expect(referenceAfterVoid?.status).toBe('pending');
+    expect(referenceAfterVoid?.mediaEvidenceId).toBeNull();
     const readinessAfterVoid = bodyOf(
       await staff.get(readinessPath).expect(200),
     );

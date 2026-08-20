@@ -97,6 +97,12 @@ function createItemResponseSummary(): ItemResponseSummary {
     },
     evidenceRefs: [
       {
+        evidenceType: 'handwriting',
+        mediaEvidenceId: null,
+        status: 'pending',
+        note: 'internal pending evidence note',
+      },
+      {
         evidenceType: 'raw_text',
         mediaEvidenceId: '507f1f77bcf86cd799439020',
         status: 'attached',
@@ -170,7 +176,18 @@ describe('item response execution mapper', () => {
       note: 'prompt note',
     });
     expect(response.evidenceRequirements).toEqual([
-      { evidenceType: 'raw_text', status: 'attached', attached: true },
+      {
+        evidenceType: 'handwriting',
+        status: 'pending',
+        attached: false,
+        mediaEvidenceId: null,
+      },
+      {
+        evidenceType: 'raw_text',
+        status: 'attached',
+        attached: true,
+        mediaEvidenceId: '507f1f77bcf86cd799439020',
+      },
     ]);
 
     for (const forbiddenKey of [
@@ -190,7 +207,6 @@ describe('item response execution mapper', () => {
       'scaleVersionId',
       'patientId',
       'assessmentVisitId',
-      'mediaEvidenceId',
       'lockedAt',
       'voidedAt',
     ]) {

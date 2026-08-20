@@ -829,6 +829,7 @@ export function ScaleInstanceExecutionPage({
                         evidenceType: requirement.evidenceType,
                         status: requirement.status,
                         attached: requirement.attached,
+                        mediaEvidenceId: requirement.mediaEvidenceId,
                       },
                     ]
                   : [],
@@ -1124,6 +1125,7 @@ export function ScaleInstanceExecutionPage({
                           ...currentRequirement,
                           status: requirement.status,
                           attached: requirement.attached,
+                          mediaEvidenceId: requirement.mediaEvidenceId,
                         }
                       : currentRequirement,
                 ),

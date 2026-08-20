@@ -236,8 +236,8 @@
 - 名称：`ScaleExecutionIdentityResponse`、`ScaleExecutionGroupResponse`、`ItemExecutionConfigResponse`、`ItemResponseExecutionResponse`
 - 文件：`backend\src\modules\assessments\types\item-response-execution-response.types.ts`
 - 用途：A14 执行详情与 PATCH 成功响应的安全公开结构。
-- 字段摘要：安全量表身份与分组；题目身份、作答类型、计分参与 / 认知域、显式 config、版本追溯、`draftRevision` / `draftSavedAt`、草稿值、step / prompt 槽位、含 timerState / lastResumedAt 的 timing、证据要求和 operatorNote。可执行 structured_manual 的 config 可选 `structuredManualFields[] { code, label, maxScore, referenceAnswer? }`，referenceAnswer 仅为 primitive 安全参考；binary eligible config 可选 `binaryManualDecision { incorrectScore: 0, correctScore: 1 }`；exact MMSE 1.0 reading-command config 可选 `manualObservationRecord { booleanLabel, trueLabel, falseLabel, responseTextLabel, responseTextHelp, requireBooleanResponse, requireResponseText }`；legacy revision / 保存时间安全归一为 0 / null，legacy timing 只读规范化。
-- 安全边界：不包含完整 Mixed 配置、scoringRule、原始 expectedValue、score / scoreValue、metadata、qualityControlHints、内部 ObjectId 或 Mongoose document；structuredResponse 内的 isCorrect 是医护已提交事实，不是系统判断。binary config 只提供安全 UI / 确定性映射元数据，不允许客户端提交 config 或 preview score。
+- 字段摘要：安全量表身份与分组；题目身份、作答类型、计分参与 / 认知域、显式 config、版本追溯、`draftRevision` / `draftSavedAt`、草稿值、step / prompt 槽位、含 timerState / lastResumedAt 的 timing、`ItemEvidenceRequirementResponse { evidenceType, status, attached, mediaEvidenceId }` 和 operatorNote。mediaEvidenceId 是当前正式 ItemResponse evidenceRef 指向的 MediaEvidence 业务 ID，未指向时为 null。可执行 structured_manual 的 config 可选 `structuredManualFields[] { code, label, maxScore, referenceAnswer? }`，referenceAnswer 仅为 primitive 安全参考；binary eligible config 可选 `binaryManualDecision { incorrectScore: 0, correctScore: 1 }`；exact MMSE 1.0 reading-command config 可选 `manualObservationRecord { booleanLabel, trueLabel, falseLabel, responseTextLabel, responseTextHelp, requireBooleanResponse, requireResponseText }`；legacy revision / 保存时间安全归一为 0 / null，legacy timing 只读规范化。
+- 安全边界：不包含完整 Mixed 配置、scoringRule、原始 expectedValue、score / scoreValue、metadata、qualityControlHints、definition / version 等内部 ObjectId 或 Mongoose document；正式 mediaEvidenceId 是允许公开的业务 identity，但不伴随 bucket、objectKey、checksum 或 signed URL。structuredResponse 内的 isCorrect 是医护已提交事实，不是系统判断。binary config 只提供安全 UI / 确定性映射元数据，不允许客户端提交 config 或 preview score。
 
 - 名称：`ScaleInstanceExecutionDetailResponse`、`UpdateItemResponseDraftResponse`
 - 文件：`backend\src\modules\assessments\types\item-response-execution-response.types.ts`
@@ -391,7 +391,8 @@
 - 名称：A15 媒体公开响应类型
 - 文件：`backend\src\modules\media\types\media-evidence-response.types.ts`
 - 类型：`MediaEvidenceFileResponse`、`MediaEvidenceImageMetadataResponse`、`MediaEvidenceHandwritingTraceResponse`、`MediaEvidenceCaptureContextResponse`、`MediaEvidenceOperatorResponse`、`MediaEvidenceAudioMetadataResponse`、`MediaEvidenceTranscriptionResponse`、`MediaEvidenceResponse`、`MediaEvidenceListResponse`、`EvidenceRequirementStateResponse`、`UploadMediaEvidenceResponse`、`MediaEvidenceAccessUrlResponse`、`VoidMediaEvidenceResponse`、`MediaEvidenceTranscriptionActionResponse`。
-- 安全边界：公开文件摘要只含 MIME、扩展名、大小、storedAt；手写摘要不含 trajectoryObjectKey；证据响应不含关联 ID、subjectCode、definition / version ID、itemSnapshot、versionTrace、qualityHints、metadata、objectKey、bucket、objectPrefix、originalFilename、checksum、publicUrl 或 deletedAt。
+- requirement：`EvidenceRequirementStateResponse { evidenceType, status, attached, mediaEvidenceId }`；mediaEvidenceId 精确表示实际写后正式 ItemResponse evidenceRef 当前指向的 MediaEvidence ID。upload / adoption 成功返回当前正式 ID；void 按实际 clear 后 ref 返回，当前实现为 null。
+- 安全边界：公开文件摘要只含 MIME、扩展名、大小、storedAt；手写摘要不含 trajectoryObjectKey；允许在 requirement 中公开上述正式 mediaEvidenceId，但证据摘要不含其他关联 ID、subjectCode、definition / version ID、itemSnapshot、versionTrace、qualityHints、metadata、objectKey、bucket、objectPrefix、originalFilename、checksum、publicUrl、signed URL 或 deletedAt。
 
 - 名称：`UserSummary`
 - 文件：`backend\src\modules\users\services\users.service.ts`

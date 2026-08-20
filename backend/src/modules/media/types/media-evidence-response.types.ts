@@ -106,6 +106,7 @@ export type EvidenceRequirementStateResponse = {
   evidenceType: Extract<MediaEvidenceType, 'photo' | 'handwriting'>;
   status: ItemEvidenceStatus;
   attached: boolean;
+  mediaEvidenceId: string | null;
 };
 
 export type UploadMediaEvidenceResponse = {

@@ -380,7 +380,7 @@ export function MediaEvidenceList({
                     size="sm"
                     variant="secondary"
                   >
-                    作废此证据
+                    作废此正式证据
                   </Button>
                 ) : (
                   <div className="grid gap-3 rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] p-4">
@@ -412,7 +412,9 @@ export function MediaEvidenceList({
                         onClick={() => submitVoid(evidence)}
                         size="sm"
                       >
-                        {isWriting ? '正在作废证据...' : '确认作废证据'}
+                        {isWriting
+                          ? '正在作废正式证据...'
+                          : '确认作废正式证据'}
                       </Button>
                       <Button
                         disabled={isWriting}

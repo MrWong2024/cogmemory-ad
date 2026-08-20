@@ -177,7 +177,12 @@ function createItem(
     ],
     timing: null,
     evidenceRequirements: [
-      { evidenceType: 'photo', status: 'pending', attached: false },
+      {
+        evidenceType: 'photo',
+        status: 'pending',
+        attached: false,
+        mediaEvidenceId: null,
+      },
     ],
     operatorNote: undefined,
     ...overrides,
@@ -841,10 +846,24 @@ test('an earlier epoch response cannot overwrite a reinitialized server baseline
 test('a newer media generation preserves the current evidence requirement', () => {
   const responseItem = createItem({
     draftRevision: 5,
-    evidenceRequirements: [{ evidenceType: 'photo', status: 'pending', attached: false }],
+    evidenceRequirements: [
+      {
+        evidenceType: 'photo',
+        status: 'pending',
+        attached: false,
+        mediaEvidenceId: null,
+      },
+    ],
   });
   const currentItem = createItem({
-    evidenceRequirements: [{ evidenceType: 'photo', status: 'attached', attached: true }],
+    evidenceRequirements: [
+      {
+        evidenceType: 'photo',
+        status: 'attached',
+        attached: true,
+        mediaEvidenceId: '507f1f77bcf86cd799439020',
+      },
+    ],
   });
   expect(
     mergeDraftSaveMediaState({
@@ -929,7 +948,14 @@ test('uncertain reconciliation classifies not committed, committed, and conflict
   expect(classifyDraftSaveReconciliation(attempt, divergent)).toBe('conflict');
   expect(draftSaveAttemptFieldsMatchServer(attempt, {
     ...committed,
-    evidenceRequirements: [{ evidenceType: 'photo', status: 'attached', attached: true }],
+    evidenceRequirements: [
+      {
+        evidenceType: 'photo',
+        status: 'attached',
+        attached: true,
+        mediaEvidenceId: '507f1f77bcf86cd799439020',
+      },
+    ],
     structuredResponse: { ignored: true },
   })).toBe(true);
 });

@@ -16,9 +16,11 @@ import {
 } from '@/src/features/assessments/api/media-evidence-api';
 import {
   buildMediaEvidenceAccessCacheKey,
+  getFormalMediaEvidenceIds,
   getMediaEvidenceErrorMessage,
   isAccessUrlReusable,
   isMediaEvidenceActive,
+  selectFormalMediaEvidences,
   sortMediaEvidences,
 } from '@/src/features/assessments/lib/media-evidence-display';
 import {
@@ -119,6 +121,24 @@ export function MediaEvidencePanel({
   const [loadingAccessKeys, setLoadingAccessKeys] = useState<
     ReadonlySet<string>
   >(() => new Set());
+  const formalMediaEvidenceIds = useMemo(
+    () => getFormalMediaEvidenceIds(supportedRequirements),
+    [supportedRequirements],
+  );
+  const formalItems = useMemo(
+    () =>
+      selectFormalMediaEvidences(formalMediaEvidenceIds, items ?? []),
+    [formalMediaEvidenceIds, items],
+  );
+  const hasFormalEvidenceMismatch = useMemo(
+    () =>
+      items !== null &&
+      [...formalMediaEvidenceIds].some(
+        (formalMediaEvidenceId) =>
+          !items.some((evidence) => evidence.id === formalMediaEvidenceId),
+      ),
+    [formalMediaEvidenceIds, items],
+  );
 
   useEffect(() => {
     mountedRef.current = true;
@@ -314,8 +334,7 @@ export function MediaEvidencePanel({
         clearEvidenceAccess(evidence.id);
         setTypeFeedback(evidenceType, {
           kind: 'success',
-          message:
-            '媒体证据已作废，历史记录仍保留，现在可以重新上传。',
+          message: '正式媒体证据已作废，历史记录仍由系统保留。',
         });
       }
     } catch (requestError: unknown) {
@@ -431,10 +450,10 @@ export function MediaEvidencePanel({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h5 className="text-lg font-semibold text-[var(--cma-text-strong)]">
-            当前媒体证据
+            正式题目媒体证据
           </h5>
           <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-            列表按题目按需加载；上传、预览和作废不会保存或改变文字作答草稿。
+            这里只显示已关联到本题正式作答的媒体证据。患者施测原始证据请在患者施测参考中核对，并按需采用。
           </p>
         </div>
         <Button
@@ -449,7 +468,7 @@ export function MediaEvidencePanel({
 
       {isListLoading && !items ? (
         <p aria-live="polite" role="status" className="text-[var(--cma-info)]">
-          正在加载当前题目的媒体证据历史...
+          正在加载当前题目的媒体证据...
         </p>
       ) : null}
 
@@ -471,11 +490,20 @@ export function MediaEvidencePanel({
         </div>
       ) : null}
 
-      {items ? (
+      {hasFormalEvidenceMismatch ? (
+        <p
+          className="rounded-md border border-[var(--cma-warning)] bg-[var(--cma-warning-soft)] p-4 text-sm leading-6 text-[var(--cma-warning)]"
+          role="alert"
+        >
+          正式证据关联信息与媒体记录暂不一致，请重新加载证据列表；如仍存在，请刷新页面后核对。
+        </p>
+      ) : null}
+
+      {items && formalItems.length > 0 ? (
         <MediaEvidenceList
           accessErrors={accessErrors}
           accesses={accesses}
-          items={items}
+          items={formalItems}
           loadingAccessKeys={loadingAccessKeys}
           onRequestAccess={requestAccess}
           onVoid={(evidence, reason) => void handleVoid(evidence, reason)}
@@ -484,23 +512,46 @@ export function MediaEvidencePanel({
         />
       ) : null}
 
+      {items && formalItems.length === 0 ? (
+        <div className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] p-4">
+          <p className="font-semibold text-[var(--cma-text-strong)]">
+            当前尚无正式题目媒体证据。
+          </p>
+          {supportedRequirements.some(
+            (requirement) =>
+              requirement.status !== 'attached' ||
+              !requirement.attached ||
+              requirement.mediaEvidenceId === null,
+          ) ? (
+            <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
+              如患者施测已产生图片或手写证据，请在患者施测参考中核对后选择“采用到正式题目证据”。
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
       {supportedRequirements.map((requirement) => {
         const activeEvidence = items?.some(
           (evidence) =>
             evidence.evidenceType === requirement.evidenceType &&
             isMediaEvidenceActive(evidence),
         );
-        const hasCurrentEvidence =
-          requirement.attached || activeEvidence === true;
+        const hasFormalEvidence =
+          requirement.status === 'attached' &&
+          requirement.attached &&
+          requirement.mediaEvidenceId !== null;
+        const hasCurrentEvidence = hasFormalEvidence || activeEvidence === true;
         const disabledReason = readOnlyReason
           ? readOnlyReason
           : isListLoading
             ? '证据列表加载完成前暂不开放上传。'
             : listError
               ? '请先成功加载证据列表，再进行上传。'
-              : hasCurrentEvidence
-                ? '已有同类型有效媒体记录；如需重传，请先作废该记录。正式关联状态仍以题目证据要求为准。'
-                : null;
+              : hasFormalEvidence
+                ? '当前题目已有同类型正式媒体证据；如需重新采集，请先作废当前正式证据。'
+                : activeEvidence
+                  ? '当前已有同类型媒体记录，但正式关联状态仍以题目证据要求为准。如需重新采集，请先按现有媒体处理流程处理该记录。'
+                  : null;
         const captureDisabled = Boolean(disabledReason);
         const feedback = feedbacks[requirement.evidenceType];
         const handwritingDraft =
