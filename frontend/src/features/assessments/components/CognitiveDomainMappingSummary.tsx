@@ -158,7 +158,7 @@ export function CognitiveDomainMappingSummary({
             </dl>
           ) : (
             <p className="mt-3 text-sm leading-6 text-[var(--cma-muted)]">
-              服务端返回值不符合 A19 当前四项安全字面值，页面不将异常值原样扩展为新能力。
+              认知域映射解释信息不符合当前安全规则，页面不将异常值扩展为新的业务含义。
             </p>
           )}
         </div>

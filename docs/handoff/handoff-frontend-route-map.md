@@ -177,18 +177,18 @@
 - 确认并发：确认区展开冻结 updatedAt；版本变化时保留意见、清除 checkbox、标记 stale。confirmation conflict 刷新 latest 且不重发；warning 不能忽略；alreadyConfirmed=true 按成功处理。
 - 最终只读：confirmed / locked 不显示人工评分输入或确认按钮；按 isFinal / totalScore.isFinal 显示确认得分、确认分组得分与确认项目分值，并展示确认时间 / 操作者。空确认意见不显示占位，confirmationId 仅在默认折叠技术信息中显示。
 - 认知域依赖：实例 completed / locked / voided 且来源 ScoreResult confirmed / locked / voided 时才查询 A19 latest。评分不存在、评分 latest 失败、draft / computed / needs_review 时显示依赖状态；B8 confirm 成功后只自动 GET 一次，不自动 compute。
-- 认知域首次计算：confirmed / locked 来源评分还必须 isFinal=true，实例只能为 completed，Visit 为 draft / in_progress / completed，latest 必须 not_found，且所有作答 / 媒体 / 人工评分 / 确认草稿和题目 / 媒体 / submit / 评分写请求均为空闲。用户须阅读说明并勾选 checkbox，POST 只发送 confirm=true；不自动重试、不支持重算。
-- 认知域结果：按 domainCode 升序展示 domain score、范围、映射项目得分比例、weighted 技术字段和全部项目计数；按 itemOrder / itemCode / domainCode 展示贡献。null 不显示为 0，不排名、不跨域求和、不重新计算任何服务端值。
-- 重叠归因：固定说明一个项目可完整归入多个认知域、同题同域由后端去重、多 domain 保留、认知域之间可能重叠、各域不可相加解释量表总分；scorePercent 不是正常率、疾病概率或风险值。
+- 认知域首次生成：最终评分确认后才开放；confirmed / locked 来源评分还必须 isFinal=true，实例只能为 completed，Visit 为 draft / in_progress / completed，latest 必须 not_found，且所有作答 / 媒体 / 人工评分 / 确认草稿和题目 / 媒体 / submit / 评分写请求均为空闲。用户显式点击唯一“生成认知域结果”按钮后，POST 仍只发送 confirm=true；不自动生成、不自动重试、不支持重新生成，也不再设置前端 checkbox / 二级确认。
+- 认知域结果：`computed` 作为最终评分与既定映射的确定性派生分析直接显示“认知域分析结果已生成”，随后按 domainCode 升序展示 domain score、范围、映射项目得分比例、weighted 技术字段和全部项目计数，并按 itemOrder / itemCode / domainCode 展示贡献。null 不显示为 0，不排名、不跨域求和、不重新计算任何服务端值。
+- 重叠归因：主界面以两条说明覆盖非独立诊断、认知域重叠 / 不可求和和 scorePercent 非概率；详细的完整项目分值归因规则放入默认折叠的“认知域结果如何解释”。
 - 认知域映射：展示 mapping version / source / mode / domainCodes、policy、interpretation、computation、warning、versionTrace、来源 ScoreResult 与弱化技术编号；interpretation 异常时提示安全异常且不扩展临床解释。
 - 贡献定位：仅 itemResponseId 可匹配当前安全题目时复用既有分组切换、scrollIntoView 与 focus；null / 无法匹配不按 itemCode 猜测，不改 URL、不清除任何本地草稿。
-- 认知域历史：computed / needs_review / confirmed / locked / voided 按 status 与服务端 isFinal 只读展示；已有结果只提供重新加载 latest，不显示重新计算。locked / voided 实例或 voided 来源评分只能查询历史。
+- 认知域历史：computed / needs_review / confirmed / locked / voided 的 backend status 兼容保留并按业务标签安全展示；当前一期没有认知域第二次人工确认或 lock 动作，不根据 isFinal 把 computed 改写为 confirmed。已有结果只提供刷新 latest，不显示重新生成；locked / voided 实例或 voided 来源评分只能查询历史。
 - 非诊断边界：主区域明确结果仅展示项目在认知维度中的映射，不能脱离量表、临床访谈和其他检查单独形成诊断；不输出阈值、等级、疾病概率、报告或 AI 解读。
 - 评分隔离：compute / latest 只允许同步服务端 scaleInstance 摘要，不覆盖 Visit、ItemResponse、作答 / 媒体草稿或 submission readiness，不触发 A14 / A15 写操作
 - 只读：completed / locked / voided 实例仍可查看 readiness、作答和历史证据；submit 期间题目保存、图片 / 手写采集、上传与作废临时真实禁用
 - 医护控制：面板显示服务端 currentStep 进度；MMSE `naming`、`reading-command`、`three-step-command` 已显示“由患者推进”，active 时不再呈现医护观察 complete；paused 时仍提供 takeover、直接前一步 redo 与一次 technical replay 授权。所有写操作使用最新 revision，不自动重放；它们只改变患者短期会话事实，不写正式 ItemResponse、提交、评分或报告。临床观察判断与 Session 推进已解耦，观察结果留待 F3 后续复核。
-- 报告入口：单量表页面不生成访视级报告；完成评分确认与认知域计算后返回访视详情页，在独立报告区域选择多实例 scope。
-- 产品文案：页面顶部概括当前页的施测记录、媒体证据、正式提交、评分复核与认知域结果，并说明临床报告工作流位于访视详情；认知域人工确认和 AI 临床解释仍未实现
+- 报告入口：单量表页面不生成访视级报告；完成评分确认与认知域结果生成后返回访视详情页，在独立报告区域选择多实例 scope。
+- 产品文案：页面顶部概括当前页的施测记录、媒体证据、正式提交、评分复核与认知域结果，并说明临床报告工作流位于访视详情；当前一期不设置认知域第二套医生独立确认动作，AI 临床解释仍未实现
 - 当前非目标：不提供批量评分、评分 lock / void / 撤销确认 / reopen / rerun / runNo=2 / 完整历史；不提供认知域人工修改 / 确认 / 锁定 / 作废 / 重算 / weighted mapping 编辑；不在单量表页提供报告生成、诊断、OCR 或 AI。
 - 关联组件：既有执行与评分组件、`PatientAdministrationStaffPanel`、`PatientAdministrationStaffStepControls`、`PatientAdministrationReviewPanel`、`ItemResponseEditor`、`ScaleInstanceSubmissionPanel`，以及 `useCognitiveDomainResult`、`CognitiveDomainResultPanel`、`CognitiveDomainScoreList`、`CognitiveDomainContributionList`、`CognitiveDomainMappingSummary`。
 

@@ -54,20 +54,15 @@ export type UseCognitiveDomainResultValue = {
   computeError: CognitiveDomainApiError | null;
   computing: boolean;
   alreadyComputedReceipt: boolean | null;
-  confirmationOpen: boolean;
-  confirmationChecked: boolean;
   liveMessage: string | null;
-  canPrepareCompute: boolean;
+  canCompute: boolean;
   computeBlockReason: string | null;
   localBlockReason: string | null;
   dependencyMessage: string;
   canRefreshSourceScore: boolean;
   refreshLatest: () => Promise<CognitiveDomainResultDetailResponse | null>;
   refreshSourceScoreResult: () => void;
-  prepareCompute: () => void;
-  cancelCompute: () => void;
-  setConfirmationChecked: (checked: boolean) => void;
-  confirmCompute: () => Promise<void>;
+  compute: () => Promise<void>;
 };
 
 const queryableInstanceStatuses = new Set<AssessmentVisitStatus>([
@@ -96,7 +91,7 @@ function toCognitiveDomainApiError(error: unknown): CognitiveDomainApiError {
     : new CognitiveDomainApiError('unknown');
 }
 
-function getDependencyMessage(
+export function getCognitiveDomainDependencyMessage(
   sourceScoreResult: SourceScoreResult | null,
   sourceScoreQueryStatus: CognitiveDomainSourceScoreQueryStatus,
   scaleInstanceStatus: AssessmentVisitStatus | null,
@@ -114,7 +109,7 @@ function getDependencyMessage(
       return '正在等待来源评分结果加载，当前不会查询认知域结果。';
     }
     if (sourceScoreQueryStatus === 'no_result') {
-      return '当前尚无来源评分，请先完成阶段性评分、人工复核和显式确认。';
+      return '当前尚无来源评分，请先完成评分并最终确认评分结果。';
     }
     if (sourceScoreQueryStatus === 'forbidden') {
       return '当前账号无法取得来源评分，因此不会查询认知域结果。';
@@ -126,10 +121,57 @@ function getDependencyMessage(
   }
 
   if (!queryableSourceScoreStatuses.has(sourceScoreResult.status)) {
-    return '当前来源评分尚未确认；draft、computed 或 needs_review 状态不会查询认知域结果。';
+    return '当前评分结果尚未最终确认，暂不能生成认知域分析。';
   }
 
   return '来源评分和实例状态允许查询已有认知域结果。';
+}
+
+type CognitiveDomainComputeBlockInput = {
+  localBlockReason: string | null;
+  sourceScoreResult: SourceScoreResult | null;
+  dependencyMessage: string;
+  scaleInstanceStatus: AssessmentVisitStatus | null;
+  visitStatus: AssessmentVisitStatus | null;
+  status: CognitiveDomainLatestStatus;
+  computeProhibitedReason: string | null;
+};
+
+export function getCognitiveDomainComputeBlockReason({
+  localBlockReason,
+  sourceScoreResult,
+  dependencyMessage,
+  scaleInstanceStatus,
+  visitStatus,
+  status,
+  computeProhibitedReason,
+}: CognitiveDomainComputeBlockInput): string | null {
+  if (localBlockReason) {
+    return localBlockReason;
+  }
+  if (!sourceScoreResult) {
+    return dependencyMessage;
+  }
+  if (!computableSourceScoreStatuses.has(sourceScoreResult.status)) {
+    return sourceScoreResult.status === 'voided'
+      ? '来源评分已作废，只能查看已有认知域结果。'
+      : '来源评分尚未达到可用于认知域分析的最终状态。';
+  }
+  if (!sourceScoreResult.isFinal) {
+    return '来源评分尚未最终确认，不能生成认知域结果。';
+  }
+  if (scaleInstanceStatus !== 'completed') {
+    return '当前量表实例状态不允许生成新的认知域结果。';
+  }
+  if (!visitStatus || !computableVisitStatuses.has(visitStatus)) {
+    return '当前访视状态不允许生成认知域结果。';
+  }
+  if (status !== 'not_found') {
+    return status === 'loaded'
+      ? '当前已有认知域结果，现阶段不支持重新生成。'
+      : '请先完成认知域结果加载。';
+  }
+  return computeProhibitedReason;
 }
 
 export function useCognitiveDomainResult({
@@ -158,14 +200,12 @@ export function useCognitiveDomainResult({
   const [alreadyComputedReceipt, setAlreadyComputedReceipt] = useState<
     boolean | null
   >(null);
-  const [confirmationOpen, setConfirmationOpen] = useState(false);
-  const [confirmationChecked, setConfirmationCheckedState] = useState(false);
   const [liveMessage, setLiveMessage] = useState<string | null>(null);
   const [computeProhibitedReason, setComputeProhibitedReason] = useState<
     string | null
   >(null);
 
-  const dependencyMessage = getDependencyMessage(
+  const dependencyMessage = getCognitiveDomainDependencyMessage(
     sourceScoreResult,
     sourceScoreQueryStatus,
     scaleInstanceStatus,
@@ -185,6 +225,7 @@ export function useCognitiveDomainResult({
     latestControllerRef.current = controller;
     setStatus('loading');
     setLatestError(null);
+    setAlreadyComputedReceipt(null);
     setLiveMessage('正在加载认知域结果。');
 
     try {
@@ -201,8 +242,6 @@ export function useCognitiveDomainResult({
 
       setDetail(response);
       setStatus('loaded');
-      setConfirmationOpen(false);
-      setConfirmationCheckedState(false);
       setLiveMessage('认知域结果已加载。');
       return response;
     } catch (requestError: unknown) {
@@ -217,12 +256,10 @@ export function useCognitiveDomainResult({
       }
 
       setDetail(null);
-      setConfirmationOpen(false);
-      setConfirmationCheckedState(false);
       if (error.kind === 'cognitive_domain_result_not_found') {
         setStatus('not_found');
         setLatestError(null);
-        setLiveMessage('当前尚未计算认知域结果。');
+        setLiveMessage(null);
       } else if (error.kind === 'forbidden') {
         setStatus('forbidden');
         setLatestError(error);
@@ -259,8 +296,6 @@ export function useCognitiveDomainResult({
     setLatestError(null);
     setComputeError(null);
     setAlreadyComputedReceipt(null);
-    setConfirmationOpen(false);
-    setConfirmationCheckedState(false);
     setLiveMessage(null);
     setComputeProhibitedReason(null);
 
@@ -282,45 +317,16 @@ export function useCognitiveDomainResult({
     visitId,
   ]);
 
-  useEffect(() => {
-    if (!localBlockReason) {
-      return;
-    }
-
-    setConfirmationOpen(false);
-    setConfirmationCheckedState(false);
-  }, [localBlockReason]);
-
   const computeBlockReason = useMemo(() => {
-    if (localBlockReason) {
-      return localBlockReason;
-    }
-    if (!sourceScoreResult) {
-      return dependencyMessage;
-    }
-    if (!computableSourceScoreStatuses.has(sourceScoreResult.status)) {
-      return sourceScoreResult.status === 'voided'
-        ? '来源评分已作废，只能查询已有历史认知域结果。'
-        : '来源评分必须为 confirmed 或 locked 才能首次计算认知域结果。';
-    }
-    if (!sourceScoreResult.isFinal) {
-      return '来源评分尚未满足服务端最终性事实，不能首次计算认知域结果。';
-    }
-    if (scaleInstanceStatus !== 'completed') {
-      return '只有 completed 量表实例可以首次计算认知域结果；locked 或 voided 实例仅可查询历史结果。';
-    }
-    if (!visitStatus || !computableVisitStatuses.has(visitStatus)) {
-      return '当前访视状态不允许首次计算认知域结果。';
-    }
-    if (status !== 'not_found') {
-      return status === 'loaded'
-        ? '当前已有认知域结果，A19 不支持重新计算。'
-        : '请先完成认知域最新结果查询。';
-    }
-    if (computeProhibitedReason) {
-      return computeProhibitedReason;
-    }
-    return null;
+    return getCognitiveDomainComputeBlockReason({
+      localBlockReason,
+      sourceScoreResult,
+      dependencyMessage,
+      scaleInstanceStatus,
+      visitStatus,
+      status,
+      computeProhibitedReason,
+    });
   }, [
     computeProhibitedReason,
     dependencyMessage,
@@ -331,45 +337,17 @@ export function useCognitiveDomainResult({
     visitStatus,
   ]);
 
-  const canPrepareCompute = computeBlockReason === null && !computing;
+  const canCompute = computeBlockReason === null && !computing;
 
-  const prepareCompute = useCallback(() => {
-    if (!canPrepareCompute) {
-      return;
-    }
-    setComputeError(null);
-    setConfirmationCheckedState(false);
-    setConfirmationOpen(true);
-  }, [canPrepareCompute]);
-
-  const cancelCompute = useCallback(() => {
-    if (computingRef.current) {
-      return;
-    }
-    setConfirmationOpen(false);
-    setConfirmationCheckedState(false);
-  }, []);
-
-  const setConfirmationChecked = useCallback((checked: boolean) => {
-    if (!computingRef.current) {
-      setConfirmationCheckedState(checked);
-    }
-  }, []);
-
-  const confirmCompute = useCallback(async () => {
-    if (
-      computingRef.current ||
-      !confirmationOpen ||
-      !confirmationChecked ||
-      !canPrepareCompute
-    ) {
+  const compute = useCallback(async () => {
+    if (computingRef.current || !canCompute) {
       return;
     }
 
     computingRef.current = true;
     setComputing(true);
     setComputeError(null);
-    setLiveMessage('正在计算认知域结果。');
+    setLiveMessage('正在生成认知域结果。');
 
     try {
       const response = await computeCognitiveDomainResult(
@@ -399,12 +377,10 @@ export function useCognitiveDomainResult({
       setStatus('loaded');
       setLatestError(null);
       setAlreadyComputedReceipt(alreadyComputed);
-      setConfirmationOpen(false);
-      setConfirmationCheckedState(false);
       setLiveMessage(
         alreadyComputed
-          ? '该实例此前已经生成认知域结果，本次未重复计算。'
-          : '认知域结果计算完成；结果尚未独立确认。',
+          ? '该量表已有认知域结果，本次未重复生成。'
+          : '认知域结果已生成。',
       );
     } catch (requestError: unknown) {
       if (!mountedRef.current) {
@@ -419,8 +395,6 @@ export function useCognitiveDomainResult({
 
       setComputeError(error);
       setComputeProhibitedReason(getCognitiveDomainApiErrorMessage(error.kind));
-      setConfirmationOpen(false);
-      setConfirmationCheckedState(false);
       setLiveMessage(null);
 
       if (error.kind === 'forbidden') {
@@ -443,9 +417,7 @@ export function useCognitiveDomainResult({
       }
     }
   }, [
-    canPrepareCompute,
-    confirmationChecked,
-    confirmationOpen,
+    canCompute,
     onUnauthorized,
     patientId,
     refreshLatest,
@@ -465,19 +437,14 @@ export function useCognitiveDomainResult({
     computeError,
     computing,
     alreadyComputedReceipt,
-    confirmationOpen,
-    confirmationChecked,
     liveMessage,
-    canPrepareCompute,
+    canCompute,
     computeBlockReason,
     localBlockReason,
     dependencyMessage,
     canRefreshSourceScore,
     refreshLatest,
     refreshSourceScoreResult: onRefreshSourceScoreResult,
-    prepareCompute,
-    cancelCompute,
-    setConfirmationChecked,
-    confirmCompute,
+    compute,
   };
 }

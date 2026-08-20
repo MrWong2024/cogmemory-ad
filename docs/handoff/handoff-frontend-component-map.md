@@ -446,17 +446,18 @@
 ### 6.39 `useCognitiveDomainResult`
 
 - 路径：`frontend\src\features\assessments\hooks\useCognitiveDomainResult.ts`
-- 职责：独立管理 A19 idle / waiting_for_score / loading / not_found / loaded / forbidden / error、latest AbortController、source ScoreResult 依赖、首次 compute 二次确认、checkbox、写锁、alreadyComputed、稳定错误与手工 reload。
+- 职责：独立管理 A19 idle / waiting_for_score / loading / not_found / loaded / forbidden / error、latest AbortController、source ScoreResult 依赖、一步显式 compute、写锁、alreadyComputed、稳定错误与手工 reload；公开合同使用 `canCompute` / `compute`，不再维护 compute checkbox 或二级确认状态。
 - 自动 latest：实例 completed / locked / voided 且来源评分 confirmed / locked / voided 时查询；来源 ID / 状态 / isFinal 或路由实例变化时重置并按条件重新进入流程。B8 confirm 成功只触发 GET，不触发 POST。
-- compute：只在来源 confirmed / locked 且 isFinal、实例 completed、Visit 状态允许、latest not_found 且外部 localBlockReason 为空时开放；只调用 `{ confirm: true }`。冲突 / voided 自动 GET 一次但不重发 POST。
+- compute：只在来源 confirmed / locked 且 isFinal、实例 completed、Visit 状态允许、latest not_found 且外部 localBlockReason 为空时开放；医生点击“生成认知域结果”就是本次显式动作，请求仍只发送 `{ confirm: true }`，并由 `computingRef` 保持 single-flight。冲突 / voided 自动 GET 一次但不重发 POST。
 - 边界：不渲染 JSX、不格式化标签、不定位题目、不计算分数 / 百分比 / 贡献，不修改来源 ScoreResult、Visit 或 ItemResponse；无轮询、无 compute 自动重试。
 
 ### 6.40 `CognitiveDomainResultPanel`
 
 - 路径：`frontend\src\features\assessments\components\CognitiveDomainResultPanel.tsx`
-- 职责：组合来源评分依赖、latest 状态、not_found、forbidden / error、首次计算说明 / checkbox、compute 写入 / 幂等回执、result status / isFinal、非诊断声明和三个结果子组件。
-- 安全说明：固定展示完整分值重叠归因、各域不可相加解释量表总分、scorePercent 非疾病概率、结果不能单独形成诊断；已有结果只提供重新加载 GET。
-- 可访问性：error 使用 alert，loading / success 使用 polite live region，checkbox 有可见 label，disabled 有文字状态；不使用雷达图或诊断式颜色。
+- 职责：组合来源评分依赖、latest 状态、not_found、forbidden / error、单一“生成认知域结果”动作、compute 写入 / 幂等回执、业务化 result status、非诊断声明和三个结果子组件。not_found 只显示一次“尚未生成认知域结果”，loaded 只提供“刷新认知域结果” GET。
+- 当前一期状态语义：`computed` 直接展示为“认知域分析结果已生成”与“已生成”，不显示虚假的“尚未独立确认”或 `isFinal` / computed / confirmed / locked 技术关系，也不新增第二套医生独立确认动作；backend status enum 中 confirmed / locked 等历史兼容与后续治理值原样保留。
+- 安全说明：主界面常驻两条核心边界，覆盖非独立诊断、认知域重叠 / 不可求和及 scorePercent 非概率；“认知域结果如何解释”使用默认折叠的原生 details，保留完整分值重叠归因。正常 passed / 无实际 warning 的 unchecked 不常驻显示质量块，needs_review / failed 和 computation warning 继续突出。
+- 可访问性：error / 异常质量使用 alert，loading / success 使用 polite live region，disabled 生成按钮有文字状态；不使用雷达图或诊断式颜色。
 
 ### 6.41 `CognitiveDomainScoreList`
 

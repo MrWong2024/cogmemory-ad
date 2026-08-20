@@ -14,6 +14,7 @@ import type { UseCognitiveDomainResultValue } from '@/src/features/assessments/h
 import {
   cognitiveDomainNonDiagnosticStatements,
   cognitiveDomainQualityStatusLabels,
+  cognitiveDomainResultStatusBadgeLabels,
   cognitiveDomainResultStatusLabels,
   getCognitiveDomainApiErrorMessage,
 } from '@/src/features/assessments/lib/cognitive-domain-display';
@@ -32,15 +33,16 @@ function CognitiveDomainSafetyBoundary() {
 
 function OverlappingAttributionNotice() {
   return (
-    <div className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] p-4 text-base leading-7 text-[var(--cma-text-strong)]">
-      <p className="font-semibold">重叠归因说明</p>
+    <details className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] p-4 text-base leading-7 text-[var(--cma-text-strong)]">
+      <summary className="cursor-pointer font-semibold">
+        认知域结果如何解释
+      </summary>
       <ul className="mt-2 list-disc space-y-1 pl-5 text-[var(--cma-muted)]">
         <li>一个项目可以归入多个认知域。</li>
-        <li>每个认知域获得该项目的完整分值，不进行平均拆分。</li>
-        <li>认知域之间可能存在重叠。</li>
-        <li>各认知域分数不可相加解释为量表总分。</li>
+        <li>每个认知域按当前映射规则获得该项目的完整分值，不进行平均拆分。</li>
+        <li>因此各认知域得分不能相加解释为量表总分。</li>
       </ul>
-    </div>
+    </details>
   );
 }
 
@@ -71,6 +73,15 @@ export function CognitiveDomainResultPanel({
     (state.status === 'waiting_for_score' ||
       state.status === 'loading' ||
       state.status === 'not_found');
+  const resultStatusTone =
+    result?.status === 'computed' || result?.status === 'confirmed'
+      ? 'success'
+      : result?.status === 'draft'
+        ? 'info'
+        : 'warning';
+  const showQualityWarning =
+    result?.qualityStatus === 'needs_review' ||
+    result?.qualityStatus === 'failed';
 
   return (
     <Card>
@@ -78,9 +89,9 @@ export function CognitiveDomainResultPanel({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <Badge tone="info">认知域结果</Badge>
-            <CardTitle className="mt-3">认知域计算与安全展示</CardTitle>
+            <CardTitle className="mt-3">认知域分析</CardTitle>
             <CardDescription>
-              查询已有结果；无结果时仅在明确确认后首次计算。页面不自动计算，也不支持重算。
+              基于已最终确认的评分结果和量表既定认知域映射生成分析。页面不会自动生成，现阶段也不支持重新生成。
             </CardDescription>
           </div>
           {state.status === 'loaded' ? (
@@ -90,7 +101,7 @@ export function CognitiveDomainResultPanel({
               type="button"
               variant="secondary"
             >
-              重新加载认知域结果
+              刷新认知域结果
             </Button>
           ) : null}
         </div>
@@ -134,7 +145,7 @@ export function CognitiveDomainResultPanel({
               正在加载认知域结果…
             </p>
           ) : null}
-          {state.liveMessage ? (
+          {state.liveMessage && state.alreadyComputedReceipt !== true ? (
             <p className="font-semibold text-[var(--cma-primary)]">
               {state.liveMessage}
             </p>
@@ -156,7 +167,7 @@ export function CognitiveDomainResultPanel({
               type="button"
               variant="secondary"
             >
-              手工重试认知域查询
+              重试加载认知域结果
             </Button>
           </div>
         ) : null}
@@ -184,7 +195,7 @@ export function CognitiveDomainResultPanel({
                 type="button"
                 variant="secondary"
               >
-                重新查询认知域结果
+                刷新认知域结果
               </Button>
             ) : null}
           </div>
@@ -202,88 +213,34 @@ export function CognitiveDomainResultPanel({
             type="button"
             variant="secondary"
           >
-            手工重试认知域查询
+            重试加载认知域结果
           </Button>
         ) : null}
 
         {state.status === 'not_found' ? (
           <section className="rounded-md border border-[var(--cma-line)] p-4">
             <h3 className="text-xl font-semibold text-[var(--cma-text-strong)]">
-              尚未计算认知域结果
+              尚未生成认知域结果
             </h3>
             <p className="mt-2 text-base leading-7 text-[var(--cma-muted)]">
-              latest 查询确认当前没有 runNo=1 认知域结果。首次计算不会在页面加载时自动发送。
+              系统将基于已最终确认的评分结果和量表既定认知域映射生成分析。结果生成后现阶段不支持重新生成。
             </p>
-            {state.canPrepareCompute ? (
+            {state.canCompute || state.computing ? (
               <Button
                 className="mt-4"
-                onClick={state.prepareCompute}
+                disabled={state.computing || !state.canCompute}
+                onClick={() => void state.compute()}
                 type="button"
               >
-                准备计算认知域结果
+                {state.computing
+                  ? '正在生成认知域结果...'
+                  : '生成认知域结果'}
               </Button>
             ) : !localSafetyBlockVisible ? (
               <p className="mt-3 text-base leading-7 text-[var(--cma-muted)]">
                 {state.computeBlockReason}
               </p>
             ) : null}
-          </section>
-        ) : null}
-
-        {state.confirmationOpen ? (
-          <section className="rounded-md border border-[var(--cma-line-strong)] p-4">
-            <h3 className="text-xl font-semibold text-[var(--cma-text-strong)]">
-              确认首次计算口径
-            </h3>
-            <ul className="mt-3 list-disc space-y-2 pl-5 text-base leading-7 text-[var(--cma-muted)]">
-              <li>计算基于已经确认的评分结果。</li>
-              <li>不会重新读取原始作答进行评分。</li>
-              <li>同一题目可将完整分值分别归入多个认知域。</li>
-              <li>认知域之间可能存在重叠，不能跨域求和解释为量表总分。</li>
-              <li>scorePercent 只是映射项目得分比例。</li>
-              <li>scorePercent 不是正常率、疾病概率或风险值。</li>
-              <li>本次只生成 computed 认知域结果。</li>
-              <li>结果尚未独立确认或锁定。</li>
-              <li>当前不生成报告或诊断结论。</li>
-              <li>A19 不支持重算。</li>
-            </ul>
-            <label className="mt-4 flex items-start gap-3 text-base leading-7 text-[var(--cma-text-strong)]">
-              <input
-                checked={state.confirmationChecked}
-                className="mt-1 h-5 w-5"
-                disabled={state.computing}
-                onChange={(event) =>
-                  state.setConfirmationChecked(event.target.checked)
-                }
-                type="checkbox"
-              />
-              <span>
-                我已核对上述重叠归因与非诊断边界，并确认首次计算认知域结果。
-              </span>
-            </label>
-            <div className="mt-4 flex flex-wrap gap-3">
-              <Button
-                disabled={
-                  !state.confirmationChecked ||
-                  state.computing ||
-                  !state.canPrepareCompute
-                }
-                onClick={() => void state.confirmCompute()}
-                type="button"
-              >
-                {state.computing
-                  ? '正在计算认知域结果'
-                  : '确认计算认知域结果'}
-              </Button>
-              <Button
-                disabled={state.computing}
-                onClick={state.cancelCompute}
-                type="button"
-                variant="secondary"
-              >
-                取消
-              </Button>
-            </div>
           </section>
         ) : null}
 
@@ -295,24 +252,22 @@ export function CognitiveDomainResultPanel({
                   <h3 className="text-xl font-semibold text-[var(--cma-text-strong)]">
                     {cognitiveDomainResultStatusLabels[result.status]}
                   </h3>
-                  <p className="mt-2 text-base leading-7 text-[var(--cma-muted)]">
-                    服务端 isFinal：{result.isFinal ? 'true' : 'false'}。
-                    computed 不等于 confirmed，confirmed 也不等于 locked。
-                  </p>
                 </div>
-                <Badge tone={result.isFinal ? 'success' : 'info'}>
-                  {result.isFinal ? '服务端标记为最终结果' : '尚未独立确认'}
+                <Badge tone={resultStatusTone}>
+                  {cognitiveDomainResultStatusBadgeLabels[result.status]}
                 </Badge>
               </div>
-              <p className="mt-3 text-base text-[var(--cma-muted)]">
-                质量处理状态：
-                {cognitiveDomainQualityStatusLabels[result.qualityStatus]}
-              </p>
-              {state.alreadyComputedReceipt !== null ? (
+              {showQualityWarning ? (
+                <p
+                  className="mt-3 rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] p-3 text-base leading-7 text-[var(--cma-warning)]"
+                  role="alert"
+                >
+                  {cognitiveDomainQualityStatusLabels[result.qualityStatus]}
+                </p>
+              ) : null}
+              {state.alreadyComputedReceipt === true ? (
                 <p className="mt-3 font-semibold text-[var(--cma-primary)]">
-                  {state.alreadyComputedReceipt
-                    ? '该实例此前已经生成认知域结果，本次未重复计算。'
-                    : '认知域结果计算完成；结果尚未独立确认。'}
+                  该量表已有认知域结果，本次未重复生成。
                 </p>
               ) : null}
             </section>

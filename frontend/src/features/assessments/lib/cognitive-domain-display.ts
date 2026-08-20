@@ -23,12 +23,24 @@ export const cognitiveDomainResultStatusLabels: Record<
   CognitiveDomainResultStatus,
   string
 > = {
-  draft: '内部认知域结果尚未完成',
-  computed: '认知域结果已计算，尚未独立确认',
-  needs_review: '认知域结果需要进一步复核（本阶段只读）',
-  confirmed: '认知域结果已确认（本阶段只读）',
-  locked: '认知域结果已锁定（只读）',
-  voided: '认知域结果已作废（只读历史）',
+  draft: '认知域结果尚未完成',
+  computed: '认知域分析结果已生成',
+  needs_review: '认知域结果需要进一步核对',
+  confirmed: '认知域结果已确认',
+  locked: '认知域结果已锁定',
+  voided: '认知域结果已作废',
+};
+
+export const cognitiveDomainResultStatusBadgeLabels: Record<
+  CognitiveDomainResultStatus,
+  string
+> = {
+  draft: '处理中',
+  computed: '已生成',
+  needs_review: '需核对',
+  confirmed: '已确认',
+  locked: '已锁定',
+  voided: '已作废',
 };
 
 export const cognitiveDomainMappingSourceLabels: Record<
@@ -94,9 +106,8 @@ const warningMessages: Record<string, string> = {
 };
 
 export const cognitiveDomainNonDiagnosticStatements = [
-  '认知域结果用于展示量表项目在不同认知维度中的映射情况。',
-  '结果不能脱离量表、临床访谈和其他检查单独形成诊断。',
-  '映射项目得分比例不是正常率、疾病概率或风险值。',
+  '认知域结果用于展示量表项目在不同认知维度中的表现，不能脱离量表、临床访谈和其他检查单独形成诊断结论。',
+  '认知域之间可能存在重叠；各域得分不可相加解释为量表总分，得分比例也不是正常率、疾病概率或风险值。',
 ];
 
 export function getCognitiveDomainTitle(
@@ -199,11 +210,11 @@ export function getCognitiveDomainApiErrorMessage(
       '量表版本配置暂时不可用，当前无法计算认知域结果。',
     score_result_not_found: '当前尚无可作为认知域来源的评分结果。',
     cognitive_domain_computation_confirmation_required:
-      '请明确确认认知域映射口径后再开始计算。',
+      '请通过“生成认知域结果”操作开始生成。',
     cognitive_domain_instance_not_computable:
-      '当前量表实例状态不允许首次计算认知域结果。',
+      '当前量表实例状态不允许生成新的认知域结果。',
     cognitive_domain_source_score_not_final:
-      '当前评分结果尚未最终确认，不能计算认知域结果。',
+      '当前评分结果尚未最终确认，不能生成认知域结果。',
     cognitive_domain_source_score_invalid:
       '当前确认评分未满足认知域计算要求，请重新核对评分结果。',
     cognitive_domain_mapping_unavailable:
@@ -214,13 +225,13 @@ export function getCognitiveDomainApiErrorMessage(
     cognitive_domain_result_incomplete:
       '当前存在未完成的内部认知域结果，请联系管理员。',
     cognitive_domain_result_voided:
-      '当前认知域结果已作废，A19 不支持重新计算。',
+      '当前认知域结果已作废，现阶段不支持重新生成。',
     cognitive_domain_computation_conflict:
-      '认知域结果发生并发变化，请重新加载最新结果。',
+      '认知域结果发生并发变化，请刷新结果。',
     cognitive_domain_computation_failed:
-      '认知域结果计算失败，请稍后重新查询。',
+      '认知域结果生成失败，请稍后刷新结果。',
     service_unavailable: '认知域服务暂时不可用，请稍后重试。',
-    unknown: '暂时无法完成认知域操作，请稍后手工重新加载结果。',
+    unknown: '暂时无法完成认知域操作，请稍后刷新结果。',
   };
 
   return messages[kind];
