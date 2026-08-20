@@ -112,6 +112,18 @@ export class MediaEvidenceController {
     );
   }
 
+  @Post(':mediaEvidenceId/revoke-adoption')
+  @HttpCode(HttpStatus.OK)
+  revokePatientAdministrationEvidenceAdoption(
+    @Param() params: MediaEvidenceParamDto,
+    @CurrentUser() currentUser: AuthenticatedUserContext | undefined,
+  ): Promise<UploadMediaEvidenceResponse> {
+    return this.mediaEvidenceWorkflowService.revokePatientAdministrationEvidenceAdoption(
+      params,
+      currentUser,
+    );
+  }
+
   @Get(':mediaEvidenceId/access-url')
   createAccessUrl(
     @Param() params: MediaEvidenceParamDto,

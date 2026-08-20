@@ -227,7 +227,7 @@
 - Controller：`MediaEvidenceController`
 - Guard / Roles：`SessionAuthGuard` + `RolesGuard`；`admin`、`doctor`、`nurse`、`research_assistant`
 - Param DTO：`MediaEvidenceItemParamDto`，四个路径 ID 均使用 `@IsMongoId()`；无 Query / Body
-- 响应：200，`MediaEvidenceListResponse { items }`；按 createdAt、_id 升序返回当前题目下 attached / locked / voided 且未 deleted 的安全历史摘要。列表表示题目媒体记录历史，不等价于当前正式 evidenceRef
+- 响应：200，`MediaEvidenceListResponse { items }`；按 createdAt、_id 升序返回当前题目下 attached / locked / voided 且未 deleted 的安全历史摘要。每项含从 `patientAdministrationContext != null` 派生的 `patientAdministrationOrigin: boolean`，但不公开 context 本体。列表表示题目媒体记录历史，不等价于当前正式 evidenceRef
 - 读取边界：完整验证 Patient -> Visit -> ScaleInstance -> ItemResponse 归属；允许 inactive / archived 患者和 completed / locked / voided 历史访视 / 实例 / 题目只读
 - 错误：400 路径校验；401 / 403；404 `PATIENT_NOT_FOUND`、`VISIT_NOT_FOUND`、`SCALE_INSTANCE_NOT_FOUND`、`ITEM_RESPONSE_NOT_FOUND`
 - 敏感字段边界：不返回 patient / visit / instance / item 关联 ID、subjectCode、definition / version ID、itemSnapshot、versionTrace、qualityHints、metadata、objectKey、bucket、objectPrefix、originalFilename、checksum、trajectoryObjectKey、deletedAt 或 Storage 凭据
@@ -255,6 +255,14 @@
 - 写入与并发：只调用既有 evidenceRef 条件绑定，复用同一个 MediaEvidence ID；并发时允许一个成功、另一个以 `MEDIA_EVIDENCE_ALREADY_ATTACHED` 等既有稳定错误安全拒绝。adoption 不创建或复制 Evidence / OSS 对象，Storage 调用为 0，CAS 失败不删除或 void 原患者 Evidence
 - 非职责：不修改答案、题目 / 实例 / 访视 status、`draftRevision`、`draftSavedAt`、operatorNote 或 score，不自动 `markAsAnswered`、submit、评分或报告复核
 
+- 接口名称：撤销患者施测证据的正式采用
+- Method / Path：`POST /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/item-responses/:itemResponseId/media-evidences/:mediaEvidenceId/revoke-adoption`
+- Guard / Roles：`SessionAuthGuard` + `RolesGuard`；继续使用 `admin`、`doctor`、`nurse`、`research_assistant`
+- Param / Body DTO：复用 `MediaEvidenceParamDto`；无 Body
+- 资格：完整 ownership、active / editable、父 / 子 submission barrier open；MediaEvidence 必须具有患者施测上下文、status=attached、未锁定 / 删除，且当前 ItemResponse 存在同 evidenceType、同 mediaEvidenceId、status=attached 的精确正式引用。任一事实不满足时 409 `MEDIA_EVIDENCE_ADOPTION_NOT_REVOCABLE`
+- 响应 / 唯一写入：200，复用 `UploadMediaEvidenceResponse { mediaEvidence, evidenceRequirement }`；只调用 `clearItemEvidenceReference()`，把正式引用变为 pending / false / null。返回的 patient MediaEvidence 仍为 attached / stored、voidedAt=null，并保留原 context / metadata / 对象；不调用 `markEvidenceVoided()` 或 Storage delete，可继续由 review / access 读取并再次采用
+- 错误：404 完整归属或 `MEDIA_EVIDENCE_NOT_FOUND`；409 可编辑错误 / `MEDIA_EVIDENCE_ADOPTION_NOT_REVOCABLE`；500 `MEDIA_EVIDENCE_ADOPTION_REVOKE_FAILED`
+
 - 接口名称：媒体证据临时访问地址
 - Method / Path：`GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/item-responses/:itemResponseId/media-evidences/:mediaEvidenceId/access-url`
 - Guard / Roles：`SessionAuthGuard` + `RolesGuard`；`admin`、`doctor`、`nurse`、`research_assistant`
@@ -277,9 +285,9 @@
 - Method / Path：`POST /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/item-responses/:itemResponseId/media-evidences/:mediaEvidenceId/void`
 - Guard / Roles：`SessionAuthGuard` + `RolesGuard`；`admin`、`doctor`、`nurse`、`research_assistant`
 - Param / Body DTO：`MediaEvidenceParamDto`；`VoidMediaEvidenceDto { reason }`，reason trim 后 3-1000；不接受 status、voidedAt、metadata、operatorId、objectKey 或 deleteObject
-- 状态与一致性：同上传可编辑状态且父 / 子 barrier open；仅 attached 且仍由当前 evidenceRef 引用的证据可作废。clear CAS 包含父 / 子 barrier open；miss 后屏障竞争精确返回 409 `SCALE_INSTANCE_NOT_EDITABLE`。先清除 evidenceRef 为 pending / null，再标记 MediaEvidence voided；后者失败只在该空 pending 引用上尝试恢复 attached 引用，restore 是补偿例外，不受普通屏障门禁开放
+- 状态与一致性：同上传可编辑状态且父 / 子 barrier open；仅 `patientAdministrationContext == null`、attached 且仍由当前 evidenceRef 引用的 direct formal Evidence 可作废。patient-origin Evidence 在 clear 前即以 409 `MEDIA_EVIDENCE_PATIENT_ORIGIN_REQUIRES_ADOPTION_REVOKE` 拒绝，必须改用 revoke-adoption。direct formal 的 clear CAS 包含父 / 子 barrier open；miss 后屏障竞争精确返回 409 `SCALE_INSTANCE_NOT_EDITABLE`。先清除 evidenceRef 为 pending / null，再标记 MediaEvidence voided；后者失败只在该空 pending 引用上尝试恢复 attached 引用，restore 是补偿例外，不受普通屏障门禁开放
 - 响应：200，`VoidMediaEvidenceResponse { mediaEvidence, evidenceRequirement }`；evidenceRequirement 从实际 clear 后 ItemResponse evidenceRef 映射，当前实现为 pending / false / mediaEvidenceId=null；metadata 仅写 voidReason / voidedBy / voidedAt；A15 作废不递增 `draftRevision` 或修改 `draftSavedAt`
-- 错误：404 完整归属或 `MEDIA_EVIDENCE_NOT_FOUND`；409 可编辑错误 / `MEDIA_EVIDENCE_NOT_VOIDABLE`；500 `MEDIA_EVIDENCE_VOID_FAILED`
+- 错误：404 完整归属或 `MEDIA_EVIDENCE_NOT_FOUND`；409 可编辑错误 / `MEDIA_EVIDENCE_NOT_VOIDABLE` / `MEDIA_EVIDENCE_PATIENT_ORIGIN_REQUIRES_ADOPTION_REVOKE`；500 `MEDIA_EVIDENCE_VOID_FAILED`
 - 删除边界：正常作废不调用 Storage.deleteObject、不物理删除对象；作废记录保留在列表中且不可签名访问，随后允许重新上传；没有原子替换接口
 
 ### A16 量表实例提交 API

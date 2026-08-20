@@ -139,6 +139,7 @@ export type MediaEvidence = {
   captureMode: MediaCaptureMode;
   status: MediaEvidenceStatus;
   storageStatus: MediaStorageStatus;
+  patientAdministrationOrigin: boolean;
   itemCode: string;
   crfCode?: string;
   itemTitle?: string;

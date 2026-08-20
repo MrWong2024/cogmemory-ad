@@ -11,6 +11,7 @@ import {
   getMediaEvidenceAccessUrl,
   listItemMediaEvidences,
   MediaEvidenceApiError,
+  revokePatientAdministrationEvidenceAdoption,
   uploadItemMediaEvidence,
   voidItemMediaEvidence,
 } from '@/src/features/assessments/api/media-evidence-api';
@@ -305,6 +306,7 @@ export function MediaEvidencePanel({
 
   async function handleVoid(evidence: MediaEvidence, reason: string) {
     if (
+      evidence.patientAdministrationOrigin ||
       (evidence.evidenceType !== 'photo' &&
         evidence.evidenceType !== 'handwriting') ||
       writingTypes.has(evidence.evidenceType) ||
@@ -359,6 +361,72 @@ export function MediaEvidencePanel({
 
       if (
         error.kind === 'media_evidence_not_voidable' ||
+        error.kind === 'media_evidence_not_found'
+      ) {
+        setListRetryKey((value) => value + 1);
+      }
+    } finally {
+      onEndWrite(evidenceType);
+    }
+  }
+
+  async function handleRevokeAdoption(evidence: MediaEvidence) {
+    if (
+      !evidence.patientAdministrationOrigin ||
+      (evidence.evidenceType !== 'photo' &&
+        evidence.evidenceType !== 'handwriting') ||
+      writingTypes.has(evidence.evidenceType) ||
+      !onTryBeginWrite(evidence.evidenceType)
+    ) {
+      return;
+    }
+
+    const evidenceType = evidence.evidenceType;
+    setTypeFeedback(evidenceType, undefined);
+
+    try {
+      const response =
+        await revokePatientAdministrationEvidenceAdoption(
+          patientId,
+          visitId,
+          scaleInstanceId,
+          item.id,
+          evidence.id,
+        );
+
+      onRequirementChange(response.evidenceRequirement);
+      onEvidencePersisted(response.evidenceRequirement);
+
+      if (mountedRef.current) {
+        setItems((current) => mergeEvidence(current, response.mediaEvidence));
+        setTypeFeedback(evidenceType, {
+          kind: 'success',
+          message:
+            '已撤销正式采用；患者原始证据、文件和施测记录仍保留，并可再次采用。',
+        });
+      }
+    } catch (requestError: unknown) {
+      if (!mountedRef.current) {
+        return;
+      }
+
+      const error =
+        requestError instanceof MediaEvidenceApiError
+          ? requestError
+          : new MediaEvidenceApiError('unknown');
+
+      if (error.kind === 'unauthenticated') {
+        router.replace('/login');
+        return;
+      }
+
+      setTypeFeedback(evidenceType, {
+        kind: 'error',
+        message: getMediaEvidenceErrorMessage(error.kind),
+      });
+
+      if (
+        error.kind === 'media_evidence_adoption_not_revocable' ||
         error.kind === 'media_evidence_not_found'
       ) {
         setListRetryKey((value) => value + 1);
@@ -506,6 +574,9 @@ export function MediaEvidencePanel({
           items={formalItems}
           loadingAccessKeys={loadingAccessKeys}
           onRequestAccess={requestAccess}
+          onRevokeAdoption={(evidence) =>
+            void handleRevokeAdoption(evidence)
+          }
           onVoid={(evidence, reason) => void handleVoid(evidence, reason)}
           readOnlyReason={readOnlyReason}
           writingTypes={writingTypes}
@@ -540,6 +611,9 @@ export function MediaEvidencePanel({
           requirement.status === 'attached' &&
           requirement.attached &&
           requirement.mediaEvidenceId !== null;
+        const formalEvidence = items?.find(
+          (evidence) => evidence.id === requirement.mediaEvidenceId,
+        );
         const hasCurrentEvidence = hasFormalEvidence || activeEvidence === true;
         const disabledReason = readOnlyReason
           ? readOnlyReason
@@ -548,7 +622,9 @@ export function MediaEvidencePanel({
             : listError
               ? '请先成功加载证据列表，再进行上传。'
               : hasFormalEvidence
-                ? '当前题目已有同类型正式媒体证据；如需重新采集，请先作废当前正式证据。'
+                ? formalEvidence?.patientAdministrationOrigin
+                  ? '当前题目已采用同类型患者原始证据；如需重新采集，请先撤销正式采用。'
+                  : '当前题目已有同类型正式媒体证据；如需重新采集，请先作废当前正式证据。'
                 : activeEvidence
                   ? '当前已有同类型媒体记录，但正式关联状态仍以题目证据要求为准。如需重新采集，请先按现有媒体处理流程处理该记录。'
                   : null;

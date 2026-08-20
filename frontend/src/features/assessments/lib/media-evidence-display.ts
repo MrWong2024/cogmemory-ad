@@ -196,6 +196,10 @@ export function getMediaEvidenceErrorMessage(
       '当前媒体证据无法访问，可能已作废或存储状态异常。',
     media_evidence_not_voidable:
       '当前媒体证据不能作废，请重新加载证据列表。',
+    media_evidence_adoption_not_revocable:
+      '当前患者证据的正式采用关系不能撤销，请重新加载后核对。',
+    media_evidence_patient_origin_requires_adoption_revoke:
+      '患者原始证据不能作废，请使用“撤销正式采用”。',
     media_trajectory_not_found: '当前手写证据没有可访问的轨迹文件。',
     media_storage_unavailable:
       '媒体存储服务暂时不可用，请稍后手工重试。',
@@ -204,8 +208,48 @@ export function getMediaEvidenceErrorMessage(
       '媒体证据关联失败，请重新加载后重试。',
     media_evidence_void_failed:
       '媒体证据作废失败，请重新加载后重试。',
+    media_evidence_adoption_revoke_failed:
+      '患者证据的正式采用关系撤销失败，请重新加载后重试。',
     service_unavailable: '媒体证据服务暂时不可用，请稍后重试。',
   };
 
   return messages[kind] ?? '媒体证据操作失败，请稍后重试。';
+}
+
+export type FormalMediaEvidenceActionCopy =
+  | {
+      kind: 'revoke_adoption';
+      actionLabel: '撤销正式采用';
+      confirmationMessage: string;
+      confirmationLabel: '确认撤销正式采用';
+      requiresVoidReason: false;
+    }
+  | {
+      kind: 'void';
+      actionLabel: '作废此正式证据';
+      confirmationMessage: string;
+      confirmationLabel: '确认作废正式证据';
+      requiresVoidReason: true;
+    };
+
+export function getFormalMediaEvidenceActionCopy(
+  patientAdministrationOrigin: boolean,
+): FormalMediaEvidenceActionCopy {
+  return patientAdministrationOrigin
+    ? {
+        kind: 'revoke_adoption',
+        actionLabel: '撤销正式采用',
+        confirmationMessage:
+          '撤销后只解除该患者原始证据与本题正式作答的关联。患者原始证据、文件和施测记录仍会保留，并可再次采用。',
+        confirmationLabel: '确认撤销正式采用',
+        requiresVoidReason: false,
+      }
+    : {
+        kind: 'void',
+        actionLabel: '作废此正式证据',
+        confirmationMessage:
+          '作废不会物理删除文件或历史记录。作废后可重新上传同类型证据。',
+        confirmationLabel: '确认作废正式证据',
+        requiresVoidReason: true,
+      };
 }

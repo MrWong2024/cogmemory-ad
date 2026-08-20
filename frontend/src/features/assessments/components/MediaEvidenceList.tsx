@@ -9,6 +9,7 @@ import { formatDuration } from '@/src/features/assessments/lib/assessment-execut
 import {
   buildMediaEvidenceAccessCacheKey,
   formatMediaFileSize,
+  getFormalMediaEvidenceActionCopy,
   handwritingInputToolLabels,
   handwritingTrajectoryFormatLabels,
   mediaCaptureModeLabels,
@@ -59,6 +60,7 @@ export function MediaEvidenceList({
   items,
   loadingAccessKeys,
   onRequestAccess,
+  onRevokeAdoption,
   onVoid,
   readOnlyReason,
   writingTypes,
@@ -71,6 +73,7 @@ export function MediaEvidenceList({
     evidence: MediaEvidence,
     asset: MediaEvidenceAccessAsset,
   ) => void;
+  onRevokeAdoption: (evidence: MediaEvidence) => void;
   onVoid: (evidence: MediaEvidence, reason: string) => void;
   readOnlyReason: string | null;
   writingTypes: ReadonlySet<SupportedMediaEvidenceType>;
@@ -141,7 +144,10 @@ export function MediaEvidenceList({
 
         const isWriting =
           isSupportedType(evidence) && writingTypes.has(evidence.evidenceType);
-        const canVoid =
+        const formalAction = getFormalMediaEvidenceActionCopy(
+          evidence.patientAdministrationOrigin,
+        );
+        const canChangeFormalEvidence =
           evidence.status === 'attached' &&
           isSupportedType(evidence) &&
           !readOnlyReason;
@@ -367,7 +373,7 @@ export function MediaEvidenceList({
               trajectoryAccess={accesses[trajectoryKey]}
             />
 
-            {canVoid ? (
+            {canChangeFormalEvidence ? (
               <div className="border-t border-[var(--cma-line)] pt-4">
                 {!isConfirming ? (
                   <Button
@@ -380,12 +386,41 @@ export function MediaEvidenceList({
                     size="sm"
                     variant="secondary"
                   >
-                    作废此正式证据
+                    {formalAction.actionLabel}
                   </Button>
+                ) : formalAction.kind === 'revoke_adoption' ? (
+                  <div className="grid gap-3 rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] p-4">
+                    <p className="text-sm leading-6 text-[var(--cma-warning)]">
+                      {formalAction.confirmationMessage}
+                    </p>
+                    <div className="flex flex-wrap gap-3">
+                      <Button
+                        disabled={isWriting}
+                        onClick={() => onRevokeAdoption(evidence)}
+                        size="sm"
+                      >
+                        {isWriting
+                          ? '正在撤销正式采用...'
+                          : formalAction.confirmationLabel}
+                      </Button>
+                      <Button
+                        disabled={isWriting}
+                        onClick={() => {
+                          setConfirmingEvidenceId(null);
+                          setVoidReason('');
+                          setVoidValidationError(null);
+                        }}
+                        size="sm"
+                        variant="secondary"
+                      >
+                        取消
+                      </Button>
+                    </div>
+                  </div>
                 ) : (
                   <div className="grid gap-3 rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] p-4">
                     <p className="text-sm leading-6 text-[var(--cma-warning)]">
-                      作废不会物理删除文件或历史记录。作废后可重新上传同类型证据。
+                      {formalAction.confirmationMessage}
                     </p>
                     <label
                       className="font-semibold text-[var(--cma-text-strong)]"
@@ -414,7 +449,7 @@ export function MediaEvidenceList({
                       >
                         {isWriting
                           ? '正在作废正式证据...'
-                          : '确认作废正式证据'}
+                          : formalAction.confirmationLabel}
                       </Button>
                       <Button
                         disabled={isWriting}

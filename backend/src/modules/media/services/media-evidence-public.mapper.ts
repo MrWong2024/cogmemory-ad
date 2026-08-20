@@ -141,6 +141,7 @@ export function toMediaEvidenceResponse(
     captureMode: evidence.captureMode,
     status: evidence.status,
     storageStatus: evidence.storageStatus,
+    patientAdministrationOrigin: evidence.patientAdministrationContext != null,
     itemCode: evidence.itemCode,
     crfCode: evidence.crfCode,
     itemTitle: evidence.itemTitle,

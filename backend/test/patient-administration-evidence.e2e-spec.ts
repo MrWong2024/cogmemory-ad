@@ -1084,6 +1084,7 @@ describe('patient administration evidence APIs (e2e)', () => {
       throw new Error('Expected adopted media evidence response');
     }
     expect(adoptedMediaEvidence.id).toBe(drawingEvidence._id.toString());
+    expect(adoptedMediaEvidence.patientAdministrationOrigin).toBe(true);
     for (const protectedKey of [
       'patientId',
       'visitId',
@@ -1092,6 +1093,7 @@ describe('patient administration evidence APIs (e2e)', () => {
       'sessionId',
       'stepKey',
       'stepRun',
+      'patientAdministrationContext',
       'objectKey',
       'bucket',
       'checksum',
@@ -1183,40 +1185,168 @@ describe('patient administration evidence APIs (e2e)', () => {
         );
       });
 
-    const voided = bodyOf(
-      await staff
-        .post(
-          `/patients/${state.patientId}/visits/${state.visitId}/scale-instances/${state.scaleInstanceId}/item-responses/${drawingItemId}/media-evidences/${drawingEvidence._id.toString()}/void`,
-        )
-        .send({ reason: 'C1 verify one-of readiness invalidation' })
-        .expect(200),
-    );
-    const drawingItemAfterVoid = await itemResponseModel
+    const mediaPath = `/patients/${state.patientId}/visits/${state.visitId}/scale-instances/${state.scaleInstanceId}/item-responses/${drawingItemId}/media-evidences/${drawingEvidence._id.toString()}`;
+    await staff
+      .post(`${mediaPath}/void`)
+      .send({ reason: 'C1 legacy client protection' })
+      .expect(409)
+      .expect((response: Response) => {
+        expect(bodyOf(response)).toEqual(
+          expect.objectContaining({
+            code: 'MEDIA_EVIDENCE_PATIENT_ORIGIN_REQUIRES_ADOPTION_REVOKE',
+          }),
+        );
+      });
+    const drawingItemAfterProtectedVoid = await itemResponseModel
       .findById(drawingItemId)
       .lean()
       .exec();
-    const referenceAfterVoid = drawingItemAfterVoid?.evidenceRefs.find(
+    const referenceAfterProtectedVoid =
+      drawingItemAfterProtectedVoid?.evidenceRefs.find(
+        (reference) => reference.evidenceType === 'photo',
+      );
+    expect(referenceAfterProtectedVoid).toEqual(
+      expect.objectContaining({
+        status: 'attached',
+        mediaEvidenceId: drawingEvidence._id,
+      }),
+    );
+    expect(
+      await mediaEvidenceModel.findById(drawingEvidence._id).lean().exec(),
+    ).toEqual(
+      expect.objectContaining({
+        status: 'attached',
+        storageStatus: 'stored',
+        voidedAt: null,
+        deletedAt: null,
+      }),
+    );
+    await staff.get(`${mediaPath}/access-url`).expect(200);
+
+    const revokeResponse = bodyOf(
+      await staff.post(`${mediaPath}/revoke-adoption`).expect(200),
+    );
+    expect(revokeResponse.evidenceRequirement).toEqual({
+      evidenceType: 'photo',
+      status: 'pending',
+      attached: false,
+      mediaEvidenceId: null,
+    });
+    expect(revokeResponse.mediaEvidence).toEqual(
+      expect.objectContaining({
+        id: drawingEvidence._id.toString(),
+        patientAdministrationOrigin: true,
+        status: 'attached',
+        storageStatus: 'stored',
+        voidedAt: null,
+      }),
+    );
+
+    const drawingItemAfterRevoke = await itemResponseModel
+      .findById(drawingItemId)
+      .lean()
+      .exec();
+    const referenceAfterRevoke = drawingItemAfterRevoke?.evidenceRefs.find(
       (reference) => reference.evidenceType === 'photo',
     );
-    expect(voided.evidenceRequirement).toEqual({
-      evidenceType: referenceAfterVoid?.evidenceType,
-      status: referenceAfterVoid?.status,
-      attached: referenceAfterVoid?.mediaEvidenceId !== null,
-      mediaEvidenceId: referenceAfterVoid?.mediaEvidenceId?.toString() ?? null,
-    });
-    expect(referenceAfterVoid?.status).toBe('pending');
-    expect(referenceAfterVoid?.mediaEvidenceId).toBeNull();
-    const readinessAfterVoid = bodyOf(
+    expect(referenceAfterRevoke?.status).toBe('pending');
+    expect(referenceAfterRevoke?.mediaEvidenceId).toBeNull();
+
+    const evidenceAfterRevoke = await mediaEvidenceModel
+      .findById(drawingEvidence._id)
+      .lean()
+      .exec();
+    expect(evidenceAfterRevoke).toEqual(
+      expect.objectContaining({
+        status: 'attached',
+        storageStatus: 'stored',
+        voidedAt: null,
+        deletedAt: null,
+        metadata: drawingEvidence.metadata,
+        patientAdministrationContext:
+          drawingEvidence.patientAdministrationContext,
+      }),
+    );
+    expect(
+      await mediaEvidenceModel.countDocuments({
+        scaleInstanceId: new Types.ObjectId(state.scaleInstanceId),
+      }),
+    ).toBe(evidenceCountBeforeAdoption);
+    const drawingObjectKey = drawingEvidence.storage?.objectKey;
+    if (!drawingObjectKey) {
+      throw new Error('Expected drawing evidence object key');
+    }
+    expect(trackingStorage.objects.has(drawingObjectKey)).toBe(true);
+    await staff.get(`${mediaPath}/access-url`).expect(200);
+
+    const reviewAfterRevoke = bodyOf(
+      await staff
+        .get(
+          `/patients/${state.patientId}/visits/${state.visitId}/scale-instances/${state.scaleInstanceId}/patient-administration/review`,
+        )
+        .expect(200),
+    );
+    const reviewEvidenceAfterRevoke = arrayOf(reviewAfterRevoke, 'items')
+      .flatMap((reviewItem) =>
+        isRecord(reviewItem) ? arrayOf(reviewItem, 'steps') : [],
+      )
+      .flatMap((step) => (isRecord(step) ? arrayOf(step, 'runs') : []))
+      .flatMap((run) => (isRecord(run) ? arrayOf(run, 'evidence') : []))
+      .find(
+        (candidate) =>
+          isRecord(candidate) &&
+          candidate.mediaEvidenceId === drawingEvidence._id.toString(),
+      );
+    expect(reviewEvidenceAfterRevoke).toEqual(
+      expect.objectContaining({
+        mediaEvidenceId: drawingEvidence._id.toString(),
+        status: 'attached',
+        storageStatus: 'stored',
+      }),
+    );
+
+    const readinessAfterRevoke = bodyOf(
       await staff.get(readinessPath).expect(200),
     );
     expect(
-      arrayOf(readinessAfterVoid, 'blockingIssues').some(
+      arrayOf(readinessAfterRevoke, 'blockingIssues').some(
         (issue) =>
           isRecord(issue) &&
           issue.code === 'ITEM_REQUIRED_MEDIA_MISSING' &&
           issue.itemCode === 'mmse.visuospatial.copy_drawing',
       ),
     ).toBe(true);
+
+    const readopted = bodyOf(await staff.post(adoptPath).expect(200));
+    expect(readopted.evidenceRequirement).toEqual({
+      evidenceType: 'photo',
+      status: 'attached',
+      attached: true,
+      mediaEvidenceId: drawingEvidence._id.toString(),
+    });
+    expect(readopted.mediaEvidence).toEqual(
+      expect.objectContaining({
+        id: drawingEvidence._id.toString(),
+        patientAdministrationOrigin: true,
+        status: 'attached',
+      }),
+    );
+    expect(
+      await mediaEvidenceModel.countDocuments({
+        scaleInstanceId: new Types.ObjectId(state.scaleInstanceId),
+      }),
+    ).toBe(evidenceCountBeforeAdoption);
+    const readinessAfterReadoption = bodyOf(
+      await staff.get(readinessPath).expect(200),
+    );
+    expect(
+      arrayOf(readinessAfterReadoption, 'blockingIssues').some(
+        (issue) =>
+          isRecord(issue) &&
+          issue.code === 'ITEM_REQUIRED_MEDIA_MISSING' &&
+          issue.itemCode === 'mmse.visuospatial.copy_drawing',
+      ),
+    ).toBe(false);
 
     const invalidatedAdoptPath = `/patients/${state.patientId}/visits/${state.visitId}/scale-instances/${state.scaleInstanceId}/item-responses/${writingItemId}/media-evidences/${invalidatedWritingEvidence._id.toString()}/adopt`;
     await staff

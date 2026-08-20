@@ -8,6 +8,7 @@ import { buildInlineActionableIssuePresentations } from '@/src/features/assessme
 import { getScaleSubmissionIssueDisplay } from '@/src/features/assessments/lib/scale-instance-submission-display';
 import { getScaleExecutionProgressiveDisclosure } from '@/src/features/assessments/lib/assessment-execution-display';
 import {
+  getFormalMediaEvidenceActionCopy,
   getFormalMediaEvidenceIds,
   selectFormalMediaEvidences,
 } from '@/src/features/assessments/lib/media-evidence-display';
@@ -16,6 +17,7 @@ import {
   formatPatientAdministrationReviewDimensions,
   formatPatientAdministrationReviewFileSize,
   formatPatientAdministrationReviewFileType,
+  getPatientEvidenceFormalAdoptionState,
   getPatientAdministrationReviewEvidenceStatusLabel,
 } from '@/src/features/patient-administration/lib/patient-administration-review-display';
 import type {
@@ -25,6 +27,7 @@ import type {
 } from '@/src/features/assessments/types/scale-instance-submission';
 import type { ItemEvidenceRequirement } from '@/src/features/assessments/types/item-response-execution';
 import type {
+  EvidenceRequirementState,
   MediaEvidence,
   MediaEvidenceStatus,
 } from '@/src/features/assessments/types/media-evidence';
@@ -72,6 +75,7 @@ function createMediaEvidence(
     captureMode: 'tablet_handwriting',
     status,
     storageStatus: 'stored',
+    patientAdministrationOrigin: id === 'patient-raw',
     itemCode: 'mmse.visuospatial.copy_drawing',
     file: null,
     imageMetadata: null,
@@ -92,7 +96,7 @@ function createHandwritingRequirement(
   status: ItemEvidenceRequirement['status'],
   attached: boolean,
   mediaEvidenceId: string | null,
-): ItemEvidenceRequirement {
+): EvidenceRequirementState {
   return {
     evidenceType: 'handwriting',
     status,
@@ -153,6 +157,51 @@ test('follows authoritative adoption and void requirement transitions without re
       items,
     ),
   ).toEqual([]);
+});
+
+test('derives patient evidence adoption only from the authoritative requirement', () => {
+  const evidence = {
+    evidenceType: 'handwriting' as const,
+    mediaEvidenceId: 'patient-raw',
+  };
+
+  expect(
+    getPatientEvidenceFormalAdoptionState(
+      [createHandwritingRequirement('attached', true, 'patient-raw')],
+      evidence,
+    ),
+  ).toBe('adopted');
+  expect(
+    getPatientEvidenceFormalAdoptionState(
+      [createHandwritingRequirement('pending', false, null)],
+      evidence,
+    ),
+  ).toBe('available');
+  expect(
+    getPatientEvidenceFormalAdoptionState(
+      [createHandwritingRequirement('attached', true, 'other-evidence')],
+      evidence,
+    ),
+  ).toBe('occupied');
+});
+
+test('keeps patient-origin revoke copy separate from direct formal void copy', () => {
+  expect(getFormalMediaEvidenceActionCopy(true)).toEqual({
+    kind: 'revoke_adoption',
+    actionLabel: '撤销正式采用',
+    confirmationMessage:
+      '撤销后只解除该患者原始证据与本题正式作答的关联。患者原始证据、文件和施测记录仍会保留，并可再次采用。',
+    confirmationLabel: '确认撤销正式采用',
+    requiresVoidReason: false,
+  });
+  expect(getFormalMediaEvidenceActionCopy(false)).toEqual({
+    kind: 'void',
+    actionLabel: '作废此正式证据',
+    confirmationMessage:
+      '作废不会物理删除文件或历史记录。作废后可重新上传同类型证据。',
+    confirmationLabel: '确认作废正式证据',
+    requiresVoidReason: true,
+  });
 });
 
 test('fails closed when the formal reference is absent from media history', () => {

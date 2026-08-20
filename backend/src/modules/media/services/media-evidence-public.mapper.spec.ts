@@ -93,6 +93,7 @@ describe('toMediaEvidenceResponse', () => {
     const response = toMediaEvidenceResponse(fixture());
 
     expect(response.evidenceType).toBe('handwriting');
+    expect(response.patientAdministrationOrigin).toBe(false);
     expect(response.itemCode).toBe('moca.visuospatial.clock');
     expect(response.file?.mimeType).toBe('image/png');
     expect(response.file?.sizeBytes).toBeNull();
@@ -158,6 +159,7 @@ describe('toMediaEvidenceResponse', () => {
     } as MediaEvidenceSummary;
     const response = toMediaEvidenceResponse(audio);
     expect(response.audioMetadata).toEqual({ durationMs: 4321 });
+    expect(response.patientAdministrationOrigin).toBe(true);
     expect(response.transcription).toMatchObject({
       status: 'succeeded',
       text: '候选文本',
@@ -168,5 +170,6 @@ describe('toMediaEvidenceResponse', () => {
     expect(JSON.stringify(response)).not.toContain(
       audio.patientAdministrationContext?.sessionId,
     );
+    expect(response).not.toHaveProperty('patientAdministrationContext');
   });
 });

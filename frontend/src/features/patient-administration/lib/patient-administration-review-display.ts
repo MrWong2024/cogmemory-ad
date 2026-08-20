@@ -1,9 +1,66 @@
 import type { PatientAdministrationReviewEvidence } from '@/src/features/patient-administration/types/patient-administration';
+import type { EvidenceRequirementState } from '@/src/features/assessments/types/media-evidence';
 
 type ReviewEvidenceStatus = Pick<
   PatientAdministrationReviewEvidence,
   'status' | 'storageStatus'
 >;
+
+export type PatientEvidenceFormalAdoptionState =
+  | 'adopted'
+  | 'available'
+  | 'occupied'
+  | 'unavailable';
+
+export function getPatientEvidenceFormalAdoptionState(
+  requirements: readonly EvidenceRequirementState[],
+  evidence: Pick<
+    PatientAdministrationReviewEvidence,
+    'evidenceType' | 'mediaEvidenceId'
+  >,
+): PatientEvidenceFormalAdoptionState {
+  if (
+    evidence.evidenceType !== 'photo' &&
+    evidence.evidenceType !== 'handwriting'
+  ) {
+    return 'unavailable';
+  }
+
+  const matchingRequirements = requirements.filter(
+    (requirement) => requirement.evidenceType === evidence.evidenceType,
+  );
+  if (
+    matchingRequirements.some(
+      (requirement) =>
+        requirement.status === 'attached' &&
+        requirement.attached === true &&
+        requirement.mediaEvidenceId === evidence.mediaEvidenceId,
+    )
+  ) {
+    return 'adopted';
+  }
+  if (
+    matchingRequirements.some(
+      (requirement) =>
+        requirement.status === 'attached' &&
+        requirement.attached === true &&
+        requirement.mediaEvidenceId !== null,
+    )
+  ) {
+    return 'occupied';
+  }
+  if (
+    matchingRequirements.some(
+      (requirement) =>
+        requirement.attached === false &&
+        requirement.mediaEvidenceId === null &&
+        ['pending', 'missing'].includes(requirement.status),
+    )
+  ) {
+    return 'available';
+  }
+  return 'unavailable';
+}
 
 export function getPatientAdministrationReviewEvidenceStatusLabel(
   evidence: ReviewEvidenceStatus,

@@ -267,7 +267,7 @@ function patientReview(
 async function expectHttpCode(
   promise: Promise<unknown>,
   status: number,
-  code: string,
+  code?: string,
 ): Promise<void> {
   try {
     await promise;
@@ -276,7 +276,11 @@ async function expectHttpCode(
     expect(error).toBeInstanceOf(HttpException);
     const httpError = error as HttpException;
     expect(httpError.getStatus()).toBe(status);
-    expect(httpError.getResponse()).toEqual(expect.objectContaining({ code }));
+    if (code) {
+      expect(httpError.getResponse()).toEqual(
+        expect.objectContaining({ code }),
+      );
+    }
   }
 }
 
@@ -637,6 +641,143 @@ describe('MediaEvidenceWorkflowService', () => {
     expect(storage.deleteObject).not.toHaveBeenCalled();
   });
 
+  it('revokes patient evidence adoption by clearing only the formal reference', async () => {
+    assessments.findItemResponseByOwnership.mockResolvedValue(
+      itemResponse({
+        evidenceRefs: [
+          {
+            evidenceType: 'photo',
+            mediaEvidenceId: ids.mediaEvidenceId,
+            status: 'attached',
+          },
+        ],
+      }),
+    );
+
+    const result = await service.revokePatientAdministrationEvidenceAdoption(
+      mediaParams,
+      user,
+    );
+
+    expect(result.mediaEvidence).toEqual(
+      expect.objectContaining({
+        id: ids.mediaEvidenceId,
+        patientAdministrationOrigin: true,
+        status: 'attached',
+        storageStatus: 'stored',
+        voidedAt: null,
+      }),
+    );
+    expect(result.evidenceRequirement).toEqual({
+      evidenceType: 'photo',
+      status: 'pending',
+      attached: false,
+      mediaEvidenceId: null,
+    });
+    expect(assessments.clearItemEvidenceReference).toHaveBeenCalledWith(
+      ids.patientId,
+      ids.visitId,
+      ids.scaleInstanceId,
+      ids.itemResponseId,
+      'photo',
+      ids.mediaEvidenceId,
+    );
+    expect(media.markEvidenceVoided).not.toHaveBeenCalled();
+    expect(storage.deleteObject).not.toHaveBeenCalled();
+  });
+
+  it('fails patient evidence adoption revoke closed for auth, provenance, locks and missing formal refs', async () => {
+    assessments.findItemResponseByOwnership.mockResolvedValue(
+      itemResponse({
+        evidenceRefs: [
+          {
+            evidenceType: 'photo',
+            mediaEvidenceId: ids.mediaEvidenceId,
+            status: 'attached',
+          },
+        ],
+      }),
+    );
+
+    await expectHttpCode(
+      service.revokePatientAdministrationEvidenceAdoption(
+        mediaParams,
+        undefined,
+      ),
+      401,
+    );
+
+    media.findEvidenceByOwnership.mockResolvedValue(evidence());
+    await expectHttpCode(
+      service.revokePatientAdministrationEvidenceAdoption(mediaParams, user),
+      409,
+      'MEDIA_EVIDENCE_ADOPTION_NOT_REVOCABLE',
+    );
+
+    media.findEvidenceByOwnership.mockResolvedValue(
+      patientAdministrationEvidence({ lockedAt: new Date() }),
+    );
+    await expectHttpCode(
+      service.revokePatientAdministrationEvidenceAdoption(mediaParams, user),
+      409,
+      'MEDIA_EVIDENCE_ADOPTION_NOT_REVOCABLE',
+    );
+
+    media.findEvidenceByOwnership.mockResolvedValue(
+      patientAdministrationEvidence(),
+    );
+    assessments.findItemResponseByOwnership.mockResolvedValue(
+      itemResponse({
+        lockedAt: new Date(),
+        evidenceRefs: [
+          {
+            evidenceType: 'photo',
+            mediaEvidenceId: ids.mediaEvidenceId,
+            status: 'attached',
+          },
+        ],
+      }),
+    );
+    await expectHttpCode(
+      service.revokePatientAdministrationEvidenceAdoption(mediaParams, user),
+      409,
+      'ITEM_RESPONSE_NOT_EDITABLE',
+    );
+
+    assessments.findItemResponseByOwnership.mockResolvedValue(itemResponse());
+    await expectHttpCode(
+      service.revokePatientAdministrationEvidenceAdoption(mediaParams, user),
+      409,
+      'MEDIA_EVIDENCE_ADOPTION_NOT_REVOCABLE',
+    );
+    expect(assessments.clearItemEvidenceReference).not.toHaveBeenCalled();
+    expect(media.markEvidenceVoided).not.toHaveBeenCalled();
+    expect(storage.deleteObject).not.toHaveBeenCalled();
+  });
+
+  it('rejects patient-origin evidence at the old void action before clearing the formal reference', async () => {
+    assessments.findItemResponseByOwnership.mockResolvedValue(
+      itemResponse({
+        evidenceRefs: [
+          {
+            evidenceType: 'photo',
+            mediaEvidenceId: ids.mediaEvidenceId,
+            status: 'attached',
+          },
+        ],
+      }),
+    );
+
+    await expectHttpCode(
+      service.voidEvidence(mediaParams, { reason: 'legacy client' }, user),
+      409,
+      'MEDIA_EVIDENCE_PATIENT_ORIGIN_REQUIRES_ADOPTION_REVOKE',
+    );
+    expect(assessments.clearItemEvidenceReference).not.toHaveBeenCalled();
+    expect(media.markEvidenceVoided).not.toHaveBeenCalled();
+    expect(storage.deleteObject).not.toHaveBeenCalled();
+  });
+
   it('normalizes and uploads optional handwriting JSON trajectory', async () => {
     const trajectory = memoryFile(
       'trajectory',
@@ -935,6 +1076,7 @@ describe('MediaEvidenceWorkflowService', () => {
   });
 
   it('voids by clearing the reference first without deleting Storage', async () => {
+    media.findEvidenceByOwnership.mockResolvedValue(evidence());
     assessments.findItemResponseByOwnership.mockResolvedValue(
       itemResponse({
         evidenceRefs: [
@@ -972,6 +1114,7 @@ describe('MediaEvidenceWorkflowService', () => {
   });
 
   it('reclassifies a clear miss won by a parent barrier without voiding evidence', async () => {
+    media.findEvidenceByOwnership.mockResolvedValue(evidence());
     assessments.findScaleInstanceByPatientVisitAndId
       .mockResolvedValueOnce({ id: ids.scaleInstanceId, status: 'draft' })
       .mockResolvedValueOnce({
@@ -1003,6 +1146,7 @@ describe('MediaEvidenceWorkflowService', () => {
   });
 
   it('restores the reference when marking evidence voided fails', async () => {
+    media.findEvidenceByOwnership.mockResolvedValue(evidence());
     assessments.findItemResponseByOwnership.mockResolvedValue(
       itemResponse({
         evidenceRefs: [

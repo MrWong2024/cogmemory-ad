@@ -697,6 +697,7 @@ describe('media evidence APIs (e2e)', () => {
         captureMode: 'photo_upload',
         status: 'attached',
         storageStatus: 'stored',
+        patientAdministrationOrigin: false,
       }),
     );
 

@@ -37,11 +37,14 @@ export type MediaEvidenceApiErrorKind =
   | 'media_evidence_not_found'
   | 'media_evidence_not_accessible'
   | 'media_evidence_not_voidable'
+  | 'media_evidence_adoption_not_revocable'
+  | 'media_evidence_patient_origin_requires_adoption_revoke'
   | 'media_trajectory_not_found'
   | 'media_storage_unavailable'
   | 'media_evidence_create_failed'
   | 'media_evidence_attach_failed'
   | 'media_evidence_void_failed'
+  | 'media_evidence_adoption_revoke_failed'
   | 'media_transcription_unavailable'
   | 'media_transcription_not_allowed'
   | 'media_transcription_conflict'
@@ -120,11 +123,17 @@ function mapHttpError(
     MEDIA_EVIDENCE_NOT_FOUND: 'media_evidence_not_found',
     MEDIA_EVIDENCE_NOT_ACCESSIBLE: 'media_evidence_not_accessible',
     MEDIA_EVIDENCE_NOT_VOIDABLE: 'media_evidence_not_voidable',
+    MEDIA_EVIDENCE_ADOPTION_NOT_REVOCABLE:
+      'media_evidence_adoption_not_revocable',
+    MEDIA_EVIDENCE_PATIENT_ORIGIN_REQUIRES_ADOPTION_REVOKE:
+      'media_evidence_patient_origin_requires_adoption_revoke',
     MEDIA_TRAJECTORY_NOT_FOUND: 'media_trajectory_not_found',
     MEDIA_STORAGE_UNAVAILABLE: 'media_storage_unavailable',
     MEDIA_EVIDENCE_CREATE_FAILED: 'media_evidence_create_failed',
     MEDIA_EVIDENCE_ATTACH_FAILED: 'media_evidence_attach_failed',
     MEDIA_EVIDENCE_VOID_FAILED: 'media_evidence_void_failed',
+    MEDIA_EVIDENCE_ADOPTION_REVOKE_FAILED:
+      'media_evidence_adoption_revoke_failed',
     MEDIA_TRANSCRIPTION_UNAVAILABLE: 'media_transcription_unavailable',
     MEDIA_TRANSCRIPTION_NOT_ALLOWED: 'media_transcription_not_allowed',
     MEDIA_TRANSCRIPTION_CONFLICT: 'media_transcription_conflict',
@@ -383,6 +392,27 @@ export async function adoptPatientAdministrationEvidence(
   );
   const response = await mediaEvidenceFetch(
     `${path}/${encodeURIComponent(mediaEvidenceId)}/adopt`,
+    { method: 'POST' },
+  );
+
+  return readJson<UploadMediaEvidenceResponse>(response);
+}
+
+export async function revokePatientAdministrationEvidenceAdoption(
+  patientId: string,
+  visitId: string,
+  scaleInstanceId: string,
+  itemResponseId: string,
+  mediaEvidenceId: string,
+): Promise<UploadMediaEvidenceResponse> {
+  const path = buildItemMediaPath(
+    patientId,
+    visitId,
+    scaleInstanceId,
+    itemResponseId,
+  );
+  const response = await mediaEvidenceFetch(
+    `${path}/${encodeURIComponent(mediaEvidenceId)}/revoke-adoption`,
     { method: 'POST' },
   );
 

@@ -331,18 +331,19 @@
 
 - Controller 名称：`MediaEvidenceController`
 - 文件路径：`backend\src\modules\media\controllers\media-evidence.controller.ts`
-- 职责边界：绑定 A15 六个题目级媒体路由（list / upload / adopt / access-url / transcribe / void）、路径 / body / query DTO、`SessionAuthGuard`、`RolesGuard`、临床角色和 multipart 内存文件接收；adopt 复用 `MediaEvidenceParamDto` 且无 Body，Controller 不直接操作 Model 或 Storage。
+- 职责边界：绑定 A15 七个题目级媒体路由（list / upload / adopt / revoke-adoption / access-url / transcribe / void）、路径 / body / query DTO、`SessionAuthGuard`、`RolesGuard`、临床角色和 multipart 内存文件接收；adopt / revoke-adoption 均复用 `MediaEvidenceParamDto` 且无 Body，Controller 不直接操作 Model 或 Storage。
 - 文件接收：`FileFieldsInterceptor` 仅接收 file / trajectory，各最多 1；总文件数 2、单文件 Multer 上限 10 MiB、文本字段最多 30。media 局部 interceptor 将 Multer / Nest 的超限异常稳定映射为 413 `MEDIA_FILE_TOO_LARGE`，不修改全局 filter。
 
 - Service 名称：`MediaEvidenceWorkflowService`
 - 文件路径：`backend\src\modules\media\services\media-evidence-workflow.service.ts`
-- 当前方法：`listEvidence()`、`uploadEvidence()`、`adoptPatientAdministrationEvidence()`、`createAccessUrl()`、`voidEvidence()`。
+- 当前方法：`listEvidence()`、`uploadEvidence()`、`adoptPatientAdministrationEvidence()`、`revokePatientAdministrationEvidenceAdoption()`、`createAccessUrl()`、`voidEvidence()`。
 - 下游依赖：`PatientsService`、`AssessmentsService`、`MediaEvidenceService`、`PatientAdministrationReviewService`、`STORAGE_SERVICE`、`StorageConfigService`。
 - 归属 / 状态：统一验证 Patient -> Visit -> ScaleInstance -> ItemResponse -> MediaEvidence 完整链；只读允许历史状态，上传 / 作废要求 Patient active、Visit / ScaleInstance draft 或 in_progress、ItemResponse not_started / in_progress / answered，并要求父 / 子 submission barrier open。
-- 上传编排：校验证据要求、captureMode、主文件和可选轨迹；生成不含患者隐私与原始文件名的 UUID objectKey；依次上传 Storage、创建 MediaEvidence、条件绑定 evidenceRef。绑定仅允许父 / 子 barrier open、同 evidenceType、mediaEvidenceId 空且状态 pending / missing 的数组元素，形成并发边界；miss 后重读屏障并精确归类。upload / adoption / void 的 `EvidenceRequirementStateResponse` 均从对应 attach / clear 返回的实际写后 ItemResponse evidenceRef 映射 status、attached 与 mediaEvidenceId，不另建状态源。
+- 上传编排：校验证据要求、captureMode、主文件和可选轨迹；生成不含患者隐私与原始文件名的 UUID objectKey；依次上传 Storage、创建 MediaEvidence、条件绑定 evidenceRef。绑定仅允许父 / 子 barrier open、同 evidenceType、mediaEvidenceId 空且状态 pending / missing 的数组元素，形成并发边界；miss 后重读屏障并精确归类。upload / adoption / revoke-adoption / void 的 `EvidenceRequirementStateResponse` 均从对应 attach / clear 返回的实际写后 ItemResponse evidenceRef 映射 status、attached 与 mediaEvidenceId，不另建状态源。
 - 采用既有患者证据：复用 `PatientAdministrationReviewService.getReview()` 的最新 Session、步骤、ItemResponse ownership、step / run、evidence type、invalidated 与 evidence-only 完整性；只允许 completed Session 中唯一、已有有效 capture 的 photo / handwriting，再复用 `AssessmentsService.attachItemEvidenceReference()` 绑定同一个既有 Evidence ID。它不调用 Storage、不创建 / 复制 Evidence，也不自动形成或确认答案；正式媒体满足性只由 `ItemResponse.evidenceRefs` 决定，媒体文档存在本身不满足 readiness，photo + handwriting 要求继续为 one_of。
+- 撤销正式采用：patient original MediaEvidence 与 formal `ItemResponse.evidenceRef` 是两层事实。revoke 只允许 patient-origin attached / unlocked / undeleted Evidence 且当前存在精确 attached ref；唯一业务写是 `clearItemEvidenceReference()`。MediaEvidence 的 status / storageStatus / voidedAt / deletedAt / metadata / `patientAdministrationContext` 与 Storage object 均不变，因此 review、access 与再次 adoption 保持可用。
 - 补偿边界：上传时轨迹上传失败删除主对象；创建失败删除本次对象；绑定异常 / 冲突先删除本次新建 MediaEvidence 与对象再抛稳定错误。adoption 不创建任何对象，CAS 失败不执行删除、void 或 Storage 补偿。补偿只使用本次上传 ID / key，不使用 transaction，不修改或删除其他业务数据；补偿日志仅记录固定类型、evidenceCode、driver 和成功标记。
-- 访问 / 作废：签名访问固定使用 `DEFAULT_SIGNED_URL_EXPIRES_SECONDS`；作废 clear CAS 要求父 / 子 barrier open，miss 后精确重读分类；再标记 MediaEvidence voided，失败尝试恢复引用。restore 仅针对本次 clear 留下的空 pending 引用，是受控补偿例外，不受普通 barrier 门禁开放；正常作废不调用 deleteObject。
+- 访问 / 作废：签名访问固定使用 `DEFAULT_SIGNED_URL_EXPIRES_SECONDS`，仍只允许 attached / locked + stored，不为 voided 放宽。generic void 在 clear 前拒绝所有 patient-origin Evidence；仅 direct formal Evidence 继续 clear ref、标记 MediaEvidence voided并在后者失败时尝试恢复引用。restore 仅针对本次 clear 留下的空 pending 引用，是受控补偿例外，不受普通 barrier 门禁开放；正常作废不调用 deleteObject。
 - 边界：除受控 adoption 写入既有 evidenceRef 外，不改变 ItemResponse / ScaleInstance / AssessmentVisit status、答案、operatorNote、draft revision 或 score；不自动 `markAsAnswered`，不实现前端采集、物理删除、原子替换、批量 / 分片 / 客户端直传、OCR / AI、报告或最终提交。
 
 - Service 名称：`MediaEvidenceService`（A15 扩展）
@@ -352,7 +353,7 @@
 
 - Mapper / 纯函数：`toMediaEvidenceResponse()`、`validatePrimaryMediaFile()`、`validateHandwritingTrajectoryJson()`
 - 文件路径：`backend\src\modules\media\services\media-evidence-public.mapper.ts`、`backend\src\modules\media\lib\media-file-validation.ts`、`handwriting-trajectory-json.ts`
-- 职责边界：public mapper 显式逐字段白名单映射并把非有限数归一化为 null；图片校验负责大小 / MIME / 魔数 / 元数据 / SHA-256；轨迹校验负责 application/json、2 MiB、结构限额、危险 key、深克隆、规范化 Buffer 与 SHA-256。纯函数不依赖 Nest DI、数据库或 Storage。
+- 职责边界：public mapper 显式逐字段白名单映射、把非有限数归一化为 null，并只从 `patientAdministrationContext != null` 派生安全 `patientAdministrationOrigin` boolean；不公开 context、Storage 或其他内部字段。图片校验负责大小 / MIME / 魔数 / 元数据 / SHA-256；轨迹校验负责 application/json、2 MiB、结构限额、危险 key、深克隆、规范化 Buffer 与 SHA-256。纯函数不依赖 Nest DI、数据库或 Storage。
 
 - Service 名称：`AssessmentsService`（A15 证据引用扩展）
 - 新增方法：`attachItemEvidenceReference()`、`clearItemEvidenceReference()`、`restoreItemEvidenceReference()`。

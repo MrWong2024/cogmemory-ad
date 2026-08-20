@@ -448,6 +448,71 @@ export class MediaEvidenceWorkflowService {
     }
   }
 
+  async revokePatientAdministrationEvidenceAdoption(
+    params: MediaEvidenceParamDto,
+    currentUser: AuthenticatedUserContext | undefined,
+  ): Promise<UploadMediaEvidenceResponse> {
+    this.requireCurrentUser(currentUser);
+    const chain = await this.requireOwnershipChain(params);
+    this.assertEditableChain(chain);
+    const evidence = await this.requireEvidence(
+      chain.ownership,
+      params.mediaEvidenceId,
+    );
+
+    if (
+      evidence.patientAdministrationContext == null ||
+      evidence.status !== 'attached' ||
+      evidence.lockedAt !== null ||
+      evidence.deletedAt !== null
+    ) {
+      this.throwAdoptionNotRevocable();
+    }
+
+    const evidenceType = this.toRevocableEvidenceType(evidence.evidenceType);
+    const matchingReference = chain.itemResponse.evidenceRefs.find(
+      (reference) =>
+        reference.evidenceType === evidenceType &&
+        reference.mediaEvidenceId === evidence.id &&
+        reference.status === 'attached',
+    );
+
+    if (!matchingReference) {
+      this.throwAdoptionNotRevocable();
+    }
+
+    let cleared: ItemResponseSummary | null;
+    try {
+      cleared = await this.assessmentsService.clearItemEvidenceReference(
+        params.patientId,
+        params.visitId,
+        params.scaleInstanceId,
+        params.itemResponseId,
+        evidenceType,
+        evidence.id,
+      );
+    } catch {
+      throw new InternalServerErrorException({
+        code: 'MEDIA_EVIDENCE_ADOPTION_REVOKE_FAILED',
+        message:
+          'Patient administration evidence adoption could not be revoked',
+      });
+    }
+
+    if (!cleared) {
+      return this.classifyAdoptionRevokeClearMiss(params);
+    }
+
+    return {
+      mediaEvidence: toMediaEvidenceResponse(evidence),
+      evidenceRequirement: this.toEvidenceRequirementState(
+        cleared,
+        evidenceType,
+        'MEDIA_EVIDENCE_ADOPTION_REVOKE_FAILED',
+      ),
+    };
+  }
+
   async voidEvidence(
     params: MediaEvidenceParamDto,
     input: VoidMediaEvidenceDto,
@@ -460,6 +525,14 @@ export class MediaEvidenceWorkflowService {
       chain.ownership,
       params.mediaEvidenceId,
     );
+
+    if (evidence.patientAdministrationContext != null) {
+      throw new ConflictException({
+        code: 'MEDIA_EVIDENCE_PATIENT_ORIGIN_REQUIRES_ADOPTION_REVOKE',
+        message:
+          'Patient administration evidence must be removed by revoking its formal adoption',
+      });
+    }
 
     if (evidence.status !== 'attached' || evidence.lockedAt instanceof Date) {
       throw new ConflictException({
@@ -546,7 +619,10 @@ export class MediaEvidenceWorkflowService {
   private toEvidenceRequirementState(
     itemResponse: ItemResponseSummary,
     evidenceType: EvidenceRequirementStateResponse['evidenceType'],
-    failureCode: 'MEDIA_EVIDENCE_ATTACH_FAILED' | 'MEDIA_EVIDENCE_VOID_FAILED',
+    failureCode:
+      | 'MEDIA_EVIDENCE_ATTACH_FAILED'
+      | 'MEDIA_EVIDENCE_VOID_FAILED'
+      | 'MEDIA_EVIDENCE_ADOPTION_REVOKE_FAILED',
   ): EvidenceRequirementStateResponse {
     const evidenceReference = itemResponse.evidenceRefs.find(
       (reference) => reference.evidenceType === evidenceType,
@@ -1044,6 +1120,26 @@ export class MediaEvidenceWorkflowService {
     });
   }
 
+  private async classifyAdoptionRevokeClearMiss(
+    params: MediaEvidenceItemParamDto,
+  ): Promise<never> {
+    try {
+      const chain = await this.requireOwnershipChain(params);
+      this.assertEditableChain(chain);
+    } catch (error: unknown) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new InternalServerErrorException({
+        code: 'MEDIA_EVIDENCE_ADOPTION_REVOKE_FAILED',
+        message:
+          'Patient administration evidence adoption could not be revoked',
+      });
+    }
+
+    this.throwAdoptionNotRevocable();
+  }
+
   private async cleanupStorage(
     objectKeys: string[],
     evidenceCode: string,
@@ -1124,6 +1220,13 @@ export class MediaEvidenceWorkflowService {
     });
   }
 
+  private throwAdoptionNotRevocable(): never {
+    throw new ConflictException({
+      code: 'MEDIA_EVIDENCE_ADOPTION_NOT_REVOCABLE',
+      message: 'Patient administration evidence adoption cannot be revoked',
+    });
+  }
+
   private throwScaleInstanceNotEditable(): never {
     throw new ConflictException({
       code: 'SCALE_INSTANCE_NOT_EDITABLE',
@@ -1162,5 +1265,15 @@ export class MediaEvidenceWorkflowService {
     }
 
     return this.throwNotAdoptable();
+  }
+
+  private toRevocableEvidenceType(
+    evidenceType: MediaEvidenceSummary['evidenceType'],
+  ): 'photo' | 'handwriting' {
+    if (evidenceType === 'photo' || evidenceType === 'handwriting') {
+      return evidenceType;
+    }
+
+    return this.throwAdoptionNotRevocable();
   }
 }

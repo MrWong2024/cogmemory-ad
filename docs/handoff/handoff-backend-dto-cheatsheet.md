@@ -81,7 +81,8 @@
 - 文件：`backend\src\modules\media\dto\transcribe-media-evidence.dto.ts`、`types\media-evidence-response.types.ts`、`types\patient-administration-review-response.types.ts`。
 - `TranscribeMediaEvidenceDto` 是空白名单 Body DTO；路由要求 JSON Body 但不接受任何字段，provider、model、language、format、采样率、URL、objectKey、文本或状态均由服务端决定。
 - `MediaEvidenceTranscriptionResponse` 只含 status、可选 text / errorCode / provider / model、requestedAt / completedAt 与安全 requestedBy；requestedBy 只含 operatorId / Name / Role。`MediaEvidenceTranscriptionActionResponse` 只再增加 mediaEvidenceId，不公开 Storage 或上游原始响应。
-- `MediaEvidenceResponse` 在旧图片 / 手写安全摘要上新增 nullable `audioMetadata { durationMs }` 与 nullable transcription；legacy 患者录音映射为 `not_requested`，非音频和 staff 图片 / 手写为 null。
+- `MediaEvidenceResponse` 在图片 / 手写安全摘要、nullable `audioMetadata { durationMs }` 与 nullable transcription 之外，统一包含 derived `patientAdministrationOrigin: boolean`；该值只表示 `patientAdministrationContext != null`，不公开 sessionId、stepKey、stepRun 或 context 本体。legacy 患者录音映射为 `not_requested`，非音频和 staff 图片 / 手写 transcription 为 null。
+- 撤销患者 Evidence 正式采用的 action 无 Body DTO，复用 `MediaEvidenceParamDto` 与 `UploadMediaEvidenceResponse { mediaEvidence, evidenceRequirement }`；不为同形响应建立重复 DTO。
 - `PatientAdministrationReviewResponse` 只含最新会话安全摘要、有限 reviewEvents 与按 item / step / run 排列的复核事实。item 只含 itemResponseId、itemCode、itemTitle、status、draftRevision；run 只含 capture 与 evidence。evidence 含 ID、类型、captureMode、状态、存储状态、uploadedAt，以及 nullable safe `file { mimeType, fileExtension, sizeBytes }`、imageMetadata、handwritingTrace 摘要、audioMetadata 与 transcription；不含 storageDriver、bucket、objectKey / objectPrefix、publicUrl、checksum / algorithm、trajectoryObjectKey、签名 URL、凭据、评分或正式作答 payload。
 
 - 名称：`PaginationQueryDto`

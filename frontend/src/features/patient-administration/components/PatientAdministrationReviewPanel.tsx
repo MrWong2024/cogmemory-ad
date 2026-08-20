@@ -47,6 +47,7 @@ import {
   formatPatientAdministrationReviewDimensions,
   formatPatientAdministrationReviewFileSize,
   formatPatientAdministrationReviewFileType,
+  getPatientEvidenceFormalAdoptionState,
   getPatientAdministrationReviewEvidenceStatusLabel,
   patientAdministrationHandwritingInputToolLabels,
 } from '@/src/features/patient-administration/lib/patient-administration-review-display';
@@ -255,9 +256,6 @@ export function PatientAdministrationReviewPanel({
     () => new Set(),
   );
   const adoptingIdsRef = useRef(new Set<string>());
-  const [adoptedIds, setAdoptedIds] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
   const [feedbacks, setFeedbacks] = useState<
     Record<string, EvidenceFeedback | undefined>
   >({});
@@ -329,7 +327,6 @@ export function PatientAdministrationReviewPanel({
   useEffect(() => {
     clearViewer();
     setFeedbacks({});
-    setAdoptedIds(new Set());
     transcribingIdsRef.current.clear();
     adoptingIdsRef.current.clear();
     setTranscribingIds(new Set());
@@ -550,7 +547,6 @@ export function PatientAdministrationReviewPanel({
         evidenceId,
       );
       if (!mountedRef.current) return;
-      setAdoptedIds((current) => new Set(current).add(evidenceId));
       onEvidenceAdopted(itemResponseId, response.evidenceRequirement);
       setEvidenceFeedback(evidenceId, {
         tone: 'success',
@@ -580,9 +576,9 @@ export function PatientAdministrationReviewPanel({
   }
 
   function canAdoptEvidence(
-    itemResponseId: string,
     run: PatientAdministrationReviewRun,
     evidence: PatientAdministrationReviewEvidence,
+    adoptionState: ReturnType<typeof getPatientEvidenceFormalAdoptionState>,
   ): boolean {
     if (
       review?.session.status !== 'completed' ||
@@ -591,17 +587,11 @@ export function PatientAdministrationReviewPanel({
       run.capture.invalidatedAt ||
       !['photo', 'handwriting'].includes(evidence.evidenceType) ||
       evidence.status !== 'attached' ||
-      evidence.storageStatus !== 'stored' ||
-      adoptedIds.has(evidence.mediaEvidenceId)
+      evidence.storageStatus !== 'stored'
     ) {
       return false;
     }
-    return (evidenceRequirementsByItem[itemResponseId] ?? []).some(
-      (requirement) =>
-        requirement.evidenceType === evidence.evidenceType &&
-        !requirement.attached &&
-        ['pending', 'missing'].includes(requirement.status),
-    );
+    return adoptionState === 'available';
   }
 
   function renderEvidence(
@@ -626,7 +616,11 @@ export function PatientAdministrationReviewPanel({
       evidence.storageStatus === 'stored' &&
       transcription?.status !== 'succeeded' &&
       transcription?.status !== 'processing';
-    const adoptable = canAdoptEvidence(itemResponseId, run, evidence);
+    const adoptionState = getPatientEvidenceFormalAdoptionState(
+      evidenceRequirementsByItem[itemResponseId] ?? [],
+      evidence,
+    );
+    const adoptable = canAdoptEvidence(run, evidence, adoptionState);
 
     return (
       <div
@@ -777,9 +771,11 @@ export function PatientAdministrationReviewPanel({
             >
               {adoptingIds.has(evidence.mediaEvidenceId)
                 ? '正在采用患者证据...'
-                : adoptedIds.has(evidence.mediaEvidenceId)
+                : adoptionState === 'adopted'
                   ? '患者证据已采用'
-                  : '采用到正式题目证据'}
+                  : adoptionState === 'occupied'
+                    ? '该题已有同类型正式证据'
+                    : '采用到正式题目证据'}
             </Button>
           ) : null}
         </div>

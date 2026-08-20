@@ -252,6 +252,8 @@ F3 统一称为“量表作答复核”或“患者施测作答复核”，首�
 
 Evidence adoption 与答案形成是两个独立动作。采用时必须继续校验 staff 授权、ownership、Item / step / evidenceType、`ScaleInstance` / `ItemResponse` 可编辑性和 submission barrier，由服务端最终裁决；该动作不得自动修改答案、`markAsAnswered`、提交 `ScaleInstance`、评分、生成报告、接受 ASR，或认定图片 / 绘图正确。F3 实现 discovery 应优先评估现有 A15 `MediaEvidence` 体系、`ItemResponse.evidenceRefs` 绑定逻辑、C2 ownership / evidence mapping、submission barrier 与 CAS / fail-closed 机制，再选择实现、测试和维护复杂度最低的方案；本合同不提前规定 endpoint、DTO 或 Service 形状，也不要求自动绑定全部患者媒体或批量采用。
 
+患者施测原始 `MediaEvidence` 与正式 `ItemResponse.evidenceRef` 的生命周期必须解耦：采用只建立指向同一 MediaEvidence ID 的正式引用；撤销采用只清除该正式引用，不得把患者原始 MediaEvidence 标记 voided、删除或移出患者复核，也不得删除 / 覆盖 Storage object。撤销后原始 Evidence 仍须保持可访问并可再次采用。只有不具有 patient-administration provenance 的 direct formal upload 才继续使用“清正式引用 + void MediaEvidence”的既有作废语义；generic void 不得绕过该来源保护。正式 readiness 始终只读取 `ItemResponse.evidenceRefs`，不得因保留患者原始 Evidence 而视为已满足。
+
 “谁负责临床判定”与“谁推动 patient Session 到下一步”是两个独立职责。正常患者主链由患者端连续推进，医护在现实中观察和辅助；`staff_observation` 首先表示该题的正式临床判断主要来自这种现场观察，不表示 F2 必须持久化独立 `StaffObservation` 记录。正常链为现实观察 → F3 直接填写或修订现有 `ItemResponse`；只有未来某量表明确要求观察事实独立长期留存、审计或跨流程复用时，才另行评估最小持久化。暂停、接管、重做、technical replay、重签和终止只在异常或控制需要时使用。
 
 WP-10 应优先复用现有 `ItemResponse` 的分步、提示、计时、缺失、证据引用和 CAS，以及 `MediaEvidence` 和提交屏障。患者原始事实若不能由当前代码安全表达，只增加本合同所需的最小持久事实，并保持与正式 `ItemResponse` 的边界；不得再建设平行的通用答案、Attempt、Capture、Review、事件溯源或投影平台。
