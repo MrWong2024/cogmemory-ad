@@ -81,7 +81,7 @@
 ### 4.5 WP-10-F1/F2 patient administration
 
 - `ScaleInstanceExecutionPage` 只在 MMSE 1.0、`supervised_patient_input` 实例上组合 `PatientAdministrationStaffPanel`；既有作答、媒体、提交、评分和认知域职责不迁移。
-- 医护面板以 5 秒 GET 轮询最新会话，使用 AbortController、single-flight 和同一 Session ID 内的 revision 屏障防旧响应覆盖；不同 Session 的权威响应可替换旧终态。服务端已唯一确定时，刷新后从 prepared / preparation / credential 事实恢复 same-device 或 cross-device，本地 flowChoice 仍不写后端或 Storage；已有患者 credential 时禁止切回 same-device。
+- 医护面板以 5 秒 GET 轮询最新会话，使用 AbortController、single-flight 和同一 Session ID 内的 revision 屏障防旧响应覆盖；不同 Session 的权威响应可替换旧终态。创建前 `deviceModeChoice` 只是 React 临时选择且不写 Storage，create request 会发送所选 `deviceMode`；创建成功后，后端持久化的 `session.deviceMode` 是唯一权威事实，刷新从服务端恢复，不依赖页面内存或 preparation / credential 推断。开放会话不提供普通设备方式切换；选错模式按合同终止后重新创建。
 - `PatientAdministrationPreparation` 的 `screen`、`input`、`sound`、`microphone` 四项必要设备检查决定本地 `ready`；WebAudio 测试音、最长 10 秒的本地 MediaRecorder 回放、默认折叠的可选 Canvas Pointer 练习和八类影响因素都只服务准备阶段。Blob 与 object URL 在 React 内存中形成并精确撤销；麦克风异步 run 在 reset、重启或卸载后失效，迟到的 MediaStream 会立即停止且不创建 recorder 或写状态。可选练习不参与 `ready`，检查与练习均不上传、不保存、不写正式作答或证据。
 - `/patient-administration/**` 使用独立 `PatientAdministrationShell`，不挂载 staff shell、`useAuth()` 或 `/auth/me`。进入码仅在 React / 表单即时内存中存在，不写 URL、storage 或日志；患者 current GET 以 3 秒间隔串行轮询。
 - `PatientAdministrationPage` 的读取 cleanup 对称 abort 并释放 controller / in-flight 引用；active 时把服务端 currentStep 交给 `PatientAdministrationCurrentStep`，prepared / paused 显示安全等待，terminated / expired / completed 显示最小安全结束状态。
@@ -114,7 +114,7 @@ A21–A25 写请求从当前服务端 `report.updatedAt` 取得 `expectedUpdated
 - B17 history/trends 可把非敏感筛选、分页与查询上限写入 URL query；浏览器前进/后退恢复这类可分享状态。
 - 页面不把临床写工作流草稿、客户端可读凭据、敏感业务对象或不可逆操作的待提交状态写入 URL、localStorage、sessionStorage 或 IndexedDB；这些状态只保存在 React 内存。主登录态仍由服务端 Session + HttpOnly Cookie 维护，前端不读取 Cookie。
 - B18-A 的作答、备注、计时、冲突快照、attempt 与媒体 generation 同样只在当前页面内存；不使用 Cache Storage 或其他离线持久化。强制重载会丢失未发送或未确认的内存草稿，`beforeunload` 是本阶段的明确保护边界，页面只从后端恢复已保存事实。
-- F1/F2 的患者进入码、同 / 跨设备选择、设备练习与正式录音 / 书写 / 照片 Blob / object URL、准备勾选和影响因素草稿都只在当前 React 会话内存；成功上传后采用服务端最小 evidence 响应，患者页面不保存 staff 认证状态或完整会话响应。
+- F1/F2 的患者进入码、创建前 `deviceModeChoice`、设备练习与正式录音 / 书写 / 照片 Blob / object URL、准备勾选和影响因素草稿只在当前 React 会话内存；其中 `deviceModeChoice` 在创建请求中发送，创建后由后端持久化的 `session.deviceMode` 取代为权威设备方式并支持 reload 恢复。成功上传后采用服务端最小 evidence 响应，患者页面不保存 staff 认证状态或完整会话响应。
 - 后端 Session + HttpOnly Cookie 是主登录态；前端不读取 Cookie，不使用 JWT。
 - 401 返回登录流程，403 保留可安全读取的页面事实并显示权限状态；后端 Guard 始终是最终权限边界。
 

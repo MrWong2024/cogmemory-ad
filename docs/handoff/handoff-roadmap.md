@@ -73,7 +73,7 @@
 - 存在有效 staff 终端时，医护可查看当前施测状态并执行暂停、接管、纠正、恢复、换设备或终止等异常控制。same-device 患者阶段不保持 staff 系统权限；确需系统干预时必须先停止患者操作、交回设备并由医护显式重新认证。具体安全合同以[受监督患者施测合同](./handoff-patient-administration-contract.md)为准。
 - cross-device 中 staff 设备保留 staff Session、patient 设备持有 patient Session，医护可通过有效 staff 终端执行必要异常控制；患者端负责正常题目和患者操作，医护端负责准备、现实观察、必要辅助与异常控制。双设备不等于双写者，正常 happy path 不要求医护逐题写入同一 Session。无论设备模式，旧患者 stale write 都不得覆盖已经成功的新服务端事实，网络恢复服从服务端权威状态。一期使用普通 HTTP，不建设 WebSocket、SSE、Redis、屏幕镜像或双端协同编辑。
 - 逐题文字、图片、固定 MP3、播放 / 重播和提示解锁边界由[受监督患者施测合同](./handoff-patient-administration-contract.md)的 MMSE / MoCA 矩阵锁定；正式运行不调用实时 TTS；未经 staff 授权，患者不得重播测量刺激；technical replay 按受监督患者施测合同执行。
-- 正式施测前提供最低充分的准备流程：提示标准触控设备和浏览器可用性，确认屏幕方向和有效交互区域，完成音量试听，并在适用语音步骤需要时完成麦克风试听，提供触摸或书写试操作，确认当前施测语言，记录视力、听力、语言或手部活动等明显影响因素，并至少完成一个不使用正式测量刺激的不计分练习。医护确认患者理解后才开始正式施测；练习不进入 ItemResponse、评分或报告，不改变正式计时和重播事实，也不扩展为训练平台或通用教程系统。
+- 正式施测前提供最低充分的准备流程：`screen`、`input`、`sound`、`microphone` 四项必要设备检查共同决定 `ready`，四项完成后才可进入正式施测；触摸 / 书写等不计分设备操作练习推荐给不熟悉设备的患者按需使用，熟悉设备者可跳过，练习不参与 `ready`。一期施测语言由 `ScaleVersion` 与当前呈现资产合同决定，准备页不通过额外 checkbox 选择或改变语言；明显影响因素继续记录。练习不进入 `ItemResponse`、`MediaEvidence`、评分或报告，不计入正式题目 timing / playback，也不扩展为训练平台或通用教程系统。
 - 患者施测终端采用一步一屏、单一主要操作、大字号、大触控区、足够间距和明确求助入口；规则未明确允许时患者不得自行跳题。播放、录音、上传、等待医护和完成等状态必须清楚，不以复杂导航、密集表单、游戏化积分、诊断暗示或自动快速切题增加负担。
 - same-device 安全交接进入患者模式后，staff Session 失效，患者不能借助后退、刷新、历史记录或普通导航进入临床工作端。患者模式只显示当前施测所需的最少身份信息；完成、终止或超时后清除当前患者可见内容，结束页只提示已完成并要求交还设备。设备交回后医护 / 医生必须重新认证；这是有意接受的简单安全边界，不为减少一次登录建设同浏览器双身份保持、隐藏身份或自动恢复。
 - 一期只对量表步骤合同明确需要语音回答的步骤支持录音和一种可用的基础 ASR，并由医生复核；动作观察、选择、点击、书写和绘图等非语音步骤不因患者施测端存在而默认录音。已有 transcription 可直接显示；没有 transcription 时仅由医护 / 医生按业务需要显式触发现有 ASR，不需要则不调用。ASR 失败时允许听取已有录音或直接人工录入，不阻断 readiness / submit；不在页面打开时自动批量转写，不建设 ASR batch job、queue、自动 retry、多供应商 fallback、自动语义评分或实时答案生成。
@@ -110,7 +110,7 @@
 - WP-10-B2 已完成：服务端权威的 19 步顺序推进、patient / staff 步骤归属、paused staff 接管、直接前一步逻辑重做、当前图片安全读取、音频顺序播放、刺激一次播放与 paused 技术重播授权、单 revision CAS、完成态与患者凭证清理已落地；步骤捕获和播放事实只内嵌在短期会话中。
 - WP-10-C1 已完成：患者短期会话 Guard 下的当前步骤 multipart 原始证据上传已支持 speech audio、writing / drawing photo 或 handwriting；私有 Storage、`MediaEvidence`、SHA-256、单 revision CAS 与精确补偿形成闭环，当前 run 媒体门禁和 redo run 隔离生效。证据引用只内嵌在患者会话，不写 `ItemResponse`、不形成正式答案，也没有 ASR、医生复核新接口或患者 UI。
 - WP-10-C2 已完成：患者 audio 可由 staff 显式触发受控 stub / 百炼同步 ASR 候选，`MediaEvidence.transcription` 以 claim / finalize CAS 保存有限状态；最新患者施测会话可通过安全只读 review 投影复核 item / step / run、失效重做、接管观察和媒体候选。候选不会自动写入 `ItemResponse`，医护 / 医生仍通过既有 revision CAS 草稿接口人工形成或修订正式答案草稿；报告链对意外进入的浏览器录音 evidence fail closed，不扩大既有图片 / 手写报告范围。
-- WP-10-F1 代码范围已实现：既有 MMSE `supervised_patient_input` 实例页新增医护发起与 5 秒服务端权威轮询、七项本地设备准备、音量 / 麦克风 / 指针练习、八类结构化影响因素、同 / 跨设备交接、暂停 / 恢复 / 重签 / 终止；独立患者 Shell 提供六位一次性码进入、3 秒当前会话轮询和仅等待医护的安全活动页。F1 不呈现正式步骤文字、资产、音频或证据，也不进入 F2/F3。
+- WP-10-F1 代码范围已实现：既有 MMSE `supervised_patient_input` 实例页新增医护发起与 5 秒服务端权威轮询、`screen` / `input` / `sound` / `microphone` 四项必要设备检查、按需可选且不参与 `ready` 的触摸 / 书写练习、八类结构化影响因素、同 / 跨设备交接、暂停 / 恢复 / 重签 / 终止；独立患者 Shell 提供六位一次性码进入、3 秒当前会话轮询和仅等待医护的安全活动页。F1 不呈现正式步骤文字、资产、音频或证据，也不进入 F2/F3。
 - WP-10-F1 已完成：F1-P1 在 preparation confirm 后真实 reload，按服务端事实恢复同设备交接并完成 staff 身份撤销与 patient active；F1-P2 在患者 credential 已存在时真实 reload，恢复跨设备准备并完成 pause / resume / reissue / 新患者 / resume / terminate。两个 Profile 均使用独立 fixture、production frontend、真实 Browser backend 与 `cogmemory_ad_browser_test`，post verifier 通过且 cleanup `residualCount=0`。
 - WP-10-F2 已完成：正式患者端按服务端权威 currentStep 呈现 MMSE 19 步一步一屏，使用 private image 与 frozen MP3，执行 guidance / stimulus 播放边界、speech MediaRecorder、audio / handwriting / photo evidence、patient / staff complete、pause / resume、takeover / redo、显式技术重播授权与 completed 安全结束；不写正式 `ItemResponse`，不调用 F3 review / ASR / submit / scoring / report。
 - F2-P1 已实际完成正常 19 步 Browser 业务主流程；post verifier 为 session=completed、19/19 captures、`MediaEvidence=17`（audio=15、handwriting=1、photo=1），`ItemResponse` / `ScaleInstance` unchanged、downstream=0。technical replay 的持久授权事实与公开投影由 backend unit / E2E 证明 `false → authorize → true → replay → false`，无数据库 Schema、endpoint 或 revision 扩张。
@@ -148,7 +148,7 @@
 - 患者短期受控施测会话与安全进入；same-device 按安全交接合同执行，cross-device 按受监督患者施测合同已锁定的一次性短期进入码执行。
 - 患者施测终端采用一步一屏、单一主操作、大字号、大触控区、明确状态和随时可达的求助入口；患者端与医护端都响应式支持既定手机、平板和桌面代表 viewport，具体步骤所需硬件能力另按合同验收。
 - 按已锁定逐题矩阵呈现题目文字、私有图片和冻结 MP3；测量刺激版本化且受控播放，正式运行不调用实时 TTS；未经 staff 授权，患者不得重播测量刺激；technical replay 按受监督患者施测合同执行。
-- 正式施测前完成设备 / 浏览器提示、方向和交互区域确认、音量及适用时的麦克风试听、触摸或书写试操作、语言确认、明显影响因素记录和至少一个不使用正式刺激的不计分练习；练习不进入 ItemResponse、评分、报告或正式计时 / 重播事实。
+- 正式施测前由 `screen`、`input`、`sound`、`microphone` 四项必要设备检查决定 `ready`；触摸 / 书写等不计分操作练习面向不熟悉设备的患者按需可选，不参与 `ready`，熟悉设备者可跳过。一期施测语言由 `ScaleVersion` 与呈现资产合同决定，不由准备页额外选择；练习不进入 `ItemResponse`、`MediaEvidence`、评分、报告或正式 timing / playback 事实。
 - same-device 在医护准备后安全交接并使当前浏览器 staff Session 失效；患者连续完成正式主链并交还设备，医护 / 医生重新认证后进入复核。cross-device 保留独立 staff Session 与 patient Session；两种方式都不默认双写。
 - 对适用的语音回答步骤支持录音和一种基础 ASR，并提供医生人工降级、自动计时和受控重播策略；非语音步骤不默认录音。
 - 采集患者点击、书写和绘图等数字交互；闭眼、拿纸、对折、放置等动作由医护现场观察，患者端仍连续推进正常主链，观察结论在后续复核中直接形成现有 `ItemResponse`。`staff_observation` 是临床事实来源 / response mode，不默认要求独立 `StaffObservation` 数据层、API 或工作流，也不默认视频、摄像头、传感器或自动动作识别。

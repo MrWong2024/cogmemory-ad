@@ -8,7 +8,7 @@
 
 - 当前报告公开 API 已扩展为既有九个生命周期接口，加 A27 报告版本列表与指定历史详情共十一个；`ClinicalHistoryController` 另提供患者 `assessment-history` 与 A28 `follow-up-trends` 两个只读接口。WP-04 后端范围已完成。
 - `AuthModule` 当前新增 `AuthController`，仅暴露最小公开认证 API 底座；主登录态仍为服务端 Session + HttpOnly Cookie，不采用 JWT 主登录态。
-- AuthModule 内部 session cookie 名称已统一为 `cogmemory_ad_session`，登录成功下发 HttpOnly Cookie，`SameSite=Lax`，`Path=/`，production 环境启用 `Secure`。
+- AuthModule 内部 session cookie 名称已统一为 `cogmemory_ad_session`，登录成功下发 HttpOnly Cookie，`SameSite=Lax`，`Path=/`；`Secure` 的最终值服从配置层 `session.cookieSecure` / `SESSION_COOKIE_SECURE`，production 默认 `true`，显式配置可覆盖该 fallback。
 - 当前没有 users controller，没有公开用户管理 API，没有注册、密码重置、角色权限管理、短信验证码、OAuth / SSO 或 JWT 登录 API。
 - A12 已新增 `PatientsController` 与 `AssessmentVisitsController`，形成第一组受保护临床业务 API；本次提前实现 WP-12 的访视维护窄切片，在既有 `AssessmentVisitsController` 增加 edit / physical delete / void，继续显式绑定 `SessionAuthGuard`、`RolesGuard` 和患者工作流角色。
 - 当前已有实例 submission、评分、认知域、报告与历史趋势接口；WP-10-B 共提供十二个 staff 会话 / 步骤控制接口和五个 patient 会话 / 步骤 / 资产接口，C1 增加患者当前步骤 evidence 上传，C2 增加显式转写与最新会话复核。自动转写候选不会写入正式 `ItemResponse`；WP-10 的 F1/F2 正常 MMSE 19 步、F2-P2 recovery、F3 正常作答复核及 completed session gate 均已完成。F3 继续复用现有 review / A14 / readiness / A16 API，本次没有后端 endpoint、DTO、Schema、Guard、权限或状态机变化。

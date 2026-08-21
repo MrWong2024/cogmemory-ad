@@ -21,7 +21,7 @@
 | WP-03 / B18-B1 | 核心真实 Browser 阶段完成；`passed=6`、`pending=0`；证据复用 | “B18-A、B18-B1 与 B18-B2 证据” |
 | WP-03 / B18-B2 | 剩余真实 Browser 阶段完成；P4/P5/P6 `passed=6`、`pending=0`；P0 `gap=0` | “B18-A、B18-B1 与 B18-B2 证据” |
 | WP-03 / B18 补充验证 | P7 `passed=2`、P8 `passed=1`；single-flight contract、P3 与 P9 `passed`；自动化 `gap=0` | “B18-A、B18-B1、B18-B2 与补充验证证据” |
-| WP-10-F1 | 完成；F1-P1 / F1-P2 各正式运行一次并通过，post verifier 与 cleanup 均闭合 | “WP-10-F1 最终证据与 Browser Audit 治理” |
+| WP-10-F1 | 产品范围已完成，WP-10 状态不回退；F1-P1 / F1-P2 的正式 Browser 通过、post verifier 与 cleanup 是证据形成时有效的历史证据。后续 preparation / deviceMode 合同与 Browser 治理演化后，当前 tracked F1 自动化存在 test-infrastructure debt，尚未按现行合同重新形成完整绿色 Browser regression 证据；这既不表示当前 Browser 已正式运行并失败或存在产品缺陷，也不得记为 current Browser passed | “WP-10-F1 最终证据与 Browser Audit 治理” |
 | WP-10-F2 | 完成；F2-P1 正常 19 步与 F2-P2 recovery 均通过，staff Axe 阻断项已修复，最终仅保留 1 个非阻断结构规则 | “WP-10-F2 阶段与最终收口证据” |
 | WP-10-F3 | 完成；正常作答复核主证据与 completed gate 后的定向 happy-path 回归、post verifier、cleanup 均已闭合 | “WP-10-F3 正常作答复核证据” |
 | Batch E | 8 个真实设备或人工项目待验；最终主要归属 WP-08 | “Batch E：真实设备或人工验收” |
