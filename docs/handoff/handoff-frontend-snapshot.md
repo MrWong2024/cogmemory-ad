@@ -33,7 +33,7 @@
 | `/patients/[patientId]/history` | B17 患者评估历史、URL 筛选和分页 |
 | `/patients/[patientId]/trends` | B17 单量表基础随访趋势 |
 | `/patients/[patientId]/visits/new` | 创建评估访视 |
-| `/patients/[patientId]/visits/[visitId]` | 访视详情、量表初始化、current report workflow 与报告版本面板 |
+| `/patients/[patientId]/visits/[visitId]` | 访视详情、服务端资格控制的 Visit maintenance、量表初始化、current report workflow 与报告版本面板 |
 | `/patients/[patientId]/visits/[visitId]/clinical-reports/[reportId]` | B17 指定历史报告只读详情 |
 | `/patients/[patientId]/visits/[visitId]/scale-instances/[scaleInstanceId]` | 量表执行、媒体、提交、评分与认知域 |
 | `/patient-administration/enter` | F1/F2 患者六位一次性进入码入口；独立 Shell，不调用 `/auth/me` |
@@ -54,14 +54,14 @@
 
 ### 4.2 Patients
 
-- Patients API 与公开类型支持患者列表/创建/详情、访视列表/创建。
+- Patients API 与公开类型支持患者列表/创建/详情、访视列表/创建；Visit maintenance 由 assessments 的 assessment execution Client 承载，不扩张 Patients API 职责。
 - `PatientsListPage`、`PatientCreateForm`、`PatientDetailPage`、`AssessmentVisitCreateForm` 分别承载列表、创建、详情和访视创建。
 - B17 新增 `PatientAssessmentHistoryPage`、`AssessmentHistoryFilters/List`、`PatientFollowUpTrendPage`、`FollowUpTrendControls/Chart/Table`。
 - history/trends 使用 URL 保存可分享的筛选状态；结果列表保持后端顺序，趋势图/表直接使用服务端 dataStatus、comparison、reason、delta 和 domain 事实。
 
 ### 4.3 Assessments
 
-- 访视详情支持安全量表目录、MMSE/MoCA 实例初始化、实例列表与报告区域。
+- 访视详情支持安全量表目录、MMSE/MoCA 实例初始化、实例列表与报告区域，并挂载 `AssessmentVisitMaintenancePanel`，依据服务端 `visitMaintenance` 展示有限 edit / delete / void；该能力复用既有详情路由，不新增 maintenance 路由。
 - 量表实例页支持按服务端分组逐题自动保存与显式立即保存、step/prompt/timing 草稿、切组 flush、题目定位和 beforeunload。
 - A15 媒体链路支持 photo 文件处理、handwriting Canvas、题目级列表、上传、短期预览、逻辑作废和重传；Blob、strokes 与短期 URL 仅在 React 内存。
 - A16 提交面板支持 readiness、阻断/警告、stale、本地 dirty 阻断、显式确认、幂等回执和 completed 只读。
@@ -95,7 +95,7 @@
 
 - Auth：login、logout、me。
 - Patients：A12 患者/访视列表、创建与详情。
-- Assessment execution：A13 量表目录/初始化、B18-A 对 A14 revision / 完整 timing / 逐题自动保存与恢复合同的消费、A15 媒体 generation 协调、A16 readiness/submit。
+- Assessment execution：Visit detail 与 `updateAssessmentVisit()` / `deleteAssessmentVisit()` / `voidAssessmentVisit()` 有限维护、A13 量表目录/初始化、B18-A 对 A14 revision / 完整 timing / 逐题自动保存与恢复合同的消费、A15 媒体 generation 协调、A16 readiness/submit。
 - Media evidence：A15 list/upload/access-url/void。
 - Provisional scoring：A17 latest/compute、A18 manual-review/confirm。
 - Cognitive domain：A19 latest/compute。
@@ -148,7 +148,7 @@ A21–A25 写请求从当前服务端 `report.updatedAt` 取得 `expectedUpdated
 
 ## 7. 当前实现结论与验证入口
 
-- WP-10 已完成：F1/F2/F3、具名 F2-P2 recovery、staff Axe 分类和 completed gate 后的 F3 定向回归均已闭合。StaffPanel 把最新服务端 session status 最小回传父页面，ReviewPanel 仅在 `completed` 后挂载；active / paused / terminated F2 不产生 F3 请求。下一前端业务工作包为仍待开始的 WP-11。
+- WP-10 已完成：F1/F2/F3、具名 F2-P2 recovery、staff Axe 分类和 completed gate 后的 F3 定向回归均已闭合。StaffPanel 把最新服务端 session status 最小回传父页面，ReviewPanel 仅在 `completed` 后挂载；active / paused / terminated F2 不产生 F3 请求。WP-12 的 Visit maintenance 窄切片已提前实现但整体仍未完成；下一前端业务工作包为仍待开始的 WP-11。
 - replacement V2+ 生命周期、history / versions / detail / trends、自动保存与媒体协调等既有前端能力已实现；精确当前事实见对应 maps。本 snapshot 不保存已关闭批次的测试数字或 evidence ledger。
 - 稳定验证规则和当前仍待验边界见 frontend / backend testing playbook；已关闭阶段的详细执行证据由 Git 历史和当前测试资产追溯。
 
@@ -158,11 +158,11 @@ A21–A25 写请求从当前服务端 `report.updatedAt` 取得 `expectedUpdated
 - F3 已实现于既有 `/patients/[patientId]/visits/[visitId]/scale-instances/[scaleInstanceId]`：信息区后、`ScaleInstanceSubmissionPanel` 前展示 `PatientAdministrationReviewPanel`。它一次读取整份 review、允许手动刷新且不轮询，按需获取 access URL、显式触发 ASR、显式采用合法 patient photo / handwriting，并把用户定位到既有 `ItemResponseEditor`；正式答案由 A14 / `markAsAnswered` 保存，整体提交由既有 readiness / A16 完成。ASR candidate 不自动写 `ItemResponse`，adoption 不复制 Evidence 或形成答案。
 - F3 没有新增 `/review` 路由、Review workspace、Anomaly、StaffObservation 或第二套提交状态机；completed 后 review 保持可读，ASR / adoption 写操作进入只读。真实设备、真实麦克风、真实触控笔、真实患者 OSS 和真实 ASR 继续按 roadmap 原有最终验收归属，桌面 Browser 的 stub / fake 证据不得冒充这些边界。
 - 非语音步骤仍不默认录音，动作观察不等于视频、摄像头、传感器或自动行为识别。摄像头不是标准患者交互设备的通用前置；未来具体步骤确有拍摄或扫码必要时，须由该步骤合同单独锁定权限、隐私、适配和验收。现有医生侧图片上传、纸笔结果拍照和手写证据能力不因此删除或取消。
-- 临床运营与知情者辅助：现有 `AuthDashboard` 仍是轻量入口，尚无 WP-12 的最小临床运营工作区或医护代录知情者辅助信息能力；知情者来源、关系和了解程度与患者作答 / ItemResponse / 量表得分分离呈现也尚未实现。当前缺口不等于一期要求知情者长期账号、家庭门户或短期自助链接。
+- 临床运营与知情者辅助：现有 `AuthDashboard` 仍是轻量入口，尚无 WP-12 的最小临床运营工作区或医护代录知情者辅助信息能力；知情者来源、关系和了解程度与患者作答 / ItemResponse / 量表得分分离呈现也尚未实现。Visit maintenance 窄切片的提前实现不表示 WP-12 整体完成；当前缺口不等于一期要求知情者长期账号、家庭门户或短期自助链接。
 - F1/F2 已锁定同 / 跨设备安全进入、准备练习、八类影响因素、5 秒 staff / 3 秒 patient 轮询、逐步骤文字 / 语音 / 播放 / 重播和当前 run 证据采集；这不表示二维码、全页面 TTS、强实时协作、特定传输技术、全部固定录音、永久保存全部原始证据、独立应用 / 新角色，或独立 attempt / capture / review 集合和通用投影子系统成为未来实现合同。
 - HIS / EMR、计费、保险及其他第三方医院系统集成当前未实现，且不属于一期产品缺口、WP-09 或上线验收门禁。
 - 患者：编辑、删除、归档、合并。
-- 访视：编辑、删除、完整状态流转。
+- 访视：已实现服务端资格控制的有限 edit、initialized-only physical delete 与 started Visit void；完整 Visit 运营和窄切片之外的通用状态流转仍未实现。
 - 施测：不实现永久离线草稿或批量 PATCH；真实设备与人工候选按 roadmap 和 testing playbook 的当前待验边界治理。
 - 评分：独立锁定、作废、撤销确认、reopen、rerun、批量人工评分和独立历史列表。
 - 认知域：人工修改、确认、锁定、作废、重算和跨量表合并。

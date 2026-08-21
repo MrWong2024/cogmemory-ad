@@ -18,7 +18,7 @@
 | Batch D / B15 | 完成；`passed=2`、`pending=0`；P0 `gap=0` | A25 HTTP/unit、三类并发收敛、Correction Node-only 与 verifier 完整 | frontend testing playbook“当前证据索引” |
 | A29 / A30 / WP-03 backend | 后端范围完成；A29 / A30 证据复用；backend 阻断性 `gap=0` | 父实例 + 固定题目 scope 的可恢复 barrier、A14/A15 原子门禁、fencing/releasing 恢复、完成/释放 CAS 竞争、legacy / invalid / privacy 证据完整 | frontend single-flight、P3 与 P9 已闭合；B18 补充验证自动化 `gap=0`，WP-03 已完成 |
 | WP-10-F1 | 完成；F1-P1 / F1-P2 各正式运行一次并通过 | 两个独立 Browser fixture 的 prepared / post verifier 与 cleanup 均通过，`residualCount=0`、runtime absent；后端产品代码未修改 | frontend testing playbook“WP-10-F1 最终证据与 Browser Audit 治理” |
-| WP-10-F2 | 完成；正常 MMSE 19 步业务主流程与 post verifier 已通过 | technical replay 授权事实由 unit / HTTP E2E 覆盖；P1 post 为 completed、19/19 captures、17 MediaEvidence 且正式结果链 unchanged | F2-P2 与 staff Axe 2 项转 WP-10 最终收口，下一阶段 F3 |
+| WP-10-F2 | 完成；正常 MMSE 19 步业务主流程与 post verifier 已通过 | technical replay 授权事实由 unit / HTTP E2E 覆盖；P1 post 为 completed、19/19 captures、17 MediaEvidence 且正式结果链 unchanged | F2-P2、staff Axe 与后续 F3 已在 WP-10 最终收口中闭合 |
 | Batch E | 8 个真实设备或人工项目待验 | 不由后端自动测试冒充 | frontend testing playbook“Batch E：真实设备或人工验收” |
 
 roadmap 独立维护产品范围和工作包状态；testing playbook 治理不启动下一工作包。

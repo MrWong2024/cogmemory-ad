@@ -45,7 +45,7 @@
 - development / test 默认 `STORAGE_DRIVER=fake`，production 默认 `STORAGE_DRIVER=oss`。
 - OSS、SMS、LLM 配置均为占位或示例口径，不包含真实密钥。
 - SMS Service 与 LLM Service 仍未实现；A15 媒体业务上传接口已通过既有 fake / OSS Storage abstraction 实现，且未新增 Storage interface、driver 或配置。
-- 当前 A12-A30 已开放既有评估闭环、单题草稿 CAS 与持久化计时合同、父实例 + 固定题目 scope 的提交写屏障、报告 generate / latest / edit / submit / confirm / lock / freeze-sources / archive / corrections、合法 V2+ replacement 的 A21-A24 生命周期复用，以及历史读取与基础随访趋势。前端当前事实由 frontend snapshot 与 maps 维护。后端仍未实现的用户管理、患者 / 访视编辑、评分 lock / void / 重跑、认知域人工修改 / 确认 / 锁定 / 重算、报告 unlock / unfreeze / unarchive、correction cancel / branch、PDF、疾病诊断或 AI 等边界以 roadmap 和对应 maps 为准。
+- 当前 A12-A30 已开放既有评估闭环、单题草稿 CAS 与持久化计时合同、父实例 + 固定题目 scope 的提交写屏障、报告 generate / latest / edit / submit / confirm / lock / freeze-sources / archive / corrections、合法 V2+ replacement 的 A21-A24 生命周期复用，以及历史读取与基础随访趋势；WP-12 的 Visit maintenance 窄切片已提前实现，但 WP-12 整体仍未完成。前端当前事实由 frontend snapshot 与 maps 维护。后端仍未实现的用户管理、患者编辑、Visit maintenance 窄切片之外的完整运营 / 通用状态流转、评分 lock / void / 重跑、认知域人工修改 / 确认 / 锁定 / 重算、报告 unlock / unfreeze / unarchive、correction cancel / branch、PDF、疾病诊断或 AI 等边界以 roadmap 和对应 maps 为准。
 - 当前 `start:prod` 与 TypeScript build 主入口产物路径均指向 `dist/src/main.js`，并已完成本地启动验证。
 - 本次仅使用指定外部 GitHub commit `b302b8af7b7ac9cc558939dc1b38ace0976c65b3` 作为后端公共底座来源，不继承其业务事实。
 
@@ -85,8 +85,9 @@
 - `AssessmentVisit` collection 为 `assessment_visits`，使用 `timestamps: true`，不在 class 中重复声明 `createdAt` / `updatedAt`。
 - `AssessmentVisit` 当前覆盖患者引用、受试者编码快照、访视编码、访视类型、状态、评估日期、开始 / 完成 / 锁定 / 作废时间、操作者快照、临床上下文、备注和扩展 metadata。
 - `AssessmentVisit` 当前索引为 `{ visitCode: 1 }` unique、`{ patientId: 1, assessmentDate: -1 }`、`{ subjectCode: 1, assessmentDate: -1 }`、`{ status: 1, assessmentDate: -1 }`。
-- `AssessmentVisitsController` 当前公开患者下访视分页列表、创建、访视详情和量表实例初始化；列表支持 `page`、`pageSize`、`status`、`visitType`、`dateFrom`、`dateTo`，默认按 `assessmentDate` 和 `_id` 倒序。
+- `AssessmentVisitsController` 当前公开患者下访视分页列表、创建、访视详情、有限编辑、物理删除、void 和量表实例初始化；详情同时返回服务端权威的 Visit maintenance eligibility，列表支持 `page`、`pageSize`、`status`、`visitType`、`dateFrom`、`dateTo`，默认按 `assessmentDate` 和 `_id` 倒序。
 - 访视创建从路径取得 patientId、从患者档案取得 subjectCode、固定初始化 `draft`，并由当前认证用户生成 operatorSnapshot；客户端不能写 operatorSnapshot、状态、状态时间、clinicalContext 或 metadata。稳定业务错误包括 `PATIENT_NOT_FOUND`、`PATIENT_NOT_ACTIVE`、`VISIT_CODE_CONFLICT`、`INVALID_DATE_RANGE`。
+- Visit edit 仅适用于服务端判定仍可编辑的尚未开始 Visit；physical delete 仅适用于空或 initialized-only Visit，并只级联清理该 Visit 的初始化 ScaleInstance / ItemResponse skeleton。一旦形成实际评估事实即不再物理删除，已开始 Visit 使用保留既有 ScaleInstance、ItemResponse、Session、Evidence、评分和报告等事实的 void。
 - 访视公开 mapper 不返回 `clinicalContext`、`metadata`、Mongoose document 字段或 `__v`。
 - `ScaleInstance` Schema 位于 `backend\src\modules\assessments\schemas\scale-instance.schema.ts`。
 - `ScaleInstance` collection 为 `scale_instances`，使用 `timestamps: true`，不在 class 中重复声明 `createdAt` / `updatedAt`。
@@ -310,10 +311,10 @@
 
 - 尚无公开用户管理接口、角色权限管理接口、短信验证码接口、OAuth / SSO 接口或密码重置接口。
 - MoCA 患者端完整实施仍未完成，下一工作包为 WP-11，状态仍为“待开始”；真实设备、真实麦克风 / 触控笔、真实患者 OSS 与真实 ASR 继续按 roadmap 既定 Batch E / WP-08 边界验收。
-- 尚未实现 WP-12 的医护代录知情者辅助信息能力，也没有将知情者来源、关系、接触频率或了解程度与患者作答、ItemResponse、量表得分和报告结论分离的专用合同；当前不存在知情者长期账号、家庭门户或短期自助链接。
+- 尚未实现 WP-12 的医护代录知情者辅助信息能力，也没有将知情者来源、关系、接触频率或了解程度与患者作答、ItemResponse、量表得分和报告结论分离的专用合同；当前不存在知情者长期账号、家庭门户或短期自助链接。WP-12 仅 Visit maintenance 窄切片已提前实现，整体仍未完成。
 - HIS / EMR、计费、保险及其他第三方医院系统集成当前未实现，且不属于一期后端实现缺口、WP-09 或上线验收门禁。
 - A12-A28 已覆盖评分计算/复核/确认、认知域计算、报告生成/编辑/确认/锁定/来源冻结/归档/版本化更正、replacement 后续生命周期、历史读取与基础随访趋势；仍无评分独立 lock / void / reopen / 重跑、认知域人工修改 / 确认 / 作废 / 重算、报告签名 / unfreeze / unarchive、correction cancel / branch 或 PDF 接口。
-- 尚无批量作答、自动保存调度、计时动作、提交撤销 / reopen / lock / force submit 或访视状态流转接口。
+- 尚无批量作答、自动保存调度、计时动作、提交撤销 / reopen / lock / force submit，或 Visit maintenance 窄切片之外的完整通用访视状态流转接口。
 - 媒体当前有题目下列表、服务端 multipart 上传、患者 Evidence adoption、显式患者录音转写、短期签名访问与逻辑作废；尚无全患者 / 访视 / 实例媒体列表、直接 objectKey 下载、永久 URL、物理删除、替换、批量、分片或客户端直传接口。
 - 尚无全量数据库 seed runner、量表管理或完整 MMSE / MoCA 题目配置公开接口；A13 只在初始化时按需物化并提供安全摘要，released MMSE 资产当前仅由内部只读 Service 与无数据库 CLI 访问。
 - 已有 A17 compute / latest 与 A18 单题人工复核 / 确认；尚无批量人工评分、锁定、作废、撤销确认、reopen、重跑或历史列表接口。
@@ -322,7 +323,7 @@
 - 尚无作答提交后自动计分或自动认知域计算触发；A17 / A19 均由显式 compute 触发，不包含 MMSE / MoCA itemCode、domain title 或诊断规则硬编码。
 - 尚无短信发送接口。
 - 尚无 AI / LLM 调用接口。
-- 尚无患者编辑 / 删除 / 归档、访视编辑 / 删除 / 状态流转，以及 A12-A28 已列接口之外的量表、作答、媒体、计分、认知域、报告等其他业务 Controller 或公开业务 API。
+- 尚无患者编辑 / 删除 / 归档；访视已有服务端资格控制的有限 edit、initialized-only physical delete 与 started Visit void，但窄切片之外的完整运营 / 通用状态流转仍未实现；A12-A28 已列接口之外的量表、作答、媒体、计分、认知域、报告等其他业务 Controller 或公开业务 API 仍不存在。
 - 尚未实现用户创建、用户更新、用户禁用、重置密码、角色权限管理、短信验证码、OAuth / SSO、JWT 主登录态或权限菜单；前端登录页与认证态已经实现。
 
 ## 18. 后续同步规则

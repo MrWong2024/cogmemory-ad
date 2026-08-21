@@ -129,7 +129,7 @@
 - 调用方：`AssessmentVisitExecutionPage`，实例安全摘要由 `ScaleInstanceList` 展示。
 - Path：patientId、visitId 均来自当前动态路由并使用 `encodeURIComponent()`；两个值不符合 24 位 MongoId 时前端不发送请求。
 - 请求体：无；GET 支持 `AbortSignal`，重试与组件卸载会取消旧请求。
-- 响应：`AssessmentVisitExecutionDetailResponse`，结构为 `{ visit, scaleInstances }`；Date JSON 字段在前端统一建模为 `string | null`。
+- 响应：`AssessmentVisitExecutionDetailResponse`，结构为 `{ visit, scaleInstances, visitMaintenance }`；必填 `visitMaintenance` 公开服务端权威的 `canEdit`、`canDelete`、`canVoid` 与 `initializedScaleCount`，Date JSON 字段在前端统一建模为 `string | null`。
 - 凭证 / 缓存：`frontendEnv.apiBaseUrl`、`credentials: 'include'`、`cache: 'no-store'`。
 - loading：访视详情有独立首次加载和刷新状态；详情失败时不展示量表初始化表单，也不允许发送 POST。
 - 400：映射“访视链接无效”；本地 MongoId 校验失败直接显示该状态。
@@ -139,6 +139,12 @@
 - 409 / 500：该 GET 契约未定义业务 409；未知 500 使用稳定加载失败文案，不展示后端 message。
 - 网络错误：显示评估服务暂不可用并提供重试。
 - 安全字段边界：实例仅读取公开 id、归属摘要、scale / instance 编号、状态、施测方式、版本追溯、状态时间、用时、操作者与 progress；不读取或显示 scaleDefinitionId、scaleVersionId、metadata、qualityControlSummary、ItemResponse、scoringRule 或 expectedValue。
+
+Visit maintenance 复用同一 assessment execution Client 与既有访视详情页，不新增平行路由或完整 Visit CRUD Client：
+
+- `updateAssessmentVisit()` -> `PATCH /patients/:patientId/visits/:visitId`：只在服务端 `canEdit` 判定允许时编辑尚未开始的 Visit，不表示任意 Visit 均可编辑。
+- `deleteAssessmentVisit()` -> `DELETE /patients/:patientId/visits/:visitId`：只在服务端 `canDelete` 判定允许时物理删除空或 initialized-only Visit；initialized-only 删除只清理当前 Visit 的初始化 ScaleInstance / ItemResponse skeleton，不删除患者、目录、其他 Visit 或实际评估事实。
+- `voidAssessmentVisit()` -> `POST /patients/:patientId/visits/:visitId/void`：用于服务端 `canVoid` 判定允许的已开始 Visit；void 保留既有 ScaleInstance、ItemResponse、PatientAdministrationSession、MediaEvidence、评分和报告等事实，不是级联删除或完整通用状态机。
 
 ### 4.11 `initializeScaleInstance()` -> `POST /patients/:patientId/visits/:visitId/scale-instances`
 
@@ -468,9 +474,9 @@ B17 四个 GET 的共同边界：全部使用 `frontendEnv.apiBaseUrl`、`creden
 
 - Client：`frontend/src/features/patient-administration/api/patient-administration-api.ts`；调用方为 `PatientAdministrationStaffPanel`。
 - 会话读取：`GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/patient-administration`，支持 `AbortSignal`，用于首次读取与 5 秒串行轮询。
-- 创建：`POST` 同一路径，Body 固定为空对象；入口码只采纳服务端当次响应并只保存在 staff React 内存，不进入 URL、storage 或日志。
-- 准备确认：`POST .../patient-administration/preparation/confirm`；Body 只含服务端 DTO 允许的 `expectedRevision`、七项准备事实和至多八类结构化影响因素 / 最长 500 字备注。
-- 交接：`POST .../patient-administration/handoff`；Body 只含 `expectedRevision`，同 / 跨设备选择仅决定前端交接路径而不发送后端。成功后同设备使用 `window.location.replace('/patient-administration')` 进入独立患者 Shell；导航失败时 fail closed，不返回仍持有 staff 内容的正常工作流。
+- 创建：`POST` 同一路径，Body 为 `{ deviceMode: 'same_device' | 'cross_device' }`；`deviceMode` 是必填创建合同，由后端持久化且创建后不能作为普通前端选择切换，当前没有缺省模式；缺失或非法值由 DTO / ValidationPipe 拒绝。入口码只采纳服务端当次响应并只保存在 staff React 内存，不进入 URL、storage 或日志。
+- 准备确认：`POST .../patient-administration/preparation/confirm`；Body 只含服务端 DTO 允许的 `{ expectedRevision, impactFactorCodes, impactFactorNote? }`。screen / input / sound / microphone 四项设备检查和可选练习只用于前端本地准备与 confirm 入口判断，不作为准备事实发送到后端。
+- 交接：`POST .../patient-administration/handoff`；Body 只含 `expectedRevision`，不重复发送 `deviceMode`；创建时持久化的服务端 mode 约束后续 handoff / reissue / redeem。成功后 same-device 使用 `window.location.replace('/patient-administration')` 进入独立患者 Shell；导航失败时 fail closed，不返回仍持有 staff 内容的正常工作流。
 - 控制：`POST .../patient-administration/pause`、`resume`、`entry-code/reissue`、`terminate`，均从最新服务端会话取得 revision、逐字段构造 Body 且不自动 retry / replay。
 - staff 步骤完成：`POST .../patient-administration/current/complete`，Body 只含 `expectedRevision` 与 trim 后非空的 `staffObservation`；只用于服务端判定为 staff-owned 的当前步骤。
 - paused 接管：`POST .../patient-administration/current/takeover`，Body 只含 `expectedRevision`、必填 reason 与 `staffObservation`；由服务端决定当前 patient 步骤是否可接管。
@@ -495,7 +501,8 @@ B17 四个 GET 的共同边界：全部使用 `frontendEnv.apiBaseUrl`、`creden
 - `getItemMediaEvidenceAccessUrl()` -> `GET .../item-responses/:itemResponseId/media-evidences/:mediaEvidenceId/access-url`：只有用户明确点击查看时调用。返回 URL 只绑定当前 React 内存中的 `<audio preload="none">` 或 `<img>` viewer，关闭、实例身份变化或卸载时清除，不写 Storage。
 - `transcribeItemMediaEvidence()` -> `POST .../item-responses/:itemResponseId/media-evidences/:mediaEvidenceId/transcribe`：Body 固定为空对象，用户显式触发且不自动 retry。成功只更新 review 中该 Evidence 的辅助候选展示，不调用 A14、不 `markAsAnswered`。
 - `adoptPatientAdministrationEvidence()` -> `POST .../item-responses/:itemResponseId/media-evidences/:mediaEvidenceId/adopt`：无 Body，用户显式触发且不自动 retry。成功消费后端返回的同一 `mediaEvidenceId` 与 `evidenceRequirement`，通知父页面 requirement / readiness stale；不上传、复制或创建 Evidence，不修改答案、status 或 `draftRevision`。
-- 四个 F3 调用继续使用 `credentials: 'include'`、`cache: 'no-store'`、编码后的完整归属路径和稳定错误映射。只读模式仍允许 review / access URL，禁用 transcribe / adopt；正式编辑与提交分别继续使用既有 A14 与 readiness / A16 Client。
+- `revokePatientAdministrationEvidenceAdoption()` -> `POST .../item-responses/:itemResponseId/media-evidences/:mediaEvidenceId/revoke-adoption`：无 Body，用户显式触发且不自动 retry。成功只撤销 patient-origin Evidence 的正式采用引用并通知父页面 requirement / readiness stale；不删除或 void 原始患者 Evidence，也不改变原始患者作答事实。
+- F3 相关调用继续使用 `credentials: 'include'`、`cache: 'no-store'`、编码后的完整归属路径和稳定错误映射。只读模式仍允许 review / access URL，禁用 transcribe / adopt / revoke-adoption；正式编辑与提交分别继续使用既有 A14 与 readiness / A16 Client。
 
 ## 5. 当前认证公开类型
 
@@ -537,7 +544,8 @@ B17 四个 GET 的共同边界：全部使用 `frontendEnv.apiBaseUrl`、`creden
 ## 7. 当前未对接 API
 
 - 当前已对接 Auth、A12–A25、A27/A28 与 F1/F2/F3 patient-administration endpoint；A26 只改变 A22–A24 对合法 replacement 的服务端适用范围，不存在 replacement 专用平行接口。F3 复用既有 A14、readiness / A16 及后续 scoring / report 链，没有平行确认或提交接口。
-- 患者编辑 / 删除 / 归档 / 合并、访视编辑 / 删除 / 完整状态流转、撤销提交 / reopen、评分 lock / void / rerun / 独立历史、认知域修改 / 确认 / 锁定 / 作废 / 重算、报告退回 / reject / reopen / withdraw / 签名 / unlock / unfreeze / unarchive / 作废 / 重生成 / PDF / 打印 / 下载、AI、用户管理、角色权限管理或科研导出 API 当前均未对接。
+- 患者编辑 / 删除 / 归档 / 合并、撤销提交 / reopen、评分 lock / void / rerun / 独立历史、认知域修改 / 确认 / 锁定 / 作废 / 重算、报告退回 / reject / reopen / withdraw / 签名 / unlock / unfreeze / unarchive / 作废 / 重生成 / PDF / 打印 / 下载、AI、用户管理、角色权限管理或科研导出 API 当前均未对接。
+- 访视已接入服务端资格控制的有限 edit、initialized-only physical delete 与 started Visit void；该窄切片之外的完整 Visit 运营和通用状态流转仍未对接。
 - 不得在后端 API 未确认并进入明确任务范围前编造前端对接事实。
 
 ## 8. 后续同步规则
