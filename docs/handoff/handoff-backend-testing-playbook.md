@@ -17,7 +17,7 @@
 | B14.1 | 累计证据索引，不是独立 Browser 批次 | shared Node-only 与分层 backend 证据完整 | frontend testing playbook“B14.1 累计证据索引” |
 | Batch D / B15 | 完成；`passed=2`、`pending=0`；P0 `gap=0` | A25 HTTP/unit、三类并发收敛、Correction Node-only 与 verifier 完整 | frontend testing playbook“当前证据索引” |
 | A29 / A30 / WP-03 backend | 后端范围完成；A29 / A30 证据复用；backend 阻断性 `gap=0` | 父实例 + 固定题目 scope 的可恢复 barrier、A14/A15 原子门禁、fencing/releasing 恢复、完成/释放 CAS 竞争、legacy / invalid / privacy 证据完整 | frontend single-flight、P3 与 P9 已闭合；B18 补充验证自动化 `gap=0`，WP-03 已完成 |
-| WP-10-F1 | 产品范围已完成，WP-10 状态不回退；F1-P1 / F1-P2 的正式 Browser 通过属于证据形成时有效的历史证据 | 当时两个独立 Browser fixture 的 prepared / post verifier 与 cleanup 均通过，`residualCount=0`、runtime absent；后端产品代码未修改 | 后续合同与 Browser 治理演化后，当前 tracked F1 自动化存在 test-infrastructure debt，尚未按现行合同重新形成完整绿色 Browser regression 证据；这既不是当前 Browser 已正式运行并失败或产品缺陷，也不是 current Browser passed；详见 frontend testing playbook |
+| WP-10-F1 | 产品范围已完成，WP-10 状态不回退；新的 `patient-administration-handoff` same-device / cross-device replacement 已形成 current green，原 F1-P1 / F1-P2 保留为历史通过证据 | replacement 使用两个独立 fresh namespace；prepare / 只读 prepared verify、Browser、post verifier 与 cleanup 均通过，实际数据库为 `cogmemory_ad_browser_test`，两次 cleanup 均 `residualCount=0`、runtime absent；后端产品代码与 fixture 均未修改 | 旧 tracked `wp10-f1` 与其 fixture 仍存在并等待独立退役，但不再作为 current Browser regression 主证据；详见 frontend testing playbook |
 | WP-10-F2 | 完成；正常 MMSE 19 步业务主流程与 post verifier 已通过 | technical replay 授权事实由 unit / HTTP E2E 覆盖；P1 post 为 completed、19/19 captures、17 MediaEvidence 且正式结果链 unchanged | F2-P2、staff Axe 与后续 F3 已在 WP-10 最终收口中闭合 |
 | Batch E | 8 个真实设备或人工项目待验 | 不由后端自动测试冒充 | frontend testing playbook“Batch E：真实设备或人工验收” |
 

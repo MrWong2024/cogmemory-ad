@@ -194,6 +194,12 @@ test.describe('patient administration handoff: cross device', () => {
       assertBrowserAudit([staff, patientAudit], [
         {
           method: 'GET',
+          status: 404,
+          safeUrlPattern:
+            '/patients/<id>/visits/<id>/scale-instances/<id>/patient-administration',
+        },
+        {
+          method: 'GET',
           status: 401,
           safeUrlPattern: '/auth/me',
         },

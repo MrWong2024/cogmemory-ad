@@ -21,7 +21,7 @@
 | WP-03 / B18-B1 | 核心真实 Browser 阶段完成；`passed=6`、`pending=0`；证据复用 | “B18-A、B18-B1 与 B18-B2 证据” |
 | WP-03 / B18-B2 | 剩余真实 Browser 阶段完成；P4/P5/P6 `passed=6`、`pending=0`；P0 `gap=0` | “B18-A、B18-B1 与 B18-B2 证据” |
 | WP-03 / B18 补充验证 | P7 `passed=2`、P8 `passed=1`；single-flight contract、P3 与 P9 `passed`；自动化 `gap=0` | “B18-A、B18-B1、B18-B2 与补充验证证据” |
-| WP-10-F1 | 产品范围已完成，WP-10 状态不回退；F1-P1 / F1-P2 的正式 Browser 通过、post verifier 与 cleanup 是证据形成时有效的历史证据。后续 preparation / deviceMode 合同与 Browser 治理演化后，当前 tracked F1 自动化存在 test-infrastructure debt，尚未按现行合同重新形成完整绿色 Browser regression 证据；这既不表示当前 Browser 已正式运行并失败或存在产品缺陷，也不得记为 current Browser passed | “WP-10-F1 最终证据与 Browser Audit 治理” |
+| WP-10-F1 | 产品范围已完成，WP-10 状态不回退；新的 `patient-administration-handoff` same-device / cross-device replacement 已按当前 preparation、deviceMode 与 Browser 治理形成 current green。F1-P1 / F1-P2 保留为证据形成时有效的历史通过证据；旧 tracked `wp10-f1` 资产仍存在并等待独立退役，但不再作为 current Browser regression 主证据 | “WP-10-F1 最终证据与 Browser Audit 治理” |
 | WP-10-F2 | 完成；F2-P1 正常 19 步与 F2-P2 recovery 均通过，staff Axe 阻断项已修复，最终仅保留 1 个非阻断结构规则 | “WP-10-F2 阶段与最终收口证据” |
 | WP-10-F3 | 完成；正常作答复核主证据与 completed gate 后的定向 happy-path 回归、post verifier、cleanup 均已闭合 | “WP-10-F3 正常作答复核证据” |
 | Batch E | 8 个真实设备或人工项目待验；最终主要归属 WP-08 | “Batch E：真实设备或人工验收” |
@@ -238,6 +238,7 @@ B14.1 不是独立业务能力，不拥有独立 Browser 活动 ID，也不恢�
 
 ### 4.2 WP-10-F1 最终证据与 Browser Audit 治理
 
+- 当前 replacement evidence：基于 `39a0f6ff49772213c7f40a3e0def6940d1307a5f` 的代码态，`patient-administration-handoff/same-device.spec.ts` 与 `cross-device.spec.ts` 分别精确 discovery 为 1 file / 1 test，并使用独立 fresh namespace 完成 prepare、只读 prepared verify、production frontend、Browser test backend、Chromium、post verifier 和精确 cleanup。两条 Browser 均 exit 0；same-device 证明 create / reload / 四项 preparation / handoff / staff revoke / patient route，cross-device 证明独立 BrowserContext redeem / reload / reissue / 身份与 Storage 隔离；预期 Session-not-found 404 与身份生命周期 401 由 endpoint-specific exact allow 接受，未知 4xx、所有 5xx、transport、Console 与 page error 继续 fail-closed。两个 post verifier 均确认 ItemResponse unchanged、正式 step side effects=0、MediaEvidence=0、downstream=0；cleanup 均 `residualCount=0`、runtime absent。旧 tracked `wp10-f1` 与其 fixture 继续保留为历史/待退役资产，不再作为 current Browser regression 主证据。
 - 静态门禁：`presentation-assets:verify` 为 assets=22、steps=19、referencedAssets=22、assetHashes / stepBindings 均 ok；frontend 完整 lint、正式 `next typegen && tsc --noEmit` 与 `NEXT_PUBLIC_API_BASE_URL=http://localhost:5002` 的 production build 最终均 exit 0。typecheck / build 前确认 Node 与 3002 / 5002 listener 为 0，并以同一沙箱外身份写入 `.next`；没有 `EPERM`、未处理拒绝或异常。
 - 审计治理：F1 曾过度追踪 GET abort 的 Browser 生命周期，现已删除 checkpoint、network snapshot identity、pending / deferred controlled abort、entryIndex ownership、候选与逐 stage 精确 abort 计数。F1 只在 Profile 结束前按各 BrowserContext 的完整 NetworkLedger / ConsoleAudit 结算业务合同，不修改公共 `network-ledger.ts` 或 `runtime-audit.ts`。
 - canceled GET 只表示客户端取消，不再独立判为产品失败，也不按 path、initiator、resourceType 或次数细分；关键读取是否成功由 UI、HTTP response 与 post verifier 证明。mutation transport failure、GET timed_out / failed、任意 5xx、未知 4xx、未知 Console error 和 runtime / page error仍严格阻断。明确 expected 4xx 必须至少真实出现一次，不要求与 Console error 数量一一对应。
