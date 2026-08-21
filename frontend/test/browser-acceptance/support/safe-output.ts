@@ -6,16 +6,29 @@ const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ULID = /^[0-9A-HJKMNP-TV-Z]{26}$/i;
 const LONG_DYNAMIC_TOKEN = /^[A-Za-z0-9_-]{20,}$/;
+const LOWERCASE_ROUTE_SEGMENT = /^[a-z]+(?:-[a-z]+)*$/;
 const FORBIDDEN_OUTPUT_KEY =
   /^(?:password|passwd|cookie|session|token|metadata|objectkey)$/i;
 
+function isExplicitIdentifier(value: string): boolean {
+  return MONGO_ID.test(value) || UUID.test(value) || ULID.test(value);
+}
+
 function isDynamicIdentifier(value: string): boolean {
-  return (
-    MONGO_ID.test(value) ||
-    UUID.test(value) ||
-    ULID.test(value) ||
-    LONG_DYNAMIC_TOKEN.test(value)
-  );
+  return isExplicitIdentifier(value) || LONG_DYNAMIC_TOKEN.test(value);
+}
+
+function sanitizeUrlSegment(value: string): string {
+  if (FORBIDDEN_OUTPUT_KEY.test(value)) {
+    return '<blocked-key>';
+  }
+  if (isExplicitIdentifier(value)) {
+    return '<id>';
+  }
+  if (LOWERCASE_ROUTE_SEGMENT.test(value)) {
+    return value;
+  }
+  return LONG_DYNAMIC_TOKEN.test(value) ? '<id>' : value;
 }
 
 export function sanitizeIdentifier(value: string): string {
@@ -35,7 +48,7 @@ export function sanitizeUrlPattern(value: string): string {
 
   const safePath = parsed.pathname
     .split('/')
-    .map((segment) => sanitizeIdentifier(decodeURIComponent(segment)))
+    .map((segment) => sanitizeUrlSegment(decodeURIComponent(segment)))
     .join('/');
   return safePath || '/';
 }
