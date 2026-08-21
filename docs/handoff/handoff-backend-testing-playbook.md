@@ -88,11 +88,11 @@ B# 可以引用当前代码态下仍适用的 A# 精确 unit、HTTP E2E 或 veri
 | 层级 | 负责 | 不能替代 |
 |---|---|---|
 | unit / pure spec | 局部判断、DTO、Controller 参数传递、Service 分支、mapper、状态边界与廉价防御 | 真实 HTTP、Guard、全局 Pipe、数据库终态 |
-| HTTP E2E | 公开 API 绕过与合法并发的认证、401/403、Guard、ValidationPipe、Body 白名单、ownership、错误码、状态机、幂等、原子写入、audit 与真实 MongoDB 终态 | 页面入口、控件、Browser API 和用户体验 |
+| HTTP E2E | 公开 API 绕过与合法并发的认证、401/403、Guard、Pipe、DTO whitelist、ownership、权限、状态门禁、重复提交、幂等、revision / CAS conflict、原子写入、audit、非法调用无副作用与真实 MongoDB 终态 | 页面入口、控件、Browser API 和用户体验 |
 | database verifier | 仅在 Browser 写入结果无法由现有 HTTP E2E 充分证明时，补充写入次数、audit、protected roots 或持久终态 | 不重复已有准确 HTTP E2E，不替代页面行为 |
 | static gate | lint、typecheck、build、discovery、依赖、import、路由和测试资产链接 | 动态权限、状态机、数据库或 Browser 通过 |
 
-页面没有入口但公开 API 可直接调用的权限、DTO、ownership 与状态绕过由 HTTP E2E 证明拒绝和数据库无非法变化。合法并发使用两个真实可达请求或独立会话，验证原子性、幂等、写入次数与终态；只有不可替代的页面恢复交互才增加 Browser。
+页面没有入口但公开 API 可直接调用的认证、权限、DTO、ownership 与状态绕过，由 HTTP E2E 证明拒绝和数据库无非法变化，不在 Browser 再模拟一次 HTTP 攻击。合法并发使用两个真实可达请求或独立会话，验证原子性、幂等、写入次数与终态；只有不可替代的页面恢复交互才增加 Browser。Browser 对这类风险只在有价值时证明正常 UI 没有暴露非法入口，或真实页面产生的请求 wiring 正确，不复制服务端非法调用矩阵。
 
 已进入可能写入的 Service，或涉及原子更新、部分写入、幂等、并发、不可逆状态的请求，必须验证数据库终态、写入次数与受保护字段。Guard / Pipe 之前拒绝的请求按风险使用最低充分无副作用证据，不机械为每个错误组合复制全库快照。代码阅读、测试文件存在或测试名称存在不得写成本次动态通过。
 
@@ -150,7 +150,11 @@ node -e "process.env.NODE_ENV='test'; process.env.COGMEMORY_DATABASE_PURPOSE='st
 
 ### 5.1 最小 fixture 与 Profile 生命周期
 
-fixture 只制造合法最小前置，不成为第二个产品：优先使用现有 API、通用 test factory 或最小数据库 builder；不按每个 Audit ID 建 fixture，不制造产品永远不能持久化的状态，不建设批次专属 runner、journal、aggregator 或完整 manifest。写入、冲突和并发场景使用隔离 Report；只读场景仅在可寻址、无污染且所有权清楚时共享最小状态。
+fixture 是“合法起点构造器”（legal minimal starting point），不是第二个产品、catalog 或 seed 治理器：优先使用现有 API、通用 test factory 或最小数据库 builder；不按每个 Audit ID 建 fixture，不制造产品永远不能持久化的状态，不建设批次专属 runner、journal、aggregator 或完整 manifest。写入、冲突和并发场景使用隔离 Report；只读场景仅在可寻址、无污染且所有权清楚时共享最小状态。
+
+已经存在且符合当前正式合同的 shared canonical 数据只读复用，不属于当前 Profile 的 namespace ownership。fixture 不得自动 materialize、update、repair 或 reseed shared canonical；canonical 不满足当前正式合同时必须 fail-closed 并报告，不得为让 Profile 启动而修补。prepared verifier 保持只读，不创建、修复或删除数据；fixture 与 cleanup 只管理当前 Profile 明确拥有的 namespace 资源，不修改 canonical seed / catalog。
+
+“前端生产代码发生变化”本身不是 fixture 修改或重建触发器。只有 DTO 必填字段、Schema、权限、服务端状态前置、seed / catalog 或其他 fixture 必须满足的数据前置合同真实变化时才调整 fixture；纯 UI copy、布局、selector、展示结构和不改变数据前置的普通交互变化，原则上只更新直接相关 spec / support。是否需要 fresh production frontend build 是 frontend Browser 运行门禁，与 fixture 是否变化相互独立，具体规则引用 frontend testing playbook 3.1。
 
 每个 Profile 独立完成：
 
@@ -164,29 +168,30 @@ fixture 只制造合法最小前置，不成为第二个产品：优先使用现
 
 一个任务可以包含多个 Profile，但不得跨 Profile 拼接前置、可写 Report、数据库终态或 cleanup。后续无关 Profile 失败，不得使此前独立闭环证据失效。
 
-WP-10-F1 使用 `backend/scripts/wp10-f1-browser-fixtures.ts` 的 `prepare`、`verify-prepared`、`verify-post`、`cleanup` 四个命令和两个固定 Profile `F1-P1-same-device` / `F1-P2-cross-device`。runtime descriptor 只含安全 route IDs、staff account 与 ItemResponse 基线 hash；密码只来自进程环境。prepared verifier 还必须验证实际 MMSE 1.0 presentation package 中每个 seed assetKey 唯一存在且 manifest `stepKey` 与所属步骤逐字一致；该门禁失败时不得启动 Browser 写入。
-
 ### 5.2 写入、并发、verifier 与 Stage
 
 - 写请求按风险验证 Body 白名单、次数、actor、状态转换、审计和最终 MongoDB 状态；禁止自动 retry、replay 或 polling。同一业务聚合在一个业务阶段优先一个主要写入主体，不影响独立患者或独立量表实例正常并行。真实竞争允许“一个成功 + 一个 CAS 安全拒绝”，前提是数据一致、最新状态可读且用户可显式重试。
 - 多角色或双 Session 使用真实独立会话；网络结果不确定时先只读核对服务端事实，不得重试写请求。
 - Evidence 上传继续验证 prepare / Storage / `MediaEvidence` / session attach 的两阶段 CAS 与失败精确补偿，确保未被权威 session 接受的本次对象和记录不残留；该一致性职责不得用前端提示或普通 409 断言替代。
-- verifier 只在现有 HTTP E2E 不足时补充 Browser 写入终态；适用时拒绝零写入、额外写入、错误 actor、错误状态、缺失 audit、受保护字段漂移和跨 Profile 污染。
+- verifier 只在现有 HTTP E2E 不足时补充 Browser 写入终态，优先验证业务不变量、相对增量、禁止副作用、actor / ownership、持久终态和受保护事实未漂移；适用时拒绝零写入、额外写入、错误 actor、错误状态、缺失 audit、受保护字段漂移和跨 Profile 污染。
+- 禁止把与正式业务合同无关的历史固定 revision、内部累计 count、合法产品行为产生的累计事件为 0，或与当前 Profile 主风险无关的内部统计设为门禁。真正的数量不变量仍严格 exact，包括禁止副作用时新增数量必须为 0、at-most-once / exactly-once、重复提交只能产生一次写、禁止重复 Evidence，以及 cardinality 本身就是正式业务合同的情形。
 - Stage 只协调正式页面或公开 API 能真实产生的并发窗口；必须少量、固定、边界明确、幂等且可精确 cleanup。禁止用直接改库、mock 响应或 Stage 创造产品不可达状态。
 - Stage 前后只允许目标 transition；非目标报告、Patient、Visit、ScaleInstance、narrative、snapshot、audit、seed 与其他 Profile 保持不变。
 
 ### 5.3 Cleanup 与复杂度治理
 
-- cleanup 只删除 Profile 明确拥有的 namespace、marker、runtime 和临时资源；禁止 `dropDatabase()`、清空 collection、无条件或宽泛 `deleteMany({})`，不得修改 canonical seed 或非目标数据。
+- cleanup 只删除 Profile 明确拥有的 namespace、marker、runtime 和临时资源；禁止 `dropDatabase()`、清空 collection、无条件或宽泛 `deleteMany({})`，不得修改、删除或重建 canonical seed / catalog 及非目标数据。
 - cleanup 必须有限超时、幂等并核对 residual；结果未知时先只读审计，不重复写入。cleanup 不替代 post-action verifier。
 - 精确关闭本次 Session、BrowserContext、Chromium、Node 进程、端口、runtime 与 test-results；不终止所有权不明的资源。
 - fixture、HTTP E2E、verifier 和 cleanup 的通用复杂度治理引用 `docs/codex-instruction-spec.md` 3.10；按职责、状态、进程、Secret、生命周期、耦合和重复实现判断，不以行数或文件数单独决定通过、失败或拆分。
 
 ## 6. 失败、止损与执行范围
 
-每轮先分类并分别报告 `product`、`spec/test`、`fixture`、`support/runner`、`environment`、`tool limitation` 和 `not_executed`。只有稳定复现并证明违反正式产品合同的行为才归类为产品缺陷；测试工具时序、fixture、runner 或环境问题只修对应层，不得自动演化为 production 并发、锁、重试或协调要求。
+每轮先分类并分别报告 `product`、`spec/test`、`fixture`、`support/runner`、`environment`、`tool limitation` 和 `not_executed`。不新增 `database/data-integrity` 平行来源：产品造成的数据完整性违例归 `product`，fixture 造成的测试数据错误归 `fixture`，数据库环境不可用归 `environment`。只有稳定复现并证明违反正式产品合同的行为才归类为产品缺陷；测试工具时序、fixture、runner 或环境问题只修对应层，不得自动演化为 production 并发、锁、重试或协调要求。
 
-同一方案连续两轮因环境、fixture 或测试资产失败时不得第三轮同方案重跑；公共 support 连续影响两个场景时停止方案；每个微型 Profile 最多一次测试资产修复轮。不得在同一任务同时重构 fixture、重构 runner、修改业务断言并执行正式完整验收；测试基础设施明显超过被测业务时停止扩张并重新评估分层。
+测试基础设施失败不等于产品失败，也不等于 Browser 通过；stale spec / fixture / support / runner、environment 或 tool limitation 不自动回退其他仍适用证据，但没有可信 Browser 证据时不得虚报 Browser passed。Browser-only 事实已有可信实际证据与完全没有可信实际证据时的准确记录口径，以 frontend testing playbook 2.7 为权威，不在本手册复制或新增状态。
+
+同一方案连续两轮因环境、fixture 或测试资产失败时不得第三轮同方案重跑；公共 support 连续影响两个场景时停止方案；每个微型 Profile 最多一次测试资产修复轮。首次失败已可靠归类为同一类 stale test asset 时，这一轮可以对当前 Profile 直接相关的 spec、support、selector 和 verifier 做一次边界明确的静态 sweep，清理同类 stale exact copy、失效 selector、历史 exact revision、过时内部 count 与已失效阶段边界假设，然后只重跑受影响 Profile 与必要关联证据。不得扫全仓库历史资产或越界重构 Browser infrastructure；正式重跑若暴露另一类结构性 fixture / runner / environment 问题或稳定产品合同违例，再停止并重新分类。不得在同一任务同时重构 fixture、重构 runner、修改业务断言并执行正式完整验收；测试基础设施明显超过被测业务时停止扩张并重新评估分层。
 
 测试范围按变化影响选择：
 

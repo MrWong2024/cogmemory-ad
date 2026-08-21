@@ -30,6 +30,8 @@ B11～B15 保持完成；B18 补充验证已闭合，自动化 `gap=0`，WP-03 �
 
 ## 2. 当前测试设计规则
 
+长期分层总原则：能不用真实浏览器证明的事实，不使用 Browser 作为主证据；只有证据本身依赖真实浏览器语义，或必须证明 production 页面到真实 HTTP 的跨层 wiring，才进入 Browser。需要人判断是否清楚、自然、好用的事实由人工 smoke 负责。Browser 不是全量业务回归框架，也不是所有 UI 可达风险的默认最高层；本治理不减少自动化责任，减少的是低价值、重复、脆弱的 Browser 覆盖。最低充分不等于削弱安全、权限、数据完整性和关键业务合同，而是把自动化证据放到更稳定、职责更准确的层级。
+
 ### 2.1 验证候选的系统生成与即时闭环
 
 通用候选治理时序以 `docs/codex-instruction-spec.md` 3.9 为唯一事实源。新 A#、B#、工作包子任务、跨层缺陷修复或其他实现单元在目标合同基本锁定后、生成实现 Codex 指令前，必须执行初始阶段 A、B、C：依据目标合同、当前既有资产和预计影响生成临时的 `初始验证风险候选集合`，治理必要性、可达性、证据复用和最低充分证据，并为候选分配当前任务、具名后续阶段、已有精确证据或人工边界。合同尚未锁定时先完成合同设计或拆分阶段；纯文档、纯格式和无行为变化的机械重构只做简化扫描。
@@ -71,7 +73,7 @@ mandatory 人工或真实设备项目尚未签收时，不得无条件宣布完�
 
 | 分类 | 判定边界 | 最低充分主证据 |
 |---|---|---|
-| `ui_reachable` | 当前正式页面可由正常人工操作触发 | Browser 验证入口、控件、输入、提示、刷新、Browser 状态与代表性可访问性 |
+| `ui_reachable` | 当前正式页面可由正常人工操作触发；只说明风险可从 UI 触达，不等于必须使用 Browser | 先按待证明事实选择 frontend static / pure、HTTP E2E、database verifier、Browser 或人工 smoke；只有不可替代浏览器语义或 production 页面到真实 HTTP 的 wiring 才以 Browser 为主证据 |
 | `public_api_reachable` | 页面无入口，但公开 API 可由 Postman、curl 或自编客户端调用 | HTTP E2E 验证认证、权限、DTO、ownership、状态门禁、错误码与数据库无非法副作用；不另建 Browser 场景 |
 | `legitimate_concurrency` | 两个合法用户、标签页、Session 或请求可通过正式页面或公开 API 形成 | HTTP E2E 验证原子性、幂等、写入次数与数据库终态；仅在存在不可替代用户恢复交互时补最小 Browser |
 | `internal_corruption_only` | 只能直接改库、伪造内部对象、篡改运行时或损坏历史数据形成 | 默认不进入业务批次；可保留廉价 pure/unit 防御证据，只有正式导入、迁移、兼容合同、已知事故或明确合规要求才升级 |
@@ -83,13 +85,14 @@ mandatory 人工或真实设备项目尚未签收时，不得无条件宣布完�
 1. 先证明正常用户主流程，再证明真实 UI、公开 API、合法并发、正式导入或真实设备入口。
 2. 判断风险是否涉及临床数据完整性、不可逆动作、权限、安全、隐私、恢复或已知回归，且是否足以阻断发布。
 3. 检查相关代码、接口与配置未变化时是否已有可复用的精确证据。
-4. 选择最低充分主证据，只为尚未被准确证明的事实补证。
-5. 最后设计最小合法前置、场景和断言；禁止先扩张断言再反向建设 fixture。
+4. 明确回答：“如果没有真实浏览器参与，哪一个产品事实将无法被可信证明？”无法指出真实 BrowserContext、Cookie、Storage、navigation / reload、focus / keyboard、文件选择、真实 CORS / credentials 或 production frontend → HTTP wiring 等不可替代事实时，不得仅因页面可达而升级为 Browser 主证据。
+5. 在 `frontend_static_or_pure`、`backend_unit`、`backend_http_e2e`、`database_verifier`、`browser_micro_profile`、`static_gate` 与人工 smoke 中选择最低充分主证据，只为尚未被准确证明的事实补证。
+6. 最后设计最小合法前置、场景和断言；禁止先扩张断言再反向建设 fixture。
 
 Browser 验收按以下优先级执行；这是现有阶段 A/B/C 内的证据选择与执行顺序，不新增测试阶段或项目状态：
 
 1. **Happy Path Smoke**：先证明正常用户按正常步骤从入口走到正常结束。happy path 未完成前，不持续扩大低频异常矩阵。
-2. **高价值防御**：再选择重复点击、重复提交、权限绕过、stale write、代表性凭证失效和一个代表性并发冲突等少量场景，重点证明无数据覆盖、无重复副作用及服务端事实一致。
+2. **高价值防御**：再选择真实 Cookie / Storage / Session 隔离、reload 恢复、关键 UI wiring、代表性凭证失效和确有不可替代页面恢复交互的少量场景。重复提交、权限绕过、stale write、合法并发和数据库终态以 HTTP E2E / verifier 为主证据；Browser 只补真实页面是否隐藏非法入口或产生正确请求的最小 wiring，不复制服务端非法调用矩阵。
 3. **少量代表性恢复**：按实际合同选择 refresh、pause / resume 或 recovery 等代表性路径，不排列所有恢复组合，也不在每条主链重复已有低层精确证据。
 4. **工作包最终收口**：非关键 Axe、真实设备、极低频组合和可用性细节在具名归属与复核时点下收口。第四层未全部完成时，不默认阻断下一业务功能，但在实际关闭前仍按 roadmap 合同阻断对应工作包完成。
 
@@ -102,9 +105,11 @@ Browser 验收按以下优先级执行；这是现有阶段 A/B/C 内的证据�
 | `backend_unit` | 局部判断、DTO、Service 分支、mapper、状态边界与廉价防御 | 不证明真实 HTTP、Guard 或数据库终态 |
 | `backend_http_e2e` | 公开 API 绕过与合法并发的认证、权限、Pipe、Body、ownership、状态机、幂等、原子性和数据库终态 | 不证明页面真实交互 |
 | `frontend_static_or_pure` | 展示映射、Action ownership、局部资格与非阻断防御 | 不证明真实输入、Browser API 或后端动态行为 |
-| `browser_micro_profile` | 页面入口、控件、输入、提示、刷新、错误恢复、Browser 隐私与代表性可访问性 | 不替代服务端合同或数据库终态 |
+| `browser_micro_profile` | BrowserContext、Cookie / Storage、navigation / reload、focus / keyboard、文件选择、真实 origin / CORS / credentials，以及 production 页面到真实 HTTP 的最小关键 wiring | 不替代服务端非法调用、服务端合同或数据库终态，也不承担普通 UI copy 与主观体验 |
 | `database_verifier` | 仅在现有 HTTP E2E 不足时补充 Browser 写入次数、audit、protected roots 或持久终态 | 不重复准确 HTTP E2E，不替代页面体验 |
 | `static_gate` | lint、typecheck、build、discovery、依赖与路由边界 | 不证明业务运行，不创建业务 Audit ID |
+
+人工 smoke 是独立人工证据边界，不是新的自动化层、活动场景状态或自动化失败后的降级替代；其职责见 2.6。
 
 backend unit、HTTP E2E、database verifier、fixture 与 cleanup 的具体规则以 backend testing playbook 为准。
 
@@ -123,19 +128,39 @@ backend unit、HTTP E2E、database verifier、fixture 与 cleanup 的具体规�
 
 同一 Profile 保持证据原子性：同一 Git 代码态、同一最小前置、一次 Browser 执行、适用的 verifier 和一次精确 cleanup。Browser Profile 应有清晰单一职责；正常业务主链与低频 recovery / takeover / redo 等异常恢复原则上拆开，不用一条长 Profile 同时承担全部组合。已有低层测试充分覆盖的边缘恢复不要求在所有高层 Browser 主链重复排列。后续无关 Profile 失败，不得作废已经闭环的证据。禁止批次专属 runner、journal、aggregator 或完整 manifest，禁止把大量不相关状态塞入一次原子运行。
 
+Browser Profile 不设置 assertion 数量 KPI。若一个 Profile 开始大量断言 API 非法组合、数据库内部状态、历史 revision、普通 copy、内部 count、fixture manifest 或其他不依赖真实浏览器的实现细节，必须重新评估并把对应事实下沉到更合适的 pure / unit、HTTP E2E、verifier 或 static gate；Profile 只保留与单一 Browser 主风险紧密相关的最小断言。
+
+Profile 内的信息分为两类，不为此新增持久状态或第二套结果系统：
+
+- **contract assertion**：本 Profile 明确负责的业务合同或 Browser 不变量；失败可以使 Profile fail。
+- **diagnostic information**：为排错记录的内部 revision、事件计数、playback 计数或其他调试事实；若不是本 Profile 的正式合同，只能用于诊断，不能因为它与历史阶段的偶然值不同而使 Profile fail。
+
+禁止把与业务合同无关的历史固定 revision、内部累计 count、合法产品行为产生的累计事件为 0，或与 Profile 主风险无关的内部统计设为门禁。真正的 cardinality 仍须精确验证，包括禁止副作用时新增数量必须为 0、at-most-once / exactly-once、重复提交只允许一次写入、禁止重复 Evidence，以及数量本身就是正式业务合同的情形；优先断言业务不变量、相对增量、actor / ownership、持久终态和受保护事实未漂移。
+
 ### 2.6 Browser 必须验证的行为与横切抽样
 
-- 使用 production frontend、真实 Browser test backend 和真实 HTTP；不得以 mock server、伪造响应或代码阅读替代。
-- 验证页面入口、角色可见性、控件 enabled/disabled、真实输入、请求次数、状态、成功或可达错误恢复；页面无入口的 403、DTO 或 ownership 绕过交给 HTTP E2E。
-- 验证刷新、beforeunload、localStorage、sessionStorage、IndexedDB、Cookie、URL、Console、DOM 和 Network 隐私边界。
+- Browser 准入必须满足 2.2 的不可替代事实问题，并使用 production frontend、真实 Browser test backend 和真实 HTTP；不得以 mock server、伪造响应或代码阅读替代。
+- 高价值 Browser 事实包括：HttpOnly / SameSite / Secure / host 等真实 Session Cookie 语义；独立 BrowserContext 的身份、Cookie 与 Storage 隔离；登录、退出和 redirect 认证生命周期；reload 后从服务端权威事实恢复；原始 credential、entry code 或 token 不进入 URL、localStorage、sessionStorage、IndexedDB 等不应进入的客户端持久区域；浏览器文件选择与上传链；关键 keyboard / focus / role / accessible name 交互；真实 origin、CORS、credentials 和 Cookie 链；关键 UI 操作确实产生正确 HTTP 请求的最小 wiring；以及少量确需跨多层 UI 才能证明的黄金路径。只在相关能力变化或缺少可信现有证据时增加，不机械覆盖全部类型。
+- 页面没有合法入口但公开 API 可直接调用的 401/403、Guard / Pipe、DTO whitelist、ownership、权限、状态门禁、重复提交、幂等、revision / CAS conflict、合法并发、原子写入、audit、数据库终态和非法调用无副作用，由 Backend HTTP E2E 承担主证据，不在 Browser 再模拟一次 HTTP 攻击。Browser 只在有价值时证明正常 UI 未暴露非法入口，或页面产生的请求 wiring 正确。
+- `beforeunload` / refresh 不机械断言浏览器对话框是否出现、具体文案或浏览器 UI 形式。产品合同确实依赖离开保护时，优先验证未保存数据是否按合同保留、reload 后服务端权威状态是否恢复，以及是否发生真实数据丢失或无法继续；只有浏览器事件本身就是正式业务合同时才直接断言事件行为。
 - 多角色或双 Session 使用独立 BrowserContext，不通过清除同一 Context Cookie 模拟隔离。
 - 响应式代表范围为 390×844、800×1280、1280×800、1024×1366、1366×1024、1280×720、1536×864；宽表只允许局部滚动。
 - 键盘证据使用真实 Tab、Shift+Tab、Enter、Space 与 `isTrusted=true` 事件，验证自然焦点顺序、focus-visible 和焦点进出。
 - Axe 与 ARIA tree 用于代表性基础 A/AA、role、accessible name 和结构检查，不替代真实设备或专业判断，也不得机械把 `violationCount === 0` 设为所有业务阶段的统一完成条件。直接影响核心操作、表单 accessible name、键盘操作、标签或内容可理解性的 violation 必须当前关闭；非关键结构或语义项可以在明确风险与最终归属后进入工作包最终 accessibility 收口。
 
+普通说明性 UI copy 不作为 Browser Profile 的阻断性 exact assertion，包括页面标题、副标题、帮助说明、普通 badge、介绍语和不构成正式稳定业务合同的操作提示。Selector 和断言优先使用 stable `data-testid`、role、对核心业务动作具有稳定语义的 accessible name、URL、Network、API 响应、服务端权威事实或必要 Browser state。安全确认、不可逆操作确认、用户必须据以判断关键业务状态的稳定文本、正式稳定错误合同，以及核心业务操作本身的稳定 accessible name，才可作为少数 exact 文本合同；普通 copy 变化不得触发 fixture、数据库 namespace 或整套 Browser runtime 重建。
+
+不把浏览器品牌矩阵设为默认门禁。真实 Chrome / Edge 品牌兼容性、真实设备和主观操作体验默认归人工 smoke；只有存在明确浏览器品牌专属风险时，才按最低充分范围升级为自动化矩阵。
+
 认证生命周期、logout/Cookie、Storage/URL 隐私、CORS、Console、DOM 敏感信息扫描、Axe、viewport、focus-visible 和不支持 Action 扫描，只在对应能力变化或缺少可信证据时附着少量真实流程；横切证据不得替代业务特有页面断言、错误恢复、请求次数或数据库终态。
 
 GET aborted / canceled 本身不代表产品失败；只有必要读取因此无法取得且使业务状态不可达、用户无法继续或没有可信恢复路径时才阻断。Next prefetch、Playwright response / requestfailed 时序、内部取消顺序、测试鼠标坐标、runner 编排、Console 网络噪声或精确事件到达顺序，必须先归入对应测试层分类，不得在缺少稳定业务风险证据时反向要求 production 增加状态、锁、配置、API、重试或状态机。
+
+#### 人工 smoke 独立职责
+
+人工 smoke 负责自动化无法可靠判断的可理解性、可用性、真实操作感、视觉层级、布局和真实设备体验，包括用户是否知道下一步做什么、文案是否自然、关键流程是否令人困惑，音频、录音、手写、文件操作等真实体验，以及自动识别或辅助结果是否可能被误解为正式结论。重大用户流程、患者端、医护关键操作或交互模型发生实质变化时，应保留最低充分人工 smoke；纯后端、纯内部或没有用户可见行为变化的阶段不机械增加。
+
+人工 smoke 不是自动化失败后的降级版，也不替代权限、DTO、状态机、并发、数据库终态或 Browser-only Cookie / Storage / Session 安全语义的自动化证据。人工实际使用 Chrome / Edge 或真实设备可以形成其明确范围内的人工证据，但不得虚报自动 Browser regression 已通过。
 
 ### 2.7 活动场景状态、失败与复杂度
 
@@ -143,7 +168,11 @@ GET aborted / canceled 本身不代表产品失败；只有必要读取因此无
 
 `unknown` 仅是命令已启动但没有可靠摘要、输出不完整或证据不足时的临时执行结论，不是活动场景状态；它不得关闭、通过或判失败场景。明确且持续的外部环境、工具或权限阻断才记 `blocked`；命令、选择器、权限或进程未启动导致目标没有实际执行时记 `not_executed`。exit code、测试文件存在、历史失败轮局部观察或 cleanup 成功均不能批量推导通过。
 
-每轮先分类为 `product`、`spec/test`、`fixture`、`support/runner`、`environment`、`tool limitation` 或 `not_executed`，再修正对应层；这些是失败归因，不是新的活动场景状态。只有稳定复现且证明违反正式产品合同的行为才归类为产品缺陷。GET aborted、Next prefetch、Playwright response / requestfailed 时序、测试鼠标坐标和 runner 编排问题不能因自动化失败本身升级为产品 `gap`。同一方案连续两轮因环境、fixture 或测试资产失败时不得第三轮同方案重跑；公共 support 连续影响两个场景或测试基础设施明显超过被测业务时停止扩张。每个 Profile 最多一次测试资产修复轮，之后只重跑受影响 Profile 与必要关联证据。
+每轮先分类为 `product`、`spec/test`、`fixture`、`support/runner`、`environment`、`tool limitation` 或 `not_executed`，再修正对应层；这些是失败归因，不是新的活动场景状态，也不新增 `database/data-integrity` 平行来源：产品造成的数据完整性违例归 `product`，fixture 造成的测试数据错误归 `fixture`，数据库环境不可用归 `environment`。只有稳定复现且证明违反正式产品合同的行为才归类为产品缺陷。GET aborted、Next prefetch、Playwright response / requestfailed 时序、测试鼠标坐标和 runner 编排问题不能因自动化失败本身升级为产品 `gap`。
+
+测试基础设施失败不等于产品失败，也不等于 Browser 通过。stale spec / fixture / support / runner、environment 或 tool limitation 不自动回退已经由其他仍适用证据证明的产品事实，但没有形成可信 Browser 证据时不得虚报 Browser passed：Browser-only 事实若已由仍适用的既有 Browser 证据或本轮可信人工真实浏览器 smoke 实际证明，可以准确记录“产品行为已验证；自动 Browser regression 未闭合，存在 test infrastructure debt”；若该 browser-dependent 行为没有任何可信实际证据，只能记录“未发现产品缺陷，但该 Browser 验证尚未形成可信证据”。该区分不新增项目持久状态枚举。
+
+同一方案连续两轮因环境、fixture 或测试资产失败时不得第三轮同方案重跑；公共 support 连续影响两个场景或测试基础设施明显超过被测业务时停止扩张。每个 Profile 最多一次测试资产修复轮。首次失败已经可靠归类为同一类 stale test asset 时，可以在这唯一一次修复轮中，对当前 Profile 直接相关的 spec、support、selector 和 verifier 做边界明确的静态 sweep，一次清理同类 stale exact copy、失效 selector、历史 exact revision、过时内部 count 与已失效阶段边界假设，然后只重跑受影响 Profile 与必要关联证据。不得扫全仓库历史资产、越界重构 Browser infrastructure、把测试债务扩张成 production 状态机，或机械形成“发现一个旧字符串 → 单独任务 → 全 Profile 重跑”的循环；正式重跑若暴露稳定产品合同违例、数据完整性问题或另一类结构性 fixture / runner / environment 问题，再按现有止损规则停止并分类。
 
 测试资产通用复杂度治理引用 `docs/codex-instruction-spec.md` 3.10。frontend/Browser 只补充：按职责内聚、重复基础设施、跨进程链路、独立状态、cleanup 责任、证据价值与维护成本判断；不得以物理行、非空行、净新增行或文件数量单独决定通过、失败、压缩或拆分。
 
@@ -162,6 +191,8 @@ GET aborted / canceled 本身不代表产品失败；只有必要读取因此无
 - 当前 Session Cookie 未设置 `Domain`，属于 API 响应 host 的 host-only Cookie。只核对名称、host/domain、path、HttpOnly、SameSite、Secure 和是否存在，禁止输出 Cookie 值。
 - `NEXT_PUBLIC_API_BASE_URL` 是 production build 的公开构建时输入；值变化后必须重新 build。只重启已有 server 不能证明新值生效，必须由实际 Network 请求确认。
 - `BROWSER_ACCEPTANCE_FRONTEND_ORIGIN` 与 `BROWSER_ACCEPTANCE_BACKEND_ORIGIN` 只声明 runner 预期拓扑，不能覆盖已进入构建产物的 API Base。
+- “前端生产代码发生变化”本身不是 fixture 修改或重建触发器。只有 DTO 必填字段、Schema、权限、服务端状态前置、seed / catalog 或其他合法数据前置合同真实变化时才调整 fixture；纯 UI copy、布局、selector、展示结构和不改变数据前置的普通交互变化，原则上只更新直接相关 spec / support。
+- fixture 是否变化与 production build 是否 fresh 是两个独立判断。修改后的前端生产代码需要正式 Browser 动态验收时，必须基于当前最终代码态生成 fresh production build，并通过实际页面/Network 确认 Browser 正在运行该构建产物；不得因“不改 fixture”复用过期 frontend build，也不得因“需要 fresh build”反推 fixture 必须重建。
 
 进入业务 Profile 前，在同一 BrowserContext 完成 health、页面 origin、登录 API origin/CORS、HttpOnly Cookie 存在以及 `GET /auth/me` 已认证读取的 preflight。任一项失败均不得进入业务场景；先修正环境与构建链，再按证据分类，不通过重试业务写请求或延长超时绕过。
 
@@ -172,6 +203,12 @@ GET aborted / canceled 本身不代表产品失败；只有必要读取因此无
 - 每个 Profile 使用独立 BrowserContext；只关闭任务拥有的 Context、Session、Chromium、Node 进程、端口、runtime 和 test-results。
 - 临床草稿、客户端可读凭据、内部 ID、完整响应和敏感对象不得进入 Storage、URL、DOM、Console、Network 日志、截图或产物。HttpOnly Cookie 只核对安全元数据。
 - 不可逆 POST 不自动 retry、replay 或 polling。网络结果不确定时先只读核对服务端事实；只有明确用户动作才能再次写入。
+
+### 3.3 正式运行结果持久化
+
+正式 Browser 运行的最终状态不得只依赖 Codex 或终端 stdout。runner / support 应把当前 Profile 的最小、脱敏、可追溯结果写入 `.local/` 下该 Profile 独立的 runtime / result 位置，至少可靠保留 stdout / stderr 或等价运行日志和最终 exit code；确有必要时再增加最小机器可读 result summary。终端输出截断不得导致无法确认 runner 最终状态。
+
+持久结果不得记录 Cookie、Session、token、数据库连接串、真实凭据、完整敏感响应或其他 Secret。本条是后续测试基础设施的长期实施要求；仅有本规则不证明当前 runner 已满足，也不得把尚未实施归类为产品缺陷或 Browser 已通过。
 
 ## 4. 当前证据索引
 
