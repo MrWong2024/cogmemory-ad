@@ -8,7 +8,6 @@ const DATABASE_BOUNDARY_PATTERNS = [
   /^COGMEMORY_DATABASE_PURPOSE$/i,
   /^BROWSER_ACCEPTANCE_(?:APP|ADMIN)_MONGO_URI$/i,
   /_FIXTURE_PASSWORD$/i,
-  /^B10_BROWSER_HTTP_FAULT_/i,
 ];
 
 export type LiveAcceptanceEnvironment =

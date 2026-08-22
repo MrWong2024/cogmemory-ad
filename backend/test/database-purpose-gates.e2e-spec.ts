@@ -77,29 +77,40 @@ describe('database purpose gates (e2e)', () => {
   });
 
   it('makes representative current Browser fixture CLIs reject the normal test database before AppModule import', () => {
-    const wp10F1RuntimePath = join(
+    const handoffRuntimePath = join(
+      process.cwd(),
+      '..',
+      '.local',
+      'deliverables',
+      'patient-administration-handoff',
+      `database-purpose-gate-handoff-${process.pid}.json`,
+    );
+    const wp10F2RuntimePath = join(
       process.cwd(),
       'test-results',
-      `database-purpose-gate-wp10-f1-${process.pid}.json`,
+      `database-purpose-gate-wp10-f2-${process.pid}.json`,
     );
-    expect(existsSync(wp10F1RuntimePath)).toBe(false);
+    expect(existsSync(handoffRuntimePath)).toBe(false);
+    expect(existsSync(wp10F2RuntimePath)).toBe(false);
 
     const fixtureProbes = [
       {
-        script: 'scripts/b10-browser-fixtures.ts',
-        args: ['prepare', '--profile', 'public-surface-security'],
+        script: 'scripts/patient-administration-handoff-browser-fixtures.ts',
+        args: ['prepare'],
         env: {
-          B10_FIXTURE_PASSWORD: 'database-gate-placeholder',
+          PATIENT_ADMIN_HANDOFF_PROFILE: 'same-device',
+          PATIENT_ADMIN_HANDOFF_NAMESPACE: 'handoff-gate',
+          PATIENT_ADMIN_HANDOFF_RUNTIME_PATH: handoffRuntimePath,
         },
       },
       {
-        script: 'scripts/wp10-f1-browser-fixtures.ts',
+        script: 'scripts/wp10-f2-browser-fixtures.ts',
         args: ['prepare'],
         env: {
-          WP10_F1_PROFILE: 'F1-P1-same-device',
-          WP10_F1_NAMESPACE: 'wp10-f1-gate',
-          WP10_F1_RUNTIME_PATH: wp10F1RuntimePath,
-          WP10_F1_FIXTURE_PASSWORD: 'database-gate-placeholder',
+          WP10_F2_PROFILE: 'full',
+          WP10_F2_NAMESPACE: 'wp10-f2-gate',
+          WP10_F2_RUNTIME_PATH: wp10F2RuntimePath,
+          WP10_F2_FIXTURE_PASSWORD: 'database-gate-placeholder',
         },
       },
     ] as const;
@@ -137,6 +148,7 @@ describe('database purpose gates (e2e)', () => {
       );
     }
 
-    expect(existsSync(wp10F1RuntimePath)).toBe(false);
+    expect(existsSync(handoffRuntimePath)).toBe(false);
+    expect(existsSync(wp10F2RuntimePath)).toBe(false);
   });
 });
