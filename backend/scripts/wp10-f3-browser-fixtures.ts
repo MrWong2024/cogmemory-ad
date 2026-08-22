@@ -1005,6 +1005,22 @@ async function assertPrepared(input: {
           .map((evidence) => evidence.mediaEvidenceId),
       ),
     ) ?? [];
+  const reviewAudioRun =
+    reviewReading?.steps
+      .flatMap((step) => step.runs)
+      .find((run) =>
+        run.evidence.some(
+          (evidence) => evidence.mediaEvidenceId === audio._id.toString(),
+        ),
+      ) ?? null;
+  const reviewAdoptionRun =
+    reviewAdoption?.steps
+      .flatMap((step) => step.runs)
+      .find((run) =>
+        run.evidence.some(
+          (evidence) => evidence.mediaEvidenceId === photo._id.toString(),
+        ),
+      ) ?? null;
   const finalCanonicalStep =
     catalog.patientAdministrationSteps[
       catalog.patientAdministrationSteps.length - 1
@@ -1067,6 +1083,44 @@ async function assertPrepared(input: {
       reviewAdoption?.itemResponseId === adoption._id.toString() &&
       reviewAudioIds.includes(audio._id.toString()) &&
       reviewPhotoIds.includes(photo._id.toString()),
+    audioCompletedSession:
+      administration.status === 'completed' &&
+      review.session.status === 'completed',
+    audioValidCapture:
+      Boolean(reviewAudioRun?.capture) &&
+      reviewAudioRun?.capture?.invalidatedAt === null,
+    audioAttachedStored:
+      audio.evidenceType === 'audio' &&
+      audio.status === 'attached' &&
+      audio.storageStatus === 'stored',
+    audioTranscriptionRequestable:
+      !audio.transcription ||
+      !['succeeded', 'processing'].includes(audio.transcription.status),
+    audioReviewProjection:
+      reviewAudioRun?.evidence.some(
+        (evidence) => evidence.mediaEvidenceId === audio._id.toString(),
+      ) === true,
+    adoptionCompletedSession:
+      administration.status === 'completed' &&
+      review.session.status === 'completed',
+    adoptionValidCapture:
+      Boolean(reviewAdoptionRun?.capture) &&
+      reviewAdoptionRun?.capture?.invalidatedAt === null,
+    adoptionImageEvidence: ['photo', 'handwriting'].includes(
+      photo.evidenceType,
+    ),
+    adoptionAttachedStored:
+      photo.status === 'attached' && photo.storageStatus === 'stored',
+    adoptionRequirementPending: adoption.evidenceRefs.some(
+      (reference) =>
+        reference.evidenceType === photo.evidenceType &&
+        reference.status === 'pending' &&
+        !reference.mediaEvidenceId,
+    ),
+    adoptionReviewProjection:
+      reviewAdoptionRun?.evidence.some(
+        (evidence) => evidence.mediaEvidenceId === photo._id.toString(),
+      ) === true,
     readiness: !readiness.ready && !readiness.canSubmitNow,
     downstream: scoreCount + domainCount + reportCount === 0,
   };
@@ -1086,7 +1140,11 @@ async function assertPrepared(input: {
     completedPatientAdministrationCount: owned.administrations.length,
     representativeMediaEvidenceCount: owned.media.length,
     representativeTargets: 'reading_audio_and_drawing_photo',
+    audioActionPrerequisites:
+      'completed_valid_capture_attached_stored_transcription_requestable_projected',
     transcription: 'not_requested',
+    adoptionActionPrerequisites:
+      'completed_valid_capture_image_attached_stored_pending_projected',
     photoAdoption: 'pending',
     readingFormalAnswer: 'not_completed',
     readiness: 'not_ready',

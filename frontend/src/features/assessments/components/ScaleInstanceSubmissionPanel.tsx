@@ -312,7 +312,11 @@ export function ScaleInstanceSubmissionPanel({
         ) : null}
 
         {submissionReceipt ? (
-          <section className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-success-soft)] p-4" aria-labelledby="submission-receipt-title">
+          <section
+            aria-labelledby="submission-receipt-title"
+            className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-success-soft)] p-4"
+            data-testid="scale-instance-submission-receipt"
+          >
             <h3
               className="font-semibold text-[var(--cma-success)]"
               id="submission-receipt-title"
@@ -361,7 +365,10 @@ export function ScaleInstanceSubmissionPanel({
             </details>
           </section>
         ) : readiness?.submissionState === 'completed' ? (
-          <section className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] p-4">
+          <section
+            className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] p-4"
+            data-testid="scale-instance-submission-receipt"
+          >
             <p className="font-semibold text-[var(--cma-text-strong)]">
               该量表实例已完成提交。
             </p>
@@ -390,6 +397,7 @@ export function ScaleInstanceSubmissionPanel({
             !isExternallyUnsubmittable &&
             !readOnlyReason ? (
               <Button
+                data-testid="scale-instance-submission-prepare-action"
                 disabled={readinessLoading || submitting}
                 onClick={onPrepareSubmit}
               >
@@ -434,6 +442,7 @@ export function ScaleInstanceSubmissionPanel({
             </div>
             <div>
               <Button
+                data-testid="scale-instance-submission-confirm-action"
                 disabled={!confirmed || submitting || confirmationBlocked}
                 onClick={onConfirmSubmit}
               >

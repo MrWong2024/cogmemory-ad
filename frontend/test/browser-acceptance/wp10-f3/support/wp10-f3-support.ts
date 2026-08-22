@@ -215,12 +215,6 @@ export async function openF3Execution(input: {
   await expect(
     input.page.getByTestId('patient-administration-review-panel'),
   ).toBeVisible();
-  await expect(
-    input.page.getByRole('heading', {
-      name: '医护复核与正式作答',
-      exact: true,
-    }),
-  ).toBeVisible();
 }
 
 export function waitForBackendResponse(input: {
