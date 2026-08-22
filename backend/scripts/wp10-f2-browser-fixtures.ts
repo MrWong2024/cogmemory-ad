@@ -3,6 +3,7 @@ import 'reflect-metadata';
 import { createHash } from 'node:crypto';
 import { readFile, unlink, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
+import { isDeepStrictEqual } from 'node:util';
 import type { INestApplicationContext, Type } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { getModelToken } from '@nestjs/mongoose';
@@ -29,6 +30,7 @@ import { MediaEvidence, type MediaEvidenceDocument } from '../src/modules/media/
 // prettier-ignore
 import { Patient, type PatientDocument } from '../src/modules/patients/schemas/patient.schema';
 import { PresentationAssetsService } from '../src/modules/scales/services/presentation-assets.service';
+import { MMSE_SCALE_VERSION_SEED } from '../src/modules/scales/seeds/mmse.seed';
 // prettier-ignore
 import { User, type UserDocument } from '../src/modules/users/schemas/user.schema';
 
@@ -312,6 +314,66 @@ async function assertUnused(namespace: string, models: Models): Promise<void> {
   }
 }
 
+type StoredMmseVersion = {
+  _id?: unknown;
+  scaleDefinitionId?: unknown;
+  status?: unknown;
+  scaleCode?: unknown;
+  version?: unknown;
+  presentationPackageKey?: unknown;
+  patientAdministrationSteps?: unknown;
+};
+
+function isUnknownArray(value: unknown): value is unknown[] {
+  return Array.isArray(value);
+}
+
+function toComparablePatientAdministrationSteps(steps: unknown): unknown {
+  if (!isUnknownArray(steps)) {
+    return steps;
+  }
+
+  return Array.from(steps, (step) => {
+    if (typeof step !== 'object' || step === null || isUnknownArray(step)) {
+      return step;
+    }
+    const record = step as Record<string, unknown>;
+    return {
+      stepKey: record.stepKey,
+      order: record.order,
+      itemCode: record.itemCode,
+      ...(record.patientText === undefined
+        ? {}
+        : { patientText: record.patientText }),
+      assetKeys: isUnknownArray(record.assetKeys)
+        ? [...record.assetKeys]
+        : null,
+      responseMode: record.responseMode,
+      advanceBy: record.advanceBy,
+    };
+  });
+}
+
+function assertMmseCatalogMatchesTrackedSeed(version: StoredMmseVersion): void {
+  if (
+    version.presentationPackageKey !==
+      MMSE_SCALE_VERSION_SEED.presentationPackageKey ||
+    !isDeepStrictEqual(
+      toComparablePatientAdministrationSteps(
+        version.patientAdministrationSteps,
+      ),
+      toComparablePatientAdministrationSteps(
+        MMSE_SCALE_VERSION_SEED.patientAdministrationSteps,
+      ),
+    )
+  ) {
+    fail(
+      'WP10_F2_MMSE_CATALOG_DRIFT',
+      'The shared Browser MMSE catalog differs from the tracked MMSE seed',
+    );
+  }
+}
+
 async function resolveExistingMmseCatalog(
   models: Models,
 ): Promise<ExistingMmseCatalogReference> {
@@ -325,13 +387,7 @@ async function resolveExistingMmseCatalog(
     _id?: unknown;
     status?: unknown;
   } | null;
-  const version = versionValue as {
-    _id?: unknown;
-    scaleDefinitionId?: unknown;
-    status?: unknown;
-    scaleCode?: unknown;
-    version?: unknown;
-  } | null;
+  const version = versionValue as StoredMmseVersion | null;
   if (
     !definition ||
     !(definition._id instanceof Types.ObjectId) ||
@@ -349,6 +405,7 @@ async function resolveExistingMmseCatalog(
       'The shared Browser MMSE catalog is unavailable',
     );
   }
+  assertMmseCatalogMatchesTrackedSeed(version);
 
   return {
     scaleDefinitionId: definition._id.toString(),
@@ -367,6 +424,7 @@ async function createFixture(input: {
   auth: AuthService;
 }): Promise<Descriptor> {
   await assertUnused(input.namespace, input.models);
+  const catalog = await resolveExistingMmseCatalog(input.models);
   const passwordHash = await input.auth.hashPassword(input.password);
   const user = await input.models.users.create({
     accountName: accountName(input.namespace),
@@ -412,7 +470,6 @@ async function createFixture(input: {
     notes: 'Synthetic WP-10 F2 browser fixture visit',
     metadata: null,
   });
-  const catalog = await resolveExistingMmseCatalog(input.models);
   const executionPlan = input.workflows.execution.buildScaleExecutionPlan({
     patientId: patient._id,
     assessmentVisitId: visit._id,
@@ -508,7 +565,23 @@ async function assertPrepared(input: {
         _id: instance.scaleVersionId,
       })
     : null;
-  const scaleVersionRecord = scaleVersion as Record<string, unknown> | null;
+  const scaleVersionRecord = scaleVersion as StoredMmseVersion | null;
+  if (
+    !instance ||
+    !scaleVersionRecord ||
+    !(scaleVersionRecord._id instanceof Types.ObjectId) ||
+    !(scaleVersionRecord.scaleDefinitionId instanceof Types.ObjectId) ||
+    !scaleVersionRecord.scaleDefinitionId.equals(instance.scaleDefinitionId) ||
+    scaleVersionRecord.status !== 'active' ||
+    scaleVersionRecord.scaleCode !== 'mmse' ||
+    scaleVersionRecord.version !== '1.0'
+  ) {
+    fail(
+      'WP10_F2_MMSE_CATALOG_UNAVAILABLE',
+      'The shared Browser MMSE catalog is unavailable',
+    );
+  }
+  assertMmseCatalogMatchesTrackedSeed(scaleVersionRecord);
   const stepValue = scaleVersionRecord?.patientAdministrationSteps;
   const steps: unknown[] = Array.isArray(stepValue) ? stepValue : [];
   let packageAssets = 0;
