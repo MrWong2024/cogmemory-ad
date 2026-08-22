@@ -825,7 +825,7 @@ export function PatientAdministrationStaffPanel({
                     }
                     type="checkbox"
                   />
-                  <span>患者已当面确认本机必要设备检查完成</span>
+                  <span>我已确认患者设备的必要检查已完成</span>
                 </label>
               </div>
             ) : null}

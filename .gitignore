@@ -1,4 +1,2 @@
-# Local-only licensed/project reference materials
-/.local/reference/
-/.local/presentation-assets/
-/.local/deliverables/
+# Local-only project references, runtime artifacts and deliverables
+/.local/
