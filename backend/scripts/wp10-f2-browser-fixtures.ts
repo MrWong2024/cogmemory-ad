@@ -172,18 +172,36 @@ function itemFacts(items: ItemResponseDocument[]): unknown {
     }));
 }
 
-function instanceFacts(instance: ScaleInstanceDocument): unknown {
+function scaleInstanceProtectedFacts(instance: ScaleInstanceDocument): unknown {
+  const versionTrace = instance.versionTrace;
+  const operatorSnapshot = instance.operatorSnapshot;
   return {
     id: instance._id.toString(),
-    status: instance.status,
-    startedAt: instance.startedAt ?? null,
-    completedAt: instance.completedAt ?? null,
-    lockedAt: instance.lockedAt ?? null,
-    voidedAt: instance.voidedAt ?? null,
-    durationMs: instance.durationMs ?? null,
-    progress: instance.progress ?? null,
-    qualityControlSummary: instance.qualityControlSummary ?? null,
-    submissionWriteBarrier: instance.submissionWriteBarrier ?? null,
+    assessmentVisitId: instance.assessmentVisitId.toString(),
+    patientId: instance.patientId.toString(),
+    subjectCode: instance.subjectCode,
+    scaleDefinitionId: instance.scaleDefinitionId.toString(),
+    scaleVersionId: instance.scaleVersionId.toString(),
+    scaleCode: instance.scaleCode,
+    scaleVersion: instance.scaleVersion,
+    instanceCode: instance.instanceCode,
+    instanceNo: instance.instanceNo,
+    administrationMode: instance.administrationMode,
+    versionTrace: versionTrace
+      ? {
+          crfVersion: versionTrace.crfVersion ?? null,
+          scoringRuleVersion: versionTrace.scoringRuleVersion ?? null,
+          fieldEncodingVersion: versionTrace.fieldEncodingVersion ?? null,
+          sourceDocument: versionTrace.sourceDocument ?? null,
+        }
+      : null,
+    operatorSnapshot: operatorSnapshot
+      ? {
+          operatorId: operatorSnapshot.operatorId?.toString() ?? null,
+          operatorName: operatorSnapshot.operatorName ?? null,
+          operatorRole: operatorSnapshot.operatorRole ?? null,
+        }
+      : null,
     metadata: instance.metadata ?? null,
   };
 }
@@ -435,7 +453,7 @@ async function createFixture(input: {
       navigationPath: `/patients/${patient._id.toString()}/visits/${visit._id.toString()}/scale-instances/${instance._id.toString()}`,
       itemCount: items.length,
       itemBaselineHash: hash(itemFacts(items)),
-      scaleInstanceBaselineHash: hash(instanceFacts(instance)),
+      scaleInstanceBaselineHash: hash(scaleInstanceProtectedFacts(instance)),
     },
   };
   await writeDescriptor(input.path, descriptor, input.password);
@@ -513,7 +531,15 @@ async function assertPrepared(input: {
       instance.scaleCode === 'mmse' &&
       instance.scaleVersion === '1.0' &&
       instance.administrationMode === 'supervised_patient_input' &&
-      hash(instanceFacts(instance)) === scenario.scaleInstanceBaselineHash,
+      hash(scaleInstanceProtectedFacts(instance)) ===
+        scenario.scaleInstanceBaselineHash &&
+      instance.status === 'draft' &&
+      (instance.startedAt ?? null) === null &&
+      (instance.completedAt ?? null) === null &&
+      (instance.lockedAt ?? null) === null &&
+      (instance.voidedAt ?? null) === null &&
+      (instance.durationMs ?? null) === null &&
+      (instance.submissionWriteBarrier ?? null) === null,
     ),
     items:
       items.length === scenario.itemCount &&
@@ -606,7 +632,16 @@ async function assertPost(input: {
   ]);
   if (
     !instance ||
-    hash(instanceFacts(instance)) !== scenario.scaleInstanceBaselineHash ||
+    hash(scaleInstanceProtectedFacts(instance)) !==
+      scenario.scaleInstanceBaselineHash ||
+    instance.status !== 'in_progress' ||
+    !(instance.startedAt instanceof Date) ||
+    !Number.isFinite(instance.startedAt.getTime()) ||
+    (instance.completedAt ?? null) !== null ||
+    (instance.lockedAt ?? null) !== null ||
+    (instance.voidedAt ?? null) !== null ||
+    (instance.durationMs ?? null) !== null ||
+    (instance.submissionWriteBarrier ?? null) !== null ||
     items.length !== scenario.itemCount ||
     hash(itemFacts(items)) !== scenario.itemBaselineHash ||
     administrations.length !== 1 ||
@@ -708,7 +743,8 @@ async function assertPost(input: {
       technicalReplayAuthorizationCount:
         replay.technicalReplayAuthorizations.length,
       itemFacts: 'unchanged',
-      scaleInstanceFacts: 'unchanged',
+      scaleInstanceProtectedFacts: 'unchanged',
+      scaleInstanceLifecycle: 'in_progress',
       downstreamResultCount: 0,
       fakeStorageReferences: 'one_per_media_evidence',
     };
@@ -765,7 +801,8 @@ async function assertPost(input: {
     currentStepEvidenceCount: currentStepReferences.length,
     currentStepCompleted,
     itemFacts: 'unchanged',
-    scaleInstanceFacts: 'unchanged',
+    scaleInstanceProtectedFacts: 'unchanged',
+    scaleInstanceLifecycle: 'in_progress',
     downstreamResultCount: 0,
     fakeStorageReferences: 'one_per_media_evidence',
   };
