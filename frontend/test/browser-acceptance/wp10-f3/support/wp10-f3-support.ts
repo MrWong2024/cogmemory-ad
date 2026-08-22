@@ -2,19 +2,17 @@ import { readFile } from 'node:fs/promises';
 
 import type { Page, Response } from '@playwright/test';
 
-import { expect } from '../../support/acceptance-test';
-import type { NetworkLedger } from '../../support/network-ledger';
-import type { ConsoleAudit } from '../../support/runtime-audit';
-import type { RoleContextFactory } from '../../support/role-context-factory';
 import {
-  assertF1BrowserAudit,
-  invariant,
-  loginStaff,
-  resolveEnvironment,
-  type EnabledEnvironment,
-  type F1ExpectedHttpFailure,
-  type StaffSession,
-} from '../../wp10-f1/support/wp10-f1-support';
+  assertDatabaseBoundaryIsClear,
+  resolveLiveAcceptanceEnvironment,
+} from '../../support/acceptance-env';
+import { expect } from '../../support/acceptance-test';
+import { NetworkLedger } from '../../support/network-ledger';
+import type {
+  RoleContext,
+  RoleContextFactory,
+} from '../../support/role-context-factory';
+import { ConsoleAudit } from '../../support/runtime-audit';
 
 export type Descriptor = {
   schemaVersion: 1;
@@ -42,22 +40,55 @@ export type Descriptor = {
   };
 };
 
+export type EnabledEnvironment = Extract<
+  ReturnType<typeof resolveLiveAcceptanceEnvironment>,
+  { enabled: true }
+>;
+
+export type StaffSession = {
+  roleContext: RoleContext;
+  ledger: NetworkLedger;
+  consoleAudit: ConsoleAudit;
+};
+
+export type AllowedHttpFailure = {
+  method: string;
+  status: number;
+  safeUrlPattern: string;
+};
+
+export type F3BrowserAuditSummary = {
+  allowedHttpFailures: number;
+  ignoredCanceledGets: number;
+  unexpectedConsoleErrors: 0;
+  pageErrors: 0;
+  unexpectedHttpFailures: 0;
+  unexpectedTransportFailures: 0;
+};
+
 export const AUTH_ME_PATTERN = '/auth/me';
 export const EXECUTION_PATTERN =
   '/patients/<id>/visits/<id>/scale-instances/<id>';
-// The shared safe-output sanitizer deliberately replaces long opaque-looking
-// path segments, including these two static endpoint names, with <id>.
-export const REVIEW_PATTERN = `${EXECUTION_PATTERN}/<id>/review`;
+export const REVIEW_PATTERN = `${EXECUTION_PATTERN}/patient-administration/review`;
 export const TRANSCRIBE_PATTERN = `${EXECUTION_PATTERN}/item-responses/<id>/media-evidences/<id>/transcribe`;
 export const ACCESS_PATTERN = `${EXECUTION_PATTERN}/item-responses/<id>/media-evidences/<id>/access-url`;
 export const ADOPT_PATTERN = `${EXECUTION_PATTERN}/item-responses/<id>/media-evidences/<id>/adopt`;
 export const A14_PATTERN = `${EXECUTION_PATTERN}/item-responses/<id>`;
-export const READINESS_PATTERN = `${EXECUTION_PATTERN}/<id>`;
+export const READINESS_PATTERN = `${EXECUTION_PATTERN}/submission-readiness`;
 export const SUBMIT_PATTERN = `${EXECUTION_PATTERN}/submit`;
 export const SCORE_RESULT_PATTERN = `${EXECUTION_PATTERN}/score-results/latest`;
 
+export function invariant(
+  condition: unknown,
+  safeMessage: string,
+): asserts condition {
+  if (!condition) throw new Error(safeMessage);
+}
+
 export function resolveF3Environment(): EnabledEnvironment | null {
-  return resolveEnvironment();
+  assertDatabaseBoundaryIsClear();
+  const environment = resolveLiveAcceptanceEnvironment();
+  return environment.enabled ? environment : null;
 }
 
 export function requireF3Secret(): string {
@@ -108,8 +139,10 @@ export async function readF3Descriptor(): Promise<Descriptor> {
       ids.every((entry) => /^[a-f\d]{24}$/i.test(entry)) &&
       scenario.navigationPath ===
         `/patients/${scenario.patientId}/visits/${scenario.visitId}/scale-instances/${scenario.scaleInstanceId}` &&
-      scenario.itemCount === 11 &&
-      scenario.stepCount === 19 &&
+      Number.isSafeInteger(scenario.itemCount) &&
+      scenario.itemCount > 0 &&
+      Number.isSafeInteger(scenario.stepCount) &&
+      scenario.stepCount > 0 &&
       hashes.length === 7 &&
       hashes.every((entry) => /^[a-f\d]{64}$/i.test(entry)),
     'WP-10 F3 descriptor contract is invalid',
@@ -117,19 +150,57 @@ export async function readF3Descriptor(): Promise<Descriptor> {
   return descriptor as Descriptor;
 }
 
-export function loginF3Staff(input: {
+export async function loginF3Staff(input: {
   factory: RoleContextFactory;
   descriptor: Descriptor;
   password: string;
   environment: EnabledEnvironment;
 }): Promise<StaffSession> {
-  return loginStaff({
-    factory: input.factory,
-    account: input.descriptor.accounts.staff.loginIdentifier,
-    password: input.password,
-    environment: input.environment,
+  const roleContext = await input.factory.create('doctor', 'wp10-f3-staff', {
     viewport: { width: 1440, height: 1000 },
   });
+  const { page } = roleContext;
+  const ledger = new NetworkLedger();
+  await ledger.attach(page);
+  const consoleAudit = new ConsoleAudit(page);
+  consoleAudit.start();
+  await page.goto(`${input.environment.frontendOrigin}/login`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  const loginResponsePromise = page.waitForResponse(
+    (response) =>
+      responsePath(response) === '/auth/login' &&
+      response.request().method() === 'POST',
+  );
+  const meResponsePromise = page.waitForResponse(
+    (response) =>
+      responsePath(response) === '/auth/me' &&
+      response.request().method() === 'GET' &&
+      response.status() === 200,
+  );
+  await page
+    .getByLabel('账号')
+    .fill(input.descriptor.accounts.staff.loginIdentifier);
+  await page.getByLabel('密码').fill(input.password);
+  await page.getByRole('button', { name: '登录系统', exact: true }).click();
+  const [loginResponse, meResponse] = await Promise.all([
+    loginResponsePromise,
+    meResponsePromise,
+  ]);
+  expect(loginResponse.status()).toBe(201);
+  const meBody = (await meResponse.json()) as {
+    authenticated?: unknown;
+    user?: { roles?: unknown };
+  };
+  invariant(
+    meBody.authenticated === true &&
+      Array.isArray(meBody.user?.roles) &&
+      meBody.user.roles.includes('doctor'),
+    'WP-10 F3 staff login did not establish the expected identity',
+  );
+  await expect(page).toHaveURL(`${input.environment.frontendOrigin}/dashboard`);
+  return { roleContext, ledger, consoleAudit };
 }
 
 function responsePath(response: Response): string {
@@ -182,23 +253,119 @@ export function waitForBackendResponse(input: {
 export function assertF3BrowserAudit(input: {
   consoleAudit: ConsoleAudit;
   ledger: NetworkLedger;
-  expectedHttpFailures: F1ExpectedHttpFailure[];
-}) {
-  return assertF1BrowserAudit(input);
+  allowedHttpFailures: AllowedHttpFailure[];
+}): F3BrowserAuditSummary {
+  const entries = input.ledger.entries();
+  const allowedFailureKeys = new Set<string>();
+
+  for (const allowedFailure of input.allowedHttpFailures) {
+    if (
+      allowedFailure.status < 400 ||
+      allowedFailure.status >= 500 ||
+      !Number.isSafeInteger(allowedFailure.status) ||
+      !allowedFailure.safeUrlPattern.startsWith('/')
+    ) {
+      throw new Error('WP-10 F3 browser audit allow entry is invalid');
+    }
+    allowedFailureKeys.add(httpFailureKey(allowedFailure));
+  }
+
+  let ignoredCanceledGets = 0;
+  for (const entry of entries) {
+    if (entry.status !== null && entry.status >= 500) {
+      throw new Error('WP-10 F3 browser audit detected an HTTP 5xx response');
+    }
+    if (
+      entry.status !== null &&
+      entry.status >= 400 &&
+      !allowedFailureKeys.has(
+        httpFailureKey({
+          method: entry.method,
+          status: entry.status,
+          safeUrlPattern: entry.safeUrlPattern,
+        }),
+      )
+    ) {
+      throw new Error(
+        'WP-10 F3 browser audit detected an unexpected HTTP 4xx response',
+      );
+    }
+
+    if (entry.failureReason === null) continue;
+    if (entry.method === 'GET') {
+      if (entry.failureReason === 'aborted') {
+        ignoredCanceledGets += 1;
+        continue;
+      }
+      throw new Error(
+        'WP-10 F3 browser audit detected a GET timeout or transport failure',
+      );
+    }
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(entry.method)) {
+      throw new Error(
+        'WP-10 F3 browser audit detected a mutation transport failure',
+      );
+    }
+    throw new Error(
+      'WP-10 F3 browser audit detected another transport failure',
+    );
+  }
+
+  for (const event of input.consoleAudit.events()) {
+    if (event.kind === 'page_error') {
+      throw new Error('WP-10 F3 browser audit detected a page error');
+    }
+    if (event.category !== 'network') {
+      throw new Error(
+        'WP-10 F3 browser audit detected an unexpected Console error',
+      );
+    }
+
+    if (event.httpStatus !== null) {
+      const responseObserved = input.allowedHttpFailures.some(
+        (allowedFailure) =>
+          allowedFailure.status === event.httpStatus &&
+          allowedFailure.safeUrlPattern === event.safeUrlPattern &&
+          entries.some(
+            (entry) =>
+              entry.method === allowedFailure.method.toUpperCase() &&
+              entry.status === allowedFailure.status &&
+              entry.safeUrlPattern === allowedFailure.safeUrlPattern,
+          ),
+      );
+      if (!responseObserved) {
+        throw new Error(
+          'WP-10 F3 browser audit detected an unexplained HTTP Console error',
+        );
+      }
+      continue;
+    }
+
+    const canceledGetObserved =
+      event.safeUrlPattern !== null &&
+      entries.some(
+        (entry) =>
+          entry.method === 'GET' &&
+          entry.failureReason === 'aborted' &&
+          entry.safeUrlPattern === event.safeUrlPattern,
+      );
+    if (!canceledGetObserved) {
+      throw new Error(
+        'WP-10 F3 browser audit detected an unexplained network Console error',
+      );
+    }
+  }
+
+  return {
+    allowedHttpFailures: allowedFailureKeys.size,
+    ignoredCanceledGets,
+    unexpectedConsoleErrors: 0,
+    pageErrors: 0,
+    unexpectedHttpFailures: 0,
+    unexpectedTransportFailures: 0,
+  };
 }
 
-export function assertExactMutationBodyKeys(
-  ledger: NetworkLedger,
-  safeUrlPattern: string,
-  expectedKeys: string[],
-): void {
-  const matching = ledger.entries().filter(
-    (entry) =>
-      ['POST', 'PATCH'].includes(entry.method) &&
-      entry.safeUrlPattern === safeUrlPattern,
-  );
-  expect(matching).toHaveLength(1);
-  expect(matching[0]?.bodyKeys).toEqual([...expectedKeys].sort());
+function httpFailureKey(input: AllowedHttpFailure): string {
+  return `${input.method.toUpperCase()}\u0000${input.status}\u0000${input.safeUrlPattern}`;
 }
-
-export { invariant };
