@@ -3,6 +3,7 @@ import 'reflect-metadata';
 import { createHash } from 'node:crypto';
 import { readFile, unlink, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
+import { isDeepStrictEqual } from 'node:util';
 import type { INestApplicationContext, Type } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { getModelToken } from '@nestjs/mongoose';
@@ -42,7 +43,7 @@ type Command =
   | 'cleanup';
 
 type Descriptor = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   batch: 'WP10-F3';
   namespace: string;
   accounts: { staff: { loginIdentifier: string } };
@@ -57,13 +58,7 @@ type Descriptor = {
     adoptionItemResponseId: string;
     audioEvidenceId: string;
     adoptionEvidenceId: string;
-    sessionBaselineHash: string;
-    mediaWithoutTranscriptionBaselineHash: string;
-    unchangedItemsBaselineHash: string;
     adoptionAnswerBaselineHash: string;
-    readingEvidenceBaselineHash: string;
-    instanceStableBaselineHash: string;
-    outsideNamespaceBaselineHash: string;
   };
 };
 
@@ -102,11 +97,54 @@ const READING_ITEM_CODE = 'mmse.language.reading_command';
 const ADOPTION_ITEM_CODE = 'mmse.visuospatial.copy_drawing';
 const WRITING_ITEM_CODE = 'mmse.language.writing_sentence';
 
-type ExistingMmseCatalogReference = {
+type CanonicalPatientAdministrationStep = {
+  stepKey: string;
+  order: number;
+  itemCode: string;
+  responseMode: string;
+};
+
+type SharedMmseCatalogReference = {
   scaleDefinitionId: string;
   scaleVersionId: string;
-  scaleVersion: string;
+  scaleVersion: '1.0';
+  patientAdministrationSteps: CanonicalPatientAdministrationStep[];
 };
+
+type StoredMmseDefinition = {
+  _id?: unknown;
+  code?: unknown;
+  status?: unknown;
+  currentVersionId?: unknown;
+};
+
+type StoredMmseVersion = Record<string, unknown> & {
+  _id?: unknown;
+  scaleDefinitionId?: unknown;
+  scaleCode?: unknown;
+  version?: unknown;
+  status?: unknown;
+  patientAdministrationSteps?: unknown;
+};
+
+const MMSE_CATALOG_BUSINESS_FIELDS = [
+  'scaleCode',
+  'version',
+  'displayVersion',
+  'status',
+  'crfVersion',
+  'scoringRuleVersion',
+  'fieldEncodingVersion',
+  'sourceDocument',
+  'groups',
+  'items',
+  'totalScoreRange',
+  'qualityControlRules',
+  'reportingRules',
+  'researchExportMappings',
+  'presentationPackageKey',
+  'patientAdministrationSteps',
+] as const;
 
 function fail(code: string, message: string): never {
   throw new FixtureError(code, message);
@@ -162,10 +200,6 @@ function visitCode(namespace: string): string {
   return `${subjectCode(namespace)}-VISIT`;
 }
 
-function ownedScaleVersion(namespace: string): string {
-  return `wp10-f3-${namespace}`;
-}
-
 function operator(user: UserDocument) {
   return {
     operatorId: user._id,
@@ -178,31 +212,10 @@ function hash(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
 
-function normalizedObjectId(value: Types.ObjectId | null | undefined) {
-  return value ? value.toString() : null;
-}
-
-function normalizedDate(value: Date | null | undefined) {
-  return value instanceof Date ? value.toISOString() : null;
-}
-
-function normalizedEvidenceRefs(item: ItemResponseDocument) {
-  return item.evidenceRefs.map((reference) => ({
-    evidenceType: reference.evidenceType,
-    mediaEvidenceId: normalizedObjectId(reference.mediaEvidenceId),
-    status: reference.status,
-    note: reference.note ?? null,
-  }));
-}
-
-function answerFacts(item: ItemResponseDocument) {
+function formalAnswerFacts(item: ItemResponseDocument) {
   return {
-    id: item._id.toString(),
-    itemCode: item.itemCode,
     status: item.status,
     answerSource: item.answerSource,
-    draftRevision: item.draftRevision,
-    draftSavedAt: normalizedDate(item.draftSavedAt),
     rawResponse: item.rawResponse ?? null,
     structuredResponse: item.structuredResponse ?? null,
     responseText: item.responseText ?? null,
@@ -211,160 +224,18 @@ function answerFacts(item: ItemResponseDocument) {
     stepResults: item.stepResults.map((step) => ({
       stepCode: step.stepCode,
       actualValue: step.actualValue ?? null,
+      isCorrect: step.isCorrect ?? null,
+      scoreValue: step.scoreValue ?? null,
       note: step.note ?? null,
     })),
     promptResponses: item.promptResponses.map((prompt) => ({
       promptType: prompt.promptType,
       responseAfterPrompt: prompt.responseAfterPrompt ?? null,
+      isCorrect: prompt.isCorrect ?? null,
       note: prompt.note ?? null,
     })),
-    timing: item.timing ?? null,
     operatorNote: item.operatorNote ?? null,
-    // A16 fences every item as an expected submission lifecycle effect; it is
-    // not part of the answer facts used to attribute F3/adoption mutations.
-    submissionWriteBarrier: null,
-    lockedAt: normalizedDate(item.lockedAt),
-    voidedAt: normalizedDate(item.voidedAt),
   };
-}
-
-function itemFacts(item: ItemResponseDocument) {
-  return { ...answerFacts(item), evidenceRefs: normalizedEvidenceRefs(item) };
-}
-
-function sessionFacts(session: PatientAdministrationSessionDocument) {
-  return {
-    id: session._id.toString(),
-    scaleInstanceId: session.scaleInstanceId.toString(),
-    status: session.status,
-    currentStepKey: session.currentStepKey,
-    revision: session.revision,
-    expiresAt: normalizedDate(session.expiresAt),
-    preparationConfirmedAt: normalizedDate(session.preparationConfirmedAt),
-    preparationConfirmedBy: session.preparationConfirmedBy ?? null,
-    impactFactorCodes: [...session.impactFactorCodes],
-    impactFactorNote: session.impactFactorNote ?? null,
-    createdBy: session.createdBy,
-    startedAt: normalizedDate(session.startedAt),
-    pausedAt: normalizedDate(session.pausedAt),
-    completedAt: normalizedDate(session.completedAt),
-    terminatedAt: normalizedDate(session.terminatedAt),
-    expiredAt: normalizedDate(session.expiredAt),
-    controlEvents: session.controlEvents,
-    stepCaptures: session.stepCaptures,
-    playbackFacts: session.playbackFacts,
-    stepEvidenceRefs: session.stepEvidenceRefs,
-  };
-}
-
-function mediaWithoutTranscriptionFacts(evidences: MediaEvidenceDocument[]) {
-  return [...evidences]
-    .sort((left, right) => left.evidenceCode.localeCompare(right.evidenceCode))
-    .map((evidence) => ({
-      id: evidence._id.toString(),
-      patientId: evidence.patientId.toString(),
-      assessmentVisitId: evidence.assessmentVisitId.toString(),
-      scaleInstanceId: evidence.scaleInstanceId.toString(),
-      itemResponseId: evidence.itemResponseId.toString(),
-      itemCode: evidence.itemCode,
-      evidenceCode: evidence.evidenceCode,
-      evidenceType: evidence.evidenceType,
-      captureMode: evidence.captureMode,
-      status: evidence.status,
-      storageStatus: evidence.storageStatus,
-      storage: evidence.storage ?? null,
-      patientAdministrationContext:
-        evidence.patientAdministrationContext ?? null,
-      audioMetadata: evidence.audioMetadata ?? null,
-      imageMetadata: evidence.imageMetadata ?? null,
-      handwritingTrace: evidence.handwritingTrace ?? null,
-      captureContext: evidence.captureContext ?? null,
-      operatorSnapshot: evidence.operatorSnapshot ?? null,
-      qualityStatus: evidence.qualityStatus,
-      lockedAt: normalizedDate(evidence.lockedAt),
-      voidedAt: normalizedDate(evidence.voidedAt),
-      deletedAt: normalizedDate(evidence.deletedAt),
-    }));
-}
-
-function instanceStableFacts(instance: ScaleInstanceDocument) {
-  return {
-    id: instance._id.toString(),
-    patientId: instance.patientId.toString(),
-    assessmentVisitId: instance.assessmentVisitId.toString(),
-    scaleDefinitionId: instance.scaleDefinitionId.toString(),
-    scaleVersionId: instance.scaleVersionId.toString(),
-    scaleCode: instance.scaleCode,
-    scaleVersion: instance.scaleVersion,
-    instanceCode: instance.instanceCode,
-    instanceNo: instance.instanceNo,
-    administrationMode: instance.administrationMode,
-    startedAt: normalizedDate(instance.startedAt),
-    lockedAt: normalizedDate(instance.lockedAt),
-    voidedAt: normalizedDate(instance.voidedAt),
-    operatorSnapshot: instance.operatorSnapshot ?? null,
-    notes: instance.notes ?? null,
-  };
-}
-
-async function outsideNamespaceHash(
-  models: Models,
-  ids: {
-    userId: Types.ObjectId;
-    patientId: Types.ObjectId;
-    visitId: Types.ObjectId;
-    scaleInstanceId: Types.ObjectId;
-    scaleVersionId: Types.ObjectId;
-  },
-): Promise<string> {
-  const db = models.items.db;
-  const stamps = async (
-    collectionName: string,
-    filter: Record<string, unknown>,
-  ) =>
-    db
-      .collection(collectionName)
-      .find(filter, { projection: { _id: 1, updatedAt: 1 } })
-      .sort({ _id: 1 })
-      .map((value) => ({
-        id: value._id.toString(),
-        updatedAt:
-          value.updatedAt instanceof Date
-            ? value.updatedAt.toISOString()
-            : null,
-      }))
-      .toArray();
-  return hash({
-    users: await stamps('users', { _id: { $ne: ids.userId } }),
-    authSessions: await stamps('sessions', { userId: { $ne: ids.userId } }),
-    patients: await stamps('patients', { _id: { $ne: ids.patientId } }),
-    visits: await stamps('assessment_visits', { _id: { $ne: ids.visitId } }),
-    instances: await stamps('scale_instances', {
-      _id: { $ne: ids.scaleInstanceId },
-    }),
-    items: await stamps('item_responses', {
-      scaleInstanceId: { $ne: ids.scaleInstanceId },
-    }),
-    administrations: await stamps('patient_administration_sessions', {
-      scaleInstanceId: { $ne: ids.scaleInstanceId },
-    }),
-    media: await stamps('media_evidences', {
-      scaleInstanceId: { $ne: ids.scaleInstanceId },
-    }),
-    scores: await stamps('score_results', {
-      scaleInstanceId: { $ne: ids.scaleInstanceId },
-    }),
-    domains: await stamps('cognitive_domain_results', {
-      scaleInstanceId: { $ne: ids.scaleInstanceId },
-    }),
-    reports: await stamps('clinical_reports', {
-      assessmentVisitId: { $ne: ids.visitId },
-    }),
-    scaleDefinitions: await stamps('scale_definitions', {}),
-    scaleVersions: await stamps('scale_versions', {
-      _id: { $ne: ids.scaleVersionId },
-    }),
-  });
 }
 
 function assertRuntime(config: ConfigService, connection: Connection): void {
@@ -425,21 +296,11 @@ async function readDescriptor(path: string): Promise<Descriptor> {
   }
   const descriptor = value as Partial<Descriptor>;
   const scenario = descriptor.scenario;
-  const hashes = scenario
-    ? [
-        scenario.sessionBaselineHash,
-        scenario.mediaWithoutTranscriptionBaselineHash,
-        scenario.unchangedItemsBaselineHash,
-        scenario.adoptionAnswerBaselineHash,
-        scenario.readingEvidenceBaselineHash,
-        scenario.instanceStableBaselineHash,
-        scenario.outsideNamespaceBaselineHash,
-      ]
-    : [];
   if (
-    descriptor.schemaVersion !== 1 ||
+    descriptor.schemaVersion !== 2 ||
     descriptor.batch !== 'WP10-F3' ||
     typeof descriptor.namespace !== 'string' ||
+    !/^[a-z0-9][a-z0-9-]{2,19}$/.test(descriptor.namespace) ||
     typeof descriptor.accounts?.staff.loginIdentifier !== 'string' ||
     !scenario ||
     ![
@@ -453,10 +314,11 @@ async function readDescriptor(path: string): Promise<Descriptor> {
     ].every(isObjectId) ||
     scenario.navigationPath !==
       `/patients/${scenario.patientId}/visits/${scenario.visitId}/scale-instances/${scenario.scaleInstanceId}` ||
-    scenario.itemCount !== 11 ||
-    scenario.stepCount !== 19 ||
-    hashes.length !== 7 ||
-    !hashes.every((entry) => /^[a-f\d]{64}$/i.test(entry))
+    !Number.isSafeInteger(scenario.itemCount) ||
+    scenario.itemCount < 1 ||
+    !Number.isSafeInteger(scenario.stepCount) ||
+    scenario.stepCount < 1 ||
+    !/^[a-f\d]{64}$/i.test(scenario.adoptionAnswerBaselineHash)
   ) {
     fail('WP10_F3_RUNTIME_INVALID', 'Safe runtime descriptor is invalid');
   }
@@ -481,54 +343,174 @@ async function assertUnused(namespace: string, models: Models): Promise<void> {
     models.users.countDocuments({ accountName: accountName(namespace) }),
     models.patients.countDocuments({ subjectCode: subjectCode(namespace) }),
     models.visits.countDocuments({ visitCode: visitCode(namespace) }),
-    models.items.db.collection('scale_versions').countDocuments({
-      scaleCode: 'mmse',
-      version: ownedScaleVersion(namespace),
-    }),
   ]);
   if (counts.some((count) => count !== 0)) {
     fail('WP10_F3_NAMESPACE_EXISTS', 'The exact namespace is already in use');
   }
 }
 
-async function createOwnedMmseCatalog(
-  namespace: string,
+function mmseBusinessPayload(
+  version: StoredMmseVersion,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    MMSE_CATALOG_BUSINESS_FIELDS.map((field) => [field, version[field]]),
+  );
+}
+
+function trackedMmseBusinessPayload(): Record<string, unknown> {
+  const seed = MMSE_SCALE_VERSION_SEED as unknown as Record<string, unknown>;
+  return Object.fromEntries(
+    MMSE_CATALOG_BUSINESS_FIELDS.map((field) => [field, seed[field]]),
+  );
+}
+
+function isCanonicalStep(
+  value: unknown,
+  index: number,
+): value is CanonicalPatientAdministrationStep {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  const step = value as Record<string, unknown>;
+  return (
+    typeof step.stepKey === 'string' &&
+    Boolean(step.stepKey.trim()) &&
+    step.order === index + 1 &&
+    typeof step.itemCode === 'string' &&
+    Boolean(step.itemCode.trim()) &&
+    typeof step.responseMode === 'string' &&
+    Boolean(step.responseMode.trim())
+  );
+}
+
+async function resolveSharedMmseCatalog(
   models: Models,
-): Promise<ExistingMmseCatalogReference> {
-  const definitionValue = await models.items.db
-    .collection('scale_definitions')
-    .findOne({ code: 'mmse' });
-  const definition = definitionValue as {
-    _id?: unknown;
-    status?: unknown;
-  } | null;
+): Promise<SharedMmseCatalogReference> {
+  const [definitions, versions] = await Promise.all([
+    models.items.db
+      .collection('scale_definitions')
+      .find({ code: 'mmse' })
+      .limit(2)
+      .toArray(),
+    models.items.db
+      .collection('scale_versions')
+      .find({ scaleCode: 'mmse', version: '1.0' })
+      .limit(2)
+      .toArray(),
+  ]);
+  const definition = definitions[0] as StoredMmseDefinition | undefined;
+  const version = versions[0] as StoredMmseVersion | undefined;
   if (
+    definitions.length !== 1 ||
+    versions.length !== 1 ||
     !definition ||
     !(definition._id instanceof Types.ObjectId) ||
-    definition.status !== 'active'
+    !version ||
+    !(version._id instanceof Types.ObjectId) ||
+    !(version.scaleDefinitionId instanceof Types.ObjectId)
   ) {
     fail(
       'WP10_F3_MMSE_CATALOG_UNAVAILABLE',
-      'The shared Browser MMSE definition is unavailable',
+      'The shared Browser MMSE catalog is unavailable',
+    );
+  }
+  const steps = version.patientAdministrationSteps;
+  if (
+    definition.code !== 'mmse' ||
+    definition.status !== 'active' ||
+    !(definition.currentVersionId instanceof Types.ObjectId) ||
+    !definition.currentVersionId.equals(version._id) ||
+    !version.scaleDefinitionId.equals(definition._id) ||
+    version.scaleCode !== 'mmse' ||
+    version.version !== '1.0' ||
+    version.status !== 'active' ||
+    !isDeepStrictEqual(
+      mmseBusinessPayload(version),
+      trackedMmseBusinessPayload(),
+    ) ||
+    !Array.isArray(steps) ||
+    steps.length < 1 ||
+    !steps.every(isCanonicalStep)
+  ) {
+    fail(
+      'WP10_F3_MMSE_CATALOG_DRIFT',
+      'The shared Browser MMSE catalog differs from the tracked MMSE seed',
     );
   }
 
-  const scaleVersionId = new Types.ObjectId();
-  const scaleVersion = ownedScaleVersion(namespace);
-  await models.items.db.collection('scale_versions').insertOne({
-    ...MMSE_SCALE_VERSION_SEED,
-    _id: scaleVersionId,
-    scaleDefinitionId: definition._id,
-    version: scaleVersion,
-    createdAt: BASE_DATE,
-    updatedAt: BASE_DATE,
-  });
-
   return {
     scaleDefinitionId: definition._id.toString(),
-    scaleVersionId: scaleVersionId.toString(),
-    scaleVersion,
+    scaleVersionId: version._id.toString(),
+    scaleVersion: '1.0',
+    patientAdministrationSteps: steps,
   };
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function buildRepresentativeStructuredResponse(
+  item: ItemResponseDocument,
+): Record<string, unknown> | null {
+  if (!isPlainRecord(item.itemConfigSnapshot)) {
+    return null;
+  }
+  const scoringRule = item.itemConfigSnapshot.scoringRule;
+  const scoreRange = item.itemConfigSnapshot.scoreRange;
+  if (!isPlainRecord(scoringRule)) {
+    return null;
+  }
+
+  if (scoringRule.mode === 'structured_manual') {
+    const configured = Array.isArray(scoringRule.subItems)
+      ? scoringRule.subItems
+      : Array.isArray(scoringRule.words)
+        ? scoringRule.words
+        : [];
+    const subItems: Record<string, { responseText: string; isCorrect: true }> =
+      {};
+    for (const value of configured) {
+      if (!isPlainRecord(value) || typeof value.code !== 'string') {
+        fail(
+          'WP10_F3_SKELETON_INVALID',
+          'MMSE structured item configuration is invalid',
+        );
+      }
+      const reference =
+        typeof value.expected === 'string'
+          ? value.expected
+          : typeof value.text === 'string'
+            ? value.text
+            : value.code;
+      subItems[value.code] = { responseText: reference, isCorrect: true };
+    }
+    if (Object.keys(subItems).length < 1) {
+      fail(
+        'WP10_F3_SKELETON_INVALID',
+        'MMSE structured item configuration is empty',
+      );
+    }
+    return { subItems };
+  }
+
+  const binaryModes = new Set([
+    'manual_exact_match',
+    'manual_observation',
+    'manual_drawing_review',
+  ]);
+  if (
+    typeof scoringRule.mode === 'string' &&
+    binaryModes.has(scoringRule.mode) &&
+    isPlainRecord(scoreRange) &&
+    scoreRange.min === 0 &&
+    scoreRange.max === 1 &&
+    scoreRange.step === 1
+  ) {
+    return { binaryManualDecision: { isCorrect: true } };
+  }
+
+  return null;
 }
 
 async function createFixture(input: {
@@ -539,8 +521,10 @@ async function createFixture(input: {
   workflows: Workflows;
   auth: AuthService;
 }): Promise<Descriptor> {
-  let phase = 'namespace_check';
+  let phase = 'mmse_catalog_resolve';
   try {
+    const catalog = await resolveSharedMmseCatalog(input.models);
+    phase = 'namespace_check';
     await assertUnused(input.namespace, input.models);
     phase = 'staff_account';
     const passwordHash = await input.auth.hashPassword(input.password);
@@ -590,8 +574,6 @@ async function createFixture(input: {
       notes: 'Synthetic WP-10 F3 browser fixture visit',
       metadata: null,
     });
-    phase = 'mmse_catalog_create';
-    const catalog = await createOwnedMmseCatalog(input.namespace, input.models);
     phase = 'mmse_initialize';
     const executionPlan = input.workflows.execution.buildScaleExecutionPlan({
       patientId: patient._id,
@@ -608,11 +590,6 @@ async function createFixture(input: {
       startedAt: null,
       metadata: null,
     });
-    executionPlan.scaleInstanceDraft.scaleVersion = catalog.scaleVersion;
-    for (const draft of executionPlan.itemResponseDrafts) {
-      draft.scaleVersion = catalog.scaleVersion;
-      draft.versionTrace.scaleVersion = catalog.scaleVersion;
-    }
     const initialized =
       await input.workflows.execution.createScaleExecutionFromPlan(
         executionPlan,
@@ -628,25 +605,7 @@ async function createFixture(input: {
     if (!instance || items.length !== 11) {
       fail('WP10_F3_SKELETON_INVALID', 'MMSE fixture skeleton is invalid');
     }
-    phase = 'mmse_load_steps';
-    const scaleVersion = await input.models.items.db
-      .collection('scale_versions')
-      .findOne({ _id: instance.scaleVersionId });
-    const stepValue: unknown = scaleVersion?.patientAdministrationSteps;
-    const steps = Array.isArray(stepValue)
-      ? (stepValue as Array<{
-          stepKey: string;
-          order: number;
-          itemCode: string;
-          responseMode: string;
-        }>)
-      : [];
-    if (
-      steps.length !== 19 ||
-      steps.some((step, index) => step.order !== index + 1)
-    ) {
-      fail('WP10_F3_STEPS_INVALID', 'MMSE patient steps are invalid');
-    }
+    const steps = catalog.patientAdministrationSteps;
 
     phase = 'item_drafts';
     const draftTime = new Date(BASE_DATE.getTime() + 60_000);
@@ -656,15 +615,16 @@ async function createFixture(input: {
       const isAdoption = item.itemCode === ADOPTION_ITEM_CODE;
       item.status = isReading ? 'in_progress' : 'answered';
       item.answerSource = 'clinician_recorded';
-      item.draftRevision = isReading ? 2 : 3;
       item.draftSavedAt = draftTime;
-      item.rawResponse = isReading ? null : `synthetic-${item.itemCode}`;
-      item.structuredResponse = null;
-      item.responseText = isReading ? undefined : '脱敏复核草稿';
+      item.rawResponse = isReading || isWriting ? null : true;
+      item.structuredResponse = isWriting
+        ? null
+        : buildRepresentativeStructuredResponse(item);
+      item.responseText = isWriting ? undefined : '脱敏代表性正式作答草稿';
       item.isMissing = isWriting;
       item.missingReason = isWriting ? '合成夹具：书写项无法完成' : undefined;
       item.stepResults.forEach((step) => {
-        step.actualValue = isReading ? null : true;
+        step.actualValue = isReading || isWriting ? null : true;
       });
       item.timing = {
         timerState: 'completed',
@@ -702,8 +662,9 @@ async function createFixture(input: {
     const administration = await input.models.administrations.create({
       scaleInstanceId: instance._id,
       status: 'completed',
+      deviceMode: 'same_device',
       currentStepKey: steps[steps.length - 1].stepKey,
-      revision: 41,
+      revision: 0,
       expiresAt: new Date(BASE_DATE.getTime() + 2 * 60 * 60 * 1000),
       preparationConfirmedAt: BASE_DATE,
       preparationConfirmedBy: operator(user),
@@ -723,44 +684,60 @@ async function createFixture(input: {
       stepEvidenceRefs: [],
     });
 
-    const itemByCode = new Map(items.map((item) => [item.itemCode, item]));
+    const readingItem = items.find(
+      (item) => item.itemCode === READING_ITEM_CODE,
+    );
+    const adoptionItem = items.find(
+      (item) => item.itemCode === ADOPTION_ITEM_CODE,
+    );
+    const readingSteps = steps.filter(
+      (step) => step.itemCode === READING_ITEM_CODE,
+    );
+    const adoptionSteps = steps.filter(
+      (step) => step.itemCode === ADOPTION_ITEM_CODE,
+    );
+    if (
+      !readingItem ||
+      !adoptionItem ||
+      readingSteps.length !== 1 ||
+      adoptionSteps.length !== 1
+    ) {
+      fail('WP10_F3_TARGETS_INVALID', 'Fixture targets are invalid');
+    }
     const evidenceRefs: Array<{
       stepKey: string;
       stepRun: number;
-      evidenceType: 'audio' | 'photo' | 'handwriting';
+      evidenceType: 'audio' | 'photo';
       mediaEvidenceId: Types.ObjectId;
       uploadedAt: Date;
     }> = [];
     const evidences: MediaEvidenceDocument[] = [];
     phase = 'patient_media';
-    for (const step of steps) {
-      const evidenceType =
-        step.responseMode === 'speech'
-          ? ('audio' as const)
-          : step.responseMode === 'writing'
-            ? ('handwriting' as const)
-            : step.responseMode === 'drawing'
-              ? ('photo' as const)
-              : null;
-      if (!evidenceType) continue;
-      const item = itemByCode.get(step.itemCode);
-      if (!item) {
-        fail(
-          'WP10_F3_ITEM_MAPPING_INVALID',
-          'Patient step item mapping is invalid',
-        );
-      }
+    const representativeTargets = [
+      {
+        step: readingSteps[0],
+        item: readingItem,
+        evidenceType: 'audio' as const,
+        captureMode: 'browser_audio_recording' as const,
+        extension: 'webm',
+        mimeType: 'audio/webm',
+        sizeBytes: 256,
+      },
+      {
+        step: adoptionSteps[0],
+        item: adoptionItem,
+        evidenceType: 'photo' as const,
+        captureMode: 'photo_upload' as const,
+        extension: 'png',
+        mimeType: 'image/png',
+        sizeBytes: 128,
+      },
+    ];
+    for (const target of representativeTargets) {
+      const { step, item, evidenceType } = target;
       const uploadedAt = new Date(
         BASE_DATE.getTime() + step.order * 30_000 + 5_000,
       );
-      const extension = evidenceType === 'audio' ? 'webm' : 'png';
-      const mimeType = evidenceType === 'audio' ? 'audio/webm' : 'image/png';
-      const captureMode =
-        evidenceType === 'audio'
-          ? ('browser_audio_recording' as const)
-          : evidenceType === 'handwriting'
-            ? ('tablet_handwriting' as const)
-            : ('photo_upload' as const);
       const evidence = await input.models.media.create({
         patientId: patient._id,
         assessmentVisitId: visit._id,
@@ -773,9 +750,9 @@ async function createFixture(input: {
         scaleVersion: instance.scaleVersion,
         instanceCode: instance.instanceCode,
         itemCode: item.itemCode,
-        evidenceCode: `WP10F3-${input.namespace}-${step.order}-${evidenceType}`,
+        evidenceCode: `WP10F3-${input.namespace}-${evidenceType}`,
         evidenceType,
-        captureMode,
+        captureMode: target.captureMode,
         status: 'attached',
         storageStatus: 'stored',
         crfCode: item.crfCode,
@@ -789,10 +766,10 @@ async function createFixture(input: {
         storage: {
           storageDriver: 'fake',
           bucket: 'cogmemory-ad-browser-test',
-          objectKey: `wp10-f3/${input.namespace}/${step.stepKey}/run-1.${extension}`,
-          mimeType,
-          fileExtension: extension,
-          sizeBytes: evidenceType === 'audio' ? 256 : 128,
+          objectKey: `wp10-f3/${input.namespace}/${step.stepKey}/run-1.${target.extension}`,
+          mimeType: target.mimeType,
+          fileExtension: target.extension,
+          sizeBytes: target.sizeBytes,
           storedAt: uploadedAt,
         },
         imageMetadata:
@@ -806,18 +783,7 @@ async function createFixture(input: {
                 isColor: true,
                 capturedAt: uploadedAt,
               },
-        handwritingTrace:
-          evidenceType === 'handwriting'
-            ? {
-                hasTrajectory: false,
-                trajectoryFormat: 'unknown',
-                strokeCount: null,
-                durationMs: null,
-                canvasWidth: 640,
-                canvasHeight: 480,
-                inputTool: 'finger',
-              }
-            : null,
+        handwritingTrace: null,
         captureContext: {
           capturedAt: uploadedAt,
           uploadedAt,
@@ -854,32 +820,32 @@ async function createFixture(input: {
       .find({ scaleInstanceId: instance._id })
       .sort({ itemOrder: 1 })
       .exec();
-    const readingItem = freshItems.find(
+    const freshReadingItem = freshItems.find(
       (item) => item.itemCode === READING_ITEM_CODE,
     );
-    const adoptionItem = freshItems.find(
+    const freshAdoptionItem = freshItems.find(
       (item) => item.itemCode === ADOPTION_ITEM_CODE,
     );
     const audioEvidence = evidences.find(
-      (evidence) => evidence.evidenceType === 'audio',
+      (evidence) =>
+        evidence.itemCode === READING_ITEM_CODE &&
+        evidence.evidenceType === 'audio',
     );
     const adoptionEvidence = evidences.find(
       (evidence) =>
         evidence.itemCode === ADOPTION_ITEM_CODE &&
         evidence.evidenceType === 'photo',
     );
-    if (!readingItem || !adoptionItem || !audioEvidence || !adoptionEvidence) {
+    if (
+      !freshReadingItem ||
+      !freshAdoptionItem ||
+      !audioEvidence ||
+      !adoptionEvidence
+    ) {
       fail('WP10_F3_TARGETS_INVALID', 'Fixture targets are invalid');
     }
-    const outsideHash = await outsideNamespaceHash(input.models, {
-      userId: user._id,
-      patientId: patient._id,
-      visitId: visit._id,
-      scaleInstanceId: instance._id,
-      scaleVersionId: instance.scaleVersionId,
-    });
     const descriptor: Descriptor = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       batch: 'WP10-F3',
       namespace: input.namespace,
       accounts: { staff: { loginIdentifier: user.accountName } },
@@ -890,27 +856,11 @@ async function createFixture(input: {
         navigationPath: `/patients/${patient._id.toString()}/visits/${visit._id.toString()}/scale-instances/${instance._id.toString()}`,
         itemCount: freshItems.length,
         stepCount: steps.length,
-        readingItemResponseId: readingItem._id.toString(),
-        adoptionItemResponseId: adoptionItem._id.toString(),
+        readingItemResponseId: freshReadingItem._id.toString(),
+        adoptionItemResponseId: freshAdoptionItem._id.toString(),
         audioEvidenceId: audioEvidence._id.toString(),
         adoptionEvidenceId: adoptionEvidence._id.toString(),
-        sessionBaselineHash: hash(sessionFacts(administration)),
-        mediaWithoutTranscriptionBaselineHash: hash(
-          mediaWithoutTranscriptionFacts(evidences),
-        ),
-        unchangedItemsBaselineHash: hash(
-          freshItems
-            .filter(
-              (item) =>
-                item._id.toString() !== readingItem._id.toString() &&
-                item._id.toString() !== adoptionItem._id.toString(),
-            )
-            .map(itemFacts),
-        ),
-        adoptionAnswerBaselineHash: hash(answerFacts(adoptionItem)),
-        readingEvidenceBaselineHash: hash(normalizedEvidenceRefs(readingItem)),
-        instanceStableBaselineHash: hash(instanceStableFacts(instance)),
-        outsideNamespaceBaselineHash: outsideHash,
+        adoptionAnswerBaselineHash: hash(formalAnswerFacts(freshAdoptionItem)),
       },
     };
     await writeDescriptor(input.path, descriptor, input.password);
@@ -976,6 +926,7 @@ async function assertPrepared(input: {
     fail('WP10_F3_NAMESPACE_MISMATCH', 'Runtime namespace mismatch');
   }
   assertDescriptorSafety(input.descriptor, input.password);
+  const catalog = await resolveSharedMmseCatalog(input.models);
   const owned = await loadOwned(input);
   const passwordValid =
     owned.user &&
@@ -989,6 +940,14 @@ async function assertPrepared(input: {
     (item) =>
       item._id.toString() === input.descriptor.scenario.adoptionItemResponseId,
   );
+  const audio = owned.media.find(
+    (evidence) =>
+      evidence._id.toString() === input.descriptor.scenario.audioEvidenceId,
+  );
+  const photo = owned.media.find(
+    (evidence) =>
+      evidence._id.toString() === input.descriptor.scenario.adoptionEvidenceId,
+  );
   if (
     !owned.user ||
     !owned.patient ||
@@ -996,20 +955,60 @@ async function assertPrepared(input: {
     !owned.instance ||
     !administration ||
     !reading ||
-    !adoption
+    !adoption ||
+    !audio ||
+    !photo
   ) {
     fail('WP10_F3_PREPARED_MISSING', 'Prepared fixture facts are missing');
   }
-  const review = await input.workflows.review.getReview({
-    patientId: owned.patient._id.toString(),
-    visitId: owned.visit._id.toString(),
-    scaleInstanceId: owned.instance._id.toString(),
-  });
-  const readiness = await input.workflows.submission.getSubmissionReadiness(
-    owned.patient._id.toString(),
-    owned.visit._id.toString(),
-    owned.instance._id.toString(),
+  const [review, readiness, scoreCount, domainCount, reportCount] =
+    await Promise.all([
+      input.workflows.review.getReview({
+        patientId: owned.patient._id.toString(),
+        visitId: owned.visit._id.toString(),
+        scaleInstanceId: owned.instance._id.toString(),
+      }),
+      input.workflows.submission.getSubmissionReadiness(
+        owned.patient._id.toString(),
+        owned.visit._id.toString(),
+        owned.instance._id.toString(),
+      ),
+      input.models.items.db.collection('score_results').countDocuments({
+        scaleInstanceId: owned.instance._id,
+      }),
+      input.models.items.db
+        .collection('cognitive_domain_results')
+        .countDocuments({ scaleInstanceId: owned.instance._id }),
+      input.models.items.db.collection('clinical_reports').countDocuments({
+        assessmentVisitId: owned.visit._id,
+      }),
+    ]);
+  const reviewReading = review.items.find(
+    (item) => item.itemCode === READING_ITEM_CODE,
   );
+  const reviewAdoption = review.items.find(
+    (item) => item.itemCode === ADOPTION_ITEM_CODE,
+  );
+  const reviewAudioIds =
+    reviewReading?.steps.flatMap((step) =>
+      step.runs.flatMap((run) =>
+        run.evidence
+          .filter((evidence) => evidence.evidenceType === 'audio')
+          .map((evidence) => evidence.mediaEvidenceId),
+      ),
+    ) ?? [];
+  const reviewPhotoIds =
+    reviewAdoption?.steps.flatMap((step) =>
+      step.runs.flatMap((run) =>
+        run.evidence
+          .filter((evidence) => evidence.evidenceType === 'photo')
+          .map((evidence) => evidence.mediaEvidenceId),
+      ),
+    ) ?? [];
+  const finalCanonicalStep =
+    catalog.patientAdministrationSteps[
+      catalog.patientAdministrationSteps.length - 1
+    ];
   const checks: Record<string, boolean> = {
     staff: Boolean(passwordValid && owned.user.roles.join() === 'doctor'),
     patient: owned.patient.status === 'active',
@@ -1017,29 +1016,19 @@ async function assertPrepared(input: {
     instance:
       owned.instance.status === 'in_progress' &&
       owned.instance.scaleCode === 'mmse' &&
-      owned.instance.administrationMode === 'supervised_patient_input' &&
-      hash(instanceStableFacts(owned.instance)) ===
-        input.descriptor.scenario.instanceStableBaselineHash,
-    items:
-      owned.items.length === 11 &&
-      hash(
-        owned.items
-          .filter(
-            (item) =>
-              item._id.toString() !== reading._id.toString() &&
-              item._id.toString() !== adoption._id.toString(),
-          )
-          .map(itemFacts),
-      ) === input.descriptor.scenario.unchangedItemsBaselineHash,
+      owned.instance.scaleVersion === '1.0' &&
+      owned.instance.scaleDefinitionId.toString() ===
+        catalog.scaleDefinitionId &&
+      owned.instance.scaleVersionId.toString() === catalog.scaleVersionId &&
+      owned.instance.administrationMode === 'supervised_patient_input',
     reading:
       reading.itemCode === READING_ITEM_CODE &&
-      reading.status === 'in_progress' &&
-      reading.draftRevision === 2 &&
-      hash(normalizedEvidenceRefs(reading)) ===
-        input.descriptor.scenario.readingEvidenceBaselineHash,
+      reading.status !== 'answered' &&
+      reading.rawResponse == null,
     adoption:
       adoption.itemCode === ADOPTION_ITEM_CODE &&
-      hash(answerFacts(adoption)) ===
+      adoption.status === 'answered' &&
+      hash(formalAnswerFacts(adoption)) ===
         input.descriptor.scenario.adoptionAnswerBaselineHash &&
       adoption.evidenceRefs.some(
         (reference) =>
@@ -1050,41 +1039,36 @@ async function assertPrepared(input: {
     administration:
       owned.administrations.length === 1 &&
       administration.status === 'completed' &&
-      administration.stepCaptures.length === 19 &&
-      administration.stepCaptures.every(
-        (capture) => !capture.staffObservation && !capture.invalidatedAt,
-      ) &&
-      hash(sessionFacts(administration)) ===
-        input.descriptor.scenario.sessionBaselineHash,
+      Boolean(administration.completedAt) &&
+      administration.currentStepKey === finalCanonicalStep.stepKey,
     media:
-      owned.media.length === 17 &&
-      hash(mediaWithoutTranscriptionFacts(owned.media)) ===
-        input.descriptor.scenario.mediaWithoutTranscriptionBaselineHash &&
-      owned.media.every((evidence) => !evidence.transcription),
+      owned.media.length === 2 &&
+      audio.itemCode === READING_ITEM_CODE &&
+      audio.itemResponseId.equals(reading._id) &&
+      audio.evidenceType === 'audio' &&
+      audio.status === 'attached' &&
+      audio.storageStatus === 'stored' &&
+      audio.patientAdministrationContext?.sessionId.equals(
+        administration._id,
+      ) === true &&
+      !audio.transcription &&
+      photo.itemCode === ADOPTION_ITEM_CODE &&
+      photo.itemResponseId.equals(adoption._id) &&
+      photo.evidenceType === 'photo' &&
+      photo.status === 'attached' &&
+      photo.storageStatus === 'stored' &&
+      photo.patientAdministrationContext?.sessionId.equals(
+        administration._id,
+      ) === true &&
+      !photo.transcription,
     review:
       review.session.status === 'completed' &&
-      review.items.reduce((count, item) => count + item.steps.length, 0) ===
-        19 &&
-      review.items.some((item) =>
-        item.steps.some(
-          (step) =>
-            step.stepKey === 'mmse-reading-command' &&
-            step.responseMode === 'staff_observation',
-        ),
-      ),
-    readiness:
-      !readiness.ready &&
-      !readiness.canSubmitNow &&
-      readiness.blockingIssues.some(
-        (issue) =>
-          issue.code === 'ITEM_NOT_COMPLETED' &&
-          issue.itemResponseId === reading._id.toString(),
-      ) &&
-      readiness.blockingIssues.some(
-        (issue) =>
-          issue.code === 'ITEM_REQUIRED_MEDIA_MISSING' &&
-          issue.itemResponseId === adoption._id.toString(),
-      ),
+      reviewReading?.itemResponseId === reading._id.toString() &&
+      reviewAdoption?.itemResponseId === adoption._id.toString() &&
+      reviewAudioIds.includes(audio._id.toString()) &&
+      reviewPhotoIds.includes(photo._id.toString()),
+    readiness: !readiness.ready && !readiness.canSubmitNow,
+    downstream: scoreCount + domainCount + reportCount === 0,
   };
   const failed = Object.entries(checks)
     .filter(([, passed]) => !passed)
@@ -1096,12 +1080,18 @@ async function assertPrepared(input: {
     );
   }
   return {
+    sharedMmseCanonical: 'active_current_1.0_matches_tracked_seed',
     itemCount: owned.items.length,
     patientAdministrationStepCount: administration.stepCaptures.length,
-    mediaEvidenceCount: owned.media.length,
+    completedPatientAdministrationCount: owned.administrations.length,
+    representativeMediaEvidenceCount: owned.media.length,
+    representativeTargets: 'reading_audio_and_drawing_photo',
+    transcription: 'not_requested',
+    photoAdoption: 'pending',
+    readingFormalAnswer: 'not_completed',
+    readiness: 'not_ready',
     reviewItemCount: review.items.length,
-    readinessBlockingIssueCount: readiness.blockingIssues.length,
-    expectedBlockingTargets: 'reading_answer_and_photo_adoption',
+    downstreamResultCount: 0,
   };
 }
 
@@ -1115,6 +1105,7 @@ async function assertPost(input: {
     fail('WP10_F3_NAMESPACE_MISMATCH', 'Runtime namespace mismatch');
   }
   assertDescriptorSafety(input.descriptor, input.password);
+  const catalog = await resolveSharedMmseCatalog(input.models);
   const owned = await loadOwned(input);
   const { scenario } = input.descriptor;
   const administration = owned.administrations[0];
@@ -1143,33 +1134,17 @@ async function assertPost(input: {
   ) {
     fail('WP10_F3_POST_MISSING', 'Post fixture facts are missing');
   }
-  const [scoreCount, domainCount, reportCount, outsideHash] = await Promise.all(
-    [
-      input.models.items.db.collection('score_results').countDocuments({
-        scaleInstanceId: owned.instance._id,
-      }),
-      input.models.items.db
-        .collection('cognitive_domain_results')
-        .countDocuments({
-          scaleInstanceId: owned.instance._id,
-        }),
-      input.models.items.db.collection('clinical_reports').countDocuments({
-        assessmentVisitId: owned.visit._id,
-      }),
-      outsideNamespaceHash(input.models, {
-        userId: owned.user._id,
-        patientId: owned.patient._id,
-        visitId: owned.visit._id,
-        scaleInstanceId: owned.instance._id,
-        scaleVersionId: owned.instance.scaleVersionId,
-      }),
-    ],
-  );
-  const unchangedItems = owned.items.filter(
-    (item) =>
-      item._id.toString() !== reading._id.toString() &&
-      item._id.toString() !== adoption._id.toString(),
-  );
+  const [scoreCount, domainCount, reportCount] = await Promise.all([
+    input.models.items.db.collection('score_results').countDocuments({
+      scaleInstanceId: owned.instance._id,
+    }),
+    input.models.items.db
+      .collection('cognitive_domain_results')
+      .countDocuments({ scaleInstanceId: owned.instance._id }),
+    input.models.items.db.collection('clinical_reports').countDocuments({
+      assessmentVisitId: owned.visit._id,
+    }),
+  ]);
   const adoptedReference = adoption.evidenceRefs.find(
     (reference) => reference.evidenceType === 'photo',
   );
@@ -1179,58 +1154,76 @@ async function assertPost(input: {
       evidence._id.toString() !== scenario.audioEvidenceId &&
       Boolean(evidence.transcription),
   );
+  const expectedMediaIds = [
+    scenario.audioEvidenceId,
+    scenario.adoptionEvidenceId,
+  ].sort();
+  const actualMediaIds = owned.media
+    .map((evidence) => evidence._id.toString())
+    .sort();
+  const finalCanonicalStep =
+    catalog.patientAdministrationSteps[
+      catalog.patientAdministrationSteps.length - 1
+    ];
+  const parentBarrier = owned.instance.submissionWriteBarrier;
   const checks: Record<string, boolean> = {
     ownership:
       owned.patient.subjectCode === subjectCode(input.namespace) &&
       owned.visit.visitCode === visitCode(input.namespace),
     administration:
       owned.administrations.length === 1 &&
-      hash(sessionFacts(administration)) === scenario.sessionBaselineHash,
-    mediaIdentity:
-      owned.media.length === 17 &&
-      hash(mediaWithoutTranscriptionFacts(owned.media)) ===
-        scenario.mediaWithoutTranscriptionBaselineHash,
+      administration.status === 'completed' &&
+      Boolean(administration.completedAt) &&
+      administration.currentStepKey === finalCanonicalStep.stepKey,
+    canonical:
+      owned.instance.scaleCode === 'mmse' &&
+      owned.instance.scaleVersion === '1.0' &&
+      owned.instance.scaleDefinitionId.toString() ===
+        catalog.scaleDefinitionId &&
+      owned.instance.scaleVersionId.toString() === catalog.scaleVersionId,
+    mediaIdentity: isDeepStrictEqual(actualMediaIds, expectedMediaIds),
     transcription:
       transcription?.status === 'succeeded' &&
-      transcription.text === '测试转写候选' &&
-      transcription.provider === 'stub' &&
-      Boolean(transcription.requestedAt && transcription.completedAt) &&
+      typeof transcription.text === 'string' &&
+      Boolean(transcription.text.trim()) &&
+      transcription.requestedAt instanceof Date &&
+      transcription.completedAt instanceof Date &&
       nonTargetTranscriptions.length === 0,
     adoptionEvidence:
       adopted.status === 'attached' &&
       adopted.storageStatus === 'stored' &&
+      !adopted.transcription &&
       adopted.patientAdministrationContext?.sessionId.toString() ===
         administration._id.toString(),
     adoptionItem:
-      hash(answerFacts(adoption)) === scenario.adoptionAnswerBaselineHash &&
+      hash(formalAnswerFacts(adoption)) ===
+        scenario.adoptionAnswerBaselineHash &&
       adoptedReference?.status === 'attached' &&
       adoptedReference.mediaEvidenceId?.toString() ===
         scenario.adoptionEvidenceId,
-    readingItemIdentity: reading.itemCode === READING_ITEM_CODE,
-    readingItemStatus: reading.status === 'answered',
-    readingItemRevision: reading.draftRevision === 3,
-    readingItemRawResponse: reading.rawResponse === true,
-    readingItemMissingState: !reading.isMissing,
-    readingItemEvidence:
-      hash(normalizedEvidenceRefs(reading)) ===
-      scenario.readingEvidenceBaselineHash,
-    unchangedItems:
-      hash(unchangedItems.map(itemFacts)) ===
-      scenario.unchangedItemsBaselineHash,
+    readingItem:
+      reading.itemCode === READING_ITEM_CODE &&
+      reading.status === 'answered' &&
+      reading.rawResponse === true &&
+      !reading.isMissing,
     instance:
-      hash(instanceStableFacts(owned.instance)) ===
-        scenario.instanceStableBaselineHash &&
       owned.instance.status === 'completed' &&
       Boolean(owned.instance.completedAt) &&
-      owned.instance.progress?.totalItemCount === 11 &&
-      owned.instance.progress?.answeredItemCount === 11 &&
+      owned.instance.progress?.totalItemCount === owned.items.length &&
+      owned.instance.progress?.answeredItemCount ===
+        owned.instance.progress.totalItemCount &&
       owned.instance.progress?.source === 'submission' &&
-      Boolean(
-        (owned.instance.metadata as Record<string, unknown> | null)?.submission,
-      ) &&
-      owned.instance.submissionWriteBarrier?.state === 'completed',
+      parentBarrier?.state === 'completed',
+    submittedItems:
+      Boolean(parentBarrier) &&
+      owned.items.every(
+        (item) =>
+          (item.status === 'answered' || item.status === 'scored') &&
+          item.submissionWriteBarrier?.version === parentBarrier?.version &&
+          item.submissionWriteBarrier?.barrierId === parentBarrier?.barrierId &&
+          item.submissionWriteBarrier?.startedAt instanceof Date,
+      ),
     downstream: scoreCount + domainCount + reportCount === 0,
-    outsideNamespace: outsideHash === scenario.outsideNamespaceBaselineHash,
   };
   const failed = Object.entries(checks)
     .filter(([, passed]) => !passed)
@@ -1239,18 +1232,18 @@ async function assertPost(input: {
     fail('WP10_F3_POST_INVALID', `Post checks failed: ${failed.join(',')}`);
   }
   return {
+    sharedMmseCanonical: 'active_current_1.0_matches_tracked_seed',
     scaleInstanceStatus: owned.instance.status,
     itemCount: owned.items.length,
-    sessionFacts: 'unchanged',
+    patientAdministrationSession: 'completed_at_canonical_final_step',
     mediaEvidenceCount: owned.media.length,
     newMediaEvidenceCount: 0,
-    transcriptionChangedEvidenceCount: 1,
+    transcription: 'target_succeeded_with_nonempty_candidate',
     adoptedEvidenceReference: 'same_patient_media_evidence_id',
-    adoptionAnswerStatusRevision: 'unchanged',
-    readingItemA14Change: 'raw_true_answered_revision_plus_one',
-    unchangedOtherItems: unchangedItems.length,
+    adoptionFormalAnswer: 'unchanged',
+    readingItemA14: 'raw_true_answered',
+    submissionBarrier: 'completed',
     downstreamResultCount: 0,
-    outsideNamespaceFacts: 'unchanged',
   };
 }
 
@@ -1279,10 +1272,6 @@ async function cleanup(
     .select({ _id: 1 });
   const instanceIds = instances.map((entry) => entry._id);
   const db = models.items.db;
-  const ownedScaleVersionFilter = {
-    scaleCode: 'mmse',
-    version: ownedScaleVersion(namespace),
-  };
   const deleted = {
     clinicalReports: (
       await db.collection('clinical_reports').deleteMany({
@@ -1322,9 +1311,6 @@ async function cleanup(
       .deletedCount,
     users: (await models.users.deleteMany({ _id: { $in: userIds } }))
       .deletedCount,
-    scaleVersions: (
-      await db.collection('scale_versions').deleteMany(ownedScaleVersionFilter)
-    ).deletedCount,
   };
   const residuals = await Promise.all([
     models.users.countDocuments({ accountName: accountName(namespace) }),
@@ -1346,12 +1332,12 @@ async function cleanup(
     db.collection('clinical_reports').countDocuments({
       assessmentVisitId: { $in: visitIds },
     }),
-    db.collection('scale_versions').countDocuments(ownedScaleVersionFilter),
   ]);
   const residualCount = residuals.reduce((sum, value) => sum + value, 0);
   if (residualCount !== 0) {
     fail('WP10_F3_CLEANUP_INCOMPLETE', 'Namespace cleanup left records');
   }
+  await resolveSharedMmseCatalog(models);
   await unlink(path).catch((error: unknown) => {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
   });
@@ -1362,6 +1348,7 @@ async function cleanup(
     actualDatabaseName: DB,
     deleted,
     residualCount,
+    sharedMmseCanonical: 'valid_after_cleanup',
     runtimeDescriptor: 'absent',
   };
 }
@@ -1456,7 +1443,8 @@ async function run(): Promise<void> {
           auth: app.get(AuthService),
           workflows,
         }),
-        runtimeDescriptor: 'safe_route_ids_targets_and_baseline_hashes_only',
+        runtimeDescriptor:
+          'safe_route_ids_targets_and_adoption_answer_baseline_only',
       };
     } else if (command === 'prepare') {
       let descriptor: Descriptor;
@@ -1499,7 +1487,8 @@ async function run(): Promise<void> {
           auth: app.get(AuthService),
           workflows,
         }),
-        runtimeDescriptor: 'safe_route_ids_targets_and_baseline_hashes_only',
+        runtimeDescriptor:
+          'safe_route_ids_targets_and_adoption_answer_baseline_only',
       };
     } else {
       const descriptor = await readDescriptor(path);

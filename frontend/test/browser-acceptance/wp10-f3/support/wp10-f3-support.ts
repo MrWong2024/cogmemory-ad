@@ -15,7 +15,7 @@ import type {
 import { ConsoleAudit } from '../../support/runtime-audit';
 
 export type Descriptor = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   batch: 'WP10-F3';
   namespace: string;
   accounts: { staff: { loginIdentifier: string } };
@@ -30,13 +30,7 @@ export type Descriptor = {
     adoptionItemResponseId: string;
     audioEvidenceId: string;
     adoptionEvidenceId: string;
-    sessionBaselineHash: string;
-    mediaWithoutTranscriptionBaselineHash: string;
-    unchangedItemsBaselineHash: string;
     adoptionAnswerBaselineHash: string;
-    readingEvidenceBaselineHash: string;
-    instanceStableBaselineHash: string;
-    outsideNamespaceBaselineHash: string;
   };
 };
 
@@ -117,19 +111,8 @@ export async function readF3Descriptor(): Promise<Descriptor> {
         scenario.adoptionEvidenceId,
       ]
     : [];
-  const hashes = scenario
-    ? [
-        scenario.sessionBaselineHash,
-        scenario.mediaWithoutTranscriptionBaselineHash,
-        scenario.unchangedItemsBaselineHash,
-        scenario.adoptionAnswerBaselineHash,
-        scenario.readingEvidenceBaselineHash,
-        scenario.instanceStableBaselineHash,
-        scenario.outsideNamespaceBaselineHash,
-      ]
-    : [];
   invariant(
-    descriptor.schemaVersion === 1 &&
+    descriptor.schemaVersion === 2 &&
       descriptor.batch === 'WP10-F3' &&
       typeof descriptor.namespace === 'string' &&
       /^[a-z0-9][a-z0-9-]{2,19}$/.test(descriptor.namespace) &&
@@ -143,8 +126,7 @@ export async function readF3Descriptor(): Promise<Descriptor> {
       scenario.itemCount > 0 &&
       Number.isSafeInteger(scenario.stepCount) &&
       scenario.stepCount > 0 &&
-      hashes.length === 7 &&
-      hashes.every((entry) => /^[a-f\d]{64}$/i.test(entry)),
+      /^[a-f\d]{64}$/i.test(scenario.adoptionAnswerBaselineHash),
     'WP-10 F3 descriptor contract is invalid',
   );
   return descriptor as Descriptor;
@@ -234,7 +216,10 @@ export async function openF3Execution(input: {
     input.page.getByTestId('patient-administration-review-panel'),
   ).toBeVisible();
   await expect(
-    input.page.getByRole('heading', { name: '患者施测复核', exact: true }),
+    input.page.getByRole('heading', {
+      name: '医护复核与正式作答',
+      exact: true,
+    }),
   ).toBeVisible();
 }
 
