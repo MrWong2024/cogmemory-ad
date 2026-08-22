@@ -737,7 +737,6 @@ export function PatientAdministrationReviewPanel({
         ) : null}
         <div className="flex flex-wrap gap-2">
           <Button
-            data-testid={`patient-administration-review-view-${evidence.mediaEvidenceId}`}
             disabled={viewerLoadingId === evidence.mediaEvidenceId}
             onClick={() => void handleOpenEvidence(itemResponseId, evidence)}
             size="sm"
@@ -749,7 +748,6 @@ export function PatientAdministrationReviewPanel({
           </Button>
           {evidence.evidenceType === 'audio' ? (
             <Button
-              data-testid={`patient-administration-review-transcribe-${evidence.mediaEvidenceId}`}
               disabled={!canTranscribe || transcribingIds.has(evidence.mediaEvidenceId)}
               onClick={() => void handleTranscribe(itemResponseId, evidence)}
               size="sm"
@@ -766,7 +764,6 @@ export function PatientAdministrationReviewPanel({
           ) : null}
           {['photo', 'handwriting'].includes(evidence.evidenceType) ? (
             <Button
-              data-testid={`patient-administration-review-adopt-${evidence.mediaEvidenceId}`}
               disabled={!adoptable || adoptingIds.has(evidence.mediaEvidenceId)}
               onClick={() => void handleAdopt(itemResponseId, evidence)}
               size="sm"
@@ -800,12 +797,7 @@ export function PatientAdministrationReviewPanel({
               <h3 className="text-xl font-semibold text-[var(--cma-text-strong)]">
                 原始证据查看器
               </h3>
-              <Button
-                data-testid="patient-administration-review-viewer-close"
-                onClick={clearViewer}
-                size="sm"
-                variant="secondary"
-              >
+              <Button onClick={clearViewer} size="sm" variant="secondary">
                 关闭查看器
               </Button>
             </div>
