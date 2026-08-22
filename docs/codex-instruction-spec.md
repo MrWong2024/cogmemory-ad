@@ -1,4 +1,4 @@
-# Codex 指令生成规则 v1.17（精简稳定版）
+# Codex 指令生成规则 v1.18（精简稳定版）
 
 > 适用于采用 `frontend\`、`backend\`、`docs\` 目录结构，并通过架构文档与规则文档约束开发的项目。
 > 目标：保证指令结构稳定、输出可审核、执行边界清晰、文档同步可判断。
@@ -153,6 +153,9 @@ Codex 阅读本规范，是为了理解任务治理边界、继承执行期规�
 4. 不得因为标准工具尚未安装，就默认要求 Codex 自研等价基础设施；尤其不得为了避免引入成熟工具而自研 Browser runner、CDP WebSocket、测试框架、文档解析器或其他已有成熟方案覆盖的重复能力。
 5. 项目现有工具已经足够时，不得机械建议继续安装新工具，也不得另建同类 runner、协议客户端或测试框架。
 6. 工具选型必须考虑后续任务复用、维护成本和项目兼容性，不得只为当前单项临时拼接。
+7. “某项事实需要真实 Browser 参与”只决定证据层，不自动推出“必须建设或维护 deterministic scripted Browser regression”。Browser execution mode 至少可以从 scripted deterministic Browser regression、Agent-assisted interactive Browser smoke、human manual / real-device smoke 中按风险、重复性要求、维护成本和证据目标选择；三者是执行方式，不是新的项目状态。
+8. Playwright 或等价确定性 Browser runner 是高价值的长期回归工具，适合稳定、可重复且值得持续维护的 Browser 合同。Agent-assisted interactive Browser smoke 只有在当前执行环境确实提供 Agent 可控制的真实交互式 Browser 时才可选择；它不是 scripted regression 失败后的降级版。人工或真实设备 smoke 承担主观、专业和真实硬件判断，也不是自动化失败后的 fallback。
+9. 工作包合同明确要求 CI、持续自动回归或可复用 scripted evidence 时，Agent-assisted 或人工 smoke 不得替代；工作包只要求当前代码态的可信 Browser flow evidence 时，可以在底层业务合同已有主证据的前提下选择最低充分的非持久执行方式。
 
 ### 3.7 最低充分复杂度优先、指令精简与去重（强制）
 
@@ -330,12 +333,21 @@ GPT 对以下任务必须在生成 Codex 实现指令前执行候选生成：
 6. 没有穷举所有角色、错误码、字段组合和数据库快照，不等于存在测试缺口；只有风险真实可达、风险独立且当前最低充分证据缺失时，才能标记为 `gap`。
 7. 要求完整 unit、E2E 或 Browser 套件时，必须说明认证、公共 Guard、Schema、通用 mapper、公共测试基础设施、跨模块合同或其他具体影响依据；不得只写“为了保险”。
 
+**Browser 证据执行方式与合同自证防线**
+
+1. Browser evidence requirement 与 Browser execution mode 必须分开判断。scripted deterministic Browser regression 适合 BrowserContext / Cookie / Storage isolation、navigation / reload、file input、Browser API、keyboard / focus、CORS / credentials，以及 interaction topology 稳定、行为锚点可靠、流程短且长期回归价值明确的跨层合同；“页面存在”“按钮存在”或“流程重要”均不足以单独证明需要持久 scripted regression。
+2. 当 unit / pure、HTTP E2E 或 verifier 已精确证明大部分服务端语义，Browser 剩余价值主要是 production 页面到真实 HTTP 的 wiring 与一条当前正常流程，而 UI 结构变化较快、deterministic locator 维护成本较高时，可以优先选择 Agent-assisted interactive Browser smoke。Agent 可以依据当前页面自适应展开结构、动态控件和语义等价入口，但必须遵守预先冻结的 expected contract；不得根据当前 production 表现降低、改变或重新定义业务目标。完整通过只能记录为 `Agent-assisted Browser smoke passed`，不能记录为 scripted / Playwright regression green、CI coverage 或 reusable scripted evidence。
+3. human manual / real-device smoke 独立负责可理解性、自然性、主观体验、专业判断、真实设备和真实硬件；不得与 Agent-assisted smoke 混称，也不得用任一 Browser 自动方式冒充人工专业签收。
+4. substantive contract change、旧 scripted Profile 与 current 行为广泛漂移，或准备重写 / 替换 Browser spec 主体时，GPT 必须先从已锁定产品合同、current roadmap contract、正式 API / DTO、领域原始需求或用户明确决策等独立来源冻结 expected business behavior，之后才读取 current production code 获取 selector、testid、route、控件结构和 wiring。不得形成“production 怎么实现 → test 就期待什么 → test 再证明 production 正确”的自证闭环。该冻结默认只是 GPT 生成期的临时设计工作，不机械新增审计任务、JSON、hash 或长期文档；只有合同来源矛盾、旧测试与 current 合同严重冲突或重写依据无法明确时，才建立具名 read-only independent contract audit。
+5. 合同或 UI 变化后按职责与长期证据价值选择资产策略：业务合同未变、仅 copy / selector / testid / URL segment 或等价 wiring 改变且测试主体职责仍正确时 `patch`；Profile 仍有长期 scripted regression 价值且主职责正确，但 interaction topology、response mode、entry state 或 workflow 实质变化、旧正文含多处历史分支或 stale semantic assumption 时 `rewrite body / keep path`；低层可靠证据已覆盖核心业务、剩余 Browser 价值主要是高变 UI wiring，且 scripted automation 维护工程显著超过证据价值时 `retire scripted profile`，改由 Agent-assisted 或 manual / real-device smoke 承担适合的剩余风险。不得机械规定合同变化一律重写或无论漂移多大都继续 patch；退役也不得删除仍缺失的安全、权限、数据或持续自动回归证据。
+
 **验收优先级与冻结止损**
 
 1. 验收先证明正常 happy path：正常用户按正常步骤从入口走到正常结束。happy path 未完成前，不持续扩大低频异常矩阵。随后依次选择少量高价值防御、代表性恢复和工作包最终收口项；该顺序不新增测试阶段，不改变初始 / 增量 A、B、C。
 2. 自动化失败必须先分类为 product、spec/test、fixture、support/runner、environment 或 tool limitation，并依据证据修正对应层。GET aborted、Next prefetch、Playwright response / requestfailed 时序、测试鼠标坐标和 runner 编排问题，不得在没有稳定业务合同违例时升级为产品 `gap` 或 production 架构要求。
 3. 只有 normal happy path 失败；数据完整性受损；权限、安全或隐私违例；正常单次操作稳定出现未知 4xx / 5xx；当前业务合同直接违例；或没有可信恢复路径，才默认重新打开当前实现。测试基础设施、环境和工具问题只修对应测试层；低频非阻断候选可以具名归入工作包最终收口。
 4. 当 happy path 已通过、当前阻断项已关闭、剩余候选均有明确主要归属和复核时点时，冻结当前实现单元的验收范围。不得为了让候选集合在理论上再也发现不了新风险而递归扩张；冻结只停止无界扩张，不删除候选、不降低工作包最终完成门禁，也不削弱数据、权限、安全、隐私、不可逆事实、防重复和关键恢复证据。
+5. 同一 execution mode 与资产方案连续两轮因 spec/test、fixture、support/runner、environment 或 tool limitation 失败后，不得因下一处局部修复看似容易而进行第三轮同方案 patch / rerun；必须先在保留并修复 scripted Profile、rewrite body、retire scripted Profile + Agent-assisted smoke、manual / real-device smoke 中重新选择最低充分方案。明确的 production contract violation 仍按产品 `gap` 处理，不得用工具重选掩盖。
 
 阶段 B 还必须在上述既有治理中判断候选是当前实现单元阻断项，还是工作包最终收口候选；这只是候选归属与验收时点判断，不是新的项目状态、候选仓库或阶段状态机：
 
@@ -410,6 +422,7 @@ Codex 指令不要求包含或输出完整候选全集，也不得新增第 13 �
 6. “最多一个 CLI 和一个 spec”等文件数量限制只能用于阻止重复基础设施，不能迫使不相干职责共处、在单文件复制逻辑或放弃合理拆分。文件数量限制与清晰职责边界冲突时，必须停止并报告设计冲突，由用户决定，不得通过塞入代码或偷偷搬移文件规避。
 7. 只有真实外部硬约束才允许精确大小限制：用户明确给出的硬性格式要求；已经存在且实际启用的编译器、平台、协议、提交系统或 linter 强制限制；外部接口或文件格式明确规定的大小限制。GPT 或 Codex 不得自行创造、推定或把观察指标包装为外部限制。
 8. 最终报告不得把“满足行数预算”作为实现或测试资产的验收结果。项目级 Browser、fixture、E2E、verifier、cleanup、证据复用与止损细节分别引用 `docs/handoff/handoff-frontend-testing-playbook.md` 和 `docs/handoff/handoff-backend-testing-playbook.md`，不在本节重复。
+9. Browser fixture、support、runner 和 verifier 不是任何 Browser evidence 的固定配套。只有 Browser 需要独立合法 synthetic 起点、Browser 写入终态未被更低层证据充分证明，或确有 namespace / cleanup 隔离风险时才增加对应资产；当这些资产开始复制 catalog、业务状态或服务端判断并逐步形成“第二套实现”，或维护工程明显超过所证明的 Browser 风险时，必须停止继续扩张并回到 3.9 重新选择 evidence execution mode，不得用更多 fixture / support / verifier 追求 scripted green。
 
 ---
 
@@ -435,8 +448,10 @@ Codex 指令不要求包含或输出完整候选全集，也不得新增第 13 �
 
 ## 6. 版本说明
 
-当前版本：v1.17（精简稳定版）
+当前版本：v1.18（精简稳定版）
 适用场景：适用于需要通过稳定指令结构控制修改范围、验证过程与文档同步的持续开发项目
+v1.18 核心变化：将 Browser evidence requirement 与 execution mode 分离，明确 scripted deterministic regression、Agent-assisted interactive smoke 与 human manual / real-device smoke 的适用边界和完成语义；新增 substantive contract change 后的 independent-contract 自证防线、patch / rewrite body / retire 决策、连续两轮测试基础设施失败后的工具级策略重评估，以及 fixture / support / verifier 形成第二套实现时的复杂度止损；不改变既有验证候选、活动状态或产品完成门禁
+v1.17 核心变化：明确页面或用户流程可见、UI 可达不自动要求 Browser；只有不可替代 Browser 语义或 production 页面到真实 HTTP wiring 才以 Browser 为主证据，主观与专业判断归人工验收；不改变 v1.16 的主体分工和最低充分治理
 v1.16 核心变化：新增 GPT-only / Codex-only / Shared 适用主体与执行边界；明确 Codex 阅读完整规范不等于重复 GPT 生成期工作；拆清 3.8 的生成期命令设计与执行期 discovery，明确 3.9 初始 A/B/C 由 GPT 负责、增量 A/B/C 与最终验收由 Codex 负责，并明确 3.10 在双方各自阶段适用；不改变既有验证治理和最低充分复杂度原则
 v1.15 核心变化：明确通用宪法与项目事实的职责边界；移除最低充分复杂度、并行治理和验证候选规则中的特定项目业务实体与场景，将其抽象为跨项目适用的业务聚合、写入主体和专业判断原则；不改变 v1.14 已确立的最低充分复杂度、正常主流程优先、安全拒绝、显式重试和验收止损原则
 v1.14 核心变化：将“最低充分复杂度优先”确立为项目全生命周期长期原则，锁定安全与正确性优先的六级权衡顺序；明确系统级正常并行、独立业务聚合可以正常并行、同一业务聚合内写操作串行优先及其不等于技术全局锁；固化真实竞争下“一个成功 + 一个 CAS 安全拒绝 + 读取权威状态 + 用户显式重试”的正确结果；在保留初始 / 增量 A、B、C 的前提下加入 happy path 优先、失败先分类、重新打开条件与验收范围冻结止损，防止风险扫描、自动化时序和低频理论问题无限扩大实现与测试范围

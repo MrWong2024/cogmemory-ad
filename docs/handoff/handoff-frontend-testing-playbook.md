@@ -23,10 +23,10 @@
 | WP-03 / B18 补充验证 | P7 `passed=2`、P8 `passed=1`；single-flight contract、P3 与 P9 `passed`；自动化 `gap=0` | “B18-A、B18-B1、B18-B2 与补充验证证据” |
 | WP-10-F1 | 产品范围已完成，WP-10 状态不回退；新的 `patient-administration-handoff` same-device / cross-device replacement 已按当前 preparation、deviceMode 与 Browser 治理形成 current green。F1-P1 / F1-P2 保留为证据形成时有效的历史通过证据；旧 tracked `wp10-f1` 资产仍存在并等待独立退役，但不再作为 current Browser regression 主证据 | “WP-10-F1 最终证据与 Browser Audit 治理” |
 | WP-10-F2 | Current Browser regression 已闭合：Phase 1A 已解除旧 WP10-F1 support dependency；P1 已按 current MMSE patient-administration contract 重写为完整 multimedia golden path，P2 reload/no-duplicate recovery current green 保持 | “WP-10-F2 阶段与最终收口证据” |
-| WP-10-F3 | 产品范围与既有历史证据保持完成；current Browser 资产治理仍待 Phase 2 | “WP-10-F3 正常作答复核证据” |
+| WP-10-F3 | 产品范围保持完成，历史 Browser 证据保留；2026-08-22 current deterministic Playwright re-automation 已在连续两轮 `spec/test` locator / test-asset 失败后按止损停止，未形成 current Playwright green，也未证明 production contract conflict。tracked F3 Browser 资产仍存在，等待独立 retirement | “WP-10-F3 正常作答复核证据” |
 | Batch E | 8 个真实设备或人工项目待验；最终主要归属 WP-08 | “Batch E：真实设备或人工验收” |
 
-B11～B15 保持完成；B18 补充验证已闭合，自动化 `gap=0`，WP-03 已完成。当前 F2-P1 replacement 与 F2-P2 reload recovery 均为 current green，F2 当前 Browser regression 已完成收口且不再依赖旧 WP10-F1 support；下一项测试资产治理为 WP10-F3 Browser Phase 2，F3 current green 后再执行旧 WP10-F1 最终退役。WP-10 产品完成状态不因测试资产治理顺序改变。产品范围、工作包状态和当前主线以 `handoff-roadmap.md` 为准；Batch E 的 8 项真实设备或人工项目仍为 `pending`，最终主要归属为 WP-08。
+B11～B15 保持完成；B18 补充验证已闭合，自动化 `gap=0`，WP-03 已完成。当前 F2-P1 replacement 与 F2-P2 reload recovery 均为 current green，F2 current scripted Browser regression 已完成收口且不再依赖旧 WP10-F1 support。F3 current Playwright re-automation 已止损，tracked F3 scripted Browser 资产仍存在并等待独立 retirement；该工具状态既不形成 current F3 Playwright green，也不回退 WP-10 产品完成状态。产品范围、工作包状态和当前主线以 `handoff-roadmap.md` 为准；Batch E 的 8 项真实设备或人工项目仍为 `pending`，最终主要归属为 WP-08。
 
 ## 2. 当前测试设计规则
 
@@ -86,7 +86,7 @@ mandatory 人工或真实设备项目尚未签收时，不得无条件宣布完�
 2. 判断风险是否涉及临床数据完整性、不可逆动作、权限、安全、隐私、恢复或已知回归，且是否足以阻断发布。
 3. 检查相关代码、接口与配置未变化时是否已有可复用的精确证据。
 4. 明确回答：“如果没有真实浏览器参与，哪一个产品事实将无法被可信证明？”无法指出真实 BrowserContext、Cookie、Storage、navigation / reload、focus / keyboard、文件选择、真实 CORS / credentials 或 production frontend → HTTP wiring 等不可替代事实时，不得仅因页面可达而升级为 Browser 主证据。
-5. 在 `frontend_static_or_pure`、`backend_unit`、`backend_http_e2e`、`database_verifier`、`browser_micro_profile`、`static_gate` 与人工 smoke 中选择最低充分主证据，只为尚未被准确证明的事实补证。
+5. 在 `frontend_static_or_pure`、`backend_unit`、`backend_http_e2e`、`database_verifier`、`browser_evidence`、`static_gate` 与人工 / 真实设备 smoke 中选择最低充分主证据，只为尚未被准确证明的事实补证；选择 `browser_evidence` 后再按 2.3 选择执行方式，不自动等同 Playwright Profile。
 6. 最后设计最小合法前置、场景和断言；禁止先扩张断言再反向建设 fixture。
 
 Browser 验收按以下优先级执行；这是现有阶段 A/B/C 内的证据选择与执行顺序，不新增测试阶段或项目状态：
@@ -105,9 +105,23 @@ Browser 验收按以下优先级执行；这是现有阶段 A/B/C 内的证据�
 | `backend_unit` | 局部判断、DTO、Service 分支、mapper、状态边界与廉价防御 | 不证明真实 HTTP、Guard 或数据库终态 |
 | `backend_http_e2e` | 公开 API 绕过与合法并发的认证、权限、Pipe、Body、ownership、状态机、幂等、原子性和数据库终态 | 不证明页面真实交互 |
 | `frontend_static_or_pure` | 展示映射、Action ownership、局部资格与非阻断防御 | 不证明真实输入、Browser API 或后端动态行为 |
-| `browser_micro_profile` | BrowserContext、Cookie / Storage、navigation / reload、focus / keyboard、文件选择、真实 origin / CORS / credentials，以及 production 页面到真实 HTTP 的最小关键 wiring | 不替代服务端非法调用、服务端合同或数据库终态，也不承担普通 UI copy 与主观体验 |
+| `browser_evidence` | BrowserContext、Cookie / Storage、navigation / reload、focus / keyboard、文件选择、真实 origin / CORS / credentials，以及 production 页面到真实 HTTP 的最小关键 wiring | 先选择最低充分 Browser execution mode；不替代服务端非法调用、服务端合同或数据库终态，也不承担普通 UI copy 与主观体验 |
 | `database_verifier` | 仅在现有 HTTP E2E 不足时补充 Browser 写入次数、audit、protected roots 或持久终态 | 不重复准确 HTTP E2E，不替代页面体验 |
 | `static_gate` | lint、typecheck、build、discovery、依赖与路由边界 | 不证明业务运行，不创建业务 Audit ID |
+
+#### Browser 证据的执行模式
+
+Browser evidence requirement 与 execution mode 分离：“需要真实 Browser 参与”不自动要求维护 Playwright 或其他 scripted regression。项目使用以下三种模式；它们不是新的活动场景状态，场景仍只使用 2.7 的既有状态：
+
+| 执行模式 | 适用价值 | 证据语义与边界 |
+|---|---|---|
+| scripted deterministic Browser regression | 当前主要实现为 Playwright；用于稳定、高价值、短而可重复的 Browser-only / 跨层合同，形成 persistent、repeatable、适合 CI 或长期回归的证据 | 对 DOM、locator、展开结构、状态文案和时序假设更敏感；只有 interaction topology 相对稳定、行为锚点可靠且 fixture / support / verifier 成本与风险成比例时长期保留 |
+| Agent-assisted interactive Browser smoke | 当前 Codex / Agent 工具环境确实提供可控制的真实交互式 Browser 时，Agent 按 frozen independent contract 操作 production frontend、真实 HTTP，实时观察页面，并可自适应展开折叠区、动态按钮状态和语义等价业务入口 | 是可信 current Browser evidence，但不是 persistent automated regression；通过时只写 `Agent-assisted Browser smoke passed`，不得写成 Playwright / scripted regression green、CI coverage 或 reusable scripted evidence |
+| human manual / real-device smoke | 人工判断可理解性、自然性、真实操作感、专业判断，以及真实手机 / 平板、麦克风、触控笔、相机和浏览器品牌使用体验 | 与 Agent-assisted smoke 严格区分；不是自动化失败后的 fallback，也不能由 Agent 或 Playwright 冒充专业 / 主观签收 |
+
+Agent-assisted smoke 的适应性不授权改变 expected contract：按钮名称、DOM ancestor 或页面结构变化时可以寻找语义等价入口，但不得依据 current production 表现降低业务目标；发现真实合同违例必须停止并报告。若工作包明确要求持续自动回归，Agent smoke 不能替代；若只要求当前代码态可信 Browser flow evidence，它可以完整执行 frozen contract并关闭其明确拥有的 current Browser wiring 候选。
+
+Codex/Agent 控制的内置 Browser 与系统 Chrome 在 Agent-assisted interactive Browser smoke 证据类别上相同，不因 Browser 品牌产生更高业务证据等级。需要隔离、干净 Browser state 时优先内置 Browser；需要真实 Chrome profile、扩展、已有登录态、品牌特有行为、系统权限或用户实际环境时优先系统 Chrome。没有品牌专属风险时，不建立 Chrome / Edge 自动矩阵。
 
 人工 smoke 是独立人工证据边界，不是新的自动化层、活动场景状态或自动化失败后的降级替代；其职责见 2.6。
 
@@ -122,7 +136,13 @@ backend unit、HTTP E2E、database verifier、fixture 与 cleanup 的具体规�
 - 是否执行完整 unit / E2E 由真实影响决定；“最终代码态”只决定已经证明有必要的完整回归何时执行，不构成扩大测试范围的理由。不得仅因达到最终代码态、“为了保险”或“为了更完整”而执行完整套件。
 - 前端最终代码态按实际影响选择 `npm run test:browser:list`、`npm run test:browser:infra`、`npm run lint`、`npm run typecheck`、`npm run build`；discovery 和 infrastructure 不关闭业务场景。
 
-### 2.5 微型 Browser Profile 与任务粒度
+### 2.5 Scripted 微型 Browser Profile 与任务粒度
+
+Playwright 是高价值的确定性回归工具，但 scripted Browser micro-profile 只有在至少承担 BrowserContext / Cookie / Storage isolation、navigation / reload、file input、MediaRecorder / Browser API、keyboard / focus、CORS / credentials，或足够稳定、足够短且长期回归价值明确的跨层流程时才长期建设 / 保留。同时必须满足 interaction topology 相对稳定、可使用稳定行为锚点、fixture / support / verifier 维护成本与待证明风险成比例；“页面存在”“按钮存在”或“这是重要业务流程”均不足以单独证明需要 persistent Playwright。
+
+Browser spec 的 expected behavior 不得主要从 current production 反推。发生 substantive contract change、旧 scripted Profile 与 current 行为广泛漂移，或准备重写 / 替换 spec 主体时，GPT 必须先从已锁定产品合同、roadmap current contract、正式 API / DTO、领域原始需求或用户明确决策冻结 independent expected contract，再读取 production code 获取 selector、testid、route、控件结构和 wiring。该冻结默认是生成期临时设计工作，不机械新增 audit task、JSON、hash 或长期文档；只有合同来源矛盾、旧测试与 current 合同严重冲突或重写依据不明确时，才建立具名 read-only independent contract audit。
+
+合同或 UI 变化后按长期职责选择资产策略：业务合同未变、仅 copy / selector / testid / URL segment 或等价 wiring 变化且主体职责仍正确时 `patch`；Profile 仍值得长期 scripted regression、主职责正确，但 interaction topology、response mode、entry state 或 workflow 实质变化，或旧 spec 已含多处历史特判 / stale semantic assumption 时 `rewrite body / keep path`；低层可靠证据已覆盖核心业务、剩余 Browser 价值主要是 current 复杂 UI wiring，且 scripted automation 维护工程明显超过证据价值时 `retire scripted profile`，把适合的剩余风险交给 Agent-assisted 或 manual / real-device smoke。退役不得删除仍缺失的权限、安全、数据或工作包明确要求的持续自动回归证据。
 
 微型 Profile 原则上只包含 1～4 个紧密相关场景，具有单一主风险、最小合法前置、独立执行、独立证据、必要后置验证和精确 cleanup，并独立关闭自己拥有的活动场景。一个 Codex 任务可以包含多个风险一致、证据层相近且能分别收口的 Profile，但不因此共享可写 Report、BrowserContext、Session、数据库终态或 cleanup。
 
@@ -150,7 +170,7 @@ Profile 内的信息分为两类，不为此新增持久状态或第二套结果
 
 普通说明性 UI copy 不作为 Browser Profile 的阻断性 exact assertion，包括页面标题、副标题、帮助说明、普通 badge、介绍语和不构成正式稳定业务合同的操作提示。Selector 和断言优先使用 stable `data-testid`、role、对核心业务动作具有稳定语义的 accessible name、URL、Network、API 响应、服务端权威事实或必要 Browser state。安全确认、不可逆操作确认、用户必须据以判断关键业务状态的稳定文本、正式稳定错误合同，以及核心业务操作本身的稳定 accessible name，才可作为少数 exact 文本合同；普通 copy 变化不得触发 fixture、数据库 namespace 或整套 Browser runtime 重建。
 
-不把浏览器品牌矩阵设为默认门禁。真实 Chrome / Edge 品牌兼容性、真实设备和主观操作体验默认归人工 smoke；只有存在明确浏览器品牌专属风险时，才按最低充分范围升级为自动化矩阵。
+不把浏览器品牌矩阵设为默认门禁。Agent 控制的内置 Browser / 系统 Chrome 按 2.3 的风险选择，不因系统 Chrome 本身提升证据等级；真实设备和主观操作体验仍归人工 smoke。只有存在明确浏览器品牌专属风险时，才按最低充分范围升级为自动化矩阵。
 
 认证生命周期、logout/Cookie、Storage/URL 隐私、CORS、Console、DOM 敏感信息扫描、Axe、viewport、focus-visible 和不支持 Action 扫描，只在对应能力变化或缺少可信证据时附着少量真实流程；横切证据不得替代业务特有页面断言、错误恢复、请求次数或数据库终态。
 
@@ -160,7 +180,7 @@ GET aborted / canceled 本身不代表产品失败；只有必要读取因此无
 
 人工 smoke 负责自动化无法可靠判断的可理解性、可用性、真实操作感、视觉层级、布局和真实设备体验，包括用户是否知道下一步做什么、文案是否自然、关键流程是否令人困惑，音频、录音、手写、文件操作等真实体验，以及自动识别或辅助结果是否可能被误解为正式结论。重大用户流程、患者端、医护关键操作或交互模型发生实质变化时，应保留最低充分人工 smoke；纯后端、纯内部或没有用户可见行为变化的阶段不机械增加。
 
-人工 smoke 不是自动化失败后的降级版，也不替代权限、DTO、状态机、并发、数据库终态或 Browser-only Cookie / Storage / Session 安全语义的自动化证据。人工实际使用 Chrome / Edge 或真实设备可以形成其明确范围内的人工证据，但不得虚报自动 Browser regression 已通过。
+人工 smoke 不是自动化失败后的降级版，也不替代权限、DTO、状态机、并发、数据库终态或 Browser-only Cookie / Storage / Session 安全语义的自动化证据。它与 Agent-assisted interactive Browser smoke 分属不同执行模式；人工实际使用 Chrome / Edge 或真实设备可以形成其明确范围内的人工证据，但不得虚报 Agent-assisted 或 scripted Browser regression 已通过。
 
 ### 2.7 活动场景状态、失败与复杂度
 
@@ -170,9 +190,9 @@ GET aborted / canceled 本身不代表产品失败；只有必要读取因此无
 
 每轮先分类为 `product`、`spec/test`、`fixture`、`support/runner`、`environment`、`tool limitation` 或 `not_executed`，再修正对应层；这些是失败归因，不是新的活动场景状态，也不新增 `database/data-integrity` 平行来源：产品造成的数据完整性违例归 `product`，fixture 造成的测试数据错误归 `fixture`，数据库环境不可用归 `environment`。只有稳定复现且证明违反正式产品合同的行为才归类为产品缺陷。GET aborted、Next prefetch、Playwright response / requestfailed 时序、测试鼠标坐标和 runner 编排问题不能因自动化失败本身升级为产品 `gap`。
 
-测试基础设施失败不等于产品失败，也不等于 Browser 通过。stale spec / fixture / support / runner、environment 或 tool limitation 不自动回退已经由其他仍适用证据证明的产品事实，但没有形成可信 Browser 证据时不得虚报 Browser passed：Browser-only 事实若已由仍适用的既有 Browser 证据或本轮可信人工真实浏览器 smoke 实际证明，可以准确记录“产品行为已验证；自动 Browser regression 未闭合，存在 test infrastructure debt”；若该 browser-dependent 行为没有任何可信实际证据，只能记录“未发现产品缺陷，但该 Browser 验证尚未形成可信证据”。该区分不新增项目持久状态枚举。
+测试基础设施失败不等于产品失败，也不等于 Browser 通过。stale spec / fixture / support / runner、environment 或 tool limitation 不自动回退已经由其他仍适用证据证明的产品事实，但没有形成可信 Browser 证据时不得虚报 Browser passed：Browser-only 事实若已由仍适用的既有 Browser 证据，或本轮可信 Agent-assisted / human manual 真实浏览器 smoke 实际证明，可以按实际模式准确记录“产品行为已验证；scripted Browser regression 未闭合，存在 test infrastructure debt”；若该 browser-dependent 行为没有任何可信实际证据，只能记录“未发现产品缺陷，但该 Browser 验证尚未形成可信证据”。该区分不新增项目持久状态枚举，且不得把 Agent-assisted 与人工结果混称。
 
-同一方案连续两轮因环境、fixture 或测试资产失败时不得第三轮同方案重跑；公共 support 连续影响两个场景或测试基础设施明显超过被测业务时停止扩张。每个 Profile 最多一次测试资产修复轮。首次失败已经可靠归类为同一类 stale test asset 时，可以在这唯一一次修复轮中，对当前 Profile 直接相关的 spec、support、selector 和 verifier 做边界明确的静态 sweep，一次清理同类 stale exact copy、失效 selector、历史 exact revision、过时内部 count 与已失效阶段边界假设，然后只重跑受影响 Profile 与必要关联证据。不得扫全仓库历史资产、越界重构 Browser infrastructure、把测试债务扩张成 production 状态机，或机械形成“发现一个旧字符串 → 单独任务 → 全 Profile 重跑”的循环；正式重跑若暴露稳定产品合同违例、数据完整性问题或另一类结构性 fixture / runner / environment 问题，再按现有止损规则停止并分类。
+同一 execution mode 与资产方案连续两轮因 `spec/test`、fixture、support/runner、environment 或 tool limitation 失败时，不得第三轮同方案 patch / rerun；即使下一处局部修复看似容易，也必须先进行工具 / 资产策略重评估，在保留并修复 scripted Profile、rewrite body、retire scripted Profile + Agent-assisted smoke、manual / real-device smoke 中选择最低充分方案。公共 support 连续影响两个场景或测试基础设施明显超过被测业务时同样停止扩张。每个 Profile 最多一次测试资产修复轮；首次失败已可靠归类为同一类 stale test asset 时，可以在这一轮对直接相关的 spec、support、selector 和 verifier 做边界明确的静态 sweep，再只重跑受影响 Profile 与必要关联证据。不得扫全仓库历史资产、越界重构 Browser infrastructure、把测试债务扩张成 production 状态机，或机械形成“发现一个旧字符串 → 单独任务 → 全 Profile 重跑”的循环。若证据明确证明 production contract violation，仍按 product `gap` 处理，不用 execution-mode 重选掩盖。
 
 测试资产通用复杂度治理引用 `docs/codex-instruction-spec.md` 3.10。frontend/Browser 只补充：按职责内聚、重复基础设施、跨进程链路、独立状态、cleanup 责任、证据价值与维护成本判断；不得以物理行、非空行、净新增行或文件数量单独决定通过、失败、压缩或拆分。
 
@@ -252,9 +272,9 @@ B14.1 不是独立业务能力，不拥有独立 Browser 活动 ID，也不恢�
 - Current replacement（2026-08-22）：F2 Phase 1A 已解除旧 WP10-F1 support dependency；原路径 `frontend/test/browser-acceptance/wp10-f2/f2-p1-mmse-complete.spec.ts` 保持不变，P1 主正文按 current MMSE contract 重新组织为 orders 1–16 统一 speech traversal、order 17 `staff_observation`、order 18 writing Canvas/Pointer、order 19 drawing/photo，并保留 cross-device credential、preparation、playback、completion privacy、no-F3 与 Browser audit 主证据。order 16 现与其他 speech step 一样真实录音并保存 Evidence；P1 不再承载历史 step 特判、固定累计网络次数、revision、playback 内部计数或完整 DB 终态矩阵。
 - Current P1 使用 fresh full namespace `f2p1fr8c4e1b`，prepare 与只读 verify-prepared 均 exit 0、`reused=false`、实际数据库为 `cogmemory_ad_browser_test`；production frontend、Browser test backend、Chromium 与真实 HTTP 下精确 1 file / 1 test 首轮通过（101.595s）。order 17 明确无录音入口且 Evidence POST relative delta 为 0，writing handwriting 与 drawing photo 上传、图片比例、最终 completed、Cookie/Storage/Blob/DOM/URL privacy、no-F3 及 staff/patient audit 均通过。
 - Current full post verifier exit 0：唯一 PatientAdministrationSession 为 `completed`、current step 为 drawing、患者 credential hashes 已清除，19 个有效 capture 完成；`ScaleInstance` protected facts 与 `ItemResponse` unchanged，ScaleInstance lifecycle=`in_progress`，Evidence ownership/reference/fake-storage 一致且 audio/handwriting/photo 类型均存在，downstream=0。cleanup 与独立幂等 residual 核对均 exit 0，`residualCount=0`、runtime descriptor absent；task-owned Node/Chromium 与 3002/5002 listener 均为 0，当前 `.local` evidence leak scan 全部为 0。
-- Current F2-P2 reload/no-duplicate recovery green 证据继续有效且本轮未重跑。由此 F2-P1/P2 均为 current green，F2 当前 Browser regression 已闭合；下一阶段进入 WP10-F3 Browser 资产治理 Phase 2，F3 current green 后再执行旧 WP10-F1 最终退役。WP-10 产品完成状态保持不变。
+- Current F2-P2 reload/no-duplicate recovery green 证据继续有效且本轮未重跑。由此 F2-P1/P2 均为 current green，F2 current scripted Browser regression 已闭合。F3 与旧 WP10-F1 tracked Browser 资产各自等待独立 retirement 治理，不以形成 F3 current Playwright green 作为产品状态或彼此退役的机械前置；WP-10 产品完成状态保持不变。
 
-以下条目保留 replacement 前各阶段形成时有效的 F2 历史证据，包括旧固定 counts、revision、playback 与 P1/P2 通过记录；它们不再定义 current P1 Browser contract。
+以下条目保留 replacement 前各阶段形成时有效的 F2 历史证据，包括旧固定 counts、revision、playback 与 P1/P2 通过记录；其中 `MediaEvidence=17` / `audio=15` 只描述当时旧 Browser Profile 的终态，不再定义 current P1 Browser contract 或 current MMSE patient-administration contract。
 
 - F2-P1 已实际完成正常 MMSE 19 步正式患者施测主流程：服务端权威 currentStep、一步一屏、private image / frozen MP3、guidance / stimulus 播放边界、MediaRecorder 语音证据、handwriting / photo、patient / staff complete 与 completed 安全结束均通过正式 Browser 业务链。
 - P1 post verifier 已通过：患者会话 `completed`，有效 capture 为 19/19，`MediaEvidence=17`（audio=15、handwriting=1、photo=1），`ItemResponse` 与 `ScaleInstance` 事实 unchanged，score / domain / report 等 downstream=0。F2 未写正式 ItemResponse，也未调用 F3 review / ASR / submit / scoring / report。
@@ -269,16 +289,23 @@ B14.1 不是独立业务能力，不拥有独立 Browser 活动 ID，也不恢�
 - F2 final post verifier exit 0：session=`terminated`、revision=21、capture=3（valid=2、invalidated=1）、`MediaEvidence=2`、duplicate=0、takeover / redo / terminated 控制事实齐全、原 run invalidated、`ItemResponse` / `ScaleInstance` unchanged、downstream=0。服务停止后精确 cleanup 删除 namespace-owned 记录，`residualCount=0`、runtime descriptor absent；3002/5002 listener=0。
 - 真实设备、真实麦克风、真实触控笔及真实 OSS 患者上传仍不由桌面 synthetic microphone Browser 冒充；设备与人工验收继续归属既有 Batch E / WP-08。真实 ASR 不属于 F2 完成门禁。
 
-F2 阶段完成当时“下一阶段为 F3”的历史语义已经由 4.5 的 F3 证据兑现；截至本最终收口，F2-P2、staff Axe、completed gate 后 F3 回归与全部 verifier / cleanup 均已闭合，WP-10 已完成，下一工作包为仍待开始的 WP-11。
+F2 阶段完成当时“下一阶段为 F3”的历史语义已经由 4.5 的历史 F3 证据兑现；当时最终收口中的 F2-P2、staff Axe、completed gate 后 F3 回归与全部 verifier / cleanup 均已闭合。当前 F3 Playwright 工具治理状态见 4.5；它不回退 WP-10 完成，下一工作包仍为待开始的 WP-11。
 
 ### 4.4 WP-10 F3 前最低实现对齐证据
 
-- `f2-p1-mmse-complete.spec.ts` 已同步长期 happy path 合同：第 14 步录音 evidence 后 patient complete，第 16 步保持“请闭上您的眼睛”、无录音与无新 audio POST 后 patient complete，第 17 步 stimulus 正常播放、无 evidence upload 后 patient complete；ledger 长期期望为 patient complete=19、staff complete=0。
+- 历史合同（F3-pre 当轮）：`f2-p1-mmse-complete.spec.ts` 当时按第 14 步录音 evidence、第 16 步“请闭上您的眼睛”但无录音、第 17 步 stimulus 且无 evidence upload 的旧语义对齐；ledger 当时预期 patient complete=19、staff complete=0。该记录只说明当轮测试与产品合同，不定义 current F2 scripted Profile。
+- Current stable contract：naming=`speech / patient`、reading-command=`speech / patient`、three-step-command=`staff_observation / patient`；current F2 orders 1–16 speech、17 staff observation、18 writing、19 drawing/photo 的执行与证据见 4.3。
 - 本对齐不重跑完整 F2 Browser，不重做 F2 Audit、不修改 Axe、不运行 P2，F2 仍为完成。底层行为由 backend 定向 unit / HTTP E2E 证明；frontend lint、含 `next typegen` 的正式 typecheck 与 canonical production build 均退出 0。
 - Windows `.next` 写入门禁中，执行前沙箱外只读核对本项目 Node/Next 进程为 0、3002 监听为 0；typecheck 与 build 随后均以同一沙箱外执行身份写入 `.next`，输出无 `EPERM`、Unhandled Rejection 或 uncaughtException。
 - 结论（F3-pre 当轮历史）：该轮只完成 F3 前最低实现对齐、未实施 F3；F3 的后续完成证据见 4.5。当时 WP-10 尚待 F2-P2 与 staff Axe，现已由 4.3 的最终证据闭合。
 
 ### 4.5 WP-10-F3 正常作答复核证据
+
+Current testing status（2026-08-22）：WP-10-F3 产品范围保持完成，下列 Browser 结果继续作为形成时有效的历史证据。current deterministic Playwright re-automation 在先冻结 independent expected contract 后仍连续两轮因 `spec/test` locator / test-asset 问题失败，并已按 2.7 工具级止损停止；没有形成 current Playwright green，也没有形成 production contract conflict 或已证明的 product gap，因而不重新打开 WP-10。
+
+`frontend/test/browser-acceptance/wp10-f3/` 与 `backend/scripts/wp10-f3-browser-fixtures.ts` 等 tracked F3 scripted Browser 资产当前仍存在，等待独立 retirement 任务，本次未执行代码退役。若后续需要 current F3 Browser flow 复核，依据当前风险、可维护性和 evidence 目标，默认优先在工具确实可用时按 frozen independent contract 执行 Agent-assisted interactive Browser smoke，而不是默认恢复复杂 Playwright Profile；该 smoke 当前尚未执行，不得写为 `passed` 或 `green`。
+
+以下条目是当时 scripted Browser Profile 形成的历史证据，不表示 2026-08-22 current Playwright regression 已通过；其中 17 个 MediaEvidence / 15 个 audio 仅描述当时 fixture 与 Browser 终态，不定义 current MMSE patient-administration contract。
 
 - 静态门禁：frontend `npm run lint`、正式 `npm run typecheck`（`next typegen && tsc --noEmit`）与 `npm run build` 均 exit 0；backend 新增 fixture 的定向 lint 与正式 `npm run typecheck` 均 exit 0。`.next` 写入前有效只读探针确认 Node=0、3002/5002 listener=0，typecheck / build 使用同一沙箱外身份；输出无 `EPERM`、Unhandled Rejection 或 uncaughtException。
 - discovery：`npm run test:browser:list -- test/browser-acceptance/wp10-f3/f3-happy-path.spec.ts` exit 0，精确发现 1 file / 1 test，没有 F1/F2 或其他 profile。
