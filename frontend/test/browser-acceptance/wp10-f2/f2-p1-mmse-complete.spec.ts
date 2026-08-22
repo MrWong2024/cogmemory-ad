@@ -94,7 +94,7 @@ test.describe('WP-10 F2-P1 complete MMSE patient administration', () => {
       await completeSyntheticPreparation(patientPage);
       await refreshStaff(staffPage);
       await staffPage
-        .getByRole('checkbox', { name: '患者已当面告知本机准备与不计分练习完成' })
+        .getByRole('checkbox', { name: '我已确认患者设备的必要检查已完成' })
         .check();
       const preparationResponsePromise = waitForPost(
         staffPage,
@@ -317,7 +317,7 @@ test.describe('WP-10 F2-P1 complete MMSE patient administration', () => {
       const staffAudit = assertF2BrowserAudit({
         ledger: staff.ledger,
         consoleAudit: staff.consoleAudit,
-        expectedHttpFailures: [
+        allowedHttpFailures: [
           { method: 'GET', status: 401, safeUrlPattern: AUTH_ME_PATTERN },
           { method: 'GET', status: 404, safeUrlPattern: STAFF_ROOT_PATTERN },
         ],
@@ -329,7 +329,7 @@ test.describe('WP-10 F2-P1 complete MMSE patient administration', () => {
       const patientAudit = assertF2BrowserAudit({
         ledger: patient.ledger,
         consoleAudit: patient.consoleAudit,
-        expectedHttpFailures: patient.ledger.entries().some(
+        allowedHttpFailures: patient.ledger.entries().some(
           ({ method, status, safeUrlPattern }) =>
             method === 'GET' &&
             status === 401 &&

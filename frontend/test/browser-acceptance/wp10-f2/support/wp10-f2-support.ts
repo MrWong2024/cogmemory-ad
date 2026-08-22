@@ -2,20 +2,17 @@ import { readFile } from 'node:fs/promises';
 
 import type { BrowserContext, Page, Response } from '@playwright/test';
 
-import { expect } from '../../support/acceptance-test';
-import type { NetworkLedger } from '../../support/network-ledger';
-import type { ConsoleAudit } from '../../support/runtime-audit';
-import type { RoleContextFactory } from '../../support/role-context-factory';
 import {
-  assertF1BrowserAudit,
-  createPatientContext,
-  invariant,
-  loginStaff,
-  resolveEnvironment,
-  type EnabledEnvironment,
-  type F1ExpectedHttpFailure,
-  type StaffSession,
-} from '../../wp10-f1/support/wp10-f1-support';
+  assertDatabaseBoundaryIsClear,
+  resolveLiveAcceptanceEnvironment,
+} from '../../support/acceptance-env';
+import { expect } from '../../support/acceptance-test';
+import { NetworkLedger } from '../../support/network-ledger';
+import type {
+  RoleContext,
+  RoleContextFactory,
+} from '../../support/role-context-factory';
+import { ConsoleAudit } from '../../support/runtime-audit';
 
 export type Profile = 'full' | 'recovery';
 
@@ -36,9 +33,35 @@ export type Descriptor = {
   };
 };
 
+export type EnabledEnvironment = Extract<
+  ReturnType<typeof resolveLiveAcceptanceEnvironment>,
+  { enabled: true }
+>;
+
+export type StaffSession = {
+  roleContext: RoleContext;
+  ledger: NetworkLedger;
+  consoleAudit: ConsoleAudit;
+};
+
+export type AllowedHttpFailure = {
+  method: string;
+  status: number;
+  safeUrlPattern: string;
+};
+
+export type F2BrowserAuditSummary = {
+  allowedHttpFailures: number;
+  ignoredCanceledGets: number;
+  unexpectedConsoleErrors: 0;
+  pageErrors: 0;
+  unexpectedHttpFailures: 0;
+  unexpectedTransportFailures: 0;
+};
+
 export const AUTH_ME_PATTERN = '/auth/me';
 export const STAFF_ROOT_PATTERN =
-  '/patients/<id>/visits/<id>/scale-instances/<id>/<id>';
+  '/patients/<id>/visits/<id>/scale-instances/<id>/patient-administration';
 export const PREPARATION_PATTERN = `${STAFF_ROOT_PATTERN}/preparation/confirm`;
 export const PAUSE_PATTERN = `${STAFF_ROOT_PATTERN}/pause`;
 export const RESUME_PATTERN = `${STAFF_ROOT_PATTERN}/resume`;
@@ -47,15 +70,25 @@ export const STAFF_COMPLETE_PATTERN = `${STAFF_ROOT_PATTERN}/current/complete`;
 export const TAKEOVER_PATTERN = `${STAFF_ROOT_PATTERN}/current/takeover`;
 export const REDO_PATTERN = `${STAFF_ROOT_PATTERN}/redo-last`;
 export const REPLAY_PATTERN = `${STAFF_ROOT_PATTERN}/current/audio/<id>/replay-authorize`;
-export const ENTER_PATTERN = '/<id>/enter';
-export const CURRENT_PATTERN = '/<id>/current';
-export const AUDIO_PATTERN = '/<id>/current/audio/<id>/play';
-export const IMAGE_PATTERN = '/<id>/current/assets/<id>';
-export const EVIDENCE_PATTERN = '/<id>/current/evidence';
-export const PATIENT_COMPLETE_PATTERN = '/<id>/current/complete';
+export const ENTER_PATTERN = '/patient-administration/enter';
+export const CURRENT_PATTERN = '/patient-administration/current';
+export const AUDIO_PATTERN = '/patient-administration/current/audio/<id>/play';
+export const IMAGE_PATTERN = '/patient-administration/current/assets/<id>';
+export const EVIDENCE_PATTERN = '/patient-administration/current/evidence';
+export const PATIENT_COMPLETE_PATTERN =
+  '/patient-administration/current/complete';
+
+export function invariant(
+  condition: unknown,
+  safeMessage: string,
+): asserts condition {
+  if (!condition) throw new Error(safeMessage);
+}
 
 export function resolveF2Environment(): EnabledEnvironment | null {
-  return resolveEnvironment();
+  assertDatabaseBoundaryIsClear();
+  const environment = resolveLiveAcceptanceEnvironment();
+  return environment.enabled ? environment : null;
 }
 
 export function requireF2Secret(): string {
@@ -102,13 +135,53 @@ export async function loginF2Staff(input: {
   password: string;
   environment: EnabledEnvironment;
 }): Promise<StaffSession> {
-  return loginStaff({
-    factory: input.factory,
-    account: input.descriptor.accounts.staff.loginIdentifier,
-    password: input.password,
-    environment: input.environment,
-    viewport: { width: 1280, height: 800 },
+  const roleContext = await input.factory.create(
+    'doctor',
+    `wp10-f2-${input.descriptor.profile}-staff`,
+    { viewport: { width: 1280, height: 800 } },
+  );
+  const { page } = roleContext;
+  const ledger = new NetworkLedger();
+  await ledger.attach(page);
+  const consoleAudit = new ConsoleAudit(page);
+  consoleAudit.start();
+  await page.goto(`${input.environment.frontendOrigin}/login`, {
+    waitUntil: 'domcontentloaded',
   });
+
+  const loginResponsePromise = page.waitForResponse(
+    (response) =>
+      responsePath(response) === '/auth/login' &&
+      response.request().method() === 'POST',
+  );
+  const meResponsePromise = page.waitForResponse(
+    (response) =>
+      responsePath(response) === '/auth/me' &&
+      response.request().method() === 'GET' &&
+      response.status() === 200,
+  );
+  await page
+    .getByLabel('账号')
+    .fill(input.descriptor.accounts.staff.loginIdentifier);
+  await page.getByLabel('密码').fill(input.password);
+  await page.getByRole('button', { name: '登录系统', exact: true }).click();
+  const [loginResponse, meResponse] = await Promise.all([
+    loginResponsePromise,
+    meResponsePromise,
+  ]);
+  expect(loginResponse.status()).toBe(201);
+  const meBody = (await meResponse.json()) as {
+    authenticated?: unknown;
+    user?: { roles?: unknown };
+  };
+  invariant(
+    meBody.authenticated === true &&
+      Array.isArray(meBody.user?.roles) &&
+      meBody.user.roles.includes('doctor'),
+    'WP-10 F2 staff login did not establish the expected identity',
+  );
+  await expect(page).toHaveURL(`${input.environment.frontendOrigin}/dashboard`);
+  return { roleContext, ledger, consoleAudit };
 }
 
 function responsePath(response: Response): string {
@@ -198,34 +271,49 @@ export async function installSyntheticMicrophone(
 }
 
 export async function completeSyntheticPreparation(page: Page): Promise<void> {
-  await page.getByRole('checkbox', { name: '屏幕内容可见，横竖屏方向合适' }).check();
-  await page.getByRole('checkbox', { name: '触摸、鼠标或手写输入可用' }).check();
-  await page.getByRole('checkbox', { name: '确认使用中文施测' }).check();
-  await page.getByRole('checkbox', { name: '已明确这是不计分练习' }).check();
-  await page.getByRole('button', { name: '播放本地测试音' }).click();
-  await expect(page.getByText('本地短测试音已播放，请确认音量舒适。')).toBeVisible();
-  await page.getByRole('button', { name: '开始本地录音检查' }).click();
-  await expect(page.getByRole('button', { name: '停止录音' })).toBeVisible();
+  const screen = page.getByRole('checkbox', {
+    name: '屏幕显示与方向已确认',
+  });
+  const input = page.getByRole('checkbox', {
+    name: '触摸、鼠标等基本操作可用',
+  });
+  const sound = page.getByRole('checkbox', {
+    name: '本地测试音已检查',
+  });
+  const microphone = page.getByRole('checkbox', {
+    name: '麦克风录音已验证可用',
+  });
+  await screen.check();
+  await input.check();
+  await page
+    .getByRole('button', { name: '播放本地测试音', exact: true })
+    .click();
+  await expect(sound).toBeChecked();
+  await page
+    .getByRole('button', { name: '开始本地录音检查', exact: true })
+    .click();
+  const stop = page.getByRole('button', { name: '停止录音', exact: true });
+  await expect(stop).toBeVisible();
   await page.waitForTimeout(250);
-  await page.getByRole('button', { name: '停止录音' }).click();
-  await expect(page.getByText('本地录音已完成，可在本设备回放检查。')).toBeVisible();
-  const canvas = page.getByLabel('不计分触摸和书写练习画布');
-  await canvas.scrollIntoViewIfNeeded();
-  await expect(canvas).toBeVisible();
-  const bounds = await canvas.boundingBox();
-  invariant(bounds, 'Preparation canvas bounds are unavailable');
-  await page.mouse.move(bounds.x + 20, bounds.y + 30);
-  await page.mouse.down();
-  await page.mouse.move(bounds.x + 110, bounds.y + 90, { steps: 5 });
-  await page.mouse.up();
-  await expect(page.getByText('七项本地准备已完成')).toBeVisible();
+  await stop.click();
+  await expect(microphone).toBeChecked();
+  await expect(screen).toBeChecked();
+  await expect(input).toBeChecked();
+  await expect(sound).toBeChecked();
 }
 
 export async function createF2PatientContext(input: {
   context: BrowserContext;
   page: Page;
-}) {
-  return createPatientContext(input);
+}): Promise<{
+  ledger: NetworkLedger;
+  consoleAudit: ConsoleAudit;
+}> {
+  const ledger = new NetworkLedger();
+  await ledger.attach(input.page);
+  const consoleAudit = new ConsoleAudit(input.page);
+  consoleAudit.start();
+  return { ledger, consoleAudit };
 }
 
 export async function enterPatientDevice(input: {
@@ -372,12 +460,128 @@ export function safeTestPng() {
   };
 }
 
+function httpFailureKey(input: {
+  method: string;
+  status: number;
+  safeUrlPattern: string;
+}): string {
+  return `${input.method.toUpperCase()}\u0000${input.status}\u0000${input.safeUrlPattern}`;
+}
+
 export function assertF2BrowserAudit(input: {
   consoleAudit: ConsoleAudit;
   ledger: NetworkLedger;
-  expectedHttpFailures: F1ExpectedHttpFailure[];
-}) {
-  return assertF1BrowserAudit(input);
+  allowedHttpFailures: AllowedHttpFailure[];
+}): F2BrowserAuditSummary {
+  const entries = input.ledger.entries();
+  const allowedFailureKeys = new Set<string>();
+
+  for (const allowedFailure of input.allowedHttpFailures) {
+    if (
+      allowedFailure.status < 400 ||
+      allowedFailure.status >= 500 ||
+      !Number.isSafeInteger(allowedFailure.status) ||
+      !allowedFailure.safeUrlPattern.startsWith('/')
+    ) {
+      throw new Error('WP-10 F2 browser audit allow entry is invalid');
+    }
+    allowedFailureKeys.add(httpFailureKey(allowedFailure));
+  }
+
+  let ignoredCanceledGets = 0;
+  for (const entry of entries) {
+    if (entry.status !== null && entry.status >= 500) {
+      throw new Error('WP-10 F2 browser audit detected an HTTP 5xx response');
+    }
+    if (
+      entry.status !== null &&
+      entry.status >= 400 &&
+      !allowedFailureKeys.has(
+        httpFailureKey({
+          method: entry.method,
+          status: entry.status,
+          safeUrlPattern: entry.safeUrlPattern,
+        }),
+      )
+    ) {
+      throw new Error(
+        'WP-10 F2 browser audit detected an unexpected HTTP 4xx response',
+      );
+    }
+
+    if (entry.failureReason === null) continue;
+    if (entry.method === 'GET') {
+      if (entry.failureReason === 'aborted') {
+        ignoredCanceledGets += 1;
+        continue;
+      }
+      throw new Error(
+        'WP-10 F2 browser audit detected a GET timeout or transport failure',
+      );
+    }
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(entry.method)) {
+      throw new Error(
+        'WP-10 F2 browser audit detected a mutation transport failure',
+      );
+    }
+    throw new Error(
+      'WP-10 F2 browser audit detected another transport failure',
+    );
+  }
+
+  for (const event of input.consoleAudit.events()) {
+    if (event.kind === 'page_error') {
+      throw new Error('WP-10 F2 browser audit detected a page error');
+    }
+    if (event.category !== 'network') {
+      throw new Error(
+        'WP-10 F2 browser audit detected an unexpected Console error',
+      );
+    }
+
+    if (event.httpStatus !== null) {
+      const responseObserved = input.allowedHttpFailures.some(
+        (allowedFailure) =>
+          allowedFailure.status === event.httpStatus &&
+          allowedFailure.safeUrlPattern === event.safeUrlPattern &&
+          entries.some(
+            (entry) =>
+              entry.method === allowedFailure.method.toUpperCase() &&
+              entry.status === allowedFailure.status &&
+              entry.safeUrlPattern === allowedFailure.safeUrlPattern,
+          ),
+      );
+      if (!responseObserved) {
+        throw new Error(
+          'WP-10 F2 browser audit detected an unexplained HTTP Console error',
+        );
+      }
+      continue;
+    }
+
+    const canceledGetObserved =
+      event.safeUrlPattern !== null &&
+      entries.some(
+        (entry) =>
+          entry.method === 'GET' &&
+          entry.failureReason === 'aborted' &&
+          entry.safeUrlPattern === event.safeUrlPattern,
+      );
+    if (!canceledGetObserved) {
+      throw new Error(
+        'WP-10 F2 browser audit detected an unexplained network Console error',
+      );
+    }
+  }
+
+  return {
+    allowedHttpFailures: allowedFailureKeys.size,
+    ignoredCanceledGets,
+    unexpectedConsoleErrors: 0,
+    pageErrors: 0,
+    unexpectedHttpFailures: 0,
+    unexpectedTransportFailures: 0,
+  };
 }
 
 export function assertNoF3Requests(ledgers: NetworkLedger[]): void {
@@ -408,5 +612,3 @@ export function assertExactBodyKeys(
     expect(entry.bodyKeys).toEqual([...expected].sort());
   }
 }
-
-export { invariant };
