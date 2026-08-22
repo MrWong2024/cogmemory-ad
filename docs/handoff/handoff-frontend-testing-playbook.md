@@ -22,11 +22,11 @@
 | WP-03 / B18-B2 | 剩余真实 Browser 阶段完成；P4/P5/P6 `passed=6`、`pending=0`；P0 `gap=0` | “B18-A、B18-B1 与 B18-B2 证据” |
 | WP-03 / B18 补充验证 | P7 `passed=2`、P8 `passed=1`；single-flight contract、P3 与 P9 `passed`；自动化 `gap=0` | “B18-A、B18-B1、B18-B2 与补充验证证据” |
 | WP-10-F1 | 产品范围已完成，WP-10 状态不回退；新的 `patient-administration-handoff` same-device / cross-device replacement 已按当前 preparation、deviceMode 与 Browser 治理形成 current green。F1-P1 / F1-P2 保留为证据形成时有效的历史通过证据；旧 tracked `wp10-f1` 资产仍存在并等待独立退役，但不再作为 current Browser regression 主证据 | “WP-10-F1 最终证据与 Browser Audit 治理” |
-| WP-10-F2 | 完成；F2-P1 正常 19 步与 F2-P2 recovery 均通过，staff Axe 阻断项已修复，最终仅保留 1 个非阻断结构规则 | “WP-10-F2 阶段与最终收口证据” |
-| WP-10-F3 | 完成；正常作答复核主证据与 completed gate 后的定向 happy-path 回归、post verifier、cleanup 均已闭合 | “WP-10-F3 正常作答复核证据” |
+| WP-10-F2 | Current Browser regression 已闭合：Phase 1A 已解除旧 WP10-F1 support dependency；P1 已按 current MMSE patient-administration contract 重写为完整 multimedia golden path，P2 reload/no-duplicate recovery current green 保持 | “WP-10-F2 阶段与最终收口证据” |
+| WP-10-F3 | 产品范围与既有历史证据保持完成；current Browser 资产治理仍待 Phase 2 | “WP-10-F3 正常作答复核证据” |
 | Batch E | 8 个真实设备或人工项目待验；最终主要归属 WP-08 | “Batch E：真实设备或人工验收” |
 
-B11～B15 保持完成；B18 补充验证已闭合，自动化 `gap=0`，WP-03 已完成。WP-10-F2 的正常患者 MMSE 主流程与 recovery、WP-10-F3 的正常作答复核及 completed gate 回归均已完成，staff Axe 已取得 exact rule 并完成分类；WP-10 已完成。产品范围、工作包状态和当前主线以 `handoff-roadmap.md` 为准；Batch E 的 8 项真实设备或人工项目仍为 `pending`，最终主要归属为 WP-08。
+B11～B15 保持完成；B18 补充验证已闭合，自动化 `gap=0`，WP-03 已完成。当前 F2-P1 replacement 与 F2-P2 reload recovery 均为 current green，F2 当前 Browser regression 已完成收口且不再依赖旧 WP10-F1 support；下一项测试资产治理为 WP10-F3 Browser Phase 2，F3 current green 后再执行旧 WP10-F1 最终退役。WP-10 产品完成状态不因测试资产治理顺序改变。产品范围、工作包状态和当前主线以 `handoff-roadmap.md` 为准；Batch E 的 8 项真实设备或人工项目仍为 `pending`，最终主要归属为 WP-08。
 
 ## 2. 当前测试设计规则
 
@@ -248,6 +248,13 @@ B14.1 不是独立业务能力，不拥有独立 Browser 活动 ID，也不恢�
 | shared façade / coordinator / reducer / identity isolation | 跨 B11～B15 | `frontend/test/browser-acceptance/contracts/clinical-report-workflow-shared-non-browser.spec.ts`；稳定 `reportId`、route RESET、unexpected identity 隔离、expected correction transition 保真、identity generation、layout barrier、单一 writingRef/latest/beforeunload |
 
 ### 4.3 WP-10-F2 阶段与最终收口证据
+
+- Current replacement（2026-08-22）：F2 Phase 1A 已解除旧 WP10-F1 support dependency；原路径 `frontend/test/browser-acceptance/wp10-f2/f2-p1-mmse-complete.spec.ts` 保持不变，P1 主正文按 current MMSE contract 重新组织为 orders 1–16 统一 speech traversal、order 17 `staff_observation`、order 18 writing Canvas/Pointer、order 19 drawing/photo，并保留 cross-device credential、preparation、playback、completion privacy、no-F3 与 Browser audit 主证据。order 16 现与其他 speech step 一样真实录音并保存 Evidence；P1 不再承载历史 step 特判、固定累计网络次数、revision、playback 内部计数或完整 DB 终态矩阵。
+- Current P1 使用 fresh full namespace `f2p1fr8c4e1b`，prepare 与只读 verify-prepared 均 exit 0、`reused=false`、实际数据库为 `cogmemory_ad_browser_test`；production frontend、Browser test backend、Chromium 与真实 HTTP 下精确 1 file / 1 test 首轮通过（101.595s）。order 17 明确无录音入口且 Evidence POST relative delta 为 0，writing handwriting 与 drawing photo 上传、图片比例、最终 completed、Cookie/Storage/Blob/DOM/URL privacy、no-F3 及 staff/patient audit 均通过。
+- Current full post verifier exit 0：唯一 PatientAdministrationSession 为 `completed`、current step 为 drawing、患者 credential hashes 已清除，19 个有效 capture 完成；`ScaleInstance` protected facts 与 `ItemResponse` unchanged，ScaleInstance lifecycle=`in_progress`，Evidence ownership/reference/fake-storage 一致且 audio/handwriting/photo 类型均存在，downstream=0。cleanup 与独立幂等 residual 核对均 exit 0，`residualCount=0`、runtime descriptor absent；task-owned Node/Chromium 与 3002/5002 listener 均为 0，当前 `.local` evidence leak scan 全部为 0。
+- Current F2-P2 reload/no-duplicate recovery green 证据继续有效且本轮未重跑。由此 F2-P1/P2 均为 current green，F2 当前 Browser regression 已闭合；下一阶段进入 WP10-F3 Browser 资产治理 Phase 2，F3 current green 后再执行旧 WP10-F1 最终退役。WP-10 产品完成状态保持不变。
+
+以下条目保留 replacement 前各阶段形成时有效的 F2 历史证据，包括旧固定 counts、revision、playback 与 P1/P2 通过记录；它们不再定义 current P1 Browser contract。
 
 - F2-P1 已实际完成正常 MMSE 19 步正式患者施测主流程：服务端权威 currentStep、一步一屏、private image / frozen MP3、guidance / stimulus 播放边界、MediaRecorder 语音证据、handwriting / photo、patient / staff complete 与 completed 安全结束均通过正式 Browser 业务链。
 - P1 post verifier 已通过：患者会话 `completed`，有效 capture 为 19/19，`MediaEvidence=17`（audio=15、handwriting=1、photo=1），`ItemResponse` 与 `ScaleInstance` 事实 unchanged，score / domain / report 等 downstream=0。F2 未写正式 ItemResponse，也未调用 F3 review / ASR / submit / scoring / report。

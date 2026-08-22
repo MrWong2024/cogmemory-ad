@@ -1,7 +1,6 @@
 import { test, expect } from '../support/acceptance-test';
 import { auditRuntimeStorage } from '../support/runtime-audit';
 import {
-  AUDIO_PATTERN,
   AUTH_ME_PATTERN,
   CURRENT_PATTERN,
   EVIDENCE_PATTERN,
@@ -107,43 +106,22 @@ test.describe('WP-10 F2-P1 complete MMSE patient administration', () => {
       ).toHaveCount(0);
       await completePatientStep(patientPage);
 
-      for (let order = 2; order <= 10; order += 1) {
+      for (let order = 2; order <= 16; order += 1) {
         await completeSpeechStep(patientPage, order);
       }
 
-      await completeSpeechStep(patientPage, 11);
-
-      await completeSpeechStep(patientPage, 12);
-      await completeSpeechStep(patientPage, 13);
-
-      await waitForStep(patientPage, 14);
-      await recordAndSaveSpeech(patientPage);
-      await completePatientStep(patientPage);
-
-      await completeSpeechStep(patientPage, 15);
-
-      const audioCountBeforeReading = patient.ledger.count({
-        method: 'POST',
-        safeUrlPattern: AUDIO_PATTERN,
-      });
-      await waitForStep(patientPage, 16);
+      await waitForStep(patientPage, 17);
+      await allowAutoplayIfNeeded(patientPage);
       await expect(
         patientPage.getByRole('button', { name: '开始录音' }),
       ).toHaveCount(0);
-      await completePatientStep(patientPage);
-      expect(
-        patient.ledger.count({ method: 'POST', safeUrlPattern: AUDIO_PATTERN }),
-      ).toBe(audioCountBeforeReading);
-
       const evidenceCountBeforeStep17 = patient.ledger.count({
         method: 'POST',
         safeUrlPattern: EVIDENCE_PATTERN,
       });
-      await waitForStep(patientPage, 17);
-      await allowAutoplayIfNeeded(patientPage);
       await expect(
         patientPage.getByRole('button', { name: '完成本题并继续' }),
-      ).toBeVisible({
+      ).toBeEnabled({
         timeout: 20_000,
       });
       await completePatientStep(patientPage);
@@ -212,14 +190,14 @@ test.describe('WP-10 F2-P1 complete MMSE patient administration', () => {
       expect(storage.forbiddenValueDetected).toBe(false);
       expect(storage.documentCookieEmpty).toBe(true);
       expect(storage.urlHasSensitiveQueryOrHash).toBe(false);
-      const patientText = await patientPage.locator('body').innerText();
+      const completedBodyText = await patientPage.locator('body').innerText();
       for (const forbidden of [
         descriptor.scenario.patientId,
         descriptor.scenario.visitId,
         descriptor.scenario.scaleInstanceId,
         code,
       ]) {
-        expect(patientText).not.toContain(forbidden);
+        expect(completedBodyText).not.toContain(forbidden);
       }
       expect(
         await patientPage.locator('[src^="blob:"]').count(),
