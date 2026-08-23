@@ -6,13 +6,7 @@
 - [Roadmap](./handoff-roadmap.md) 维护产品范围、工作包状态和当前主线；本 INDEX 不复制这些事实。
 - Frontend snapshot 维护当前工程结构、能力和真实未实现边界；各 map、design baseline 与 testing playbook 按下文分工维护专项事实。
 
-## 2. 当前实现摘要
-
-- 前端采用 Next.js App Router、React、TypeScript 与 Tailwind CSS。
-- 主登录态使用后端 Session 与 HttpOnly Cookie，浏览器不持久化凭据。
-- 当前实现事实和真实未实现边界以 frontend snapshot、roadmap 与各专项 map 为准，本 INDEX 不复制阶段状态或测试流水。
-
-## 3. Handoff 文档导航与职责
+## 2. Handoff 文档导航与职责
 
 - [受监督患者施测合同](./handoff-patient-administration-contract.md)：WP-10 跨端业务、逐题呈现、题目媒体、会话、安全退出与医生复核边界的稳定合同入口；不预设前端路由或页面结构。
 - [Frontend snapshot](./handoff-frontend-snapshot.md)：当前前端工程结构、能力范围与真实未实现边界。
@@ -26,11 +20,12 @@
 
 > 修改页面、组件或样式前必须阅读并遵循 frontend design baseline；不得继承 ReviewX 的业务视觉。
 
-## 4. 同步规则
+## 3. 使用与同步规则
 
 - 产品范围、工作包状态或当前主线变化时，更新 roadmap。
 - 前端工程结构、能力范围或真实未实现边界变化时，更新 frontend snapshot。
 - 路由、API 对接、组件或 Hook 变化时，分别更新 route map、API map、component map。
 - 视觉或交互原则变化时，更新 frontend design baseline。
 - 前端或 Browser 稳定验证规则、跨层证据分工或当前仍待验边界变化时，更新 frontend testing playbook；已关闭阶段的详细执行证据由 Git 历史和当前测试资产追溯。
-- 仅当导航入口或文档职责变化时更新本 INDEX，不在此累积实现流水、测试事实或工作包状态。
+- 阅读当前 frontend 全貌时先看 frontend snapshot，再按问题进入 route / API / component map、design baseline 或 testing playbook；产品阶段与患者施测详细合同分别回到各自权威文档。
+- 仅当导航入口或文档职责变化时更新本 INDEX；遵循 `reference, don't restate`，不在此维护技术栈、实现摘要、患者合同、测试事实或工作包状态。

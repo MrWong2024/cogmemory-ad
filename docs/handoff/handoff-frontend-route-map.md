@@ -2,254 +2,174 @@
 
 ## 1. 文档定位
 
-本文档用于记录 CogMemory AD 前端路由、页面职责、访问边界和数据来源，供后续开发、测试和交接使用。
+本文档维护当前 frontend route 投影：页面职责、访问边界、主要数据来源、主要状态 / 高层交互、关联组件与必要非目标。
 
-## 2. 当前状态
+- route 是否存在以 frontend/app current code 为准。
+- 产品阶段和工作包状态见 [Roadmap](./handoff-roadmap.md)。
+- 请求 / 响应、DTO、错误映射与写协议见 [Frontend API Map](./handoff-frontend-api-map.md)。
+- 组件 / Hook / Client 内部职责见 [Frontend Component Map](./handoff-frontend-component-map.md)。
+- 受监督患者施测的逐题、媒体、播放、same/cross、安全和 F2/F3 合同见 [Patient Administration Contract](./handoff-patient-administration-contract.md)。
 
-- 当前包含既有公共、认证、患者 / 访视与量表实例路由；B17 新增患者历史、随访趋势和指定历史报告只读详情三个路由，报告版本面板继续落在访视详情。
-- B16 已让安全线性 replacement V2+ 在既有访视详情复用 A22 lock、A23 freeze-sources 与 A24 archive；没有 replacement 专用路由。
-- B17 / WP-04 已完成；历史报告详情保持只读，current report workflow、版本列表和历史详情职责分离。
-- WP-10 已完成；F1/F2 患者端继续复用 `/patient-administration/enter` 与 `/patient-administration`，既有 MMSE `supervised_patient_input` `ScaleInstance` 页面继续承载医护施测控制。patient administration completed 后，同一既有 `ScaleInstance` 页面挂载 F3 正常作答复核；F3 没有新增独立 `/review` 路由。下一工作包为 WP-11，状态仍为“待开始”。
-- WP-12 的 Visit edit / initialized-only physical delete / started Visit void 窄切片已提前落在既有访视详情，不新增 route；WP-12 整体仍未完成，也未因此启动 WP-11。
-- `/dashboard` 已提供患者档案入口，但仍不是完整医生工作台。
-- 当前不包含患者编辑 / 删除 / 归档 / 合并、访视恢复 / 取消作废 / 二次删除或其他状态流转、独立评分、评分锁定、独立认知域、current 报告专用详情、AI、用户管理或权限菜单路由。
-- 当前不包含 Next middleware 或路由级服务端认证中间件。
+Route Map 只保留理解页面所需的高层投影，不作为 API、算法、业务合同或测试 evidence 的第二 owner。
 
-## 3. 当前路由清单
+## 2. 当前路由结构
 
-### 3.1 `/`
+- frontend/app/layout.tsx 提供全局根布局。
+- frontend/app/patients/layout.tsx 为 /patients/** 挂载认证后的临床工作区 Shell。
+- frontend/app/patient-administration/layout.tsx 为 /patient-administration/** 挂载独立患者 Shell。
+- 当前路由覆盖公共 / 认证、患者 / 访视 / 历史趋势、量表执行、患者施测终端、临床报告历史详情与 not-found。
+- 页面统一通过 feature API Client 访问后端；具体对接见 Frontend API Map。
 
-- 页面名称：公共首页
-- 页面职责：展示 CogMemory AD / 智忆评当前临床评估能力与安全边界，并提供 `/login` 与 `/dashboard` 入口
-- 访问边界：公开
-- 数据来源：静态内容，无 API 调用
-- 加载态 / 错误态：不适用
-- 关联组件：`Badge`、`Card`、Next `Link`
-- 备注：仍是静态无 API 的公共入口，不是完整产品门户或业务工作台；能力概览覆盖 MMSE / MoCA 施测、原始证据、评分与认知域、临床报告和随访，并明确核心量表须由医护或研究人员陪伴或监督完成，不用于患者居家自测或自动诊断
+## 3. 当前路由
 
-### 3.2 `/login`
+### 3.1 /
 
-- 页面名称：机构账号登录
-- 页面职责：提供账号密码登录；已有有效会话时进入 `/dashboard`
-- 访问边界：公开
-- 数据来源：`GET /auth/me`、提交时 `POST /auth/login`
-- 加载态：确认已有会话时显示“正在确认登录状态...”；提交时按钮禁用并显示“正在登录...”
-- 错误态：登录认证失败显示统一文案；服务异常显示稳定连接错误，不展示后端细节
-- 成功态：`router.replace('/dashboard')`
-- 关联组件：`Badge`、`Card`、`LoginForm`、`useAuth`
-- 备注：不提供注册、密码重置、短信验证码、OAuth / SSO 或测试账号
+- 页面名称：公共首页。
+- 页面职责：说明产品定位并提供登录、工作台和患者档案入口。
+- 访问边界：公开。
+- 主要数据来源：静态内容，不调用业务 API。
+- 主要交互：导航到 /login、/dashboard 或 /patients。
+- 非目标：不展示真实患者数据、工作包状态或后台统计。
 
-### 3.3 `/dashboard`
+### 3.2 /login
 
-- 页面名称：轻量工作台
-- 页面职责：通过认证探针恢复状态，展示当前用户公开信息与角色摘要，提供患者档案真实入口和登出入口
-- 访问边界：需要有效会话；当前由 Client Component 调用 `GET /auth/me` 判断，不使用 middleware
-- 数据来源：`GET /auth/me`；登出时调用 `POST /auth/logout`
-- 加载态：显示正在验证认证状态
-- 未认证态：显示会话失效提示并 `router.replace('/login')`
-- 错误态：显示稳定认证服务错误，提供重新检查与返回登录页入口
-- 已认证态：显示 `displayName`、`accountName`、`roles`、可选 `userType`
-- 关联组件：`Badge`、`Button`、`Card`、`AuthDashboard`、`useAuth`
-- 备注：Dashboard 自身不调用患者 API；患者档案卡片链接到 `/patients`。`AuthDashboard` 以“已接入”概括 MMSE / MoCA 施测与证据、评分复核与认知域、报告工作流与历史趋势，并以“规划中”保留科研脱敏导出的真实未实现边界
+- 页面名称：机构账号登录。
+- 页面职责：检查已有会话、提交登录并在成功后进入工作台。
+- 访问边界：公开；已认证会话直接进入 /dashboard。
+- 主要数据来源：Auth API Client 的 getMe() 与 login()。
+- 关联组件：LoginForm、Button、Card。
+- 非目标：不提供注册、找回密码、患者入口或测试账号说明。
 
-### 3.4 `/patients`
+### 3.3 /dashboard
 
-- 页面名称：患者档案列表
-- 页面职责：分页查看患者公开档案，按 keyword / status / sourceType 筛选，并进入患者详情或新建患者
-- 访问边界：`PatientsWorkspaceShell` 使用 `useAuth()`；loading 显示认证检查，unauthenticated 返回 `/login`，认证服务 error 提供重试；后端 Guard 仍是最终权限边界
-- 数据来源：`GET /patients`
-- 状态：首次 / 列表加载、无记录、筛选无结果、网络错误、401 跳转、403 无权限、上一页 / 下一页
-- 关联组件：`PatientsListPage`、`PaginationControls`、`PatientStatusBadge`
-- 当前非目标：不在前端重新搜索，不提供编辑、删除、归档或合并
+- 页面名称：认证后轻量工作台。
+- 页面职责：展示公开用户摘要、患者档案入口、临床能力概览和登出。
+- 访问边界：认证后；后端会话是最终边界。
+- 主要数据来源：useAuth() / Auth API Client。
+- 关联组件：AuthDashboard。
+- 非目标：不是完整临床运营 Dashboard、权限菜单或统计中心。
 
-### 3.5 `/patients/new`
+### 3.4 /patients
 
-- 页面名称：新建患者
-- 页面职责：按 `CreatePatientDto` 白名单创建患者，成功后跳转患者详情
-- 访问边界：复用 `/patients/**` 认证工作区；API 401 返回登录，403 显示无权限
-- 数据来源：`POST /patients`
-- 状态：表单校验、提交中、患者编号冲突、网络错误与稳定成功跳转
-- 关联组件：`PatientCreateForm`
-- 当前非目标：不提交 status、externalRefs、metadata 或 timestamps；不提供编辑、草稿或本地持久化
+- 页面名称：患者列表。
+- 页面职责：分页、关键词 / 状态筛选，并提供患者详情与创建入口。
+- 访问边界：认证后的 patients workspace；后端 Guard 最终裁决。
+- 主要数据来源：Patients API Client 的 listPatients()。
+- 关联组件：PatientsWorkspaceShell、PatientsListPage、PaginationControls、PatientStatusBadge。
+- 高层边界：只展示安全列表字段，不承载患者编辑或批量运营。
 
-### 3.6 `/patients/[patientId]`
+### 3.5 /patients/new
 
-- 页面名称：患者详情与评估访视列表
-- 页面职责：展示患者公开档案，在同页分页查看访视并按 status / visitType / dateFrom / dateTo 筛选；每条访视提供“打开访视”入口
-- 动态参数：Server Component 按 Next 16 `params: Promise<{ patientId: string }>` 等待参数后传入 Client Component
-- 访问边界：复用 `/patients/**` 认证工作区；400 显示链接无效，404 显示患者不存在，401 返回登录，403 显示无权限
-- 数据来源：`GET /patients/:patientId`、`GET /patients/:patientId/visits`
-- 状态：患者与访视独立 loading / error；访视失败保留患者详情；空访视、筛选无结果、分页、日期范围前端校验
-- 关联组件：`PatientDetailPage`、`PaginationControls`、`PatientStatusBadge`
-- 当前非目标：不展示 externalRefs、metadata、clinicalContext；不在列表页直接初始化量表，不提供“开始评估”、访视编辑 / 删除 / 状态流转入口
+- 页面名称：创建患者。
+- 页面职责：采集必要患者信息、客户端基础校验、提交和成功跳转。
+- 访问边界：认证后的 patients workspace；实际创建资格由后端裁决。
+- 主要数据来源：Patients API Client 的 createPatient()。
+- 关联组件：PatientCreateForm。
+- 非目标：不提供编辑、草稿、批量导入或内部字段维护；具体请求 / 错误见 Frontend API Map。
 
-### 3.7 `/patients/[patientId]/visits/new`
+### 3.6 /patients/[patientId]
 
-- 页面名称：新建评估访视
-- 页面职责：先读取患者公开信息并确认 active 状态，再按 `CreateAssessmentVisitDto` 白名单创建访视，成功后返回患者详情
-- 动态参数：Server Component 按 Next 16 `params: Promise<{ patientId: string }>` 契约实现
-- 访问边界：复用 `/patients/**` 认证工作区；患者不存在 / 非 active、401、403、校验和冲突均有独立状态
-- 数据来源：`GET /patients/:patientId`、`POST /patients/:patientId/visits`
-- 关联组件：`AssessmentVisitCreateForm`、`PatientStatusBadge`
-- 当前非目标：不提交 operatorSnapshot、clinicalContext、metadata、状态或状态时间；不自动创建量表实例，不启动计分或报告
+- 页面名称：患者详情与访视列表。
+- 页面职责：展示患者安全摘要、访视筛选 / 分页，并提供新建访视、评估历史和随访趋势入口。
+- 访问边界：认证后的 patients workspace；路径 ID 与权限由页面 / 后端校验。
+- 主要数据来源：getPatient() 与 listPatientVisits()。
+- 关联组件：PatientDetailPage、PaginationControls、PatientStatusBadge。
+- 高层边界：患者详情与访视列表独立失败；本页不执行量表初始化或报告写入。
 
-### 3.8 `/patients/[patientId]/visits/[visitId]`
+### 3.7 /patients/[patientId]/visits/new
 
-- 页面名称：访视详情、量表初始化与访视级报告工作流
-- 页面职责：展示访视与实例摘要并初始化量表；新增同页“访视维护”区，完全服从服务端 `visitMaintenance` 显示 edit / delete / void；current report 区域接入 A20–A25，安全线性 replacement V2+ 复用 A21–A24；独立版本面板提供 A27 报告版本导航。
-- 动态参数：Server Component 按 Next 16 `params: Promise<{ patientId: string; visitId: string }>` 等待参数后传给 `AssessmentVisitExecutionPage`
-- 访问边界：复用 `/patients/**` 的 `PatientsWorkspaceShell`；Shell 用轻量 `PatientsWorkspaceContext` 提供已取得的安全 AuthUser，不新增第二次 `/auth/me`，不读取 Cookie；角色只控制确认入口可见性，后端 Guard 是最终安全边界
-- 数据来源：访视详情（含服务端 `visitMaintenance`）、同一 execution client 的 Visit PATCH / DELETE / void、量表目录 / 初始化请求，以及 A20 latest / generate、A21 draft / submit / confirm、A22 lock、A23 freeze-sources、A24 archive、A25 `POST .../:reportId/corrections` 与 A27 `GET .../clinical-reports`。
-- loading：认证检查由工作区承担；访视详情、量表目录与报告 latest 各自独立 loading、AbortController、错误与重试；目录或报告失败不移除访视和既有实例
-- 链接无效：任一动态参数不符合 24 位 MongoId 时不发送 A13 请求，显示“访视链接无效”并提供返回入口
-- 401 / 403 / 404：401 返回 `/login`；403 显示无权限及工作台 / 退出登录入口；患者不存在与访视不存在或归属不符使用不同稳定文案
-- 初始化能力：仅 `draft` / `in_progress` 可操作；使用原生下拉框选择当前开放的施测方式，只提交 scaleCode / scaleVersion / administrationMode。MMSE 默认监督下患者作答，医护人员施测仍是兼容实时模式；paper import 当前未开放，MoCA supervised patient input 待对应患者端闭环开放。已初始化 scaleCode 禁用按钮；重复冲突刷新详情
-- 成功：以服务端返回的 ScaleInstance 更新列表并展示 `createdItemResponseCount` 题目记录骨架数量，不展示 ItemResponse 全量
-- 编辑维护：`canEdit=true` 才显示“编辑访视”；同页表单复用创建字段语义，成功采用完整服务器详情。`VISIT_NOT_EDITABLE` 后只刷新一次详情，不重试 PATCH，并提示访视已进入评估流程。
-- 删除维护：`canDelete=true` 才显示“删除访视”；必须勾选显式确认。`initializedScaleCount > 0` 时说明 N 个未开始实例及空白题目会一并删除；204 后 replace 到患者详情并 refresh。`VISIT_NOT_DELETABLE` 只刷新详情并提示改用作废，不自动发送 void。
-- 作废维护：`canVoid=true` 时只显示“作废访视”，要求 3–500 字原因和显式 checkbox，并说明量表、作答、证据、历史保留；成功直接采用服务器详情。已 voided 明确展示时间、人员、原因且整区只读。
-- 写互斥：Visit maintenance 请求期间阻止新的量表初始化和报告写；当前量表初始化、报告生成或 report workflow 写期间禁用维护按钮。只使用页面局部 busy 状态，不新增全局 write coordinator。
-- 报告 scope：无报告时由用户从当前访视 completed / locked 实例中明确选择 1-10 项；draft / in_progress / voided 不可选，初始不自动选择。候选状态不等于后端评分 / 认知域 / 媒体前置条件，不扇出 A17 / A19 readiness 请求。
-- 报告生成：用户须阅读 scope 固定、version 1、system_draft、未使用 AI、未医生确认与非诊断说明并勾选 checkbox；POST 只发送 confirm 与稳定排序实例 ID。生成期间禁用 scope 与初始化提交，不自动重试。
-- 报告状态：latest 独立建模 idle / loading / not_found / loaded / forbidden / error；已有报告只提供重新加载。same scope alreadyGenerated 按成功处理；scope conflict / voided / generation conflict 只自动 latest 一次，不覆盖、不重发 POST。
-- 报告展示：继续只读展示 patient / visit / scale / score / domain / evidence 快照、A20 五段 narrative、generation 与技术信息；独立分区展示 clinician-owned doctorOpinion / recommendationText、editorial、submission、confirmation 与当前会话回执。scope 固定，后续实例不自动加入。
-- draft 编辑：普通 V1 的 system_draft / mixed draft，以及由 doctor/admin 操作的结构安全 replacement V2+ draft，在未锁定 / 归档 / 作废 / 确认时可进入 A21。只编辑 doctorOpinion、recommendationText 与本次 editNote；建议空字符串可清除。系统五段摘要与所有快照不可编辑。
-- 乐观并发：编辑、提交、确认均冻结服务端 updatedAt；版本变化或冲突保留 React 内存输入、自动 latest 一次、标记 stale，禁止自动覆盖和自动重发。用户明确基于最新报告继续后才更新基线；相关 note dirty 触发 beforeunload。
-- 提交：mixed draft 且医生意见合法、quality 非 failed、无本地 dirty / 写请求时，通过 submissionNote + checkbox 两步确认后进入 pending_confirmation。提交后不可编辑且不显示重复提交按钮；展示提交人、时间、说明和弱化 ID。
-- 确认：pending_confirmation 仅 doctor / admin 显示 confirmationNote + checkbox 的两步确认；nurse / research_assistant 只读等待。成功使用服务端 status=confirmed、qualityStatus=passed、isFinal=true 并进入只读；alreadySubmitted / alreadyConfirmed 按幂等成功处理。
-- 锁定入口：仅 doctor / admin。普通 V1 继续要求访视为 draft / in_progress / completed；结构安全的任意整数 V2+ replacement 不因 Patient inactive 或 Visit locked / voided 被前端阻断。两类目标均须为 confirmed / mixed / passed / isFinal、确认摘要完整、lockedAt 与 lock 为空且没有一致性警告、其他写请求或本地草稿；完整 lineage 由后端 A26 裁决。
-- 锁定交互：内联展示真实 status、isFinal、confirmation、updatedAt、不可逆边界、3–2000 字 lockNote 与可见 checkbox；请求只发送 confirm、lockNote、服务端 expectedUpdatedAt。冲突保留说明、清 checkbox、latest 一次、stale 且不自动重发；alreadyLocked 为正常成功。
-- 锁定展示：status 继续为 confirmed，页面额外显示已锁定；顶层 lockedAt 是主事实，lock 摘要展示技术追溯号、时间、锁定人 / 角色和“锁定流程说明”，当前会话 receipt 单独展示。锁定后 edit / submit / confirm / lock 全部只读；lockedAt 与 lock 缺失 / 不一致时不猜测字段并显示安全警告。
-- 来源冻结入口：仅 doctor / admin 显示可用操作。首次要求 confirmed / mixed / passed / isFinal、报告锁定安全摘要一致、sourceFreeze=null、无其他报告写请求 / 本地草稿 / 外部写阻断；普通 V1 继续要求 Visit 为 draft / in_progress / completed，安全 replacement V2+ 不因 Patient inactive 或 Visit locked / voided 被前端阻断。请求使用用户明确填写的 3–2000 字 freezeNote、checkbox 与当前服务端 report.updatedAt。
-- 来源冻结状态：sourceFreeze=null 显示“报告来源尚未冻结”；in_progress 显示原 freezeId、原服务端说明、发起人 / 时间、expected / previously 计数，并明确部分来源可能已冻结且未自动回滚；completed 显示完成时间 / 操作者与 expected / completed / newly / previously 五类及 total 计数，只读且无再次冻结 / 恢复入口。
-- 恢复交互：doctor / admin 必须明确选择“准备继续完成来源冻结”并重新勾选 checkbox；恢复使用同一 POST、服务端原 freezeNote 和当前 report.updatedAt，不生成新 freezeId、不允许替换首次说明。恢复不因 Visit 后续 locked / voided 被前端擅自阻断，后端仍是最终边界。
-- 并发与不确定结果：source_freeze 与 edit / submit / confirm / lock 共用一个 writingAction。conflict / incomplete / failed 等最多 latest 一次，保留本地首次说明、清 checkbox，不自动 POST / 恢复；网络错误只提供手工 latest。页面不轮询、不显示百分比或虚假逐项进度。
-- 来源冻结安全：页面不查询、定义或展示内部来源 ID / scope / metadata，不调用 A14–A19 扇出检查，不前端重新统计。明确 A23 不使用 Mongo transaction、completed 前可能部分冻结、无自动解冻 / 回滚，Patient / Visit / Storage 未冻结，CognitiveDomainResult 冻结不等于确认。
-- 归档入口：仅 doctor / admin，且 current latest report 必须是普通 cognitive_assessment V1，或由 `clinical-report-lifecycle-target` 判定公开摘要结构安全的线性 replacement V2+；两类目标都须为 confirmed / mixed / passed / isFinal、完整确认与安全锁定、sourceFreeze completed 且一致、archivedAt / archive / voidedAt 为空、updatedAt 非空、无其他写请求 / 草稿 / 外部阻断。Patient active、Visit draft / in_progress / completed、Visit locked / voided 与 Visit editable 均不是 A24 前端归档条件；完整 ownership、最新版本和 V2+ 双向 lineage 仍由后端裁决。
-- 归档交互：内联展示 status、lockedAt、sourceFreeze.completedAt、report.updatedAt、不可撤销边界、3–2000 字 archiveNote 与可见 checkbox；请求只发送 confirm、archiveNote、服务端 expectedUpdatedAt。POST 期间 edit / submit / confirm / lock / source-freeze / archive 共用单一写锁，报告内容仍可阅读。
-- 归档并发：conflict / not archivable / failed / voided / not found 保留 archiveNote、清 checkbox、latest 最多一次，不自动重发 POST。latest 仍可归档时需明确基于最新继续；latest 已 archived 时进入只读，提示本地说明未写入并保留到用户关闭。网络不确定结果仅提供手工 latest。
-- 归档展示：成功完整采用服务端 report，status 真实为 archived；顶层 archivedAt、status、archive 安全摘要与当前会话 receipt 分开。展示归档追溯号、时间、actor / role、流程说明、sourceFreezeId / completedAt 与 alreadyArchived；完整摘要校验冻结锚点。历史 fallback 的缺失 ID、actor 或锚点不猜测、不补写，也不开放再次归档。
-- 归档后只读：archived 不显示 edit / submit / confirm / lock / source-freeze / archive；corrected 只读展示原归档摘要，voided 不开放归档。归档不修改报告锁定、来源冻结、Patient、Visit 或来源对象，不等于删除、作废、更正或 PDF。
-- 报告版本面板：`ClinicalReportVersionPanel` 作为 current report 区域的 sibling 独立读取 A27 版本列表、分页和公开 previous/replacement code/version；其 loading / error / lineage 409 不阻断 latest 或 A21–A25 workflow。版本项可进入 B17 历史报告只读详情。
-- 状态边界：pending_confirmation 不可编辑；confirmed 未锁定仅可进入 A22 锁定；confirmed 已锁定及 archived / corrected / voided 只读。qualityStatus=passed 只表示报告确认流程质量标记通过；confirmed 与 lockedAt 是正交事实，source=mixed 不表示 AI。
-- 报告安全：不补齐缺失快照，不重新计算评分 / 比例 / 认知域，不调用媒体预览，不显示内部来源 ID / 对象键 / metadata，不输出诊断阈值、疾病判断或治疗建议。
-- 安全边界：目录不展示完整 groups / items、指导语、答案、scoringRule、expectedValue 或内部 ObjectId；能力标识不表示媒体、手写或计时已实现
-- 当前非目标：不在访视详情内读取或保存题目，不提供访视恢复 / 取消作废 / 单独删除未开始量表或其他访视状态流转，也不提供报告退回 / reject / reopen / withdraw / 签名 / unlock / unfreeze / rollback / unarchive / restore confirmed / 作废 / 重生成 / PDF / 打印 / 下载或 AI 操作
-- 关联组件：`AssessmentVisitExecutionPage`、`AssessmentVisitMaintenancePanel`、`ScaleInstanceList`、`ScaleInitializationPanel`、`PatientsWorkspaceContext`、`useClinicalReport`、`useClinicalReportWorkflow`、`ClinicalReportVersionPanel`、`ClinicalReportCorrectionPanel`、`ClinicalReportLockPanel`、`ClinicalReportSourceFreezePanel`、`ClinicalReportArchivePanel`、`ClinicalReportReadOnlyContent` 与其他 ClinicalReport 展示/摘要组件
-- 当前工作流结论：访视详情仍是唯一 current report 写工作流入口；七类 Action 只能经 `useClinicalReportWorkflow` façade 被页面间接使用。A25 成功后原地采用 replacement；B17 版本面板另行提供公开历史导航，历史详情不反向挂载写工作流。
-- B16 replacement 边界：安全 V2+ 的 draft / mixed / pending_confirmation 复用 A21，confirmed / locked / frozen 阶段按顺序复用当前报告工作流的 A22–A24；Patient inactive、Visit locked / voided 不构成 replacement 的前端阻断。没有 replacement 专用平行 API、路由、页面、Hook 或状态仓库。
+- 页面名称：创建评估访视。
+- 页面职责：核对患者后创建访视并跳转至访视详情。
+- 访问边界：认证后的 patients workspace；患者状态和创建资格由后端裁决。
+- 主要数据来源：getPatient() 与 createPatientVisit()。
+- 关联组件：AssessmentVisitCreateForm。
+- 非目标：不在同一请求初始化量表，也不维护 DTO 白名单或错误矩阵；具体合同见 Frontend API Map。
 
-### 3.9 `/patients/[patientId]/visits/[visitId]/scale-instances/[scaleInstanceId]`
+### 3.8 /patients/[patientId]/visits/[visitId]
 
-- 页面名称：量表实例施测执行、媒体证据、正式提交、评分确认与认知域结果
-- 页面职责：在既有 A14-A18 能力上接入 A19 认知域 latest / compute、安全结果展示与贡献定位；不新增独立评分或认知域路由。
-- F1/F2 条件组合：仅服务端详情明确为 `scale.code=mmse` 且 `administrationMode=supervised_patient_input` 时渲染 `PatientAdministrationStaffPanel`；其他量表和施测方式不显示该面板。
-- progressive disclosure：仅 `scale.code=mmse` 且 `administrationMode=supervised_patient_input` 使用患者施测边界。无 Session、prepared / active / paused / terminated / expired 时保留页面身份、StaffPanel、访视 / 量表 / 实例信息与阶段提示，不显示任何分组导航、正式 ItemResponse、readiness / submit、评分或认知域，首次详情加载也不请求 readiness。StaffPanel 首次回传 completed 后才进入既有紧凑 group navigation、当前分组逐题 unified review 与全局 submission；clinician-administered 保持普通正式作答和首次 readiness，非 MMSE 不扩展该流程。
-- 后续阶段：ScaleInstance 仅在 completed / locked / voided 时显示 provisional scoring；只有已加载 ScoreResult status=confirmed / locked / voided 时显示 cognitive-domain panel。认知域 hook 始终按 React 规则调用，查询与首次计算资格继续由既有 hook / backend 决定。
-- completed supervised 复核交互：unified review 不渲染 handwriting 新采集 / 重采集工具；患者原始 handwriting 在施测参考中查看并按需采用，已有正式 Evidence 历史仍直接可见，photo 正式采集保持。当前分组末尾的“返回复核分组导航”普通锚点只滚动到既有 `supervised-review-group-navigation`，不触发切组、保存、readiness 刷新或其他业务写入。
-- 动态参数：Server Component 按 Next 16 `params: Promise<{ patientId: string; visitId: string; scaleInstanceId: string }>` 等待参数后传给 `ScaleInstanceExecutionPage`；route 不 fetch、不保存表单状态
-- 访问边界：继续复用 `/patients/**` 的 `PatientsWorkspaceShell`；不新增 middleware、BFF 或 Provider，不读取 Cookie；后端 Guard 是最终权限边界
-- 数据来源：既有 A14-A18 请求与 A19 cognitive-domain latest GET / compute POST；另由医护面板读取 / 创建 patient-administration 会话，并调用准备、交接、暂停 / 恢复 / 重签 / 终止、staff complete / takeover / redo / technical replay authorize。评分和认知域只读刷新各自只使用 latest GET。
-- loading / 取消：执行详情 GET 使用 AbortController；重试和卸载取消旧请求，被取消请求不显示服务错误；任一动态 ID 无效时不发请求
-- 401 / 403 / 404 / 409：401 返回 `/login`；403 展示无权限与返回 / 退出入口；患者、访视、实例不存在分别使用稳定状态；配置不可用不渲染空白题目页
-- 分组：groups 按 order、题目按 itemOrder 排序，使用 groupCode 动态归组；无匹配分组题目进入“其他项目”；button 导航显示每组完成数并支持键盘 focus
-- 逐题复核：completed supervised MMSE 以 formal ItemResponse 为主列表，同题按“正式状态 → readiness blocker / warning → patient step / run / capture / Evidence / viewer / ASR → 正式 ItemResponseEditor”排列。review projection 一次整份加载，切组不重新请求；review loading / error 不隐藏或禁用正式编辑。
-- 草稿状态：作答以 itemResponseId 为 key、媒体以 `${itemResponseId}:${evidenceType}` 为 key 存于父级组件内存，切换分组不丢失；顶部区分未保存作答与未上传证据，任一非零时注册 beforeunload，不写 localStorage / sessionStorage
-- 作答：支持 boolean、number、text、single / multi choice 原始转录、分步实际回答、提示后表现、媒体类文字说明、缺失原因、计时草稿和操作者备注；不生成选项、答案或评分
-- 保存：每题提供保存草稿与保存并标记本题完成；只 PATCH 变化白名单，无变化不请求；成功以服务端 itemResponse 覆盖当前题并用 progress 更新页面，不重新加载整页
-- 媒体：photo 支持本地选择和移动端 capture 提示，源图经 Canvas 重新编码为 JPEG；handwriting 支持响应式 1200 × 800 逻辑画布、Pointer Events、最终 PNG 和默认 strokes JSON；证据列表保留 attached / locked / voided 历史，按点击获取短期 URL，attached 可内联确认后作废并重传
-- 只读：completed / locked / voided 访视或实例全页只读；scored / locked / voided 题目只读；保留历史安全草稿、证据列表和 attached / locked 预览，但禁用媒体采集、上传和作废
-- 隔离：媒体操作不触发 A14 PATCH，不改变作答 dirty、progress、题目完成状态或访视 / 实例 / 题目状态；后端 Guard 与状态校验仍是最终边界
-- readiness：clinician-administered 执行详情成功后继续独立加载；supported supervised pre-review 不请求，Session status 首次回传 completed 时才加载。失败只在已开放的提交区域显示并可重试。服务器确认的 `mark_answered` 在成功合并 ItemResponse 后自动刷新一次；automatic autosave、显式保存草稿、conflict/server-only 同步与 A15 上传 / 作废成功只标记 stale。自动刷新失败不回滚已成功作答，仍可手工重新检查；不轮询或自动重试。
-- 本地阻断：未保存作答、未上传媒体、题目保存中或媒体写入中均阻止确认和 POST；服务器 readiness 仍可查看，且明确不包含本地内容
-- issue 路由：completed supervised MMSE 对同一 readiness snapshot 优先按 itemResponseId、缺失时按唯一 itemCode 将 item issue 内联到题目；scale_instance 与无法映射的异常 issue 留在全局提交区，完整 summary / ready / canSubmitNow / submit gate 不过滤。普通布局仍可由带 itemResponseId 的 issue 切组、滚动并聚焦题目；scale_instance scope 不提供定位按钮。
-- 提交：只有最新 readiness 的 ready / canSubmitNow 为 true、无 blocking 且无本地阻断时展开内联 checkbox；POST 只发送 confirm=true，不自动重试。warning 可展开查看但不阻断
-- 成功 / 历史：提交响应或 readiness 服务端状态驱动 completed 只读；不模拟状态，不修改 Visit / ItemResponse。`alreadySubmitted=true` 作为成功处理；completed 初始加载不自动 POST，也不以施测 operatorSnapshot 冒充历史提交操作者
-- 阶段性评分查询：仅 completed / locked / voided 实例自动查询一次 latest；draft / in_progress 不请求。查询状态独立于执行详情，失败保留题目、提交回执与媒体历史，支持手工重新加载但不轮询或自动重试
-- 阶段性评分生成：仅 completed、Visit 为 draft / in_progress / completed 且 latest 无结果时提供一次“生成阶段性评分”；本地 dirty、媒体草稿、题目 / 媒体写请求或 submit 继续阻断，点击后 handler 再次复查现有门禁并以 confirm=true 调用 compute。`no_result` 不显示结果刷新；loaded 且已有结果时可“刷新评分结果”。页面不自动计算、不自动重试、不支持重算；最终评分确认仍保持 checkbox 与版本保护的强确认
-- 结果展示：非 final 主标题为“阶段性评分与最终确认”，突出阶段性 score / max 与已评分 / 总项目数；异常零值收缩为紧凑成功状态，reviewQueue 为零时不渲染独立空区块，分组正常视图不显示 groupCode。确认区排在默认折叠的题目分值明细之前；技术信息继续默认折叠。不重新求和、聚合、补算比例或构造队列，不输出临床解释。
-- 原题定位：reviewQueue 仅在 itemResponseId 能匹配当前安全题目时提供“查看原题”，复用 B6 分组切换、滚动与键盘 focus，不修改 URL、不清理其他分组草稿；null / 无法匹配不虚假跳转
-- 人工评分：needs_review 与确认前 manual_scored 计分项可打开单一活动表单；0 合法，前端校验 finite number 与服务端 min / max，step 不公开且不猜测。reviewNote trim 后 3–2000；auto_scored、not_scored、过程项、空 itemResponseId 与只读结果无入口。
-- 修订与安全摘要：manual_scored 表单一致预填最新服务端人工分值与公开 reviewNote；只展示最新 manualReview 摘要，不展示原始作答、previousScoreValue、metadata 或完整历史。查看作答只能通过“查看原题”定位。
-- 乐观并发：表单展开冻结 ScoreResult.updatedAt；latest 或其他完整响应导致版本变化时草稿 stale 并禁止提交。冲突保留输入、自动刷新一次 latest，但不自动重试 PATCH；用户明确“基于最新结果继续”后才更新基线。
-- 草稿：人工评分与确认意见只保存在 React 内存；页面刷新丢失。顶部与 beforeunload 独立区分作答、媒体、人工评分和确认意见，不把评分草稿计入题目或媒体数量。
-- 确认：仅 computed、isFinal=false、无 pending / queue / warning、total complete、实例 / 访视状态允许且无任何本地草稿或写请求时显示“准备确认评分结果”。第二步展示动态量表 / 得分 / 完整性摘要，确认意见可为空且最多 2000 字，checkbox 仍强制；POST 固定发送 confirm=true、string reviewNote、expectedUpdatedAt。
-- 确认并发：确认区展开冻结 updatedAt；版本变化时保留意见、清除 checkbox、标记 stale。confirmation conflict 刷新 latest 且不重发；warning 不能忽略；alreadyConfirmed=true 按成功处理。
-- 最终只读：confirmed / locked 不显示人工评分输入或确认按钮；按 isFinal / totalScore.isFinal 显示确认得分、确认分组得分与确认项目分值，并展示确认时间 / 操作者。空确认意见不显示占位，confirmationId 仅在默认折叠技术信息中显示。
-- 认知域依赖：实例 completed / locked / voided 且来源 ScoreResult confirmed / locked / voided 时才查询 A19 latest。评分不存在、评分 latest 失败、draft / computed / needs_review 时显示依赖状态；B8 confirm 成功后只自动 GET 一次，不自动 compute。
-- 认知域首次生成：最终评分确认后才开放；confirmed / locked 来源评分还必须 isFinal=true，实例只能为 completed，Visit 为 draft / in_progress / completed，latest 必须 not_found，且所有作答 / 媒体 / 人工评分 / 确认草稿和题目 / 媒体 / submit / 评分写请求均为空闲。用户显式点击唯一“生成认知域结果”按钮后，POST 仍只发送 confirm=true；不自动生成、不自动重试、不支持重新生成，也不再设置前端 checkbox / 二级确认。
-- 认知域结果：`computed` 作为最终评分与既定映射的确定性派生分析直接显示“认知域分析结果已生成”，并在主状态区复用已加载 ScoreResult 展示来源量表、最终得分与满分。随后以“认知域映射得分”展示服务端 domain score / max 和 scorePercent；主卡不显示 domainCode / weighted 技术值，正常零异常统计隐藏。null 不显示为 0，不排名、不跨域求和、不重新计算任何服务端值。
-- 重叠归因：主界面只常驻临床辅助 / 非独立诊断说明；多域映射、完整分值归入、不可跨域求和及 scorePercent 非正常率 / 概率 / 风险值放入默认折叠的“认知域结果如何解释”。
-- 认知域映射与贡献：题目贡献默认折叠，展开后突出题目、映射认知域、题目得分、本域贡献和原题核对；mapping / policy / weighted / computation / version / run 等正常追溯信息统一进入单一默认折叠的“映射规则与技术信息”。interpretation 或 computation warning 始终在折叠区外提示，且不扩展临床解释。
-- 贡献定位：仅 itemResponseId 可匹配当前安全题目时复用既有分组切换、scrollIntoView 与 focus；null / 无法匹配不按 itemCode 猜测，不改 URL、不清除任何本地草稿。
-- 认知域历史：computed / needs_review / confirmed / locked / voided 的 backend status 兼容保留并按业务标签安全展示；当前一期没有认知域第二次人工确认或 lock 动作，不根据 isFinal 把 computed 改写为 confirmed。已有结果只提供刷新 latest，不显示重新生成；locked / voided 实例或 voided 来源评分只能查询历史。
-- 非诊断边界：主区域明确结果仅展示项目在认知维度中的映射，不能脱离量表、临床访谈和其他检查单独形成诊断；不输出阈值、等级、疾病概率、报告或 AI 解读。
-- 评分隔离：compute / latest 只允许同步服务端 scaleInstance 摘要，不覆盖 Visit、ItemResponse、作答 / 媒体草稿或 submission readiness，不触发 A14 / A15 写操作
-- 只读：completed / locked / voided 实例仍可查看 readiness、作答和历史证据；submit 期间题目保存、图片 / 手写采集、上传与作废临时真实禁用
-- 医护控制：面板显示服务端 currentStep 进度；MMSE `naming`、`reading-command`、`three-step-command` 已显示“由患者推进”，active 时不再呈现医护观察 complete；paused 时仍提供 takeover、直接前一步 redo 与一次 technical replay 授权。所有写操作使用最新 revision，不自动重放；它们只改变患者短期会话事实，不写正式 ItemResponse、提交、评分或报告。临床观察判断与 Session 推进已解耦，观察结果留待 F3 后续复核。
-- 报告入口：单量表页面不生成访视级报告；完成评分确认与认知域结果生成后返回访视详情页，在独立报告区域选择多实例 scope。
-- 产品文案：页面顶部概括当前页的施测记录、媒体证据、正式提交、评分复核与认知域结果，并说明临床报告工作流位于访视详情；当前一期不设置认知域第二套医生独立确认动作，AI 临床解释仍未实现
-- 当前非目标：不提供批量评分、评分 lock / void / 撤销确认 / reopen / rerun / runNo=2 / 完整历史；不提供认知域人工修改 / 确认 / 锁定 / 作废 / 重算 / weighted mapping 编辑；不在单量表页提供报告生成、诊断、OCR 或 AI。
-- 关联组件：既有执行与评分组件、`PatientAdministrationStaffPanel`、`PatientAdministrationStaffStepControls`、`PatientAdministrationReviewPanel`、`ItemResponseEditor`、`ScaleInstanceSubmissionPanel`，以及 `useCognitiveDomainResult`、`CognitiveDomainResultPanel`、`CognitiveDomainScoreList`、`CognitiveDomainContributionList`、`CognitiveDomainMappingSummary`。
+- 页面名称：访视执行详情。
+- 页面职责：展示访视与量表实例，组合有限 Visit maintenance、量表初始化、current clinical report workflow 和报告版本列表。
+- 访问边界：认证后的 patients workspace；后端 Guard 与返回的能力摘要是最终写边界。
+- 主要数据来源：访视执行详情、量表目录、初始化 / maintenance Client、Clinical Report Client 与报告版本 Client；具体调用见 Frontend API Map。
+- 主要状态：访视读取、目录与实例、各区域独立错误，以及页面级互斥写入状态。
+- 关联组件：AssessmentVisitExecutionPage、AssessmentVisitMaintenancePanel、ScaleInstanceList、ScaleInitializationPanel、ClinicalReportPanel、ClinicalReportVersionPanel。
+- 非目标：不在路由文档维护 Visit DTO、report lifecycle 状态机、并发算法或写请求细节；不把 current report 与历史报告详情合并为同一路由。
 
-### 3.10 `/patient-administration/enter`
+### 3.9 /patients/[patientId]/visits/[visitId]/scale-instances/[scaleInstanceId]
 
-- 页面名称：患者安全进入
-- 页面职责：接收六位 ASCII 数字一次性进入码，只有患者显式提交才调用 enter；不自动提交、不在页面重载后恢复输入。
-- 访问边界：公开患者入口，使用独立 `PatientAdministrationShell`；不挂载 `/patients/**` staff workspace，不调用 `/auth/me`，后端患者 Cookie / Guard 是最终边界。
-- 数据来源：显式提交时 `POST /patient-administration/enter`；成功后 `router.replace('/patient-administration')`。
-- 安全边界：进入码只在表单即时内存与单次请求体中存在，不写 URL、localStorage、sessionStorage、IndexedDB、日志或 DOM 回执；页面不展示患者、访视、量表、staff 或 Cookie 详情。
-- 状态：区分格式错误、码无效 / 已使用 / 过期、会话不可进入、服务不可用和提交中；写请求结果不确定时不自动重放。
-- 关联组件：`PatientAdministrationShell`、`PatientAdministrationEnterPage`。
+- 页面名称：量表实例执行与结果工作页。
+- 页面职责：承载正式 ItemResponse、媒体证据、submission、评分、认知域，以及受监督 patient administration 的医护控制与 completed 后复核组合。
+- 访问边界：认证后的临床工作区；实例可读 / 可写状态和业务资格由后端裁决。
+- 主要数据来源：量表执行详情、ItemResponse、Media Evidence、submission readiness、评分、认知域与 Patient Administration Clients；具体调用见 Frontend API Map。
+- 主要状态 / 交互：动态分组、正式作答保存、媒体操作、整体提交、评分复核和认知域展示；患者施测未完成时按服务端事实保持相应页面投影。
+- Patient Administration 投影：医护控制面板挂载于本 route；患者施测 completed 后 F3 继续在本 route 复用既有正式作答与提交链，不新增独立 review route。
+- 关联组件：ScaleInstanceExecutionPage、ScaleExecutionGroupNavigation、ItemResponseEditor、MediaEvidencePanel、ScaleInstanceSubmissionPanel、ProvisionalScoringPanel、CognitiveDomainResultPanel、PatientAdministrationStaffPanel、PatientAdministrationReviewPanel。
+- 非目标：不在此复制逐题 responseMode、媒体 / 播放规则、异常控制、revision / CAS、评分或报告业务协议；患者施测详细合同见 [Patient Administration Contract](./handoff-patient-administration-contract.md)。
 
-### 3.11 `/patient-administration`
+### 3.10 /patient-administration/enter
 
-- 页面名称：患者当前会话与 MMSE 正式步骤页
-- 页面职责：读取患者短期 Cookie 对应的 current 会话；active 时一步一屏呈现服务端权威 MMSE 当前步骤，prepared / paused 显示等待医护，terminated / expired / completed 显示最小安全结束状态。
-- 访问边界：患者独立 Shell；不读取 staff Session、`/auth/me` 或 staff workspace Context。无患者会话时只提供返回安全进入页。
-- 数据来源：`GET /patient-administration/current` 以 3 秒串行轮询并使用 AbortController、single-flight 和 revision / run 身份防旧响应覆盖；当前步骤按需调用 private image GET、audio play POST、multipart evidence POST 与 patient complete POST。
-- 当前交互：按服务端顺序播放 frozen MP3；guidance 可受控重播，stimulus 仅在 current asset 的 `technicalReplayAuthorized=true` 时允许一次技术重播。speech 使用 MediaRecorder 上传 audio，writing / drawing 使用 Canvas handwriting 或 photo，上传后由患者显式完成步骤。`naming` 仍需录音 evidence 后完成；`reading-command` 无音频 / evidence 可直接完成；`three-step-command` 须先通过 stimulus audio gate 再完成。两个 staff_observation 步骤均提示医护将在后续复核记录观察结果，不新增观察输入或状态。
-- 隐私与功能边界：只呈现当前步骤获准的 patientText、image / audio 和作答控件，不取得完整量表、评分、报告、诊断、其他患者或 staff 信息；completed 后清除当前步骤并安全交还。页面不调用 F3 review / ASR / ItemResponse / submit / scoring / report。
-- 关联组件：`PatientAdministrationShell`、`PatientAdministrationPage`、`PatientAdministrationCurrentStep`、`PatientAdministrationSpeechResponse`、`PatientAdministrationWrittenResponse`。
+- 页面名称：患者安全进入。
+- 页面职责：接收患者主动提交的短期进入凭据，成功后替换导航到当前患者会话页。
+- 访问边界：公开患者 Shell；不挂载 patients staff workspace，不调用 /auth/me，患者 Cookie / Guard 是最终边界。
+- 主要数据来源：Patient Administration Client 的 enter 调用。
+- 主要状态：输入、提交中、可理解的失败反馈和成功导航。
+- 关联组件：PatientAdministrationShell、PatientAdministrationEnterPage。
+- 安全边界：不在页面显示患者、访视、量表、staff 或凭据技术信息；详细进入码与会话合同见 Patient Administration Contract，API 形状见 Frontend API Map。
 
-### 3.12 `not-found`
+### 3.11 /patient-administration
 
-- 页面名称：404 兜底页
-- 页面职责：处理未匹配地址并提供返回首页入口
-- 访问边界：公开
-- 数据来源：静态内容
-- 错误态：页面自身即为兜底展示
-- 关联组件：`Badge`、`Card`
-- 备注：不调用后端；使用稳定产品级提示说明地址不存在、已失效或暂时无法通过该地址访问，不把 404 解释为权限不足
+- 页面名称：患者当前施测会话。
+- 页面职责：读取当前患者会话；active 时一步一屏呈现服务端权威当前步骤，其他状态显示安全等待、处理或结束。
+- 访问边界：独立患者 Shell；不读取 staff Session、/auth/me 或 patients workspace Context。
+- 主要数据来源：Patient Administration Client 的 current、当前资产、音频播放、Evidence 上传与步骤完成调用。
+- 主要状态 / 交互：当前步骤呈现、必要媒体 / 作答控件、医护求助和最小安全结束状态。
+- 关联组件：PatientAdministrationShell、PatientAdministrationPage、PatientAdministrationCurrentStep、PatientAdministrationSpeechResponse、PatientAdministrationWrittenResponse。
+- 安全边界：只显示完成当前步骤所需的最少信息，不展示评分、报告、诊断或其他患者 / staff 数据。
+- 合同边界：逐题 responseMode、录音 / 媒体、播放 / 重播、轮询实现和异常控制不由 Route Map 维护，统一见 [Patient Administration Contract](./handoff-patient-administration-contract.md)、[Frontend API Map](./handoff-frontend-api-map.md) 与 current code。
 
-### 3.13 `/patients/[patientId]/history`
+### 3.12 not-found
 
-- 页面名称：患者评估历史
-- 页面职责：展示患者安全摘要、URL 可分享筛选、分页 Visit/Scale/Score/Domain availability 与报告摘要；顺序完全采用后端。
-- 访问边界：认证后 doctor、nurse、research_assistant、admin；后端 Guard 为最终边界。
-- 数据来源：`getPatient()` 与 `listPatientAssessmentHistory()` 两个独立 GET；401 返回登录，403/Patient 404/空结果/筛选空结果各自稳定展示。
-- 导航：患者详情始终提供“评估历史”和“随访趋势”；历史项可打开 Visit 与安全历史报告详情。inactive/archived 患者仍保留历史/趋势入口，新建访视资格不放宽。
-- URL：`page`、`pageSize`、`status`、`visitType`、`dateFrom`、`dateTo`、`scaleCode`；查询、分页和浏览器前进/后退恢复 URL 状态。
+- 页面名称：404 兜底页。
+- 页面职责：处理未匹配地址并提供返回首页入口。
+- 访问边界：公开。
+- 主要数据来源：静态内容。
+- 关联组件：Badge、Card。
+- 非目标：不调用后端，也不把地址不存在解释为权限不足。
 
-### 3.14 `/patients/[patientId]/trends`
+### 3.13 /patients/[patientId]/history
 
-- 页面名称：患者随访趋势
-- 页面职责：明确选择量表后展示保留全部 Visit 的基础趋势、纯 SVG 图和完整表；未选择量表不请求趋势。
-- 数据来源：`getPatient()`、`listAvailableScales()`、`getPatientFollowUpTrend()` 独立 GET；query 为 `scaleCode`、可选日期和 `maxPoints`。
-- 图表边界：0–100 服务端 percent；所有 Visit 有 X 位置；仅 backend comparison 可比的相邻点连线，missing/not_comparable 不连接，不跨缺失点；marker 可聚焦且 aria 不含内部 ID。
-- 文案边界：固定显示“得分比例，不是疾病概率”；不输出诊断、风险、概率、改善、恶化、进展或治疗结论。
+- 页面名称：患者评估历史。
+- 页面职责：展示患者摘要、可分享筛选、分页历史、结果可用性和报告摘要。
+- 访问边界：认证后的 patients workspace；后端 Guard 最终裁决。
+- 主要数据来源：getPatient() 与 listPatientAssessmentHistory()。
+- 主要状态 / 交互：URL 筛选、分页、空结果、打开 Visit 或历史报告。
+- 关联组件：PatientAssessmentHistoryPage、AssessmentHistoryFilters、AssessmentHistoryList。
+- 非目标：不重排后端历史，不在本页编辑报告或推导临床结论。
 
-### 3.15 `/patients/[patientId]/visits/[visitId]/clinical-reports/[reportId]`
+### 3.14 /patients/[patientId]/trends
 
-- 页面名称：历史报告只读视图
-- 页面职责：读取指定历史报告，复用安全快照和正文展示基础；展示 reportCode/version/status/source/quality/isFinal 与创建/更新时间。
-- 访问边界：认证后四个 WP-04 允许角色；三个路径 ID 在请求前校验。401、403、Patient/Visit/Report 404、response incomplete 409 和服务错误分开处理。
-- 导航：返回 Visit、患者评估历史、患者详情和工作台。
-- 安全边界：不挂载 current workflow Hook，不调用 latest 或 A21–A25 写接口，没有编辑、提交、确认、锁定、冻结、归档或更正按钮；不渲染内部 lineage ID。
+- 页面名称：患者随访趋势。
+- 页面职责：在明确选择量表后展示服务端提供的基础趋势、图表和完整表格。
+- 访问边界：认证后的 patients workspace；后端 Guard 最终裁决。
+- 主要数据来源：getPatient()、listAvailableScales() 与 getPatientFollowUpTrend()。
+- 主要状态 / 交互：URL 条件、量表选择、日期范围、图表和表格。
+- 关联组件：PatientFollowUpTrendPage、FollowUpTrendControls、FollowUpTrendChart、FollowUpTrendTable。
+- 非目标：不自行补算、跨缺失点连接或输出诊断、风险、改善 / 恶化结论。
+
+### 3.15 /patients/[patientId]/visits/[visitId]/clinical-reports/[reportId]
+
+- 页面名称：历史报告只读详情。
+- 页面职责：读取并展示指定历史报告的安全快照、正文和公开版本摘要。
+- 访问边界：认证后的 patients workspace；路径 ID、资源归属和角色由页面 / 后端校验。
+- 主要数据来源：getHistoricalClinicalReport()。
+- 主要状态 / 交互：独立 loading / error / retry，以及返回 Visit、患者历史和患者详情的导航。
+- 关联组件：HistoricalClinicalReportDetailPage、ClinicalReportReadOnlyContent。
+- 非目标：不挂载 current report Hook 或写工作流，不提供编辑、提交、确认、锁定、冻结、归档或更正动作。
 
 ## 4. 后续同步规则
 
-- 路由事实以实际前端代码、路由文件和业务文档为准。
-- 不得在页面未实现前写成已存在路由。
-- 路由涉及接口调用时，应同步更新 `docs\handoff\handoff-frontend-api-map.md`。
-- `/dashboard` 仍是轻量入口；只有更多医生业务能力真实落地后才能更新为完整医生业务工作台。
+- 新增、删除或改变 route、页面职责、访问边界、主要数据来源或组件组合时更新本文件。
+- DTO、endpoint、错误、Client 请求 / 响应变化只更新 Frontend API Map；组件内部状态和算法只更新 Component Map / current code。
+- 患者施测逐题与安全业务合同只更新 Patient Administration Contract；测试 evidence 只更新 testing playbook。
+- 遵循 reference, don't restate；“同步相关文档”只在本 route projection 确实变化时更新，没有 route 职责变化则保持 zero diff。
+- 不得在页面未实现前写成 current route，也不得把 Route Map 扩展成 API 规格、业务合同或 release notes。
