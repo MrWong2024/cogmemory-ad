@@ -1,332 +1,96 @@
 # CogMemory AD / 智忆评 后端事实快照
 
-## 1. 文档定位
+## 1. 文档定位与权威来源
 
-本文档用于记录 CogMemory AD 后端当前事实快照，帮助后续交接时快速判断后端工程、模块、接口和验证能力的真实状态。
+本文只维护当前后端工程结构、主要模块的能力范围、关键架构边界与真实未实现边界。它不是 Schema、API、DTO、Service、配置、测试、患者施测合同、Roadmap 或 release notes 的替代品。
 
-## 2. 当前工程状态
+专项事实按以下 owner 查询：
 
-- `backend\src` 公共底座已初始化。
-- 已具备 NestJS 启动入口、根模块、全局应用配置、健康检查、配置加载与校验、MongoDB 连接底座、全局 ValidationPipe、全局异常过滤器和 Storage 公共模块。
-- `backend\src\modules` 当前包含 `storage`、`scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains`、`reports`、`clinical-history`、`users` 与 `auth`。
-- `StorageModule` 当前只提供 fake / OSS 底层 driver 结构和 `STORAGE_SERVICE` token，不提供独立、通用的 Storage 管理或上传 API；题目媒体业务上传链路由 `MediaModule` 基于该抽象提供。
-- `ScalesModule` 当前提供量表定义 / 量表版本 Schema、内部 `ScalesService`、MMSE / MoCA seed、只读 `ScaleSeedDataService`、`ScaleCatalogService`、内部只读 `PresentationAssetsService` 和公开只读 `ScalesController`。current MMSE seed 的 11 个正式 Item 均为 `requiresOperatorNote=false`，同时保留 `operator_note` evidence type 与可选 `operatorNote`；通用 readiness 对未来显式 `requiresOperatorNote=true` 的 Item 仍 fail closed。`GET /scales/available` 只返回安全摘要且不写数据库；量表初始化时才按需幂等物化对应 seed 版本。没有公共题目资产接口或静态目录挂载。
-- `PatientsModule` 当前提供患者 / 受试者基础档案 Schema、内部读取底座，以及 `GET /patients`、`POST /patients`、`GET /patients/:patientId` 三个患者最小公开 API。
-- `AssessmentsModule` 当前除访视 / 量表实例 / 题目作答底座外，已注册 WP-10 `PatientAdministrationSession`、会话 Service、患者专用 Guard、staff / patient Controller 与 Cookie 工具。患者会话独立于既有 staff `Session`；C1 在既有会话内增加当前 run 的 `stepEvidenceRefs` 和完成媒体门禁，仍不写 `ItemResponse`。
-- A16 在 `AssessmentsModule` 提供 `ScaleInstanceSubmissionController`、`ScaleInstanceSubmissionService`、`ScaleInstanceSubmissionBarrierService`、纯 readiness / barrier 函数、提交 DTO 与安全公开响应类型；开放 readiness GET 与 submit POST，并由 A30 的可恢复屏障协议完成跨父子集合线性化保护。
-- `MediaModule` 当前同时承载既有 A15 staff 媒体链、WP-10-C1 患者当前步骤媒体链与 WP-10-C2 转写 / 复核链：患者上传继续复用同一 `MediaEvidenceService` 与私有 Storage；staff 媒体响应增加安全 audioMetadata / transcription，另提供显式 transcribe、最新会话 review 与受控 adoption。只读复核和机器候选均不写正式答案；adoption 只把同一个合法患者 photo / handwriting Evidence ID 绑定到既有 evidenceRef。
-- `ScoringModule` 当前在计分结果快照 Schema、`ScoringService` 与 `summarizeItemScores()` 通用汇总基础上，提供 A17 阶段性 workflow、A18 `ScoreReviewWorkflowService`、纯评分 / 人工复核函数与安全 public mapper；公开 compute / latest / manual-review / confirm，不提供 lock、void、重跑、认知域或报告接口。
-- `CognitiveDomainsModule` 当前在认知域结果 Schema、内部读取和 `summarizeDomainScores()` 基础上，新增 A19 Controller、Workflow、确认评分纯映射 / 校验、安全 public mapper 与 runNo=1 创建能力；公开认知域 compute / latest，不提供人工修改、确认、锁定、作废、重算或报告接口。
-- `ReportsModule` 当前提供 A20 generation / latest、A21 review、A22 lock、A23 source freeze、A24 archive、A25 corrections、A26 replacement lifecycle，以及 A27 报告版本列表与指定历史详情。无 Schema 的 `ClinicalHistoryModule` 提供患者 assessment-history 与 A28 follow-up-trends；WP-04 后端范围已完成。
-- `UsersModule` 当前只提供系统账号 `User` Schema 与内部 `UsersService` 读取、规范化和安全 mapper 底座，不提供公开用户管理接口。
-- `AuthModule` 当前提供服务端 `Session` Schema、内部 `AuthService`、基础认证上下文、`@Public()` / `@Roles()` / `@CurrentUser()` 装饰器、`SessionAuthGuard`、`RolesGuard` 与 `AuthController`；公开最小认证 API `POST /auth/login`、`POST /auth/logout`、`GET /auth/me`，且未注册全局 Guard。
-- SMS Service 与 LLM Service 仍未实现；`MediaModule` 已通过 fake / OSS Storage abstraction 提供题目媒体业务上传、短期访问、作废和重传链路。
-- 本地默认后端端口为 `5002`。
-- 本地默认前端 origin 为 `http://localhost:3002`。
-- test 数据库用途已分为 `standard_test` → `cogmemory_ad_test` 与 `browser_acceptance` → `cogmemory_ad_browser_test`；未显式指定的 `NODE_ENV=test` 进程默认 `standard_test`。配置 URI 在连接前按固定映射校验，连接后再按 Mongoose `connection.name` 校验。
-- `npm run start:browser-test` 是 Browser test backend 专用入口：仅接受 Browser app 用户及目标库 `readWrite` 角色，通过实际库名与角色门禁后才监听；当前所有 Browser fixture CLI 仅接受 Browser db_admin 用户及目标库 `dbOwner` 角色，具体 CLI 与 Profile 以当前代码和 testing playbook 为准。
-- 当前报告接口为十一个，另有患者历史评估与基础随访趋势两个接口；WP-10 提供十二个 staff 会话 / 步骤控制接口和六个 patient 会话 / 步骤 / 资产 / evidence 接口。staff 入口继续显式使用 `SessionAuthGuard` + `RolesGuard`，patient 入口使用独立患者 Cookie Guard。
-- A27 已实现患者历史评估、完整报告版本链与指定历史详情；A28 已实现 Visit 保留式基础随访趋势、稳定 source/dataStatus 与相邻 exact trace/domain mapping 可比性。
-- D-038 已实施：`standard_test` 与 `browser_acceptance` 双库、Browser app / db_admin 双角色及独立进程隔离结构均已存在，建连前后库名与角色门禁生效。
-- 当前验证规则与仍待验边界以 frontend / backend testing playbook 为准；已关闭阶段的详细执行证据由 Git 历史和当前测试资产追溯，本文不保存测试流水。
-- 后端 TypeScript 编译根目录为 `.`，`outDir` 保持 `./dist`，因此 `src/main.ts` 编译后的主入口产物为 `dist/src/main.js`。
-- `package.json` 中 `start:prod` 保持指向 `./dist/src/main.js`，当前 build 产物路径已与该启动路径对齐。
-- `tsBuildInfoFile` 保持 `./dist/tsconfig.build.tsbuildinfo`；`dist` 与 `*.tsbuildinfo` 均作为生成物处理，不作为项目源文件纳入版本库。
-- 用户已补充验证 `npm run start:prod` 本地启动成功；该验证只代表公共底座本地基础启动链路通过，不代表真实生产环境部署完成。
-- 当前不得写成完整业务后端已经实现。
+- 产品阶段、工作包状态与当前主线见[路线图](./handoff-roadmap.md)。
+- 受监督患者施测的稳定业务、安全、媒体、逐题及 F2 / F3 合同见[受监督患者施测合同](./handoff-patient-administration-contract.md)。
+- endpoint、guard、请求 / 响应及错误边界见[后端 API 地图](./handoff-backend-api-map.md)。
+- DTO、response 字段与 validation 见[后端 DTO 速查表](./handoff-backend-dto-cheatsheet.md)。
+- Service 职责、调用关系与一致性机制见[后端 Service 职责地图](./handoff-backend-service-map.md)。
+- 环境、数据库用途、端口与 Storage driver 配置见[后端环境与配置矩阵](./handoff-backend-config-matrix.md)。
+- 历史决策及形成背景见[后端关键决策](./handoff-backend-decisions.md)。
+- 测试治理、数据库隔离、fixture、verifier、cleanup 与 current / historical evidence 见[后端验证手册](./handoff-backend-testing-playbook.md)和[前端验证手册](./handoff-frontend-testing-playbook.md)。
+- 当前实现细节以 `backend/src` 与 Git 为最终投影和演进追溯来源。
 
-## 3. 当前已确认后端事实
+项目级采用 `reference, don't restate`：本快照只保留理解当前后端所需的模块级事实，专项 owner 已完整维护的细节不在此复制。
 
-- 项目名称为 CogMemory AD / 智忆评。
-- health 响应 service 为 `cogmemory-ad-backend`。
-- MongoDB 当前命名口径包含 development 的 `cogmemory_ad_dev`、普通自动化测试的 `cogmemory_ad_test`、Browser 验收的 `cogmemory_ad_browser_test` 和 production 的 `cogmemory_ad`。
-- 配置模块中的 Session cookie 默认名为 `cogmemory_ad_session`；A11 已将 `AuthModule` 内部 `SESSION_COOKIE_NAME` 统一为 `cogmemory_ad_session`，与当前项目配置默认口径一致。
-- Storage object prefix 默认值为 `cogmemory_ad`。
-- development / test 默认 `STORAGE_DRIVER=fake`，production 默认 `STORAGE_DRIVER=oss`。
-- OSS、SMS、LLM 配置均为占位或示例口径，不包含真实密钥。
-- SMS Service 与 LLM Service 仍未实现；A15 媒体业务上传接口已通过既有 fake / OSS Storage abstraction 实现，且未新增 Storage interface、driver 或配置。
-- 当前 A12-A30 已开放既有评估闭环、单题草稿 CAS 与持久化计时合同、父实例 + 固定题目 scope 的提交写屏障、报告 generate / latest / edit / submit / confirm / lock / freeze-sources / archive / corrections、合法 V2+ replacement 的 A21-A24 生命周期复用，以及历史读取与基础随访趋势；WP-12 的 Visit maintenance 窄切片已提前实现，但 WP-12 整体仍未完成。前端当前事实由 frontend snapshot 与 maps 维护。后端仍未实现的用户管理、患者编辑、Visit maintenance 窄切片之外的完整运营 / 通用状态流转、评分 lock / void / 重跑、认知域人工修改 / 确认 / 锁定 / 重算、报告 unlock / unfreeze / unarchive、correction cancel / branch、PDF、疾病诊断或 AI 等边界以 roadmap 和对应 maps 为准。
-- 当前 `start:prod` 与 TypeScript build 主入口产物路径均指向 `dist/src/main.js`，并已完成本地启动验证。
-- 本次仅使用指定外部 GitHub commit `b302b8af7b7ac9cc558939dc1b38ace0976c65b3` 作为后端公共底座来源，不继承其业务事实。
+## 2. 当前工程结构
 
-## 4. 当前 scales 模型底座
+- 后端基于 NestJS、TypeScript 与 MongoDB / Mongoose，应用由根模块组合公共底座和各业务模块。
+- 全局底座包括统一配置加载与 schema 校验、数据库连接门禁、请求 validation、统一异常响应和健康检查。
+- `backend/src/modules` 当前包含 `storage`、`scales`、`patients`、`assessments`、`media`、`scoring`、`cognitive-domains`、`reports`、`clinical-history`、`users` 与 `auth`。
+- Storage 通过私有抽象隔离业务代码与 fake / OSS driver；具体环境选择由配置 owner 维护。
+- Controller、DTO、Schema 与 Service 按模块分层；具体 endpoint、字段和调用关系分别由对应 maps 与 current code 维护。
 
-- `ScaleDefinition` Schema 位于 `backend\src\modules\scales\schemas\scale-definition.schema.ts`。
-- `ScaleDefinition` collection 为 `scale_definitions`，使用 `timestamps: true`，不在 class 中重复声明 `createdAt` / `updatedAt`。
-- `ScaleDefinition` 当前覆盖稳定量表编码、名称、简称、说明、分类、状态、当前版本引用、排序和标签。
-- `ScaleDefinition` 当前索引为 `{ code: 1 }` unique 与 `{ status: 1, sortOrder: 1 }`。
-- `ScaleVersion` Schema 位于 `backend\src\modules\scales\schemas\scale-version.schema.ts`。
-- `ScaleVersion` collection 为 `scale_versions`，使用 `timestamps: true`，不在 class 中重复声明 `createdAt` / `updatedAt`。
-- `ScaleVersion` 当前覆盖量表引用、量表 code、版本、CRF 版本、评分规则版本、字段编码版本、来源材料、状态、总分范围、分组配置、题目配置、可选 `presentationPackageKey`、可选 `patientAdministrationSteps`、质控规则、报告规则、科研导出映射、生效时间和退役时间；患者步骤子文档 `_id: false`，只含步骤、题目、患者安全文字、资产键、作答模式和推进方。
-- `ScaleVersion` 当前索引为 `{ scaleDefinitionId: 1, version: 1 }` unique、`{ scaleCode: 1, version: 1 }`、`{ scaleCode: 1, status: 1 }`。
-- 内嵌 group / item 配置已预留指导语、作答类型、得分范围、是否计入总分、认知域、证据类型、计时、图片上传、平板手写、操作者备注、质控规则、报告规则和科研导出映射等字段。
-- `backend\src\modules\scales\seeds` 中 MMSE 1.0 绑定 `mmse-1.0-package-001` 和 19 个患者安全呈现步骤，全部 22 个 released 资产均被引用；`mmse-naming`、`mmse-reading-command`、`mmse-three-step-command` 均由患者正常推进，其 `responseMode` 仍分别为 speech / staff_observation / staff_observation；阅读闭眼步骤不绑定音频。MoCA 1.0 仍无 package 或步骤字段，不写空配置。
-- `ScaleSeedDataService` 当前提供内存 seed 的只读读取与纯校验；呈现校验覆盖 package / steps 成对、步骤键和连续顺序、同版本 item 引用、枚举、同一步资产键去重、非空患者文字、阅读项安全合同和显式评分答案不泄漏。通用 seed validator 不读取 manifest 或文件系统。
-- `ScaleCatalogService` 的公开目录仍只返回名称、版本追溯、总分范围、分组 / 题目数量和能力布尔值，不返回呈现 package、患者步骤、患者文字、资产或评分配置。
-- `ensureSeedScaleVersionMaterialized()` 新插入 MMSE 时随 `$setOnInsert` 写入完整 presentation config；已物化配置与 current seed 一致时零额外 presentation 写。package / steps 缺失、部分缺失或 stored drift 均返回 `SCALE_CATALOG_VERSION_CONFLICT`，不自动 repair 或 migration。MoCA 仍不写 presentation config，`currentVersionId` 仍只在为空或缺失时设置。
-- 该物化能力仅由 A13 初始化调用，不是全量 seed runner，也不在应用启动时扫描。`presentation-assets:verify` 是不连接数据库、不可写入的 released package 校验 CLI，不是 seed / migration runner。
-- `PresentationAssetsService` 从 backend 工作目录按 `process.cwd()/../.local/presentation-assets` 确定私有根，只按精确 packageKey 定位；校验 released / 整包审核、身份、受控相对路径、MIME / 扩展名、文件存在与 SHA-256，并按 assetKey 提供内部只读流。当前 MMSE `package-001` 已 released；服务不读取 PDF、不生成或修复资产、不访问 OSS、不在启动时强制验证。
-- MMSE / MoCA 资料治理遵循 D-018：项目“来源”中的 `MMSE+MoCA.pdf` 是权威原始资料；仓库根目录与 `docs`、`backend`、`frontend` 同级的 `.local/reference/MMSE+MoCA.pdf` 是 Codex 本地工作镜像，不是第二套业务基线，并由根目录 `.gitignore` 的 `/.local/reference/` 排除而不进入 Git。
-- 涉及 MMSE / MoCA 题项、指导语、评分规则、CRF 编码、图片素材或种子数据时，必须同时实际参阅该 PDF；seed 中的 `sourceDocument` 或其他来源标识只用于追溯，不能代替阅读 PDF，也不得只依据 seed、页面、handoff、代码命名或模型记忆推断。
-- 最新代码和 handoff 是已演进落地的当前实现事实和业务契约；PDF 的明显原始编号或排版错误不得覆盖 MMSE“表达”第 9 项、“绘图”第 10 项、MoCA 抽象项 `N1.2.12.1` / `N1.2.12.2` 等已确认并落地的修正及内部稳定语义编码。如项目来源、本地工作镜像、handoff 与代码出现无法合理解释的不一致，必须停止相关实现并报告差异。
-- MMSE seed 当前来源标识为 `MMSE+MoCA.pdf`，版本为 `1.0`，总分范围 0-30，包含定向力、即刻回忆、注意力和计算力、回忆、语言、视空间 / 绘图分组；题目覆盖时间定向、地点定向、即刻回忆、连续减 7、延迟回忆、命名、重复、阅读并执行、三步指令、表达 / 写完整句子和绘图。
-- MoCA seed 当前来源标识为 `MMSE+MoCA.pdf`，版本为 `1.0`，总分范围 0-30，包含视空间与执行功能、命名、即刻记忆、注意、语言、抽象、延迟回忆和定向分组；题目覆盖交替连线、立方体、钟表、命名、两次即刻记忆记录、数字广度、警觉性、连续减 7、句子复述、词语流畅性、两个抽象项、延迟回忆和定向；`N1.2.15` 总分字段保留在 reporting / research export 映射中。
-- 本节的 scales/seed 能力本身不提供全量 seed runner、完整题目配置公开 API、批量或自动保存、媒体批量 / 分片 / 直传 / 物理删除 / 原子替换、评分、认知域、报告或 AI；这些跨域能力以各自模块和 A15-A28 当前实现为准。
+## 3. 当前主要模块与能力
 
-## 5. 当前 patients / assessments 运行时与作答模型底座
+### 3.1 Scales
 
-- `Patient` Schema 位于 `backend\src\modules\patients\schemas\patient.schema.ts`。
-- `Patient` collection 为 `patients`，使用 `timestamps: true`，不在 class 中重复声明 `createdAt` / `updatedAt`。
-- `Patient` 当前覆盖受试者稳定编码、展示名、来源类型、性别、出生日期、受教育年限、利手、状态、标签、备注、脱敏外部引用和扩展 metadata。
-- `Patient` 当前索引为 `{ subjectCode: 1 }` unique、`{ status: 1, subjectCode: 1 }`、`{ sourceType: 1, status: 1 }`。
-- `PatientsController` 当前公开患者分页列表、创建和详情读取；列表支持 `page`、`pageSize`、`keyword`、`status`、`sourceType`，默认按 `subjectCode` 升序。创建只接受确认的结构化字段，`subjectCode` 使用 trim + uppercase，`status` 固定为 `active`，重复编号统一为 `PATIENT_SUBJECT_CODE_CONFLICT`。
-- 患者公开 mapper 不返回内部 `externalRefs`、`metadata`、Mongoose document 字段或 `__v`；详情相较列表额外返回 `notes`。
-- `AssessmentVisit` Schema 位于 `backend\src\modules\assessments\schemas\assessment-visit.schema.ts`。
-- `AssessmentVisit` collection 为 `assessment_visits`，使用 `timestamps: true`，不在 class 中重复声明 `createdAt` / `updatedAt`。
-- `AssessmentVisit` 当前覆盖患者引用、受试者编码快照、访视编码、访视类型、状态、评估日期、开始 / 完成 / 锁定 / 作废时间、操作者快照、临床上下文、备注和扩展 metadata。
-- `AssessmentVisit` 当前索引为 `{ visitCode: 1 }` unique、`{ patientId: 1, assessmentDate: -1 }`、`{ subjectCode: 1, assessmentDate: -1 }`、`{ status: 1, assessmentDate: -1 }`。
-- `AssessmentVisitsController` 当前公开患者下访视分页列表、创建、访视详情、有限编辑、物理删除、void 和量表实例初始化；详情同时返回服务端权威的 Visit maintenance eligibility，列表支持 `page`、`pageSize`、`status`、`visitType`、`dateFrom`、`dateTo`，默认按 `assessmentDate` 和 `_id` 倒序。
-- 访视创建从路径取得 patientId、从患者档案取得 subjectCode、固定初始化 `draft`，并由当前认证用户生成 operatorSnapshot；客户端不能写 operatorSnapshot、状态、状态时间、clinicalContext 或 metadata。稳定业务错误包括 `PATIENT_NOT_FOUND`、`PATIENT_NOT_ACTIVE`、`VISIT_CODE_CONFLICT`、`INVALID_DATE_RANGE`。
-- Visit edit 仅适用于服务端判定仍可编辑的尚未开始 Visit；physical delete 仅适用于空或 initialized-only Visit，并只级联清理该 Visit 的初始化 ScaleInstance / ItemResponse skeleton。一旦形成实际评估事实即不再物理删除，已开始 Visit 使用保留既有 ScaleInstance、ItemResponse、Session、Evidence、评分和报告等事实的 void。
-- 访视公开 mapper 不返回 `clinicalContext`、`metadata`、Mongoose document 字段或 `__v`。
-- `ScaleInstance` Schema 位于 `backend\src\modules\assessments\schemas\scale-instance.schema.ts`。
-- `ScaleInstance` collection 为 `scale_instances`，使用 `timestamps: true`，不在 class 中重复声明 `createdAt` / `updatedAt`。
-- `ScaleInstance` 当前覆盖访视引用、患者引用、受试者编码快照、量表定义引用、量表版本引用、量表 code、量表版本、实例编码、实例序号、状态、施测模式、版本追溯快照、时间字段、用时、操作者快照、进度摘要占位、质控摘要占位、备注、private nullable `submissionWriteBarrier` 和扩展 metadata。屏障保存固定 scope、首次 actor / 时间与阶段，不由公开 mapper 返回。
-- `ScaleInstance` 当前索引为 `{ instanceCode: 1 }` unique、`{ assessmentVisitId: 1, scaleCode: 1, instanceNo: 1 }` unique、`{ patientId: 1, scaleCode: 1, startedAt: -1 }`、`{ status: 1, updatedAt: -1 }`、`{ scaleCode: 1, scaleVersion: 1 }`。
-- `ItemResponse` Schema 位于 `backend\src\modules\assessments\schemas\item-response.schema.ts`。
-- `ItemResponse` collection 为 `item_responses`，使用 `timestamps: true`，不在 class 中重复声明 `createdAt` / `updatedAt`。
-- `ItemResponse` 当前覆盖访视引用、量表实例引用、患者引用、受试者编码快照、量表定义引用、量表版本引用、量表 code / version、量表实例编码快照、题目编码、CRF 编码、题目组、题目标题、题目顺序、作答类型、是否计入总分、认知域编码、题目配置快照、版本追溯、作答状态、作答来源、原始作答、结构化作答、文本记录、缺失原因、独立 `draftRevision` / `draftSavedAt`、单题得分、分步结果、提示后表现、含 `timerState` / `lastResumedAt` 的计时快照、证据引用占位、操作者备注、private nullable `submissionWriteBarrier`、质控占位、metadata、锁定和作废时间。历史缺失 revision / 保存时间按 0 / null 读取，不做迁移或 GET 回写。
-- `ItemResponse` 当前索引为 `{ scaleInstanceId: 1, itemCode: 1 }` unique、`{ assessmentVisitId: 1, scaleInstanceId: 1, itemOrder: 1 }`、`{ patientId: 1, scaleCode: 1, itemCode: 1 }`、`{ scaleCode: 1, itemCode: 1 }`、`{ status: 1, updatedAt: -1 }`、`{ scaleInstanceId: 1, countsTowardTotal: 1 }`。
-- 当前已建立 `Patient` -> `AssessmentVisit` -> `ScaleInstance` -> `ItemResponse` 的运行时 ObjectId 引用关系，并在 `ScaleInstance` 与 `ItemResponse` 中保存量表定义、量表版本和版本追溯快照字段。
-- `AssessmentsService` 当前提供 `ItemResponse` 的最小内部读取能力：规范化 item code、按量表实例和题目编码读取单条作答、按量表实例读取作答列表、按量表实例读取已计分作答列表、按访视读取作答列表；返回结果经过 mapper，不直接返回完整 Mongoose document。
-- `AssessmentExecutionService` 当前提供内部评估执行初始化编排能力：规范化 subject / instance / scale code，基于 `ScaleSeedDataService` 读取并校验 MMSE / MoCA seed，构建不写库的 `ScaleExecutionPlan`，并在内部写库方法中先创建 `ScaleInstance`、再批量创建初始 `ItemResponse` 骨架。
-- `AssessmentExecutionService` 生成的初始 `ItemResponse` 骨架会从 seed 复制 itemCode、CRF 编码、分组、标题、顺序、作答类型、是否计入总分、认知域、item 配置快照、版本追溯、score 初始快照、连续减 7 / 钟表等分步结果占位、MoCA 延迟回忆提示后表现占位、计时占位和 photo / handwriting / duration / raw_text / operator_note 等 evidenceRefs 占位。
-- `AssessmentExecutionService` 仍是内部写库能力，由 `AssessmentScaleWorkflowService` 调用；不创建 Patient、AssessmentVisit、MediaEvidence、ScoreResult、CognitiveDomainResult 或 ClinicalReport。`ItemResponse.insertMany()` 失败时，会按本次 `scaleInstanceId` 尝试删除可能已创建的 ItemResponse，再删除本次 ScaleInstance，并重新抛出原始错误供上层转换；不删除其他实例、访视、患者或目录数据。
-- `AssessmentScaleWorkflowService` 依次校验患者存在且 active、访视联合归属与 draft / in_progress 状态、可用 seed / version、同访视同 scaleCode 不重复；服务端生成 subjectCode、definition / version 引用、`INST-{VISIT_ID_UPPERCASE}-{SCALE_CODE_UPPERCASE}-1`、instanceNo=1、draft 状态和操作者快照，再调用执行 Service。响应仅返回安全 scale / ScaleInstance 摘要与创建题目数量。
-- `GET /patients/:patientId/visits/:visitId` 先确认患者存在，再以 patientId + visitId 联合查询访视，不泄露跨患者归属；量表实例按 scaleCode、instanceNo 排序。公开 mapper 只输出版本追溯、操作者和有限非负 progress 字段，不返回 definition / version ObjectId、metadata、qualityControlSummary 或 ItemResponse 全量数据。
-- A14 `GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId` 校验 patient / visit / instance 完整归属，从实例的 scaleCode / scaleVersion 读取已物化 `ScaleVersion`，返回安全 scale 身份、排序后的 groups、显式题目 config、现有草稿与实际进度；历史只读不因患者 inactive / archived 或实例 completed / locked / voided 被拒绝。
-- A14 公开题目 mapper 只提取 prompt、instruction、scoreRange、evidenceTypes、计时 / 图片 / 手写 / 操作者备注能力和草稿槽位，并安全公开 `draftRevision` / `draftSavedAt` 与规范化 timing；非法 legacy revision / 日期保守归一为 0 / null，旧 timing 只读归一但不回写。mapper 不透传 itemConfigSnapshot、scoringRule、qualityControlRule、reportingRule、researchExportField、expectedValue、正确答案、score、isCorrect、scoreValue、qualityControlHints、metadata、内部 ObjectId 或 `__v`。
-- A14 PATCH 要求必填安全非负整数 `expectedRevision`，并只允许 rawResponse、structuredResponse、responseText、isMissing / missingReason、既有 step 的 actualValue / note、既有 prompt 的 responseAfterPrompt / note、timing、operatorNote 与 markAsAnswered；expectedRevision 不属于业务草稿，单独提交仍为 `ITEM_RESPONSE_EMPTY_PATCH`。JSON 值经过普通对象、危险 key、深度、数组 / key / 字符串和 32768 字节限制后递归克隆。
-- A29 / A30 保存先完成既有归属、状态、父 / 子屏障、草稿结构和 timing 校验，再以 ownership、可编辑 status、`lockedAt: null`、父 / 子 barrier open 与 revision 组成单条 `findOneAndUpdate` CAS；expectedRevision=0 兼容字段缺失或 0。成功写入字段级草稿变化、`$inc draftRevision: 1` 与服务端 `draftSavedAt`，竞争 miss 返回 409 / `ITEM_RESPONSE_DRAFT_CONFLICT`，不覆盖、不合并、不自动重试；miss 后发现生命周期或任一合法 / 损坏屏障时优先返回 409 `SCALE_INSTANCE_NOT_EDITABLE`。
-- timing 非 null 现在是完整快照，显式包含 `timerState`、`startedAt`、`lastResumedAt`、`completedAt`、`durationMs`、`timerSource`；纯函数校验 idle / running / paused / completed 不变量与锁定转换，`timing=null` 表示复位。计时保存不自动 answered、提交、评分或修改 Visit / ScaleInstance startedAt。
-- PATCH 要求 Patient active、Visit / ScaleInstance 为 draft 或 in_progress、ItemResponse 为 not_started / in_progress / answered；资源归属不匹配统一按对应资源不存在处理。not_started 在有效草稿更新后进入 in_progress，markAsAnswered 需存在有效作答并进入 answered，answered 后继续编辑不回退；缺失记录清除实际作答值但保留 timing / operatorNote 与 step / prompt note。
-- `AssessmentsService.countItemResponseProgress()` 以实例下实际 ItemResponse 数量作为 totalItemCount，以 answered / scored 状态数量作为 answeredItemCount；A13 访视详情、A14 执行详情与 PATCH 响应均使用实时派生值，不回写 `ScaleInstance.progress` Mixed 快照。
-- A30 submission 使用父实例 + 固定题目 scope 的持久化可恢复屏障，而非 Mongo transaction、内存锁、`lockedAt` 或后台轮询。父 / 子每次变化均为精确条件原子更新；部分阶段失败保留可恢复事实或执行同 token 释放。
-- A14 / A29 / A30 是后端逐题草稿、并发控制与提交屏障能力，本身不等于完整患者管理；草稿 PATCH 不自动修改访视 / 实例 status、不设置实例 startedAt、不批量保存，也不触发媒体、计分、认知域、报告或 AI。前端 B18 已适配 `expectedRevision`、`draftRevision` / `draftSavedAt` 和完整 timing 合同，并关闭 reconciliation single-flight 与 P9 媒体失败 Browser gap；B18 补充验证闭合，WP-03 已完成。Batch E 的 8 项历史真实设备或人工候选仍为 `pending`，当前主要归属为 WP-08；WP-08 启动时须按最终患者施测合同重新治理适用候选。
+- `ScalesModule` 维护版本化量表定义和运行目录，当前包含 MMSE / MoCA seed、按需物化能力与安全的量表目录投影。
+- 题目呈现资产通过内部私有能力按量表版本和当前施测上下文受控读取，不作为公共静态资源或通用资产管理能力。
+- MMSE 已具备受监督患者施测所需的 presentation config；逐题、媒体、播放和推进语义只由[受监督患者施测合同](./handoff-patient-administration-contract.md)与 current seed / code 维护。
 
-### A16 submission readiness 与实例完成
+### 3.2 Patients / Assessments
 
-- `GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/submission-readiness` 只读检查完整归属、ScaleDefinition / ScaleVersion 绑定、项目集合、answered / scored、有效作答、缺失原因、必填步骤、计时、媒体 evidenceRef 与操作者备注；不写数据库，不返回作答、expectedValue、scoringRule、分数、mediaEvidenceId、objectKey 或 metadata。
-- photo / handwriting 同时配置时为 `one_of`，单独配置时必须满足对应类型；attached 必须同时有 mediaEvidenceId，readiness 不直接查询 `MediaEvidence`。
-- `POST .../:scaleInstanceId/submit` 要求 `confirm=true`、active Patient、draft / in_progress Visit 与 ScaleInstance。首次 readiness 后固化稳定排序、无重复的完整 ItemResponse scope，并以 UUID barrierId、首次 actor / 时间原子建立父 `fencing`；随后逐项写入同 token 子屏障、重读验证并推进父 `fenced`。
-- 父为 `fenced` 后重新读取固定 scope 和配置执行第二次实时 readiness；仍 ready 时，以首次 barrierId 作为 submissionId、首次 actor / startedAt 作为提交事实，单条 ScaleInstance CAS 同时写 completed、timing、progress、`metadata.submission` 与父 `completed`。completed 后子屏障保留，暂停后恢复的 A14 / A15 写仍被永久拒绝。
-- 第二次 readiness 失效时，父 CAS 进入 `releasing`，只清除同 barrierId 子屏障，确认固定 scope 全部 open 后再清父；释放中断可恢复，并允许同一请求在释放完成后建立新 token 重试。其他 token 不被删除；完成与释放只能由父状态 CAS 的一个方向胜出。
-- submission metadata 仍只含 submissionId、submittedAt、submittedBy / name / role 与五项 readinessSummary；点路径写入保留既有 metadata，不覆盖 operatorSnapshot，不设置 lockedAt，不修改 AssessmentVisit 或 ItemResponse 业务字段。父 / 子 barrier、scope 与内部 actor 字段均不公开。
-- completed 重复提交幂等，不重写 submissionId、completedAt、durationMs 或首次 actor；并发请求收敛到首次屏障事实。无 A30 字段的 legacy completed 实例继续使用既有 audit / completedAt fallback；非法父 / 子屏障 fail closed 为 500，不被当作 open。当前不使用 Mongo transaction、分布式锁或后台任务。
-- startedAt 优先保留实例合法值，否则采用最早合法题目 timing.startedAt；无法确定时 durationMs 保持 null 并产生 warning，不伪造零时长。A16 不执行评分，不创建 ScoreResult、CognitiveDomainResult、ClinicalReport。
+- `PatientsModule` 提供患者基础档案的最小创建与读取能力；完整编辑、归档、合并等运营能力尚未形成。
+- `AssessmentsModule` 覆盖 Patient、Visit、ScaleInstance 与 ItemResponse 的执行底座，包括访视创建 / 读取及已落地的有限维护、量表实例初始化、正式答案草稿和整体提交。
+- 正式 ItemResponse 写入与整体提交链已存在；提交一致性由可恢复写屏障保护，但具体 CAS、状态机和恢复算法只由 Service map 与 current code 维护。
+- 受监督患者施测会话已接入 Assessments：患者短期会话与 staff 登录会话分离，患者侧原始事实不直接写入正式 ItemResponse。
+- 患者施测 completed 后的临床复核继续复用既有 ScaleInstance 页面、A14 草稿、readiness 与 A16 整体提交链，不建立第二套正式答案工作流；详细边界见[受监督患者施测合同](./handoff-patient-administration-contract.md)。
 
-## 6. 当前 media 媒体证据模型与 A15 API
+### 3.3 Media / Patient Administration
 
-- `MediaEvidence` Schema 位于 `backend\src\modules\media\schemas\media-evidence.schema.ts`。
-- `MediaEvidence` collection 为 `media_evidences`，使用 `timestamps: true`，不在 class 中重复声明 `createdAt` / `updatedAt`。
-- `MediaEvidence` 当前覆盖患者、访视、量表实例、题目作答、量表定义和量表版本引用；同时保存受试者编码、量表 code / version、实例编码和题目编码快照。
-- 当前已通过 `MediaEvidence.patientId`、`assessmentVisitId`、`scaleInstanceId` 与 `itemResponseId` 建立 `Patient` -> `AssessmentVisit` -> `ScaleInstance` -> `ItemResponse` -> `MediaEvidence` 的证据链 ObjectId 引用关系。
-- `MediaEvidence` 当前覆盖证据稳定编码、证据类型、采集方式、证据状态、存储状态、CRF 编码、题目组、题目标题、作答类型、是否计入总分、认知域编码、题目快照、版本追溯、存储对象元数据、图片元数据、平板手写轨迹元数据、采集上下文、操作者快照、患者施测来源上下文、音频时长辅助元数据、质量状态、质量提示占位、操作者备注、描述、扩展 metadata、锁定 / 作废 / 删除时间。`captureMode` 新增 `browser_audio_recording`，既有值语义不变。
-- `MediaEvidence` 当前内嵌 `MediaEvidenceVersionTrace`、`MediaStorageSnapshot`、`MediaImageMetadata`、`HandwritingTraceSnapshot`、`MediaCaptureContext`、`MediaOperatorSnapshot`、`MediaPatientAdministrationContext`、`MediaAudioMetadata` 与可选 `MediaEvidenceTranscription` 子文档，均使用 `_id: false`。transcription 只保存 not_requested / processing / succeeded / failed、候选 text、六个有限 errorCode、stub / bailian、model、请求 / 完成时间与请求操作者；不保存 request ID、usage、confidence、原始响应、签名 URL或历史数组。
-- `MediaEvidence` 当前索引为 `{ evidenceCode: 1 }` unique、`{ itemResponseId: 1, evidenceType: 1, status: 1 }`、`{ scaleInstanceId: 1, itemCode: 1, evidenceType: 1 }`、`{ assessmentVisitId: 1, createdAt: -1 }`、`{ patientId: 1, createdAt: -1 }`、`{ status: 1, updatedAt: -1 }`、`{ 'storage.objectKey': 1 }` sparse、`{ scaleCode: 1, itemCode: 1, evidenceType: 1 }`。
-- WP-10-C1 的 `PatientAdministrationSession.stepEvidenceRefs` 只保存 stepKey、stepRun、audio / photo / handwriting evidenceType、MediaEvidence ObjectId 与 uploadedAt；子文档 `_id:false`，未新增 collection 或 index。speech 要求当前 run audio，writing / drawing 要求当前 run photo 或 handwriting，staff_observation 不要求媒体，paused staff takeover 可绕过；redo 保留旧 run 引用但旧引用不能满足新 run。
-- 患者上传顺序固定为重新读取会话与权威步骤、只读解析唯一 `ItemResponse`、校验文件、写私有 Storage、创建 `MediaEvidence`、以同一会话 revision CAS 追加引用。CAS / 后续失败只删除本次 Evidence 与本次 objectKey；患者链不调用 A15 的 ItemResponse evidenceRef attach / clear / restore，不修改 `ItemResponse` 或 `ScaleInstance`。
-- `MediaEvidenceService` 在既有读取方法上新增完整 patient / visit / instance / item 归属查询、题目下未删除记录列表、当前 attached / locked 证据查询、创建、条件作废与仅供补偿的按 ID 删除；内部 Summary 不直接作为 HTTP 响应。
-- WP-10-C2 的转写只允许患者施测 `browser_audio_recording` audio、stored 私有对象、webm / ogg / m4a / mp3 与五分钟内已知时长；succeeded 重复请求幂等，failed 可显式重试，processing 使用 `max(120000, BAILIAN_TIMEOUT_MS*2)` 判 stale。claim 与完成均匹配完整 ownership、合法 evidence 状态和 requestedAt token；void / lock / submit 或 stale reclaim 后旧完成不能覆盖新事实。
-- `PatientAudioAsrClientService` 是单一具体客户端：test 强制 stub 且不生成签名 URL / 不发网络；bailian 使用 Node fetch、AbortController、固定非流式同步请求，只解析 `output.text`，不重试。技术失败写有限 failed 候选并保留录音；disabled / 配置缺失、业务状态或 CAS 冲突使用稳定 API 错误。
-- 完整 `MediaCaptureMode` 现可在 MediaEvidence 内部摘要中表达浏览器录音；ClinicalReport 仍只纳入既有 photo / handwriting，report draft builder 对意外进入的 `browser_audio_recording` 明确 fail closed，不映射、不静默降级，也不扩大报告 Schema。
-- 最新患者施测 review 由会话白名单事实、ScaleVersion 权威步骤、ItemResponse 安全状态与 MediaEvidence 引用联合形成；按 itemCode / step order 分组并保留 evidence-only 与 invalidated run。每个 evidence ref 必须匹配 patient / visit / instance / session / step / run / ID，否则返回 `PATIENT_ADMINISTRATION_STEP_INVALID`；投影不生成签名 URL，不返回 patientText、资产、评分、hash、Storage 路径或完整事件。
-- A15 六个接口统一位于 `/patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/item-responses/:itemResponseId/media-evidences`：GET 列表、POST multipart 上传、POST `:mediaEvidenceId/adopt`、GET `:mediaEvidenceId/access-url`、POST `:mediaEvidenceId/transcribe`、POST `:mediaEvidenceId/void`。
-- adoption 要求完整 ownership / editable / lock / 父子 submission barrier、attached / stored 且未锁定 / 作废 / 删除的 patient Evidence、最新 completed Session，以及对应 Item 下精确唯一、已有未失效 capture 的 step / run；仅支持当前 ref 仍 pending / missing + null 的 photo / handwriting。最终复用既有 evidenceRef CAS 与同一 MediaEvidence ID，不创建或复制 Evidence / Storage，不调用 Storage，不修改答案 / status / draft / operatorNote / score，不自动 markAsAnswered / submit / 评分；CAS 失败保留原患者 Evidence。
-- 上传主文件最大 10 MiB，仅允许 JPEG / PNG / WebP；校验 MIME 白名单、JPEG / PNG / WebP 魔数和 MIME / 实际格式一致性，并拒绝 JPEG EXIF / XMP、PNG eXIf / tEXt / zTXt / iTXt、WebP EXIF / XMP。主文件由服务端计算 SHA-256；不保存客户端原始文件名。
-- objectKey 使用经 `StorageConfigService.getObjectPrefix()` 校验的前缀、固定 `clinical-evidence` 目录、内部 ObjectId 与随机 UUID；不使用姓名、受试者编号、病历号、手机号、身份证号、备注或原始文件名。公开 mapper 不返回 objectKey、bucket、objectPrefix、originalFilename、checksum、trajectoryObjectKey、metadata、qualityHints 或数据库关联 ID。
-- handwriting 必须包含最终渲染图片，可选上传最大 2 MiB、MIME `application/json` 的轨迹；trajectoryFormat 仅 json / strokes，不接受 SVG。轨迹 JSON 拒绝危险 key、非有限数、非普通对象以及超出深度 10、数组 10000、对象 100 keys、总节点 50000、单字符串 2000 的内容，解析后递归克隆并重新 `JSON.stringify()` 为规范化 Buffer 再写 Storage。
-- 上传要求 Patient active，Visit / ScaleInstance 为 draft / in_progress，ItemResponse 为 not_started / in_progress / answered，父 / 子 submission barrier 均 open，并要求 evidenceRefs 中存在同类型 pending / missing 要求。相同题目与 evidenceType 已有 attached / locked 证据时返回冲突；最终通过 ownership、可编辑状态、父 / 子 barrier open 与 evidenceRefs 条件更新原子绑定并发边界。
-- 上传顺序为 Storage 主文件、可选轨迹、MediaEvidence 创建、ItemResponse evidenceRef 绑定；任一步失败只补偿本次新建记录与本次对象，不使用 Mongo transaction，不删除其他证据或其他业务数据。A15 上传 / 作废只点更新 evidenceRefs 与通用 updatedAt，不修改 `draftRevision` / `draftSavedAt`；A14 草稿保存也不覆盖或重建 evidenceRefs。媒体变化因此不使同一草稿版本失效；两类写入仍各自保持原有状态和锁边界。
-- access-url 仅允许 primary / trajectory，固定使用 `DEFAULT_SIGNED_URL_EXPIRES_SECONDS`；只有 attached / locked 且 storageStatus=stored 可访问。voided / deleted / pending / 存储缺失不可访问，轨迹不存在返回 `MEDIA_TRAJECTORY_NOT_FOUND`。
-- 作废要求 3-1000 字符原因，先在父 / 子 barrier open 条件下按当前 mediaEvidenceId 原子清除 evidenceRef 并恢复 pending，再将 MediaEvidence 标记 voided；metadata 仅写 voidReason / voidedBy / voidedAt。标记失败会尝试恢复同一空 pending 引用；该 restore 是 clear 后下游失败的受控补偿例外，不把普通业务写重新开放。正常作废保留 Storage 对象和审计记录，允许随后重新上传，不提供原子替换接口。
-- A15 不包含前端拍照 / 画布、图片重编码、PDF / SVG / 音频 / 视频、批量 / 分片 / 客户端直传、物理删除、OCR / AI、质量审核、评分、最终提交、认知域或报告。
+- `MediaModule` 以 `MediaEvidence` 和私有 Storage 为基础，覆盖临床工作端媒体采集、短期访问、逻辑作废与重传。
+- 受监督患者施测已具备患者 Evidence、音频 ASR 候选、安全 review projection 和受控 evidence adoption；原始媒体、机器候选与临床正式答案保持分离。
+- Patient Administration 的会话、准备、same / cross device、逐题 Evidence、异常控制、复核和 F2 / F3 稳定合同统一见[受监督患者施测合同](./handoff-patient-administration-contract.md)，本快照不维护其状态机或逐题矩阵。
 
-## 7. 当前 scoring 自动计分结果模型与通用汇总底座
+### 3.4 Scoring / Cognitive Domains
 
-- `ScoreResult` Schema 位于 `backend\src\modules\scoring\schemas\score-result.schema.ts`。
-- `ScoreResult` collection 为 `score_results`，使用 `timestamps: true`，不在 class 中重复声明 `createdAt` / `updatedAt`。
-- `ScoreResult` 当前覆盖患者、访视、量表实例、量表定义和量表版本引用，并在单题得分快照中可引用 `ItemResponse`。
-- 当前已通过 `ScoreResult.patientId`、`assessmentVisitId`、`scaleInstanceId`、`itemScores.itemResponseId` 建立 `Patient` -> `AssessmentVisit` -> `ScaleInstance` -> `ItemResponse` -> `ScoreResult` 的计分结果引用关系。
-- `ScoreResult` 当前保存受试者编码、量表 code / version、实例编码、计分结果编码、计分运行次数、计分状态、计分来源、计分模式、版本追溯、总分、单题得分快照、分项 / 分组得分快照、计算过程摘要、人工复核状态、质量状态、质量提示、操作者备注、metadata、确认 / 锁定 / 作废时间。
-- `ScoreResult` 当前内嵌 `ScoreVersionTrace`、`TotalScoreSnapshot`、`ScoreItemSnapshot`、`ScoreGroupSnapshot`、`ScoringComputationSnapshot` 与 `ScoreReviewSnapshot` 子文档，均使用 `_id: false`。
-- `ScoreResult` 当前索引为 `{ scoreResultCode: 1 }` unique、`{ scaleInstanceId: 1, runNo: 1 }` unique、`{ scaleInstanceId: 1, status: 1, createdAt: -1 }`、`{ assessmentVisitId: 1, scaleCode: 1, createdAt: -1 }`、`{ patientId: 1, scaleCode: 1, createdAt: -1 }`、`{ status: 1, updatedAt: -1 }`、`{ scaleCode: 1, scaleVersion: 1 }`、`{ qualityStatus: 1, updatedAt: -1 }`。
-- `ScoringService` 当前提供最小内部读取能力：规范化 score result code、按计分结果编码读取、按量表实例读取最新计分结果、按量表实例 / 访视 / 患者读取计分结果列表；返回结果经过 mapper，不直接返回完整 Mongoose document。
-- `ScoringService.summarizeItemScores()` 当前为不落库的通用计分汇总纯函数，只根据输入的单题得分快照汇总总分、分组分、计入 / 不计入总分数量、未评分数量、缺失数量、需复核数量和非有限数字 warning；不读取或修改 `ItemResponse`，不根据 `itemCode` 写死 MMSE / MoCA 专用规则，不从 raw response 推断单题对错。
-- A17 在不修改 ScoreResult Schema 的前提下新增阶段性评分闭环：`POST /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/score-results/compute` 与对应 `GET .../latest`。
-- 首次计算要求 active Patient、draft / in_progress / completed Visit、completed ScaleInstance，以及 definition / version / item set / ownership 一致；GET 历史读取允许 inactive / archived Patient 与 completed / locked / voided Visit / ScaleInstance。
-- 纯评分引擎不按 scaleCode / itemCode 分支，仅对严格可识别的 `multi_step_manual` 做有限 number / boolean 严格比较。MMSE 真实步骤分值直接求和；MoCA 使用 seed 中 `correctStepCount` 或 `correctStepCountMin/Max` 数组映射。字符串不匹配、不转换，不使用 eval / Function。
-- 其他人工模式、未知模式、missing 和既有 ItemResponse 题分进入安全 reviewQueue；`countsTowardTotal=false` / `raw_record_only` 过程项为 not_scored、不中总分且不进复核。
-- ScoreResult 首次创建固定 runNo=1、rule_based；状态为 computed / needs_review，来源为 auto_rule / mixed / manual。阶段性总分只累计可靠得分，存在待复核时 scorePercent=null、isComplete=false，A17 新建结果 isFinal=false。
-- compute 对 computed / needs_review / confirmed / locked 幂等返回；draft / voided 分别拒绝。创建依赖 `{ scaleInstanceId, runNo }` 唯一索引，duplicate key 后重读恢复；不使用 transaction、分布式锁或临时 draft。
-- public mapper 逐字段输出 item / group / total、computation、review 与稳定排序 reviewQueue；不返回原始作答、expectedValue、scoringRule、isCorrect、ItemResponse.score、metadata、qualityHints 或 reviewer 信息。未知 reason / warning 只映射为受控通用值，不原样透传。
-- A17 不修改 Patient、AssessmentVisit、ScaleInstance、ItemResponse、step / prompt 或媒体；不创建 CognitiveDomainResult / ClinicalReport，不执行教育校正、诊断或 AI。
-- A18 新增 `PATCH .../score-results/:scoreResultId/item-scores/:itemResponseId/manual-review` 与 `POST .../score-results/:scoreResultId/confirm`；路径由 `ScoreItemReviewParamDto` / `ScoreResultParamDto` 校验，body 分别为 `ReviewScoreItemDto` / `ConfirmScoreResultDto`，只接收分值 / 意见 / expectedUpdatedAt 或 confirm / 意见 / expectedUpdatedAt。
-- 人工评分仅允许 countsTowardTotal=true 的 needs_review / manual_scored 项目；分值必须是 finite number，并按当前 ScaleVersion item scoreRange 的 min / max / step 验证，0 为合法值。成功后为 manual_scored / operator，保留 A17 reason，调用 `summarizeItemScores(..., { provisional: true })` 重新派生 total / group / scorePercent、result / review / quality 状态与 scoringSource。
-- 每次人工修改向 `metadata.a18ManualReview.events` 追加 UUID 事件并保留其他顶层 metadata；单结果上限 500。内部可保存 previousScoreValue，但 public mapper 只公开每题最新 manualReview 摘要，不公开 metadata、历史事件或 previousScoreValue。非法 legacy metadata 在写入时以 `SCORE_RESULT_METADATA_UNSUPPORTED` 拒绝，在公开读取时安全忽略。
-- latest / compute / manual-review / confirm 安全响应的 scoreResult 均包含 `updatedAt`。两个 A18 写接口以 expectedUpdatedAt 加入完整 ownership + runNo=1 原子过滤；原子 miss 重读并返回 review / confirmation conflict，不自动覆盖其他操作者，不使用 transaction 或分布式锁。
-- 队列清空后结果回到 computed / reviewed / unchecked，仍 isFinal=false；confirm 会实时重新汇总并验证 item range / source、total / groups / scorePercent、A17 warning、Patient / Visit / completed Instance 状态。成功后 status=confirmed、confirmedAt / reviewer / final note 落库、qualityStatus=passed、isFinal=true，并写 `metadata.a18Confirmation` UUID 审计；qualityStatus=passed 只表示评分结果完整性和复核流程通过，不表示疾病结论。
-- confirmed / locked 重复 confirm 返回 alreadyConfirmed=true 且不改审计；受控 metadata 缺失时可从 confirmedAt + review 安全回退，confirmedAt 缺失则 `SCORE_RESULT_CONFIRMATION_AUDIT_UNAVAILABLE`。confirmed 不设置 lockedAt。A18 不修改 Patient、Visit、ScaleInstance、ItemResponse / score / step / prompt / media，不创建 CognitiveDomainResult 或 ClinicalReport。
+- `ScoringModule` 已提供基于正式提交结果的评分计算、最新结果读取、单题人工复核与显式确认。
+- `CognitiveDomainsModule` 已提供基于确认评分的认知域计算与最新结果读取。
+- 两个模块保持保守、可复核和非诊断边界；正式 submission 不自动触发评分或认知域计算。
 
-## 8. 当前 cognitive-domains 认知域结果与 A19 最小公开闭环
+### 3.5 Reports / Clinical History
 
-- `CognitiveDomainResult` Schema 位于 `backend\src\modules\cognitive-domains\schemas\cognitive-domain-result.schema.ts`。
-- `CognitiveDomainResult` collection 为 `cognitive_domain_results`，使用 `timestamps: true`，不在 class 中重复声明 `createdAt` / `updatedAt`。
-- `CognitiveDomainResult` 当前覆盖患者、访视、量表实例、计分结果、量表定义和量表版本引用，并在题目贡献快照中可引用 `ItemResponse` 与 `ScoreResult`。
-- 当前已通过 `CognitiveDomainResult.patientId`、`assessmentVisitId`、`scaleInstanceId`、`scoreResultId`、`itemContributions.itemResponseId` 建立 `Patient` -> `AssessmentVisit` -> `ScaleInstance` -> `ScoreResult` -> `CognitiveDomainResult` 的认知域结果引用关系，并保留必要题目作答引用。
-- `CognitiveDomainResult` 当前保存受试者编码、量表 code / version、实例编码、认知域结果编码、运行次数、计算状态、映射来源、映射模式、版本追溯、认知域得分快照、题目贡献快照、映射规则快照、计算过程摘要、人工复核状态、质量状态、质量提示、操作者备注、metadata、确认 / 锁定 / 作废时间。
-- `CognitiveDomainResult` 当前内嵌 `CognitiveDomainVersionTrace`、`CognitiveDomainScoreSnapshot`、`CognitiveDomainItemContributionSnapshot`、`CognitiveDomainMappingSnapshot`、`CognitiveDomainComputationSnapshot` 与 `CognitiveDomainReviewSnapshot` 子文档，均使用 `_id: false`。
-- `CognitiveDomainResult` 当前索引为 `{ domainResultCode: 1 }` unique、`{ scaleInstanceId: 1, runNo: 1 }` unique、`{ scoreResultId: 1, runNo: 1 }`、`{ scaleInstanceId: 1, status: 1, createdAt: -1 }`、`{ assessmentVisitId: 1, scaleCode: 1, createdAt: -1 }`、`{ patientId: 1, scaleCode: 1, createdAt: -1 }`、`{ status: 1, updatedAt: -1 }`、`{ scaleCode: 1, scaleVersion: 1 }`、`{ qualityStatus: 1, updatedAt: -1 }`、`{ 'domainScores.domainCode': 1 }`。
-- `CognitiveDomainsService` 保留既有规范化、按 code / 实例 / ScoreResult / 访视 / 患者读取能力，并新增按 scaleInstanceId + runNo 精确读取和受控 runNo=1 create；ObjectId 只在 Service 转换，不返回 Mongoose document，duplicate key 不向客户端泄露 Mongo 错误。
-- `summarizeDomainScores()` 已向后兼容增强 minScore：完整新输入按 `(score-min)/(max-min)` 计算并限制 0-100；旧调用方未提供 min 时保留 legacy score/max 语义；included 未评分时 percentage=null，excluded contribution 不进入 score / min / max。domainScores 按 domainCode 排序，contributions 按 itemOrder / itemCode / domainCode 排序。
-- A19 公开 `POST /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/cognitive-domain-results/compute` 与对应 `GET .../latest`。两个接口显式使用 Session / Roles Guard 和四个临床角色；compute 额外使用 `@CurrentUser()`，只把当前用户 ID 写入内部 computation.computedBy，公开响应不返回该字段。
-- 首次 compute 要求 active Patient、draft / in_progress / completed Visit、completed ScaleInstance，以及 runNo=1、confirmed / locked、confirmedAt 完整、qualityStatus=passed、reviewed、total 完整且 computation.warningCount=0 的 ScoreResult。latest 与既有结果幂等返回允许历史 Patient / Visit / Instance 状态。
-- 纯映射只读取 ScoreResult.itemScores 安全快照，并与实例绑定 ScaleVersion 的 itemCode 集合、countsTowardTotal、min/max 和 cognitiveDomainCodes 规范化集合一致性逐项校验；不读取 raw / structured / text 作答、missingReason、step / prompt 实际值、图片、手写、expectedValue、scoringRule、isCorrect 或 AI。
-- 当前 mappingSource=scale_config、mappingMode=item_domain_codes、domainMappingVersion=`a19-item-domain-codes-1.0`。domain code trim + lowercase，同 item 同 domain 去重；weight 固定 1。单 item 多 domain 时每个 domain 获得完整 score / max，不拆分、不平均，属于重叠归因；domainScores 不可跨 domain 相加解释为量表总分。
-- 首次创建固定 domainResultCode=`CDR-{UUID无连字符大写}`、runNo=1、status=computed、reviewStatus=not_required、qualityStatus=unchecked、isFinal=false，不设置 confirmedAt / lockedAt / voidedAt、operatorNote 或客户端 metadata。mappingSnapshot 保存固定 policy 与安全说明；computation 保存固定 rule / engine version、计数、时间和内部 computedBy。
-- computed / needs_review / confirmed / locked 既有结果返回 alreadyComputed=true 且不重算；draft / voided 分别拒绝。创建依赖既有 `{ scaleInstanceId, runNo }` 唯一索引，duplicate key 后重读；不使用 transaction、分布式锁、临时 draft 或 runNo=2。
-- public mapper 显式输出 domain score、题目贡献、受控 mapping policy / interpretation、computation 和版本追溯；不输出 subjectCode、原始作答、评分 / 确认意见、metadata、qualityHints、computedBy、原始 Mixed mappingRules、阈值或诊断结论。scorePercent 仅是映射项目得分比例，不是疾病概率。
+- `ReportsModule` 已覆盖规则化报告生成、临床复核与确认、锁定、来源冻结、归档、版本化纠错、replacement 及历史版本读取。
+- `ClinicalHistoryModule` 提供患者评估历史、指定历史报告详情所需的查询组合，以及基础随访趋势。
+- 报告和历史能力复用正式 ItemResponse、评分、认知域与媒体投影；具体生命周期协议、权限和错误边界见 API / Service maps。
 
-## 9. 当前 reports 临床报告模型与医生确认流程底座
+### 3.6 Users / Auth
 
-- `ClinicalReport` Schema 位于 `backend\src\modules\reports\schemas\clinical-report.schema.ts`。
-- `ClinicalReport` collection 为 `clinical_reports`，使用 `timestamps: true`，不在 class 中重复声明 `createdAt` / `updatedAt`。
-- `ClinicalReport` 当前覆盖患者、访视、主量表实例、计分结果、认知域结果、媒体证据引用，并通过证据快照保留 `MediaEvidence` 与 `ItemResponse` 引用。
-- 当前已通过 `ClinicalReport.patientId`、`assessmentVisitId`、`primaryScaleInstanceIds`、`scoreResultIds`、`cognitiveDomainResultIds`、`mediaEvidenceIds`、`evidenceSnapshots.itemResponseId` 建立 `Patient` -> `AssessmentVisit` -> `ScaleInstance` -> `ScoreResult` -> `CognitiveDomainResult` -> `ClinicalReport` 的报告引用链，并保留必要题目作答与媒体证据引用。
-- `ClinicalReport` 当前保存报告编码、展示编号、类型、状态、版本、来源、患者快照、访视快照、量表版本追溯、计分结果快照、认知域结果快照、媒体证据摘要、报告正文占位、AI 草稿占位、医生确认、锁定、归档、更正记录占位、作废字段、审计引用占位、质控状态、质控提示和 metadata。
-- `ClinicalReport` 当前内嵌 `ReportPatientSnapshot`、`ReportVisitSnapshot`、`ReportScaleTraceSnapshot`、`ReportScoreSnapshot`、`ReportDomainSnapshot`、`ReportEvidenceSnapshot`、`ReportNarrativeSnapshot`、`ReportAiDraftSnapshot`、`ReportConfirmationSnapshot` 与 `ReportCorrectionRecord` 子文档，均使用 `_id: false`。
-- `ClinicalReport` 当前索引为 `{ reportCode: 1 }` unique、`{ assessmentVisitId: 1, reportType: 1, reportVersion: -1 }`、`{ patientId: 1, createdAt: -1 }`、`{ subjectCode: 1, createdAt: -1 }`、`{ status: 1, updatedAt: -1 }`、`{ reportType: 1, status: 1 }`、`{ 'scoreSnapshots.scaleCode': 1 }`、`{ 'domainSnapshots.domainCode': 1 }`、`{ qualityStatus: 1, updatedAt: -1 }`。
-- `ReportsService` 当前提供最小内部读取能力：规范化 `reportCode`、按报告编码读取、按访视读取最新报告、按访视 / 患者 / 状态读取报告列表、按患者读取 confirmed / archived / corrected 报告列表；返回结果经过 mapper，不直接返回完整 Mongoose document。
-- `ReportsService` 当前提供不落库的报告状态转换校验纯函数：支持 `draft -> pending_confirmation / voided`、`pending_confirmation -> draft / confirmed / voided`、`confirmed -> archived / corrected / voided`、`archived -> corrected`，`corrected` 与 `voided` 默认不再流转。
-- A20 新增 `POST /patients/:patientId/visits/:visitId/clinical-reports/generate` 和 `GET /patients/:patientId/visits/:visitId/clinical-reports/latest`。报告资源边界为 AssessmentVisit，generate 由客户端显式选择 1-10 个不重复的同访视 ScaleInstance；请求顺序不构成业务差异。
-- 首次生成要求 active Patient、draft / in_progress / completed Visit、completed / locked ScaleInstance、绑定 ScaleDefinition / ScaleVersion 一致、runNo=1 confirmed / locked 且 passed / reviewed / 完整无 warning 的 ScoreResult，以及 runNo=1 computed / confirmed / locked、scale_config + item_domain_codes、有效无 warning 的 CognitiveDomainResult；不自动调用 A17-A19，也不修改来源。
-- A20 媒体只纳入 selected instance 下 attached / locked、stored、未删除的 photo / handwriting 索引；unchecked / acceptable 可纳入，needs_review 派生报告 needs_review，unusable 或有效证据缺失 objectKey / ownership 字段时阻断。系统不读取 Buffer / 轨迹、不做 OCR、图像识别、媒体评分或 AI。
-- A20 单次创建 patientSnapshot、visitSnapshot（clinicalContext 固定 null）、历史 scaleTraces、scoreSnapshots（scoreDetails=null）、domainSnapshots（不编造 minScore）、evidenceSnapshots（storageObjectKey 仅内部）、五段固定 narrative、`aiDraft={ status: 'not_requested', doctorEdited: false }` 与受控 `metadata.a20Generation`。公开 mapper 不返回 metadata、source result ID、media / item ID、storageObjectKey、scoreDetails、clinicalContext、qualityHints 或 AI draftText。
-- 新报告固定 reportType=cognitive_assessment、reportVersion=1、status=draft、source=system_draft、confirmation=null、isFinal=false；reportCode 为 `RPT-{SHA256 前 24 位大写十六进制}` 的确定性非隐私编码。metadata 记录 UUID generationId、generatedAt / actor、engineVersion=`a20-clinical-report-draft-1.0`、显式 scope、内部 source ID 和 `aiUsed=false`。
-- 同一 Visit / type / version 只允许一个结果：同 scope 返回 `alreadyGenerated=true` 且不重读来源或修改报告；不同 scope 返回 `CLINICAL_REPORT_SCOPE_CONFLICT`；voided 返回 `CLINICAL_REPORT_VOIDED`；不完整历史报告拒绝自动修复。并发由既有 reportCode unique 索引兜底，duplicate key 后重读；没有 transaction、分布式锁、临时 draft、覆盖、重生成或 version 2。
-- latest 按 reportVersion、createdAt 倒序只读，允许 inactive / archived Patient 和 locked / voided Visit 的历史读取；公开支持安全展示 draft / pending_confirmation / confirmed / archived / corrected / voided。A20 不实现医生确认、状态写流转、签名、锁定、归档、更正、作废、PDF、Storage 文件或 AI。
-- A21 新增 `ClinicalReportResourceParamDto`、`UpdateClinicalReportDraftDto`、`SubmitClinicalReportForConfirmationDto` 与 `ConfirmClinicalReportDto`，请求严格拒绝客户端 status、source、actor、metadata、snapshot、confirmation、签名或锁定字段。
-- draft PATCH 只修改 `doctorOpinion` 与显式提供的 `recommendationText`；空 recommendation 表示清除。A20 五段系统 narrative、scope、所有结构化快照、aiDraft、reportCode / version / type 均保持不变，成功后 source 固定为 mixed。
-- `metadata.a21Edits` 以 UUID、服务端时间和认证 actor 追加内部审计，保存 changedFields / previousValues / nextValues / editNote，最多 200 条且不静默裁剪；公开只返回 editCount、最后编辑人 / 时间 / changedFields，不返回事件历史或 previous / next。
-- submit 显式要求 `confirm=true` 与 submissionNote，readiness 以 ClinicalReport 自身 A20 快照为准，不重读来源；成功写 `a21Submission` 并进入 pending_confirmation。pending 重复提交返回既有 submissionId / 时间 / actor / note，不重写审计。
-- confirm 仅 doctor / admin，显式要求 confirmationNote；成功写 Schema confirmation 与 `a21Confirmation`，进入 confirmed、qualityStatus=passed、isFinal=true。confirmed / archived / corrected 重复确认幂等；历史报告缺少 A21 namespace 时可从 Schema confirmation 安全回退，confirmedAt 缺失则拒绝猜测。
-- 三个写接口均要求严格 ISO `expectedUpdatedAt`，原子 filter 包含 report / patient / visit ownership、type、version、允许状态和 updatedAt；单次 `findOneAndUpdate({ new: true, runValidators: true })` 完成。没有自动覆盖、自动重试、transaction、分布式锁或 AuditLog 写入。
-- confirmed 与 locked 明确分离：A21 不设置 lockedAt / signatureText，不修改 Patient、Visit、ScaleInstance、ItemResponse、ScoreResult、CognitiveDomainResult、MediaEvidence，不调用来源 Service、Storage、LLM 或 PDF。
-- A22 新增唯一公开接口 `POST /patients/:patientId/visits/:visitId/clinical-reports/:reportId/lock`。Body 仅允许 `confirm=true`、trim 3-2000 `lockNote` 与 strict ISO `expectedUpdatedAt`；Controller 复用 `ClinicalReportResourceParamDto`、`SessionAuthGuard`、`RolesGuard`、`@CurrentUser()`，方法级 `@Roles('doctor', 'admin')`。
-- 首次锁定中，V1 是要求 active Patient、draft / in_progress / completed Visit 的基础路径；合法线性 replacement V2+ 必须先通过 A26 完整双向 lineage 与 ownership 校验，历史 Patient inactive、Visit locked / voided 不阻断。两类报告都必须为完整 confirmed / mixed / passed cognitive_assessment，并具有完整 confirmation、A20 generation、A21 submission / confirmation、patient / visit / scale / score / domain 快照、五段 narrative 与合法 doctorOpinion，且未锁定、未归档、未作废、无 correctionRecords；写入使用报告真实 `reportVersion`，不重读或验证来源当前状态。
-- `ReportsService.lockReportIfUnmodified()` 的单次 `findOneAndUpdate({ new: true, runValidators: true })` filter 包含完整 ownership、type/version、confirmed/mixed/passed、锁定 / 归档 / 作废空值、空 correctionRecords 与 expectedUpdatedAt；update 只写 lockedAt、lockedBy、metadata。没有 transaction、自动重试或来源写入。
-- `metadata.a22Lock` version 固定 1，保存服务端 randomUUID lockId、服务端 lockedAt、认证 actor ID / name / doctor-or-admin role 与 trim lockNote；写入时创建新 metadata 根对象，保留 a20Generation、a21Edits / Submission / Confirmation 和未知顶层 namespace，不修改原引用。
-- public response 保留 top-level lockedAt，并新增 `lock` 安全摘要；lock response 为 `{ report, lockReceipt }`，receipt 含 lockId、lockedAt、安全 actor、可选 lockNote、alreadyLocked。绝不返回 metadata 或 Schema 原始 lockedBy。
-- 重复锁定不写库、不改 updatedAt / lockId / 时间 / actor / note，即使请求携带旧 expectedUpdatedAt 也返回 alreadyLocked=true。合法 a22Lock 返回完整审计；历史 lockedAt + lockedBy 且无 a22Lock 时 lockId=null、role=unknown 安全 fallback；字段残缺或 a22Lock 不一致返回 `CLINICAL_REPORT_LOCK_AUDIT_UNAVAILABLE`。
-- 锁定后 status 仍为 confirmed、qualityStatus 仍为 passed、isFinal 仍为 true，confirmation、reportCode、reportVersion、narrative、快照与来源对象全部不变。A22 不新增 locked status，不实现 unlock / reopen / return / reject / archive / correct / void，不生成 PDF / Storage 文件，不调用 AI / LLM。
+- `UsersModule` 提供内部系统账号读取和安全投影底座，当前没有公开用户与角色管理能力。
+- `AuthModule` 使用服务端 Session 与 HttpOnly Cookie 作为主登录态，提供登录、登出、当前用户，以及显式认证 / 角色 guard。
+- 密码和会话凭证只持久化散列并保持安全响应边界；JWT 不是当前主登录态。
 
-## 10. 当前 users / auth 认证、用户、会话与角色权限底座
+## 4. 当前关键架构边界
 
-- `User` Schema 位于 `backend\src\modules\users\schemas\user.schema.ts`。
-- `User` collection 为 `users`，使用 `timestamps: true`，不在 class 中重复声明 `createdAt` / `updatedAt`。
-- `User` 当前覆盖账号名、展示名、staffCode、email、phone、`passwordHash`、密码变更时间、roles、permissions、userType、status、department、organization、lastLoginAt、failedLoginCount、lockedUntil 和 metadata。
-- `User.passwordHash` 设置 `select: false`，普通 `UsersService` mapper 输出不包含 `passwordHash`。
-- `User` 当前索引为 `{ accountName: 1 }` unique、`{ staffCode: 1 }` unique + sparse、`{ email: 1 }` unique + sparse、`{ phone: 1 }` sparse、`{ status: 1, accountName: 1 }`、`{ roles: 1, status: 1 }`、`{ userType: 1, status: 1 }`。
-- `UsersService` 当前提供内部账号读取和规范化能力：`normalizeAccountName()`、`normalizeEmail()`、`normalizeStaffCode()`、`findUserById()`、`findUserByAccountName()`、`findUserCredentialByAccountName()`、`listActiveUsers()`；不创建、更新、删除用户，不实现密码重置或公开用户管理 API。
-- `Session` Schema 位于 `backend\src\modules\auth\schemas\session.schema.ts`。
-- `Session` collection 为 `sessions`，使用 `timestamps: true`，不在 class 中重复声明 `createdAt` / `updatedAt`。
-- `Session` 当前覆盖 userId、`sessionTokenHash`、status、expiresAt、revokedAt、lastSeenAt、userAgent、ipAddress、rolesSnapshot、permissionsSnapshot 和 metadata。
-- `Session.sessionTokenHash` 设置 `select: false`；AuthService 入库前对 raw session token 做 SHA-256 hash，不保存明文 session token。
-- `Session` 当前索引为 `{ sessionTokenHash: 1 }` unique、`{ userId: 1, status: 1 }`、`{ expiresAt: 1 }` TTL（`expireAfterSeconds: 0`）、`{ status: 1, updatedAt: -1 }`、`{ userId: 1, createdAt: -1 }`。
-- `AuthService` 当前提供内部认证底座能力：`hashPassword()`、`verifyPassword()`、`generateSessionToken()`、`hashSessionToken()`、`authenticateWithPassword()`、`createSessionForUser()`、`validateSessionToken()`、`revokeSessionByToken()`、`buildPublicAuthUser()` 和 `toAuthUserResponse()`；使用 Node.js 内置 `crypto`，不使用 JWT 作为主登录态。
-- `AuthenticatedUserContext` 当前位于 `backend\src\modules\auth\types\auth-user-context.type.ts`；`SessionAuthGuard` 校验会话后将其挂载到 `req.user`，`RolesGuard`、`@CurrentUser()` 与 Controller 认证上下文链已直接使用。
-- 当前已新增 `@Public()`、`@Roles()`、`@CurrentUser()`、`SessionAuthGuard` 与 `RolesGuard`；`SessionAuthGuard` 可从 cookie-parser cookies 或原始 `cookie` header 读取 `cogmemory_ad_session` 并调用 `AuthService.validateSessionToken()`，成功后挂载 `req.user`；`RolesGuard` 基于 `@Roles()` 和 `req.user.roles` 做角色底座校验。
-- `SessionAuthGuard` 与 `RolesGuard` 当前未注册为全局 Guard，不影响 `GET /health`。
-- `UsersModule` 与 `AuthModule` 已注册到 `AppModule`；`AuthModule` 声明 `AuthController`，`UsersModule` 不声明 Controller。
-- `AuthController` 当前公开 `POST /auth/login`、`POST /auth/logout`、`GET /auth/me`：登录校验账号密码、创建服务端 session 并下发 HttpOnly `cogmemory_ad_session` Cookie；登出从 Cookie 读取 session token，存在则内部撤销 session，并清除 Cookie；`GET /auth/me` 使用 `SessionAuthGuard` 显式保护并返回当前用户公开上下文。
-- 当前不提供用户管理或权限管理 API；前端已有登录与认证态接入，但仍无用户管理或权限菜单。
+- 后端以 NestJS module 组织业务能力，以 MongoDB / Mongoose 持久化结构化业务事实；环境与数据库选择集中受配置门禁约束。
+- staff 使用服务端登录 Session；患者施测使用独立、短期且受控的 patient session，两种身份不共享权限。
+- Patient Administration 的原始作答、媒体、ASR 候选与现场观察不是正式 ItemResponse；只有临床复核后通过既有正式答案与整体提交链进入下游。
+- 系统复用既有 ItemResponse、submission、scoring、domain 和 report 主链，没有第二套 Review / Observation 领域状态或旁路正式结果。
+- Storage 对象保持私有并通过业务模块受控访问；数据库保存业务引用和元数据，不把二进制媒体作为结构化字段管理。
+- 整体提交与评分 / 认知域计算是分离动作，系统不自动形成诊断。
+- 接口、字段、Service 算法、配置和测试执行规则分别以对应 owner 为准；本快照不把这些细节再解释为模块事实。
 
-## 11. A23 已锁报告来源链冻结
+## 5. 当前真实未实现边界
 
-- 唯一新增公开接口为 `POST /patients/:patientId/visits/:visitId/clinical-reports/:reportId/freeze-sources`；DTO 只接收显式 `confirm=true`、trim 3-2000 `freezeNote` 与 strict ISO `expectedUpdatedAt`，仅 doctor / admin 可执行。
-- 首次发起中，V1 是要求 active Patient、draft / in_progress / completed Visit 的基础路径；合法线性 replacement V2+ 必须先通过 A26 完整双向 lineage 与 ownership 校验，历史 Patient inactive、Visit locked / voided 不阻断。两类目标都必须是已锁定且完整 confirmed / mixed / passed 报告，并验证 A20 generation、A21 submission / confirmation 与 A22 lock 审计；写入使用报告真实 `reportVersion`。scope 只来自报告的 primaryScaleInstanceIds、scoreResultIds、cognitiveDomainResultIds、mediaEvidenceIds；实例下全部 ItemResponse ID 在首次审计中固化。
-- A23 冻结 ScaleInstance completed→locked、ItemResponse answered/scored→locked、ScoreResult confirmed→locked、MediaEvidence attached→locked；CognitiveDomainResult computed/confirmed 只设置 lockedAt，保留原 status。已有合法锁与 lockedAt 均保留。
-- `metadata.a23SourceFreeze` version=1 使用 `in_progress / completed`，保存 freezeId、原始 actor/note/time、sourceLockedAt、内部 scope 和计数。跨五类集合不使用 transaction；部分失败不回滚、不解冻，重复 POST 按固化 scope 恢复；仅在重新读取全部精确来源并验证后写 completed。completed 重复请求即使 expectedUpdatedAt 已旧也只读幂等返回。
-- latest 与写响应只返回安全 `sourceFreeze` 摘要和 receipt；不返回 metadata、scope IDs 或来源关联 ID。A14 ItemResponse 草稿、A15 上传/作废、A16 submit、A18 review/confirm 等写路径增加 lockedAt 防御。
-- 不冻结 Patient、AssessmentVisit、ScaleDefinition、ScaleVersion、Storage 对象；不实现 unfreeze、rollback、AuditLog、PDF 或 AI。ReportsModule 只调用来源模块导出的 Service，不直接注入来源 Model。
+以下只描述后端能力缺口；是否属于当前产品阶段、一期范围或下一工作包由[路线图](./handoff-roadmap.md)决定。
 
-## 12. A24 已冻结报告归档
+- 公开用户 / 角色管理、账号生命周期、密码重置、OAuth / SSO 与短信验证码业务能力尚未实现。
+- 患者完整编辑、更正、归档、删除与合并尚未形成；Visit 已有有限维护，但完整运营状态流转和知情者信息能力仍缺失。
+- MoCA 的受监督患者多模态施测闭环尚未实现；现有 Patient Administration 能力不应被解释为自动覆盖全部量表。
+- 评分仍缺少独立 lock、void、reopen、rerun、批量人工处理和历史生命周期；认知域仍缺少人工复核 / 确认、锁定、作废、重算、历史及跨量表组合能力。
+- 报告仍缺少签名、逆向解锁 / 解冻 / 取消归档、纠错分支 / 取消，以及 PDF / Word / 打印等正式导出能力。
+- 媒体仍缺少面向运营的跨患者 / 访视聚合、批量或分片上传、客户端直传、替换和物理删除等高级管理能力。
+- 尚无公开量表管理后台、全量数据库 seed runner 或完整题目配置管理 API。
+- AI / LLM、SMS 业务 Service，以及 HIS / EMR、计费、保险等第三方医院系统集成尚未实现。
 
-- 唯一新增公开接口为 `POST /patients/:patientId/visits/:visitId/clinical-reports/:reportId/archive`；复用 `ClinicalReportResourceParamDto`、类级 Session / Roles Guard、方法级 doctor / admin 与 `@CurrentUser()`。`ArchiveClinicalReportDto` 只允许显式 `confirm=true`、trim 3-2000 的 `archiveNote` 和 strict ISO `expectedUpdatedAt`。
-- Patient 与 Visit 只用于存在性、联合归属和跨患者 / 跨访视防护；V1 与合法线性 replacement V2+ 都不因 Patient inactive、Visit locked / voided 被阻断，A24 不修改二者。V2+ 还必须通过 A26 完整双向 lineage 校验。
-- 首次 readiness 要求正安全整数真实版本的 cognitive_assessment 报告为 confirmed / mixed / passed、confirmation 完整、isFinal 可由 status 派生为 true、A22 lockedAt / lockedBy 与受控 a22Lock 一致、A23 sourceFreeze 为完整 completed 审计、归档 / 作废字段为空且无 correctionRecords；原子写入精确匹配该真实 `reportVersion`。A24 不重新读取五类来源或 Storage。
-- 归档复用既有 `confirmed -> archived` 状态转换，没有新增状态或修改转换表。`ReportsService.archiveReportIfUnmodified()` 以完整 ownership、type/version、confirmed/mixed/passed、锁定非空、归档 / 作废空值、空 correctionRecords、updatedAt、A23 completed 和 A24 namespace 不存在为 filter，单次 `findOneAndUpdate({ new: true, runValidators: true })` 只 `$set` status、archivedAt、archivedBy、metadata。
-- `metadata.a24Archive` version=1，只写一次，保存服务端 UUID archiveId、服务端 archivedAt、认证 actor ID / name / doctor-or-admin role、trim archiveNote，以及 A23 freezeId / completedAt 来源锚点；构造新 metadata 根对象并保留 A20-A23 与未来未知合法 namespace。
-- 重复 archived / corrected 归档只读幂等，允许旧 expectedUpdatedAt，不生成新 ID，不改 archivedAt / archivedBy / note / updatedAt。历史完整 archivedAt + archivedBy 且无 a24Archive 时返回 archiveId / sourceFreeze anchor 为 null、actor role=unknown 的安全 fallback，不补写 metadata；字段或审计不一致返回 `CLINICAL_REPORT_ARCHIVE_AUDIT_UNAVAILABLE`。
-- public report 继续保留兼容顶层 archivedAt，并新增 nullable `archive` 安全摘要；写响应为 `{ report, archiveReceipt }`，receipt 额外包含 alreadyArchived。公开响应不含 metadata、Schema 原始 archivedBy、source IDs、A23 scope、Session 或 currentUser。
-- 乐观并发冲突返回 `CLINICAL_REPORT_ARCHIVE_CONFLICT`，不自动重试或覆盖；未知持久化失败为 `CLINICAL_REPORT_ARCHIVE_FAILED`。A24 不修改 lockedAt / lockedBy、a22Lock、a23SourceFreeze、confirmation、narrative、快照、scope、reportCode / version / type 或来源对象。
+## 6. 同步规则
 
-## 13. A25 归档报告版本化更正
-
-- 唯一新增接口为 `POST /patients/:patientId/visits/:visitId/clinical-reports/:reportId/corrections`，Body 仅允许 strict `confirm=true`、trim 3-2000 `correctionReason`、trim 3-4000 `changeSummary` 与首次源报告最新 `expectedUpdatedAt`；类级 Session / Roles Guard、方法级 doctor / admin 与 CurrentUser 生效。
-- 首次 source 必须是当前 Visit / cognitive_assessment latest，状态 archived、mixed / passed / isFinal，confirmation 与 A21 submission/confirmation 完整，A22 lock、A23 completed freeze、A24 archive 及 freeze anchors 全部合法；historical archive fallback 不可发起。Patient inactive、Visit locked / voided 不阻断，且 Patient / Visit 不被修改。
-- 线性链固定 `replacementVersion=sourceVersion+1`、`correctionNo=replacementVersion-1`，replacement code 复用 `buildClinicalReportCode()`。源先写 `metadata.a25Correction.state=in_progress`，创建并验证唯一 replacement，再记录 replacement anchor，最后单文档更新 source 为 corrected、追加一条 correctionRecords 并完成审计；没有 Mongo transaction、回滚、删除或分支。
-- replacement 深复制 Patient / Visit、量表、评分、认知域、媒体证据、系统五段 narrative、doctorOpinion / recommendationText、aiDraft 与来源 ID；固定 draft / mixed / needs_review，重置 confirmation、lock、sourceFreeze、archive、void、correctionRecords、auditLogRefs。metadata 仅复制经验证的 a20Generation 并写新的 a25CorrectionReplacement。
-- 中断恢复沿用持久化 correctionId / correctionNo / reason / summary / startedBy / archive-freeze anchors；replacement 未创建则继续创建，已创建则验证后完成。completed 请求允许旧 expectedUpdatedAt、只读返回原事实且不修改 updatedAt。
-- A20 generate 改为 latest-first：任何合法版本存在时返回最新版本，不再创建 V1；A21 原子 filter 使用服务端读取的真实 reportVersion。合法 V2+ replacement 的 edit / submit / confirm 仅 doctor/admin，并豁免 Patient inactive 与 Visit locked / voided；普通 V1 角色和状态边界不变。
-- public report 新增 nullable `correction` / `replacementOf`，写响应新增 sourceReport、replacementReport 与 correctionReceipt；不公开 metadata、原始 correctionRecords、五类来源 ID 或 AuditLog ID。A25 本身不自动锁定、冻结或归档 replacement；A26 允许后续显式复用 A22-A24。
-
-## 14. A26 replacement 不可逆生命周期泛化
-
-- 三个既有 endpoint、请求 DTO、角色与公开 response 未变；V1 继续走原资格。V2+ 在 lock / freeze / archive 初始读取与原子 miss 重读时执行统一全链 lineage 校验，任一非法跳转、缺失或单边 A25 关系返回 409 `CLINICAL_REPORT_REPLACEMENT_LINEAGE_INVALID`。
-- lineage 从当前 `a25CorrectionReplacement` 的 previousReportId 在同 Patient / Visit ownership 内逐级回溯到 V1；每一跳验证连续整数版本、同 reportType、前序 corrected、completed source correction、唯一 correctionRecord、当前 replacement 与 A22-A24 archive/freeze anchors 的完整双向关系。
-- V1 lock / freeze 保留 active Patient 与可编辑 Visit；合法 V2+ 不受历史 Patient inactive、Visit locked / voided 阻断。archive 对 V1/V2+ 均只校验 ownership 和报告自身 readiness。所有写入只落当前报告，前序 corrected 报告不变。
-- lock、freeze start、freeze complete、archive 的内部输入与原子 filter 使用服务端读取的真实精确 reportVersion。A23 complete 还精确匹配 start 后 updatedAt 与完整 confirmed / lock / unarchived / unvoided / no-correction 前置；没有宽泛 `>=2` 更新。
-- replacement freeze 从当前固化快照与来源 ID 建立独立 scope/receipt；前序已冻结共享来源经精确兼容性验证后计入 previouslyFrozen，不再次写五类来源的 status、lockedAt、updatedAt 或首次事实。中断恢复沿用原 freezeId、scope、started actor 与 note。
-
-## 15. WP-04 后端 A27-A28 只读历史与趋势
-
-- A27 提供 assessment-history、报告版本列表和指定历史详情；A28 在同一无 Schema 编排模块提供 follow-up-trends。四个接口均为只读 GET，允许 doctor / nurse / research_assistant / admin，支持 inactive/archived Patient 与全部 Visit 历史状态。
-- follow-up-trends 要求当前 catalog 可用 scaleCode，按含边界日期读取并保留每个 Visit，按 assessmentDate/_id asc；超过 maxPoints 返回 409，不静默截断。缺实例、多实例、void、非 final 和不完整 source 均保留为明确 dataStatus。
-- available 总分仅来自持久化 confirmed/locked ScoreResult；认知域仅来自精确绑定 CognitiveDomainResult。不读取 ItemResponse 或 ClinicalReport，不重算评分/认知域。总分 exact trace 与 Domain exact mapping 不一致即明确不可比，且只做当前减紧邻前一点。
-- 查询为 Visit max+1 加三次按 ID 集合轻量 batch，响应为显式白名单；没有 N+1、内部 HTTP、写入、Schema/index/collection/cache/read model/job/dependency 变化，也不暴露 Patient identity、内部来源 ID、raw/Mixed、metadata、report、media、AI 或诊断字段。
-- WP-04 已完成：A27/A28 后端四个只读接口与 B17 前端历史、版本导航、历史详情和基础趋势均已实施并验收。
-
-## 16. WP-10 患者施测当前事实
-
-- `PatientAdministrationSession`、staff / patient 专用 Controller 与 Guard 已实现短期患者会话、安全进入、same-device / cross-device、准备、服务端权威当前步骤、暂停 / 恢复 / 接管 / redo / technical replay / 重签 / 终止和完成态；患者会话与 staff `Session` 保持身份隔离。
-- 会话状态、当前 run capture、播放事实和控制写使用单一 `revision` CAS；旧写不能覆盖已成功事实，患者响应保持最小白名单且不泄露答案、评分、内部定位或 staff 权限。
-- WP-10-F1 的同 / 跨设备流程和 F2 的 MMSE 正常 19 步患者主链已实现；患者 evidence、`MediaEvidence` audio、固定题目资产、书写 / 绘图证据和完成媒体门禁已接入，患者流程本身仍不直接写 `ItemResponse`。只有后续 staff 显式调用受控 adoption 时，合法 photo / handwriting 才以同一 ID 写入既有 evidenceRef。
-- C2 已实现 ASR candidate / review projection；机器候选不自动成为正式答案。F3 的两个最低基础对齐已完成：MMSE current seed 的 operatorNote 已 optional，patient MediaEvidence adoption 已闭合 readiness 的既有 evidenceRef 数据链。
-- WP-10-F3 正常作答复核 UI 已完成，并复用现有 `ScaleInstance` 页面；患者施测 completed 后，同一页面挂载 F3 复核。医护 / 医生继续沿现有 A14 `ItemResponse` 草稿链人工录入或修订，满足既有 readiness 后由现有 A16 整体提交，同一批 `ItemResponse` 成为该次正式提交结果，不复制第二套答案，也没有新增 Review / Anomaly / StaffObservation 工作流。
-- WP-10 已完成；F2-P2 recovery、staff Axe 分类及受影响 F3 回归均已完成收口。
-- 精确 Schema、endpoint、DTO、Cookie、权限和 Service 事实以 backend API / DTO / service maps 及最新代码为准，本 snapshot 不复制已关闭阶段的实施过程。
-
-## 17. 当前尚未实现
-
-- 尚无公开用户管理接口、角色权限管理接口、短信验证码接口、OAuth / SSO 接口或密码重置接口。
-- MoCA 患者端完整实施仍未完成，下一工作包为 WP-11，状态仍为“待开始”；真实设备、真实麦克风 / 触控笔、真实患者 OSS 与真实 ASR 继续按 roadmap 既定 Batch E / WP-08 边界验收。
-- 尚未实现 WP-12 的医护代录知情者辅助信息能力，也没有将知情者来源、关系、接触频率或了解程度与患者作答、ItemResponse、量表得分和报告结论分离的专用合同；当前不存在知情者长期账号、家庭门户或短期自助链接。WP-12 仅 Visit maintenance 窄切片已提前实现，整体仍未完成。
-- HIS / EMR、计费、保险及其他第三方医院系统集成当前未实现，且不属于一期后端实现缺口、WP-09 或上线验收门禁。
-- A12-A28 已覆盖评分计算/复核/确认、认知域计算、报告生成/编辑/确认/锁定/来源冻结/归档/版本化更正、replacement 后续生命周期、历史读取与基础随访趋势；仍无评分独立 lock / void / reopen / 重跑、认知域人工修改 / 确认 / 作废 / 重算、报告签名 / unfreeze / unarchive、correction cancel / branch 或 PDF 接口。
-- 尚无批量作答、自动保存调度、计时动作、提交撤销 / reopen / lock / force submit，或 Visit maintenance 窄切片之外的完整通用访视状态流转接口。
-- 媒体当前有题目下列表、服务端 multipart 上传、患者 Evidence adoption、显式患者录音转写、短期签名访问与逻辑作废；尚无全患者 / 访视 / 实例媒体列表、直接 objectKey 下载、永久 URL、物理删除、替换、批量、分片或客户端直传接口。
-- 尚无全量数据库 seed runner、量表管理或完整 MMSE / MoCA 题目配置公开接口；A13 只在初始化时按需物化并提供安全摘要，released MMSE 资产当前仅由内部只读 Service 与无数据库 CLI 访问。
-- 已有 A17 compute / latest 与 A18 单题人工复核 / 确认；尚无批量人工评分、锁定、作废、撤销确认、reopen、重跑或历史列表接口。
-- 已有 A19 认知域 compute / latest；尚无认知域人工复核、确认、锁定、作废、重算、历史列表、跨量表合并或报告接口。
-- 已有 A20-A27 报告 generate / latest / edit / submit / confirm / lock / freeze-sources / archive / corrections、版本列表和指定历史详情，以及 A27-A28 患者历史评估与 follow-up-trends；B17 前端历史/趋势产品页已完成。仍无签名、unlock / unfreeze / unarchive、correction cancel / branch、PDF / Word / 打印导出、AuditLog 模型或 AI 报告。
-- 尚无作答提交后自动计分或自动认知域计算触发；A17 / A19 均由显式 compute 触发，不包含 MMSE / MoCA itemCode、domain title 或诊断规则硬编码。
-- 尚无短信发送接口。
-- 尚无 AI / LLM 调用接口。
-- 尚无患者编辑 / 删除 / 归档；访视已有服务端资格控制的有限 edit、initialized-only physical delete 与 started Visit void，但窄切片之外的完整运营 / 通用状态流转仍未实现；A12-A28 已列接口之外的量表、作答、媒体、计分、认知域、报告等其他业务 Controller 或公开业务 API 仍不存在。
-- 尚未实现用户创建、用户更新、用户禁用、重置密码、角色权限管理、短信验证码、OAuth / SSO、JWT 主登录态或权限菜单；前端登录页与认证态已经实现。
-
-## 18. 后续同步规则
-
-- 后续新增模块、接口、DTO、数据模型或 Service 后，应同步更新对应 maps 与 snapshot；稳定验证规则和当前仍待验边界由 testing playbook 维护，已关闭执行证据由 Git 历史与测试资产追溯。
-- 本文档只记录已确认事实，不承载未确认推测。
+- 只有后端工程结构、模块级 current capability、关键跨模块边界或真实未实现边界变化时，才更新本快照。
+- API、DTO、Service、配置、测试或患者施测专项事实只更新各自 authoritative owner；本快照仅在其自身高层投影随之变化时同步。
+- owner 已完整保留的细节从本快照删除属于 deduplication，不是 information loss；没有 Snapshot 职责变化时保持 zero diff。
