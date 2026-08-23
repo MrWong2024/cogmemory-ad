@@ -1,4 +1,4 @@
-# Codex 指令生成规则 v1.18（精简稳定版）
+# Codex 指令生成规则 v1.19（精简稳定版）
 
 > 适用于采用 `frontend\`、`backend\`、`docs\` 目录结构，并通过架构文档与规则文档约束开发的项目。
 > 目标：保证指令结构稳定、输出可审核、执行边界清晰、文档同步可判断。
@@ -424,6 +424,17 @@ Codex 指令不要求包含或输出完整候选全集，也不得新增第 13 �
 8. 最终报告不得把“满足行数预算”作为实现或测试资产的验收结果。项目级 Browser、fixture、E2E、verifier、cleanup、证据复用与止损细节分别引用 `docs/handoff/handoff-frontend-testing-playbook.md` 和 `docs/handoff/handoff-backend-testing-playbook.md`，不在本节重复。
 9. Browser fixture、support、runner 和 verifier 不是任何 Browser evidence 的固定配套。只有 Browser 需要独立合法 synthetic 起点、Browser 写入终态未被更低层证据充分证明，或确有 namespace / cleanup 隔离风险时才增加对应资产；当这些资产开始复制 catalog、业务状态或服务端判断并逐步形成“第二套实现”，或维护工程明显超过所证明的 Browser 风险时，必须停止继续扩张并回到 3.9 重新选择 evidence execution mode，不得用更多 fixture / support / verifier 追求 scripted green。
 
+### 3.11 文档事实所有权与同步写入门禁（强制）
+
+1. **单一权威 owner**：GPT / Codex 在新增或更新长期文档事实前，必须先轻量判断“哪份现有文档完整维护这条事实”。项目已有文档职责定义时以项目定义为准。每个 persistent fact 只允许一个 authoritative owner，可以有多个 projection / reference 文档，但不得由多个平级 owner 同时维护同一 current contract；不得为了让当前读者方便、让单份文档自包含或方便下一会话而复制完整事实。
+2. **`reference, don't restate`**：目标文档不是 owner 时，默认只保留其职责所需的当前状态、高层摘要、必要依赖、owner 链接或历史时间定界。除非缺少它会使目标文档自身职责无法成立，否则不得重新复制详细字段、状态转换、逐项矩阵、API / DTO 细节、测试数量、revision、fixture shape、媒体 cardinality、完整错误矩阵或完整业务流程。
+3. **“同步文档”不等于复制事实**：先更新 authoritative owner，再判断其它 projection 文档的状态、索引、依赖、引用或投影是否因该变化而改变；只有其自身职责发生变化时才修改，没有职责变化的文档保持 zero diff。“同步相关文档”不得解释为在所有相关文档重复写一遍新事实。
+4. **completed work package compression**：roadmap / plan 在规划或开发中可以保留足够的目标、依赖和完成定义；工作包正式 completed 后，必须主动压缩为高层目标、高层交付摘要、高层完成定义、权威合同链接和测试证据入口。实现过程流水、子任务逐条日志、具体 fixture / Browser 结果、revision / count、临时 workaround，以及已由 contract、map 或 testing playbook 完整拥有的详细规则应删除或回到各自 owner。
+5. **current stage 不是 release notes**：roadmap 的 current stage / current phase 只回答已完成、进行中、待开始、当前阻断、下一工作包和必要阶段级特殊状态；不得长期积累子阶段实现日志、逐轮 Browser 结果、测试 count、已关闭缺陷或历史诊断。
+6. **去重不等于信息丢失**：authoritative owner 已完整保留某事实时，从非 owner 删除重复副本属于 deduplication，不是 information loss；不得以“可能以后有用”为由永久保留重复 current 副本。
+7. **历史事实按职责归档**：决策背景归 decisions，测试通过和 historical evidence 归 testing playbook，实现演进归 Git，范围变化归 roadmap 的范围处置记录，稳定业务合同归 contract。不得为了保留历史而让 current section 同时维护当时事实、current 事实和修订说明。
+8. **轻量 owner check**：普通任务只需在设计和执行期完成上述轻量判断，不得为每次文档修改生成 owner audit JSON、长期 ownership registry、新状态机、额外审批流程或独立文档数据库。只有 ownership 矛盾、多份文档均声称唯一事实源或大规模治理时，才需要具名 read-only 文档审计。
+
 ---
 
 ## 4. 不允许的行为
@@ -448,8 +459,9 @@ Codex 指令不要求包含或输出完整候选全集，也不得新增第 13 �
 
 ## 6. 版本说明
 
-当前版本：v1.18（精简稳定版）
+当前版本：v1.19（精简稳定版）
 适用场景：适用于需要通过稳定指令结构控制修改范围、验证过程与文档同步的持续开发项目
+v1.19 核心变化：新增文档事实单一 authoritative owner 与同步写入门禁，确立 `reference, don't restate`、同步文档不等于复制事实、completed work package 压缩、current stage 非 release notes、去重不等于信息丢失及轻量 owner check；不新增 ownership registry、独立审计流程或持久状态体系
 v1.18 核心变化：将 Browser evidence requirement 与 execution mode 分离，明确 scripted deterministic regression、Agent-assisted interactive smoke 与 human manual / real-device smoke 的适用边界和完成语义；新增 substantive contract change 后的 independent-contract 自证防线、patch / rewrite body / retire 决策、连续两轮测试基础设施失败后的工具级策略重评估，以及 fixture / support / verifier 形成第二套实现时的复杂度止损；不改变既有验证候选、活动状态或产品完成门禁
 v1.17 核心变化：明确页面或用户流程可见、UI 可达不自动要求 Browser；只有不可替代 Browser 语义或 production 页面到真实 HTTP wiring 才以 Browser 为主证据，主观与专业判断归人工验收；不改变 v1.16 的主体分工和最低充分治理
 v1.16 核心变化：新增 GPT-only / Codex-only / Shared 适用主体与执行边界；明确 Codex 阅读完整规范不等于重复 GPT 生成期工作；拆清 3.8 的生成期命令设计与执行期 discovery，明确 3.9 初始 A/B/C 由 GPT 负责、增量 A/B/C 与最终验收由 Codex 负责，并明确 3.10 在双方各自阶段适用；不改变既有验证治理和最低充分复杂度原则
