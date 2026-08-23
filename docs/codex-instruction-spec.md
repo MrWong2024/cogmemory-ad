@@ -1,4 +1,4 @@
-# Codex 指令生成规则 v1.19（精简稳定版）
+# Codex 指令生成规则 v1.20（精简稳定版）
 
 > 适用于采用 `frontend\`、`backend\`、`docs\` 目录结构，并通过架构文档与规则文档约束开发的项目。
 > 目标：保证指令结构稳定、输出可审核、执行边界清晰、文档同步可判断。
@@ -153,9 +153,9 @@ Codex 阅读本规范，是为了理解任务治理边界、继承执行期规�
 4. 不得因为标准工具尚未安装，就默认要求 Codex 自研等价基础设施；尤其不得为了避免引入成熟工具而自研 Browser runner、CDP WebSocket、测试框架、文档解析器或其他已有成熟方案覆盖的重复能力。
 5. 项目现有工具已经足够时，不得机械建议继续安装新工具，也不得另建同类 runner、协议客户端或测试框架。
 6. 工具选型必须考虑后续任务复用、维护成本和项目兼容性，不得只为当前单项临时拼接。
-7. “某项事实需要真实 Browser 参与”只决定证据层，不自动推出“必须建设或维护 deterministic scripted Browser regression”。Browser execution mode 至少可以从 scripted deterministic Browser regression、Agent-assisted interactive Browser smoke、human manual / real-device smoke 中按风险、重复性要求、维护成本和证据目标选择；三者是执行方式，不是新的项目状态。
-8. Playwright 或等价确定性 Browser runner 是高价值的长期回归工具，适合稳定、可重复且值得持续维护的 Browser 合同。Agent-assisted interactive Browser smoke 只有在当前执行环境确实提供 Agent 可控制的真实交互式 Browser 时才可选择；它不是 scripted regression 失败后的降级版。人工或真实设备 smoke 承担主观、专业和真实硬件判断，也不是自动化失败后的 fallback。
-9. 工作包合同明确要求 CI、持续自动回归或可复用 scripted evidence 时，Agent-assisted 或人工 smoke 不得替代；工作包只要求当前代码态的可信 Browser flow evidence 时，可以在底层业务合同已有主证据的前提下选择最低充分的非持久执行方式。
+7. “某项事实需要真实 Browser 参与”只决定证据层，不自动推出“必须建设或维护 deterministic scripted Browser regression”。Browser execution mode 至少可以从 scripted deterministic Browser regression、Agent-assisted interactive Browser smoke、human manual / real-device smoke 中按 assertion target 选择；三者是执行方式，不是新的项目状态。
+8. Playwright 或等价确定性 Browser runner 是 non-UI Browser runtime / network / origin / isolation semantic 的高价值长期回归工具，不是产品 UI regression 的默认工具。即使 UI interaction topology、selector、行为锚点或文案稳定，流程很短、重要或长期回归价值高，只要主要 assertion target 是产品 UI 结构、控件、组件层级、交互路径或用户 workflow，就不获得 scripted 资格。Agent-assisted interactive Browser smoke 只有在当前执行环境确实提供 Agent 可控制的真实交互式 Browser 时才可选择；它是客观 production UI Browser evidence 的默认执行方式，不是 scripted regression 失败后的降级版。人工或真实设备 smoke 独立承担主观、专业和真实硬件判断；Agent 不可用或人工操作本身属于验收合同时，客观 UI flow 也可以按真实 execution mode 由人工执行。
+9. CI、持续自动回归或可复用 scripted evidence 的要求不能覆盖上述边界。需要 persistent CI 的风险必须先拆分为 pure / unit / HTTP E2E / verifier 可证明的业务不变量、可由 scripted Browser 证明的 non-UI Browser semantic，以及由 Agent-assisted 或 human 承担的剩余 UI behavior。若合同不可拆分地要求 deterministic scripted UI workflow，与本规范冲突时，Codex 必须停止并报告，由用户决定是否建立显式项目例外；通用规范不提供默认例外。
 
 ### 3.7 最低充分复杂度优先、指令精简与去重（强制）
 
@@ -327,7 +327,7 @@ GPT 对以下任务必须在生成 Codex 实现指令前执行候选生成：
 
 1. 为每个强制测试写明真实触发路径、调用方或人工角色、实际接口与足以阻断发布的业务风险；无法证明必要性的测试不得写入指令。
 2. 检查相关代码、接口与配置未变化时是否已有可复用的精确证据；不得为同一风险重复建设 Browser、HTTP E2E、verifier 或多个 Audit ID。
-3. 选择最低充分证据层：页面或用户流程候选不因用户可见或 UI 可达而自动要求 Browser，应按项目 testing playbook 选择最低充分证据；只有事实本身依赖真实浏览器语义（如 BrowserContext、Cookie / Storage、navigation / reload、文件选择、focus / keyboard 或其他 Browser API），或必须证明 production 页面到真实 HTTP 的跨层 wiring 时，才以 Browser 为主证据；主观可用性或专业判断由人工验收。Postman、curl 或自编客户端可触发的公开 API 绕过由 HTTP E2E 验证，合法并发以 HTTP E2E 为主，局部判断和非阻断防御分支使用 pure/unit。
+3. 选择最低充分证据层：页面或用户流程候选不因用户可见或 UI 可达而自动要求 Browser，应按项目 testing playbook 选择最低充分证据。必须 Browser 时先判断 assertion target：BrowserContext、Cookie / Storage、origin、CORS / credentials、必要 Browser lifecycle、独立 Browser-native API semantic，或不依赖复杂用户点击的 production build / 真实 origin / 真实 HTTP 最低充分 wiring，属于 non-UI Browser semantic，可以继续评估 scripted；产品 UI 结构、文案、visible controls、组件层级、locator、interaction topology、用户操作 workflow、页面级 restore / resume 体验及 accessibility / 视觉体验属于 UI semantic，客观事实默认由 Agent-assisted 验证，主观、专业或真实设备事实由 human manual / real-device 验证。公开 API 绕过由 HTTP E2E 验证，合法并发以 HTTP E2E 为主，局部判断和非阻断防御分支使用 pure/unit。
 4. 不把只能直接改库、伪造内部对象或篡改运行时形成的异常默认列为阻断性业务验收；只有正式导入、迁移、兼容合同、已知生产事故或明确合规要求可以升级。
 5. 页面没有操作入口、但仍可通过 Postman、curl 或自编客户端直接调用公开 API 的非法操作，由后端 HTTP E2E 验证，不重复建立 Browser 场景。缩减 Browser 测试时，必须确认认证、权限、DTO 白名单、资源归属（ownership）、状态门禁、幂等、原子性、隐私和数据库无副作用等后端风险已有可靠证据；已有精确证据直接引用，只有存在真实缺口时才补充测试。
 6. 没有穷举所有角色、错误码、字段组合和数据库快照，不等于存在测试缺口；只有风险真实可达、风险独立且当前最低充分证据缺失时，才能标记为 `gap`。
@@ -335,11 +335,13 @@ GPT 对以下任务必须在生成 Codex 实现指令前执行候选生成：
 
 **Browser 证据执行方式与合同自证防线**
 
-1. Browser evidence requirement 与 Browser execution mode 必须分开判断。scripted deterministic Browser regression 适合 BrowserContext / Cookie / Storage isolation、navigation / reload、file input、Browser API、keyboard / focus、CORS / credentials，以及 interaction topology 稳定、行为锚点可靠、流程短且长期回归价值明确的跨层合同；“页面存在”“按钮存在”或“流程重要”均不足以单独证明需要持久 scripted regression。
-2. 当 unit / pure、HTTP E2E 或 verifier 已精确证明大部分服务端语义，Browser 剩余价值主要是 production 页面到真实 HTTP 的 wiring 与一条当前正常流程，而 UI 结构变化较快、deterministic locator 维护成本较高时，可以优先选择 Agent-assisted interactive Browser smoke。Agent 可以依据当前页面自适应展开结构、动态控件和语义等价入口，但必须遵守预先冻结的 expected contract；不得根据当前 production 表现降低、改变或重新定义业务目标。完整通过只能记录为 `Agent-assisted Browser smoke passed`，不能记录为 scripted / Playwright regression green、CI coverage 或 reusable scripted evidence。
-3. human manual / real-device smoke 独立负责可理解性、自然性、主观体验、专业判断、真实设备和真实硬件；不得与 Agent-assisted smoke 混称，也不得用任一 Browser 自动方式冒充人工专业签收。
-4. substantive contract change、旧 scripted Profile 与 current 行为广泛漂移，或准备重写 / 替换 Browser spec 主体时，GPT 必须先从已锁定产品合同、current roadmap contract、正式 API / DTO、领域原始需求或用户明确决策等独立来源冻结 expected business behavior，之后才读取 current production code 获取 selector、testid、route、控件结构和 wiring。不得形成“production 怎么实现 → test 就期待什么 → test 再证明 production 正确”的自证闭环。该冻结默认只是 GPT 生成期的临时设计工作，不机械新增审计任务、JSON、hash 或长期文档；只有合同来源矛盾、旧测试与 current 合同严重冲突或重写依据无法明确时，才建立具名 read-only independent contract audit。
-5. 合同或 UI 变化后按职责与长期证据价值选择资产策略：业务合同未变、仅 copy / selector / testid / URL segment 或等价 wiring 改变且测试主体职责仍正确时 `patch`；Profile 仍有长期 scripted regression 价值且主职责正确，但 interaction topology、response mode、entry state 或 workflow 实质变化、旧正文含多处历史分支或 stale semantic assumption 时 `rewrite body / keep path`；低层可靠证据已覆盖核心业务、剩余 Browser 价值主要是高变 UI wiring，且 scripted automation 维护工程显著超过证据价值时 `retire scripted profile`，改由 Agent-assisted 或 manual / real-device smoke 承担适合的剩余风险。不得机械规定合同变化一律重写或无论漂移多大都继续 patch；退役也不得删除仍缺失的安全、权限、数据或持续自动回归证据。
+1. Browser evidence requirement 与 Browser execution mode 必须分开判断，且先问“assertion target 是 Browser semantic 还是 UI semantic”，不能先问 Playwright 是否能写。scripted deterministic Browser regression 默认只准入 non-UI Browser runtime / network / origin / isolation semantic；主要测试逻辑和主要断言不得依赖 production UI 的 DOM 结构、文案、selector、visible controls、组件层级、interaction topology 或用户操作路径。
+2. non-UI Browser semantic 包括 BrowserContext isolation、Cookie isolation / persistence、localStorage / sessionStorage / IndexedDB 等 Storage isolation、origin isolation、CORS / credentials、浏览器层 Session / Cookie 生命周期、navigation / reload / history / origin 的 Browser lifecycle 本身、Browser-native file / blob / object URL semantics、独立 Browser-native API semantics，以及 production build / 真实 origin / 真实 HTTP topology 的最低充分 wiring。production 页面可以作为 Browser runtime 宿主，但 scripted 主断言不得因此扩张成登录、多页导航、多次点击、modal / details、录音、手写、上传或业务完成等 UI golden path。
+3. Browser-native API 名称本身不构成 scripted 资格。MediaRecorder、Canvas、Pointer、file input、focus、keyboard、clipboard、permissions 等都必须继续判断是在证明独立 Browser primitive，还是产品 UI 使用该 primitive 的行为；前者只有在可脱离 production UI topology 的薄 profile 中才可 scripted，后者属于 UI。navigation / reload 只有在证明 Cookie / Storage / Context 等 Browser lifecycle 事实时可 scripted；业务页面刷新后的题目、面板、按钮、提示和继续操作体验属于 UI。泛化的 file input 以及 keyboard / focus 不再是默认 scripted 白名单。
+4. UI semantic 包括页面结构、可见组件或控件、文案、提示语、modal / drawer / details / tab、组件展开关系、selector / locator / DOM ancestor、元素位置、enable / disable、用户点击顺序、输入 / 保存 / 继续流程、页面级错误恢复、UI reload / resume、frontend workflow，以及视觉、布局和 accessibility 体验。客观 production UI Browser behavior 默认使用 Agent-assisted interactive Browser smoke；Agent 可以适应当前布局、DOM ancestor、展开结构、动态控件和不改变合同的普通 copy 变化，但不得改变预先冻结的 expected contract。通过只能记录为 `Agent-assisted Browser smoke passed`，不能记录为 scripted / Playwright regression green、CI coverage 或 reusable scripted evidence。
+5. human manual / real-device smoke 独立负责可理解性、自然性、视觉层级、主观体验、专业判断、真实设备和真实麦克风、触控笔、相机及浏览器 / OS 权限体验。Agent Browser 不可用或人工实际操作本身是验收要求时，客观 UI flow 也可以形成准确标记的 human manual evidence；不得与 Agent-assisted 或 scripted 结果混称。human 不替代 BrowserContext、Cookie / Storage isolation、CORS / credentials 等独立 non-UI Browser security semantic 的 scripted evidence。
+6. substantive contract change、旧 scripted Profile 与 current 行为广泛漂移，或准备重写 / 替换 Browser spec 主体时，GPT 必须先从已锁定产品合同、current roadmap contract、正式 API / DTO、领域原始需求或用户明确决策等独立来源冻结 expected business behavior，之后才读取 current production code 获取 selector、testid、route、控件结构和 wiring。Agent 的适应性不得形成“production 怎么实现 → test 就期待什么 → test 再证明 production 正确”的自证闭环。该冻结默认只是 GPT 生成期的临时设计工作，不机械新增审计任务、JSON、hash 或长期文档；只有合同来源矛盾、旧测试与 current 合同严重冲突或重写依据无法明确时，才建立具名 read-only independent contract audit。
+7. 对现有 scripted Profile，`patch / rewrite body / retire` 前先判断其是否仍有本版本 scripted 资格。主要验证 UI 时直接选择 `retire scripted profile / switch current UI evidence to Agent-assisted or human`，不得 patch selector 或 rewrite scripted UI body 作为长期方案；历史通过继续按形成时有效的 historical evidence 保存，但不自动构成 current / future scripted regression 资格。只有 `ELIGIBLE_NON_UI_SCRIPTED` Profile 才继续依据职责、漂移范围与维护成本选择 patch 或 rewrite；真正 Browser-only semantic 被长 UI flow 包裹时，先尝试下沉低层或形成最低充分的薄 non-UI profile，无法合理薄化时由 Agent-assisted 验证整个 UI flow。
 
 **验收优先级与冻结止损**
 
@@ -347,7 +349,7 @@ GPT 对以下任务必须在生成 Codex 实现指令前执行候选生成：
 2. 自动化失败必须先分类为 product、spec/test、fixture、support/runner、environment 或 tool limitation，并依据证据修正对应层。GET aborted、Next prefetch、Playwright response / requestfailed 时序、测试鼠标坐标和 runner 编排问题，不得在没有稳定业务合同违例时升级为产品 `gap` 或 production 架构要求。
 3. 只有 normal happy path 失败；数据完整性受损；权限、安全或隐私违例；正常单次操作稳定出现未知 4xx / 5xx；当前业务合同直接违例；或没有可信恢复路径，才默认重新打开当前实现。测试基础设施、环境和工具问题只修对应测试层；低频非阻断候选可以具名归入工作包最终收口。
 4. 当 happy path 已通过、当前阻断项已关闭、剩余候选均有明确主要归属和复核时点时，冻结当前实现单元的验收范围。不得为了让候选集合在理论上再也发现不了新风险而递归扩张；冻结只停止无界扩张，不删除候选、不降低工作包最终完成门禁，也不削弱数据、权限、安全、隐私、不可逆事实、防重复和关键恢复证据。
-5. 同一 execution mode 与资产方案连续两轮因 spec/test、fixture、support/runner、environment 或 tool limitation 失败后，不得因下一处局部修复看似容易而进行第三轮同方案 patch / rerun；必须先在保留并修复 scripted Profile、rewrite body、retire scripted Profile + Agent-assisted smoke、manual / real-device smoke 中重新选择最低充分方案。明确的 production contract violation 仍按产品 `gap` 处理，不得用工具重选掩盖。
+5. UI scripted Profile 不需要等待失败两轮：静态审计已经证明主要 assertion target 是 UI semantic 时，直接判定不符合本版本，不再执行、patch selector 或修复 scripted UI body。连续两轮止损继续适用于真正 `ELIGIBLE_NON_UI_SCRIPTED` 的测试基础设施：同一 execution mode 与资产方案因 spec/test、fixture、support/runner、environment 或 tool limitation 连续两轮失败后，不得进行第三轮同方案 patch / rerun，必须在修复或重写合格的 non-UI scripted Profile、退役 Profile、Agent-assisted smoke、manual / real-device smoke 中重新选择最低充分方案。明确的 production contract violation 仍按产品 `gap` 处理，不得用工具重选掩盖。
 
 阶段 B 还必须在上述既有治理中判断候选是当前实现单元阻断项，还是工作包最终收口候选；这只是候选归属与验收时点判断，不是新的项目状态、候选仓库或阶段状态机：
 
@@ -401,7 +403,7 @@ GPT 对以下任务必须在生成 Codex 实现指令前执行候选生成：
 
 - A# 后端实现单元通常以 Controller/API、DTO/Guard/Pipe、Service/Repository、Schema/index、原子写、幂等、并发、恢复、audit、mapper、数据库终态和外部副作用为主要范围，并按风险从 backend unit、HTTP E2E、database verifier 与 static gate 中选择最低充分证据；没有正式 UI 入口时不机械新增 Browser。
 - UI 行为明确属于同一工作包中具名的后续 B# 时，UI 候选可以归属该 B#；A# 在锁定的纯后端范围全部关闭后可以准确写为 `A# 后端范围完成`。该 UI 候选在对应 B# 验收通过前仍是 open，且不得据此宣布完整产品能力或工作包完成。若 A# 锁定合同本身包含跨层产品闭环，则不得把 UI 候选转移到未明确的未来 B# 以提前完成。
-- B# 前端实现单元通常以页面/路由、用户入口、表单交互、Browser 状态、当前会话和持久事实、刷新/错误恢复、DOM/URL/Storage/Cookie/Network 隐私及代表性可访问性为主要范围。相关 A# 精确证据仍适用于当前代码态时，B# 应引用该 unit、HTTP E2E 或 verifier 证据，只为新增的用户可见风险补最低充分 Browser；B# 改变后端合同或暴露新的公开调用路径时，必须重新扫描后端候选，并明确由当前跨层实现单元或具名 A# 承担。
+- B# 前端实现单元通常以页面/路由、用户入口、表单交互、Browser 状态、当前会话和持久事实、刷新/错误恢复、DOM/URL/Storage/Cookie/Network 隐私及代表性可访问性为主要范围。相关 A# 精确证据仍适用于当前代码态时，B# 应引用该 unit、HTTP E2E 或 verifier 证据，只为新增风险补最低充分 Browser evidence，并继续按 assertion target 选择 mode：non-UI Browser semantic 才可 scripted，客观 UI 默认 Agent-assisted，主观、专业或真实设备事实归 human；B# 改变后端合同或暴露新的公开调用路径时，必须重新扫描后端候选，并明确由当前跨层实现单元或具名 A# 承担。
 - mandatory 人工或真实设备项目尚未完成时，不得无条件宣布完整范围完成。当前合同明确只验收桌面、自动化、后端或其他子范围时，可以使用“桌面范围完成”“自动化范围完成”“后端范围完成”等准确限定语；不得将限定完成简写为无条件的“A# 完成”“B# 完成”或“工作包完成”。
 
 本节后续规则的执行主体以本节前部“适用主体与双时点分工”为准，不得将任一生成期规则解释为要求 Codex 重复初始 A/B/C，也不得将该分工解释为允许 Codex 跳过增量治理或最终验收。
@@ -422,7 +424,7 @@ Codex 指令不要求包含或输出完整候选全集，也不得新增第 13 �
 6. “最多一个 CLI 和一个 spec”等文件数量限制只能用于阻止重复基础设施，不能迫使不相干职责共处、在单文件复制逻辑或放弃合理拆分。文件数量限制与清晰职责边界冲突时，必须停止并报告设计冲突，由用户决定，不得通过塞入代码或偷偷搬移文件规避。
 7. 只有真实外部硬约束才允许精确大小限制：用户明确给出的硬性格式要求；已经存在且实际启用的编译器、平台、协议、提交系统或 linter 强制限制；外部接口或文件格式明确规定的大小限制。GPT 或 Codex 不得自行创造、推定或把观察指标包装为外部限制。
 8. 最终报告不得把“满足行数预算”作为实现或测试资产的验收结果。项目级 Browser、fixture、E2E、verifier、cleanup、证据复用与止损细节分别引用 `docs/handoff/handoff-frontend-testing-playbook.md` 和 `docs/handoff/handoff-backend-testing-playbook.md`，不在本节重复。
-9. Browser fixture、support、runner 和 verifier 不是任何 Browser evidence 的固定配套。只有 Browser 需要独立合法 synthetic 起点、Browser 写入终态未被更低层证据充分证明，或确有 namespace / cleanup 隔离风险时才增加对应资产；当这些资产开始复制 catalog、业务状态或服务端判断并逐步形成“第二套实现”，或维护工程明显超过所证明的 Browser 风险时，必须停止继续扩张并回到 3.9 重新选择 evidence execution mode，不得用更多 fixture / support / verifier 追求 scripted green。
+9. Browser fixture、support、runner 和 verifier 不是任何 Browser evidence 的固定配套。只有 Browser 需要独立合法 synthetic 起点、Browser 写入终态未被更低层证据充分证明，或确有 namespace / cleanup 隔离风险时才增加对应资产；不得为了把 UI flow 改造成 scripted 而扩张 fixture、support、testid、test-only UI hook、复杂 Browser harness 或第二套业务状态模型。当这些资产开始复制 catalog、业务状态或服务端判断并逐步形成“第二套实现”，维护工程明显超过所证明的 Browser 风险，或 UI flow 需要大量基础设施才能稳定时，必须停止继续扩张并回到 3.9 重新选择 evidence execution mode；后者进一步支持 Agent-assisted / human，而不是用更多资产追求 scripted green。
 
 ### 3.11 文档事实所有权与同步写入门禁（强制）
 
@@ -459,8 +461,9 @@ Codex 指令不要求包含或输出完整候选全集，也不得新增第 13 �
 
 ## 6. 版本说明
 
-当前版本：v1.19（精简稳定版）
+当前版本：v1.20（精简稳定版）
 适用场景：适用于需要通过稳定指令结构控制修改范围、验证过程与文档同步的持续开发项目
+v1.20 核心变化：将 scripted deterministic Browser regression 收窄为 non-UI Browser runtime / network / origin / isolation semantics；产品客观 UI verification 默认由 Agent-assisted 执行，主观、专业与真实设备事实由 human manual / real-device 执行；删除稳定 interaction topology、keyboard / focus 和泛化 file input 作为默认 scripted 准入，明确 CI 要求不覆盖该边界，并要求现有 scripted 资产按新规则重新 qualification
 v1.19 核心变化：新增文档事实单一 authoritative owner 与同步写入门禁，确立 `reference, don't restate`、同步文档不等于复制事实、completed work package 压缩、current stage 非 release notes、去重不等于信息丢失及轻量 owner check；不新增 ownership registry、独立审计流程或持久状态体系
 v1.18 核心变化：将 Browser evidence requirement 与 execution mode 分离，明确 scripted deterministic regression、Agent-assisted interactive smoke 与 human manual / real-device smoke 的适用边界和完成语义；新增 substantive contract change 后的 independent-contract 自证防线、patch / rewrite body / retire 决策、连续两轮测试基础设施失败后的工具级策略重评估，以及 fixture / support / verifier 形成第二套实现时的复杂度止损；不改变既有验证候选、活动状态或产品完成门禁
 v1.17 核心变化：明确页面或用户流程可见、UI 可达不自动要求 Browser；只有不可替代 Browser 语义或 production 页面到真实 HTTP wiring 才以 Browser 为主证据，主观与专业判断归人工验收；不改变 v1.16 的主体分工和最低充分治理

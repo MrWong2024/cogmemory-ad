@@ -17,16 +17,18 @@
 | B14.1 | 累计证据索引，不是独立 Browser 批次 | shared Node-only 与分层 backend 证据完整 | frontend testing playbook“B14.1 累计证据索引” |
 | Batch D / B15 | 完成；`passed=2`、`pending=0`；P0 `gap=0` | A25 HTTP/unit、三类并发收敛、Correction Node-only 与 verifier 完整 | frontend testing playbook“当前证据索引” |
 | A29 / A30 / WP-03 backend | 后端范围完成；A29 / A30 证据复用；backend 阻断性 `gap=0` | 父实例 + 固定题目 scope 的可恢复 barrier、A14/A15 原子门禁、fencing/releasing 恢复、完成/释放 CAS 竞争、legacy / invalid / privacy 证据完整 | frontend single-flight、P3 与 P9 已闭合；B18 补充验证自动化 `gap=0`，WP-03 已完成 |
-| WP-10-F1 | 产品范围已完成，WP-10 状态不回退；新的 `patient-administration-handoff` same-device / cross-device replacement 已形成 current green，原 F1-P1 / F1-P2 保留为历史通过证据 | replacement 使用两个独立 fresh namespace；prepare / 只读 prepared verify、Browser、post verifier 与 cleanup 均通过，实际数据库为 `cogmemory_ad_browser_test`，两次 cleanup 均 `residualCount=0`、runtime absent；后端产品代码与 retained handoff fixture 均未修改 | 旧 `wp10-f1` spec / support / fixture executable 已退役，不再作为 current Browser regression 主证据；详见 frontend testing playbook |
-| WP-10-F2 | Current Browser regression 已闭合；P1 已按 current MMSE contract replacement，P2 reload recovery current green 保持 | current P1 post 为 completed/currentStep drawing、credential hashes cleared、protected facts 与 ItemResponse unchanged、ScaleInstance lifecycle `in_progress`、audio/handwriting/photo Evidence present、downstream=0 | Phase 1A 已解除旧 WP10-F1 support dependency；F3 current Playwright 止损不影响 F2 current green，WP-10 产品完成状态不变 |
+| WP-10-F1 | 产品范围已完成，WP-10 状态不回退；same-device / cross-device replacement green 保留为形成时有效的历史证据，但两个现存 executable 按 v1.20 均为 `UI_FLOW_DISQUALIFIED` | replacement 当轮使用两个独立 fresh namespace；prepare / 只读 prepared verify、Browser、post verifier 与 cleanup 均通过，实际数据库为 `cogmemory_ad_browser_test`，两次 cleanup 均 `residualCount=0`、runtime absent | future same / cross UI evidence 改由 Agent-assisted / human；专用 fixture 等待下一批 retirement / requalification |
+| WP-10-F2 | 产品范围已完成，P1 / P2 green 保留为形成时有效的历史证据；两个现存 executable 按 v1.20 均为 `UI_FLOW_DISQUALIFIED` | P1 当轮 post 为 completed/currentStep drawing、credential hashes cleared、protected facts 与 ItemResponse unchanged、ScaleInstance lifecycle `in_progress`、audio/handwriting/photo Evidence present、downstream=0 | future F2 UI evidence 改由 Agent-assisted / human；专用 fixture 等待下一批 retirement / requalification |
 | WP-10-F3 | 产品范围保持完成；backend unit / HTTP E2E 与服务端合同证据继续有效，历史 Browser 证据保留 | 2026-08-22 current deterministic Playwright re-automation 连续两轮因 `spec/test` locator / test-asset 问题失败后已止损，未形成 current Playwright green，也未证明 production gap | F3 spec / support / fixture executable 已退役；测试工具状态不回退 WP-10 |
 | Batch E | 8 个真实设备或人工项目待验 | 不由后端自动测试冒充 | frontend testing playbook“Batch E：真实设备或人工验收” |
 
 roadmap 独立维护产品范围和工作包状态；testing playbook 治理不启动下一工作包。
 
-2026-08-22 current F2 replacement 使用 fresh full namespace `f2p1fr8c4e1b`，prepare / verify-prepared / Browser / full verify-post / cleanup / residual 均 exit 0，实际数据库逐字为 `cogmemory_ad_browser_test`，`reused=false`。P1 首轮 1/1 通过并按 current contract 走完 1–16 speech、17 `staff_observation`、18 writing、19 drawing/photo；post verifier 确认唯一 Session completed、currentStep drawing、credential hashes cleared、19 个有效 capture、Evidence ownership/reference/storage 一致且 audio/handwriting/photo present，`ScaleInstance` protected facts与 `ItemResponse` unchanged、lifecycle `in_progress`、downstream=0。两次精确 cleanup/residual 均为 `residualCount=0`、runtime absent；P2 current green 保持且本轮未重跑。旧 counts、revision、playback 与历史 P1/P2 evidence 继续由下方阶段证据和 Git 历史保留，不作为 current P1 Browser contract。F3 current Playwright re-automation 的停止与 executable 退役不影响 F2 current green，也不作为 WP-10 产品状态的机械前置；roadmap 与 WP-10 产品完成状态未改变。
+2026-08-22 F2 replacement 当轮使用 fresh full namespace `f2p1fr8c4e1b`，prepare / verify-prepared / Browser / full verify-post / cleanup / residual 均 exit 0，实际数据库逐字为 `cogmemory_ad_browser_test`，`reused=false`。P1 首轮 1/1 通过并按 current product contract 走完 1–16 speech、17 `staff_observation`、18 writing、19 drawing/photo；post verifier 确认唯一 Session completed、currentStep drawing、credential hashes cleared、19 个有效 capture、Evidence ownership/reference/storage 一致且 audio/handwriting/photo present，`ScaleInstance` protected facts与 `ItemResponse` unchanged、lifecycle `in_progress`、downstream=0。两次精确 cleanup/residual 均为 `residualCount=0`、runtime absent；P2 green 保持且本轮未重跑。旧 counts、revision、playback 与历史 P1/P2 evidence 继续由下方阶段证据和 Git 历史保留。v1.20 只取消 P1 / P2 的 future / current scripted UI regression 资格，不改写历史通过，也不回退 roadmap 与 WP-10 产品完成状态。
 
-Current Browser backend executable inventory（2026-08-23）：retained fixture CLIs 仅为 `patient-administration-handoff-browser-fixtures.ts` 与 `wp10-f2-browser-fixtures.ts`；`start-browser-test-backend.ts` 继续作为 generic Browser acceptance backend launcher，保留 database-purpose pre-import / connected-runtime gate、AppModule 延迟加载、bootstrap、`configureApp` 与 listen，但已移除全部 B10-only HTTP fault injection。`database-purpose-gates.e2e-spec.ts` 现以 handoff 与 F2 两个 retained fixture CLI 证明错误数据库配置在 AppModule import / 写入前 fail-closed。B10～B15、B18、old WP10-F1 与 WP10-F3 的 historical Browser fixture executable 已退役；历史 backend / Browser 通过证据仍由本手册、frontend testing playbook 与 Git 历史保留。
+Current Browser backend physical inventory 与 v1.20 policy inventory（2026-08-23）必须分开：`patient-administration-handoff-browser-fixtures.ts` 只声明 same-device / cross-device，`wp10-f2-browser-fixtures.ts` 只声明 full / recovery；它们仍物理存在，但当前只服务 4 个 `UI_FLOW_DISQUALIFIED` scripted UI profile，本任务不删除，也不再描述为 v1.20 long-term retained Browser fixture。下一批退役 / requalification 必须连同两个专用 support、runtime descriptor 与调用文档一起处理。
+
+`database-purpose-gates.e2e-spec.ts` 当前仍把上述两个 fixture CLI 的 `prepare` 作为 fail-closed 静态探针；这只是 current gate dependency，不授予 fixture 或 UI profile scripted 资格。下一批 retirement 必须同步选择仍具 current 价值的代表 probe。`start-browser-test-backend.ts` 不导入任何 profile fixture，继续作为 generic Browser acceptance backend launcher，保留 database-purpose pre-import / connected-runtime gate、AppModule 延迟加载、bootstrap、`configureApp` 与 listen；它对 v1.20 eligible live topology 及需要真实 backend 的 Agent-assisted UI smoke 仍有独立 current 价值。B10～B15、B18、old WP10-F1 与 WP10-F3 的 historical Browser fixture executable 已退役；历史 backend / Browser 通过证据仍由本手册、frontend testing playbook 与 Git 历史保留。
 
 2026-08-07 首次 development 隔离 OSS smoke 暴露 HTTP signed URL 并正确失败；`OssStorageService` 修复统一 `secure: true` 与 HTTPS fail-closed 后，以 none 进程重新完成真实合成对象 upload、HTTPS signed GET 200 且字节一致、未签名 GET 403、精确删除及删除后 / finally signed GET 404，`residualObject=false`。全程未连接数据库、未使用患者数据或真实录音；该证据仅覆盖底层真实 OSS driver，不代表患者 HTTP 上传、真实设备、真实 ASR 或生产部署验收。
 
@@ -39,7 +41,7 @@ Current Browser backend executable inventory（2026-08-23）：retained fixture 
 | `none` | 任务不需要数据库 | 文档、lint、typecheck、build、静态审计、Playwright runner、production frontend |
 | `development` | 日常开发与人工调试 | 仅使用明确归属的开发范围，不作为自动测试或生产操作用途 |
 | `standard_test` | unit、普通 HTTP E2E 和允许重建测试数据的自动化 | 按测试资产合同写入、验证和精确清理测试数据 |
-| `browser_acceptance` | retained Browser fixture、Browser test backend、verifier 与 cleanup | 仅在专用 Browser acceptance 运行链中使用 |
+| `browser_acceptance` | 合格 non-UI scripted 或 Agent-assisted / human Browser evidence 所需的 fixture、Browser test backend、verifier 与 cleanup | 仅在专用 Browser acceptance 运行链中使用；execution mode 本身不授予 fixture 资格 |
 | `production_or_operations` | 用户同时明确授权目标环境与允许操作 | 仅执行该次授权覆盖的生产或运维操作 |
 
 精确 database name、env file 及 main / admin URI variable source 统一按 [Backend Config Matrix](./handoff-backend-config-matrix.md) 解析，本文不维护第二张静态映射。`standard_test` 与 `browser_acceptance` 必须数据库级隔离；namespace 不能替代数据库隔离。任一进程只允许一种用途，不得混合两个用途的配置来源，也不得依赖 dotenv 顺序、继承变量或后加载覆盖选择数据库。
@@ -90,16 +92,16 @@ B# 可以引用当前代码态下仍适用的 A# 精确 unit、HTTP E2E 或 veri
 
 新风险的 `ui_reachable`、`public_api_reachable`、`legitimate_concurrency`、`internal_corruption_only`、`manual_or_real_device` 与 `general_gate` 分类，以 frontend testing playbook“当前测试设计规则”为权威。后端在该分类上只补充以下证据职责：
 
-一个用户流程需要 Browser evidence，不自动要求后端建设 Browser fixture + verifier；scripted Browser Profile 与 Agent-assisted interactive Browser smoke 也都不能反向要求后端重复已有精确 HTTP E2E。Browser execution mode 的选择以 frontend testing playbook“Browser 证据的执行模式”为唯一项目级权威。
+一个用户流程需要 Browser evidence，不自动要求后端建设 Browser fixture + verifier；UI flow 从 scripted 转为 Agent-assisted / human 后也不自动要求新增或扩张 fixture / verifier。服务端事实已由精确 HTTP E2E 证明时，Agent UI smoke 不再重复 post database verifier。真正 non-UI Browser semantic 是否使用 scripted，以及 objective UI / subjective-professional-real-device 如何分流，以 frontend testing playbook“Browser 证据的执行模式”为唯一项目级权威。
 
 | 层级 | 负责 | 不能替代 |
 |---|---|---|
 | unit / pure spec | 局部判断、DTO、Controller 参数传递、Service 分支、mapper、状态边界与廉价防御 | 真实 HTTP、Guard、全局 Pipe、数据库终态 |
 | HTTP E2E | 公开 API 绕过与合法并发的认证、401/403、Guard、Pipe、DTO whitelist、ownership、权限、状态门禁、重复提交、幂等、revision / CAS conflict、原子写入、audit、非法调用无副作用与真实 MongoDB 终态 | 页面入口、控件、Browser API 和用户体验 |
-| database verifier | 仅在 Browser 写入结果无法由现有 HTTP E2E 充分证明时，补充写入次数、audit、protected roots 或持久终态 | 不重复已有准确 HTTP E2E，不替代页面行为 |
+| database verifier | 仅在任一 Browser execution mode 的写入结果无法由现有 HTTP E2E 充分证明时，补充写入次数、audit、protected roots 或持久终态 | 不因 UI flow 转 Agent-assisted 自动新增，不重复已有准确 HTTP E2E，不替代页面行为 |
 | static gate | lint、typecheck、build、discovery、依赖、import、路由和测试资产链接 | 动态权限、状态机、数据库或 Browser 通过 |
 
-页面没有入口但公开 API 可直接调用的认证、权限、DTO、ownership 与状态绕过，由 HTTP E2E 证明拒绝和数据库无非法变化，不在 Browser 再模拟一次 HTTP 攻击。合法并发使用两个真实可达请求或独立会话，验证原子性、幂等、写入次数与终态；只有不可替代的页面恢复交互才增加 Browser。Browser 对这类风险只在有价值时证明正常 UI 没有暴露非法入口，或真实页面产生的请求 wiring 正确，不复制服务端非法调用矩阵。
+页面没有入口但公开 API 可直接调用的认证、权限、DTO、ownership 与状态绕过，由 HTTP E2E 证明拒绝和数据库无非法变化，不在 Browser 再模拟一次 HTTP 攻击。合法并发使用两个真实可达请求或独立会话，验证原子性、幂等、写入次数与终态；不可替代的页面恢复或 UI 交互由 Agent-assisted / human，真正 non-UI Browser semantic 才按 frontend testing playbook 评估 scripted。Browser 对这类风险只在有价值时证明真实页面产生正确最低充分 wiring，不复制服务端非法调用矩阵。
 
 已进入可能写入的 Service，或涉及原子更新、部分写入、幂等、并发、不可逆状态的请求，必须验证数据库终态、写入次数与受保护字段。Guard / Pipe 之前拒绝的请求按风险使用最低充分无副作用证据，不机械为每个错误组合复制全库快照。代码阅读、测试文件存在或测试名称存在不得写成本次动态通过。
 
@@ -163,7 +165,7 @@ Agent-assisted interactive Browser smoke 优先复用已有合法测试起点、
 
 已经存在且符合当前正式合同的 shared canonical 数据只读复用，不属于当前 Profile 的 namespace ownership。fixture 不得自动 materialize、update、repair 或 reseed shared canonical；canonical 不满足当前正式合同时必须 fail-closed 并报告，不得为让 Profile 启动而修补。prepared verifier 保持只读，不创建、修复或删除数据；fixture 与 cleanup 只管理当前 Profile 明确拥有的 namespace 资源，不修改 canonical seed / catalog。
 
-“前端生产代码发生变化”本身不是 fixture 修改或重建触发器。只有 DTO 必填字段、Schema、权限、服务端状态前置、seed / catalog 或其他 fixture 必须满足的数据前置合同真实变化时才调整 fixture；纯 UI copy、布局、selector、展示结构和不改变数据前置的普通交互变化，原则上只更新直接相关 spec / support。是否需要 fresh production frontend build 是 frontend Browser 运行门禁，与 fixture 是否变化相互独立，具体规则引用 frontend testing playbook 3.1。
+“前端生产代码发生变化”本身不是 fixture 修改或重建触发器。只有 DTO 必填字段、Schema、权限、服务端状态前置、seed / catalog 或其他 fixture 必须满足的数据前置合同真实变化时才调整 fixture；纯 UI copy、布局、selector、展示结构和不改变数据前置的普通交互变化，不修改 fixture，也不授权 patch 已被 v1.20 取消资格的 scripted UI spec / support。是否需要 fresh production frontend build 是 production-connected Browser evidence 运行门禁，与 fixture 是否变化相互独立，具体规则引用 frontend testing playbook 3.1。
 
 每个 Profile 独立完成：
 
@@ -171,7 +173,7 @@ Agent-assisted interactive Browser smoke 优先复用已有合法测试起点、
 2. db_admin / `dbOwner` 独立进程 prepare；重复 prepare 默认拒绝，replace 必须显式且精确。
 3. 执行只读 prepared verifier；不得创建、修复或删除数据。
 4. prepared 门禁通过后才启动 app / `readWrite` 的 Browser backend；Playwright 仍为 `none`。
-5. 在同一代码态和前置下执行一次 Browser 微型 Profile。
+5. 在同一代码态和前置下按已选择的 execution mode 执行一次最低充分 Browser evidence；只有 non-UI Browser semantic 才执行 scripted micro-profile。
 6. 执行与副作用匹配的只读 verifier；零写入场景也验证报告、audit、`updatedAt` 和受保护资源未变。
 7. logout、关闭 Browser/Context、停止进程，按所有权精确 cleanup，再执行幂等 residual 核对。
 
@@ -182,7 +184,7 @@ Agent-assisted interactive Browser smoke 优先复用已有合法测试起点、
 - 写请求按风险验证 Body 白名单、次数、actor、状态转换、审计和最终 MongoDB 状态；禁止自动 retry、replay 或 polling。同一业务聚合在一个业务阶段优先一个主要写入主体，不影响独立患者或独立量表实例正常并行。真实竞争允许“一个成功 + 一个 CAS 安全拒绝”，前提是数据一致、最新状态可读且用户可显式重试。
 - 多角色或双 Session 使用真实独立会话；网络结果不确定时先只读核对服务端事实，不得重试写请求。
 - Evidence 上传继续验证 prepare / Storage / `MediaEvidence` / session attach 的两阶段 CAS 与失败精确补偿，确保未被权威 session 接受的本次对象和记录不残留；该一致性职责不得用前端提示或普通 409 断言替代。
-- verifier 只在现有 HTTP E2E 不足时补充 scripted 或 Agent-assisted Browser 写入终态，优先验证业务不变量、相对增量、禁止副作用、actor / ownership、持久终态和受保护事实未漂移；适用时拒绝零写入、额外写入、错误 actor、错误状态、缺失 audit、受保护字段漂移和跨 Profile 污染。Browser 只证明 wiring 或当前正常流程、没有新增未被低层覆盖的持久写入时，不机械增加 verifier。
+- verifier 只在现有 HTTP E2E 不足时补充任一 Browser execution mode 的写入终态，优先验证业务不变量、相对增量、禁止副作用、actor / ownership、持久终态和受保护事实未漂移；适用时拒绝零写入、额外写入、错误 actor、错误状态、缺失 audit、受保护字段漂移和跨 Profile 污染。UI flow 转 Agent-assisted 后不自动增加 verifier；Browser 只证明 wiring 或当前正常流程、没有新增未被低层覆盖的持久写入时，不机械增加 verifier。
 - 禁止把与正式业务合同无关的历史固定 revision、内部累计 count、合法产品行为产生的累计事件为 0，或与当前 Profile 主风险无关的内部统计设为门禁。真正的数量不变量仍严格 exact，包括禁止副作用时新增数量必须为 0、at-most-once / exactly-once、重复提交只能产生一次写、禁止重复 Evidence，以及 cardinality 本身就是正式业务合同的情形。
 - Stage 只协调正式页面或公开 API 能真实产生的并发窗口；必须少量、固定、边界明确、幂等且可精确 cleanup。禁止用直接改库、mock 响应或 Stage 创造产品不可达状态。
 - Stage 前后只允许目标 transition；非目标报告、Patient、Visit、ScaleInstance、narrative、snapshot、audit、seed 与其他 Profile 保持不变。
@@ -193,7 +195,7 @@ Agent-assisted interactive Browser smoke 优先复用已有合法测试起点、
 - cleanup 必须有限超时、幂等并核对 residual；结果未知时先只读审计，不重复写入。cleanup 不替代 post-action verifier。
 - 精确关闭本次 Session、BrowserContext、Chromium、Node 进程、端口、runtime 与 test-results；不终止所有权不明的资源。
 - fixture、HTTP E2E、verifier 和 cleanup 的通用复杂度治理引用 `docs/codex-instruction-spec.md` 3.10；按职责、状态、进程、Secret、生命周期、耦合和重复实现判断，不以行数或文件数单独决定通过、失败或拆分。
-- 当 fixture / verifier / support 的维护工程明显超过所证明的 Browser 风险，或开始复制 catalog、服务端状态判断和业务流程而形成第二套实现时，停止继续扩张并回到 frontend testing playbook 重新评估 scripted Browser 的必要性；不得用更多后端测试基础设施追求 scripted green。
+- 当 fixture / verifier / support 的维护工程明显超过所证明的 Browser 风险，或开始复制 catalog、服务端状态判断和业务流程而形成第二套实现时，停止继续扩张并回到 frontend testing playbook 重新评估 execution mode。不得为了把 UI flow 伪装成 scripted 而扩张 fixture、support、test-only hook、复杂 harness 或第二套业务状态模型；大量稳定化基础设施本身进一步支持 Agent-assisted / human，不得用更多后端测试资产追求 scripted UI green。
 
 ## 6. 失败、止损与执行范围
 
@@ -201,7 +203,7 @@ Agent-assisted interactive Browser smoke 优先复用已有合法测试起点、
 
 测试基础设施失败不等于产品失败，也不等于 Browser 通过；stale spec / fixture / support / runner、environment 或 tool limitation 不自动回退其他仍适用证据，但没有可信 Browser 证据时不得虚报 Browser passed。Browser-only 事实已有可信实际证据与完全没有可信实际证据时的准确记录口径，以 frontend testing playbook 2.7 为权威，不在本手册复制或新增状态。
 
-同一 execution mode 与资产方案连续两轮因 `spec/test`、fixture、support/runner、environment 或 tool limitation 失败时，不得第三轮同方案 patch / rerun；即使下一处局部修复看似容易，也必须先按 frontend testing playbook 在保留并修复 scripted Profile、rewrite body、retire scripted Profile + Agent-assisted smoke、manual / real-device smoke 中重新选择最低充分方案。公共 support 连续影响两个场景时停止方案；每个微型 Profile 最多一次测试资产修复轮。首次失败已可靠归类为同一类 stale test asset 时，这一轮可以对当前 Profile 直接相关的 spec、support、selector 和 verifier 做一次边界明确的静态 sweep，再只重跑受影响 Profile 与必要关联证据。不得扫全仓库历史资产或越界重构 Browser infrastructure；明确 production contract violation 仍归 product `gap`，不得以 execution-mode 重选掩盖。不得在同一任务同时重构 fixture、重构 runner、修改业务断言并执行正式完整验收；测试基础设施明显超过被测业务时停止扩张并重新评估分层。
+UI scripted Profile 不等待失败两轮：静态审计证明主要 assertion target 是 UI semantic 时，直接按 frontend testing playbook 判定不符合 v1.20，不再执行、patch selector 或 rewrite scripted UI body。连续两轮止损继续适用于真正 `ELIGIBLE_NON_UI_SCRIPTED` 的基础设施：同一 execution mode 与资产方案因 `spec/test`、fixture、support/runner、environment 或 tool limitation 连续两轮失败时，不得第三轮同方案 patch / rerun，必须在修复或重写合格 non-UI Profile、退役 Profile、Agent-assisted smoke、manual / real-device smoke 中重新选择最低充分方案。公共 support 连续影响两个场景时停止方案；每个合格 non-UI micro-profile 最多一次测试资产修复轮。不得扫全仓库历史资产或越界重构 Browser infrastructure；明确 production contract violation 仍归 product `gap`，不得以 execution-mode 重选掩盖。不得在同一任务同时重构 fixture、重构 runner、修改业务断言并执行正式完整验收；测试基础设施明显超过被测业务时停止扩张并重新评估分层。
 
 测试范围按变化影响选择：
 
