@@ -2,7 +2,7 @@
 
 ## 1. 文档定位与紧凑状态
 
-本文档是后端验证候选来源的项目级补充，以及数据库用途与隔离、Secret 和进程职责、后端定向 Jest / HTTP E2E、unit / HTTP E2E / database verifier 分工、fixture、verifier、cleanup、并发终态和后端静态门禁的权威来源。跨层候选生成与分类、Browser evidence execution mode 的选择、Browser 规则、活动场景状态、Batch D Browser 证据和 Batch E 由 `handoff-frontend-testing-playbook.md` 维护；通用任务归属与即时闭环由 `docs/codex-instruction-spec.md` 3.9 维护；逐轮命令、耗时、失败过程与历史完整合同由 Git 历史追溯。
+本文档是后端验证候选来源的项目级补充，以及数据库用途选择与隔离、Secret 和进程职责、后端定向 Jest / HTTP E2E、unit / HTTP E2E / database verifier 分工、fixture、verifier、cleanup、并发终态、后端静态门禁及 current / historical testing evidence 的权威来源。精确环境变量、数据库名、env file、URI variable mapping 与默认值由 [Backend Config Matrix](./handoff-backend-config-matrix.md) 唯一完整维护；本文只维护测试用途语义和运行门禁。跨层候选生成与分类、Browser evidence execution mode 的选择、Browser 规则、活动场景状态、Batch D Browser 证据和 Batch E 由 `handoff-frontend-testing-playbook.md` 维护；通用任务归属与即时闭环由 `docs/codex-instruction-spec.md` 3.9 维护；逐轮命令、耗时、失败过程与历史完整合同由 Git 历史追溯。
 
 | 范围 | 当前状态 | backend-specific 证据 | Browser 详情 |
 |---|---|---|---|
@@ -32,24 +32,24 @@ Current Browser backend executable inventory（2026-08-23）：retained fixture 
 
 ## 2. 数据库用途和隔离
 
-### 2.1 五类用途与固定映射
+### 2.1 五类用途与运行语义
 
-| 用途 | 项目数据库 | 允许范围 |
+| 用途 | 何时使用 | 允许操作范围 |
 |---|---|---|
-| `none` | 不连接数据库 | 文档、lint、typecheck、build、静态审计、Playwright runner、production frontend |
-| `development` | `cogmemory_ad_dev` | 日常开发与人工调试 |
-| `standard_test` | `cogmemory_ad_test` | unit、普通 HTTP E2E 和允许重建测试数据的自动化 |
-| `browser_acceptance` | `cogmemory_ad_browser_test` | 最小 Browser fixture、Browser test backend、verifier 与精确 cleanup |
-| `production_or_operations` | 项目命名基线 `cogmemory_ad` | 仅在用户同时明确授权目标环境与允许操作后使用 |
+| `none` | 任务不需要数据库 | 文档、lint、typecheck、build、静态审计、Playwright runner、production frontend |
+| `development` | 日常开发与人工调试 | 仅使用明确归属的开发范围，不作为自动测试或生产操作用途 |
+| `standard_test` | unit、普通 HTTP E2E 和允许重建测试数据的自动化 | 按测试资产合同写入、验证和精确清理测试数据 |
+| `browser_acceptance` | retained Browser fixture、Browser test backend、verifier 与 cleanup | 仅在专用 Browser acceptance 运行链中使用 |
+| `production_or_operations` | 用户同时明确授权目标环境与允许操作 | 仅执行该次授权覆盖的生产或运维操作 |
 
-`standard_test` 与 `browser_acceptance` 必须数据库级隔离；namespace 不能替代数据库隔离。任一进程只允许一种用途，不得叠加 `.env.test` 与 `.env.browser-acceptance`，也不得依赖 dotenv 顺序、继承变量或后加载覆盖选择数据库。
+精确 database name、env file 及 main / admin URI variable source 统一按 [Backend Config Matrix](./handoff-backend-config-matrix.md) 解析，本文不维护第二张静态映射。`standard_test` 与 `browser_acceptance` 必须数据库级隔离；namespace 不能替代数据库隔离。任一进程只允许一种用途，不得混合两个用途的配置来源，也不得依赖 dotenv 顺序、继承变量或后加载覆盖选择数据库。
 
 ### 2.2 连接前后门禁与进程角色
 
-1. 启动前确定唯一用途，并校验 URI 声明数据库名与固定映射逐字一致。
+1. 启动前确定唯一用途，从 [Backend Config Matrix](./handoff-backend-config-matrix.md) 取得该用途的声明数据库与 URI 来源，并校验 URI 声明数据库名与解析结果逐字一致。
 2. 建连后读取实际数据库名，再与允许数据库逐字比较；不一致立即失败，不自动回退或猜测其他库。
 3. Browser test backend 主连接使用 Browser app 用户与 `readWrite`；fixture、verifier、cleanup 独立进程使用 db_admin 与 `dbOwner`。
-4. 同时存在不同用途时使用独立进程；需要切换时显式清除或覆盖 `MONGO_URI`、`MONGO_ADMIN_URI`、`COGMEMORY_DATABASE_PURPOSE` 及用途相关变量。
+4. 同时存在不同用途时使用独立进程；需要切换时显式清除或覆盖全部 database purpose、main / admin connection 及其他用途相关变量。
 5. 普通测试不得连接 Browser 库；Browser 进程不得连接普通测试库、开发库或生产库；角色互换也必须拒绝。
 6. `none` 进程不得建立数据库连接，也不得启动会连接数据库的应用、fixture 或测试后端。
 
@@ -123,7 +123,7 @@ B# 可以引用当前代码态下仍适用的 A# 精确 unit、HTTP E2E 或 veri
 npm run test:e2e -- <target>
 ```
 
-以下命令均从 `backend` 目录执行，并在 Jest 启动前设置 `NODE_ENV=test` 与 `COGMEMORY_DATABASE_PURPOSE=standard_test`。discovery 只列出目标文件、不连接数据库，也不证明动态测试通过；正式运行导入应用时加载普通测试配置并连接 `cogmemory_ad_test`。
+以下命令均从 `backend` 目录执行，并在 Jest 启动前设置 `NODE_ENV=test` 与 `COGMEMORY_DATABASE_PURPOSE=standard_test`。discovery 只列出目标文件、不连接数据库，也不证明动态测试通过；正式运行导入应用时加载普通测试配置，并连接由 [Backend Config Matrix](./handoff-backend-config-matrix.md) 为 `standard_test` 解析出的数据库，实际库名仍须通过连接前后门禁。
 
 单文件 discovery：
 

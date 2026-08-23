@@ -2,93 +2,93 @@
 
 ## 1. 文档定位
 
-本文档用于记录 CogMemory AD 后端配置项、来源、用途、默认值和部署注意事项。
+本文档是 CogMemory AD 后端的**静态配置事实 owner**，唯一完整维护配置项、配置路径、默认值 / 示例值、配置来源、静态校验、测试数据库用途映射和部署配置约束。
+
+- 测试用途选择、进程隔离、连接前后门禁、角色职责、fixture / verifier / cleanup 与测试证据见 [Backend Testing Playbook](./handoff-backend-testing-playbook.md)。
+- 当前模块能力与真实未实现边界见 [Backend Snapshot](./handoff-backend-snapshot.md)。
+- 产品阶段与工作包状态见 [Roadmap](./handoff-roadmap.md)。
 
 ## 2. 当前状态
 
 - `backend\src\config\configuration.ts` 与 `backend\src\config\env.validation.ts` 已初始化。
 - 配置加载顺序为 `.env.${NODE_ENV}`、`.env`。
-- 当前配置同时覆盖公共底座、D-038 测试数据库用途门禁和第三方能力口径；SMS Service 与 LLM Service 仍未实现，WP-10-C2 已实现与 LLM provider 独立的患者录音 ASR 配置和具体 client。
-- `MediaModule` 已通过 fake / OSS Storage abstraction 提供题目媒体业务上传、短期访问、作废和重传；`StorageModule` 没有独立、通用的 Storage 管理 API。
+- 当前已定义 runtime / server、Mongo、Storage / OSS、Session / Auth、LLM、ASR 与 SMS 配置族。
+- 配置项存在不表示对应业务 Service 或产品能力可用；current capability 统一以 [Backend Snapshot](./handoff-backend-snapshot.md) 为准。
 - 当前不得写入真实密钥、真实数据库密码、真实 OSS AccessKey、真实短信配置或真实大模型 API Key。
 
-## 3. 测试数据库用途与进程隔离
+## 3. 测试数据库用途静态映射
 
 ### 3.1 用途与数据库映射
 
-| 用途 | 数据库 | 配置来源 | 进程边界 |
+| 用途 | 数据库 | env file / 配置来源 | `NODE_ENV=test` 静态约束 |
 | --- | --- | --- | --- |
-| `standard_test` | `cogmemory_ad_test` | `backend/.env.test` | 只供普通 unit / E2E；不得加载 Browser 配置 |
-| `browser_acceptance` | `cogmemory_ad_browser_test` | `backend/.env.browser-acceptance` | 只供 Browser backend 与 fixture CLI；不得与 `.env.test` 叠加 |
+| `standard_test` | `cogmemory_ad_test` | `backend/.env.test` | 允许值；未显式指定用途时的默认值 |
+| `browser_acceptance` | `cogmemory_ad_browser_test` | `backend/.env.browser-acceptance` | 允许值；必须显式指定用途 |
 
 - `NODE_ENV=test` 时，`COGMEMORY_DATABASE_PURPOSE` 只允许 `standard_test` 或 `browser_acceptance`；未显式指定时默认 `standard_test`。
-- 两个 env 文件可以同时存在于磁盘，但不得同时加载、source 或合并到同一进程，也不得依赖 dotenv 顺序、旧 shell 变量或后加载覆盖选择数据库。
-- 切换用途时应启动独立进程；确需复用 shell 时，必须先清除或覆盖数据库主连接、管理连接、用途及其他用途相关变量。
+- 同一进程的静态配置只能选择一个 database purpose；用途切换、进程隔离和连接前后门禁见 [Backend Testing Playbook](./handoff-backend-testing-playbook.md)。
 - 本文只记录文件职责和变量映射，不记录实际密码、完整 URI 或本地 env 实际值。
 
-### 3.2 Browser 进程 URI 与角色映射
+### 3.2 配置消费方与 URI 来源映射
 
-| 独立进程 | `COGMEMORY_DATABASE_PURPOSE` | `MONGO_URI` 来源 | `MONGO_ADMIN_URI` 来源 | 主连接身份 / 角色 |
-| --- | --- | --- | --- | --- |
-| Browser test backend | `browser_acceptance` | `BROWSER_ACCEPTANCE_APP_MONGO_URI` | `BROWSER_ACCEPTANCE_ADMIN_MONGO_URI` | app / `readWrite` |
-| Browser fixture CLI | `browser_acceptance` | `BROWSER_ACCEPTANCE_ADMIN_MONGO_URI` | `BROWSER_ACCEPTANCE_ADMIN_MONGO_URI` | db_admin / `dbOwner` |
-| 普通 E2E | `standard_test` | `.env.test` 的普通测试主连接 | `.env.test` 的普通测试管理连接 | standard_test 用户 / 测试配置角色 |
+| 配置消费方 | `COGMEMORY_DATABASE_PURPOSE` | `MONGO_URI` 来源 | `MONGO_ADMIN_URI` 来源 |
+| --- | --- | --- | --- |
+| Browser test backend | `browser_acceptance` | `BROWSER_ACCEPTANCE_APP_MONGO_URI` | `BROWSER_ACCEPTANCE_ADMIN_MONGO_URI` |
+| Browser fixture / admin CLI | `browser_acceptance` | `BROWSER_ACCEPTANCE_ADMIN_MONGO_URI` | `BROWSER_ACCEPTANCE_ADMIN_MONGO_URI` |
+| 普通 E2E | `standard_test` | `backend/.env.test` 的普通测试主连接 | `backend/.env.test` 的普通测试管理连接 |
 
-- `npm run start:browser-test` 是 test-only Browser backend 入口；Browser backend 不得以 db_admin 作为主连接，fixture CLI 不得以 app 用户作为主连接。
-- Browser backend 与 fixture CLI 在导入 AppModule 前验证 `NODE_ENV=test`、`browser_acceptance` 用途和 URI 声明库名。
-- AppModule 在建连前校验 URI 声明库名与用途固定映射，在建连后校验 Mongoose `connection.name`；Browser 专用进程还校验唯一认证用户和目标库角色。
-- 普通 E2E 指向 Browser 库、Browser 进程指向普通测试库或开发库、app/db_admin 身份或角色互换时均立即拒绝，不自动回退或改连。
+此表只定义配置消费方读取哪个 URI variable / source；app / db_admin 职责、`readWrite` / `dbOwner` 最小权限、AppModule 连接门禁和 fixture 运行规则由 [Backend Testing Playbook](./handoff-backend-testing-playbook.md) 维护。
 
 ## 4. 其他配置矩阵
 
-| 配置项 | development 默认 / 示例 | production 默认 / 示例 | test 默认 / 示例 | 备注 |
-| --- | --- | --- | --- | --- |
-| `NODE_ENV` | `development` | `production` | `test` | 运行环境 |
-| `PORT` | `5002` | `5002` | `5002` | 后端默认端口 |
-| `FRONTEND_URL` | `http://localhost:3002` | 部署域名覆盖 | `http://localhost:3002` | 本地前端 origin |
-| `CORS_ORIGIN` | `http://localhost:3002` | 部署域名覆盖 | `http://localhost:3002` | 支持逗号分隔多个 origin |
-| `COGMEMORY_DATABASE_PURPOSE` | 可不设置 | 可不设置 | `standard_test` / `browser_acceptance` | test 进程用途；未设置默认 `standard_test` |
-| `MONGO_URI` | `cogmemory_ad_dev` 口径 | required | 按用途映射到普通测试或 Browser 专用库 | 不写真实密码或完整 URI |
-| `MONGO_ADMIN_URI` | `cogmemory_ad_dev` 口径 | required | standard_test 测试管理连接；Browser backend/fixture 按上表映射 | 仅供受控测试管理或运维场景 |
-| `MONGO_AUTO_INDEX` | 默认按非生产启用 | `false` | 默认按非生产启用 | 生产强制关闭 |
-| `MONGO_SERVER_SELECTION_TIMEOUT_MS` | `5000` | `5000` | `5000` | MongoDB 连接超时 |
-| `STORAGE_DRIVER` | `oss` | `oss` | `fake` | 支持 `fake` / `oss`；development / production example 使用 `oss`，test 使用 `fake` |
-| `OSS_REGION` | `oss-cn-shenzhen` | `oss-cn-shenzhen` | 可为空 | OSS 示例区域 |
-| `OSS_BUCKET` | 占位或空 | required when `oss` | 可为空 | 不写真实 bucket |
-| `OSS_INTERNAL_ENDPOINT` | `oss-cn-shenzhen.aliyuncs.com` | `oss-cn-shenzhen-internal.aliyuncs.com` | 可为空 | 后端访问 endpoint |
-| `OSS_PUBLIC_ENDPOINT` | `oss-cn-shenzhen.aliyuncs.com` | `oss-cn-shenzhen.aliyuncs.com` | 可为空 | 签名 URL endpoint |
-| `OSS_ACCESS_KEY_ID` | 占位或空 | required when `oss` | 可为空 | 不写真实 AccessKey |
-| `OSS_ACCESS_KEY_SECRET` | 占位或空 | required when `oss` | 可为空 | 不写真实 AccessKey |
-| `OSS_OBJECT_PREFIX` | `cogmemory_ad` | `cogmemory_ad` | `cogmemory_ad` | 对象前缀默认值 |
-| `SESSION_COOKIE_NAME` | `cogmemory_ad_session` | `cogmemory_ad_session` | `cogmemory_ad_session` | Cookie 名称 |
-| `SESSION_TTL_MS` | `86400000` | `86400000` | `86400000` | 会话 TTL 占位 |
-| `MAX_ACTIVE_SESSIONS_PER_USER` | `5` | `5` | `5` | 当前仅配置占位 |
-| `SESSION_COOKIE_SECURE` | `false` | `true` | `false` | 生产默认 secure |
-| `SESSION_COOKIE_SAME_SITE` | `lax` | `lax` | `lax` | `none` 必须搭配 secure |
-| `LLM_PROVIDER` | `bailian` | `bailian` | `stub` | test 只能为 `stub` |
-| `BAILIAN_API_KEY` | 空或占位；ASR=bailian 时 required | ASR=bailian 时 required | 空 | LLM / ASR 复用密钥变量；不写真实 API Key |
-| `BAILIAN_BASE_URL` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | 同 development | 同 development | 仅占位 |
-| `BAILIAN_MODEL` | `qwen3.6-plus` | `qwen3.6-plus` | 空 | 仅占位 |
-| `BAILIAN_TIMEOUT_MS` | `90000` | `90000` | `90000` | LLM / ASR 复用请求超时；ASR stale claim 为 `max(120000, timeout*2)` |
-| `BAILIAN_MAX_RETRIES` | `1` | `1` | `1` | 仅占位 |
-| `ASR_PROVIDER` | example 为 `bailian`；支持 `disabled` / `stub` / `bailian` | example 为 `bailian`；运行合同只允许 `disabled` / `bailian`，`stub` 解析为 `disabled` | 强制 `stub` | 与 `LLM_PROVIDER` 独立；`disabled` 不调用外部服务，`stub` 返回固定“测试转写候选”，`bailian` 调用百炼 ASR |
-| `BAILIAN_ASR_API_URL` | `https://ws-09jkdkybppp4yy0v.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation` | `https://ws-09jkdkybppp4yy0v.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation` | 空 | `bailian` 时 required 且必须为 HTTPS；必须提供完整 workspace URL，不由代码拼接 |
-| `BAILIAN_ASR_MODEL` | `qwen-audio-3.0-asr-flash` | `qwen-audio-3.0-asr-flash` | 未显式设置；`stub` 运行时使用内置默认 `qwen-audio-3.0-asr-flash` | Bailian 模式固定模型；test 不调用真实 ASR |
-| `SMS_AUTH_PROVIDER` | `aliyun` | `aliyun` | `stub` | test 只能为 `stub` |
-| `ALIYUN_SMS_ACCESS_KEY_ID` | 空或占位 | 空或占位 | 空 | 不写真实密钥 |
-| `ALIYUN_SMS_ACCESS_KEY_SECRET` | 空或占位 | 空或占位 | 空 | 不写真实密钥 |
-| `ALIYUN_SMS_REGION_ID` | `cn-shenzhen` | `cn-shenzhen` | `cn-shenzhen` | 安全示例值 |
-| `ALIYUN_SMS_ENDPOINT` | `dysmsapi.aliyuncs.com` | `dysmsapi.aliyuncs.com` | `dysmsapi.aliyuncs.com` | 阿里云 endpoint 示例 |
-| `ALIYUN_SMS_COUNTRY_CODE` | `86` | `86` | `86` | 默认国家码 |
-| `ALIYUN_SMS_SIGN_NAME` | 空 | 空 | 空 | 不写真实签名 |
-| `ALIYUN_SMS_TEMPLATE_CODE` | 空 | 空 | 空 | 不写真实模板号 |
-| `ALIYUN_SMS_TEMPLATE_PARAM` | 空 | 空 | 空 | 不写真实模板参数 |
-| `ALIYUN_SMS_CODE_LENGTH` | `6` | `6` | `6` | 验证码策略占位 |
-| `ALIYUN_SMS_VALID_TIME_SECONDS` | `300` | `300` | `300` | 验证码策略占位 |
-| `ALIYUN_SMS_DUPLICATE_POLICY` | `1` | `1` | `1` | 验证码策略占位 |
-| `ALIYUN_SMS_INTERVAL_SECONDS` | `60` | `60` | `60` | 验证码策略占位 |
-| `ALIYUN_SMS_CODE_TYPE` | `1` | `1` | `1` | 验证码策略占位 |
-| `ALIYUN_SMS_CASE_AUTH_POLICY` | `1` | `1` | `1` | 验证码策略占位 |
+| 环境变量 | Config key | development 默认 / 示例 | production 默认 / 示例 | test 默认 / 示例 | 备注 |
+| --- | --- | --- | --- | --- | --- |
+| `NODE_ENV` | `app.env` | `development` | `production` | `test` | 运行环境 |
+| `PORT` | `app.port` | `5002` | `5002` | `5002` | 后端默认端口 |
+| `FRONTEND_URL` | `app.frontendUrl` | `http://localhost:3002` | 部署域名覆盖 | `http://localhost:3002` | 本地前端 origin |
+| `CORS_ORIGIN` | `app.corsOrigin` | `http://localhost:3002` | 部署域名覆盖 | `http://localhost:3002` | 支持逗号分隔多个 origin |
+| `COGMEMORY_DATABASE_PURPOSE` | `mongo.purpose` | 可不设置 | 可不设置 | `standard_test` / `browser_acceptance` | test 进程用途；未设置默认 `standard_test` |
+| `MONGO_URI` | `mongo.uri` | `cogmemory_ad_dev` 口径 | required | 按用途映射到普通测试或 Browser 专用库 | 不写真实密码或完整 URI |
+| `MONGO_ADMIN_URI` | `mongo.adminUri` | `cogmemory_ad_dev` 口径 | required | standard_test 测试管理连接；Browser backend/fixture 按上表映射 | 仅供受控测试管理或运维场景 |
+| `MONGO_AUTO_INDEX` | `mongo.autoIndex` | 默认按非生产启用 | `false` | 默认按非生产启用 | 生产强制关闭 |
+| `MONGO_SERVER_SELECTION_TIMEOUT_MS` | `mongo.serverSelectionTimeoutMs` | `5000` | `5000` | `5000` | MongoDB 连接超时 |
+| `STORAGE_DRIVER` | `storage.driver` | 默认 `fake`；example 为 `oss` | 默认 / example 为 `oss` | `fake` | 支持 `fake` / `oss` |
+| `OSS_REGION` | `storage.oss.region` | `oss-cn-shenzhen` | `oss-cn-shenzhen` | 可为空 | OSS 示例区域 |
+| `OSS_BUCKET` | `storage.oss.bucket` | 占位或空 | required when `oss` | 可为空 | 不写真实 bucket |
+| `OSS_INTERNAL_ENDPOINT` | `storage.oss.internalEndpoint` | `oss-cn-shenzhen.aliyuncs.com` | `oss-cn-shenzhen-internal.aliyuncs.com` | 可为空 | 后端访问 endpoint |
+| `OSS_PUBLIC_ENDPOINT` | `storage.oss.publicEndpoint` | `oss-cn-shenzhen.aliyuncs.com` | `oss-cn-shenzhen.aliyuncs.com` | 可为空 | 签名 URL endpoint |
+| `OSS_ACCESS_KEY_ID` | `storage.oss.accessKeyId` | 占位或空 | required when `oss` | 可为空 | 不写真实 AccessKey |
+| `OSS_ACCESS_KEY_SECRET` | `storage.oss.accessKeySecret` | 占位或空 | required when `oss` | 可为空 | 不写真实 AccessKey |
+| `OSS_OBJECT_PREFIX` | `storage.oss.objectPrefix` | `cogmemory_ad` | `cogmemory_ad` | `cogmemory_ad` | 对象前缀默认值 |
+| `SESSION_COOKIE_NAME` | `session.cookieName` | `cogmemory_ad_session` | `cogmemory_ad_session` | `cogmemory_ad_session` | Cookie 名称 |
+| `SESSION_TTL_MS` | `session.ttlMs` | `86400000` | `86400000` | `86400000` | 会话 TTL 占位 |
+| `MAX_ACTIVE_SESSIONS_PER_USER` | `session.maxActiveSessionsPerUser` | `5` | `5` | `5` | 当前仅配置占位 |
+| `SESSION_COOKIE_SECURE` | `session.cookieSecure` | `false` | `true` | `false` | 生产默认 secure |
+| `SESSION_COOKIE_SAME_SITE` | `session.cookieSameSite` | `lax` | `lax` | `lax` | `none` 必须搭配 secure |
+| `LLM_PROVIDER` | `llm.provider` | `bailian` | `bailian` | `stub` | test 只能为 `stub` |
+| `BAILIAN_API_KEY` | `llm.bailian.apiKey` / `asr.bailian.apiKey` | 空或占位；ASR=bailian 时 required | ASR=bailian 时 required | 空 | LLM / ASR 复用密钥变量；不写真实 API Key |
+| `BAILIAN_BASE_URL` | `llm.bailian.baseUrl` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | 同 development | 同 development | 仅占位 |
+| `BAILIAN_MODEL` | `llm.bailian.model` | `qwen3.6-plus` | `qwen3.6-plus` | 空 | 仅占位 |
+| `BAILIAN_TIMEOUT_MS` | `llm.bailian.timeoutMs` / `asr.bailian.timeoutMs` | `90000` | `90000` | `90000` | LLM / ASR 复用请求超时；整数且至少为 `1` |
+| `BAILIAN_MAX_RETRIES` | `llm.bailian.maxRetries` | `1` | `1` | `1` | 仅占位 |
+| `ASR_PROVIDER` | `asr.provider` | 默认 `disabled`；example 为 `bailian`；允许 `disabled` / `stub` / `bailian` | 默认 `disabled`；example 为 `bailian`；只允许 `disabled` / `bailian` | 强制 `stub` | 与 `LLM_PROVIDER` 独立；本行只维护 provider enum 与环境约束 |
+| `BAILIAN_ASR_API_URL` | `asr.bailian.apiUrl` | `https://ws-09jkdkybppp4yy0v.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation` | `https://ws-09jkdkybppp4yy0v.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation` | 空 | `bailian` 时 required 且必须为 HTTPS；必须提供完整 workspace URL，不由代码拼接 |
+| `BAILIAN_ASR_MODEL` | `asr.bailian.model` | `qwen-audio-3.0-asr-flash` | `qwen-audio-3.0-asr-flash` | 未显式设置；`stub` 运行时使用内置默认 `qwen-audio-3.0-asr-flash` | Bailian 模式固定模型；test 不调用真实 ASR |
+| `SMS_AUTH_PROVIDER` | `smsAuth.provider` | `aliyun` | `aliyun` | `stub` | test 只能为 `stub` |
+| `ALIYUN_SMS_ACCESS_KEY_ID` | `smsAuth.aliyun.accessKeyId` | 空或占位 | 空或占位 | 空 | 不写真实密钥 |
+| `ALIYUN_SMS_ACCESS_KEY_SECRET` | `smsAuth.aliyun.accessKeySecret` | 空或占位 | 空或占位 | 空 | 不写真实密钥 |
+| `ALIYUN_SMS_REGION_ID` | `smsAuth.aliyun.regionId` | `cn-shenzhen` | `cn-shenzhen` | `cn-shenzhen` | 安全示例值 |
+| `ALIYUN_SMS_ENDPOINT` | `smsAuth.aliyun.endpoint` | `dysmsapi.aliyuncs.com` | `dysmsapi.aliyuncs.com` | `dysmsapi.aliyuncs.com` | 阿里云 endpoint 示例 |
+| `ALIYUN_SMS_COUNTRY_CODE` | `smsAuth.aliyun.countryCode` | `86` | `86` | `86` | 默认国家码 |
+| `ALIYUN_SMS_SIGN_NAME` | `smsAuth.aliyun.signName` | 空 | 空 | 空 | 不写真实签名 |
+| `ALIYUN_SMS_TEMPLATE_CODE` | `smsAuth.aliyun.templateCode` | 空 | 空 | 空 | 不写真实模板号 |
+| `ALIYUN_SMS_TEMPLATE_PARAM` | `smsAuth.aliyun.templateParam` | 空 | 空 | 空 | 不写真实模板参数 |
+| `ALIYUN_SMS_CODE_LENGTH` | `smsAuth.aliyun.codeLength` | `6` | `6` | `6` | 验证码策略占位 |
+| `ALIYUN_SMS_VALID_TIME_SECONDS` | `smsAuth.aliyun.validTimeSeconds` | `300` | `300` | `300` | 验证码策略占位 |
+| `ALIYUN_SMS_DUPLICATE_POLICY` | `smsAuth.aliyun.duplicatePolicy` | `1` | `1` | `1` | 验证码策略占位 |
+| `ALIYUN_SMS_INTERVAL_SECONDS` | `smsAuth.aliyun.intervalSeconds` | `60` | `60` | `60` | 验证码策略占位 |
+| `ALIYUN_SMS_CODE_TYPE` | `smsAuth.aliyun.codeType` | `1` | `1` | `1` | 验证码策略占位 |
+| `ALIYUN_SMS_CASE_AUTH_POLICY` | `smsAuth.aliyun.caseAuthPolicy` | `1` | `1` | `1` | 验证码策略占位 |
 
 ## 5. 安全与部署注意事项
 
@@ -96,13 +96,13 @@
 - production MongoDB URI 必须由真实部署环境提供，不得写入仓库。
 - production 默认 `STORAGE_DRIVER=oss`，但真实 bucket 与 AccessKey 必须由安全环境变量提供。
 - test 环境使用 fake storage，并强制 ASR / LLM / SMS 为 stub；不得依赖真实 OSS、百炼、短信或其他真实大模型服务。
-- `standard_test` 与 `browser_acceptance` 的本地隔离测试凭据可由对应独立进程自动读取，但不得写入跟踪文件、文档、日志、manifest、生成物或最终报告。
-- SMS 变量当前只保留阿里云 SMS 配置口径，不代表 SMS Service 已实现。
-- LLM 变量当前只保留 `stub` / `bailian` 占位口径，不代表 LLM Service 已实现。
-- ASR 已实现 `disabled` / 确定性 `stub` / 具体 `bailian` 三种模式；development / production example 已预置北京 Workspace 的 Bailian ASR HTTPS endpoint 与固定 model，API Key 仍为占位符；test 强制 `stub`，production 不允许 `stub`。bailian 配置必须同时具备非空 `BAILIAN_API_KEY`、HTTPS 完整 API URL 与固定 model。
+- development / production example 可以保留非敏感 provider、endpoint 与 model 示例；真实 API Key 始终由安全环境提供。Bailian ASR 配置要求非空 `BAILIAN_API_KEY`、HTTPS 完整 API URL 与固定 model。
+- 测试 Secret、证据和进程处理规则见 [Backend Testing Playbook](./handoff-backend-testing-playbook.md)；配置对应的 current capability 见 [Backend Snapshot](./handoff-backend-snapshot.md)。
 
 ## 6. 后续同步规则
 
-- 新增或调整配置项时，应同步更新本文档和相关部署说明。
-- 涉及密钥、个人信息、医疗数据或第三方服务的配置必须明确安全边界。
-- 不得在文档中写入真实密钥、真实账号、真实患者信息或生产环境敏感配置。
+- 配置项、默认值 / 示例值、来源、静态校验或 database purpose 静态映射变化时，更新本文档。
+- 测试用途选择、进程隔离、连接门禁、角色、fixture / verifier / cleanup 或 testing evidence 变化时，只更新 [Backend Testing Playbook](./handoff-backend-testing-playbook.md)；本文引用，不复述运行流程。
+- 模块级 current capability 变化时更新 [Backend Snapshot](./handoff-backend-snapshot.md)；产品阶段变化时更新 [Roadmap](./handoff-roadmap.md)。
+- 若变更不影响静态配置职责，本文保持 zero diff；同步是按 owner 更新并建立引用，不是横向复制。
+- 涉及密钥、个人信息、医疗数据或第三方服务的配置必须明确静态安全边界；不得在文档中写入真实密钥、真实账号、真实患者信息或生产环境敏感配置。
