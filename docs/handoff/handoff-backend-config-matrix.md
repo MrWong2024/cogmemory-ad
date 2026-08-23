@@ -34,10 +34,9 @@
 | 配置消费方 | `COGMEMORY_DATABASE_PURPOSE` | `MONGO_URI` 来源 | `MONGO_ADMIN_URI` 来源 |
 | --- | --- | --- | --- |
 | Browser test backend | `browser_acceptance` | `BROWSER_ACCEPTANCE_APP_MONGO_URI` | `BROWSER_ACCEPTANCE_ADMIN_MONGO_URI` |
-| Browser fixture / admin CLI | `browser_acceptance` | `BROWSER_ACCEPTANCE_ADMIN_MONGO_URI` | `BROWSER_ACCEPTANCE_ADMIN_MONGO_URI` |
 | 普通 E2E | `standard_test` | `backend/.env.test` 的普通测试主连接 | `backend/.env.test` 的普通测试管理连接 |
 
-此表只定义配置消费方读取哪个 URI variable / source；app / db_admin 职责、`readWrite` / `dbOwner` 最小权限、AppModule 连接门禁和 fixture 运行规则由 [Backend Testing Playbook](./handoff-backend-testing-playbook.md) 维护。
+此表只定义 current 配置消费方读取哪个 URI variable / source；`BROWSER_ACCEPTANCE_ADMIN_MONGO_URI` 仍是 Browser acceptance 受控管理连接来源，但 current retained Browser fixture / admin CLI count 为 0。app / db_admin 职责、`readWrite` / `dbOwner` 最小权限、AppModule 连接门禁、current tooling inventory 和未来合法 test admin tooling 的 fixture 规则由 [Backend Testing Playbook](./handoff-backend-testing-playbook.md) 维护。
 
 ## 4. 其他配置矩阵
 
@@ -49,7 +48,7 @@
 | `CORS_ORIGIN` | `app.corsOrigin` | `http://localhost:3002` | 部署域名覆盖 | `http://localhost:3002` | 支持逗号分隔多个 origin |
 | `COGMEMORY_DATABASE_PURPOSE` | `mongo.purpose` | 可不设置 | 可不设置 | `standard_test` / `browser_acceptance` | test 进程用途；未设置默认 `standard_test` |
 | `MONGO_URI` | `mongo.uri` | `cogmemory_ad_dev` 口径 | required | 按用途映射到普通测试或 Browser 专用库 | 不写真实密码或完整 URI |
-| `MONGO_ADMIN_URI` | `mongo.adminUri` | `cogmemory_ad_dev` 口径 | required | standard_test 测试管理连接；Browser backend/fixture 按上表映射 | 仅供受控测试管理或运维场景 |
+| `MONGO_ADMIN_URI` | `mongo.adminUri` | `cogmemory_ad_dev` 口径 | required | standard_test 测试管理连接；browser_acceptance 受控管理连接按 §3.2 映射 | 仅供受控测试管理或运维场景 |
 | `MONGO_AUTO_INDEX` | `mongo.autoIndex` | 默认按非生产启用 | `false` | 默认按非生产启用 | 生产强制关闭 |
 | `MONGO_SERVER_SELECTION_TIMEOUT_MS` | `mongo.serverSelectionTimeoutMs` | `5000` | `5000` | `5000` | MongoDB 连接超时 |
 | `STORAGE_DRIVER` | `storage.driver` | 默认 `fake`；example 为 `oss` | 默认 / example 为 `oss` | `fake` | 支持 `fake` / `oss` |
