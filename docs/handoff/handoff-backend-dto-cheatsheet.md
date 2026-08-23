@@ -2,664 +2,379 @@
 
 ## 1. 文档定位
 
-本文档用于记录 CogMemory AD 后端 DTO、请求参数、响应结构和校验摘要，方便后续开发、测试和交接快速查阅。
-
-## 2. 当前状态
-
-- 当前存在公共底座 DTO、响应 type、Storage interface，以及 A12-A28 和 WP-10 业务契约；B1/B2 锁定患者会话、步骤与受控资产，C1 增加患者当前步骤原始媒体 evidence 上传白名单。
-- 当前新增公开认证请求 DTO：`LoginDto`。
-- 当前公开患者 / 访视 DTO 包含 `CreatePatientDto`、`ListPatientsQueryDto`、`PatientIdParamDto`、`CreateAssessmentVisitDto`、`UpdateAssessmentVisitDto`、`VoidAssessmentVisitDto`、`ListAssessmentVisitsQueryDto` 与患者 / 访视 path DTO；edit / delete / void 是提前实现的 WP-12 访视维护窄切片。
-- 当前仍没有用户管理、注册、密码重置、撤销 / reopen / force submit、批量 / 分片 / 客户端直传、认知域人工修改 / 确认 / 锁定 / 重算或报告退回 / 签名 / unlock / unfreeze / unarchive / correction cancel / 报告作废 / PDF 请求 DTO；A25 已新增受控 correction DTO。
-
-## 3. 当前 DTO / Type 清单
-
-- 名称：`AppHealthResponse`
-- 文件：`backend\src\app.service.ts`
-- 用途：`GET /health` 响应 type。
-- 字段：`status: 'ok'`，`service: 'cogmemory-ad-backend'`。
-
-- 名称：`LoginDto`
-- 文件：`backend\src\modules\auth\dto\login.dto.ts`
-- 用途：`POST /auth/login` 请求 DTO。
-- 字段：`accountName: string`、`password: string`。
-- 校验：两者均为 string、非空；`accountName` 最长 120，`password` 最长 256。
-
-- 名称：`AuthUserResponse`
-- 文件：`backend\src\modules\auth\types\auth-response.types.ts`
-- 用途：公开认证响应中的用户公开信息 type。
-- 字段：`id`、`accountName`、`displayName`、`roles`、`permissions`、`userType`。
-- 安全口径：不包含 `passwordHash`、raw session token、session token hash、`sessionId`、secret 或 credential。
-
-- 名称：`LoginResponse`
-- 文件：`backend\src\modules\auth\types\auth-response.types.ts`
-- 用途：`POST /auth/login` 成功响应 type。
-- 字段：`authenticated: true`、`user: AuthUserResponse`。
-
-- 名称：`MeResponse`
-- 文件：`backend\src\modules\auth\types\auth-response.types.ts`
-- 用途：`GET /auth/me` 成功响应 type。
-- 字段：`authenticated: true`、`user: AuthUserResponse`。
-
-- 名称：`LogoutResponse`
-- 文件：`backend\src\modules\auth\types\auth-response.types.ts`
-- 用途：`POST /auth/logout` 稳定成功响应 type。
-- 字段：`authenticated: false`、`ok: true`。
-
-### WP-10-B patient administration DTO / response
-
-- 文件：`backend\src\modules\assessments\dto\patient-administration.dto.ts` 与 `types\patient-administration-response.types.ts`。
-- `CreatePatientAdministrationSessionDto`：必填 `deviceMode`，仅允许 `same_device` / `cross_device`；没有 backend default，缺失、非法值或额外字段由全局校验拒绝。
-- `EnterPatientAdministrationDto`：`code` transform trim 后必须精确匹配六位数字。
-- `PatientAdministrationRevisionDto`：`expectedRevision` 必须为 0 到 `Number.MAX_SAFE_INTEGER` 的整数。
-- `PatientAdministrationControlDto`：继承 expectedRevision；`reason?` trim、string、最大 500。
-- `PatientAdministrationRequiredReasonDto`：继承 expectedRevision；`reason` 必填、trim 后非空、最大 500。
-- `ConfirmPatientAdministrationPreparationDto`：expectedRevision；`impactFactorCodes` 必须为数组、允许空、元素唯一且只允许 sensory / upper_limb / language_culture_education / instruction_comprehension / fatigue_emotion_refusal / environment / device_network / other；`impactFactorNote?` trim、最大 500。
-- `CompletePatientAdministrationStepDto`：患者完成当前步骤，只声明 `expectedRevision`；客户端提交 stepKey、assetKey、advanceBy、回答或其他字段均由全局 whitelist 拒绝。
-- `CompletePatientAdministrationStaffStepDto`：staff 完成 staff 步骤；除 expectedRevision 外要求 trim 后非空的 `staffObservation`，最大 2000。
-- `TakeOverPatientAdministrationStepDto`：paused staff 接管当前 patient 步骤；要求 expectedRevision、trim 后非空 reason（最大 500）与 staffObservation（最大 2000）。
-- `PatientAdministrationAssetParamDto`：patient 资产路径只含 assetKey；trim、非空、最大 120，只允许小写字母数字及单连字符分段。`PatientAdministrationStaffAssetParamDto` 在三个既有 MongoId 路径参数上增加同一 assetKey 校验，供 staff 技术重播授权使用。
-- `PatientAdministrationSessionSummaryResponse`：只含 id、`deviceMode: 'same_device' | 'cross_device' | null`、status、currentStepKey、revision、expiresAt、entryCodeExpiresAt、hasPatientCredential、preparationConfirmedAt / By、impactFactorCodes / Note、createdBy、startedAt / pausedAt / completedAt / terminatedAt / expiredAt、createdAt / updatedAt。新会话 deviceMode 非 null，legacy 缺失字段映射为 null；操作者只含 operatorId / Name / Role，不含 credential 或 controlEvents。
-- `PatientAdministrationSessionCreateResponse`：在 staff summary 上增加 `entryCode: string | null`；same-device 的 entryCode / entryCodeExpiresAt 均为 null，cross-device 返回仅本次可见的六位 raw code 与非空过期时间。
-- `PatientAdministrationEntryCodeResponse`：在 staff summary 上增加非空 `entryCode` 与 `entryCodeExpiresAt`，继续只用于 cross-device 重签等真正签发进入码的能力；raw code 不进入普通 summary。
-- `PatientAdministrationCredentialResponse`：跨设备 enter 仅含 status、revision、expiresAt；handoff 与其他 staff 状态动作返回 staff summary。两种路径的患者 Token 都只写 Cookie。
-- `PatientAdministrationCurrentResponse`：仅 status、revision、expiresAt、currentStep；非 active 为 null，active step 只含 stepKey、order、可选 patientText、responseMode、advanceBy、assets。每个 asset 仅含 assetKey、kind、role（guidance / stimulus / null）、mimeType 与 `currentStep.assets[].technicalReplayAuthorized:boolean`；该布尔值只在当前 stimulus、当前 step/current run 尚有未消费技术重播授权时为 true，guidance / image 始终 false，不暴露 count / history / reason / operator。它不引入 Schema 变化或新 endpoint；响应仍不含 file / filePath / size / sha256 / spokenText / manifest / packageKey，旧 `assetKeys` 字段保持移除。
-- `PatientAdministrationOpenedAsset` / `PatientAdministrationPlayedAudio`：仅为 Controller 与 Service 之间的内部流 type，携带已授权 assetKey / kind / mimeType / size / Readable；音频结果额外带写后 revision。它们不是 JSON 公开 DTO，不允许把路径、manifest 或 hash 映射到响应。
-- `PatientAdministrationRequestContext`：Guard 内部仅含 sessionId、sessionTokenHash、revision；不得挂载 raw Token、患者档案、完整 ScaleVersion 或步骤集合。
-
-### WP-10-C1 patient evidence DTO / response
-
-- 文件：`backend\src\modules\media\dto\upload-patient-administration-evidence.dto.ts`、`types\patient-administration-evidence-response.types.ts`，内部上传上下文位于 assessments 的 `patient-administration-response.types.ts`。
-- `UploadPatientAdministrationEvidenceDto`：multipart Body 必填 `expectedRevision` 与 `evidenceType`；expectedRevision 转 number 后必须为 0 到 `Number.MAX_SAFE_INTEGER` 的整数，evidenceType 只允许 audio / photo / handwriting。
-- 可选 `capturedAt` 必须是严格 ISO 8601，且 Service 拒绝超过服务器时间合理容差的未来值；可选 `durationMs` 转 number 后必须为 1–600000 的整数，且只允许 evidenceType=audio。photo / handwriting 可选 imageWidth / imageHeight；handwriting 另可选 strokeCount / trajectoryDurationMs / canvasWidth / canvasHeight / inputTool，全部经数字范围或既有 inputTool enum 校验并写入现有 typed schema 字段；这些字段缺失时上传仍合法。
-- 白名单：不声明 captureMode、stepKey、stepRun、patientId、visitId、scaleInstanceId、itemResponseId、itemCode、sessionId、objectKey、originalFilename、sourceDevice、sourceApp、metadata、operator、status 或 responseMode；全局 whitelist + `forbidNonWhitelisted` 拒绝。
-- 文件字段固定 `file`，最多一个、10 MiB；不接受 trajectory。audio 允许规范化后的 audio/webm、audio/ogg、audio/mp4、audio/mpeg，photo / handwriting 继续使用既有图片白名单。
-- `PatientAdministrationEvidenceResponse` 只含 mediaEvidenceId、evidenceType、revision、uploadedAt；不含 ownership ID、step / run、Storage 信息、文件名、签名 URL、checksum、Token 或完整 `MediaEvidence`。
-- `PatientAdministrationEvidenceUploadContext` / `AttachPatientAdministrationEvidenceInput` 仅在 Service 间内部使用：上下文来自重新读取后的患者会话、权威 ScaleInstance / ScaleVersion 与当前步骤，不接收客户端业务 ID，也不携带 raw Token。
-
-### WP-10-C2 transcription / review DTO / response
-
-- 文件：`backend\src\modules\media\dto\transcribe-media-evidence.dto.ts`、`types\media-evidence-response.types.ts`、`types\patient-administration-review-response.types.ts`。
-- `TranscribeMediaEvidenceDto` 是空白名单 Body DTO；路由要求 JSON Body 但不接受任何字段，provider、model、language、format、采样率、URL、objectKey、文本或状态均由服务端决定。
-- `MediaEvidenceTranscriptionResponse` 只含 status、可选 text / errorCode / provider / model、requestedAt / completedAt 与安全 requestedBy；requestedBy 只含 operatorId / Name / Role。`MediaEvidenceTranscriptionActionResponse` 只再增加 mediaEvidenceId，不公开 Storage 或上游原始响应。
-- `MediaEvidenceResponse` 在图片 / 手写安全摘要、nullable `audioMetadata { durationMs }` 与 nullable transcription 之外，统一包含 derived `patientAdministrationOrigin: boolean`；该值只表示 `patientAdministrationContext != null`，不公开 sessionId、stepKey、stepRun 或 context 本体。legacy 患者录音映射为 `not_requested`，非音频和 staff 图片 / 手写 transcription 为 null。
-- 撤销患者 Evidence 正式采用的 action 无 Body DTO，复用 `MediaEvidenceParamDto` 与 `UploadMediaEvidenceResponse { mediaEvidence, evidenceRequirement }`；不为同形响应建立重复 DTO。
-- `PatientAdministrationReviewResponse` 只含最新会话安全摘要、有限 reviewEvents 与按 item / step / run 排列的复核事实。item 只含 itemResponseId、itemCode、itemTitle、status、draftRevision；run 只含 capture 与 evidence。evidence 含 ID、类型、captureMode、状态、存储状态、uploadedAt，以及 nullable safe `file { mimeType, fileExtension, sizeBytes }`、imageMetadata、handwritingTrace 摘要、audioMetadata 与 transcription；不含 storageDriver、bucket、objectKey / objectPrefix、publicUrl、checksum / algorithm、trajectoryObjectKey、签名 URL、凭据、评分或正式作答 payload。
-
-- 名称：`PaginationQueryDto`
-- 文件：`backend\src\common\dto\pagination-query.dto.ts`
-- 用途：公共分页 query DTO。
-- 字段：`page` 默认 `1`，`pageSize` 默认 `100`。
-- 校验：`page` 为不小于 `1` 的整数；`pageSize` 为 `1` 到 `1000` 的整数。
-
-- 名称：`ListFilterQueryDto`
-- 文件：`backend\src\common\dto\pagination-query.dto.ts`
-- 用途：公共列表过滤 query DTO。
-- 字段：`keyword?: string`，`isActive?: boolean`。
-
-- 名称：`PaginatedResponse<T>`
-- 文件：`backend\src\common\dto\pagination-query.dto.ts`
-- 用途：公共分页响应 type。
-- 字段：`items`、`page`、`pageSize`、`total`。
-
-- 名称：`CreatePatientDto`
-- 文件：`backend\src\modules\patients\dto\create-patient.dto.ts`
-- 用途：`POST /patients` 请求 DTO。
-- 允许字段：必填 `subjectCode`；可选 `displayName`、`sourceType`、`sex`、`birthDate`、`educationYears`、`handedness`、`tags`、`notes`。
-- 校验摘要：subjectCode trim、非空、最大 80；displayName 最大 120；birthDate 转为 Date；educationYears 为 0-40 整数；tags 最多 20 项、单项 trim 且最大 50、移除空字符串；notes 最大 2000。
-- 白名单边界：不声明 status、externalRefs、metadata、operator 或 timestamps，非白名单字段由全局 ValidationPipe 拒绝。
-
-- 名称：`ListPatientsQueryDto`
-- 文件：`backend\src\modules\patients\dto\list-patients-query.dto.ts`
-- 用途：`GET /patients` query DTO。
-- 字段：`page` 默认 1；`pageSize` 默认 20、最大 100；可选 `keyword`、`status`、`sourceType`。
-- 校验摘要：keyword trim、最大 100；status 仅 active / inactive / archived；sourceType 仅 clinical / research。
-
-- 名称：`PatientIdParamDto`
-- 文件：`backend\src\modules\patients\dto\patient-id-param.dto.ts`
-- 用途：`GET /patients/:patientId` path DTO。
-- 字段与校验：`patientId: string`，使用 `@IsMongoId()`。
-
-- 名称：`PatientListItemResponse`、`PatientDetailResponse`、`PatientListResponse`
-- 文件：`backend\src\modules\patients\types\patient-response.types.ts`
-- 用途：患者公开响应 type。
-- 字段摘要：列表项包含 id、subjectCode、displayName、sourceType、sex、birthDate、educationYears、handedness、status、tags；详情额外包含 notes；分页响应包含 items、page、pageSize、total。
-- 安全边界：不包含 externalRefs、metadata、`__v` 或 Mongoose document 方法。
-
-- 名称：`CreateAssessmentVisitDto`
-- 文件：`backend\src\modules\assessments\dto\create-assessment-visit.dto.ts`
-- 用途：`POST /patients/:patientId/visits` 请求 DTO。
-- 允许字段：必填 `visitCode`、`assessmentDate`；可选 `visitType`、`notes`。
-- 校验摘要：visitCode trim、非空、最大 80；visitType 仅 baseline / follow_up / screening / unscheduled / other；assessmentDate 转为 Date；notes trim、最大 2000。
-- 白名单边界：不声明 patientId、subjectCode、status、operatorSnapshot、状态时间、clinicalContext、metadata 或 timestamps。
-
-- 名称：`UpdateAssessmentVisitDto`
-- 文件：`backend\src\modules\assessments\dto\update-assessment-visit.dto.ts`
-- 用途：`PATCH /patients/:patientId/visits/:visitId` 请求 DTO。
-- 允许字段：可选 `visitCode`、`visitType`、`assessmentDate`、`notes`；Service 要求至少存在一个字段，空对象返回 `VISIT_UPDATE_EMPTY_PATCH`。
-- 校验摘要：与创建语义一致；visitCode trim、非空、最大 80，visitType 使用既有 enum，assessmentDate 转为有效 Date，notes trim、最大 2000 且允许空字符串清空。
-- 白名单边界：不声明 patientId、subjectCode、status、operatorSnapshot、startedAt、completedAt、lockedAt、voidedAt、voidedBy、clinicalContext、metadata 或 timestamps。
-
-- 名称：`VoidAssessmentVisitDto`
-- 文件：`backend\src\modules\assessments\dto\void-assessment-visit.dto.ts`
-- 用途：`POST /patients/:patientId/visits/:visitId/void` 请求 DTO。
-- 字段与校验：`confirm` 必须严格为 true；`reason` trim 后必填、最短 3、最长 500。
-- 白名单边界：voidedAt、voidedBy 与 status 均由服务端生成，客户端不能覆盖。
-
-- 名称：`ListAssessmentVisitsQueryDto`
-- 文件：`backend\src\modules\assessments\dto\list-assessment-visits-query.dto.ts`
-- 用途：`GET /patients/:patientId/visits` query DTO。
-- 字段：`page` 默认 1；`pageSize` 默认 20、最大 100；可选 `status`、`visitType`、`dateFrom`、`dateTo`。
-- 校验摘要：status / visitType 使用既有 Schema 枚举口径；dateFrom / dateTo 转为 Date；日期先后关系由 Service 形成 `INVALID_DATE_RANGE` 业务语义。
-
-- 名称：`PatientVisitsParamDto`
-- 文件：`backend\src\modules\assessments\dto\patient-visits-param.dto.ts`
-- 用途：两个患者访视接口的 path DTO。
-- 字段与校验：`patientId: string`，使用 `@IsMongoId()`。
-
-- 名称：`PatientVisitParamDto`
-- 文件：`backend\src\modules\assessments\dto\patient-visit-param.dto.ts`
-- 用途：访视详情、更新、删除、作废与量表实例初始化的共用 path DTO。
-- 字段与校验：`patientId: string`、`visitId: string`，均使用 `@IsMongoId()`。
-
-- 名称：`InitializeScaleInstanceDto`
-- 文件：`backend\src\modules\assessments\dto\initialize-scale-instance.dto.ts`
-- 用途：A13 量表实例初始化请求 DTO。
-- 允许字段：必填 `scaleCode`；可选 `scaleVersion`、`administrationMode`。
-- 校验摘要：scaleCode trim + lowercase、非空、最长 50；scaleVersion trim、非空、最长 40；administrationMode 仅 `clinician_administered`、`supervised_patient_input`、`paper_import`，默认 `clinician_administered`。
-- 白名单边界：不声明 patientId、visitId、subjectCode、definition / version ID、instanceCode、instanceNo、status、operatorSnapshot、状态时间、progress、qualityControlSummary、metadata、itemResponses、score、report 或 timestamps；这些字段由全局 ValidationPipe 拒绝。
-
-- 名称：`AssessmentVisitListItemResponse`、`AssessmentVisitDetailResponse`、`AssessmentVisitListResponse`
-- 文件：`backend\src\modules\assessments\types\assessment-visit-response.types.ts`
-- 用途：访视公开响应 type。
-- 字段摘要：id、patientId、subjectCode、visitCode、visitType、status、assessmentDate、状态时间、operatorSnapshot、notes，以及安全作废审计 `voidedBy` / `voidReason`；分页响应包含 items、page、pageSize、total。
-- 安全边界：不包含 clinicalContext、metadata、`__v` 或 Mongoose document 方法。
-
-- 名称：`ScaleScoreRangeResponse`、`ScaleCapabilityResponse`、`AvailableScaleOptionResponse`、`AvailableScaleListResponse`
-- 文件：`backend\src\modules\scales\types\scale-catalog-response.types.ts`
-- 用途：`GET /scales/available` 公开安全目录响应。
-- 字段摘要：量表 code / name / shortName / description / category、版本追溯、totalScoreRange、groupCount、itemCount，以及 photo / handwriting / timer / raw text / operator note 能力布尔值。
-- 安全边界：不包含完整 groups / items、prompt / instruction、scoringRule、正确答案 / expectedValue、ObjectId、Mixed 原始字段、metadata 或 Mongoose document。
-
-- 名称：`MaterializedScaleVersionReference`
-- 文件：`backend\src\modules\scales\types\scale-catalog-response.types.ts`
-- 用途：`ScaleCatalogService` 向内部初始化工作流返回已解析 definition / version ID 和安全 option；仅内部使用，不是 HTTP 响应 type。
-
-- 名称：`ScaleInstanceVersionTraceResponse`、`ScaleInstanceOperatorResponse`、`ScaleInstanceProgressResponse`、`ScaleInstanceListItemResponse`
-- 文件：`backend\src\modules\assessments\types\assessment-execution-response.types.ts`
-- 用途：访视详情与初始化响应中的安全 ScaleInstance 摘要。
-- 字段摘要：公开运行时标识、subject / scale / instance 快照、状态、施测模式、限定版本追溯、状态时间、durationMs、限定操作者快照，以及 totalItemCount / answeredItemCount。
-- 安全边界：不包含 scaleDefinitionId、scaleVersionId、metadata、qualityControlSummary、notes、任意完整 Mixed 对象或 ItemResponse 全量数据；非法 progress 值映射为 0。
-
-- 名称：`AssessmentVisitExecutionDetailResponse`
-- 文件：`backend\src\modules\assessments\types\assessment-execution-response.types.ts`
-- 用途：A13 访视执行详情响应。
-- 字段：`visit: AssessmentVisitDetailResponse`、`scaleInstances: ScaleInstanceListItemResponse[]`、`visitMaintenance: { canEdit, canDelete, canVoid, initializedScaleCount }`；不返回内部判定细节或数据库结构。
-
-- 名称：`InitializeScaleInstanceResponse`
-- 文件：`backend\src\modules\assessments\types\assessment-execution-response.types.ts`
-- 用途：A13 初始化成功响应。
-- 字段：安全 `scale` 摘要、安全 `scaleInstance` 摘要、`createdItemResponseCount`；不包含 ItemResponse 全量骨架。
-
-- 名称：`ScaleInstanceExecutionParamDto`
-- 文件：`backend\src\modules\assessments\dto\scale-instance-execution-param.dto.ts`
-- 用途：A14 单实例执行详情 path DTO。
-- 字段与校验：`patientId`、`visitId`、`scaleInstanceId` 均使用 `@IsMongoId()`。
-
-- 名称：`ItemResponseDraftParamDto`
-- 文件：`backend\src\modules\assessments\dto\item-response-draft-param.dto.ts`
-- 用途：A14 单题草稿 PATCH path DTO。
-- 字段与校验：`patientId`、`visitId`、`scaleInstanceId`、`itemResponseId` 均使用 `@IsMongoId()`。
-
-- 名称：`UpdateItemResponseDraftDto`
-- 文件：`backend\src\modules\assessments\dto\update-item-response-draft.dto.ts`
-- 用途：A14 单题草稿 PATCH body DTO。
-- 控制字段：`expectedRevision` 必填，必须是 0 到 `Number.MAX_SAFE_INTEGER` 的安全非负整数，不允许字符串隐式转换；仅用于 CAS，不写入草稿 Mixed 字段，单独提交不构成有效草稿变更。
-- 允许业务字段：rawResponse、structuredResponse、responseText（nullable，最大 10000）、isMissing、missingReason（nullable，最大 1000）、stepResponses、promptResponses、timing（nullable）、operatorNote（nullable，最大 4000）、markAsAnswered。可执行 structured_manual 的 structuredResponse 固定为 `{ subItems: { [fieldCode]: { responseText?: string, isCorrect?: boolean | null } } }`；草稿允许部分字段，完成时服务层要求全部字段、非空 responseText 与 boolean isCorrect。binary eligible item 的 structuredResponse 固定为 `{ binaryManualDecision: { isCorrect: boolean | null } }`；null 可保存为 partial，非 missing 完成时还要求既有有效原始作答与 boolean decision。MMSE 1.0 reading-command overlay 继续用 responseText 记录患者实际阅读、rawResponse null / true / false 记录闭眼动作；两者均可 partial，主动提交 rawResponse 时仅接受 null / boolean，非 missing 完成时另要求两项原始事实与 boolean decision 全部存在。
-- 白名单边界：不声明 item 身份 / 配置 / 版本、status、answerSource、score、evidence、metadata、锁定 / 作废、所有权 ID 或 timestamps；structured sub-item 除医护确认的 responseText / isCorrect 外不接受任何评分或参考字段；binary root / nested shape 必须精确，拒绝 scoreValue / correctScore / maxScore / note / decidedBy / decidedAt 等伪造字段；非白名单 DTO 字段由全局 ValidationPipe 拒绝，Mixed 内部结构由服务端配置驱动 validator 拒绝。
-
-- 名称：`UpdateItemStepDraftDto`
-- 文件：`backend\src\modules\assessments\dto\update-item-response-draft.dto.ts`
-- 字段：必填 stepCode（trim + lowercase、最大 200），可选 actualValue 与 note（nullable、最大 2000）；不允许 expectedValue、isCorrect、scoreValue 或 countsTowardItemScore。
-
-- 名称：`UpdatePromptResponseDraftDto`
-- 文件：`backend\src\modules\assessments\dto\update-item-response-draft.dto.ts`
-- 字段：必填现有 PROMPT_RESPONSE_TYPES 中的 promptType、正整数 order；可选 responseAfterPrompt 与 note（nullable、最大 2000）；不允许 promptText、isCorrect 或 countsTowardScore。
-
-- 名称：`UpdateItemTimingDraftDto`
-- 文件：`backend\src\modules\assessments\dto\update-item-response-draft.dto.ts`
-- 字段：timing 非 null 时为完整快照，必须显式提交 timerState（idle / running / paused / completed）、nullable ISO startedAt / lastResumedAt / completedAt、nullable 非负整数 durationMs、timerSource（system / manual / imported / none）；字段可按状态为 null，但不能缺失。`timing=null` 表示显式复位。
-- 约束：idle 只能 none 且无时间事实；running / paused 只能 system；completed 可为 system / manual / imported；纯函数校验各状态锚点、日期顺序、duration 与允许转换，非法统一 `ITEM_RESPONSE_INVALID_TIMING`。
-
-- 名称：`ItemResponseDraftJsonValue`
-- 文件：`backend\src\modules\assessments\types\item-response-execution-response.types.ts`
-- 类型：null、string、finite number、boolean、递归数组或普通对象；模块内纯函数限制最大深度 5、数组 100 项、对象 100 keys、字符串 4000、raw / structured 序列化 32768 字节，并拒绝危险 key 和非 JSON 值。
-
-- 名称：`ScaleExecutionIdentityResponse`、`ScaleExecutionGroupResponse`、`ItemExecutionConfigResponse`、`ItemResponseExecutionResponse`
-- 文件：`backend\src\modules\assessments\types\item-response-execution-response.types.ts`
-- 用途：A14 执行详情与 PATCH 成功响应的安全公开结构。
-- 字段摘要：安全量表身份与分组；题目身份、作答类型、计分参与 / 认知域、显式 config、版本追溯、`draftRevision` / `draftSavedAt`、草稿值、step / prompt 槽位、含 timerState / lastResumedAt 的 timing、`ItemEvidenceRequirementResponse { evidenceType, status, attached, mediaEvidenceId }` 和 operatorNote。mediaEvidenceId 是当前正式 ItemResponse evidenceRef 指向的 MediaEvidence 业务 ID，未指向时为 null。可执行 structured_manual 的 config 可选 `structuredManualFields[] { code, label, maxScore, referenceAnswer? }`，referenceAnswer 仅为 primitive 安全参考；binary eligible config 可选 `binaryManualDecision { incorrectScore: 0, correctScore: 1 }`；exact MMSE 1.0 reading-command config 可选 `manualObservationRecord { booleanLabel, trueLabel, falseLabel, responseTextLabel, responseTextHelp, requireBooleanResponse, requireResponseText }`；legacy revision / 保存时间安全归一为 0 / null，legacy timing 只读规范化。
-- 安全边界：不包含完整 Mixed 配置、scoringRule、原始 expectedValue、score / scoreValue、metadata、qualityControlHints、definition / version 等内部 ObjectId 或 Mongoose document；正式 mediaEvidenceId 是允许公开的业务 identity，但不伴随 bucket、objectKey、checksum 或 signed URL。structuredResponse 内的 isCorrect 是医护已提交事实，不是系统判断。binary config 只提供安全 UI / 确定性映射元数据，不允许客户端提交 config 或 preview score。
-
-- 名称：`ScaleInstanceExecutionDetailResponse`、`UpdateItemResponseDraftResponse`
-- 文件：`backend\src\modules\assessments\types\item-response-execution-response.types.ts`
-- 字段：详情为 `{ visit, scale, scaleInstance, groups, itemResponses }`；PATCH 为 `{ itemResponse, progress }`。progress 使用 `ScaleInstanceProgressResponse`，由实际 ItemResponse 状态派生。
-
-- 名称：`StorageService` 及相关输入输出 type
-- 文件：`backend\src\modules\storage\storage.interface.ts`
-- 用途：Storage 公共底层接口。
-- 相关 type：`UploadFileInput`、`UploadedFileResult`、`SignedUrlOptions`、`SignedUrlResult`。
-
-- 名称：`ScaleDefinitionSummary`
-- 文件：`backend\src\modules\scales\services\scales.service.ts`
-- 用途：`ScalesService` 内部读取量表定义时返回的 mapper 输出 type，不是 HTTP DTO。
-- 字段摘要：`id`、`code`、`name`、`shortName`、`description`、`category`、`status`、`currentVersionId`、`sortOrder`、`tags`。
-
-- 名称：`ScaleVersionSummary`
-- 文件：`backend\src\modules\scales\services\scales.service.ts`
-- 用途：`ScalesService` 内部读取量表版本配置时返回的 mapper 输出 type，不是 HTTP DTO。
-- 字段摘要：量表引用、量表 code、版本追溯字段、状态、总分范围、分组配置、题目配置、质控规则、报告规则、科研导出映射、生效时间和退役时间。
-
-- 名称：`ScaleScoreRangeSummary`、`ScaleGroupConfigSummary`、`ScaleItemConfigSummary`
-- 文件：`backend\src\modules\scales\services\scales.service.ts`
-- 用途：`ScaleVersionSummary` 的内部配置输出 type，承载题目分组、题目配置、作答类型、得分范围、证据要求和展示 / 导出规则。
-
-- 名称：`ScaleSeedDefinition`、`ScaleSeedVersion`、`ScaleSeedGroup`、`ScaleSeedItem`、`ScaleSeedData`
-- 文件：`backend\src\modules\scales\seeds\scale-seed.types.ts`
-- 用途：MMSE / MoCA 初始配置 seed 的内部静态配置 type，不是 HTTP DTO，不定义前端调用契约，不代表数据库写入结构。
-- 字段摘要：量表 definition、版本追溯、总分范围、分组、题目、指导语摘要、作答类型、得分范围、证据要求、计时 / 图片 / 手写 / 原始文本 / 操作者备注、规则元数据、认知域映射、质控 / 报告 / 科研导出映射。
-
-- 名称：`ScaleSeedValidationResult`、`ScaleSeedValidationIssue`
-- 文件：`backend\src\modules\scales\seeds\scale-seed.types.ts`
-- 用途：`validateScaleSeeds()` 种子数据校验纯函数的内部输出 type，不是 HTTP DTO。
-- 字段摘要：`valid`、`errors`、`warnings`、`issues`；用于表达量表 code / 版本 / item / group / scoreRange / CRF 修正 / 证据一致性等校验结果。
-
-- 名称：`PatientSummary`
-- 文件：`backend\src\modules\patients\services\patients.service.ts`
-- 用途：`PatientsService` 内部读取患者 / 受试者基础档案时返回的 mapper 输出 type，不是 HTTP DTO。
-- 字段摘要：`id`、`subjectCode`、`displayName`、`sourceType`、`sex`、`birthDate`、`educationYears`、`handedness`、`status`、`tags`、`notes`、`externalRefs`、`metadata`。
-
-- 名称：`AssessmentVisitSummary`
-- 文件：`backend\src\modules\assessments\services\assessments.service.ts`
-- 用途：`AssessmentsService` 内部读取访视时返回的 mapper 输出 type，不是 HTTP DTO。
-- 字段摘要：访视引用输出、患者引用、受试者编码快照、访视编码、访视类型、状态、评估日期、开始 / 完成 / 锁定 / 作废时间、作废操作者 / 原因、创建操作者快照、临床上下文、备注和 metadata。
-
-- 名称：`ScaleInstanceSummary`
-- 文件：`backend\src\modules\assessments\services\assessments.service.ts`
-- 用途：`AssessmentsService` 内部读取量表实例时返回的 mapper 输出 type，不是 HTTP DTO。
-- 字段摘要：访视引用、患者引用、量表定义引用、量表版本引用、量表 code、量表版本、实例编码、实例序号、状态、施测模式、版本追溯快照、时间字段、用时、操作者快照、进度摘要占位、质控摘要占位、备注和 metadata。
-
-- 名称：`AssessmentOperatorSnapshotSummary`、`ScaleVersionTraceSummary`
-- 文件：`backend\src\modules\assessments\services\assessments.service.ts`
-- 用途：`AssessmentVisitSummary` / `ScaleInstanceSummary` 的内部嵌套输出 type，承载操作者快照和量表版本追溯快照。
-
-- 名称：`ItemResponseSummary`
-- 文件：`backend\src\modules\assessments\services\assessments.service.ts`
-- 用途：`AssessmentsService` 内部读取题目作答记录时返回的 mapper 输出 type，不是 HTTP DTO。
-- 字段摘要：运行时引用、量表版本追溯、题目标识与快照、作答状态、原始作答、结构化作答、单题得分、分步结果、提示后表现、计时、证据引用占位、操作者备注、质控占位和 metadata。
-
-- 名称：`ItemResponseVersionTraceSummary`、`ItemScoreSummary`、`ItemStepResultSummary`、`PromptResponseRecordSummary`、`ItemResponseTimingSummary`、`ItemEvidenceRefSummary`
-- 文件：`backend\src\modules\assessments\services\assessments.service.ts`
-- 用途：`ItemResponseSummary` 的内部嵌套输出 type，承载版本追溯、单题得分、分步记录、提示后表现、计时与证据引用占位。
-
-- 名称：`BuildScaleExecutionPlanInput`
-- 文件：`backend\src\modules\assessments\types\assessment-execution.types.ts`
-- 用途：`AssessmentExecutionService.buildScaleExecutionPlan()` / `createScaleExecutionFromSeed()` 的内部输入 type，不是 HTTP DTO。
-- 字段摘要：患者 ID、访视 ID、受试者编码、量表定义 ID、量表版本 ID、量表 code / version、实例编码、实例序号、施测模式、操作者快照、开始时间和 metadata。
-
-- 名称：`ScaleExecutionPlan`、`ScaleInstanceDraft`、`ItemResponseDraft`、`ScaleExecutionSeedSummary`
-- 文件：`backend\src\modules\assessments\types\assessment-execution.types.ts`
-- 用途：评估执行初始化内部计划和写库草稿 type，不是公开 API DTO。
-- 字段摘要：`ScaleInstance` 初始草稿、与 seed items 对齐的初始 `ItemResponse` 草稿、seed 摘要和 seed 校验结果；`ItemResponseDraft` 包含题目快照、版本追溯、score 初始占位、stepResults、promptResponses、timing 与 evidenceRefs 占位。
-
-- 名称：`ScaleExecutionCreationResult`、`CreatedScaleInstanceSummary`、`CreatedItemResponseSummary`
-- 文件：`backend\src\modules\assessments\types\assessment-execution.types.ts`
-- 用途：`AssessmentExecutionService.createScaleExecutionFromPlan()` / `createScaleExecutionFromSeed()` 的内部 mapper 输出 type，不直接暴露 Mongoose document，不是 HTTP DTO。
-- 字段摘要：创建后的量表实例摘要、初始题目作答摘要、创建的题目作答数量、量表 code / version 与实例编码。
-
-- 名称：`MediaEvidenceSummary`
-- 文件：`backend\src\modules\media\services\media-evidence.service.ts`
-- 用途：`MediaEvidenceService` 内部读取媒体证据元数据时返回的 mapper 输出 type，不是 HTTP DTO。
-- 字段摘要：运行时证据链引用、量表版本追溯、题目标识与快照、证据编码、完整媒体采集方式（含 browser audio）、存储状态、媒体存储对象元数据、图片 / 音频元数据、手写轨迹元数据、患者施测上下文、操作者快照、nullable transcription、质量状态、锁定 / 作废 / 删除时间、备注和 metadata。transcription 仅保存有限状态 / 候选 / 错误 / provider / model / 时间 / requestedBy，不携带签名 URL或原始 provider payload。
-
-- 名称：`MediaEvidenceVersionTraceSummary`、`MediaStorageSummary`、`MediaImageMetadataSummary`、`HandwritingTraceSummary`、`MediaCaptureContextSummary`、`MediaOperatorSnapshotSummary`
-- 文件：`backend\src\modules\media\services\media-evidence.service.ts`
-- 用途：`MediaEvidenceSummary` 的内部嵌套输出 type，承载版本追溯、存储对象、图片、手写轨迹、采集上下文和操作者快照摘要。
-
-- 名称：`ScoreResultSummary`
-- 文件：`backend\src\modules\scoring\services\scoring.service.ts`
-- 用途：`ScoringService` 内部读取计分结果快照时返回的 mapper 输出 type，不是 HTTP DTO。
-- 字段摘要：运行时引用、受试者与量表快照、计分结果编码、运行次数、计分状态 / 来源 / 模式、版本追溯、总分、单题得分快照、分项 / 分组得分、计算过程摘要、人工复核、质量状态、质量提示、备注、metadata、确认 / 锁定 / 作废时间。
-
-- 名称：`ScoreVersionTraceSummary`、`TotalScoreSummary`、`ScoreItemSummary`、`ScoreGroupSummary`、`ScoringComputationSnapshotSummary`、`ScoreReviewSummary`
-- 文件：`backend\src\modules\scoring\services\scoring.service.ts`
-- 用途：`ScoreResultSummary` 的内部嵌套输出 type，承载版本追溯、总分、单题得分、分组得分、计算过程与人工复核摘要。
-
-- 名称：`ScoringItemInput`、`ScoringComputationSummary`、`ScoringComputationWarning`
-- 文件：`backend\src\modules\scoring\services\scoring.service.ts`
-- 用途：`summarizeItemScores()` 通用计分汇总纯函数的输入 / 输出 type，不是 HTTP DTO；只描述基于单题得分快照的内存汇总结构。
-
-- 名称：`CognitiveDomainResultSummary`
-- 文件：`backend\src\modules\cognitive-domains\services\cognitive-domains.service.ts`
-- 用途：`CognitiveDomainsService` 内部读取认知域结果快照时返回的 mapper 输出 type，不是 HTTP DTO。
-- 字段摘要：运行时引用、受试者与量表快照、认知域结果编码、运行次数、计算状态 / 映射来源 / 映射模式、版本追溯、认知域得分快照、题目贡献快照、映射快照、计算过程摘要、人工复核、质量状态、质量提示、备注、metadata、确认 / 锁定 / 作废时间。
-
-- 名称：`CognitiveDomainVersionTraceSummary`、`CognitiveDomainScoreSummary`、`CognitiveDomainItemContributionSummary`、`CognitiveDomainMappingSnapshotSummary`、`CognitiveDomainComputationSnapshotSummary`、`CognitiveDomainReviewSummary`
-- 文件：`backend\src\modules\cognitive-domains\services\cognitive-domains.service.ts`
-- 用途：`CognitiveDomainResultSummary` 的内部嵌套输出 type，承载版本追溯、认知域得分、题目贡献、映射快照、计算过程与人工复核摘要。
-
-- 名称：`CognitiveDomainItemInput`、`CognitiveDomainMappingInput`、`CognitiveDomainComputationSummary`、`CognitiveDomainComputationWarning`
-- 文件：`backend\src\modules\cognitive-domains\services\cognitive-domains.service.ts`
-- 用途：`summarizeDomainScores()` 通用认知域汇总纯函数的输入 / 输出 type，不是 HTTP DTO；只描述基于单题得分快照和认知域映射快照的内存汇总结构。
-
-- 名称：`ClinicalReportSummary`
-- 文件：`backend\src\modules\reports\services\reports.service.ts`
-- 用途：`ReportsService` 内部读取临床报告摘要时返回的 mapper 输出 type，不是 HTTP DTO。
-- 字段摘要：运行时引用、报告编码 / 编号 / 类型 / 状态 / 版本 / 来源、患者快照、访视快照、量表追溯、计分结果快照、认知域结果快照、媒体证据摘要、报告正文占位、AI 草稿占位、医生确认、锁定、归档、更正、作废、审计引用占位、质控状态、质控提示、备注和 metadata。
-
-- 名称：`ReportPatientSnapshotSummary`、`ReportVisitSnapshotSummary`、`ReportScaleTraceSummary`、`ReportScoreSnapshotSummary`、`ReportDomainSnapshotSummary`、`ReportEvidenceSnapshotSummary`、`ReportNarrativeSummary`、`ReportAiDraftSummary`、`ReportConfirmationSummary`、`ReportCorrectionSummary`
-- 文件：`backend\src\modules\reports\services\reports.service.ts`
-- 用途：`ClinicalReportSummary` 的内部嵌套输出 type，承载患者 / 访视快照、量表版本追溯、计分与认知域快照、证据摘要、报告正文占位、AI 草稿占位、医生确认和更正记录摘要。
-
-- 名称：`UserMetadata`
-- 文件：`backend\src\modules\users\schemas\user.schema.ts`
-- 用途：`User` Schema 的内部扩展 metadata type，不是 HTTP DTO。
-- 字段摘要：`Record<string, unknown> | null`。
-
-- 名称：`MediaEvidenceItemParamDto`、`MediaEvidenceParamDto`
-- 文件：`backend\src\modules\media\dto\media-evidence-item-param.dto.ts`、`media-evidence-param.dto.ts`
-- 用途：A15 题目级列表 / 上传路径，以及带单证据 ID 的访问 / 作废路径。
-- 字段：patientId、visitId、scaleInstanceId、itemResponseId；单证据 DTO 额外 mediaEvidenceId；全部使用 `@IsMongoId()`。
-
-- 名称：`UploadMediaEvidenceDto`
-- 文件：`backend\src\modules\media\dto\upload-media-evidence.dto.ts`
-- 用途：A15 multipart 上传文本字段 DTO。
-- 必填：evidenceType 仅 photo / handwriting；captureMode 仅 photo_upload / paper_scan / tablet_handwriting，业务矩阵由 Workflow 再校验。
-- 可选采集字段：capturedAt、sourceDevice / sourceApp、captureNote、description、operatorNote；图片字段 imageWidth / imageHeight、orientation、pageNo、isColor；手写字段 trajectoryFormat(json / strokes)、strokeCount、trajectoryDurationMs、canvasWidth / canvasHeight、deviceType、inputTool。
-- 转换与限制：空字符串转 undefined；数字字符串显式转有限 number，再校验整数 / 范围；boolean 只把字符串 true / false 转换为布尔值，不把 false 误转 true。全局 whitelist + forbidNonWhitelisted 拒绝关联 ID、业务编码、状态、storage、checksum、operatorSnapshot、itemSnapshot、versionTrace、quality / metadata 和审计时间等服务器字段。
-
-- 名称：`MediaEvidenceAccessQueryDto`
-- 文件：`backend\src\modules\media\dto\media-evidence-access-query.dto.ts`
-- 用途：临时访问地址 query；asset 仅 primary / trajectory，默认 primary；不声明 expiresInSeconds。
-
-- 名称：`VoidMediaEvidenceDto`
-- 文件：`backend\src\modules\media\dto\void-media-evidence.dto.ts`
-- 用途：A15 作废 body；仅允许 reason，trim 后必填且 3-1000 字符。
-
-- 名称：`UploadedMemoryFile`、`MediaEvidenceUploadedFiles`
-- 文件：`backend\src\modules\media\types\uploaded-memory-file.types.ts`
-- 用途：不依赖缺失 `@types/multer` 的内存文件安全 type；单文件仅包含 fieldname、originalname、encoding、mimetype、size、buffer，文件集合仅有 file / trajectory。
-
-- 名称：A15 媒体公开响应类型
-- 文件：`backend\src\modules\media\types\media-evidence-response.types.ts`
-- 类型：`MediaEvidenceFileResponse`、`MediaEvidenceImageMetadataResponse`、`MediaEvidenceHandwritingTraceResponse`、`MediaEvidenceCaptureContextResponse`、`MediaEvidenceOperatorResponse`、`MediaEvidenceAudioMetadataResponse`、`MediaEvidenceTranscriptionResponse`、`MediaEvidenceResponse`、`MediaEvidenceListResponse`、`EvidenceRequirementStateResponse`、`UploadMediaEvidenceResponse`、`MediaEvidenceAccessUrlResponse`、`VoidMediaEvidenceResponse`、`MediaEvidenceTranscriptionActionResponse`。
-- requirement：`EvidenceRequirementStateResponse { evidenceType, status, attached, mediaEvidenceId }`；mediaEvidenceId 精确表示实际写后正式 ItemResponse evidenceRef 当前指向的 MediaEvidence ID。upload / adoption 成功返回当前正式 ID；void 按实际 clear 后 ref 返回，当前实现为 null。
-- 安全边界：公开文件摘要只含 MIME、扩展名、大小、storedAt；手写摘要不含 trajectoryObjectKey；允许在 requirement 中公开上述正式 mediaEvidenceId，但证据摘要不含其他关联 ID、subjectCode、definition / version ID、itemSnapshot、versionTrace、qualityHints、metadata、objectKey、bucket、objectPrefix、originalFilename、checksum、publicUrl、signed URL 或 deletedAt。
-
-- 名称：`UserSummary`
-- 文件：`backend\src\modules\users\services\users.service.ts`
-- 用途：`UsersService` 内部读取系统账号时返回的安全 mapper 输出 type，不是 HTTP DTO。
-- 字段摘要：账号 ID、accountName、displayName、staffCode、email、phone、passwordChangedAt、roles、permissions、userType、status、department、organization、lastLoginAt、failedLoginCount、lockedUntil 和 metadata；不包含 `passwordHash`。
-
-- 名称：`UserCredentialRecord`
-- 文件：`backend\src\modules\users\services\users.service.ts`
-- 用途：`UsersService.findUserCredentialByAccountName()` 返回给内部认证流程的最小凭证读取 type，不是 HTTP DTO，不得作为普通响应输出。
-- 字段摘要：账号 ID、accountName、displayName、`passwordHash`、passwordChangedAt、roles、permissions、userType、status、failedLoginCount 和 lockedUntil。
-
-- 名称：`SessionMetadata`
-- 文件：`backend\src\modules\auth\schemas\session.schema.ts`
-- 用途：`Session` Schema 的内部扩展 metadata type，不是 HTTP DTO。
-- 字段摘要：`Record<string, unknown> | null`。
-
-- 名称：`AuthenticatedUserContext`
-- 文件：`backend\src\modules\auth\types\auth-user-context.type.ts`
-- 用途：当前由 `SessionAuthGuard` 校验会话后挂载到 `req.user`，并由 `RolesGuard`、`@CurrentUser()` 与 Controller 认证上下文链读取的内部 type；不是公开 API DTO。
-- 字段摘要：`id`、`accountName`、`displayName`、`roles`、`permissions`、可选 `sessionId` 和可选 `userType`；不包含 passwordHash、session token 或 token hash。
-
-- 名称：`RequestWithAuthenticatedUser`
-- 文件：`backend\src\modules\auth\types\auth-user-context.type.ts`
-- 用途：`SessionAuthGuard`、`RolesGuard` 和 `@CurrentUser()` 内部读取 / 挂载 `req.user` 的最小 request type。
-- 字段摘要：`headers`、可选 `cookies`、可选 `user`。
-
-- 名称：`CookieLikeRequest`
-- 文件：`backend\src\modules\auth\utils\session-cookie.util.ts`
-- 用途：`SessionAuthGuard` 与 `AuthController` 复用的轻量 Cookie request type，支持 cookie-parser cookies 和原始 `cookie` header。
-- 字段摘要：可选 `cookies`、可选 `headers.cookie`、可选 `headers['user-agent']`、可选 `ip` 和 `socket.remoteAddress`。
-
-- 名称：`CreateSessionForUserInput`
-- 文件：`backend\src\modules\auth\services\auth.service.ts`
-- 用途：`AuthService.createSessionForUser()` 的内部输入 type，不是公开 API DTO。
-- 字段摘要：`userId`、可选 `expiresAt`、可选 `userAgent`、`ipAddress` 和 `metadata`；未显式传入 `expiresAt` 时使用 `DEFAULT_SESSION_TTL_MS`。
-
-- 名称：`CreateSessionForUserResult`
-- 文件：`backend\src\modules\auth\services\auth.service.ts`
-- 用途：`AuthService.createSessionForUser()` 的内部返回 type；包含 raw token 仅供后续内部登录流程下发 Cookie 时使用，不得作为普通 mapper 输出。
-- 字段摘要：`sessionId`、`rawToken`、`expiresAt` 和 `user: AuthenticatedUserContext`；不包含 token hash。
-
-- 名称：`AuthenticateWithPasswordInput`
-- 文件：`backend\src\modules\auth\services\auth.service.ts`
-- 用途：`AuthService.authenticateWithPassword()` 的内部输入 type，由 `AuthController.login()` 调用；不是公开 API DTO。
-- 字段摘要：`accountName`、`password`、可选 `userAgent`、`ipAddress`。
-
-- 名称：`AuthenticateWithPasswordResult`
-- 文件：`backend\src\modules\auth\services\auth.service.ts`
-- 用途：`AuthService.authenticateWithPassword()` 的内部返回 type；raw session token 仅供 Controller 写入 HttpOnly Cookie。
-- 字段摘要：`user: AuthenticatedUserContext`、`rawSessionToken`、`expiresAt`；不包含 token hash。
-
-### A16 submission DTO 与公开响应
-
-- 名称：`SubmitScaleInstanceDto`
-- 用途：`POST .../:scaleInstanceId/submit` body；唯一字段 `confirm` 接受 boolean，缺失由 Service 统一转为 `SCALE_INSTANCE_SUBMISSION_CONFIRMATION_REQUIRED`，只有严格 true 可提交；所有服务器控制字段和 override 字段由全局 whitelist 拒绝。
-- 路径：readiness 与 submit 均复用 `ScaleInstanceExecutionParamDto`，不维护重复路径 DTO。
-
-- 名称：`ScaleSubmissionIssueResponse`
-- 字段：code、severity(blocking / warning)、scope(scale_instance / item)、安全题目标识 / 顺序、可选 missingItemCodes / unexpectedItemCodes / missingStepCodes / requiredEvidenceMode / requiredEvidenceTypes、稳定 message。
-- supervised patient gate：目标实例不存在 completed PatientAdministrationSession 时返回 blocking、scale_instance scope 的 `SCALE_INSTANCE_PATIENT_ADMINISTRATION_INCOMPLETE`；不附 itemResponseId / itemCode，不由 frontend 提供完成事实。
-- structured_manual：非 missing 且 structuredResponse 非法或不完整时返回 blocking `ITEM_STRUCTURED_SUBITEMS_INCOMPLETE`，不额外返回缺失 code 数组。
-- binary manual：eligible、非 missing 且 `binaryManualDecision.isCorrect` 不是 boolean 时返回 blocking `ITEM_BINARY_MANUAL_DECISION_INCOMPLETE`；该 issue 与基于原始事实的 `ITEM_ANSWER_CONTENT_MISSING` 独立，历史 answered 数据同样 fail closed。
-- manual observation record：exact MMSE 1.0 reading-command、非 missing 且 responseText 空白或 rawResponse 不是 boolean 时返回 blocking `ITEM_MANUAL_OBSERVATION_INCOMPLETE`；rawResponse=false 是完整原始事实。该 issue 与 `ITEM_BINARY_MANUAL_DECISION_INCOMPLETE` 独立，历史数据不推断、不 backfill。
-- 隐私：不含作答、missingReason / operatorNote 原文、expectedValue、scoringRule、score / isCorrect / scoreValue、mediaEvidenceId 或 metadata。
-
-- 名称：`ScaleSubmissionReadinessSummaryResponse`
-- 字段：expectedItemCount、actualItemCount、completedItemCount、incompleteItemCount、missingItemCount、requiredMediaItemCount、satisfiedMediaItemCount、blockingIssueCount、warningCount。
-- 持久化边界：submission audit 的 readinessSummary 只保存 expected / actual / completed / blocking / warning 五项，不保存 issue 明细。
-
-- 名称：`ScaleSubmissionReadinessResponse`
-- 字段：安全 `ScaleInstanceListItemResponse`、checkedAt、ready、canSubmitNow、submissionState、可选 stateReason、summary、blockingIssues、warnings。
-
-- 名称：`ScaleInstanceSubmissionAuditResponse` / `SubmitScaleInstanceResponse`
-- 字段：submissionId、submittedAt、安全 submittedBy(operatorId / name / role)、alreadySubmitted、durationSource；顶层响应为 `{ scaleInstance, submission, readiness }`。
-- 历史兼容：completed 无 A16 metadata 时 submissionId=null、submittedAt=completedAt、submittedBy=null；completedAt 也缺失则 409，不猜测操作者或时间。
-
-### A17 阶段性评分 DTO 与公开响应
-
-- 名称：`ComputeScoreResultDto`
-- 用途：`POST .../:scaleInstanceId/score-results/compute` body；唯一字段 `confirm` 仅接受 boolean，缺失 / false 由 Workflow 统一为 `SCORE_COMPUTATION_CONFIRMATION_REQUIRED`。runNo、scoreResultCode、状态 / 来源 / 模式、item / group / total 分数、规则、review、quality、metadata、force / rerun / override 和路径 ID 均不声明并由全局 whitelist 拒绝。
-- 路径：compute 与 latest 复用 assessments 的 `ScaleInstanceExecutionParamDto`；三个 ID 均 `@IsMongoId()`，未新增重复路径 DTO。
-
-- 名称：`ProvisionalScoreTotalResponse`
-- 字段：provisionalScoreValue、minScore、maxScore、scorePercent、totalItemCount、scoredItemCount、unscoredItemCount、needsReviewItemCount、missingItemCount、isComplete、isFinal。存在未评分 / 待复核计分项时 scorePercent=null；A17 新建结果 isFinal=false。
-
-- 名称：`ProvisionalScoreGroupResponse`
-- 字段：groupCode、可选 groupTitle / order、provisionalScoreValue、minScore、maxScore、scored / unscored / needsReview / missing 计数、isComplete；不是 CognitiveDomainResult。
-
-- 名称：`ProvisionalScoreItemResponse`
-- 字段：安全 itemResponseId / itemCode / CRF / group / title / order / responseType、countsTowardTotal、includedInTotal、provisionalScoreValue、scoreRange、scoreStatus / source、isMissing、cognitiveDomainCodes、reviewRequired 和受控 reason（含 `STRUCTURED_RESPONSE_INVALID`）；不含作答、expectedValue、scoringRule、isCorrect 或 ItemResponse.score。
-
-- 名称：`ProvisionalScoreComputationResponse` / `ProvisionalScoreReviewResponse`
-- 字段：computedAt、engineVersion、scoringRuleVersion、auto / pending / excluded 计数、受控 warningCodes；review 仅含 status 与 pendingItemCount，不含 reviewer / note / reviewedAt。
-
-- 名称：`ProvisionalScoreResultResponse` / `ScoreReviewQueueItemResponse`
-- 结果字段：id、scoreResultCode、runNo、status / source / mode、versionTrace、provisional total / groups / items、computation、review、qualityStatus、isFinal。
-- reviewQueue：安全题目标识、顺序、responseType、countsTowardTotal 与受控 reason；不含作答、媒体地址、答案或内部规则。
-
-- 名称：`ScoreResultDetailResponse` / `ComputeScoreResultResponse`
-- latest：`{ scale, scaleInstance, scoreResult, reviewQueue }`；compute 额外 `alreadyComputed`。公开 mapper 对 number 做 finite / null 处理、复制数组、未知内部 reason 回退 `MANUAL_SCORING_REQUIRED`，未知 warning 不透传。
-
-### A18 人工复核 / 确认 DTO 与公开响应
-
-- 名称：`ScoreResultParamDto`
-- 用途：A18 confirm path；patientId、visitId、scaleInstanceId、scoreResultId 均使用 `@IsMongoId()`，不从 body 接受路径 ID。
-
-- 名称：`ScoreItemReviewParamDto`
-- 用途：A18 manual-review path；继承四段 ScoreResult path 并增加 `itemResponseId: @IsMongoId()`。
-
-- 名称：`ReviewScoreItemDto`
-- 字段：必填 `scoreValue` 为不允许 NaN / Infinity 的 number；`reviewNote` trim 后 3-2000；`expectedUpdatedAt` 为 strict ISO 8601 string。
-- 白名单：不声明 item identity / range / status / source、reviewer / reviewedAt、item / group / total、metadata、expectedValue / scoringRule、force / override；字符串数字不转换。
-
-- 名称：`ConfirmScoreResultDto`
-- 字段：`confirm` 仅接受 boolean，业务层要求严格 true；`reviewNote` 保持必填 string，trim 后允许空字符串且最大 2000；`expectedUpdatedAt` 为 strict ISO 8601 string。人工单题评分的 `ReviewScoreItemDto.reviewNote` 仍为 3–2000。
-- 白名单：不声明 status / confirmedAt / lockedAt、reviewer、confirmationId、item / group / total、quality、metadata、force / ignoreWarnings / lockAfterConfirm / downstream create 字段。
-
-- 名称：`ScoreResultActorResponse` / `ManualScoreReviewSummaryResponse`
-- 字段：actor 仅 operatorId、可选 operatorName / operatorRole；manualReview 仅 reviewedAt、reviewer、reviewNote。每个 manual_scored item 最多公开最新一条合法摘要。
-
-- 名称：`ScoreResultConfirmationSummaryResponse`
-- 字段：confirmationId（历史 fallback 可为 null）、confirmedAt、confirmedBy 安全 actor、可选 reviewNote；仅 confirmed / locked 结果公开。
-
-- 名称：`ManualScoreReviewReceiptResponse` / `ReviewScoreItemResponse`
-- 字段：receipt 为 eventId、itemResponseId、reviewedAt、reviewer、pendingItemCount；顶层继承 `ScoreResultDetailResponse` 并增加 `reviewUpdate`。
-
-- 名称：`ScoreResultConfirmationReceiptResponse` / `ConfirmScoreResultResponse`
-- 字段：confirmationId、confirmedAt、confirmedBy、reviewNote、alreadyConfirmed；顶层继承 detail 并增加 `confirmationReceipt`。
-
-- A17 兼容扩展：`ProvisionalScoreResultResponse` 增加 `updatedAt: Date` 和可选 confirmation；`ProvisionalScoreItemResponse` 增加可选 manualReview。JSON 中 Date 序列化为 ISO string；既有字段未删除或改名。
-- 并发口径：latest / compute / manual-review / confirm 的 scoreResult.updatedAt 是下一次 A18 写请求 expectedUpdatedAt 的事实源；不是客户端 revision，也不是分布式锁。
-- 安全：响应不含 metadata、全部审计事件、previousScoreValue、作答、expectedValue、scoringRule、正确答案、Session 或 token。
-
-### A19 认知域计算 DTO 与公开响应
-
-- 名称：`ComputeCognitiveDomainResultDto`
-- 用途：`POST .../:scaleInstanceId/cognitive-domain-results/compute` body；唯一字段 `confirm` 只接受 boolean，缺失 / false 由 Workflow 统一为 `COGNITIVE_DOMAIN_COMPUTATION_CONFIRMATION_REQUIRED`。scoreResultId、domainResultCode、runNo、status、domainScores、itemContributions、domainCodes、weights、mappingRules、metadata、force / rerun / override 和路径 ID 均不声明，由全局 whitelist 拒绝。
-- 路径：compute 与 latest 复用 assessments 的 `ScaleInstanceExecutionParamDto`；patientId / visitId / scaleInstanceId 均 `@IsMongoId()`，未新增重复路径 DTO。
-
-- 名称：`CognitiveDomainScaleResponse` / `CognitiveDomainScaleInstanceResponse` / `CognitiveDomainSourceScoreResultResponse`
-- 字段：安全量表身份；实例只含 id / instanceCode / scaleCode / version / status /历史时间，不含 subjectCode、patientId、visitId 或 operator；fresh / latest source score 返回安全 code / run / status / confirmedAt / updatedAt，既有幂等 compute 为避免重读 ScoreResult 只返回 source id。
-
-- 名称：`CognitiveDomainScoreResponse`
-- 字段：domainCode、可选 domainTitle、scoreValue、minScore、maxScore、scorePercent、weightedScore、weightedMaxScore，以及 item / scored / unscored / missing / needsReview / excluded 计数。scorePercent 只表示映射项目区间得分比例，不是正常率或疾病概率。
-
-- 名称：`CognitiveDomainItemContributionResponse`
-- 字段：itemResponseId、安全题目标识 / 顺序、domainCode / 可选 title、weight、countsTowardDomain、score / max / weighted score / max、scoreStatus / source、isMissing；现有 Schema 未持久化 contribution min / weightedMin，因此 A19 不在该响应编造字段。
-- 安全：不含 scoreResultId、作答、missingReason、operatorNote、scoringRule、expectedValue、isCorrect、review / confirmation 意见、metadata、qualityHints、媒体对象或签名地址。
-
-- 名称：`CognitiveDomainMappingPolicyResponse` / `CognitiveDomainMappingResponse`
-- policy：固定 `{ strategy: 'full_item_score_per_domain', weight: 1, deduplicatePerItem: true, overlappingDomains: true }`；不透传内部 Mixed mappingRules。
-- interpretation：固定声明 overlapping full-item attribution、domainScores 不是量表总分互斥拆分、scorePercent 不是诊断概率、结果不是诊断结论。
-
-- 名称：`CognitiveDomainComputationResponse` / `CognitiveDomainReviewResponse` / `CognitiveDomainResultResponse`
-- computation：computedAt、ruleSet / engine version、input / contribution / domain / included / excluded / warning 计数与受控 warningCodes；不含 computedBy。
-- result：id、domainResultCode、runNo、status、source / mode、versionTrace、domainScores、itemContributions、mapping、computation、review、qualityStatus、确认 / 锁定 / 作废 / timestamps 与 isFinal；A19 新建 computed 的 isFinal=false。
-
-- 名称：`CognitiveDomainResultDetailResponse` / `ComputeCognitiveDomainResultResponse`
-- latest：`{ scale, scaleInstance, sourceScoreResult, cognitiveDomainResult }`；compute 额外 `alreadyComputed`。数组由 public mapper 复制并稳定排序；响应不含 subjectCode、metadata、qualityHints、computedBy、原始 mappingRules、阈值或诊断结论。
-
-### A20 临床报告 DTO 与公开响应
-
-- 名称：`ClinicalReportVisitParamDto`
-- 文件：`backend\src\modules\reports\dto\clinical-report-visit-param.dto.ts`
-- 用途：generate / latest path；patientId、visitId 均使用 `@IsMongoId()`，不从 body 接受路径 ID。
-
-- 名称：`GenerateClinicalReportDto`
-- 文件：`backend\src\modules\reports\dto\generate-clinical-report.dto.ts`
-- 字段：`confirm?: boolean`，业务层要求严格 true；`primaryScaleInstanceIds: string[]` 必填，转换时逐项 trim + lowercase，校验 ArrayMinSize(1)、ArrayMaxSize(10)、ArrayUnique 和逐项 MongoId。
-- 白名单：不声明 report identity / type / version / status / source、patient / visit / scale / score / domain / evidence snapshot、narrative、AI、confirmation、quality、metadata、source result IDs、force / regenerate / override / createPdf / useAi / diagnosis；全局 whitelist + forbidNonWhitelisted 拒绝。
-
-- 名称：`ClinicalReportGenerationActorResponse` / `ClinicalReportGenerationResponse`
-- generation actor：operatorId、可选 operatorName / operatorRole；不返回 currentUser、Session 或 token。
-- generation：generationId、generatedAt、安全 generatedBy、engineVersion、reportScope、includedScaleInstanceCount、scoreResultCount、cognitiveDomainResultCount、mediaEvidenceCount、aiUsed。公开只返回计数，不返回内部 source ID 数组；非法 metadata 返回 generation=null，不透传原始 Mixed。
-
-- 名称：`ClinicalReportPatientSnapshotResponse` / `ClinicalReportVisitSnapshotResponse`
-- patient：subjectCode、可选 displayName / sex、birthDate、educationYears；不含 externalRefs、tags、notes 或 metadata。
-- visit：visitCode、visitType、assessmentDate、operatorName / role；不含 clinicalContext、notes 或 metadata。
-
-- 名称：`ClinicalReportScaleTraceResponse` / `ClinicalReportScoreSnapshotResponse`
-- scale：scaleInstanceId、scaleCode、历史 scale / CRF / scoring / encoding / domain mapping version 和 sourceDocument。
-- score：scaleCode / name / version、totalScoreValue / max / min / percent、scoreStatus、qualityStatus、固定安全 summary；不含 scoreResultId、scoreDetails、itemScores、原始作答或评分意见。
-
-- 名称：`ClinicalReportDomainSnapshotResponse` / `ClinicalReportEvidenceSnapshotResponse`
-- domain：scaleCode、domainCode / title、score / max / percent、weighted score / max、item / needs-review count 与固定安全 summary；Schema 无 minScore，响应不编造 minScore，也不返回 cognitiveDomainResultId。
-- evidence：scaleCode、itemCode / title、evidenceType、captureMode、转换后的 qualityStatus 与固定安全 summary；不返回 mediaEvidenceId、itemResponseId、storageObjectKey、文件名、bucket、checksum 或 URL。
-
-- 名称：`ClinicalReportNarrativeResponse` / `ClinicalReportConfirmationResponse`
-- narrative 只含 chiefSummary、scoreSummary、domainSummary、evidenceSummary、limitations；不返回 trendSummary、recommendationText、doctorOpinion。
-- confirmation 仅为历史兼容安全字段 confirmedAt、confirmedByName / role、confirmationNote；不返回 confirmedBy ObjectId 或 signatureText。A20 新报告 confirmation=null。
-
-- 名称：`ClinicalReportResponse` / `ClinicalReportDetailResponse` / `GenerateClinicalReportResponse`
-- report：id、reportCode / no / type / status / version / source / quality、六类安全快照、narrative、generation、安全 confirmation、locked / archived / voided timestamps / reason、createdAt / updatedAt 与 isFinal。
-- latest：`{ report }`；generate：`{ report, alreadyGenerated }`。draft / pending_confirmation / voided 的 isFinal=false，confirmed / archived / corrected 为 true。响应不含 metadata、qualityHints、source ID 数组、scoreDetails、storageObjectKey、AI draftText、clinicalContext 或 Mongoose 字段。
-
-## 4. 后续同步规则
-
-- DTO 事实以实际 DTO 文件、校验装饰器、Controller 使用方式和测试为准。
-- 不得在业务文档未确认前编造字段、枚举、状态或响应结构。
-- DTO 变更影响前端时，应同步更新前端 API 对接文档。
-
-## A21 ClinicalReport review DTO / response
-
-- `ClinicalReportResourceParamDto`：继承 visit params，并增加 `reportId @IsMongoId()`；三个路径 ID 均不进入 body。
-- `UpdateClinicalReportDraftDto`：`doctorOpinion` 必填 string、trim、3-4000；`recommendationText` 可选 string、trim、空串表示清除，非空 3-4000；`editNote` 必填、trim、3-1000；`expectedUpdatedAt` 必填 string、`@IsISO8601({ strict: true })`。
-- `SubmitClinicalReportForConfirmationDto`：可选声明但业务上必须严格为 true 的 boolean `confirm`、必填 trim 3-2000 `submissionNote`、严格 ISO `expectedUpdatedAt`；缺失 / 非 true 由 workflow 返回稳定 400 code。
-- `ConfirmClinicalReportDto`：同样要求显式 `confirm=true`，必填 trim 3-2000 `confirmationNote` 与严格 ISO `expectedUpdatedAt`；不含 signatureText。
-- 全局 whitelist + forbidNonWhitelisted 拒绝 status、source、qualityStatus、actor、客户端时间 / audit ID、metadata、confirmation、snapshot、force、lock / archive / PDF 等额外字段。
-- `ClinicalReportNarrativeResponse` 新增可选 doctorOpinion / recommendationText；`ClinicalReportResponse` 新增 `editorial` 与 `submission`，confirmation 新增 nullable confirmationId，既有 A20 字段保持兼容。
-- `ClinicalReportReviewActorResponse` 是 A21 专用公开 actor，只含可选 `operatorName` / `operatorRole`；不声明或返回内部 `operatorId`。A20 generation 与 A22–A25 lifecycle actor 不在本次契约收缩范围。
-- `ClinicalReportEditorialSummaryResponse` 只含 lastEditedAt、使用 A21 安全 actor 的 lastEditedBy、editCount、lastChangedFields；不含历史、previous / next 或 editNote 历史。
-- `ClinicalReportSubmissionSummaryResponse` 含 nullable submissionId / submittedAt、使用 A21 安全 actor 的 submittedBy 与可选 submissionNote；`ClinicalReportConfirmationResponse` 不含 confirmedBy ObjectId 或 signatureText。
-- 三种写响应分别为 `UpdateClinicalReportDraftResponse`（report + editReceipt）、`SubmitClinicalReportForConfirmationResponse`（report + submissionReceipt）、`ConfirmClinicalReportResponse`（report + confirmationReceipt）。三类 receipt actor 均只返回 name / role，首次与幂等 / 历史 fallback 一致，不暴露 `operatorId` 或 metadata；数据库中的 editedBy / submittedBy / confirmedBy 审计 ID 继续保留。
-
-## A22 ClinicalReport lock DTO / response
-
-- `LockClinicalReportDto`：`confirm` 必须在业务层严格为 true；`lockNote` 必填 string，transform trim 后 3-2000；`expectedUpdatedAt` 必填 strict ISO 8601。DTO 不接收路径 ID、status/source/quality、锁定字段、actor / lockId / time、confirmation、正文、快照、metadata、force / unlock / archive / PDF / source lock 字段。
-- `ClinicalReportLockSummaryResponse`：`lockId: string | null`、`lockedAt: Date | null`、`lockedBy: ClinicalReportWorkflowActorResponse | null`、可选 `lockNote`。它作为 `ClinicalReportResponse.lock` 返回；既有 top-level `lockedAt` 保留。
-- `LockClinicalReportReceiptResponse`：`lockId: string | null`、`lockedAt: Date`、`lockedBy: ClinicalReportWorkflowActorResponse`、可选 `lockNote`、`alreadyLocked: boolean`。
-- `LockClinicalReportResponse`：`{ report: ClinicalReportResponse; lockReceipt: LockClinicalReportReceiptResponse }`。
-- Date JSON 口径：Nest/JSON 将 Date 序列化为 ISO 8601 string；TypeScript response type 保持 Date。历史 fallback 的 lockId 为 null、lockedBy.operatorRole 为 unknown，不猜 operatorName 或 lockNote。
-- public contract 不含 metadata 或 Schema 原始 lockedBy；安全 actor 的 operatorId 可为 string/null，首次 A22 写入一定来自认证 doctor/admin，历史 fallback 才使用 unknown role。
-- Date 口径：请求 `expectedUpdatedAt` 是严格 ISO string；内部解析为 Date 并进入原子 filter；公开 report / receipt 时间保持 Date，由 Nest JSON 序列化为 ISO string。
-
-## A23 ClinicalReport source freeze DTO / response
-
-- `FreezeClinicalReportSourcesDto`：`confirm` 仅声明为 boolean 且业务层要求严格 true；`freezeNote` 必填 string，transform trim 后 3-2000；`expectedUpdatedAt` 必填并使用 strict ISO 8601。DTO 不接收任何 source ID、scope、metadata、actor、时间、状态、force / rollback / unfreeze。
-- `ClinicalReportSourceFreezeState` 为 `in_progress | completed`；`ClinicalReportSourceFreezeResourceCountsResponse` 只包含五类数量和 total，不包含 ID。
-- `ClinicalReportSourceFreezeActorResponse` 包含 operatorId / operatorName / operatorRole；summary 公开 freezeId、state、started/sourceLocked/completed 时间、startedBy/completedBy、freezeNote 与 expected/completed/newly/previously counts。
-- `ClinicalReportSourceFreezeReceiptResponse` 在 completed summary 上增加 `alreadyFrozen` 与 `resumedExisting`；`FreezeClinicalReportSourcesResponse` 为 `{ report, sourceFreezeReceipt }`。`ClinicalReportResponse.sourceFreeze` 为 nullable 安全摘要。
-- TypeScript response 中时间保持 Date，Nest/JSON 序列化为 ISO string。expectedUpdatedAt 只在首次无审计时参与启动原子并发；既有 in_progress 恢复和 completed 幂等允许客户端继续携带旧值。
-- public contract 不返回内部 `metadata.a23SourceFreeze`、scope 或五类来源 ID；非法审计在 latest mapper 中安全忽略，A23 写接口则返回受控审计错误。
-
-## A24 ClinicalReport archive DTO / response
-
-- `ArchiveClinicalReportDto`：`confirm` 仅声明为允许字段且 workflow 要求严格 `true`；`archiveNote` 必填 string，transform trim 后 3-2000；`expectedUpdatedAt` 必填 strict ISO 8601。DTO 不接收路径 ID、status/source/quality、归档 / 锁定 / 来源冻结 / confirmation / correction / void 字段、actor / archiveId / time、metadata、force / unarchive / correct / void / createPdf。
-- `ClinicalReportArchiveSummaryResponse`：`archiveId: string | null`、`archivedAt: Date`、`archivedBy: ClinicalReportWorkflowActorResponse`、可选 `archiveNote`、`sourceFreezeId: string | null`、`sourceFreezeCompletedAt: Date | null`。它作为 `ClinicalReportResponse.archive` 返回；既有 top-level `archivedAt: Date | null` 保留兼容。
-- `ArchiveClinicalReportReceiptResponse`：与 archive summary 相同，并增加 `alreadyArchived: boolean`。
-- `ArchiveClinicalReportResponse`：`{ report: ClinicalReportResponse; archiveReceipt: ArchiveClinicalReportReceiptResponse }`。
-- Date JSON：TypeScript response 中时间保持 Date，Nest / JSON 序列化为 ISO string。首次 expectedUpdatedAt 必须来自最新 public report.updatedAt；已 archived / corrected 幂等分支仍要求 DTO 时间格式合法，但允许携带首次归档前的旧值且不写库。
-- historical fallback：archiveId、sourceFreezeId、sourceFreezeCompletedAt 为 null，archivedAt 使用 Schema 兼容字段，archivedBy 只公开 operatorId 且 role=unknown；不猜 operatorName / note，不补写 metadata。
-- public contract 不返回 metadata / 原始 a24Archive、Schema 原始 archivedBy、A23 scope、primaryScaleInstanceIds / scoreResultIds / cognitiveDomainResultIds / mediaEvidenceIds、correctionRecords、Session 或 currentUser。
-
-## A25 ClinicalReport correction DTO / response
-
-- `CreateClinicalReportCorrectionDto`：`confirm` 必须由 Workflow 严格判定为 boolean true；`correctionReason` trim 后 3-2000；`changeSummary` trim 后 3-4000；`expectedUpdatedAt` 为 strict ISO 8601。不得提交 version / code / replacement ID / correction ID / actor / narrative / snapshots / source IDs / metadata / force / resume / rollback。
-- 首次 `expectedUpdatedAt` 必须等于 source 最新 updatedAt；in_progress 恢复和 completed 幂等仍要求 DTO 合法，但允许旧值，且新 reason / summary 不覆盖首次值。
-- `ClinicalReportResponse` 增加 nullable `correction` 与 `replacementOf`；Date 字段经 JSON 返回 ISO string。`CreateClinicalReportCorrectionResponse` 为 `{ sourceReport, replacementReport, correctionReceipt }`，receipt 包含 started/completed actor、版本关系、原 reason/summary、alreadyCreated 与 resumedExisting。
-- public contract 不返回 metadata、a25 原始 namespace、原始 correctionRecords、AuditLog ID、五类来源 ID、Patient 隐私、Session 或 currentUser。
-
-## A27 Clinical history DTO / response
-
-- `PatientHistoryParamDto`：`patientId` 必填 canonical MongoId。
-- `ListPatientAssessmentHistoryQueryDto`：`page` 默认 1、min 1；`pageSize` 默认 20、1–100；`dateFrom/dateTo` 可选 strict ISO Date 且含边界；`visitType` / `status` 复用 Assessment 枚举；`scaleCode` 可选、trim + lowercase、空串 400；不接受 sort。日期倒置由 QueryService 返回 400 `INVALID_DATE_RANGE`。
-- `PatientAssessmentHistoryResponse`：`{ items,page,pageSize,total }`。每项只含 Visit 白名单、`scaleSummaries` 和 `reportSummary`；Score/Domain `availability` 为 available / source_not_final / source_voided / source_incomplete。Score 结果不存在才为 null；Domain 在 Score 不存在或精确绑定 Domain 不存在时为 null；其他不可用状态保留摘要但数值/mapping 为 null/0。
-- `ListClinicalReportVersionsQueryDto`：只允许 `page` 默认 1 与 `pageSize` 默认 20（max 100）；不接受 type/sort/status/lineage。
-- `ClinicalReportHistoryParamDto`：patientId、visitId、reportId 均为必填 canonical MongoId。
-- `ClinicalReportVersionListResponse`：`{ items,page,pageSize,total,lineage }`；lineage 固定 valid 且含 firstVersion/latestVersion/totalVersions。item 时间 nullable 按合同返回；sourceFreezeStatus 为 none/in_progress/completed；previous/replacement 只含 code/version，内部 lineage ID 不公开。
-- 指定历史详情继续使用既有 `ClinicalReportDetailResponse { report }`，没有第二套详情响应或附加版本链。
-
-## A28 Follow-up trend DTO / response
-
-- `GetPatientFollowUpTrendQueryDto`：`scaleCode` 必填，string、trim + lowercase、最短 1；`dateFrom/dateTo` 可选 strict ISO Date 且含边界；`maxPoints` 默认 50，integer 2–100。不接受 sort、status、visitType、分页、版本、mapping 或诊断参数；未知字段由全局 whitelist/forbidNonWhitelisted 返回 400，日期倒置为 400 `INVALID_DATE_RANGE`。
-- `PatientFollowUpTrendResponse`：`{ scale,range,comparabilityPolicy,points }`。`scale` 只含当前 catalog 的 `scaleCode/displayName`；`range` 为 nullable dateFrom/dateTo 与实际 `pointCount`；不返回 Patient identity。
-- `PatientFollowUpTrendPoint`：每个日期范围内 Visit 固定保留一项，只含 Visit `id/visitCode/visitType/status/assessmentDate`、nullable `scaleInstance`、`dataStatus`、nullable `score`、`domains[]`、`comparisonToPrevious`。`scaleInstance` 只公开自身 id/code、scale code/version、administrationMode、status、nullable duration 与四项 nullable versionTrace；不公开 ownership / definition / version 内部 ID。
-- `TrendDataStatus` 为 `available | source_missing | source_not_final | source_voided | source_incomplete | source_ambiguous`。available score 只允许 confirmed/locked、qualityStatus=passed、有限且范围有效的 total/min/max/percent、有效 confirmedAt 与 nullable lockedAt；Domain item 只公开 code/title、score/range/percent、nullable 成对 weighted 值和 itemCount。
-- `TrendComparisonResponse` 的 status 为 `first_point | comparable | not_comparable | unavailable`，只表示当前点减紧邻前一点；包含 nullable `scoreDelta/scorePercentDelta` 与 `domainDeltas`。Domain 聚合 status 为 `comparable | partially_comparable | not_comparable | unavailable`，item status 为 comparable/not_comparable，delta 不舍入。
-- reason code 固定为：`scale_version_changed`、`crf_version_changed`、`scoring_rule_version_changed`、`field_encoding_version_changed`、`administration_mode_changed`、`score_range_changed`、`version_trace_incomplete`、`source_missing`、`source_not_final`、`source_voided`、`source_incomplete`、`source_ambiguous`、`domain_mapping_version_changed`、`domain_mapping_source_changed`、`domain_mapping_mode_changed`、`domain_set_changed`、`domain_range_changed`、`domain_missing`、`domain_source_incomplete`；输出顺序按服务端固定优先级稳定排序。
-- `comparabilityPolicy` 固定为 version=`wp04-exact-trace-v1`、comparisonDirection=`current_minus_immediately_previous`、totalScoreRequiresExactTrace/domainScoreRequiresExactMapping/scorePercentIsNotProbability/noDiagnosticInterpretation 均为 true；客户端不得将 scorePercent 或 delta 解释为概率、诊断、改善或恶化。
+本文档是 Backend request DTO、public response type、公开 nested shape、validation/transform/whitelist 与 field-level safe exposure 的 authoritative owner。
+
+- endpoint、HTTP status、Guard/Roles、业务错误与 endpoint-specific side effect：见 [Backend API Map](./handoff-backend-api-map.md)。
+- Service 调用顺序、CAS/屏障、恢复与一致性算法：见 [Backend Service Map](./handoff-backend-service-map.md) 和 current code。
+- 受监督患者施测的业务、安全、媒体、逐题与 F2/F3 稳定合同：见 [Patient Administration Contract](./handoff-patient-administration-contract.md)。
+- 测试/evidence 与工作包状态分别见 [Backend Testing Playbook](./handoff-backend-testing-playbook.md) 和 [Roadmap](./handoff-roadmap.md)。
+
+本文档不维护 Controller 权限、HTTP error matrix、Service 状态推进/写入顺序、测试通过事实或工作包流水。
+
+## 2. 当前 DTO surface
+
+- current Controller inventory 引用 54 个唯一 request DTO（Param/Query/Body）与 45 个唯一命名 response type；两条患者资产 endpoint 另返回 framework `StreamableFile`，一个 DELETE 返回无 body。
+- 主要 family：Auth；Patients/Visits/Scales；Assessment Execution/A14；Media/A15；Submission/A16；Scoring/A17-A18；Cognitive Domains/A19；Clinical Reports/A20-A27；History/Trend/A27-A28；Patient Administration。
+- 当前没有用户管理、注册、密码重置、患者通用更新/合并、撤销提交/reopen、评分重跑/lock/void、认知域人工修改/确认/锁定、报告退回/签名/PDF/AI 等请求 DTO family。
+- 全局 `ValidationPipe` 使用 whitelist 与 `forbidNonWhitelisted`；只允许 DTO 显式声明字段。各节的“安全省略”定义 public response 不得暴露的字段。
+- TypeScript response 中的 `Date` 经 Nest/JSON 序列化为 ISO string；本表仍按 Backend TypeScript type 记录 `Date`。
+
+## 3. System、Auth 与公共 shape
+
+### 3.1 `AppHealthResponse`
+
+- Source：`backend/src/app.service.ts`。
+- Shape：`{ status: 'ok'; service: 'cogmemory-ad-backend' }`。
+
+### 3.2 `LoginDto` 与认证响应
+
+- Source：`backend/src/modules/auth/dto/login.dto.ts`。
+- `LoginDto`：`accountName: string`、`password: string` 均 required、string、非空；最大长度分别为 120、256。
+- Source：`backend/src/modules/auth/types/auth-response.types.ts`。
+- `AuthUserResponse`：`id`、`accountName`、`displayName`、`roles`、`permissions`、`userType`。
+- `LoginResponse`：`{ authenticated: true; user: AuthUserResponse }`。
+- `MeResponse`：`{ authenticated: true; user: AuthUserResponse }`。
+- `LogoutResponse`：`{ authenticated: false; ok: true }`。
+- 安全省略：`password/passwordHash`、raw session token、token hash、session credential、reset token 与 secret。
+
+### 3.3 公共分页
+
+- Source：`backend/src/common/dto/pagination-query.dto.ts`。
+- `PaginationQueryDto`：`page=1`，integer ≥1；`pageSize=100`，integer 1–1000。
+- `ListFilterQueryDto`：`keyword?: string`、`isActive?: boolean`。
+- `PaginatedResponse<T>`：`items: T[]`、`page`、`pageSize`、`total`。
+- 业务 API 可以用更窄的 pageSize 默认值/范围；以对应 DTO 小节为准。
+
+## 4. Patients、Visits、Scales 与 Assessment Execution
+
+### 4.1 Patients request DTO
+
+- Sources：`backend/src/modules/patients/dto/*.ts`。
+- `PatientIdParamDto`：`patientId: string`，required，`@IsMongoId()`。
+- `ListPatientsQueryDto`：
+  - `page=1`；`pageSize=20`，integer 1–100。
+  - `keyword?` trim、最大 100。
+  - `status?`：`active | inactive | archived`。
+  - `sourceType?`：`clinical | research`。
+- `CreatePatientDto`：
+  - required `subjectCode: string`：trim、非空、最大 80。
+  - optional `displayName`（最大 120）、`sourceType: clinical | research`、`sex: male | female | other | unknown`、`birthDate`（transform Date）、`educationYears`（integer 0–40）、`handedness: right | left | ambidextrous | unknown`、`tags`（最多 20 项，逐项 trim/最大 50并移除空项）、`notes`（最大 2000）。
+  - whitelist 不声明 `id/_id/status/externalRefs/metadata/operator/createdAt/updatedAt`。
+
+### 4.2 Patient response types
+
+- Source：`backend/src/modules/patients/types/patient-response.types.ts`。
+- `PatientListItemResponse`：`id`、`subjectCode`、`displayName`、`sourceType`、`sex`、`birthDate`、`educationYears`、`handedness`、`status`、`tags`。
+- `PatientDetailResponse`：列表项字段 + `notes`。
+- `PatientListResponse`：`{ items: PatientListItemResponse[]; page; pageSize; total }`。
+- 安全省略：`externalRefs`、`metadata`、`__v`、Mongoose document 方法与认证字段。
+
+### 4.3 Visit request DTO
+
+- Sources：`backend/src/modules/assessments/dto/patient-visits-param.dto.ts`、`patient-visit-param.dto.ts`、`list-assessment-visits-query.dto.ts`、`create-assessment-visit.dto.ts`、`update-assessment-visit.dto.ts`、`void-assessment-visit.dto.ts`、`initialize-scale-instance.dto.ts`。
+- `PatientVisitsParamDto`：`patientId @IsMongoId()`。
+- `PatientVisitParamDto`：`patientId`、`visitId` 均 `@IsMongoId()`。
+- `ListAssessmentVisitsQueryDto`：`page=1`、`pageSize=20`（1–100）；optional `status`、`visitType`、`dateFrom`、`dateTo`；日期 transform 为有效 Date。
+- `CreateAssessmentVisitDto`：
+  - required `visitCode`（trim、非空、最大 80）、`assessmentDate`（Date transform）。
+  - optional `visitType: baseline | follow_up | screening | unscheduled | other`、`notes`（trim、最大 2000）。
+- `UpdateAssessmentVisitDto`：optional `visitCode`、`visitType`、`assessmentDate`、`notes`；validation 与创建一致，`notes: ''` 合法；是否为空 patch 属于 endpoint 业务检查。
+- `VoidAssessmentVisitDto`：`confirm` 必须为 boolean true；`reason` required、trim、长度 3–500。
+- 上述 whitelist 不声明 ownership、status、operatorSnapshot、生命周期时间、clinicalContext、metadata 或 timestamps。
+- `InitializeScaleInstanceDto`：
+  - `scaleCode` required，trim + lowercase、非空、最大 50。
+  - `scaleVersion?` trim、非空、最大 40。
+  - `administrationMode?`：`clinician_administered | supervised_patient_input | paper_import`，默认 `clinician_administered`。
+  - 不声明路径 ownership、definition/version ID、instance identity/status、operator/progress/metadata/ItemResponse/score/report 字段。
+
+### 4.4 Visit、Scale 与初始化 response
+
+- Source：`backend/src/modules/assessments/types/assessment-visit-response.types.ts`。
+- `AssessmentVisitListItemResponse`：`id`、`patientId`、`subjectCode`、`visitCode`、`visitType`、`status`、`assessmentDate`、`startedAt`、`completedAt`、`lockedAt`、`voidedAt`、`operatorSnapshot`、`notes`、安全 `voidedBy`/`voidReason`。
+- `AssessmentVisitDetailResponse`：当前与安全详情 mapper 对齐的 Visit 字段。
+- `AssessmentVisitListResponse`：`{ items; page; pageSize; total }`。
+- 安全省略：`clinicalContext`、`metadata`、`__v` 与 Mongoose internals。
+- Source：`backend/src/modules/scales/types/scale-catalog-response.types.ts`。
+- `ScaleScoreRangeResponse`：`min`、`max`、`step`。
+- `ScaleCapabilityResponse`：photo/handwriting/timer/raw text/operator-note 能力布尔值。
+- `AvailableScaleOptionResponse`：code/name/shortName/description/category、version trace、total score range、group/item count、capabilities。
+- `AvailableScaleListResponse`：`{ items: AvailableScaleOptionResponse[] }`。
+- 安全省略：完整 groups/items、prompt/instruction、scoring/quality/report/research rules、expected answer、ObjectId 与 metadata。
+- Source：`backend/src/modules/assessments/types/assessment-execution-response.types.ts`。
+- `ScaleInstanceVersionTraceResponse`：公开版本追溯字段；`ScaleInstanceOperatorResponse`：安全 operator；`ScaleInstanceProgressResponse`：`totalItemCount`、`answeredItemCount`。
+- `ScaleInstanceListItemResponse`：公开 instance identity、subject/scale/instance snapshot、status、administrationMode、versionTrace、生命周期时间、duration、operator、progress。
+- `AssessmentVisitExecutionDetailResponse`：`{ visit: AssessmentVisitDetailResponse; scaleInstances: ScaleInstanceListItemResponse[]; visitMaintenance: { canEdit; canDelete; canVoid; initializedScaleCount } }`。
+- `InitializeScaleInstanceResponse`：`{ scale: { code; name; shortName?; version; displayVersion? }; scaleInstance: ScaleInstanceListItemResponse; createdItemResponseCount: number }`。
+- 安全省略：definition/version ObjectId、metadata、qualityControlSummary、完整 ItemResponse/Mixed config。
+
+## 5. A14 ItemResponse DTO 与 public execution shape
+
+### 5.1 Path DTO
+
+- `ScaleInstanceExecutionParamDto` — `backend/src/modules/assessments/dto/scale-instance-execution-param.dto.ts`：`patientId`、`visitId`、`scaleInstanceId` 均 `@IsMongoId()`。
+- `ItemResponseDraftParamDto` — `backend/src/modules/assessments/dto/item-response-draft-param.dto.ts`：上述三个 ID + `itemResponseId`，全部 `@IsMongoId()`。
+
+### 5.2 `UpdateItemResponseDraftDto`
+
+- Source：`backend/src/modules/assessments/dto/update-item-response-draft.dto.ts`。
+- required control field：`expectedRevision: number`，integer、0–`Number.MAX_SAFE_INTEGER`，不接受字符串隐式转换。
+- optional business fields：
+  - `rawResponse?: unknown`，runtime 只接受 `JsonValue`；`structuredResponse?: Record<string, unknown> | null`，runtime 只接受 JSON object/null。
+  - `responseText?: string | null`，最大 10000。
+  - `isMissing?: boolean`、`missingReason?: string | null`（最大 1000）。
+  - `stepResponses?: UpdateItemStepDraftDto[]`。
+  - `promptResponses?: UpdatePromptResponseDraftDto[]`。
+  - `timing?: UpdateItemTimingDraftDto | null`。
+  - `operatorNote?: string | null`，最大 4000。
+  - `markAsAnswered?: boolean`。
+- `stepResponses` 与 `promptResponses` 均为最多 100 项的 nested DTO array。
+- `UpdateItemStepDraftDto`：`stepCode` required、trim + lowercase、最大 200；`actualValue?: unknown`（runtime `JsonValue`）、`note?: string | null`（最大 2000）。不允许 expectedValue/isCorrect/score/counts 字段。
+- `UpdatePromptResponseDraftDto`：`promptType` required，enum 为 `none | repeat_instruction | semantic_category | multiple_choice | operator_clarification | other`；`order` 正整数；`responseAfterPrompt?: unknown`（runtime `JsonValue`）、`note?: string | null`（最大 2000）。不允许 promptText/isCorrect/counts。
+- `UpdateItemTimingDraftDto`：非 null 时必须显式包含 `timerState: idle | running | paused | completed`、nullable ISO `startedAt/lastResumedAt/completedAt`、nullable non-negative integer `durationMs`、`timerSource: system | manual | imported | none`；`timing=null` 表示显式复位。状态间允许关系由 DTO/pure validator 校验。
+- `ItemResponseDraftJsonValue`：null/string/finite number/boolean/递归 array/plain object；最大深度 5、array 100、object keys 100、string 4000、raw/structured serialized 32768 bytes；拒绝危险 key 与非 JSON value。
+
+### 5.3 Structured shapes 与 whitelist
+
+- executable `structured_manual`：
+
+  `{ subItems: { [fieldCode]: { responseText?: string; isCorrect?: boolean | null } } }`
+
+  partial draft 可缺字段、文本或判断；nested object 只允许 `responseText`/`isCorrect`，不允许 maxScore/scoreValue/referenceAnswer/expected/title/label 等服务端或评分字段。
+- eligible binary manual：
+
+  `{ binaryManualDecision: { isCorrect: boolean | null } }`
+
+  root/nested shape 必须精确；不允许 scoreValue/correctScore/maxScore/note/actor/time。
+- exact MMSE 1.0 reading-command overlay：`responseText` 记录患者实际阅读，`rawResponse: null | boolean` 记录闭眼动作，`structuredResponse.binaryManualDecision.isCorrect` 记录人工最终判断。三者是独立 payload facts。
+- 顶层 whitelist 不声明 item/config/version/status/answerSource/score/evidence/metadata/lock/void/ownership/timestamps 或 submission barrier 字段。
+
+### 5.4 A14 response types
+
+- Source：`backend/src/modules/assessments/types/item-response-execution-response.types.ts`。
+- `ScaleExecutionIdentityResponse`：安全 scale identity/version trace；`ScaleExecutionGroupResponse`：group identity/title/order。
+- `ItemExecutionConfigResponse`：公开 prompt/instruction/scoreRange/evidence type/timer/photo/handwriting/operator-note flags；可选：
+  - `structuredManualFields: { code; label; maxScore; referenceAnswer?: string | number | boolean }[]`。
+  - `binaryManualDecision: { incorrectScore: 0; correctScore: 1 }`。
+  - `manualObservationRecord: { booleanLabel; trueLabel; falseLabel; responseTextLabel; responseTextHelp; requireBooleanResponse; requireResponseText }`。
+- `ItemEvidenceRequirementResponse`：`{ evidenceType; status; attached; mediaEvidenceId }`。
+- `ItemResponseExecutionResponse`：安全 item identity/config/version、status、`draftRevision`、`draftSavedAt`、raw/structured/text/missing 草稿、step/prompt slots、timing、evidence requirements、operatorNote。
+- `ScaleInstanceExecutionDetailResponse`：`{ visit; scale; scaleInstance; groups; itemResponses }`。
+- `UpdateItemResponseDraftResponse`：`{ itemResponse: ItemResponseExecutionResponse; progress: ScaleInstanceProgressResponse }`。
+- 安全省略：完整 itemConfigSnapshot/scoringRule/expectedValue、score/scoreValue、qualityControlHints、metadata、内部 definition/version IDs、Storage object/bucket/checksum/signed URL、submission barrier。
+
+## 6. A15 Media 与 Patient Administration evidence DTO/type
+
+### 6.1 Staff media path/body DTO
+
+- `MediaEvidenceItemParamDto` — `backend/src/modules/media/dto/media-evidence-item-param.dto.ts`：`patientId`、`visitId`、`scaleInstanceId`、`itemResponseId` 均 `@IsMongoId()`。
+- `MediaEvidenceParamDto` — `backend/src/modules/media/dto/media-evidence-param.dto.ts`：继承上述字段并增加 `mediaEvidenceId @IsMongoId()`。
+- `MediaEvidenceAccessQueryDto` — `backend/src/modules/media/dto/media-evidence-access-query.dto.ts`：`asset?: primary | trajectory`，默认 `primary`；不允许客户端控制有效期。
+- `VoidMediaEvidenceDto` — `backend/src/modules/media/dto/void-media-evidence.dto.ts`：`reason` required、trim、3–1000。
+- `TranscribeMediaEvidenceDto` — `backend/src/modules/media/dto/transcribe-media-evidence.dto.ts`：空白名单 DTO；不接受 provider/model/language/format/URL/objectKey/text/status。
+
+### 6.2 `UploadMediaEvidenceDto`
+
+- Source：`backend/src/modules/media/dto/upload-media-evidence.dto.ts`。
+- required：`evidenceType: photo | handwriting`；`captureMode: photo_upload | paper_scan | tablet_handwriting`。
+- optional common fields：`capturedAt`、`sourceDevice`、`sourceApp`、`captureNote`、`description`、`operatorNote`。
+- optional image fields：`imageWidth`、`imageHeight`、`orientation`、`pageNo`、`isColor`。
+- optional handwriting fields：`trajectoryFormat: json | strokes`、`strokeCount`、`trajectoryDurationMs`、`canvasWidth`、`canvasHeight`、`deviceType`、`inputTool`。
+- transform/validation：空字符串 → undefined；数字字符串只显式转换为有限 number 后做 integer/range 校验；boolean 字符串仅 `true/false` 转换；evidence/capture cross-field matrix 受校验。
+- multipart files：`file` required；`trajectory` optional 且仅 handwriting。主文件最大 10 MiB，JPEG/PNG/WebP；trajectory 最大 2 MiB、`application/json`、json/strokes；验证非空、MIME/signature 与嵌入 metadata。
+- whitelist 不声明 ownership/business code/status/storage/checksum/operatorSnapshot/itemSnapshot/versionTrace/quality/metadata/timestamps；不保存原始文件名为 public contract。
+
+### 6.3 `UploadPatientAdministrationEvidenceDto`
+
+- Source：`backend/src/modules/media/dto/upload-patient-administration-evidence.dto.ts`。
+- required：`expectedRevision`（multipart number transform，integer 0–`Number.MAX_SAFE_INTEGER`）、`evidenceType: audio | photo | handwriting`。
+- optional：strict ISO `capturedAt`；audio-only `durationMs` integer 1–600000；photo/handwriting `imageWidth/imageHeight`；handwriting `strokeCount/trajectoryDurationMs/canvasWidth/canvasHeight/inputTool`，均按 source range/enum 校验。
+- multipart：单一 `file`，最大 10 MiB；不接受 trajectory。audio MIME 为 normalized WebM/Ogg/MP4(M4A)/MPEG(MP3)，photo/handwriting 使用图片白名单并校验签名。
+- whitelist 不声明 captureMode、stepKey/stepRun、任何 ownership ID、itemCode/sessionId、objectKey/originalFilename、source/metadata/operator/status/responseMode。
+
+### 6.4 Media public response types
+
+- Source：`backend/src/modules/media/types/media-evidence-response.types.ts`。
+- `MediaEvidenceFileResponse`：`mimeType`、`fileExtension`、`sizeBytes`、`storedAt`。
+- `MediaEvidenceImageMetadataResponse`：公开尺寸/orientation/page/color；`MediaEvidenceHandwritingTraceResponse`：公开格式、stroke/duration/canvas/device/input 摘要，不含 trajectory object key。
+- `MediaEvidenceCaptureContextResponse`、`MediaEvidenceOperatorResponse`：安全采集/操作者投影。
+- `MediaEvidenceAudioMetadataResponse`：`durationMs`。
+- `MediaEvidenceTranscriptionResponse`：有限 `status`、optional `text/errorCode/provider/model/requestedAt/completedAt/requestedBy`。
+- `MediaEvidenceResponse`：安全 evidence identity/code/type/capture/status/storageStatus、file/image/handwriting/audio/transcription、operator/times/void summary 与 derived `patientAdministrationOrigin`。
+- `MediaEvidenceListResponse`：`{ items: MediaEvidenceResponse[] }`。
+- `EvidenceRequirementStateResponse`：`{ evidenceType; status; attached; mediaEvidenceId }`。
+- `UploadMediaEvidenceResponse`：`{ mediaEvidence; evidenceRequirement }`。
+- `VoidMediaEvidenceResponse`：`{ mediaEvidence; evidenceRequirement }`。
+- `MediaEvidenceAccessUrlResponse`：`{ asset: primary | trajectory; url; expiresAt }`。
+- `MediaEvidenceTranscriptionActionResponse`：`{ mediaEvidenceId; transcription }`。
+- 安全省略：ownership IDs/subjectCode、definition/version IDs、itemSnapshot/versionTrace、storage driver/bucket/objectKey/objectPrefix/originalFilename/checksum/publicUrl、trajectoryObjectKey、metadata/qualityHints、credential。
+
+### 6.5 Patient evidence/review response
+
+- Source：`backend/src/modules/media/types/patient-administration-evidence-response.types.ts`。
+- `PatientAdministrationEvidenceResponse`：`{ mediaEvidenceId; evidenceType; revision; uploadedAt }`；不含 ownership、step/run、Storage、filename、URL、checksum、token。
+- Source：`backend/src/modules/media/types/patient-administration-review-response.types.ts`。
+- `PatientAdministrationReviewResponse`：`{ session; reviewEvents; items }`。
+- session 只含安全 status/preparation/impact/lifecycle；review event 只含受控 action/time/reason/safe actor。
+- item 含 `itemResponseId`、`itemCode`、`itemTitle`、`status`、`draftRevision` 与 step/run；run 含 capture/evidence。
+- evidence 只含安全 identity/type/capture/status/storageStatus/uploadedAt、nullable file/image/handwriting/audio/transcription 投影。
+- 安全省略：Storage 定位/credential、完整 control events、patientText/assets/playback、正式答案 payload、评分与 metadata。
+
+## 7. A16 Submission DTO/type
+
+- `SubmitScaleInstanceDto` — `backend/src/modules/assessments/dto/submit-scale-instance.dto.ts`：唯一字段 `confirm: boolean`；endpoint 要求严格 true；不声明 force/ignore/status/operator/metadata。
+- Path 复用 `ScaleInstanceExecutionParamDto`。
+- Source：`backend/src/modules/assessments/types/scale-instance-submission-response.types.ts`。
+- `ScaleSubmissionIssueResponse`：`code`、`severity: blocking | warning`、`scope: scale_instance | item`、optional safe item identity/order/group、missing/unexpected item codes、missing step codes、`requiredEvidenceMode`、`requiredEvidenceTypes`、`message`。
+- `ScaleSubmissionIssueCode`：
+  - scale：`SCALE_INSTANCE_ITEM_SET_MISMATCH`、`SCALE_INSTANCE_PATIENT_ADMINISTRATION_INCOMPLETE`、`SCALE_INSTANCE_DURATION_UNAVAILABLE`、`SCALE_INSTANCE_START_TIME_INVALID`。
+  - item：`ITEM_NOT_COMPLETED`、`ITEM_ANSWER_CONTENT_MISSING`、`ITEM_STRUCTURED_SUBITEMS_INCOMPLETE`、`ITEM_MANUAL_OBSERVATION_INCOMPLETE`、`ITEM_BINARY_MANUAL_DECISION_INCOMPLETE`、`ITEM_MISSING_REASON_REQUIRED`、`ITEM_STALE_MISSING_REASON`、`ITEM_REQUIRED_STEP_MISSING`、`ITEM_REQUIRED_TIMING_MISSING`、`ITEM_INVALID_TIMING`、`ITEM_TIMING_POINTS_INCOMPLETE`、`ITEM_REQUIRED_MEDIA_MISSING`、`ITEM_EVIDENCE_REFERENCE_INCONSISTENT`、`ITEM_EVIDENCE_REQUIREMENT_CONFIGURATION_MISMATCH`、`ITEM_REQUIRED_OPERATOR_NOTE_MISSING`。
+- `ScaleSubmissionReadinessSummaryResponse`：expected/actual/completed/incomplete/missing item counts、required/satisfied media item counts、blocking/warning counts。
+- `ScaleSubmissionReadinessResponse`：`scaleInstance`、`checkedAt`、`ready`、`canSubmitNow`、`submissionState: editable | incomplete | ready | completed | locked | voided | patient_inactive | visit_not_editable`、optional `stateReason`、`summary`、`blockingIssues`、`warnings`。
+- `ScaleInstanceSubmissionAuditResponse`：`submissionId`、`submittedAt`、safe `submittedBy`、`alreadySubmitted`、`durationSource`。
+- `SubmitScaleInstanceResponse`：`{ scaleInstance; submission; readiness }`。
+- 安全省略：原始作答、scoring/expected value、mediaEvidenceId、内部 item scope/barrier/state/token 与 metadata。
+
+## 8. A17-A19 Scoring 与 Cognitive Domain DTO/type
+
+### 8.1 Scoring request DTO
+
+- `ComputeScoreResultDto` — `backend/src/modules/scoring/dto/compute-score-result.dto.ts`：唯一 `confirm: boolean`；不声明 run/status/score/rule/review/metadata/force。
+- `ScoreResultParamDto` — `backend/src/modules/scoring/dto/score-result-param.dto.ts`：`patientId`、`visitId`、`scaleInstanceId`、`scoreResultId` 均 `@IsMongoId()`。
+- `ScoreItemReviewParamDto` — `backend/src/modules/scoring/dto/score-item-review-param.dto.ts`：上述字段 + `itemResponseId @IsMongoId()`。
+- `ReviewScoreItemDto` — `backend/src/modules/scoring/dto/review-score-item.dto.ts`：required finite number `scoreValue`；`reviewNote` trim 3–2000；strict ISO `expectedUpdatedAt`；不转换字符串分数。
+- `ConfirmScoreResultDto` — `backend/src/modules/scoring/dto/confirm-score-result.dto.ts`：`confirm: boolean`、required `reviewNote` trim 后允许空且最大 2000、strict ISO `expectedUpdatedAt`。
+- 两个写 DTO 均不声明 actor/time/status/score collections/rules/metadata/force/override。
+
+### 8.2 Scoring public response
+
+- Source：`backend/src/modules/scoring/types/score-result-response.types.ts`。
+- `ProvisionalScoreTotalResponse`：provisional value/min/max/percent、item count totals、`isComplete`、`isFinal`。
+- `ProvisionalScoreGroupResponse`：group identity/order、provisional range/value、scored/unscored/review/missing counts、`isComplete`。
+- `ProvisionalScoreItemResponse`：安全 item identity/order/type/domain、counts/included flags、provisional value/range、score status/source、missing/review/reason、optional latest `manualReview`。
+- `ProvisionalScoreComputationResponse`：computedAt、engine/rule version、counts、受控 warnings；`ProvisionalScoreReviewResponse`：status/pending count。
+- `ProvisionalScoreResultResponse`：id/code/run/status/source/mode/versionTrace、total/groups/items/computation/review/quality、`updatedAt`、optional confirmation、`isFinal`。
+- `ScoreReviewQueueItemResponse`：安全 item identity/order/type/counts + reason。
+- `ScoreResultDetailResponse`：`{ scale; scaleInstance; scoreResult; reviewQueue }`。
+- `ComputeScoreResultResponse`：detail + `alreadyComputed`。
+- `ManualScoreReviewReceiptResponse` 与 `ReviewScoreItemResponse`：detail + `reviewUpdate { eventId; itemResponseId; reviewedAt; reviewer; pendingItemCount }`。
+- `ScoreResultConfirmationReceiptResponse` 与 `ConfirmScoreResultResponse`：detail + `confirmationReceipt { confirmationId; confirmedAt; confirmedBy; reviewNote; alreadyConfirmed }`。
+- 安全省略：作答、expectedValue/scoringRule/isCorrect、media URL、metadata/完整审计/previous score、Session/token。
+
+### 8.3 Cognitive Domain request/response
+
+- `ComputeCognitiveDomainResultDto` — `backend/src/modules/cognitive-domains/dto/compute-cognitive-domain-result.dto.ts`：唯一 `confirm: boolean`；不声明 source score/domain/status/mapping/weights/metadata/force。
+- Path 复用 `ScaleInstanceExecutionParamDto`。
+- Source：`backend/src/modules/cognitive-domains/types/cognitive-domain-result-response.types.ts`。
+- `CognitiveDomainScaleResponse`、`CognitiveDomainScaleInstanceResponse`、`CognitiveDomainSourceScoreResultResponse`：安全量表/实例/来源评分 identity/status/time。
+- `CognitiveDomainScoreResponse`：domain identity/title、score/min/max/percent、weighted score/max、item/scored/unscored/missing/review/excluded counts。
+- `CognitiveDomainItemContributionResponse`：安全 item/domain identity、weight/count flag、score/max/weighted values、score status/source、missing；不编造未持久化 min fields。
+- `CognitiveDomainMappingPolicyResponse`：`{ strategy: 'full_item_score_per_domain'; weight: 1; deduplicatePerItem: true; overlappingDomains: true }`；mapping response 另含非诊断 interpretation。
+- `CognitiveDomainComputationResponse`、`CognitiveDomainReviewResponse`、`CognitiveDomainResultResponse`：computation/review/result status、versionTrace、domain scores、contributions、mapping、quality/final/time。
+- `CognitiveDomainResultDetailResponse`：`{ scale; scaleInstance; sourceScoreResult; cognitiveDomainResult }`。
+- `ComputeCognitiveDomainResultResponse`：detail + `alreadyComputed`。
+- 安全省略：Patient identity、原始作答、评分/确认意见、expected/scoring rule、原始 mapping rules、metadata/quality hints、媒体与诊断结论。
+
+## 9. Clinical Report DTO/type
+
+### 9.1 Path/query DTO
+
+- Sources：`backend/src/modules/reports/dto/*.ts`。
+- `ClinicalReportVisitParamDto`：`patientId`、`visitId` 均 `@IsMongoId()`。
+- `ClinicalReportResourceParamDto`：上述字段 + `reportId @IsMongoId()`。
+- `ClinicalReportHistoryParamDto`：`patientId`、`visitId`、`reportId` 均 `@IsMongoId()`。
+- `ListClinicalReportVersionsQueryDto`：`page=1`、`pageSize=20`（integer 1–100）；不接受 sort/status/type/lineage。
+
+### 9.2 Report write DTO
+
+- `GenerateClinicalReportDto`：`confirm?: boolean`；`primaryScaleInstanceIds: string[]` required，逐项 trim + lowercase、1–10、unique、每项 MongoId。
+- `UpdateClinicalReportDraftDto`：`doctorOpinion` required trim 3–4000；`recommendationText?` trim，空串表示清除，非空 3–4000；`editNote` required 3–1000；`expectedUpdatedAt` strict ISO。
+- `SubmitClinicalReportForConfirmationDto`：`confirm?: boolean`；`submissionNote` required trim 3–2000；`expectedUpdatedAt` strict ISO。
+- `ConfirmClinicalReportDto`：`confirm?: boolean`；`confirmationNote` required trim 3–2000；`expectedUpdatedAt` strict ISO。
+- `LockClinicalReportDto`：`confirm: boolean`；`lockNote` required trim 3–2000；`expectedUpdatedAt` strict ISO。
+- `FreezeClinicalReportSourcesDto`：`confirm: boolean`；`freezeNote` required trim 3–2000；`expectedUpdatedAt` strict ISO。
+- `ArchiveClinicalReportDto`：`confirm: boolean`；`archiveNote` required trim 3–2000；`expectedUpdatedAt` strict ISO。
+- `CreateClinicalReportCorrectionDto`：`confirm: boolean`；`correctionReason` trim 3–2000；`changeSummary` trim 3–4000；`expectedUpdatedAt` strict ISO。
+- 所有 write DTO 均不声明 path IDs、status/source/quality/version/code、actor/audit IDs/times、narrative/snapshots/source IDs、metadata、force/override/retry/unlock/unfreeze/unarchive/PDF/AI。
+
+### 9.3 Core report response
+
+- Source：`backend/src/modules/reports/types/clinical-report-response.types.ts`。
+- `ClinicalReportPatientSnapshotResponse`：subjectCode、optional displayName/sex/birthDate/educationYears；省略 externalRefs/tags/notes/metadata。
+- `ClinicalReportVisitSnapshotResponse`：visitCode/type/date/operator name/role；省略 clinicalContext/notes/metadata。
+- `ClinicalReportScaleTraceResponse`：scaleInstanceId、scale code/version 与 CRF/scoring/encoding/domain mapping/source trace。
+- `ClinicalReportScoreSnapshotResponse`：scale identity、total/min/max/percent、score/quality status、safe summary。
+- `ClinicalReportDomainSnapshotResponse`：scale/domain identity、score/max/percent、weighted pair、item/review counts、safe summary。
+- `ClinicalReportEvidenceSnapshotResponse`：scale/item identity、evidenceType/captureMode/quality、safe summary；不含 evidence/item/storage identity。
+- `ClinicalReportNarrativeResponse`：chiefSummary、scoreSummary、domainSummary、evidenceSummary、limitations、optional doctorOpinion/recommendationText。
+- `ClinicalReportGenerationResponse`：generationId/time/safe actor/engine/scope + included scale/score/domain/media counts + `aiUsed`。
+- `ClinicalReportResponse`：id/code/no/type/status/version/source/quality、patient/visit/scale/score/domain/evidence snapshots、narrative、generation、editorial、submission、confirmation、lock、sourceFreeze、archive、correction、replacementOf、locked/archived/voided timestamps/reason、createdAt/updatedAt、`isFinal`。
+- `ClinicalReportDetailResponse`：`{ report: ClinicalReportResponse }`。
+- `GenerateClinicalReportResponse`：`{ report; alreadyGenerated }`。
+- 安全省略：patientId/visitId、raw scope/source ID arrays、score details/item answers、Storage object/URL、clinicalContext、metadata/qualityHints、raw AI draft/provider、signature 与 Mongoose fields。
+
+### 9.4 Review/lifecycle response
+
+- A21：`UpdateClinicalReportDraftResponse { report; editReceipt }`、`SubmitClinicalReportForConfirmationResponse { report; submissionReceipt }`、`ConfirmClinicalReportResponse { report; confirmationReceipt }`。A21 review actors only expose optional name/role；receipts expose current event identity/time/note/already flag，不公开 metadata/history/internal operator ID。
+- A22：`LockClinicalReportResponse { report; lockReceipt }`；lock summary/receipt 为 lockId、lockedAt、safe actor、optional note、`alreadyLocked`。
+- A23：`FreezeClinicalReportSourcesResponse { report; sourceFreezeReceipt }`；summary/receipt 为 freezeId/state/times/safe actors/note、expected/completed/newly/previously resource counts、`alreadyFrozen`、`resumedExisting`。不公开 source scope/IDs。
+- A24：`ArchiveClinicalReportResponse { report; archiveReceipt }`；summary/receipt 为 archiveId/time/safe actor/note、sourceFreeze anchor、`alreadyArchived`。
+- A25：`CreateClinicalReportCorrectionResponse { sourceReport; replacementReport; correctionReceipt }`；receipt 含 started/completed facts、safe actors、version relation、reason/summary、`alreadyCreated`、`resumedExisting`。不公开 raw correction records/internal audit/source IDs。
+
+### 9.5 Report history response
+
+- Source：`backend/src/modules/reports/types/clinical-report-history-response.types.ts`。
+- `ClinicalReportVersionListResponse`：`{ items; page; pageSize; total; lineage }`；lineage 含 valid/firstVersion/latestVersion/totalVersions。
+- item 只含安全 report code/version/status/source/quality/final/time/sourceFreeze status 与 previous/replacement code+version；不含内部 lineage IDs、narrative/snapshots/metadata。
+
+## 10. Clinical History 与 Follow-up Trend DTO/type
+
+- `PatientHistoryParamDto` — `backend/src/modules/clinical-history/dto/patient-history-param.dto.ts`：`patientId @IsMongoId()`。
+- `ListPatientAssessmentHistoryQueryDto` — `backend/src/modules/clinical-history/dto/list-patient-assessment-history-query.dto.ts`：
+  - `page=1`、`pageSize=20`（1–100）。
+  - optional strict ISO `dateFrom/dateTo`、`visitType`、`status`、trim + lowercase non-empty `scaleCode`；不接受 sort。
+- `GetPatientFollowUpTrendQueryDto` — `backend/src/modules/clinical-history/dto/get-patient-follow-up-trend-query.dto.ts`：
+  - required `scaleCode` trim + lowercase、min 1。
+  - optional strict ISO `dateFrom/dateTo`；`maxPoints=50`，integer 2–100；不接受 sort/status/visitType/pagination/version/mapping/diagnosis。
+- Source：`backend/src/modules/clinical-history/types/clinical-history.types.ts`。
+- `PatientAssessmentHistoryResponse`：`{ items; page; pageSize; total }`；item 为安全 Visit、`scaleSummaries` 与 `reportSummary`；Score/Domain availability 为 `available | source_not_final | source_voided | source_incomplete`，nullable value 保留。
+- Source：`backend/src/modules/clinical-history/types/follow-up-trend.types.ts`。
+- `PatientFollowUpTrendResponse`：`{ scale; range; comparabilityPolicy; points }`。
+- point：安全 Visit、nullable instance、`dataStatus: available | source_missing | source_not_final | source_voided | source_incomplete | source_ambiguous`、nullable score、domains、comparison。
+- comparison：`first_point | comparable | not_comparable | unavailable`；score/domain delta nullable；reason code 为 source/version/range/mapping/domain availability 受控 enum。
+- privacy：不含 Patient identity、ownership/source IDs、raw answer/reviewer/metadata/report/media/AI/diagnosis；`scorePercent`/delta 不表示概率或诊断。
+
+## 11. Patient Administration DTO/type
+
+### 11.1 Request DTO
+
+- Source：`backend/src/modules/assessments/dto/patient-administration.dto.ts`。
+- `CreatePatientAdministrationSessionDto`：`deviceMode: same_device | cross_device` required，无 backend default。
+- `EnterPatientAdministrationDto`：`code` trim 后精确六位 ASCII 数字。
+- `PatientAdministrationRevisionDto`：`expectedRevision` integer 0–`Number.MAX_SAFE_INTEGER`。
+- `PatientAdministrationControlDto`：expectedRevision + optional `reason` trim、最大 500。
+- `PatientAdministrationRequiredReasonDto`：expectedRevision + required non-empty `reason` trim、最大 500。
+- `ConfirmPatientAdministrationPreparationDto`：expectedRevision；`impactFactorCodes` array、unique、允许空，元素为 `sensory | upper_limb | language_culture_education | instruction_comprehension | fatigue_emotion_refusal | environment | device_network | other`；optional `impactFactorNote` trim、最大 500。
+- `CompletePatientAdministrationStepDto`：仅 expectedRevision。
+- `CompletePatientAdministrationStaffStepDto`：expectedRevision + required `staffObservation` trim、非空、最大 2000。
+- `TakeOverPatientAdministrationStepDto`：expectedRevision + required `reason`（最大 500）+ `staffObservation`（最大 2000）。
+- `PatientAdministrationAssetParamDto`：`assetKey` trim、非空、最大 120，只允许 lowercase alphanumeric 的单连字符分段。
+- `PatientAdministrationStaffAssetParamDto`：三个 `@IsMongoId()` 路径 ID + 同一 assetKey validation。
+- whitelist 不接受客户端 stepKey/stepRun/advanceBy/status/credential/actor/time/asset config/ownership 事实。
+
+### 11.2 Public response
+
+- Source：`backend/src/modules/assessments/types/patient-administration-response.types.ts`。
+- `PatientAdministrationSessionSummaryResponse`：`id`、nullable `deviceMode`、`status`、`currentStepKey`、`revision`、`expiresAt`、`entryCodeExpiresAt`、`hasPatientCredential`、`preparationConfirmedAt`、`preparationConfirmedBy`、`impactFactorCodes`、optional `impactFactorNote`、`createdBy`、`startedAt`、`pausedAt`、`completedAt`、`terminatedAt`、`expiredAt`、`createdAt`、`updatedAt`；actor 仅为 safe operator projection。
+- `PatientAdministrationSessionCreateResponse`：summary + `entryCode: string | null`。
+- `PatientAdministrationEntryCodeResponse`：summary + non-null `entryCode`/`entryCodeExpiresAt`。
+- `PatientAdministrationCredentialResponse`：`{ status; revision; expiresAt }`；patient token 仅在 Cookie。
+- `PatientAdministrationCurrentResponse`：`{ status; revision; expiresAt; currentStep }`；currentStep nullable，非空时含 stepKey/order/patientText/responseMode/advanceBy/assets；asset 只含 assetKey/kind/role/mimeType/`technicalReplayAuthorized`。
+- 二进制 endpoint 使用 `StreamableFile`：image 返回授权 Content-Type/Length 与 private no-store headers；played audio 另用响应 header 提供写后 revision。内部 `PatientAdministrationOpenedAsset`/`PatientAdministrationPlayedAudio` 不是 JSON response DTO。
+- `PatientAdministrationRequestContext` 等 Guard/Service internal type 不属于 public DTO inventory。
+- 安全省略：raw entry/token/hash、controlEvents、完整步骤/资产配置、file path/manifest/package key、patient/visit/instance identity、answer/score/report。
+
+## 12. Coverage boundary
+
+- 本文完整定位 API Map 当前引用的 54 个 request DTO 与 45 个命名 response type；`StreamableFile` 与 204 void response 已在对应小节说明。
+- Service summary、Schema metadata、Storage interface、认证内部 context、seed/plan 与 Mongoose mapper type 不属于 public DTO/response owner，继续由 current code 与 Service Map 维护，不在本文复制。
+- endpoint business error/status 不在本文维护；字段 validation、enum、range、transform、nested shape 与 public safe omission 才是本文职责。
