@@ -5,7 +5,7 @@
 本文档只维护当前 frontend 的工程结构、主要模块、高层能力、关键架构边界和真实未实现边界。
 
 - 产品阶段、工作包状态和当前主线见 [Roadmap](./handoff-roadmap.md)。
-- 受监督患者施测的 same/cross、准备、逐题呈现、媒体、ASR、Evidence、异常控制及 F2/F3 详细稳定合同见 [Patient Administration Contract](./handoff-patient-administration-contract.md)。
+- 受监督患者施测的 same/cross、准备、逐题呈现、媒体、ASR、Evidence、异常控制及正式复核详细稳定合同见 [Patient Administration Contract](./handoff-patient-administration-contract.md)。
 - current / historical 测试证据与 current executable inventory 见 [Frontend Testing Playbook](./handoff-frontend-testing-playbook.md)；跨层后端证据见 [Backend Testing Playbook](./handoff-backend-testing-playbook.md)。
 - 完整 current 路由、API Client 对接和组件 / Hook 职责分别见 [Route Map](./handoff-frontend-route-map.md)、[API Map](./handoff-frontend-api-map.md) 与 [Component Map](./handoff-frontend-component-map.md)。
 - 视觉、布局、交互气质和长期 UX 原则见 [Design Baseline](./handoff-frontend-design-baseline.md)。
@@ -50,7 +50,7 @@
 
 ### 4.3 Assessments
 
-- 支持量表目录与实例初始化、动态分组执行、正式 ItemResponse 草稿和逐题保存协调。
+- 支持量表目录与实例初始化、动态分组执行，以及正式 ItemResponse 草稿、自动 / 显式保存、冲突与网络结果协调、切组和实时计时。
 - 支持题目媒体采集 / 查看、submission readiness 与整体提交。
 - 支持阶段性评分、人工评分复核与确认，以及认知域结果展示；前端不自行重算临床结果或生成诊断。
 
@@ -62,9 +62,9 @@
 
 ### 4.5 Patient Administration
 
-- 当前 frontend 已实现 F1/F2 受监督 MMSE 患者施测：医护在现有量表实例页发起和控制短期患者会话，患者通过独立 Shell 安全进入并按服务端权威步骤完成施测。
-- 患者施测 completed 后，F3 正式复核继续复用现有 ScaleInstance 页面、ItemResponse、readiness 与整体提交链，不新增独立 review route 或第二套正式答案工作流。
-- same/cross、准备、逐题 response / media、ASR、Evidence、播放、异常控制和 F2/F3 边界统一见 [Patient Administration Contract](./handoff-patient-administration-contract.md)；本快照不维护逐 step 合同。
+- 当前 frontend 已实现受监督 MMSE 患者施测：医护在现有量表实例页发起和控制短期患者会话，患者通过独立 Shell 安全进入并按服务端权威步骤完成施测。
+- 患者施测 completed 后，正式复核继续复用现有 ScaleInstance 页面、ItemResponse、readiness 与整体提交链，不新增独立 review route 或第二套正式答案工作流。
+- same/cross、准备、逐题 response / media、ASR、Evidence、播放、异常控制和正式复核边界统一见 [Patient Administration Contract](./handoff-patient-administration-contract.md)；本快照不维护逐 step 合同。
 
 ## 5. API 与状态边界
 
@@ -73,36 +73,17 @@
 - history / trends 只把可分享的非敏感筛选和分页写入 URL；临床草稿、客户端可读凭据和不可逆操作的待提交状态不写入 URL 或浏览器持久化存储。
 - 后端 Guard 是最终权限边界；前端展示 gate 不替代服务端授权和业务校验。
 
-## 6. B16 / B17 / B18 高层投影
+## 6. 当前实现结论
 
-### 6.1 B16：replacement V2+
-
-- 安全 replacement V2+ 复用既有报告 lifecycle；没有专用页面、Hook、API 或状态仓库。
-- 前端负责结构门槛与同一 current workflow 的组合，完整 lineage 与写资格由后端裁决。
-- 组件与 API 对接分别见 [Component Map](./handoff-frontend-component-map.md) 和 [API Map](./handoff-frontend-api-map.md)。
-
-### 6.2 B17：history、versions、detail、trends
-
-- 患者评估历史、单量表基础趋势、报告版本列表和指定历史报告只读详情均已实现。
-- 趋势直接展示服务端可比性事实，不生成诊断、风险、改善 / 恶化或治疗结论。
-
-### 6.3 B18：autosave、conflict、network 与 timing
-
-- 逐题自动保存、显式保存、冲突处理、网络结果核对、切组协调、媒体 generation 和实时计时闭环已实现。
-- item-response-autosave.ts、接入 Hook、保存状态组件和 timer 纯函数的职责见 [Component Map](./handoff-frontend-component-map.md)；调度与 reconciliation 算法以 current code / pure contracts 为准。
-- current / historical 验证证据只见 [Frontend Testing Playbook](./handoff-frontend-testing-playbook.md)。
-
-## 7. 当前实现结论
-
-- WP-10 等产品状态、剩余工作包和下一主线以 [Roadmap](./handoff-roadmap.md) 为准。
+- 产品状态、剩余工作包和下一主线以 [Roadmap](./handoff-roadmap.md) 为准。
 - frontend 当前模块级能力以本快照为入口；route、API、component 和设计专项事实由对应 owner 维护。
 - 测试通过、失败、历史数量、fixture、cleanup 与当前可执行资产不在本快照维护。
 
-## 8. 当前未实现边界
+## 7. 当前未实现边界
 
-- MoCA 患者端多模态闭环尚未实现，规划归属见 Roadmap 的 WP-11。
-- WP-12 临床运营与知情者辅助整体能力尚未完成；已存在的 Visit maintenance 窄切片不等于完整运营工作区。
-- 真实设备、真实麦克风 / 触控笔、真实患者媒体与人工验收仍归 WP-08；桌面自动化不能替代。
+- MoCA 患者端多模态闭环尚未实现；规划归属见 Roadmap 的 WP-11。
+- 临床运营与知情者辅助整体能力尚未完成，已存在的 Visit maintenance 窄切片不等于完整运营工作区；规划归属见 Roadmap 的 WP-12。
+- 真实设备、真实麦克风 / 触控笔、真实患者媒体与人工验收尚未完整闭合，桌面自动化不能替代；规划归属见 Roadmap 的 WP-08。
 - 患者编辑、删除、归档与合并尚未实现；Visit 仅有当前有限 maintenance，通用生命周期尚未实现。
 - 评分的独立 lock / void / reopen / rerun / 批量人工评分与独立历史，认知域的人工修改 / 确认 / 锁定 / 作废 / 重算，报告的 reject / reopen / withdraw / 签名 / unlock / unfreeze / unarchive / 作废 / 重生成 / PDF / 打印 / 下载尚未实现。
 - AI 临床解释、诊断概率、自动结论、用户 / 角色管理和完整权限菜单尚未实现。
@@ -110,7 +91,7 @@
 
 以上条目只维护 frontend 模块级真实缺口；已实现患者施测的详细合同不在此复述。
 
-## 9. 后续同步规则
+## 8. 后续同步规则
 
 - Snapshot 只在 frontend 工程结构、模块级 current 能力、关键架构边界或真实未实现边界变化时更新。
 - 路由、API 对接、组件 / Hook、设计原则、患者施测详细合同和测试 evidence 分别由对应 owner 更新；本快照只在自身投影受影响时同步。

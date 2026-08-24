@@ -6,7 +6,7 @@
 
 - 产品范围、工作包状态和当前主线见 [Roadmap](./handoff-roadmap.md)。
 - 路由职责见 [Route Map](./handoff-frontend-route-map.md)；API method、请求 / 响应和错误映射见 [Frontend API Map](./handoff-frontend-api-map.md)。
-- 受监督患者施测的 detailed same/cross、准备、逐题、媒体、ASR、Evidence、控制与 F2/F3 合同见 [Patient Administration Contract](./handoff-patient-administration-contract.md)。
+- 受监督患者施测的 detailed same/cross、准备、逐题、媒体、ASR、Evidence、控制与正式复核合同见 [Patient Administration Contract](./handoff-patient-administration-contract.md)。
 - current / historical 测试证据与 current executable inventory 见 [Frontend Testing Playbook](./handoff-frontend-testing-playbook.md)。
 - 视觉、布局和长期 UX 原则见 [Design Baseline](./handoff-frontend-design-baseline.md)。
 
@@ -131,14 +131,13 @@
 
 评分与认知域组件只展示或提交对应用户 intent，不在 frontend 重新计算服务端结果。相关 types、display helpers 与 Clients 位于 features/assessments 对应目录；API 细节见 Frontend API Map。
 
-## 7. B18 autosave 与 timing 组件架构
+## 7. Autosave 与 timing 组件架构
 
 - features/assessments/lib/item-response-autosave.ts：逐题纯协调器，负责调度、单题写入序列、冲突 / 网络结果分类、服务端成功后的草稿重基线和可清理状态。精确常量、状态转换与 reconciliation 算法以 current code / pure contracts 为准，本地图不复制。
 - features/assessments/hooks/useItemResponseAutosaveCoordinator.ts：把纯协调器接入页面、Assessment Execution Client、网络事件和计时 checkpoint；负责注册与清理 timer、listener 和只读核对资源。
 - ItemResponseSaveStatus：把协调器状态转成低干扰、可访问的保存反馈和显式冲突选择。
 - features/assessments/lib/item-response-timer.ts：维护计时 intent、快照校验与安全 elapsed 计算；不负责页面渲染或临床判定。
 - ScaleInstanceExecutionPage：持有页面级 draft snapshot、媒体 generation 与 beforeunload 汇总，并把具体保存动作交给协调器。
-- B18 的当前 / 历史测试证据只见 Frontend Testing Playbook；本地图不记录通过数量、Browser Profile、fixture 或完成批次。
 
 ## 8. Clinical Report 组件架构
 
@@ -191,7 +190,7 @@
 
 ## 9. Patient Administration 组件架构
 
-本节只维护组件职责和组合关系。same/cross、准备、逐题 response / media、播放、technical replay、takeover / redo、ASR、Evidence adoption、F2/F3 及安全退出的详细业务规则统一见 [Patient Administration Contract](./handoff-patient-administration-contract.md)。
+本节只维护组件职责和组合关系。same/cross、准备、逐题 response / media、播放、technical replay、takeover / redo、ASR、Evidence adoption、正式复核及安全退出的详细业务规则统一见 [Patient Administration Contract](./handoff-patient-administration-contract.md)。
 
 ### 9.1 医护侧
 
@@ -213,12 +212,12 @@
 
 逐题 responseMode、哪些步骤需要音频 / 观察 / 书写、播放与 Evidence gate 不由 Component Map 维护，统一见 Patient Administration Contract。
 
-### 9.4 F3 review projection
+### 9.4 Patient Administration review projection
 
 - PatientAdministrationReviewPanel — components/PatientAdministrationReviewPanel.tsx：在符合 server completed 投影时读取患者施测 review reference，按 formal ItemResponse 组织患者原始事实并把展示 slot 交给既有 ItemResponseEditor；管理 review、按需媒体访问、显式辅助操作和 viewer local state。
 - patient-review-reference-routing.ts：把 backend review placement 与 formal editor slot 做纯路由；运行时不匹配时安全退化，不维护逐题业务矩阵。
 - 正式 ItemResponse 保存、readiness 和整体提交仍由 ScaleInstanceExecutionPage、ItemResponseEditor、autosave coordinator 与 SubmissionPanel 负责；ReviewPanel 不建立第二套正式写链。
-- Evidence / ASR / adoption 的详细安全语义和 F3 业务边界见 [Patient Administration Contract](./handoff-patient-administration-contract.md)；具体 calls 见 [Frontend API Map](./handoff-frontend-api-map.md)。
+- Evidence / ASR / adoption 的详细安全语义和正式复核业务边界见 [Patient Administration Contract](./handoff-patient-administration-contract.md)；具体 calls 见 [Frontend API Map](./handoff-frontend-api-map.md)。
 
 ### 9.5 Client、类型与展示辅助
 
