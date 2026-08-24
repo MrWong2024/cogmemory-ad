@@ -28,7 +28,7 @@
 
 B11～B15 保持完成；B18 补充验证已闭合，自动化 `gap=0`，WP-03 已完成。F1 replacement 与 F2 P1 / P2 的既有 green 均继续作为形成时策略下有效的历史证据；v1.20 requalification 后四个 executable 已物理退役，这只改变 future / current evidence execution mode，不把历史通过改写成失败，也不回退 WP-10 产品完成状态。F3 current Playwright re-automation 已止损且其 scripted Browser executable 已退役；该工具状态既不形成 current F3 Playwright green，也不回退 WP-10。产品范围、工作包状态和当前主线以 `handoff-roadmap.md` 为准；Batch E 的 8 项真实设备或人工项目仍为 `pending`，最终主要归属为 WP-08。
 
-Current physical inventory 已与 v1.20 clean-slate 决策对齐：`@playwright/test` 当前只作为 `frontend/test/contracts/` 的 pure/static contract runner；current contract files / tests 的精确数量以当前 runner discovery 为准，不在 handoff 中静态维护，数量变化本身不触发本文档同步。这些 specs 不声明 `page`、`context`、`browser`、`browserName`、`BrowserContext` 或 `chromium`，不启动 Browser，也不属于 Browser evidence。Current scripted deterministic real-Browser executable inventory = 0。旧 `frontend/test/browser-acceptance/` 目录及其 infrastructure、live topology、safe-output 与 shared support 已全部退役，当前物理路径不存在；这不否定其 pre-clean-slate 历史作用或当时形成的通过证据。
+Current physical inventory 已与 v1.20 clean-slate 决策对齐：`@playwright/test` 当前只作为 `frontend/test/contracts/` 的 pure/static contract runner；这些 specs 不声明 `page`、`context`、`browser`、`browserName`、`BrowserContext` 或 `chromium`，不启动 Browser，也不属于 Browser evidence。Current scripted deterministic real-Browser executable inventory = 0。旧 `frontend/test/browser-acceptance/` 目录及其 infrastructure、live topology、safe-output 与 shared support 已全部退役，当前物理路径不存在；这不否定其 pre-clean-slate 历史作用或当时形成的通过证据。
 
 下表记录 pre-clean-slate requalification 与后续物理处置。前两行曾通过 non-UI classification，但 clean slate 不 grandfather 未被 current 风险消费的 Browser framework，因此与后四行一样都不是 current executable inventory。
 
