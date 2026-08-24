@@ -127,9 +127,14 @@ export function formatProvisionalScoreNumber(
 export function formatProvisionalScorePercent(
   value: number | null | undefined,
 ): string {
-  return typeof value === 'number' && Number.isFinite(value)
-    ? `${value}%`
-    : '—';
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return '—';
+  }
+
+  const displayValue = Number.isInteger(value)
+    ? value
+    : Number(value.toFixed(1));
+  return `${displayValue}%`;
 }
 
 export function formatProvisionalScoreDate(value: string | null): string {

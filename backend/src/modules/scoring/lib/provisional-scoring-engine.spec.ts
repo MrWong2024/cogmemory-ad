@@ -180,35 +180,100 @@ describe('provisional scoring engine', () => {
     throw new Error('Expected real serial sevens seed items');
   }
 
-  it('scores the real MMSE multi-step rule by independent step values', () => {
-    const response = responseFor(mmseSerial, {
-      stepResults: serialSteps(
-        'mmse.attention.serial_sevens',
-        [93, 0, 79, 0, 65],
-      ),
-    });
-    const result = evaluateProvisionalItems([mmseSerial], [response]);
-    expect(result.itemScores[0]).toEqual(
-      expect.objectContaining({
-        scoreValue: 3,
-        scoreStatus: 'auto_scored',
-        scoreSource: 'auto_rule',
-      }),
-    );
-    expect(response.stepResults.every((step) => step.isCorrect === null)).toBe(
-      true,
-    );
-  });
+  it.each([
+    {
+      label: 'manual smoke regression',
+      actualValues: [93, 86, 79, 76, 65],
+      correctStepCount: 3,
+      mocaScore: 2,
+    },
+    {
+      label: 'first-step error with later independent recovery',
+      actualValues: [92, 85, 78, 71, 65],
+      correctStepCount: 3,
+      mocaScore: 2,
+    },
+    {
+      label: 'restarts a correct chain after an error',
+      actualValues: [93, 86, 80, 73, 66],
+      correctStepCount: 4,
+      mocaScore: 3,
+    },
+    {
+      label: 'all steps correct',
+      actualValues: [93, 86, 79, 72, 65],
+      correctStepCount: 5,
+      mocaScore: 3,
+    },
+  ])(
+    'scores serial sevens by chained independent steps: $label',
+    ({ actualValues, correctStepCount, mocaScore }) => {
+      const mmseResponse = responseFor(mmseSerial, {
+        stepResults: serialSteps('mmse.attention.serial_sevens', actualValues),
+      });
+      const mocaResponse = responseFor(mocaSerial, {
+        stepResults: serialSteps('moca.attention.serial_sevens', actualValues),
+      });
 
-  it('uses the real MoCA correct-step-count aggregation structure', () => {
-    const response = responseFor(mocaSerial, {
-      stepResults: serialSteps(
-        'moca.attention.serial_sevens',
-        [93, 86, 0, 0, 0],
-      ),
+      expect(
+        evaluateProvisionalItems([mmseSerial], [mmseResponse]).itemScores[0],
+      ).toEqual(
+        expect.objectContaining({
+          scoreValue: correctStepCount,
+          scoreStatus: 'auto_scored',
+          scoreSource: 'auto_rule',
+        }),
+      );
+      expect(
+        evaluateProvisionalItems([mocaSerial], [mocaResponse]).itemScores[0]
+          .scoreValue,
+      ).toBe(mocaScore);
+      expect(
+        [...mmseResponse.stepResults, ...mocaResponse.stepResults].every(
+          (step) => step.isCorrect === null,
+        ),
+      ).toBe(true);
+    },
+  );
+
+  it('keeps ordinary multi-step numeric scoring on fixed expected values', () => {
+    const item: ScaleItemConfigSummary = {
+      ...mmseSerial,
+      scoreRange: { min: 0, max: 2, step: 1 },
+      scoringRule: {
+        mode: 'multi_step_manual',
+        steps: [
+          { code: 'test.step_1', expected: 93, maxScore: 1 },
+          { code: 'test.step_2', expected: 86, maxScore: 1 },
+        ],
+      },
+    };
+    const response = responseFor(item, {
+      stepResults: [
+        {
+          stepCode: 'test.step_1',
+          order: 1,
+          expectedValue: 93,
+          actualValue: 92,
+          isCorrect: null,
+          scoreValue: null,
+          countsTowardItemScore: true,
+        },
+        {
+          stepCode: 'test.step_2',
+          order: 2,
+          expectedValue: 86,
+          actualValue: 85,
+          isCorrect: null,
+          scoreValue: null,
+          countsTowardItemScore: true,
+        },
+      ],
     });
-    const result = evaluateProvisionalItems([mocaSerial], [response]);
-    expect(result.itemScores[0].scoreValue).toBe(2);
+
+    expect(
+      evaluateProvisionalItems([item], [response]).itemScores[0].scoreValue,
+    ).toBe(0);
   });
 
   it('accepts finite zero and boolean false without coercion', () => {
@@ -285,6 +350,21 @@ describe('provisional scoring engine', () => {
         [responseFor(mmseSerial, { stepResults: duplicate })],
       ).itemScores[0].note,
     ).toBe('STEP_CONFIGURATION_INVALID');
+
+    const mismatchedReference = serialSteps(
+      'mmse.attention.serial_sevens',
+      [93, 86, 79, 72, 65],
+    );
+    mismatchedReference[1] = {
+      ...mismatchedReference[1],
+      expectedValue: 85,
+    };
+    expect(
+      evaluateProvisionalItems(
+        [mmseSerial],
+        [responseFor(mmseSerial, { stepResults: mismatchedReference })],
+      ).itemScores[0].note,
+    ).toBe('STEP_RESPONSE_TYPE_UNSUPPORTED');
 
     const malformed = {
       ...mocaSerial,

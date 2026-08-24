@@ -221,6 +221,9 @@ function calculateMultiStepScore(
 
   let correctStepCount = 0;
   let directScore = 0;
+  const independentStepScoring = rule.independentStepScoring === true;
+  let previousExpectedValue: number | undefined;
+  let previousActualValue: number | undefined;
   for (const ruleStep of ruleSteps) {
     const responseStep = responseSteps.get(ruleStep.code)?.[0];
     if (!responseStep || responseStep.actualValue === null) {
@@ -240,7 +243,26 @@ function calculateMultiStepScore(
     ) {
       return { reasonCode: 'STEP_RESPONSE_TYPE_UNSUPPORTED' };
     }
-    if (responseStep.actualValue === ruleStep.expected) {
+    let isCorrect = responseStep.actualValue === ruleStep.expected;
+    if (independentStepScoring) {
+      if (
+        !isFiniteNumber(ruleStep.expected) ||
+        !isFiniteNumber(responseStep.actualValue)
+      ) {
+        return { reasonCode: 'STEP_RESPONSE_TYPE_UNSUPPORTED' };
+      }
+      if (
+        previousExpectedValue !== undefined &&
+        previousActualValue !== undefined
+      ) {
+        isCorrect =
+          responseStep.actualValue - previousActualValue ===
+          ruleStep.expected - previousExpectedValue;
+      }
+      previousExpectedValue = ruleStep.expected;
+      previousActualValue = responseStep.actualValue;
+    }
+    if (isCorrect) {
       correctStepCount += 1;
       directScore += ruleStep.maxScore;
     }
