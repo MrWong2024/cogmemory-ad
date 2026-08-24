@@ -206,9 +206,9 @@
 
 ### 9.3 当前步骤与患者输入
 
-- PatientAdministrationCurrentStep — components/PatientAdministrationCurrentStep.tsx：对单一 server current step 编排获准资产、播放、Evidence 上传和完成 intent；换步 / 卸载时清理 audio、object URL、AbortController 与旧 run 资源。
-- PatientAdministrationSpeechResponse — components/PatientAdministrationSpeechResponse.tsx：管理单步骤短录音、本地回放、保存 intent 和 MediaStream / timer / object URL cleanup；不自动转写或形成正式答案。
-- PatientAdministrationWrittenResponse — components/PatientAdministrationWrittenResponse.tsx：管理当前步骤的 Canvas 或照片输入、预览与上传 intent；Blob / preview 只驻留组件内存，不自动完成步骤或写正式答案。
+- PatientAdministrationCurrentStep — components/PatientAdministrationCurrentStep.tsx：对单一 server current step 编排获准资产、播放以及 Evidence / completion 的 server mutation 与 revision；换步 / 卸载时清理 audio、object URL、AbortController 与旧 run 资源。
+- PatientAdministrationSpeechResponse — components/PatientAdministrationSpeechResponse.tsx：管理单步骤短录音、本地回放和 MediaStream / timer / object URL cleanup；patient-advance Evidence 步骤承载“必要时先上传，再请求完成”的单一患者提交 intent，staff-advance 保持 save-only；不自动转写或形成正式答案。
+- PatientAdministrationWrittenResponse — components/PatientAdministrationWrittenResponse.tsx：管理当前步骤的 Canvas 或照片输入、预览与 Blob 生命周期；patient-advance Evidence 步骤承载“必要时先上传，再请求完成”的单一患者提交 intent，staff-advance 保持 save-only；不写正式答案。
 
 逐题 responseMode、哪些步骤需要音频 / 观察 / 书写、播放与 Evidence gate 不由 Component Map 维护，统一见 Patient Administration Contract。
 

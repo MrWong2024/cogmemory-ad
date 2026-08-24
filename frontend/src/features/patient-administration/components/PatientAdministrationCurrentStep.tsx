@@ -14,6 +14,7 @@ import {
 } from '@/src/features/patient-administration/api/patient-administration-api';
 import { PatientAdministrationSpeechResponse } from '@/src/features/patient-administration/components/PatientAdministrationSpeechResponse';
 import { PatientAdministrationWrittenResponse } from '@/src/features/patient-administration/components/PatientAdministrationWrittenResponse';
+import type { PatientEvidenceUploadResult } from '@/src/features/patient-administration/lib/patient-evidence-completion';
 import type {
   PatientAdministrationCurrentResponse,
   PatientAdministrationCurrentStep as CurrentStep,
@@ -36,7 +37,7 @@ function patientErrorMessage(error: unknown): string {
     return '当前操作未能完成，请告知医护人员协助。';
   }
   if (error.kind === 'media_invalid') {
-    return '回答文件格式或大小不符合要求，请重新准备后保存。';
+    return '回答文件格式或大小不符合要求，请重新准备本题回答后继续。';
   }
   if (error.kind === 'evidence_not_allowed') {
     return '当前步骤不接受这种回答方式，请告知医护人员协助。';
@@ -150,7 +151,7 @@ export function PatientAdministrationCurrentStep({
         if (error.kind === 'step_invalid') {
           setMessage(
             completing
-              ? '本题还未满足完成条件，请确认回答或书写内容已经保存；如已完成仍不能继续，请告知医护人员。'
+              ? '本题暂未满足完成条件，请确认已经完成本题作答；如仍不能继续，请告知医护人员。'
               : '当前步骤前置条件尚未满足，请在医护人员指导下继续。',
           );
           return;
@@ -332,8 +333,8 @@ export function PatientAdministrationCurrentStep({
   const uploadEvidence = useCallback(
     async (
       input: Omit<PatientAdministrationEvidenceUploadInput, 'expectedRevision'>,
-    ): Promise<boolean> => {
-      if (mutationInFlightRef.current) return false;
+    ): Promise<PatientEvidenceUploadResult> => {
+      if (mutationInFlightRef.current) return 'failed';
       mutationInFlightRef.current = true;
       setMutationBusy(true);
       setMessage(null);
@@ -343,10 +344,14 @@ export function PatientAdministrationCurrentStep({
           expectedRevision: revisionRef.current,
         });
         publishRevision(uploaded.revision);
-        return true;
+        return 'success';
       } catch (error: unknown) {
         await handleWriteError(error);
-        return false;
+        return error instanceof PatientAdministrationApiError &&
+          (error.kind === 'session_conflict' ||
+            error.kind === 'request_outcome_uncertain')
+          ? 'conflict_or_uncertain'
+          : 'failed';
       } finally {
         mutationInFlightRef.current = false;
         if (mountedRef.current) setMutationBusy(false);
@@ -355,13 +360,8 @@ export function PatientAdministrationCurrentStep({
     [handleWriteError, publishRevision],
   );
 
-  async function completeStep() {
-    if (
-      mutationInFlightRef.current ||
-      responseBusy ||
-      audioBusy ||
-      !audioReady
-    ) {
+  async function completeStepMutation() {
+    if (mutationInFlightRef.current || audioBusy || !audioReady) {
       return;
     }
     mutationInFlightRef.current = true;
@@ -382,9 +382,19 @@ export function PatientAdministrationCurrentStep({
     }
   }
 
+  async function completeStepFromOuterButton() {
+    if (responseBusy) return;
+    await completeStepMutation();
+  }
+
   const guidanceAssets = mountedStep.assets.filter(
     (asset) => asset.kind === 'audio' && asset.role === 'guidance',
   );
+  const evidenceResponseOwnsPatientCompletion =
+    mountedStep.advanceBy === 'patient' &&
+    (mountedStep.responseMode === 'speech' ||
+      mountedStep.responseMode === 'writing' ||
+      mountedStep.responseMode === 'drawing');
   const controlsDisabled = audioBusy || mutationBusy || responseBusy;
   const showAuthorizedReplay = Boolean(
     audioReady &&
@@ -452,11 +462,32 @@ export function PatientAdministrationCurrentStep({
       ) : null}
 
       {audioReady && mountedStep.responseMode === 'speech' ? (
-        <PatientAdministrationSpeechResponse disabled={controlsDisabled} onBusyChange={setResponseBusy} onUpload={uploadEvidence} />
+        <PatientAdministrationSpeechResponse
+          advanceBy={mountedStep.advanceBy}
+          disabled={controlsDisabled}
+          onBusyChange={setResponseBusy}
+          onComplete={
+            evidenceResponseOwnsPatientCompletion
+              ? completeStepMutation
+              : undefined
+          }
+          onUpload={uploadEvidence}
+        />
       ) : null}
 
       {audioReady && (mountedStep.responseMode === 'writing' || mountedStep.responseMode === 'drawing') ? (
-        <PatientAdministrationWrittenResponse disabled={controlsDisabled} onBusyChange={setResponseBusy} onUpload={uploadEvidence} responseMode={mountedStep.responseMode} />
+        <PatientAdministrationWrittenResponse
+          advanceBy={mountedStep.advanceBy}
+          disabled={controlsDisabled}
+          onBusyChange={setResponseBusy}
+          onComplete={
+            evidenceResponseOwnsPatientCompletion
+              ? completeStepMutation
+              : undefined
+          }
+          onUpload={uploadEvidence}
+          responseMode={mountedStep.responseMode}
+        />
       ) : null}
 
       {audioReady && mountedStep.responseMode === 'staff_observation' ? (
@@ -467,13 +498,14 @@ export function PatientAdministrationCurrentStep({
 
       {message ? <p className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] px-4 py-3 leading-7 text-[var(--cma-warning)]" role="alert">{message}</p> : null}
 
-      {mountedStep.advanceBy === 'patient' ? (
-        <Button className="min-h-12 w-full sm:w-fit" disabled={!audioReady || controlsDisabled} onClick={() => void completeStep()} size="lg">
+      {mountedStep.advanceBy === 'patient' &&
+      !evidenceResponseOwnsPatientCompletion ? (
+        <Button className="min-h-12 w-full sm:w-fit" disabled={!audioReady || controlsDisabled} onClick={() => void completeStepFromOuterButton()} size="lg">
           {mutationBusy ? '正在完成…' : '完成本题并继续'}
         </Button>
-      ) : (
+      ) : mountedStep.advanceBy === 'staff' ? (
         <p className="font-semibold text-[var(--cma-info)]">本步骤由医护人员确认后继续。</p>
-      )}
+      ) : null}
 
       <div className="border-t border-[var(--cma-line)] pt-4">
         <Button onClick={() => setHelpVisible((visible) => !visible)} variant="secondary">需要医护人员帮助</Button>

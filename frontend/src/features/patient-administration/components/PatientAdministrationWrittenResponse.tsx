@@ -3,7 +3,12 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/src/components/ui/Button';
+import {
+  runPatientEvidenceCompletion,
+  type PatientEvidenceUploadResult,
+} from '@/src/features/patient-administration/lib/patient-evidence-completion';
 import type {
+  PatientAdministrationAdvanceBy,
   PatientAdministrationEvidenceUploadInput,
   PatientAdministrationHandwritingInputTool,
   PatientAdministrationResponseMode,
@@ -40,18 +45,22 @@ async function readImageDimensions(blob: Blob): Promise<ImageDimensions | null> 
 }
 
 type Props = {
+  advanceBy: PatientAdministrationAdvanceBy;
   disabled: boolean;
   responseMode: Extract<PatientAdministrationResponseMode, 'writing' | 'drawing'>;
   onBusyChange: (busy: boolean) => void;
+  onComplete?: () => Promise<void>;
   onUpload: (
     input: Omit<PatientAdministrationEvidenceUploadInput, 'expectedRevision'>,
-  ) => Promise<boolean>;
+  ) => Promise<PatientEvidenceUploadResult>;
 };
 
 export function PatientAdministrationWrittenResponse({
+  advanceBy,
   disabled,
   responseMode,
   onBusyChange,
+  onComplete,
   onUpload,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -64,6 +73,8 @@ export function PatientAdministrationWrittenResponse({
   const photoUrlRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
   const savingRef = useRef(false);
+  const savedRef = useRef(false);
+  const completeOnlyRecoveryRef = useRef(false);
   const [mode, setMode] = useState<InputMode>('canvas');
   const [hasInk, setHasInk] = useState(false);
   const [photo, setPhoto] = useState<Blob | null>(null);
@@ -107,6 +118,8 @@ export function PatientAdministrationWrittenResponse({
     return () => {
       mountedRef.current = false;
       savingRef.current = false;
+      savedRef.current = false;
+      completeOnlyRecoveryRef.current = false;
       if (photoUrlRef.current) URL.revokeObjectURL(photoUrlRef.current);
       photoUrlRef.current = null;
       onBusyChange(false);
@@ -204,58 +217,102 @@ export function PatientAdministrationWrittenResponse({
     });
   }
 
-  async function saveContent() {
-    if (savingRef.current || disabled || uploading || saved) return;
-    if ((mode === 'canvas' && !hasInk) || (mode === 'photo' && !photo)) {
+  function markContentSaved() {
+    if (!mountedRef.current) return;
+    savedRef.current = true;
+    clearPhoto();
+    resetCanvas();
+    setSaved(true);
+  }
+
+  async function submitContent() {
+    if (savingRef.current || disabled || uploading) return;
+    const patientAdvance = advanceBy === 'patient';
+    const consumeCompleteOnlyRecovery =
+      patientAdvance && completeOnlyRecoveryRef.current;
+    const skipUpload =
+      patientAdvance &&
+      (savedRef.current || consumeCompleteOnlyRecovery);
+    const complete = onComplete;
+
+    if (
+      !skipUpload &&
+      ((mode === 'canvas' && !hasInk) || (mode === 'photo' && !photo))
+    ) {
       setError(mode === 'canvas' ? '请先完成有效书写或绘图。' : '请先选择照片。');
       return;
     }
+    if (patientAdvance && !complete) {
+      setError('当前步骤暂时不能完成，请告知医护人员。');
+      return;
+    }
+
     savingRef.current = true;
     setUploading(true);
     onBusyChange(true);
     setError(null);
+    if (consumeCompleteOnlyRecovery) {
+      completeOnlyRecoveryRef.current = false;
+    }
     try {
-      const file = mode === 'canvas' ? await canvasBlob() : photo;
-      if (!mountedRef.current) return;
-      if (!file || file.size > MAX_FILE_BYTES) {
-        setError('本题内容大小不符合要求，请清空后重试。');
-        return;
-      }
-      const canvas = canvasRef.current;
-      const handwritingDurationMs =
-        handwritingStartedAtRef.current !== null &&
-        handwritingLastInkAtRef.current !== null
-          ? Math.max(
-              0,
-              handwritingLastInkAtRef.current -
-                handwritingStartedAtRef.current,
-            )
-          : 0;
-      const uploaded = await onUpload({
-        file,
-        evidenceType: mode === 'canvas' ? 'handwriting' : 'photo',
-        capturedAt: new Date().toISOString(),
-        ...(mode === 'canvas'
-          ? {
-              imageWidth: canvas?.width ?? CANVAS_WIDTH,
-              imageHeight: canvas?.height ?? CANVAS_HEIGHT,
-              strokeCount: strokeCountRef.current,
-              trajectoryDurationMs: handwritingDurationMs,
-              canvasWidth: canvas?.width ?? CANVAS_WIDTH,
-              canvasHeight: canvas?.height ?? CANVAS_HEIGHT,
-              inputTool: handwritingInputToolRef.current ?? 'unknown',
-            }
-          : photoDimensions
+      const upload = async (): Promise<PatientEvidenceUploadResult> => {
+        const file = mode === 'canvas' ? await canvasBlob() : photo;
+        if (!mountedRef.current) return 'failed';
+        if (!file || file.size > MAX_FILE_BYTES) {
+          setError('本题内容大小不符合要求，请清空后重试。');
+          return 'failed';
+        }
+        const canvas = canvasRef.current;
+        const handwritingDurationMs =
+          handwritingStartedAtRef.current !== null &&
+          handwritingLastInkAtRef.current !== null
+            ? Math.max(
+                0,
+                handwritingLastInkAtRef.current -
+                  handwritingStartedAtRef.current,
+              )
+            : 0;
+        const result = await onUpload({
+          file,
+          evidenceType: mode === 'canvas' ? 'handwriting' : 'photo',
+          capturedAt: new Date().toISOString(),
+          ...(mode === 'canvas'
             ? {
-                imageWidth: photoDimensions.width,
-                imageHeight: photoDimensions.height,
+                imageWidth: canvas?.width ?? CANVAS_WIDTH,
+                imageHeight: canvas?.height ?? CANVAS_HEIGHT,
+                strokeCount: strokeCountRef.current,
+                trajectoryDurationMs: handwritingDurationMs,
+                canvasWidth: canvas?.width ?? CANVAS_WIDTH,
+                canvasHeight: canvas?.height ?? CANVAS_HEIGHT,
+                inputTool: handwritingInputToolRef.current ?? 'unknown',
               }
-            : {}),
-      });
-      if (uploaded && mountedRef.current) {
-        clearPhoto();
-        resetCanvas();
-        setSaved(true);
+            : photoDimensions
+              ? {
+                  imageWidth: photoDimensions.width,
+                  imageHeight: photoDimensions.height,
+                }
+              : {}),
+        });
+        if (result === 'success') {
+          markContentSaved();
+        } else if (
+          patientAdvance &&
+          result === 'conflict_or_uncertain' &&
+          mountedRef.current
+        ) {
+          completeOnlyRecoveryRef.current = true;
+        }
+        return result;
+      };
+
+      if (patientAdvance && complete) {
+        await runPatientEvidenceCompletion({
+          skipUpload,
+          upload,
+          complete,
+        });
+      } else {
+        await upload();
       }
     } catch {
       if (mountedRef.current) setError('本题内容未能生成，请重试。');
@@ -275,7 +332,9 @@ export function PatientAdministrationWrittenResponse({
       <div>
         <h3 className="text-xl font-semibold" id="written-response-title">完成本题{actionName}</h3>
         <p className="mt-1 text-base leading-7 text-[var(--cma-muted)]">
-          可直接在屏幕上完成，也可在纸上完成后选择照片。
+          {advanceBy === 'patient'
+            ? '可直接在屏幕上完成，也可在纸上完成后选择照片；确认无误后点击“完成本题并继续”。'
+            : '可直接在屏幕上完成，也可在纸上完成后选择照片；确认无误后保存本题内容。'}
         </p>
       </div>
 
@@ -315,15 +374,21 @@ export function PatientAdministrationWrittenResponse({
           {photoUrl ? (
             // The patient-selected photo is a short-lived local Blob URL.
             // eslint-disable-next-line @next/next/no-img-element
-            <img alt="本题待保存照片预览" className="max-h-96 w-full rounded-md border border-[var(--cma-line)] object-contain" src={photoUrl} />
+            <img alt="本题照片预览" className="max-h-96 w-full rounded-md border border-[var(--cma-line)] object-contain" src={photoUrl} />
           ) : null}
         </div>
       )}
 
-      {saved ? <p className="rounded-md bg-[var(--cma-success-soft)] px-4 py-3 font-semibold text-[var(--cma-success)]" role="status">本题内容已保存</p> : null}
-      {!saved ? (
-        <Button className="min-h-12 sm:w-fit" disabled={disabled || uploading || (mode === 'canvas' ? !hasInk : !photo)} onClick={() => void saveContent()} size="lg">
-          {uploading ? '正在保存…' : '保存本题内容'}
+      {saved ? <p className="rounded-md bg-[var(--cma-success-soft)] px-4 py-3 font-semibold text-[var(--cma-success)]" role="status">{advanceBy === 'patient' ? '本题内容已提交' : '本题内容已保存'}</p> : null}
+      {advanceBy === 'patient' || !saved ? (
+        <Button className="min-h-12 sm:w-fit" disabled={disabled || uploading || (!saved && (mode === 'canvas' ? !hasInk : !photo))} onClick={() => void submitContent()} size="lg">
+          {uploading
+            ? advanceBy === 'patient'
+              ? '正在完成…'
+              : '正在保存…'
+            : advanceBy === 'patient'
+              ? '完成本题并继续'
+              : '保存本题内容'}
         </Button>
       ) : null}
       {error ? <p className="text-[var(--cma-danger)]" role="alert">{error}</p> : null}

@@ -3,7 +3,14 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/src/components/ui/Button';
-import type { PatientAdministrationEvidenceUploadInput } from '@/src/features/patient-administration/types/patient-administration';
+import {
+  runPatientEvidenceCompletion,
+  type PatientEvidenceUploadResult,
+} from '@/src/features/patient-administration/lib/patient-evidence-completion';
+import type {
+  PatientAdministrationAdvanceBy,
+  PatientAdministrationEvidenceUploadInput,
+} from '@/src/features/patient-administration/types/patient-administration';
 
 const MAX_RECORDING_MS = 600_000;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
@@ -23,16 +30,20 @@ type PendingRecording = {
 };
 
 type Props = {
+  advanceBy: PatientAdministrationAdvanceBy;
   disabled: boolean;
   onBusyChange: (busy: boolean) => void;
+  onComplete?: () => Promise<void>;
   onUpload: (
     input: Omit<PatientAdministrationEvidenceUploadInput, 'expectedRevision'>,
-  ) => Promise<boolean>;
+  ) => Promise<PatientEvidenceUploadResult>;
 };
 
 export function PatientAdministrationSpeechResponse({
+  advanceBy,
   disabled,
   onBusyChange,
+  onComplete,
   onUpload,
 }: Props) {
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -46,6 +57,8 @@ export function PatientAdministrationSpeechResponse({
   const startRunRef = useRef(0);
   const startInFlightRef = useRef(false);
   const savingRef = useRef(false);
+  const savedRef = useRef(false);
+  const completeOnlyRecoveryRef = useRef(false);
   const [starting, setStarting] = useState(false);
   const [recording, setRecording] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -80,6 +93,8 @@ export function PatientAdministrationSpeechResponse({
       startRunRef.current += 1;
       startInFlightRef.current = false;
       savingRef.current = false;
+      savedRef.current = false;
+      completeOnlyRecoveryRef.current = false;
       clearTimer();
       const recorder = recorderRef.current;
       recorderRef.current = null;
@@ -207,32 +222,79 @@ export function PatientAdministrationSpeechResponse({
     if (recorder?.state === 'recording') recorder.stop();
   }
 
-  async function saveRecording() {
-    if (savingRef.current || !pending || uploading || saved) return;
-    const normalizedMimeType = pending.blob.type.split(';')[0].toLowerCase();
-    if (
-      pending.blob.size > MAX_FILE_BYTES ||
-      !['audio/webm', 'audio/ogg', 'audio/mp4', 'audio/mpeg'].includes(
-        normalizedMimeType,
-      )
-    ) {
-      setError('录音格式或大小不符合要求，请重新录制。');
+  function markRecordingSaved() {
+    if (!mountedRef.current) return;
+    savedRef.current = true;
+    clearPreview();
+    setSaved(true);
+  }
+
+  async function submitRecording() {
+    if (savingRef.current || uploading || disabled) return;
+    const patientAdvance = advanceBy === 'patient';
+    const currentPending = pending;
+    const consumeCompleteOnlyRecovery =
+      patientAdvance && completeOnlyRecoveryRef.current;
+    const skipUpload =
+      patientAdvance &&
+      (savedRef.current || consumeCompleteOnlyRecovery);
+    const complete = onComplete;
+
+    if (!skipUpload) {
+      if (!currentPending) return;
+      const normalizedMimeType = currentPending.blob.type
+        .split(';')[0]
+        .toLowerCase();
+      if (
+        currentPending.blob.size > MAX_FILE_BYTES ||
+        !['audio/webm', 'audio/ogg', 'audio/mp4', 'audio/mpeg'].includes(
+          normalizedMimeType,
+        )
+      ) {
+        setError('录音格式或大小不符合要求，请重新录制。');
+        return;
+      }
+    }
+    if (patientAdvance && !complete) {
+      setError('当前步骤暂时不能完成，请告知医护人员。');
       return;
     }
+
     savingRef.current = true;
     setUploading(true);
     onBusyChange(true);
     setError(null);
+    if (consumeCompleteOnlyRecovery) {
+      completeOnlyRecoveryRef.current = false;
+    }
     try {
-      const uploaded = await onUpload({
-        file: pending.blob,
-        evidenceType: 'audio',
-        capturedAt: pending.capturedAt,
-        durationMs: pending.durationMs,
-      });
-      if (uploaded && mountedRef.current) {
-        clearPreview();
-        setSaved(true);
+      const upload = async (): Promise<PatientEvidenceUploadResult> => {
+        if (!currentPending) return 'failed';
+        const result = await onUpload({
+          file: currentPending.blob,
+          evidenceType: 'audio',
+          capturedAt: currentPending.capturedAt,
+          durationMs: currentPending.durationMs,
+        });
+        if (result === 'success') {
+          markRecordingSaved();
+        } else if (
+          result === 'conflict_or_uncertain' &&
+          mountedRef.current
+        ) {
+          completeOnlyRecoveryRef.current = true;
+        }
+        return result;
+      };
+
+      if (patientAdvance && complete) {
+        await runPatientEvidenceCompletion({
+          skipUpload,
+          upload,
+          complete,
+        });
+      } else {
+        await upload();
       }
     } finally {
       savingRef.current = false;
@@ -248,7 +310,9 @@ export function PatientAdministrationSpeechResponse({
       <div>
         <h3 className="text-xl font-semibold" id="speech-response-title">录制本题回答</h3>
         <p className="mt-1 text-base leading-7 text-[var(--cma-muted)]">
-          请先点击开始录音，再按题目要求作答；录完可以先试听，再显式保存。
+          {advanceBy === 'patient'
+            ? '请先点击开始录音，再按题目要求作答；录完可以试听，确认无误后点击“完成本题并继续”。'
+            : '请先点击开始录音，再按题目要求作答；录完可以试听，确认无误后保存本题回答。'}
         </p>
       </div>
 
@@ -264,7 +328,7 @@ export function PatientAdministrationSpeechResponse({
 
       {saved ? (
         <p className="rounded-md bg-[var(--cma-success-soft)] px-4 py-3 font-semibold text-[var(--cma-success)]" role="status">
-          回答已保存
+          {advanceBy === 'patient' ? '本题回答已提交' : '回答已保存'}
         </p>
       ) : null}
 
@@ -277,15 +341,31 @@ export function PatientAdministrationSpeechResponse({
         {recording ? (
           <Button className="min-h-12" onClick={stopRecording} size="lg">结束录音</Button>
         ) : null}
+        {!recording &&
+        ((advanceBy === 'patient' && (pending || saved)) ||
+          (advanceBy === 'staff' && pending && !saved)) ? (
+          <Button className="min-h-12" disabled={disabled || uploading} onClick={() => void submitRecording()} size="lg">
+            {uploading
+              ? advanceBy === 'patient'
+                ? '正在完成…'
+                : '正在保存…'
+              : advanceBy === 'patient'
+                ? '完成本题并继续'
+                : '保存本题回答'}
+          </Button>
+        ) : null}
         {pending && !recording && !saved ? (
-          <>
-            <Button className="min-h-12" disabled={disabled || uploading} onClick={() => void saveRecording()} size="lg">
-              {uploading ? '正在保存…' : '保存本题回答'}
-            </Button>
-            <Button disabled={disabled || uploading} onClick={() => { clearPreview(); setError(null); }} variant="secondary">
-              重新录制
-            </Button>
-          </>
+          <Button
+            disabled={disabled || uploading}
+            onClick={() => {
+              completeOnlyRecoveryRef.current = false;
+              clearPreview();
+              setError(null);
+            }}
+            variant="secondary"
+          >
+            重新录制
+          </Button>
         ) : null}
       </div>
 
