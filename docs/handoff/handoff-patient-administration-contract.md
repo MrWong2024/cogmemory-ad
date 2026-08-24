@@ -142,6 +142,7 @@ manifest 不承担独立资产数据库、资产管理后台、多级审批、TT
 - `supervised_patient_input` 的设备方式必须在创建 `PatientAdministrationSession` 时由客户端明确选择并持久化为 `same_device` 或 `cross_device`；两者是同级正常方式，创建后不可修改，也不存在第三种设备方式。选择错误时可终止当前开放会话，并仅在该 `ScaleInstance` 不存在 completed 历史时重新创建；不提供 switch / change-flow 接口。
 - `same_device` 创建时不生成、不持久化也不返回六位进入码；完成准备确认后通过同设备安全 handoff 签发患者凭证。只有 `cross_device` 创建、重签和兑换六位进入码。
 - 同设备安全交接进入患者模式后，当前浏览器的 staff Session 必须失效，浏览器只持有 patient 身份；患者不能通过后退、刷新、历史记录或普通导航进入临床工作端。医护现实中一直在患者旁边，不等于浏览器中的 staff Session 可以继续保留。
+- same-device handoff 同时承担 prepared 首次交接、paused 凭证替换，以及未过期 active Session 在医护显式重新认证后的安全再次交接。prepared 首次 handoff 才从 prepared 进入 active 并首次启动计时；paused handoff 保持 paused；active re-handoff 保持 active，并复用同一 Session、当前步骤、首次 `startedAt`、原 `expiresAt`、准备事实和患者已完成事实，只轮换 patient credential、使旧 credential 立即失效并撤销本次 staff 身份。active re-handoff 不续期、不重置施测、不创建新 Session，也不重新启动或改写 Visit / ScaleInstance；paused 与 cross-device 的既有合同保持原义。
 - 跨设备使用六位数字的一次性短期进入码：十分钟有效，只能成功兑换一次。进入码不是患者账号或长期凭据；患者设备持有 patient Session，独立医护设备继续保留 staff Session。
 - 同一 `ScaleInstance` 同时只允许一个有效患者设备。换设备时旧患者凭证立即失效。
 - 患者会话绝对有效期为两小时，不做空闲心跳、滑动续期或自动续期。

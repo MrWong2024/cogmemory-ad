@@ -428,7 +428,7 @@ export class PatientAdministrationSessionService {
       visitId,
       scaleInstanceId,
       expectedRevision,
-      ['prepared', 'paused'],
+      ['prepared', 'active', 'paused'],
       false,
     );
     this.assertSameDeviceHandoffPrerequisites(session);
@@ -452,7 +452,7 @@ export class PatientAdministrationSessionService {
       visitId,
       scaleInstanceId,
       expectedRevision,
-      ['prepared', 'paused'],
+      ['prepared', 'active', 'paused'],
       true,
     );
     this.assertSameDeviceHandoffPrerequisites(session);
@@ -478,7 +478,9 @@ export class PatientAdministrationSessionService {
           preparationConfirmedBy: { $exists: true },
           ...(session.status === 'prepared'
             ? { sessionTokenHash: { $exists: false } }
-            : {}),
+            : session.status === 'active'
+              ? { sessionTokenHash: { $exists: true } }
+              : {}),
         },
         {
           $set: setValues,
@@ -2096,6 +2098,7 @@ export class PatientAdministrationSessionService {
       !session.preparationConfirmedAt ||
       !session.preparationConfirmedBy ||
       (session.status === 'prepared' && session.sessionTokenHash) ||
+      (session.status === 'active' && !session.sessionTokenHash) ||
       (session.status === 'paused' &&
         !session.sessionTokenHash &&
         !session.entryCodeHash)

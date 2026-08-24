@@ -873,17 +873,169 @@ describe('PatientAdministrationSessionService', () => {
     ).not.toHaveBeenCalled();
   });
 
+  it('rotates only the credential when re-handing off an active same-device session', async () => {
+    const preparationConfirmedAt = new Date('2026-08-07T01:00:00.000Z');
+    const startedAt = new Date('2026-08-07T01:01:00.000Z');
+    const expiresAt = new Date(Date.now() + 60_000);
+    const stepCaptures = [
+      {
+        stepKey: 'first',
+        stepRun: 1,
+        capturedBy: 'patient',
+        capturedAt: new Date('2026-08-07T01:02:00.000Z'),
+      },
+    ];
+    const playbackFacts = [playbackFact('first', 'asset-1')];
+    const stepEvidenceRefs = [
+      stepEvidenceRef('first', 1, 'audio', '507f1f77bcf86cd799439018'),
+    ];
+    const active = sessionDocument({
+      deviceMode: 'same_device',
+      status: 'active',
+      currentStepKey: 'second',
+      revision: 7,
+      sessionTokenHash: 'old-patient-token-hash',
+      entryCodeHash: undefined,
+      entryCodeExpiresAt: undefined,
+      preparationConfirmedAt,
+      preparationConfirmedBy: operator,
+      impactFactorCodes: ['environment'],
+      impactFactorNote: 'preserve me',
+      startedAt,
+      expiresAt,
+      stepCaptures,
+      playbackFacts,
+      stepEvidenceRefs,
+    });
+    const updated = sessionDocument({
+      ...active,
+      revision: 8,
+      sessionTokenHash: 'hash:raw-patient-token',
+    });
+    arrangeEditableBusiness();
+    sessionModel.findOne.mockReturnValue(createQuery(active));
+    sessionModel.findOneAndUpdate.mockReturnValue(createQuery(updated));
+
+    await expect(
+      service.validateSameDeviceHandoff(patientId, visitId, scaleInstanceId, 7),
+    ).resolves.toBeUndefined();
+    const issued = await service.issueSameDeviceCredential(
+      patientId,
+      visitId,
+      scaleInstanceId,
+      7,
+      operator,
+    );
+
+    expect(issued.rawToken).toBe('raw-patient-token');
+    expect(issued.expiresAt).toEqual(expiresAt);
+    expect(issued.response).toEqual(
+      expect.objectContaining({
+        id: active._id.toString(),
+        status: 'active',
+        currentStepKey: 'second',
+        revision: 8,
+        startedAt,
+        expiresAt,
+        preparationConfirmedAt,
+        impactFactorCodes: ['environment'],
+        impactFactorNote: 'preserve me',
+      }),
+    );
+    const filter = requireRecord(
+      readMockCallArgument(sessionModel.findOneAndUpdate, 0),
+      'active handoff filter',
+    );
+    expect(filter).toEqual(
+      expect.objectContaining({
+        status: 'active',
+        revision: 7,
+        preparationConfirmedAt: { $exists: true },
+        preparationConfirmedBy: { $exists: true },
+        sessionTokenHash: { $exists: true },
+      }),
+    );
+    expect(
+      requireRecord(filter.expiresAt, 'active handoff expiry').$gt,
+    ).toBeInstanceOf(Date);
+    const update = requireRecord(
+      readMockCallArgument(sessionModel.findOneAndUpdate, 1),
+      'active handoff update',
+    );
+    expect(update.$set).toEqual({
+      sessionTokenHash: 'hash:raw-patient-token',
+    });
+    expect(update.$inc).toEqual({ revision: 1 });
+    expect(
+      requireRecord(update.$push, 'active handoff push').controlEvents,
+    ).toEqual(expect.objectContaining({ action: 'same_device_handoff' }));
+    for (const protectedField of [
+      'status',
+      'currentStepKey',
+      'startedAt',
+      'expiresAt',
+      'preparationConfirmedAt',
+      'preparationConfirmedBy',
+      'impactFactorCodes',
+      'impactFactorNote',
+      'stepCaptures',
+      'playbackFacts',
+      'stepEvidenceRefs',
+    ]) {
+      expect(
+        requireRecord(update.$set, 'active handoff set'),
+      ).not.toHaveProperty(protectedField);
+    }
+    expect(
+      assessmentsService.ensureVisitAndScaleStarted,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('rejects active same-device handoff without an existing patient credential', async () => {
+    arrangeEditableBusiness();
+    sessionModel.findOne.mockReturnValue(
+      createQuery(
+        sessionDocument({
+          deviceMode: 'same_device',
+          status: 'active',
+          revision: 3,
+          sessionTokenHash: undefined,
+          entryCodeHash: undefined,
+          entryCodeExpiresAt: undefined,
+          preparationConfirmedAt: new Date(),
+          preparationConfirmedBy: operator,
+          startedAt: new Date(),
+        }),
+      ),
+    );
+
+    await expectHttpException(
+      service.validateSameDeviceHandoff(patientId, visitId, scaleInstanceId, 3),
+      409,
+      'PATIENT_ADMINISTRATION_SESSION_CONFLICT',
+    );
+
+    expect(authService.generateSessionToken).not.toHaveBeenCalled();
+    expect(sessionModel.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(
+      scalesService.findVersionByScaleCodeAndVersion,
+    ).not.toHaveBeenCalled();
+  });
+
   it('rejects stale same-device handoff validation without writing', async () => {
     arrangeEditableBusiness();
     sessionModel.findOne.mockReturnValue(
       createQuery(
         sessionDocument({
           deviceMode: 'same_device',
+          status: 'active',
           revision: 1,
+          sessionTokenHash: 'existing-patient-token-hash',
           entryCodeHash: undefined,
           entryCodeExpiresAt: undefined,
           preparationConfirmedAt: new Date(),
           preparationConfirmedBy: operator,
+          startedAt: new Date(),
         }),
       ),
     );
@@ -904,8 +1056,13 @@ describe('PatientAdministrationSessionService', () => {
     const forbiddenSessions = [
       sessionDocument({
         deviceMode: 'cross_device',
+        status: 'active',
+        sessionTokenHash: 'existing-patient-token-hash',
+        entryCodeHash: undefined,
+        entryCodeExpiresAt: undefined,
         preparationConfirmedAt: confirmedAt,
         preparationConfirmedBy: operator,
+        startedAt: new Date(),
       }),
       sessionDocument({
         deviceMode: undefined,

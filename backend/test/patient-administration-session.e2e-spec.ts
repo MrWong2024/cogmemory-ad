@@ -3,9 +3,11 @@ import { ConfigService } from '@nestjs/config';
 import { getConnectionToken, getModelToken } from '@nestjs/mongoose';
 import { Test } from '@nestjs/testing';
 import { Connection, Model, Types } from 'mongoose';
+import { Readable } from 'node:stream';
 import request, { type Response } from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
+import { PATIENT_ADMINISTRATION_COOKIE_NAME } from '../src/modules/assessments/patient-administration.constants';
 import {
   AssessmentVisit,
   type AssessmentVisitDocument,
@@ -109,6 +111,47 @@ function readNumber(
   return value;
 }
 
+function readCookiePair(response: Response, cookieName: string): string {
+  const headers: unknown = response.headers;
+  if (!isRecord(headers)) {
+    throw new Error('Expected response headers');
+  }
+  const header = headers['set-cookie'];
+  const values = Array.isArray(header)
+    ? header.filter((value): value is string => typeof value === 'string')
+    : typeof header === 'string'
+      ? [header]
+      : [];
+  const serialized = values.find((value) => value.startsWith(`${cookieName}=`));
+  if (!serialized) {
+    throw new Error(`Expected ${cookieName} response cookie`);
+  }
+  return serialized.split(';', 1)[0];
+}
+
+function preservedSessionFacts(
+  session: PatientAdministrationSessionDocument | null,
+) {
+  if (!session) {
+    throw new Error('Expected patient administration session');
+  }
+  return {
+    id: session._id.toString(),
+    status: session.status,
+    currentStepKey: session.currentStepKey,
+    startedAt: session.startedAt?.toISOString() ?? null,
+    expiresAt: session.expiresAt.toISOString(),
+    preparationConfirmedAt:
+      session.preparationConfirmedAt?.toISOString() ?? null,
+    preparationConfirmedBy: JSON.stringify(session.preparationConfirmedBy),
+    impactFactorCodes: [...(session.impactFactorCodes ?? [])],
+    impactFactorNote: session.impactFactorNote,
+    stepCaptures: JSON.stringify(session.stepCaptures ?? []),
+    playbackFacts: JSON.stringify(session.playbackFacts ?? []),
+    stepEvidenceRefs: JSON.stringify(session.stepEvidenceRefs ?? []),
+  };
+}
+
 describe('patient administration session APIs (e2e)', () => {
   let app: INestApplication;
   let connection: Connection;
@@ -147,8 +190,19 @@ describe('patient administration session APIs (e2e)', () => {
       await authSessionModel.deleteMany({ userId: { $in: userIds } }).exec();
     }
 
+    const knownInstanceIds = [...ownedScaleInstanceIds].map(
+      (id) => new Types.ObjectId(id),
+    );
     const instances = await scaleInstanceModel
-      .find({ instanceCode: { $regex: `^${INSTANCE_PREFIX}` } })
+      .find({
+        $or: [
+          { instanceCode: { $regex: `^${INSTANCE_PREFIX}` } },
+          { subjectCode: { $regex: `^${PATIENT_PREFIX}` } },
+          ...(knownInstanceIds.length > 0
+            ? [{ _id: { $in: knownInstanceIds } }]
+            : []),
+        ],
+      })
       .select({ _id: 1 })
       .exec();
     const instanceIds = instances.map((instance) => instance._id);
@@ -181,6 +235,7 @@ describe('patient administration session APIs (e2e)', () => {
     administrationMode:
       | 'clinician_administered'
       | 'supervised_patient_input' = 'supervised_patient_input',
+    initializeWith?: TestAgent,
   ): Promise<Fixture> {
     const patient = await patientModel.create({
       subjectCode: `${PATIENT_PREFIX}${suffix}`,
@@ -210,26 +265,53 @@ describe('patient administration session APIs (e2e)', () => {
       clinicalContext: null,
       metadata: null,
     });
-    const scaleInstance = await scaleInstanceModel.create({
-      assessmentVisitId: visit._id,
-      patientId: patient._id,
-      subjectCode: patient.subjectCode,
-      scaleDefinitionId: mmseDefinition._id,
-      scaleVersionId: mmseVersion._id,
-      scaleCode: 'mmse',
-      scaleVersion: '1.0',
-      instanceCode: `${INSTANCE_PREFIX}${suffix}`,
-      instanceNo: 1,
-      status: 'draft',
-      administrationMode,
-      startedAt: null,
-      completedAt: null,
-      lockedAt: null,
-      voidedAt: null,
-      operatorSnapshot: null,
-      submissionWriteBarrier: null,
-      metadata: null,
-    });
+    let scaleInstance: ScaleInstanceDocument;
+    if (initializeWith) {
+      const initialization = readBody(
+        await initializeWith
+          .post(
+            `/patients/${patient._id.toString()}/visits/${visit._id.toString()}/scale-instances`,
+          )
+          .send({
+            scaleCode: 'mmse',
+            scaleVersion: '1.0',
+            administrationMode,
+          })
+          .expect(201),
+      );
+      const initialized = initialization.scaleInstance;
+      if (!isRecord(initialized)) {
+        throw new Error('Expected initialized scale instance');
+      }
+      const stored = await scaleInstanceModel
+        .findById(readString(initialized, 'id'))
+        .exec();
+      if (!stored) {
+        throw new Error('Expected stored initialized scale instance');
+      }
+      scaleInstance = stored;
+    } else {
+      scaleInstance = await scaleInstanceModel.create({
+        assessmentVisitId: visit._id,
+        patientId: patient._id,
+        subjectCode: patient.subjectCode,
+        scaleDefinitionId: mmseDefinition._id,
+        scaleVersionId: mmseVersion._id,
+        scaleCode: 'mmse',
+        scaleVersion: '1.0',
+        instanceCode: `${INSTANCE_PREFIX}${suffix}`,
+        instanceNo: 1,
+        status: 'draft',
+        administrationMode,
+        startedAt: null,
+        completedAt: null,
+        lockedAt: null,
+        voidedAt: null,
+        operatorSnapshot: null,
+        submissionWriteBarrier: null,
+        metadata: null,
+      });
+    }
     ownedScaleInstanceIds.add(scaleInstance._id.toString());
     return { patient, visit, scaleInstance };
   }
@@ -376,6 +458,24 @@ describe('patient administration session APIs (e2e)', () => {
         },
         assets: stubAssets,
       }),
+      openAsset: jest
+        .fn()
+        .mockImplementation((_packageKey: string, assetKey: string) => {
+          const asset = stubAssets.find(
+            (candidate) => candidate.assetKey === assetKey,
+          );
+          if (!asset) {
+            throw new Error(`Unexpected E2E asset ${assetKey}`);
+          }
+          const buffer = Buffer.from(`session-e2e-asset:${assetKey}`);
+          return Promise.resolve({
+            assetKey,
+            kind: asset.kind,
+            mimeType: asset.mimeType,
+            size: buffer.length,
+            stream: Readable.from(buffer),
+          });
+        }),
     };
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
@@ -1286,6 +1386,282 @@ describe('patient administration session APIs (e2e)', () => {
       .post('/patient-administration/enter')
       .send({ code: conflictCode })
       .expect(200);
+  });
+
+  it('safely re-hands off the same active same-device session after staff re-authentication', async () => {
+    const handoffDoctor = await login(ACCOUNTS.handoffDoctor);
+    const fixture = await createFixture(
+      'ACTIVE-REHANDOFF',
+      'supervised_patient_input',
+      handoffDoctor,
+    );
+    const base = staffBase(fixture);
+    const created = readBody(
+      await handoffDoctor
+        .post(base)
+        .send({ deviceMode: 'same_device' })
+        .expect(201),
+    );
+    const sessionId = readString(created, 'id');
+    const confirmed = readBody(
+      await handoffDoctor
+        .post(`${base}/preparation/confirm`)
+        .send({
+          expectedRevision: 0,
+          impactFactorCodes: ['device_network', 'environment'],
+          impactFactorNote: 'stable preparation facts',
+        })
+        .expect(200),
+    );
+    const firstHandoffResponse = await handoffDoctor
+      .post(`${base}/handoff`)
+      .send({ expectedRevision: readNumber(confirmed, 'revision') })
+      .expect(200);
+    const firstHandoff = readBody(firstHandoffResponse);
+    const originalPatientCookie = readCookiePair(
+      firstHandoffResponse,
+      PATIENT_ADMINISTRATION_COOKIE_NAME,
+    );
+    let revision = readNumber(firstHandoff, 'revision');
+    expect(firstHandoff).toEqual(
+      expect.objectContaining({
+        id: sessionId,
+        status: 'active',
+        revision,
+      }),
+    );
+
+    const firstCurrent = readBody(
+      await handoffDoctor.get('/patient-administration/current').expect(200),
+    );
+    if (!isRecord(firstCurrent.currentStep)) {
+      throw new Error('Expected active current step before re-handoff');
+    }
+    const firstStep = firstCurrent.currentStep;
+    expect(readString(firstStep, 'responseMode')).toBe('speech');
+    const assets = firstStep.assets;
+    if (!Array.isArray(assets)) {
+      throw new Error('Expected active current step assets');
+    }
+    let playedAudioCount = 0;
+    for (const asset of assets) {
+      if (!isRecord(asset) || asset.kind !== 'audio') {
+        continue;
+      }
+      const playResponse = await handoffDoctor
+        .post(
+          `/patient-administration/current/audio/${readString(asset, 'assetKey')}/play`,
+        )
+        .send({ expectedRevision: revision })
+        .expect(200);
+      const revisionHeader =
+        playResponse.headers['x-patient-administration-revision'];
+      if (typeof revisionHeader !== 'string') {
+        throw new Error('Expected patient administration revision header');
+      }
+      revision = Number(revisionHeader);
+      if (!Number.isSafeInteger(revision)) {
+        throw new Error('Expected a safe patient administration revision');
+      }
+      playedAudioCount += 1;
+    }
+    expect(playedAudioCount).toBeGreaterThan(0);
+
+    const evidenceResponse = await handoffDoctor
+      .post('/patient-administration/current/evidence')
+      .field('expectedRevision', revision.toString())
+      .field('evidenceType', 'audio')
+      .field('durationMs', '1200')
+      .attach('file', Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0x01]), {
+        filename: 'active-rehandoff.webm',
+        contentType: 'audio/webm;codecs=opus',
+      })
+      .expect(201);
+    revision = readNumber(readBody(evidenceResponse), 'revision');
+    const completedStep = readBody(
+      await handoffDoctor
+        .post('/patient-administration/current/complete')
+        .send({ expectedRevision: revision })
+        .expect(200),
+    );
+    revision = readNumber(completedStep, 'revision');
+
+    const currentBeforeReHandoff = readBody(
+      await handoffDoctor.get('/patient-administration/current').expect(200),
+    );
+    if (!isRecord(currentBeforeReHandoff.currentStep)) {
+      throw new Error('Expected active current step after persisted facts');
+    }
+    const currentStepKey = readString(
+      currentBeforeReHandoff.currentStep,
+      'stepKey',
+    );
+    const storedBeforeReHandoff = await administrationSessionModel
+      .findById(sessionId)
+      .select('+entryCodeHash +sessionTokenHash')
+      .exec();
+    if (!storedBeforeReHandoff) {
+      throw new Error('Expected active session before re-handoff');
+    }
+    expect(storedBeforeReHandoff.status).toBe('active');
+    expect(storedBeforeReHandoff.currentStepKey).toBe(currentStepKey);
+    expect(storedBeforeReHandoff.revision).toBe(revision);
+    expect(storedBeforeReHandoff.stepCaptures.length).toBeGreaterThan(0);
+    expect(storedBeforeReHandoff.playbackFacts.length).toBeGreaterThan(0);
+    expect(storedBeforeReHandoff.stepEvidenceRefs.length).toBeGreaterThan(0);
+    expect(Boolean(storedBeforeReHandoff.sessionTokenHash)).toBe(true);
+    expect(storedBeforeReHandoff.entryCodeHash).toBeUndefined();
+    expect(storedBeforeReHandoff.entryCodeExpiresAt).toBeUndefined();
+    const patientTokenHashBefore = storedBeforeReHandoff.sessionTokenHash;
+    const factsBefore = preservedSessionFacts(storedBeforeReHandoff);
+    const eventActionsBefore = storedBeforeReHandoff.controlEvents.map(
+      (event) => event.action,
+    );
+    const visitBeforeReHandoff = await visitModel
+      .findById(fixture.visit._id)
+      .lean()
+      .exec();
+    const scaleBeforeReHandoff = await scaleInstanceModel
+      .findById(fixture.scaleInstance._id)
+      .lean()
+      .exec();
+    const sessionCountBefore = await administrationSessionModel
+      .countDocuments({ scaleInstanceId: fixture.scaleInstance._id })
+      .exec();
+    const itemResponseCountBefore = await itemResponseModel
+      .countDocuments({ scaleInstanceId: fixture.scaleInstance._id })
+      .exec();
+    const mediaEvidenceCountBefore = await mediaEvidenceModel
+      .countDocuments({ scaleInstanceId: fixture.scaleInstance._id })
+      .exec();
+    expect(sessionCountBefore).toBe(1);
+    expect(itemResponseCountBefore).toBeGreaterThan(0);
+    expect(mediaEvidenceCountBefore).toBeGreaterThan(0);
+
+    await handoffDoctor
+      .post('/auth/login')
+      .send({ accountName: ACCOUNTS.handoffDoctor, password: PASSWORD })
+      .expect(201);
+    const latestSummary = readBody(await handoffDoctor.get(base).expect(200));
+    expect(latestSummary).toEqual(
+      expect.objectContaining({
+        id: sessionId,
+        status: 'active',
+        currentStepKey,
+        revision,
+      }),
+    );
+
+    const staleResponse = await handoffDoctor
+      .post(`${base}/handoff`)
+      .send({ expectedRevision: revision - 1 })
+      .expect(409);
+    expect(readBody(staleResponse)).toEqual(
+      expect.objectContaining({
+        code: 'PATIENT_ADMINISTRATION_SESSION_CONFLICT',
+      }),
+    );
+    expect(staleResponse.headers['set-cookie']).toBeUndefined();
+    await handoffDoctor.get('/auth/me').expect(200);
+    await request(httpServer)
+      .get('/patient-administration/current')
+      .set('Cookie', originalPatientCookie)
+      .expect(200);
+    const storedAfterStale = await administrationSessionModel
+      .findById(sessionId)
+      .select('+entryCodeHash +sessionTokenHash')
+      .exec();
+    expect(preservedSessionFacts(storedAfterStale)).toEqual(factsBefore);
+    expect(storedAfterStale?.revision).toBe(revision);
+    expect(storedAfterStale?.sessionTokenHash === patientTokenHashBefore).toBe(
+      true,
+    );
+    expect(
+      storedAfterStale?.controlEvents.map((event) => event.action),
+    ).toEqual(eventActionsBefore);
+
+    const reHandoffResponse = await handoffDoctor
+      .post(`${base}/handoff`)
+      .send({ expectedRevision: revision })
+      .expect(200);
+    const reHandoff = readBody(reHandoffResponse);
+    const replacementPatientCookie = readCookiePair(
+      reHandoffResponse,
+      PATIENT_ADMINISTRATION_COOKIE_NAME,
+    );
+    expect(reHandoff).toEqual(
+      expect.objectContaining({
+        id: sessionId,
+        status: 'active',
+        currentStepKey,
+        revision: revision + 1,
+        startedAt: factsBefore.startedAt,
+        expiresAt: factsBefore.expiresAt,
+      }),
+    );
+    expect(JSON.stringify(reHandoff)).not.toContain('token');
+    await handoffDoctor.get('/auth/me').expect(401);
+    const replacementCurrent = readBody(
+      await request(httpServer)
+        .get('/patient-administration/current')
+        .set('Cookie', replacementPatientCookie)
+        .expect(200),
+    );
+    expect(replacementCurrent).toEqual(
+      expect.objectContaining({ status: 'active', revision: revision + 1 }),
+    );
+    if (!isRecord(replacementCurrent.currentStep)) {
+      throw new Error('Expected current step after active re-handoff');
+    }
+    expect(readString(replacementCurrent.currentStep, 'stepKey')).toBe(
+      currentStepKey,
+    );
+    await request(httpServer)
+      .get('/patient-administration/current')
+      .set('Cookie', originalPatientCookie)
+      .expect(401);
+
+    const storedAfterReHandoff = await administrationSessionModel
+      .findById(sessionId)
+      .select('+entryCodeHash +sessionTokenHash')
+      .exec();
+    expect(preservedSessionFacts(storedAfterReHandoff)).toEqual(factsBefore);
+    expect(storedAfterReHandoff?.revision).toBe(revision + 1);
+    expect(
+      Boolean(storedAfterReHandoff?.sessionTokenHash) &&
+        storedAfterReHandoff?.sessionTokenHash !== patientTokenHashBefore,
+    ).toBe(true);
+    expect(storedAfterReHandoff?.entryCodeHash).toBeUndefined();
+    expect(storedAfterReHandoff?.entryCodeExpiresAt).toBeUndefined();
+    expect(
+      storedAfterReHandoff?.controlEvents.map((event) => event.action),
+    ).toEqual([...eventActionsBefore, 'same_device_handoff']);
+    expect(
+      (await visitModel.findById(fixture.visit._id).lean().exec())?.startedAt,
+    ).toEqual(visitBeforeReHandoff?.startedAt);
+    expect(
+      (
+        await scaleInstanceModel
+          .findById(fixture.scaleInstance._id)
+          .lean()
+          .exec()
+      )?.startedAt,
+    ).toEqual(scaleBeforeReHandoff?.startedAt);
+    expect(
+      await administrationSessionModel
+        .countDocuments({ scaleInstanceId: fixture.scaleInstance._id })
+        .exec(),
+    ).toBe(sessionCountBefore);
+    expect(
+      await itemResponseModel
+        .countDocuments({ scaleInstanceId: fixture.scaleInstance._id })
+        .exec(),
+    ).toBe(itemResponseCountBefore);
+    expect(
+      await mediaEvidenceModel
+        .countDocuments({ scaleInstanceId: fixture.scaleInstance._id })
+        .exec(),
+    ).toBe(mediaEvidenceCountBefore);
   });
 
   it('keeps paused handoff paused and resumes the same step without rewriting startedAt', async () => {
