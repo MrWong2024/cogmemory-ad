@@ -28,7 +28,7 @@
 
 B11～B15 保持完成；B18 补充验证已闭合，自动化 `gap=0`，WP-03 已完成。F1 replacement 与 F2 P1 / P2 的既有 green 均继续作为形成时策略下有效的历史证据；v1.20 requalification 后四个 executable 已物理退役，这只改变 future / current evidence execution mode，不把历史通过改写成失败，也不回退 WP-10 产品完成状态。F3 current Playwright re-automation 已止损且其 scripted Browser executable 已退役；该工具状态既不形成 current F3 Playwright green，也不回退 WP-10。产品范围、工作包状态和当前主线以 `handoff-roadmap.md` 为准；Batch E 的 8 项真实设备或人工项目仍为 `pending`，最终主要归属为 WP-08。
 
-Current physical inventory 已与 v1.20 clean-slate 决策对齐：`@playwright/test` 当前只作为 pure/static contract runner，在 `frontend/test/contracts/` 发现 14 files / 159 tests；这些 specs 不声明 `page`、`context`、`browser`、`browserName`、`BrowserContext` 或 `chromium`，不启动 Browser，也不属于 Browser evidence。Current scripted deterministic real-Browser executable inventory = 0。旧 `frontend/test/browser-acceptance/` 目录及其 infrastructure、live topology、safe-output 与 shared support 已全部退役，当前物理路径不存在；这不否定其 pre-clean-slate 历史作用或当时形成的通过证据。
+Current physical inventory 已与 v1.20 clean-slate 决策对齐：`@playwright/test` 当前只作为 `frontend/test/contracts/` 的 pure/static contract runner；current contract files / tests 的精确数量以当前 runner discovery 为准，不在 handoff 中静态维护，数量变化本身不触发本文档同步。这些 specs 不声明 `page`、`context`、`browser`、`browserName`、`BrowserContext` 或 `chromium`，不启动 Browser，也不属于 Browser evidence。Current scripted deterministic real-Browser executable inventory = 0。旧 `frontend/test/browser-acceptance/` 目录及其 infrastructure、live topology、safe-output 与 shared support 已全部退役，当前物理路径不存在；这不否定其 pre-clean-slate 历史作用或当时形成的通过证据。
 
 下表记录 pre-clean-slate requalification 与后续物理处置。前两行曾通过 non-UI classification，但 clean slate 不 grandfather 未被 current 风险消费的 Browser framework，因此与后四行一样都不是 current executable inventory。
 
@@ -226,9 +226,14 @@ UI scripted Profile 不等待失败两轮：静态审计证明主要 assertion t
 | `localhost` | `http://localhost:3002` | `http://localhost:5002` | `http://localhost:3002` | `localhost` | `http://localhost:5002/health` |
 | `127.0.0.1` | `http://127.0.0.1:3002` | `http://127.0.0.1:5002` | `http://127.0.0.1:3002` | `127.0.0.1` | `http://127.0.0.1:5002/health` |
 
+上表维护默认 canonical topology；`3002 / 5002` 是默认端口，不是测试运行必须抢占的固定端口。
+
+- 默认 frontend 或 backend 端口被现有非本任务进程占用时，不得杀掉、停止、接管或干扰该进程；当前测试运行可以分别选择空闲替代端口，例如 frontend `3003`、backend `5003`，不要求为了形式机械同时加 1。
+- 使用替代端口时，当前运行必须记录并始终使用同一套实际 topology，使 frontend listen origin、backend listen origin、`NEXT_PUBLIC_API_BASE_URL`、backend `CORS_ORIGIN`、Browser / Agent runner 预期 frontend / backend origin 和 backend health URL 与实际端口一致。
+- 替代端口只是 execution-time fallback，不要求修改 tracked 产品配置、创建永久端口配置或维护第二套 topology。
 - 同一认证链不得混用 `localhost` 与 `127.0.0.1`；CORS 必须精确匹配含 scheme 和端口的页面 origin。
 - 当前 Session Cookie 未设置 `Domain`，属于 API 响应 host 的 host-only Cookie。只核对名称、host/domain、path、HttpOnly、SameSite、Secure 和是否存在，禁止输出 Cookie 值。
-- `NEXT_PUBLIC_API_BASE_URL` 是 production build 的公开构建时输入；值变化后必须重新 build。只重启已有 server 不能证明新值生效，必须由实际 Network 请求确认。
+- `NEXT_PUBLIC_API_BASE_URL` 是 production build 的公开构建时输入；值变化后必须 fresh build。只重启已有 server 不能证明新值生效，必须由实际 Network 请求确认当前 Browser 使用的 API origin。仅 frontend listen port 变化且该构建时输入未变化时，不机械要求因此重建；其它 fresh build 判断仍服从实际构建时输入和当前最终代码态。
 - `BROWSER_ACCEPTANCE_FRONTEND_ORIGIN` 与 `BROWSER_ACCEPTANCE_BACKEND_ORIGIN` 只声明 runner 预期拓扑，不能覆盖已进入构建产物的 API Base。
 - “前端生产代码发生变化”本身不是 fixture 修改或重建触发器。只有 DTO 必填字段、Schema、权限、服务端状态前置、seed / catalog 或其他合法数据前置合同真实变化时才调整 fixture；纯 UI copy、布局、selector、展示结构和不改变数据前置的普通交互变化，只影响 frozen contract 下的 Agent-assisted / human 执行说明或观察，不 patch 已被 v1.20 取消资格的 scripted UI spec / support。
 - fixture 是否变化与 production build 是否 fresh 是两个独立判断。修改后的前端生产代码需要正式 Browser 动态验收时，必须基于当前最终代码态生成 fresh production build，并通过实际页面/Network 确认 Browser 正在运行该构建产物；不得因“不改 fixture”复用过期 frontend build，也不得因“需要 fresh build”反推 fixture 必须重建。
