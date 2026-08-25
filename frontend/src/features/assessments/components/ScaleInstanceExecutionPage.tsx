@@ -15,6 +15,7 @@ import {
 } from '@/src/components/ui/Card';
 import {
   AssessmentExecutionApiError,
+  deleteScaleInstance,
   getScaleInstanceExecutionDetail,
   getScaleInstanceSubmissionReadiness,
   submitScaleInstance,
@@ -273,6 +274,7 @@ export function ScaleInstanceExecutionPage({
     pendingMediaItemCount: 0,
   });
   const submittingRef = useRef(false);
+  const deletingScaleInstanceRef = useRef(false);
   const computingScoreRef = useRef(false);
   const scoreWriteStateRef = useRef<'idle' | 'reviewing' | 'confirming'>(
     'idle',
@@ -315,6 +317,13 @@ export function ScaleInstanceExecutionPage({
   >(null);
   const [patientAdministrationStatus, setPatientAdministrationStatus] =
     useState<PatientAdministrationStatus | null>(null);
+  const [patientAdministrationSessionResolved, setPatientAdministrationSessionResolved] =
+    useState(false);
+  const [deleteConfirmed, setDeleteConfirmed] = useState(false);
+  const [isDeletingScaleInstance, setIsDeletingScaleInstance] = useState(false);
+  const [deleteScaleInstanceError, setDeleteScaleInstanceError] = useState<
+    string | null
+  >(null);
   const [scoreResult, setScoreResult] =
     useState<ScoreResultDetailResponse | null>(null);
   const [scoreQueryStatus, setScoreQueryStatus] =
@@ -368,6 +377,15 @@ export function ScaleInstanceExecutionPage({
   const handlePatientAdministrationUnauthorized = useCallback(() => {
     router.replace('/login');
   }, [router]);
+  const handlePatientAdministrationStatusChange = useCallback(
+    (status: PatientAdministrationStatus | null) => {
+      setPatientAdministrationStatus(status);
+      setPatientAdministrationSessionResolved(true);
+      setDeleteConfirmed(false);
+      setDeleteScaleInstanceError(null);
+    },
+    [],
+  );
 
   const handleAutosaveItemAccepted = useCallback(
     (
@@ -625,6 +643,11 @@ export function ScaleInstanceExecutionPage({
 
   useEffect(() => {
     setPatientAdministrationStatus(null);
+    setPatientAdministrationSessionResolved(false);
+    setDeleteConfirmed(false);
+    setDeleteScaleInstanceError(null);
+    deletingScaleInstanceRef.current = false;
+    setIsDeletingScaleInstance(false);
     completedReviewLoadKeyRef.current = null;
     if (!idsAreValid) {
       readinessControllerRef.current?.abort();
@@ -1028,6 +1051,59 @@ export function ScaleInstanceExecutionPage({
     } finally {
       if (mountedRef.current) {
         router.replace('/login');
+      }
+    }
+  }
+
+  async function handleDeleteScaleInstance() {
+    if (!deleteConfirmed || deletingScaleInstanceRef.current) {
+      return;
+    }
+
+    deletingScaleInstanceRef.current = true;
+    setIsDeletingScaleInstance(true);
+    setDeleteScaleInstanceError(null);
+    let leavingPage = false;
+    const visitHref = `/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}`;
+
+    try {
+      await deleteScaleInstance(patientId, visitId, scaleInstanceId);
+      leavingPage = true;
+      window.location.replace(visitHref);
+    } catch (requestError: unknown) {
+      const error =
+        requestError instanceof AssessmentExecutionApiError
+          ? requestError
+          : new AssessmentExecutionApiError('unknown');
+
+      if (error.kind === 'unauthenticated') {
+        leavingPage = true;
+        window.location.replace('/login');
+        return;
+      }
+
+      if (
+        error.kind === 'scale_instance_not_found' ||
+        error.kind === 'request_outcome_uncertain'
+      ) {
+        leavingPage = true;
+        window.location.replace(visitHref);
+        return;
+      }
+
+      if (error.kind === 'scale_instance_not_deletable') {
+        setDeleteScaleInstanceError(
+          '当前量表实例已不满足删除条件，请刷新后核对状态。',
+        );
+      } else if (error.kind === 'forbidden') {
+        setDeleteScaleInstanceError('当前账号没有删除该量表实例的权限。');
+      } else {
+        setDeleteScaleInstanceError('删除失败，请稍后重试。');
+      }
+    } finally {
+      if (!leavingPage && mountedRef.current) {
+        deletingScaleInstanceRef.current = false;
+        setIsDeletingScaleInstance(false);
       }
     }
   }
@@ -1904,6 +1980,14 @@ export function ScaleInstanceExecutionPage({
     });
   const isCompletedSupervisedPatientReview =
     executionDisclosure.isCompletedSupervisedReview;
+  const canDeleteScaleInstance =
+    patientAdministrationSessionResolved &&
+    scaleInstance.administrationMode === 'supervised_patient_input' &&
+    (scaleInstance.status === 'draft' ||
+      scaleInstance.status === 'in_progress') &&
+    (patientAdministrationStatus === null ||
+      patientAdministrationStatus === 'terminated' ||
+      patientAdministrationStatus === 'expired');
   const readOnlyReason = getScaleExecutionReadOnlyReason(
     visit.status,
     scaleInstance.status,
@@ -2120,12 +2204,67 @@ export function ScaleInstanceExecutionPage({
 
       {executionDisclosure.isSupervisedPatientFlow ? (
         <PatientAdministrationStaffPanel
-          onSessionStatusChange={setPatientAdministrationStatus}
+          onSessionStatusChange={handlePatientAdministrationStatusChange}
           onUnauthorized={handlePatientAdministrationUnauthorized}
           patientId={patientId}
           scaleInstanceId={scaleInstanceId}
           visitId={visitId}
         />
+      ) : null}
+
+      {canDeleteScaleInstance ? (
+        <Card>
+          <CardHeader className="border-b border-[var(--cma-line)]">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <CardTitle>删除本次未完成量表</CardTitle>
+                <CardDescription>
+                  这是永久删除。当前访视不会删除，删除后可以在该访视重新初始化该量表。
+                </CardDescription>
+              </div>
+              {isDeletingScaleInstance ? (
+                <Badge tone="warning">删除请求处理中</Badge>
+              ) : null}
+            </div>
+          </CardHeader>
+          <CardContent className="grid gap-4 pt-5">
+            <p className="rounded-md border border-[var(--cma-warning)] bg-[var(--cma-warning-soft)] px-4 py-3 text-base leading-7 text-[var(--cma-text-strong)]">
+              此操作会永久删除本次未完成量表、失败的患者施测记录和关联的患者 Evidence，无法恢复。
+            </p>
+            <label className="flex items-start gap-3 text-base leading-7 text-[var(--cma-text-strong)]">
+              <input
+                checked={deleteConfirmed}
+                className="mt-1 h-5 w-5"
+                disabled={isDeletingScaleInstance}
+                onChange={(event) => {
+                  setDeleteConfirmed(event.target.checked);
+                  setDeleteScaleInstanceError(null);
+                }}
+                type="checkbox"
+              />
+              我确认永久删除本次未完成量表及其关联患者施测数据
+            </label>
+            <div>
+              <Button
+                disabled={!deleteConfirmed || isDeletingScaleInstance}
+                onClick={() => void handleDeleteScaleInstance()}
+                variant="secondary"
+              >
+                {isDeletingScaleInstance
+                  ? '正在永久删除...'
+                  : '永久删除本次未完成量表'}
+              </Button>
+            </div>
+            {deleteScaleInstanceError ? (
+              <p
+                className="rounded-md border border-[var(--cma-danger)] bg-[var(--cma-danger-soft)] px-4 py-3 text-base leading-7 text-[var(--cma-danger)]"
+                role="alert"
+              >
+                {deleteScaleInstanceError}
+              </p>
+            ) : null}
+          </CardContent>
+        </Card>
       ) : null}
 
       <div className="grid gap-5 xl:grid-cols-3">

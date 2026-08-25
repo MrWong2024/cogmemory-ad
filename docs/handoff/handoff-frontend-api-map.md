@@ -50,7 +50,7 @@
 | `listPatientAssessmentHistory()` — patient history page | `GET /patients/:patientId/assessment-history` | `ListPatientAssessmentHistoryQuery → PatientAssessmentHistoryResponse` | Signal; no retry | query 编码后消费 Visit/scale/score/domain/report 安全投影；不重排或补算。 |
 | `getPatientFollowUpTrend()` — follow-up trend page | `GET /patients/:patientId/follow-up-trends` | `GetPatientFollowUpTrendQuery → PatientFollowUpTrendResponse` | Signal; no retry | 保留全部 point/dataStatus/comparison；不跨缺失点、不重算 delta/percent、不解释诊断。 |
 
-### 3.4 Assessment execution — `frontend/src/features/assessments/api/assessment-execution-api.ts`（10）
+### 3.4 Assessment execution — `frontend/src/features/assessments/api/assessment-execution-api.ts`（11）
 
 | Client / caller | Backend | Frontend request → response | Cancel/retry | Success projection |
 |---|---|---|---|---|
@@ -61,6 +61,7 @@
 | `voidAssessmentVisit()` — visit maintenance UI | `POST /patients/:patientId/visits/:visitId/void` | `VoidAssessmentVisitRequest → AssessmentVisitExecutionDetailResponse` | no Signal; no retry | 完整采用 void 后详情。 |
 | `initializeScaleInstance()` — `ScaleInitializationPanel` | `POST /patients/:patientId/visits/:visitId/scale-instances` | `InitializeScaleInstanceRequest → InitializeScaleInstanceResponse` | no Signal; no retry | 合并服务端实例摘要；不乐观构造 ItemResponse。 |
 | `getScaleInstanceExecutionDetail()` — `ScaleInstanceExecutionPage` | `GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId` | no body → `ScaleInstanceExecutionDetailResponse` | Signal; no retry | 建立逐题 server baseline；字段合同见 Backend DTO owner。 |
+| `deleteScaleInstance()` — `ScaleInstanceExecutionPage` maintenance UI | `DELETE /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId` | no body → `void` | uncertain write; no Signal; no automatic retry | 成功后替换浏览器历史并返回 Visit；结果不确定时不重发 DELETE，由 Visit 最新状态核对。 |
 | `getScaleInstanceSubmissionReadiness()` — submission panel | `GET .../:scaleInstanceId/submission-readiness` | no body → `ScaleSubmissionReadinessResponse` | Signal; no retry | 只更新 readiness/安全 scale instance 投影。 |
 | `submitScaleInstance()` — submission panel | `POST .../:scaleInstanceId/submit` | `SubmitScaleInstanceRequest → SubmitScaleInstanceResponse` | no Signal; no retry | 采用服务端 instance/submission/readiness；`alreadySubmitted` 仍为成功。 |
 | `saveItemResponseDraft()` — `useItemResponseAutosaveCoordinator` | `PATCH .../:scaleInstanceId/item-responses/:itemResponseId` | `UpdateItemResponseDraftRequest → UpdateItemResponseDraftResponse` | no Signal; no automatic retry | 请求使用当前 `expectedRevision`；响应 item/progress 成为新 server baseline。conflict/uncertain 的恢复算法由 coordinator/current pure contract 拥有。 |

@@ -85,7 +85,7 @@
 
 ### 6.2 量表实例页面与导航
 
-- ScaleInstanceExecutionPage — components/ScaleInstanceExecutionPage.tsx：量表实例工作页总编排器；加载执行详情，组合正式作答、媒体、submission、评分、认知域和受监督患者施测 staff / review 投影。页面持有分组选择、作答 snapshot、媒体草稿、未收口提示和子工作流组合状态；各写入仍经对应 Hook / Client。
+- ScaleInstanceExecutionPage — components/ScaleInstanceExecutionPage.tsx：量表实例工作页总编排器；加载执行详情，组合正式作答、媒体、submission、评分、认知域和受监督患者施测 staff / review 投影。页面持有分组选择、作答 snapshot、媒体草稿、未收口提示和子工作流组合状态；各写入仍经对应 Hook / Client。页面同时拥有 eligible `supervised_patient_input` 未完成实例的显式不可逆删除 UI：仅在患者会话首次读取后保守展示，资格最终以后端为准，成功后返回当前 Visit。
 - ScaleExecutionGroupNavigation — components/ScaleExecutionGroupNavigation.tsx：按服务端分组展示进度并回传当前分组选择，不清理其他分组的合法内存草稿。
 - assessment-execution-display.ts：集中维护安全展示标签和页面级展示判断；它是纯展示辅助，不是权限或业务状态机。
 

@@ -39,6 +39,7 @@ export type AssessmentExecutionApiErrorKind =
   | 'scale_catalog_version_conflict'
   | 'scale_instance_already_exists'
   | 'scale_instance_not_found'
+  | 'scale_instance_not_deletable'
   | 'scale_instance_not_editable'
   | 'scale_instance_configuration_unavailable'
   | 'scale_instance_not_submittable'
@@ -140,6 +141,7 @@ function mapHttpError(
     SCALE_CATALOG_VERSION_CONFLICT: 'scale_catalog_version_conflict',
     SCALE_INSTANCE_ALREADY_EXISTS: 'scale_instance_already_exists',
     SCALE_INSTANCE_NOT_FOUND: 'scale_instance_not_found',
+    SCALE_INSTANCE_NOT_DELETABLE: 'scale_instance_not_deletable',
     SCALE_INSTANCE_NOT_EDITABLE: 'scale_instance_not_editable',
     SCALE_INSTANCE_CONFIGURATION_UNAVAILABLE:
       'scale_instance_configuration_unavailable',
@@ -374,6 +376,18 @@ export async function getScaleInstanceExecutionDetail(
   );
 
   return readJson<ScaleInstanceExecutionDetailResponse>(response);
+}
+
+export async function deleteScaleInstance(
+  patientId: string,
+  visitId: string,
+  scaleInstanceId: string,
+): Promise<void> {
+  await assessmentExecutionFetch(
+    `/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/scale-instances/${encodeURIComponent(scaleInstanceId)}`,
+    { method: 'DELETE' },
+    { uncertainWrite: true },
+  );
 }
 
 export async function getScaleInstanceSubmissionReadiness(
