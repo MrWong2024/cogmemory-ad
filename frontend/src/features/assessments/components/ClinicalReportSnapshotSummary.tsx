@@ -26,10 +26,10 @@ export function ClinicalReportSnapshotSummary({
           className="text-xl font-semibold text-[var(--cma-text-strong)]"
           id="clinical-report-patient-snapshot-heading"
         >
-          报告生成时的患者快照
+          患者信息（报告生成时）
         </h3>
         <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-          这是报告生成时保存的安全快照，不代表当前实时患者档案。
+          这是生成本版报告时记录的信息，不代表患者档案的当前状态。
         </p>
         {report.patientSnapshot ? (
           <dl className="mt-4 grid gap-x-5 gap-y-4 sm:grid-cols-2 lg:grid-cols-5">
@@ -80,7 +80,7 @@ export function ClinicalReportSnapshotSummary({
           </dl>
         ) : (
           <p className="mt-4 text-base text-[var(--cma-muted)]">
-            当前安全报告响应未提供该快照。
+            本版报告未记录患者信息。
           </p>
         )}
       </section>
@@ -93,10 +93,10 @@ export function ClinicalReportSnapshotSummary({
           className="text-xl font-semibold text-[var(--cma-text-strong)]"
           id="clinical-report-visit-snapshot-heading"
         >
-          报告生成时的访视快照
+          访视信息（报告生成时）
         </h3>
         <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-          这是生成时的访视安全快照，不从当前页面补齐缺失字段。
+          这是生成本版报告时记录的访视信息，缺失内容不会由当前页面推测补齐。
         </p>
         {report.visitSnapshot ? (
           <dl className="mt-4 grid gap-x-5 gap-y-4 sm:grid-cols-2 lg:grid-cols-5">
@@ -153,7 +153,7 @@ export function ClinicalReportSnapshotSummary({
           </dl>
         ) : (
           <p className="mt-4 text-base text-[var(--cma-muted)]">
-            当前安全报告响应未提供该快照。
+            本版报告未记录访视信息。
           </p>
         )}
       </section>

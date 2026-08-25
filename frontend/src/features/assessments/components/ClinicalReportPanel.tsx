@@ -14,9 +14,7 @@ import { ClinicalReportConfirmationPanel } from '@/src/features/assessments/comp
 import { ClinicalReportWorkflowSummary } from '@/src/features/assessments/components/ClinicalReportWorkflowSummary';
 import { ClinicalReportLockPanel } from '@/src/features/assessments/components/ClinicalReportLockPanel';
 import { ClinicalReportSourceFreezePanel } from '@/src/features/assessments/components/ClinicalReportSourceFreezePanel';
-import { ClinicalReportSourceFreezeSummary } from '@/src/features/assessments/components/ClinicalReportSourceFreezeSummary';
 import { ClinicalReportArchivePanel } from '@/src/features/assessments/components/ClinicalReportArchivePanel';
-import { ClinicalReportArchiveSummary } from '@/src/features/assessments/components/ClinicalReportArchiveSummary';
 import { ClinicalReportCorrectionPanel } from '@/src/features/assessments/components/ClinicalReportCorrectionPanel';
 import { ClinicalReportCorrectionSummary } from '@/src/features/assessments/components/ClinicalReportCorrectionSummary';
 import { ClinicalReportScopeSelector } from '@/src/features/assessments/components/ClinicalReportScopeSelector';
@@ -101,6 +99,21 @@ export function ClinicalReportPanel({
   const lifecycleTargetWarning = report
     ? getClinicalReportLifecycleTargetWarning(report)
     : null;
+  const reportLiveMessage =
+    reportState.liveMessage === '正在生成规则化报告草稿。'
+      ? '正在生成报告草稿。'
+      : reportState.liveMessage ===
+          '规则化临床报告草稿已生成；当前仍为 draft，尚未经医生确认。'
+        ? '临床报告草稿已生成；当前尚未经医生确认。'
+        : reportState.liveMessage;
+  const workflowLiveMessage =
+    workflow.liveMessage ===
+    '本地未提交说明已放弃；请重新核对服务端原说明并明确确认恢复。'
+      ? '本地未提交说明已放弃；请重新核对原说明并明确确认继续。'
+      : workflow.liveMessage ===
+          '本地未提交说明已放弃；请核对服务端原始说明并明确确认继续同一更正流程。'
+        ? '本地未提交说明已放弃；请核对原说明并明确确认继续同一更正流程。'
+        : workflow.liveMessage;
 
   return (
     <Card>
@@ -109,7 +122,7 @@ export function ClinicalReportPanel({
           <div>
             <CardTitle>访视级临床报告</CardTitle>
             <CardDescription>
-              支持版本化更正、线性来源追溯及当前安全版本的受控报告工作流；所有写入共享同一写锁与 updatedAt 并发边界。
+              集中查看本次访视的报告内容、处理状态和可用操作；报告更正会保留原版本并形成新的可追溯版本。
             </CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -131,17 +144,17 @@ export function ClinicalReportPanel({
                   }
                 >
                   {report.sourceFreeze?.state === 'completed'
-                    ? '来源已冻结'
+                    ? '报告依据已固定'
                     : report.sourceFreeze?.state === 'in_progress'
-                      ? '冻结未完成'
-                      : '来源未冻结'}
+                      ? '正在固定报告依据'
+                      : '报告依据未固定'}
                 </Badge>
                 {report.replacementOf ? (
-                  <Badge tone="info">替代版本 V{report.reportVersion}</Badge>
+                  <Badge tone="info">更正版本 V{report.reportVersion}</Badge>
                 ) : report.correction?.state === 'in_progress' ? (
                   <Badge tone="warning">更正待继续</Badge>
                 ) : report.correction?.state === 'completed' ? (
-                  <Badge tone="success">已由替代版本接续</Badge>
+                  <Badge tone="success">已生成更正版本</Badge>
                 ) : null}
                 <Badge
                   tone={
@@ -181,21 +194,21 @@ export function ClinicalReportPanel({
         </div>
       </CardHeader>
       <CardContent className="grid gap-6 pt-5">
-        {reportState.liveMessage ? (
+        {reportLiveMessage ? (
           <p
             aria-live="polite"
             className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-info-soft)] px-4 py-3 text-base leading-7 text-[var(--cma-info)]"
           >
-            {reportState.liveMessage}
+            {reportLiveMessage}
           </p>
         ) : null}
 
-        {workflow.liveMessage ? (
+        {workflowLiveMessage ? (
           <p
             aria-live="polite"
             className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-info-soft)] px-4 py-3 text-base leading-7 text-[var(--cma-info)]"
           >
-            {workflow.liveMessage}
+            {workflowLiveMessage}
           </p>
         ) : null}
 
@@ -215,7 +228,7 @@ export function ClinicalReportPanel({
           >
             {reportState.alreadyGeneratedReceipt
               ? '该访视此前已经生成相同范围的报告，本次未重复生成。'
-              : '规则化临床报告草稿已生成；当前仍为 draft，尚未经医生确认。'}
+              : '临床报告草稿已生成；当前尚未经医生确认。'}
           </p>
         ) : null}
 
@@ -287,7 +300,7 @@ export function ClinicalReportPanel({
                 当前访视尚未生成临床报告草稿
               </h3>
               <p className="mt-2 text-base leading-7 text-[var(--cma-muted)]">
-                页面不会自动生成。请先明确选择 scope，再完成内联二次确认。
+                页面不会自动生成。请先选择纳入报告的评估结果，再完成确认。
               </p>
             </div>
 
@@ -329,7 +342,7 @@ export function ClinicalReportPanel({
                     className="text-xl font-semibold text-[var(--cma-text-strong)]"
                     id="clinical-report-confirm-generate-heading"
                   >
-                    二次确认报告范围与草稿边界
+                    二次确认报告内容与草稿边界
                   </h3>
                   <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
                     本次选定的量表实例如下，请再次核对。
@@ -338,8 +351,7 @@ export function ClinicalReportPanel({
                 <ul className="list-disc space-y-1 pl-5 text-base text-[var(--cma-text-strong)]">
                   {selectedInstances.map((instance) => (
                     <li key={instance.id}>
-                      {instance.scaleCode} · {instance.instanceCode} · 第{' '}
-                      {instance.instanceNo} 份
+                      {instance.scaleCode} · 第 {instance.instanceNo} 份
                     </li>
                   ))}
                 </ul>
@@ -365,7 +377,7 @@ export function ClinicalReportPanel({
                     type="checkbox"
                   />
                   <span>
-                    我已核对本次报告范围，并理解这是固定服务端规则生成、未使用 AI、尚未经医生确认且不构成诊断结论的 draft。
+                    我已核对本次纳入报告的评估结果，并理解报告由系统固定规则生成、未使用 AI、尚未经医生确认且不构成诊断结论。
                   </span>
                 </label>
                 <div className="flex flex-wrap gap-3">
@@ -378,7 +390,7 @@ export function ClinicalReportPanel({
                     onClick={() => void reportState.confirmGenerate()}
                   >
                     {reportState.generating
-                      ? '正在生成规则化报告草稿'
+                      ? '正在生成报告草稿'
                       : '确认生成报告草稿'}
                   </Button>
                   <Button
@@ -426,8 +438,8 @@ export function ClinicalReportPanel({
                   ? clinicalReportDraftBoundaryStatements
                   : [
                       '当前内容是临床认知评估报告的结构化信息，不得脱离临床背景单独形成诊断。',
-                      'pending_confirmation 只能等待 doctor / admin 确认；confirmed、archived、corrected 与 voided 均只读。',
-                      '系统规则化部分不自动生成诊断阈值、疾病风险等级、医生意见或治疗建议。',
+                      '报告等待确认时，只能由医生或管理员完成确认；完成确认、归档、更正或作废后保持只读。',
+                      '系统生成的报告内容不会自动给出诊断阈值、疾病风险等级、医生意见或治疗建议。',
                       '认知域之间可能重叠，不能跨域求和解释量表总分。',
                     ]
                 ).map((statement) => (
@@ -459,8 +471,7 @@ export function ClinicalReportPanel({
                 className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] px-4 py-3 text-base text-[var(--cma-warning)]"
                 role="alert"
               >
-                来源冻结安全摘要不完整或不一致：
-                {sourceFreezeConsistencyWarning}
+                报告所依据的评估资料信息不完整或不一致；为避免误操作，当前不会开放后续处理。
               </p>
             ) : null}
 
@@ -469,8 +480,7 @@ export function ClinicalReportPanel({
                 className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] px-4 py-3 text-base text-[var(--cma-warning)]"
                 role="alert"
               >
-                归档安全摘要不完整或不一致：
-                {archiveConsistencyWarning}
+                报告归档信息不完整或不一致；为避免误操作，当前不会开放后续处理。
               </p>
             ) : null}
 
@@ -497,22 +507,14 @@ export function ClinicalReportPanel({
                   report={report}
                   workflow={workflow}
                 />
-                <ClinicalReportSourceFreezeSummary
-                  receipt={workflow.sourceFreezeReceipt}
-                  sourceFreeze={report.sourceFreeze}
-                />
                 <ClinicalReportArchivePanel report={report} workflow={workflow} />
-                <ClinicalReportArchiveSummary
-                  receipt={workflow.archiveReceipt}
-                  report={report}
-                />
               </>
             ) : lifecycleTargetWarning ? (
               <p
                 className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] px-4 py-3 text-base leading-7 text-[var(--cma-warning)]"
                 role="alert"
               >
-                {lifecycleTargetWarning}
+                当前报告的版本关系信息不完整或不一致；为避免误操作，当前不会开放后续处理。
               </p>
             ) : null}
             <ClinicalReportCorrectionPanel report={report} workflow={workflow} />
@@ -521,24 +523,25 @@ export function ClinicalReportPanel({
             ) ? (
               <p className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] px-4 py-3 text-base leading-7 text-[var(--cma-muted)]">
                 {lifecycleTarget?.kind === 'replacement'
-                  ? `当前是版本化更正形成的 ${report.reportCode} / V${report.reportVersion} 报告。锁定、来源冻结与归档按当前报告自身事实依次开放；每一步均需医生或管理员明确确认，不会自动串联。`
+                  ? `当前为更正生成的 V${report.reportVersion} 报告。确认、锁定、固定报告依据与归档会按当前报告的处理进度依次开放；每一步均需医生或管理员明确确认，不会自动串联。`
                   : isClinicalReportLocked(report)
                   ? report.status === 'archived'
-                    ? '当前报告真实 status=archived，报告自身锁定与 completed 来源冻结事实继续保留。归档不修改 Patient、Visit 或来源对象，不等于删除、作废、更正或生成 PDF；当前不提供 unarchive。'
+                    ? '当前报告已经归档并保持只读。归档不会修改患者、访视或原始评估资料，也不等于删除、作废、更正或生成可下载文件。'
                     : report.status === 'corrected'
-                      ? '当前为已更正的历史来源报告，只读展示归档与更正摘要；替代报告是下一线性版本，不提供取消更正、取消归档、解锁或解冻操作。'
+                      ? '当前为已更正的历史报告，只读展示归档与更正摘要；后续版本单独保留，不提供取消更正、取消归档或解除锁定操作。'
                       : report.sourceFreeze?.state === 'completed'
-                    ? '当前报告自身已经确认并锁定，status 仍为 confirmed；其固定 scope 内来源链已完成冻结。归档仍需 doctor / admin 明确执行；Patient、Visit 与来源对象不会被归档操作修改。'
+                    ? '当前报告已经确认并锁定，所依据的评估资料也已固定。归档仍需医生或管理员明确执行，患者、访视与原始评估资料不会因此改变。'
                     : report.sourceFreeze?.state === 'in_progress'
-                      ? '当前报告自身已经锁定，但来源冻结尚未完整完成，部分来源可能已经冻结且系统不会自动回滚。Patient、Visit 与 Storage 未冻结；需由医生或管理员明确恢复同一流程。'
-                      : '当前报告自身已经确认并锁定，但 sourceFreeze=null 表示报告来源尚未冻结。报告锁定与来源冻结是两个独立阶段；Patient、Visit 与 Storage 未冻结。'
-                  : '当前报告为只读状态。confirmed 表示已完成医生或管理员确认，但尚未锁定；也不表示访视、评分、认知域或媒体已锁定，或报告已归档、签名、生成 PDF。'}
+                      ? '当前报告已经锁定，但报告依据尚未全部固定；已完成的部分不会自动撤销，需由医生或管理员继续完成同一流程。'
+                      : '当前报告已经确认并锁定，但报告依据尚未固定。报告锁定与固定报告依据是两个独立阶段。'
+                  : '当前报告已经完成医生或管理员确认并保持只读，但尚未锁定；这不表示访视或原始评估资料已经锁定，也不表示报告已经归档、签名或生成可下载文件。'}
               </p>
             ) : null}
             <ClinicalReportTechnicalSummary
               patientId={patientId}
               report={report}
               visitId={visitId}
+              workflow={workflow}
             />
           </div>
         ) : null}

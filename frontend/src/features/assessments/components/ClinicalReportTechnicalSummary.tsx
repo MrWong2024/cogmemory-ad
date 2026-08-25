@@ -1,5 +1,8 @@
 import Link from 'next/link';
 
+import { ClinicalReportArchiveSummary } from '@/src/features/assessments/components/ClinicalReportArchiveSummary';
+import { ClinicalReportSourceFreezeSummary } from '@/src/features/assessments/components/ClinicalReportSourceFreezeSummary';
+import type { UseClinicalReportWorkflowValue } from '@/src/features/assessments/hooks/useClinicalReportWorkflow';
 import {
   clinicalReportConfirmationRoleLabels,
   clinicalReportOperatorRoleLabels,
@@ -30,10 +33,12 @@ export function ClinicalReportTechnicalSummary({
   patientId,
   report,
   visitId,
+  workflow,
 }: {
   patientId: string;
   report: ClinicalReport;
   visitId: string;
+  workflow: UseClinicalReportWorkflowValue;
 }) {
   const finalityWarning = getClinicalReportFinalityWarning(
     report.status,
@@ -51,7 +56,11 @@ export function ClinicalReportTechnicalSummary({
     getClinicalReportCorrectionConsistencyWarning(report);
 
   return (
-    <div className="grid gap-5">
+    <details className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] p-4">
+      <summary className="cursor-pointer text-base font-semibold text-[var(--cma-text-strong)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cma-ring)]">
+        技术与审计信息
+      </summary>
+      <div className="mt-4 grid gap-5">
       <section
         aria-labelledby="clinical-report-generation-heading"
         className="rounded-md border border-[var(--cma-line)] p-4"
@@ -212,11 +221,81 @@ export function ClinicalReportTechnicalSummary({
         )}
       </section>
 
-      <details className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] p-4">
-        <summary className="cursor-pointer text-base font-semibold text-[var(--cma-text-strong)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cma-ring)]">
-          查看报告技术信息与历史纳入范围
-        </summary>
-        <div className="mt-4 grid gap-5">
+      {workflow.editReceipt ||
+      workflow.submissionReceipt ||
+      workflow.confirmationReceipt ||
+      workflow.lockReceipt ||
+      workflow.correctionReceipt ? (
+        <section className="rounded-md border border-[var(--cma-line)] p-4">
+          <h3 className="text-xl font-semibold text-[var(--cma-text-strong)]">
+            本次页面操作技术回执
+          </h3>
+          <div className="mt-4 grid gap-3 break-all text-sm leading-6 text-[var(--cma-muted)]">
+            {workflow.editReceipt ? (
+              <p>
+                edit eventId={workflow.editReceipt.eventId}；editedAt=
+                {workflow.editReceipt.editedAt}；changedFields=
+                {workflow.editReceipt.changedFields.join(',')}；editNote=
+                {workflow.editReceipt.editNote}
+              </p>
+            ) : null}
+            {workflow.submissionReceipt ? (
+              <p>
+                submissionId=
+                {displayValue(workflow.submissionReceipt.submissionId)}；submittedAt=
+                {displayValue(workflow.submissionReceipt.submittedAt)}；alreadySubmitted=
+                {String(workflow.submissionReceipt.alreadySubmitted)}；submissionNote=
+                {displayValue(workflow.submissionReceipt.submissionNote)}
+              </p>
+            ) : null}
+            {workflow.confirmationReceipt ? (
+              <p>
+                confirmationId=
+                {displayValue(workflow.confirmationReceipt.confirmationId)}；confirmedAt=
+                {workflow.confirmationReceipt.confirmedAt}；alreadyConfirmed=
+                {String(workflow.confirmationReceipt.alreadyConfirmed)}；confirmationNote=
+                {displayValue(workflow.confirmationReceipt.confirmationNote)}
+              </p>
+            ) : null}
+            {workflow.lockReceipt ? (
+              <p>
+                lockId={displayValue(workflow.lockReceipt.lockId)}；lockedAt=
+                {workflow.lockReceipt.lockedAt}；operatorId=
+                {displayValue(workflow.lockReceipt.lockedBy.operatorId)}；alreadyLocked=
+                {String(workflow.lockReceipt.alreadyLocked)}；lockNote=
+                {displayValue(workflow.lockReceipt.lockNote)}
+              </p>
+            ) : null}
+            {workflow.correctionReceipt ? (
+              <p>
+                correctionId={workflow.correctionReceipt.correctionId}；sourceReportId=
+                {workflow.correctionReceipt.sourceReportId}；replacementReportId=
+                {workflow.correctionReceipt.replacementReportId}；correctionNo=
+                {workflow.correctionReceipt.correctionNo}；state=
+                {workflow.correctionReceipt.state}；startedAt=
+                {workflow.correctionReceipt.startedAt}；completedAt=
+                {workflow.correctionReceipt.completedAt}；alreadyCreated=
+                {String(workflow.correctionReceipt.alreadyCreated)}；resumedExisting=
+                {String(workflow.correctionReceipt.resumedExisting)}
+              </p>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+
+      <ClinicalReportSourceFreezeSummary
+        receipt={workflow.sourceFreezeReceipt}
+        sourceFreeze={report.sourceFreeze}
+      />
+      <ClinicalReportArchiveSummary
+        receipt={workflow.archiveReceipt}
+        report={report}
+      />
+
+      <section className="grid gap-5 rounded-md border border-[var(--cma-line)] p-4">
+        <h3 className="text-xl font-semibold text-[var(--cma-text-strong)]">
+          报告技术信息与历史纳入范围
+        </h3>
           {finalityWarning ? (
             <p
               className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] px-4 py-3 text-base text-[var(--cma-warning)]"
@@ -419,8 +498,8 @@ export function ClinicalReportTechnicalSummary({
               </ul>
             )}
           </section>
-        </div>
-      </details>
-    </div>
+      </section>
+      </div>
+    </details>
   );
 }

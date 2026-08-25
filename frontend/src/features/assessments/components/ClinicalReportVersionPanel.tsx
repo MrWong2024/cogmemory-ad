@@ -37,9 +37,9 @@ const sourceFreezeLabels: Record<
   ClinicalReportVersionListItem['sourceFreezeStatus'],
   string
 > = {
-  none: '来源未冻结',
-  in_progress: '来源冻结进行中',
-  completed: '来源冻结已完成',
+  none: '报告依据未固定',
+  in_progress: '正在固定报告依据',
+  completed: '报告依据已固定',
 };
 
 function errorMessage(error: ClinicalReportApiError): string {
@@ -72,7 +72,7 @@ function VersionItem({
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h4 className="text-xl font-semibold text-[var(--cma-text-strong)]">
-              V{item.reportVersion} · {item.reportCode}
+              V{item.reportVersion}
             </h4>
             {item.isLatestVersion ? <Badge tone="info">最新版本</Badge> : null}
             <Badge>{clinicalReportStatusLabels[item.status]}</Badge>
@@ -80,7 +80,7 @@ function VersionItem({
           <p className="mt-2 text-sm text-[var(--cma-muted)]">
             {clinicalReportSourceLabels[item.source]} ·{' '}
             {clinicalReportQualityStatusLabels[item.qualityStatus]} ·{' '}
-            {item.isFinal ? '后端标记为最终报告' : '后端未标记为最终报告'}
+            {item.isFinal ? '已标记为最终报告' : '尚未标记为最终报告'}
           </p>
         </div>
         <Link
@@ -105,7 +105,7 @@ function VersionItem({
           </dd>
         </div>
         <div>
-          <dt className="font-semibold text-[var(--cma-muted)]">来源冻结</dt>
+          <dt className="font-semibold text-[var(--cma-muted)]">报告依据固定</dt>
           <dd className="mt-1">
             {sourceFreezeLabels[item.sourceFreezeStatus]} ·{' '}
             {formatDateTime(item.sourceFreezeCompletedAt)}
@@ -127,7 +127,7 @@ function VersionItem({
           <dt className="font-semibold text-[var(--cma-muted)]">前一版本</dt>
           <dd className="mt-1">
             {item.previous
-              ? `${item.previous.reportCode} / V${item.previous.reportVersion}`
+              ? `V${item.previous.reportVersion}`
               : '—'}
           </dd>
         </div>
@@ -135,7 +135,7 @@ function VersionItem({
           <dt className="font-semibold text-[var(--cma-muted)]">替代版本</dt>
           <dd className="mt-1">
             {item.replacement
-              ? `${item.replacement.reportCode} / V${item.replacement.reportVersion}`
+              ? `V${item.replacement.reportVersion}`
               : '—'}
           </dd>
         </div>
@@ -234,7 +234,7 @@ export function ClinicalReportVersionPanel({
           <div>
             <CardTitle>临床报告版本</CardTitle>
             <CardDescription>
-              独立只读加载；失败不会影响访视、量表实例或当前报告工作流。
+              查看本次访视历次报告及其更正关系；版本列表加载失败不会影响当前报告操作。
             </CardDescription>
           </div>
           <Button
@@ -269,7 +269,7 @@ export function ClinicalReportVersionPanel({
             {errorMessage(error)}
           </p>
           <p className="text-sm leading-6 text-[var(--cma-muted)]">
-            页面不会展示部分版本、拼接关系或公开内部关联字段；当前报告工作流保持独立可用。
+            为避免展示不完整的版本关系，当前暂不显示版本列表；当前报告操作仍可继续使用。
           </p>
         </CardContent>
       ) : null}
@@ -321,7 +321,7 @@ export function ClinicalReportVersionPanel({
                 当前访视暂无临床报告版本
               </p>
               <p className="mt-2 text-sm text-[var(--cma-muted)]">
-                空版本链由后端标记为有效，不表示请求失败。
+                当前没有可展示的历史报告版本，这不表示请求失败。
               </p>
             </CardContent>
           )}

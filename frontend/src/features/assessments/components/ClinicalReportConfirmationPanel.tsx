@@ -23,7 +23,7 @@ export function ClinicalReportConfirmationPanel({
           等待医生或管理员确认
         </h3>
         <p className="mt-2 text-base leading-7 text-[var(--cma-muted)]">
-          当前报告需由医生或管理员确认。护士与研究助理可继续只读查看报告及提交摘要，但不显示可用确认按钮；后端 RolesGuard 仍是最终权限边界。
+          当前报告需由医生或管理员确认。护士与研究助理可继续只读查看报告及提交摘要，但不能执行确认操作；系统权限校验仍是最终边界。
         </p>
       </section>
     );
@@ -37,7 +37,7 @@ export function ClinicalReportConfirmationPanel({
             医生或管理员最终确认
           </h3>
           <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-            报告已提交待确认。最终确认后当前 A21 报告进入只读，但不表示报告或来源数据已锁定。
+            报告已提交待确认。最终确认后当前报告进入只读，但不表示报告或相关评估资料已经锁定。
           </p>
         </div>
         <Button disabled={!workflow.canConfirm} onClick={workflow.openConfirm}>
@@ -63,7 +63,7 @@ export function ClinicalReportConfirmationPanel({
           二次确认当前报告
         </h3>
         <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-          当前状态：pending_confirmation；并发基线：{formatClinicalReportDate(draft.baseUpdatedAt)}。
+          当前报告等待医生确认。本次操作基于最近加载于 {formatClinicalReportDate(draft.baseUpdatedAt)} 的报告内容。
         </p>
       </div>
 
@@ -95,7 +95,7 @@ export function ClinicalReportConfirmationPanel({
         >
           <p className="font-semibold">确认表单已过期</p>
           <p className="mt-1 text-sm leading-6">
-            最终确认意见已保留，checkbox 已清除，原请求没有自动重发。请重新核对最新报告。
+            最终确认意见已保留，确认项已清除，原请求没有自动重新提交。请重新核对最新报告。
           </p>
           <Button
             className="mt-3"
@@ -129,13 +129,13 @@ export function ClinicalReportConfirmationPanel({
           onChange={(event) => workflow.updateConfirmationNote(event.target.value)}
           value={draft.confirmationNote}
         />
-        <p className="text-sm text-[var(--cma-muted)]">trim 后 3–2000 个字符。</p>
+        <p className="text-sm text-[var(--cma-muted)]">请输入 3–2000 个字符。</p>
       </div>
 
       <ul className="list-disc space-y-1 pl-5 text-sm leading-6 text-[var(--cma-muted)]">
-        <li>确认后 status=confirmed，A21 报告不可继续编辑。</li>
-        <li>qualityStatus=passed 只表示报告确认流程质量标记通过，不表示患者或认知状态正常。</li>
-        <li>confirmed 不等于 locked，不生成签名，也不锁定访视、评分、认知域或媒体。</li>
+        <li>确认后报告不可继续编辑。</li>
+        <li>结果状态正常只表示报告确认流程已完成，不表示患者认知状态正常。</li>
+        <li>确认不等于锁定；本操作不生成签名，也不锁定访视、评分、认知域或媒体。</li>
         <li>本操作不生成 PDF，不调用 AI；系统不解释或改写临床人员文本。</li>
       </ul>
 
@@ -162,7 +162,7 @@ export function ClinicalReportConfirmationPanel({
           role="alert"
         >
           {workflow.confirmationError.kind === 'forbidden'
-            ? '当前账号不具备 doctor / admin 确认权限；报告和确认意见均已保留。'
+            ? '当前账号不具备医生或管理员确认权限；报告和确认意见均已保留。'
             : getClinicalReportApiErrorMessage(workflow.confirmationError.kind)}
         </p>
       ) : null}

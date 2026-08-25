@@ -24,15 +24,15 @@ export function ClinicalReportEvidenceList({
           className="text-xl font-semibold text-[var(--cma-text-strong)]"
           id="clinical-report-evidence-heading"
         >
-          媒体证据索引快照
+          相关作答证据
         </h3>
         <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-          报告只纳入证据索引快照。A20 没有读取或分析媒体内容，未执行 OCR、图像识别或 AI 判断；此处不提供预览或下载。
+          本版报告只记录相关作答证据的摘要信息，不读取或分析媒体内容，也不执行文字识别、图像识别或 AI 判断；此处不提供预览或下载。
         </p>
       </div>
       {sortedSnapshots.length === 0 ? (
         <p className="text-base text-[var(--cma-muted)]">
-          当前报告没有公开媒体证据索引摘要。
+          本版报告未记录相关作答证据。
         </p>
       ) : (
         <ul className="grid gap-3 md:grid-cols-2">
@@ -42,14 +42,10 @@ export function ClinicalReportEvidenceList({
               key={`${snapshot.scaleCode ?? ''}:${snapshot.itemCode ?? ''}:${snapshot.evidenceType ?? ''}:${index}`}
             >
               <h4 className="text-lg font-semibold text-[var(--cma-text-strong)]">
-                {snapshot.itemTitle?.trim() ||
-                  snapshot.itemCode?.trim() ||
-                  '证据索引'}
+                {snapshot.itemTitle?.trim() || '作答证据'}
               </h4>
               <p className="mt-1 text-sm text-[var(--cma-muted)]">
-                {[snapshot.scaleCode, snapshot.itemCode]
-                  .filter((value) => Boolean(value))
-                  .join(' · ') || '未提供量表与题目标识'}
+                {snapshot.scaleCode || '未记录量表名称'}
               </p>
               <dl className="mt-4 grid gap-3 sm:grid-cols-3">
                 <div>
@@ -74,7 +70,7 @@ export function ClinicalReportEvidenceList({
                 </div>
                 <div>
                   <dt className="text-sm font-semibold text-[var(--cma-muted)]">
-                    流程质量标记
+                    结果状态
                   </dt>
                   <dd className="mt-1 text-base text-[var(--cma-text-strong)]">
                     {snapshot.qualityStatus
@@ -86,7 +82,7 @@ export function ClinicalReportEvidenceList({
                 </div>
               </dl>
               <p className="mt-4 whitespace-pre-wrap border-t border-[var(--cma-line)] pt-3 text-base leading-7 text-[var(--cma-text-strong)]">
-                {snapshot.summary?.trim() || '当前索引未提供摘要。'}
+                {snapshot.summary?.trim() || '本版报告未记录证据摘要。'}
               </p>
             </li>
           ))}

@@ -23,7 +23,7 @@ export const clinicalReportTypeLabels: Record<ClinicalReportType, string> = {
 };
 
 export const clinicalReportStatusLabels: Record<ClinicalReportStatus, string> = {
-  draft: '规则化报告草稿',
+  draft: '报告草稿',
   pending_confirmation: '待医生确认',
   confirmed: '已确认报告',
   archived: '已归档报告',
@@ -43,10 +43,10 @@ export const clinicalReportQualityStatusLabels: Record<
   ClinicalReportQualityStatus,
   string
 > = {
-  unchecked: '尚未进行进一步质量确认',
-  passed: '报告确认流程质量标记已通过',
-  needs_review: '报告包含需要进一步复核的内容或证据索引',
-  failed: '报告质量检查未通过',
+  unchecked: '尚未完成结果确认',
+  passed: '结果状态正常',
+  needs_review: '报告包含需要进一步复核的内容或作答证据',
+  failed: '结果检查未通过',
 };
 
 export const clinicalReportPatientSexLabels: Record<
@@ -149,11 +149,11 @@ export const clinicalReportSourceFreezeCountLabels = {
 } as const;
 
 export const clinicalReportDraftBoundaryStatements = [
-  '本次内容是访视级临床认知评估报告的结构化规则草稿。',
-  '系统规则化草稿不等于医生结论；draft 报告尚未经医生确认。',
-  '当前 A20 规则化草稿生成流程不调用 AI。',
-  'A20 不读取原始作答自由文本生成诊断意见，也不分析图片或手写内容。',
-  '系统规则化部分不自动生成医生意见或治疗建议；临床人员可在受控字段中明确补充。',
+  '当前内容是访视级临床认知评估报告草稿。',
+  '报告草稿尚未经医生确认，不能作为最终临床结论。',
+  '本报告由系统按照固定规则生成，未使用 AI。',
+  '系统不会读取原始作答自由文本、图片或手写内容生成诊断意见。',
+  '系统生成的报告内容不会自动给出医生意见或治疗建议；临床人员可在受控字段中明确补充。',
   '认知域结果尚未独立确认，且存在重叠归因，不能跨域求和解释量表总分。',
   '结果必须结合临床访谈、病史和其他检查综合判断。',
 ];
@@ -161,9 +161,9 @@ export const clinicalReportDraftBoundaryStatements = [
 export const clinicalReportGenerationConfirmationStatements = [
   '本次将基于所选量表实例生成访视级报告。',
   '所选实例必须已经完成最终评分确认和认知域计算，前端候选状态不代表全部条件已经满足。',
-  '报告正文由固定服务端规则生成；系统不会读取原始作答自由文本生成诊断意见。',
-  '系统不会分析图片或手写内容，媒体只作为证据索引快照纳入。',
-  '本次未使用 AI；生成后状态为 draft，尚未经医生确认。',
+  '报告正文由系统固定规则生成；系统不会读取原始作答自由文本生成诊断意见。',
+  '系统不会分析图片或手写内容，只在报告中记录相关作答证据的摘要信息。',
+  '本次不使用 AI；生成后为报告草稿，尚未经医生确认。',
   '报告不包含诊断阈值、疾病判断或治疗建议。',
   '认知域结果尚未独立确认，认知域之间存在重叠归因，不能跨域求和解释量表总分。',
   '报告生成后，本版报告所依据的评估内容不会直接修改；如需后续补充或更正，请通过报告更正流程处理。当前不生成 PDF 或可下载文件。',
@@ -177,44 +177,42 @@ export const clinicalReportScopeFixedStatements = [
 ];
 
 export const clinicalReportLockBoundaryStatements = [
-  '当前报告已经确认；锁定后真实 status 仍为 confirmed。',
-  '系统通过顶层 lockedAt 和锁定审计摘要表达锁定，不新增 locked 状态。',
-  '锁定不可撤销，当前系统不提供 unlock。',
-  '锁定只作用于当前 ClinicalReport，不会锁定患者、访视、量表实例、评分、认知域或媒体。',
+  '当前报告已经确认；锁定后仍保持已确认状态。',
+  '锁定不可撤销，当前系统不提供解锁。',
+  '锁定只作用于当前报告，不会锁定患者、访视、量表结果、评分、认知域或媒体。',
   '锁定不等于归档，不生成签名，也不生成 PDF 或下载文件。',
-  '锁定过程不调用 AI；qualityStatus=passed 不表示患者正常，也不形成新的诊断结论。',
+  '锁定过程不调用 AI；结果状态正常不表示患者认知状态正常，也不形成新的诊断结论。',
   '锁定流程说明仅用于本次锁定审计，不属于报告正文。',
 ];
 
 export const clinicalReportSourceFreezeBoundaryStatements = [
-  '当前报告已经确认并锁定；报告锁定与来源冻结是两个独立阶段。',
-  '冻结范围来自服务端保存的报告来源 scope，前端不能选择、增加、移除或修改。',
-  '冻结范围包含报告纳入的量表实例、这些实例下的全部题目记录、报告引用的评分结果、认知域结果持久快照和媒体证据记录。',
-  '来源冻结不会读取或修改原始作答、分值或媒体内容。',
-  '冻结可能跨多个集合逐步执行，不使用 Mongo transaction。',
-  '完成前可能已有部分来源被冻结；系统不会自动解冻或回滚。',
-  '中断后必须由 doctor / admin 明确继续同一 freezeId，系统不会自动恢复。',
-  '恢复沿用服务端原冻结范围、原说明、发起人和 freezeId，不生成新流程。',
-  'completed 后重复请求按幂等成功处理，不会重新冻结来源。',
-  'CognitiveDomainResult 的冻结只固定持久快照，不等于独立认知域确认。',
-  '本操作不冻结 Patient、AssessmentVisit 或 Storage 文件。',
-  '当前不提供 unfreeze、自动回滚、PDF、下载或 AI 操作，也不形成新的诊断结论。',
+  '当前报告已经确认并锁定；报告锁定与固定报告依据是两个独立阶段。',
+  '固定范围来自本版报告所依据的评估资料，不能在当前页面增加、移除或修改。',
+  '固定范围包含报告纳入的量表结果、相关题目记录、评分结果、认知域结果和作答证据记录。',
+  '固定报告依据不会读取或修改原始作答、分值或媒体内容。',
+  '固定过程可能分步完成；中断时部分资料可能已经固定，系统不会自动撤销或回滚。',
+  '中断后必须由医生或管理员明确继续同一流程，系统不会自动恢复。',
+  '继续处理时沿用首次确定的范围、说明和发起人，不会创建新流程。',
+  '完成后重复操作不会再次固定相同资料。',
+  '认知域结果仅固定本版报告所依据的记录，不等于独立确认认知域结论。',
+  '本操作不会固定患者档案、访视本身或原始存储文件。',
+  '当前不提供撤销固定、自动回滚、PDF、下载或 AI 操作，也不形成新的诊断结论。',
 ];
 
 export const clinicalReportArchiveBoundaryStatements = [
-  '归档对象是当前 ClinicalReport；报告已经确认、报告自身已经锁定，且来源冻结已经完成。',
-  '归档成功后报告真实 status 变为 archived；当前系统不提供 unarchive，也不能恢复为 confirmed。',
-  '归档不会清除报告锁定，不会解冻或重新冻结来源。',
-  '归档不会修改 Patient、AssessmentVisit 或任何来源对象。',
-  '归档不会修改原始作答、评分、认知域结果、媒体、报告正文或既有快照。',
+  '归档对象是当前报告；报告必须已经确认并锁定，且报告所依据的评估资料已经固定。',
+  '归档成功后不能取消归档，也不能恢复为已确认状态。',
+  '归档不会清除报告锁定，也不会撤销或重新固定报告依据。',
+  '归档不会修改患者档案、访视或报告所依据的评估资料。',
+  '归档不会修改原始作答、评分、认知域结果、媒体、报告正文或报告生成时已记录的内容。',
   '归档不等于删除、作废或更正；后续更正必须通过独立、可追溯的受控流程形成。',
   '归档不生成 PDF、Word、签名、打印件或下载文件，也不调用 AI。',
   '归档流程说明只用于本次归档审计，不属于报告正文或医生确认意见。',
 ];
 
 export const clinicalReportCorrectionBoundaryStatements = [
-  '原归档报告保持不变，系统创建下一线性版本；不允许分支或跳号。',
-  '替代报告初始为草稿；更正不会自动完成编辑、确认、锁定、冻结或归档。',
+  '原归档报告保持不变，系统创建下一报告版本；不允许从旧版本创建分支或跳过版本号。',
+  '更正报告初始为草稿；更正不会自动完成编辑、确认、锁定、固定报告依据或归档。',
   '更正不修改原始作答、评分、认知域或媒体，不生成 PDF，也不调用 AI。',
 ];
 
@@ -256,9 +254,10 @@ export function formatClinicalReportNumber(
 export function formatClinicalReportPercent(
   value: number | null | undefined,
 ): string {
-  return typeof value === 'number' && Number.isFinite(value)
-    ? `${value}%`
-    : '—';
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return '—';
+  }
+  return `${Math.round(value * 10) / 10}%`;
 }
 
 export function getClinicalReportFinalityWarning(
@@ -288,23 +287,23 @@ export function getClinicalReportLockConsistencyWarning(
   report: ClinicalReport,
 ): string | null {
   if (report.lock !== null && report.lockedAt === null) {
-    return '报告返回了锁定审计摘要，但顶层 lockedAt 为空；不能据此认定报告已锁定，也不能继续锁定，请联系管理员。';
+    return '报告的锁定状态与锁定记录不一致；当前不能继续锁定，请联系管理员。';
   }
   if (
     report.lockedAt !== null &&
     !['confirmed', 'archived', 'corrected'].includes(report.status)
   ) {
-    return '报告状态与顶层 lockedAt 不一致；当前不能继续报告写操作，请联系管理员。';
+    return '报告状态与锁定记录不一致；当前不能继续报告操作，请联系管理员。';
   }
   if (report.lockedAt !== null && report.lock === null) {
-    return '报告已锁定，但当前安全响应未提供完整锁定审计摘要；系统不会猜测锁定人或说明。';
+    return '本版报告已锁定，但未记录完整锁定信息；系统不会猜测锁定人或说明。';
   }
   if (
     report.lockedAt !== null &&
     report.lock !== null &&
     (report.lock.lockedAt === null || report.lock.lockedBy === null)
   ) {
-    return '报告已锁定，但锁定审计摘要不完整；系统不会猜测锁定人、角色或时间。';
+    return '本版报告已锁定，但锁定信息不完整；系统不会猜测锁定人、角色或时间。';
   }
   if (
     report.lockedAt !== null &&
@@ -312,7 +311,7 @@ export function getClinicalReportLockConsistencyWarning(
     report.lock?.lockedAt !== undefined &&
     report.lock.lockedAt !== report.lockedAt
   ) {
-    return '顶层 lockedAt 与锁定审计摘要时间不一致；系统不会自行选择或覆盖时间，请联系管理员。';
+    return '报告记录的锁定时间不一致；系统不会自行选择或覆盖时间，请联系管理员。';
   }
   return null;
 }
@@ -333,9 +332,9 @@ export function getClinicalReportApiErrorMessage(
     scale_instance_configuration_unavailable:
       '所选量表实例的版本配置暂时不可用，请联系管理员核对。',
     clinical_report_generation_confirmation_required:
-      '请明确确认报告范围和草稿边界后再生成。',
+      '请明确确认报告内容和草稿边界后再生成。',
     clinical_report_scope_invalid:
-      '报告范围无效，请重新选择 1–10 个当前访视中的可纳入量表实例。',
+      '纳入报告的评估结果无效，请重新选择 1–10 个当前访视中的可纳入量表。',
     clinical_report_source_scale_not_ready:
       '至少一个所选量表实例尚未达到报告生成要求。',
     clinical_report_source_score_not_final:
@@ -345,7 +344,7 @@ export function getClinicalReportApiErrorMessage(
     clinical_report_source_domain_result_invalid:
       '至少一个认知域结果不满足报告生成要求，请重新核对或联系管理员。',
     clinical_report_source_media_invalid:
-      '至少一条有效媒体证据索引不满足报告快照要求，请打开量表核对图片或手写证据。',
+      '至少一条图片或手写作答证据不满足报告生成要求，请打开量表核对。',
     clinical_report_input_invalid:
       '报告来源数据之间不一致，当前不能安全生成报告，请联系管理员。',
     clinical_report_not_found: '当前访视尚未生成临床报告草稿。',
@@ -354,15 +353,15 @@ export function getClinicalReportApiErrorMessage(
     clinical_report_history_lineage_invalid:
       '报告版本关系暂时无法安全展示；不会展示部分版本或推测内部关系。',
     clinical_report_voided:
-      '当前访视的 version 1 报告已作废，A20 不支持重新生成。',
+      '当前访视的原报告已作废，不能重新生成同一版报告。',
     clinical_report_scope_conflict:
-      '当前访视已存在范围不同的 version 1 报告，不能覆盖或重新生成。',
+      '当前访视已存在纳入内容不同的原报告，不能覆盖或重新生成。',
     clinical_report_generation_conflict:
       '报告在并发生成过程中发生变化，请重新加载最新报告。',
     clinical_report_generation_failed:
-      '规则化报告草稿生成失败，请保留当前选择并稍后重试。',
+      '报告草稿生成失败，请保留当前选择并稍后重试。',
     clinical_report_metadata_unsupported:
-      '报告内部审计结构异常，当前不能继续写入，请联系管理员。',
+      '报告记录不完整，当前不能继续操作，请联系管理员。',
     clinical_report_not_editable: '当前报告状态不允许继续编辑。',
     clinical_report_edit_no_changes:
       '医生意见和建议与当前报告一致，没有需要保存的变化。',
@@ -403,21 +402,21 @@ export function getClinicalReportApiErrorMessage(
     clinical_report_lock_failed:
       '报告锁定失败，请保留当前锁定说明并稍后重试。',
     clinical_report_source_freeze_confirmation_required:
-      '请明确确认来源冻结的不可逆边界后再继续。',
+      '请明确确认固定报告依据的不可逆边界后再继续。',
     clinical_report_not_source_freezable:
-      '当前报告尚未满足来源链冻结要求。',
+      '当前报告尚未满足固定报告依据的要求。',
     clinical_report_source_freeze_scope_invalid:
-      '报告保存的来源范围不完整或不一致，当前不能安全冻结。',
+      '报告所依据的评估资料不完整或不一致，当前不能继续固定。',
     clinical_report_source_freeze_input_invalid:
-      '报告来源数据状态与冻结审计不一致，请联系管理员处理。',
+      '报告所依据的评估资料与处理记录不一致，请联系管理员处理。',
     clinical_report_source_freeze_conflict:
-      '报告在来源冻结开始前已发生变化，请重新核对最新报告。',
+      '报告在固定依据前已发生变化，请重新核对最新报告。',
     clinical_report_source_freeze_audit_unavailable:
-      '来源冻结审计信息不完整，不能安全启动、恢复或确认完成状态。',
+      '固定报告依据的操作记录不完整，不能安全启动、继续或确认完成状态。',
     clinical_report_source_freeze_incomplete:
-      '来源冻结尚未完整完成；部分来源可能已经冻结，请重新加载并由医生或管理员明确继续恢复。',
+      '报告依据尚未全部固定；部分资料可能已经完成且不会自动撤销，请重新加载并由医生或管理员明确继续。',
     clinical_report_source_freeze_failed:
-      '来源冻结操作未完成；请重新加载最新报告，确认是否存在可恢复流程。',
+      '固定报告依据的操作未完成；请重新加载最新报告，确认是否可以继续原有流程。',
     clinical_report_archive_confirmation_required:
       '请明确确认报告归档边界后再继续。',
     clinical_report_not_archivable: '当前报告尚未满足归档要求。',
@@ -440,13 +439,13 @@ export function getClinicalReportApiErrorMessage(
     clinical_report_correction_audit_unavailable:
       '更正审计信息不完整，不能安全启动、恢复或确认完成状态。',
     clinical_report_correction_replacement_conflict:
-      '目标替代版本已存在但与当前更正关系不一致。',
+      '目标更正版本已存在，但与当前报告的版本关系不一致。',
     clinical_report_correction_incomplete:
       '更正流程尚未完整完成，可重新加载并继续同一流程。',
     clinical_report_correction_failed:
       '更正操作未能确认完成，请重新加载最新报告核对。',
     clinical_report_correction_workflow_forbidden:
-      '替代报告的编辑、提交和确认仅允许医生或管理员。',
+      '更正报告的编辑、提交和确认仅允许医生或管理员。',
     service_unavailable: '报告服务暂时不可用，请稍后手工重试。',
     unknown: '暂时无法完成报告操作，请稍后手工重新加载最新报告。',
   };
@@ -457,7 +456,7 @@ export function getClinicalReportLockApiErrorMessage(
   kind: ClinicalReportApiErrorKind,
 ): string {
   if (kind === 'forbidden') {
-    return '当前账号不具备 doctor / admin 锁定权限；报告和本地锁定说明均已保留。';
+    return '当前账号不具备锁定报告的权限；报告和本地锁定说明均已保留。';
   }
   if (kind === 'patient_not_active') {
     return '当前患者不是活动状态，不能首次锁定报告。';
@@ -466,7 +465,7 @@ export function getClinicalReportLockApiErrorMessage(
     return '当前访视状态不允许首次锁定报告。';
   }
   if (kind === 'clinical_report_metadata_unsupported') {
-    return '报告内部审计结构异常，当前不能继续锁定，请联系管理员。';
+    return '报告记录不完整，当前不能继续锁定，请联系管理员。';
   }
   return getClinicalReportApiErrorMessage(kind);
 }
@@ -475,19 +474,19 @@ export function getClinicalReportSourceFreezeApiErrorMessage(
   kind: ClinicalReportApiErrorKind,
 ): string {
   if (kind === 'forbidden') {
-    return '当前账号不具备 doctor / admin 来源冻结权限；报告和本地首次说明均已保留。';
+    return '当前账号不具备固定报告依据的权限；报告和本地说明均已保留。';
   }
   if (kind === 'patient_not_active') {
-    return '当前患者不是活动状态，不能首次发起来源冻结。';
+    return '当前患者不是活动状态，不能开始固定报告依据。';
   }
   if (kind === 'visit_not_editable') {
-    return '当前访视状态不允许首次发起来源冻结。';
+    return '当前访视状态不允许开始固定报告依据。';
   }
   if (kind === 'clinical_report_metadata_unsupported') {
-    return '报告内部审计结构异常，当前不能继续来源冻结，请联系管理员。';
+    return '报告记录不完整，当前不能继续固定报告依据，请联系管理员。';
   }
   if (kind === 'service_unavailable' || kind === 'unknown') {
-    return '来源冻结请求结果暂不确定；系统不会自动重试，请手工重新加载最新报告核对。';
+    return '固定报告依据的请求结果暂不确定；系统不会自动重试，请手工重新加载最新报告核对。';
   }
   return getClinicalReportApiErrorMessage(kind);
 }
@@ -496,10 +495,10 @@ export function getClinicalReportArchiveApiErrorMessage(
   kind: ClinicalReportApiErrorKind,
 ): string {
   if (kind === 'forbidden') {
-    return '当前账号不具备 doctor / admin 归档权限；报告和本地归档说明均已保留。';
+    return '当前账号不具备归档报告的权限；报告和本地归档说明均已保留。';
   }
   if (kind === 'clinical_report_metadata_unsupported') {
-    return '报告内部审计结构异常，当前不能继续归档，请联系管理员。';
+    return '报告记录不完整，当前不能继续归档，请联系管理员。';
   }
   if (kind === 'clinical_report_voided') {
     return '当前报告已作废，不能归档。';
@@ -517,7 +516,7 @@ export function getClinicalReportCorrectionApiErrorMessage(
     kind === 'forbidden' ||
     kind === 'clinical_report_correction_workflow_forbidden'
   ) {
-    return '版本化更正及替代报告的编辑、提交和确认仅允许医生或管理员；报告和本地输入均已保留。';
+    return '创建更正版本以及编辑、提交和确认更正报告仅允许医生或管理员；报告和本地输入均已保留。';
   }
   if (kind === 'service_unavailable' || kind === 'unknown') {
     return '更正请求结果暂不确定；系统不会自动重试，请保留本地说明并手工重新加载最新报告核对。';

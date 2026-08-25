@@ -1,6 +1,7 @@
 import { Button } from '@/src/components/ui/Button';
 import type { UseClinicalReportWorkflowValue } from '@/src/features/assessments/hooks/useClinicalReportWorkflow';
 import {
+  clinicalReportConfirmationRoleLabels,
   clinicalReportLockBoundaryStatements,
   clinicalReportStatusLabels,
   formatClinicalReportDate,
@@ -19,7 +20,7 @@ export function ClinicalReportLockPanel({
   workflow: UseClinicalReportWorkflowValue;
 }) {
   const consistencyWarning = getClinicalReportLockConsistencyWarning(report);
-  const targetLabel = `${report.reportCode} / V${report.reportVersion}`;
+  const targetLabel = `V${report.reportVersion}`;
 
   if (
     isClinicalReportLocked(report) &&
@@ -34,8 +35,7 @@ export function ClinicalReportLockPanel({
           当前操作目标：{targetLabel}
         </p>
         <p className="mt-2 text-base leading-7 text-[var(--cma-muted)]">
-          当前真实 status 仍为 {report.status}；锁定事实来自服务端 lockedAt。
-          本页面不提供再次锁定或解锁入口。
+          当前报告保持{clinicalReportStatusLabels[report.status]}状态。本页面不提供再次锁定或解锁入口。
         </p>
       </section>
     );
@@ -66,7 +66,7 @@ export function ClinicalReportLockPanel({
           当前操作目标：{targetLabel}
         </p>
         <p className="mt-2 text-base leading-7 text-[var(--cma-muted)]">
-          报告锁定需由医生或管理员执行。当前账号仍可查看报告和已有锁定摘要，后端 RolesGuard 是最终权限边界。
+          报告锁定需由医生或管理员执行。当前账号仍可查看报告和已有锁定信息，系统权限校验是最终边界。
         </p>
       </section>
     );
@@ -80,7 +80,7 @@ export function ClinicalReportLockPanel({
             不可逆锁定报告
           </h3>
           <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-            当前操作目标：{targetLabel}。仅 confirmed、尚未锁定且通过安全资格检查的当前报告可进入二次确认。
+            当前操作目标：{targetLabel}。只有已经确认、尚未锁定且满足操作条件的当前报告可以进入二次确认。
           </p>
         </div>
         {workflow.canLock ? (
@@ -111,10 +111,10 @@ export function ClinicalReportLockPanel({
           二次确认不可逆锁定
         </h3>
         <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-          当前操作目标：{targetLabel}；status：
-          {clinicalReportStatusLabels[report.status]}（{report.status}）；isFinal：
-          {report.isFinal ? 'true' : 'false'}；并发基线：
-          {formatClinicalReportDate(draft.baseUpdatedAt)}。
+          当前报告版本：{targetLabel}；状态：
+          {clinicalReportStatusLabels[report.status]}；
+          {report.isFinal ? '已完成最终确认' : '尚未完成最终确认'}。本次操作基于最近加载于{' '}
+          {formatClinicalReportDate(draft.baseUpdatedAt)} 的报告内容。
         </p>
       </div>
 
@@ -126,14 +126,16 @@ export function ClinicalReportLockPanel({
           </p>
         </div>
         <div>
-          <p className="font-semibold text-[var(--cma-muted)]">确认人 / 角色</p>
+          <p className="font-semibold text-[var(--cma-muted)]">确认人</p>
           <p className="mt-1 text-[var(--cma-text-strong)]">
-            {report.confirmation?.confirmedByName?.trim() || '—'} /{' '}
-            {report.confirmation?.confirmedByRole || '—'}
+            {report.confirmation?.confirmedByName?.trim() || '—'}
+            {report.confirmation?.confirmedByRole
+              ? `（${clinicalReportConfirmationRoleLabels[report.confirmation.confirmedByRole]}）`
+              : ''}
           </p>
         </div>
         <div>
-          <p className="font-semibold text-[var(--cma-muted)]">报告更新时间</p>
+          <p className="font-semibold text-[var(--cma-muted)]">最近更新时间</p>
           <p className="mt-1 text-[var(--cma-text-strong)]">
             {formatClinicalReportDate(report.updatedAt)}
           </p>
@@ -157,7 +159,7 @@ export function ClinicalReportLockPanel({
               : '锁定草稿已过期'}
           </p>
           <p className="mt-1 text-sm leading-6">
-            锁定流程说明已保留，checkbox 已清除，原 POST 没有自动重发或覆盖其他操作者结果。
+            锁定流程说明已保留，确认项已清除，原请求没有自动重新提交或覆盖其他操作者结果。
           </p>
           {workflow.canContinueLockWithLatest ? (
             <Button
@@ -203,7 +205,7 @@ export function ClinicalReportLockPanel({
           value={draft.lockNote}
         />
         <p className="text-sm text-[var(--cma-muted)]">
-          trim 后 3–2000 个字符；不自动生成，也不预填其他报告意见。
+          请输入 3–2000 个字符；系统不会自动生成，也不会预填其他报告意见。
         </p>
       </div>
 

@@ -35,7 +35,7 @@ export function ClinicalReportCorrectionPanel({
             版本化更正
           </h3>
           <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-            当前报告：{report.reportCode} / V{report.reportVersion}；确认后将请求服务端创建 {nextVersionLabel}。更正保留原归档报告，完整版本关系仍由服务端裁决。
+            当前报告版本：V{report.reportVersion}；确认后系统将创建 {nextVersionLabel}。更正会保留原归档报告，并形成可追溯的下一版本。
           </p>
         </div>
         {workflow.canResumeCorrection ? (
@@ -83,12 +83,12 @@ export function ClinicalReportCorrectionPanel({
           {persisted ? '继续同一版本化更正流程' : '二次确认版本化更正'}
         </h3>
         <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-          来源报告：{report.reportCode} / V{report.reportVersion}；并发基线：
-          {formatClinicalReportDate(draft.baseUpdatedAt)}。
+          原报告版本：V{report.reportVersion}。本次操作基于最近加载于{' '}
+          {formatClinicalReportDate(draft.baseUpdatedAt)} 的报告内容。
         </p>
         {persisted ? (
           <p className="mt-2 text-sm leading-6 text-[var(--cma-muted)]">
-            正在继续服务端已保存的同一版本化更正流程。原始原因与摘要只读且不会被本页面覆盖；内部关联标识由系统保存，不在页面展示。
+            正在继续系统已保存的同一报告更正流程。原始原因与摘要只读且不会被本页面覆盖。
           </p>
         ) : null}
       </div>
@@ -107,10 +107,10 @@ export function ClinicalReportCorrectionPanel({
           <p className="font-semibold">
             {latestIsReplacementOrCorrected
               ? '其他操作已经完成更正，本地说明未写入'
-              : '更正草稿基线已过期'}
+              : '更正确认内容已过期'}
           </p>
           <p className="mt-1 text-sm leading-6">
-            本地首次输入已保留，checkbox 已清除；系统没有自动重发 POST，也没有覆盖其他操作者结果。
+            本地首次输入已保留，确认项已清除；系统没有自动重新提交请求，也没有覆盖其他操作者结果。
           </p>
           <div className="mt-3 flex flex-col gap-3 sm:flex-row">
             {workflow.canContinueCorrectionWithLatest ? (
@@ -130,7 +130,7 @@ export function ClinicalReportCorrectionPanel({
                 size="sm"
                 variant="secondary"
               >
-                放弃本地说明并转入服务端恢复
+                放弃本地说明并继续原有流程
               </Button>
             ) : null}
           </div>
@@ -210,7 +210,7 @@ export function ClinicalReportCorrectionPanel({
           type="checkbox"
         />
         <span>
-          我已核对原归档报告与线性版本边界，并明确确认创建或继续同一替代版本流程。
+          我已核对原归档报告与版本关系，并明确确认创建或继续同一更正版本流程。
         </span>
       </label>
 
@@ -246,7 +246,7 @@ export function ClinicalReportCorrectionPanel({
             ? '正在处理版本化更正'
             : persisted
               ? '确认继续同一更正流程'
-              : '确认创建替代版本'}
+              : '确认创建更正版本'}
         </Button>
         <Button
           disabled={isWriting}

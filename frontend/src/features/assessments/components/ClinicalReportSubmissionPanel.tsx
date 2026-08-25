@@ -21,7 +21,7 @@ export function ClinicalReportSubmissionPanel({
             提交待医生确认
           </h3>
           <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-            保存合规的医生意见后，报告可由用户明确提交为 pending_confirmation。提交不等于最终确认。
+            保存符合要求的医生意见后，可以明确提交报告等待医生确认。提交不等于最终确认。
           </p>
         </div>
         <Button disabled={!workflow.canSubmit} onClick={workflow.openSubmit}>
@@ -29,7 +29,7 @@ export function ClinicalReportSubmissionPanel({
         </Button>
         {!workflow.canSubmit ? (
           <p className="text-sm leading-6 text-[var(--cma-muted)]">
-            当前需先保存 3–4000 字符的医生意见，且报告来源应为 mixed、质量状态不能为 failed，并且没有其他本地草稿或写请求。
+            请先保存 3–4000 个字符的医生意见，并确认报告内容与结果状态满足提交要求，且当前没有其他未完成的报告操作。
           </p>
         ) : null}
       </section>
@@ -79,7 +79,7 @@ export function ClinicalReportSubmissionPanel({
         >
           <p className="font-semibold">提交表单已过期</p>
           <p className="mt-1 text-sm leading-6">
-            提交说明已保留，checkbox 已清除，原请求没有自动重发。请重新核对最新报告后明确继续。
+            提交说明已保留，确认项已清除，原请求没有自动重新提交。请重新核对最新报告后明确继续。
           </p>
           <Button
             className="mt-3"
@@ -113,12 +113,12 @@ export function ClinicalReportSubmissionPanel({
           onChange={(event) => workflow.updateSubmissionNote(event.target.value)}
           value={draft.submissionNote}
         />
-        <p className="text-sm text-[var(--cma-muted)]">trim 后 3–2000 个字符。</p>
+        <p className="text-sm text-[var(--cma-muted)]">请输入 3–2000 个字符。</p>
       </div>
 
       <ul className="list-disc space-y-1 pl-5 text-sm leading-6 text-[var(--cma-muted)]">
-        <li>提交后状态进入 pending_confirmation，当前没有退回 draft 的公开能力。</li>
-        <li>提交后不能继续编辑，且只有 doctor / admin 可以最终确认。</li>
+        <li>提交后报告将等待医生确认，当前不能退回草稿继续编辑。</li>
+        <li>提交后不能继续编辑，且只有医生或管理员可以最终确认。</li>
         <li>提交不等于确认，也不锁定报告、访视、评分、认知域或媒体。</li>
         <li>本操作不生成 PDF，不调用 AI。</li>
       </ul>

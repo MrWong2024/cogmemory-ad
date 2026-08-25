@@ -26,10 +26,10 @@ export function ClinicalReportNarrative({
           className="text-xl font-semibold text-[var(--cma-text-strong)]"
           id="clinical-report-narrative-heading"
         >
-          服务端规则化正文
+          系统生成的报告摘要
         </h3>
         <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-          以下五段按普通文本只读展示，由服务端固定规则生成，不是医生意见，也不能在本页面编辑。
+          以下内容由系统按照固定规则生成，不是医生意见，也不能在本页面编辑。
         </p>
       </div>
       {narrative ? (
@@ -44,14 +44,14 @@ export function ClinicalReportNarrative({
               </h4>
               <p className="mt-2 whitespace-pre-wrap text-base leading-7 text-[var(--cma-text-strong)]">
                 {narrative[field.key]?.trim() ||
-                  '当前报告未提供该规则化段落。'}
+                  '本版报告未记录该摘要内容。'}
               </p>
             </section>
           ))}
         </div>
       ) : (
         <p className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] p-4 text-base text-[var(--cma-muted)]">
-          当前安全响应未提供规则化正文。
+          本版报告未记录系统生成的报告摘要。
         </p>
       )}
 

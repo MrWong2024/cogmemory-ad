@@ -18,6 +18,7 @@ import type {
 import type { ClinicalReportArchiveDraft } from '@/src/features/assessments/lib/clinical-report-archive-draft';
 import type { CorrectionDraft } from '@/src/features/assessments/lib/clinical-report-correction-draft';
 import type { ClinicalReportSourceFreezeDraft } from '@/src/features/assessments/lib/clinical-report-source-freeze-draft';
+import { formatClinicalReportPercent } from '@/src/features/assessments/lib/clinical-report-display';
 import type {
   ArchiveClinicalReportReceipt,
   ClinicalReport,
@@ -286,6 +287,17 @@ function readWorkflowSource(relativePath: string): string {
 }
 
 test.describe('Clinical report shared workflow Node-only contracts', () => {
+  test('formats clinical report percentages for presentation', () => {
+    expect(formatClinicalReportPercent(93.33333333333333)).toBe('93.3%');
+    expect(formatClinicalReportPercent(86.66666666666667)).toBe('86.7%');
+    expect(formatClinicalReportPercent(90)).toBe('90%');
+    expect(formatClinicalReportPercent(100)).toBe('100%');
+    expect(formatClinicalReportPercent(null)).toBe('—');
+    expect(formatClinicalReportPercent(undefined)).toBe('—');
+    expect(formatClinicalReportPercent(Number.NaN)).toBe('—');
+    expect(formatClinicalReportPercent(Number.POSITIVE_INFINITY)).toBe('—');
+  });
+
   test('C16 starts safely and RESET restores every shared slice', () => {
     const initial = createClinicalReportWorkflowState();
     expect(initial.activeMode).toBe('idle');

@@ -37,7 +37,7 @@ function getCandidateMessage(instance: ScaleInstanceListItem): string {
     return '实例标识无效，不能纳入报告，请重新加载访视详情。';
   }
   if (instance.status === 'completed' || instance.status === 'locked') {
-    return '可作为前端候选；评分最终性、认知域与媒体条件仍由后端生成时校验。';
+    return '可纳入当前选择；评分、认知域和作答证据是否满足条件将在生成时确认。';
   }
   if (instance.status === 'draft') {
     return '草稿实例不可纳入报告。';
@@ -85,10 +85,10 @@ export function ClinicalReportScopeSelector({
             className="text-xl font-semibold text-[var(--cma-text-strong)]"
             id="clinical-report-scope-heading"
           >
-            明确选择报告范围
+            选择纳入报告的评估结果
           </h3>
           <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-            初始不会自动选择。请选择 1–10 个同访视 completed / locked 实例；这只是前端候选资格，不代表全部报告生成条件已经满足。
+            初始不会自动选择。请选择 1–10 个当前访视中已完成或已锁定的量表结果；系统将在生成时确认是否满足全部条件。
           </p>
         </div>
         <p className="text-base font-semibold text-[var(--cma-text-strong)]">
@@ -102,7 +102,7 @@ export function ClinicalReportScopeSelector({
           onClick={onSelectAll}
           variant="secondary"
         >
-          选择全部可纳入候选项（最多前 10 项）
+          选择全部可纳入结果（最多前 10 项）
         </Button>
         <Button
           disabled={generating || selectedScaleInstanceIds.length === 0}
@@ -154,8 +154,8 @@ export function ClinicalReportScopeSelector({
                         {getScaleDisplayName(instance, catalog)}
                       </span>
                       <span className="mt-1 block text-sm text-[var(--cma-muted)]">
-                        {instance.scaleCode} · 版本 {instance.scaleVersion} ·{' '}
-                        {instance.instanceCode} · 第 {instance.instanceNo} 份
+                      {instance.scaleCode} · 版本 {instance.scaleVersion} · 第{' '}
+                      {instance.instanceNo} 份
                       </span>
                     </span>
                   </label>
@@ -183,7 +183,7 @@ export function ClinicalReportScopeSelector({
                   </div>
                   <div>
                     <dt className="text-sm font-semibold text-[var(--cma-muted)]">
-                      候选说明
+                      纳入说明
                     </dt>
                     <dd className="mt-1 text-sm leading-6 text-[var(--cma-text-strong)]">
                       {getCandidateMessage(instance)}

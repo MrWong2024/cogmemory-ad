@@ -21,7 +21,7 @@ export function ClinicalReportArchivePanel({
 }) {
   const draft = workflow.archiveDraft;
   const isActive = workflow.activeMode === 'archive' && draft !== null;
-  const targetLabel = `${report.reportCode} / V${report.reportVersion}`;
+  const targetLabel = `V${report.reportVersion}`;
 
   if (!isActive) {
     if (isClinicalReportArchived(report)) {
@@ -47,7 +47,7 @@ export function ClinicalReportArchivePanel({
           role="alert"
         >
           当前操作目标：{targetLabel}。<br />
-          {workflow.archiveConsistencyWarning}
+          归档信息不完整或不一致；当前不能执行归档，请联系管理员核对。
         </p>
       );
     }
@@ -59,14 +59,14 @@ export function ClinicalReportArchivePanel({
             报告归档
           </h3>
           <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-            当前操作目标：{targetLabel}。首次归档只面向已确认、已安全锁定且来源冻结完成的报告；Patient 与 Visit 状态不作为前端归档条件。
+            当前操作目标：{targetLabel}。首次归档只面向已确认、已锁定且报告依据已经固定的报告；归档不会修改患者档案或访视内容。
           </p>
         </div>
         {workflow.canArchive ? (
           <Button onClick={workflow.openArchive}>准备归档报告</Button>
         ) : (
           <p className="text-sm leading-6 text-[var(--cma-muted)]">
-            {workflow.archiveBlockReason}
+            当前报告尚未满足归档条件，请先完成确认、锁定及固定报告依据的流程。
           </p>
         )}
       </section>
@@ -89,17 +89,18 @@ export function ClinicalReportArchivePanel({
           二次确认不可撤销归档
         </h3>
         <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-          当前操作目标：{targetLabel}；status：
-          {clinicalReportStatusLabels[report.status]}（
-          {report.status}）；并发基线：
-          {formatClinicalReportDate(draft.baseUpdatedAt)}。
+          当前报告版本：{targetLabel}；状态：
+          {clinicalReportStatusLabels[report.status]}。本次操作基于最近加载于{' '}
+          {formatClinicalReportDate(draft.baseUpdatedAt)} 的报告内容。
         </p>
       </div>
 
       <div className="grid gap-3 rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface)] p-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
         <div>
           <p className="font-semibold text-[var(--cma-muted)]">报告状态</p>
-          <p className="mt-1 text-[var(--cma-text-strong)]">{report.status}</p>
+          <p className="mt-1 text-[var(--cma-text-strong)]">
+            {clinicalReportStatusLabels[report.status]}
+          </p>
         </div>
         <div>
           <p className="font-semibold text-[var(--cma-muted)]">报告锁定时间</p>
@@ -109,14 +110,14 @@ export function ClinicalReportArchivePanel({
         </div>
         <div>
           <p className="font-semibold text-[var(--cma-muted)]">
-            来源冻结完成时间
+            报告依据固定完成时间
           </p>
           <p className="mt-1 text-[var(--cma-text-strong)]">
             {formatClinicalReportDate(report.sourceFreeze?.completedAt)}
           </p>
         </div>
         <div>
-          <p className="font-semibold text-[var(--cma-muted)]">报告更新时间</p>
+          <p className="font-semibold text-[var(--cma-muted)]">最近更新时间</p>
           <p className="mt-1 text-[var(--cma-text-strong)]">
             {formatClinicalReportDate(report.updatedAt)}
           </p>
@@ -140,7 +141,7 @@ export function ClinicalReportArchivePanel({
               : '归档草稿已过期'}
           </p>
           <p className="mt-1 text-sm leading-6">
-            本地归档说明已保留，checkbox 已清除；原 POST 没有自动重发，也没有覆盖其他操作者的归档结果。
+            本地归档说明已保留，确认项已清除；原请求没有自动重新提交，也没有覆盖其他操作者的归档结果。
           </p>
           <div className="mt-3 flex flex-col gap-3 sm:flex-row">
             {latestArchived ? (
@@ -188,7 +189,7 @@ export function ClinicalReportArchivePanel({
           value={draft.archiveNote}
         />
         <p className="text-sm text-[var(--cma-muted)]">
-          trim 后 3–2000 个字符；不自动生成，不预填 freezeNote、lockNote、confirmationNote 或医生意见，也不属于报告正文。
+          请输入 3–2000 个字符；系统不会自动生成或预填其他流程说明、确认意见或医生意见，此内容不属于报告正文。
         </p>
       </div>
 
@@ -207,7 +208,7 @@ export function ClinicalReportArchivePanel({
           type="checkbox"
         />
         <span>
-          我已核对当前已确认、已锁定且来源冻结完成的报告，并理解归档后不能恢复为已确认状态。
+          我已核对当前已确认、已锁定且报告依据已经固定的报告，并理解归档后不能恢复为已确认状态。
         </span>
       </label>
 

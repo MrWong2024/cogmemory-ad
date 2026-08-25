@@ -4,7 +4,6 @@ import {
   clinicalReportWorkflowLimits,
 } from '@/src/features/assessments/lib/clinical-report-workflow-draft';
 import {
-  formatClinicalReportDate,
   getClinicalReportApiErrorMessage,
 } from '@/src/features/assessments/lib/clinical-report-display';
 import type { ClinicalReport } from '@/src/features/assessments/types/clinical-report';
@@ -33,7 +32,7 @@ export function ClinicalReportDraftEditor({
             补充临床人员内容
           </h3>
           <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-            仅可编辑医生意见与临床人员补充建议；服务端规则化五段摘要和全部快照保持只读。
+            仅可编辑医生意见与临床人员补充建议；系统生成的报告内容保持只读。
           </p>
         </div>
         <Button onClick={workflow.openEdit}>编辑临床人员内容</Button>
@@ -58,7 +57,7 @@ export function ClinicalReportDraftEditor({
           编辑临床人员补充内容
         </h3>
         <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-          乐观并发基线：{formatClinicalReportDate(draft.baseUpdatedAt)}。系统不会自动生成、改写、审核或解释以下文本。
+          当前编辑基于最近加载的报告；如报告已被其他操作更新，系统会提示重新加载。系统不会自动生成、改写、审核或解释以下文本。
         </p>
       </div>
 
@@ -67,17 +66,17 @@ export function ClinicalReportDraftEditor({
           className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-warning-soft)] p-4 text-[var(--cma-warning)]"
           role="alert"
         >
-          <p className="font-semibold">本地表单已过期</p>
+          <p className="font-semibold">报告已更新，请重新加载后继续编辑</p>
           <p className="mt-1 text-sm leading-6">
-            报告已被其他操作更新。本地医生意见、建议与编辑说明均已保留；系统没有自动覆盖或重发保存请求。请核对最新服务端内容后明确继续。
+            本地医生意见、建议与编辑说明均已保留；系统没有自动覆盖或重新提交保存请求。请核对最新报告内容后明确继续。
           </p>
           <div className="mt-3 grid gap-2 text-sm leading-6">
             <p>
-              最新服务端医生意见：
+              最新报告中的医生意见：
               {report.narrative?.doctorOpinion?.trim() || '未填写'}
             </p>
             <p>
-              最新服务端补充建议：
+              最新报告中的补充建议：
               {report.narrative?.recommendationText?.trim() || '未填写'}
             </p>
           </div>
@@ -116,7 +115,7 @@ export function ClinicalReportDraftEditor({
           }
           value={draft.doctorOpinion}
         />
-        <p className="text-sm text-[var(--cma-muted)]">trim 后 3–4000 个字符。</p>
+        <p className="text-sm text-[var(--cma-muted)]">请输入 3–4000 个字符。</p>
       </div>
 
       <div className="grid gap-2">
@@ -143,7 +142,7 @@ export function ClinicalReportDraftEditor({
           value={draft.recommendationText}
         />
         <p className="text-sm text-[var(--cma-muted)]">
-          留空并保存表示清除现有建议；非空时 trim 后 3–4000 个字符。
+          留空并保存表示清除现有建议；填写时请输入 3–4000 个字符。
         </p>
       </div>
 
@@ -153,7 +152,7 @@ export function ClinicalReportDraftEditor({
             className="text-base font-semibold text-[var(--cma-text-strong)]"
             htmlFor="clinical-report-edit-note"
           >
-            本次编辑审计说明（必填）
+            本次编辑说明（必填）
           </label>
           <CharacterCount
             max={clinicalReportWorkflowLimits.editNote.max}
@@ -171,7 +170,7 @@ export function ClinicalReportDraftEditor({
           value={draft.editNote}
         />
         <p className="text-sm text-[var(--cma-muted)]">
-          仅用于本次受控编辑审计，不会自动复用历史说明。
+          仅用于记录本次编辑，不会自动复用历史说明。
         </p>
       </div>
 
@@ -197,7 +196,7 @@ export function ClinicalReportDraftEditor({
           disabled={!workflow.canSaveEdit}
           onClick={() => void workflow.saveEdit()}
         >
-          {isWriting ? '正在保存受控编辑' : '保存受控编辑'}
+          {isWriting ? '正在保存编辑' : '保存编辑'}
         </Button>
         <Button
           disabled={isWriting}

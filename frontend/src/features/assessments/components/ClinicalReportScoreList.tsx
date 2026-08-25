@@ -24,15 +24,15 @@ export function ClinicalReportScoreList({
           className="text-xl font-semibold text-[var(--cma-text-strong)]"
           id="clinical-report-score-heading"
         >
-          评分快照
+          量表评分结果
         </h3>
         <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-          仅展示服务端生成报告时保存的分值与规则化安全摘要，不解释诊断阈值或患者状态。
+          展示本版报告生成时记录的量表分值与摘要，不解释诊断阈值或患者状态。
         </p>
       </div>
       {sortedSnapshots.length === 0 ? (
         <p className="text-base text-[var(--cma-muted)]">
-          当前安全报告响应未提供评分快照。
+          本版报告未记录量表评分结果。
         </p>
       ) : (
         <ul className="grid gap-3">
@@ -60,17 +60,17 @@ export function ClinicalReportScoreList({
                 <dl className="mt-4 grid gap-x-5 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
                   <div>
                     <dt className="text-sm font-semibold text-[var(--cma-muted)]">
-                      报告快照分值
+                      量表得分
                     </dt>
                     <dd className="mt-1 text-base text-[var(--cma-text-strong)]">
                       {hasCompleteRange
                         ? `${formatClinicalReportNumber(snapshot.totalScoreValue)}（范围 ${formatClinicalReportNumber(snapshot.totalMinScore)}–${formatClinicalReportNumber(snapshot.totalMaxScore)}）`
-                        : '当前快照未提供完整分值范围'}
+                        : '本版报告未记录完整分值范围'}
                     </dd>
                   </div>
                   <div>
                     <dt className="text-sm font-semibold text-[var(--cma-muted)]">
-                      服务端比例
+                      得分比例
                     </dt>
                     <dd className="mt-1 text-base text-[var(--cma-text-strong)]">
                       {formatClinicalReportPercent(snapshot.scorePercent)}
@@ -88,7 +88,7 @@ export function ClinicalReportScoreList({
                   </div>
                   <div>
                     <dt className="text-sm font-semibold text-[var(--cma-muted)]">
-                      流程质量标记
+                      结果状态
                     </dt>
                     <dd className="mt-1 text-base text-[var(--cma-text-strong)]">
                       {snapshot.qualityStatus
@@ -101,10 +101,10 @@ export function ClinicalReportScoreList({
                 </dl>
                 <div className="mt-4 border-t border-[var(--cma-line)] pt-3">
                   <p className="text-sm font-semibold text-[var(--cma-muted)]">
-                    服务端规则化安全摘要
+                    评分摘要
                   </p>
                   <p className="mt-1 whitespace-pre-wrap text-base leading-7 text-[var(--cma-text-strong)]">
-                    {snapshot.summary?.trim() || '当前快照未提供评分摘要。'}
+                    {snapshot.summary?.trim() || '本版报告未记录评分摘要。'}
                   </p>
                 </div>
               </li>

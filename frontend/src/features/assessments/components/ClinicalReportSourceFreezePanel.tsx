@@ -18,20 +18,20 @@ export function ClinicalReportSourceFreezePanel({
 }) {
   const draft = workflow.sourceFreezeDraft;
   const isActive = workflow.activeMode === 'source_freeze' && draft !== null;
-  const targetLabel = `${report.reportCode} / V${report.reportVersion}`;
+  const targetLabel = `V${report.reportVersion}`;
 
   if (!isActive) {
     if (report.sourceFreeze?.state === 'completed') {
       return (
         <section className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] p-4">
           <h3 className="text-xl font-semibold text-[var(--cma-text-strong)]">
-            报告来源链冻结已完成
+            报告依据已固定
           </h3>
           <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
             当前操作目标：{targetLabel}
           </p>
           <p className="mt-2 text-base leading-7 text-[var(--cma-muted)]">
-            当前不再显示首次冻结或恢复入口；完成事实来自服务端 sourceFreeze，重复请求不会重新冻结来源。
+            当前不再显示首次处理或继续入口；重复操作不会再次固定相同的评估资料。
           </p>
         </section>
       );
@@ -44,7 +44,7 @@ export function ClinicalReportSourceFreezePanel({
           role="alert"
         >
           当前操作目标：{targetLabel}。<br />
-          来源冻结安全摘要不完整或不一致；当前不开放首次冻结或恢复操作，请联系管理员。
+          固定报告依据的信息不完整或不一致；当前不开放首次处理或继续操作，请联系管理员。
         </p>
       );
     }
@@ -53,15 +53,15 @@ export function ClinicalReportSourceFreezePanel({
       return (
         <section className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] p-4">
           <h3 className="text-xl font-semibold text-[var(--cma-text-strong)]">
-            报告来源冻结
+            固定报告依据
           </h3>
           <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
             当前操作目标：{targetLabel}
           </p>
           <p className="mt-2 text-base leading-7 text-[var(--cma-muted)]">
             {report.sourceFreeze?.state === 'in_progress'
-              ? '来源冻结尚未完成；部分来源可能已经冻结。等待医生或管理员明确继续完成同一流程。'
-              : '来源冻结需由医生或管理员执行。当前账号可查看持久安全摘要，后端 RolesGuard 是最终权限边界。'}
+              ? '固定过程尚未完成；部分评估资料可能已经固定。等待医生或管理员明确继续完成同一流程。'
+              : '固定报告依据需由医生或管理员执行。当前账号仍可查看已有处理信息，系统权限校验是最终边界。'}
           </p>
         </section>
       );
@@ -72,27 +72,27 @@ export function ClinicalReportSourceFreezePanel({
         <div>
           <h3 className="text-xl font-semibold text-[var(--cma-text-strong)]">
             {report.sourceFreeze?.state === 'in_progress'
-              ? '继续完成来源冻结'
-              : '不可逆冻结报告来源'}
+              ? '继续固定报告依据'
+              : '不可逆固定报告依据'}
           </h3>
           <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
             当前操作目标：{targetLabel}。
             {report.sourceFreeze?.state === 'in_progress'
-              ? '服务端已固化原 freezeId、说明与范围；恢复不会生成新流程，也不会解冻已冻结来源。'
+              ? '系统将沿用首次确定的说明与范围；继续处理不会生成新流程，也不会撤销已经固定的资料。'
               : '首次发起只面向已确认、已锁定且通过安全资格检查的报告。'}
           </p>
         </div>
         {workflow.canStartSourceFreeze ? (
           <Button onClick={workflow.openSourceFreeze}>
-            准备冻结报告来源
+            准备固定报告依据
           </Button>
         ) : workflow.canResumeSourceFreeze ? (
           <Button onClick={workflow.openSourceFreezeResume}>
-            准备继续完成来源冻结
+            准备继续固定报告依据
           </Button>
         ) : (
           <p className="text-sm leading-6 text-[var(--cma-muted)]">
-            {workflow.sourceFreezeBlockReason}
+            当前报告尚未满足固定报告依据的条件，请先完成报告确认和锁定，并核对最新状态。
           </p>
         )}
       </section>
@@ -117,31 +117,28 @@ export function ClinicalReportSourceFreezePanel({
           id="clinical-report-source-freeze-heading"
         >
           {isStart
-            ? '二次确认不可逆来源冻结'
-            : '二次确认继续同一来源冻结流程'}
+            ? '二次确认不可逆固定报告依据'
+            : '二次确认继续同一固定流程'}
         </h3>
         <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-          当前操作目标：{targetLabel}；status：
-          {clinicalReportStatusLabels[report.status]}（
-          {report.status}）；报告锁定时间：
-          {formatClinicalReportDate(report.lockedAt)}；并发基线：
-          {formatClinicalReportDate(draft.baseUpdatedAt)}。
+          当前报告版本：{targetLabel}；状态：
+          {clinicalReportStatusLabels[report.status]}；报告锁定时间：
+          {formatClinicalReportDate(report.lockedAt)}。本次操作基于最近加载于{' '}
+          {formatClinicalReportDate(draft.baseUpdatedAt)} 的报告内容。
         </p>
       </div>
 
       {!isStart && report.sourceFreeze ? (
         <div className="grid gap-3 rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface)] p-4 text-sm sm:grid-cols-2">
-          <div><p className="font-semibold text-[var(--cma-muted)]">原 freezeId</p><p className="mt-1 break-all text-[var(--cma-text-strong)]">{report.sourceFreeze.freezeId}</p></div>
           <div><p className="font-semibold text-[var(--cma-muted)]">流程开始时间</p><p className="mt-1 text-[var(--cma-text-strong)]">{formatClinicalReportDate(report.sourceFreeze.startedAt)}</p></div>
-          <div><p className="font-semibold text-[var(--cma-muted)]">来源统一锁定时间</p><p className="mt-1 text-[var(--cma-text-strong)]">{formatClinicalReportDate(report.sourceFreeze.sourceLockedAt)}</p></div>
-          <div><p className="font-semibold text-[var(--cma-muted)]">当前 report.updatedAt</p><p className="mt-1 text-[var(--cma-text-strong)]">{formatClinicalReportDate(report.updatedAt)}</p></div>
-          <div className="sm:col-span-2"><p className="font-semibold text-[var(--cma-muted)]">服务端首次来源冻结流程说明（只读）</p><p className="mt-1 whitespace-pre-wrap text-[var(--cma-text-strong)]">{draft.freezeNote}</p></div>
+          <div><p className="font-semibold text-[var(--cma-muted)]">资料固定时间</p><p className="mt-1 text-[var(--cma-text-strong)]">{formatClinicalReportDate(report.sourceFreeze.sourceLockedAt)}</p></div>
+          <div className="sm:col-span-2"><p className="font-semibold text-[var(--cma-muted)]">首次流程说明（只读）</p><p className="mt-1 whitespace-pre-wrap text-[var(--cma-text-strong)]">{draft.freezeNote}</p></div>
         </div>
       ) : (
         <div className="grid gap-3 rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface)] p-4 text-sm sm:grid-cols-3">
-          <div><p className="font-semibold text-[var(--cma-muted)]">报告状态</p><p className="mt-1 text-[var(--cma-text-strong)]">{report.status}</p></div>
+          <div><p className="font-semibold text-[var(--cma-muted)]">报告状态</p><p className="mt-1 text-[var(--cma-text-strong)]">{clinicalReportStatusLabels[report.status]}</p></div>
           <div><p className="font-semibold text-[var(--cma-muted)]">报告锁定时间</p><p className="mt-1 text-[var(--cma-text-strong)]">{formatClinicalReportDate(report.lockedAt)}</p></div>
-          <div><p className="font-semibold text-[var(--cma-muted)]">报告更新时间</p><p className="mt-1 text-[var(--cma-text-strong)]">{formatClinicalReportDate(report.updatedAt)}</p></div>
+          <div><p className="font-semibold text-[var(--cma-muted)]">最近更新时间</p><p className="mt-1 text-[var(--cma-text-strong)]">{formatClinicalReportDate(report.updatedAt)}</p></div>
         </div>
       )}
 
@@ -158,17 +155,17 @@ export function ClinicalReportSourceFreezePanel({
         >
           <p className="font-semibold">
             {latestStartedExisting
-              ? '服务端已存在来源冻结流程，本地首次说明尚未提交'
+              ? '系统已存在固定报告依据的流程，本地首次说明尚未提交'
               : latestCompleted
                 ? isStart
-                  ? '来源冻结已由其他操作完成，本地说明未写入'
-                  : '来源冻结已由其他操作完成，当前恢复确认已失效'
-                : '来源冻结确认草稿已过期'}
+                  ? '报告依据已由其他操作固定，本地说明未写入'
+                  : '报告依据已由其他操作固定，当前继续确认已失效'
+                : '当前确认内容已过期'}
           </p>
           <p className="mt-1 text-sm leading-6">
             {latestStartedExisting
-              ? '恢复必须使用服务端首次 freezeNote；系统不会静默替换或提交当前本地说明。'
-              : 'checkbox 已清除，原 POST 没有自动重发，也没有覆盖其他操作者结果。'}
+              ? '继续处理必须使用首次保存的流程说明；系统不会静默替换或提交当前本地说明。'
+              : '确认项已清除，原请求没有自动重新提交，也没有覆盖其他操作者结果。'}
           </p>
           <div className="mt-3 flex flex-col gap-3 sm:flex-row">
             {latestStartedExisting ? (
@@ -221,7 +218,7 @@ export function ClinicalReportSourceFreezePanel({
               className="text-base font-semibold text-[var(--cma-text-strong)]"
               htmlFor="clinical-report-source-freeze-note"
             >
-              来源冻结流程说明（必填）
+              固定报告依据的流程说明（必填）
             </label>
             <span className="text-sm text-[var(--cma-muted)]">
               {draft.freezeNote.length} /{' '}
@@ -239,12 +236,12 @@ export function ClinicalReportSourceFreezePanel({
             value={draft.freezeNote}
           />
           <p className="text-sm text-[var(--cma-muted)]">
-            trim 后 3–2000 个字符；不自动生成，不预填 lockNote、confirmationNote，也不属于报告正文。
+            请输入 3–2000 个字符；系统不会自动生成或预填其他流程说明，此内容不属于报告正文。
           </p>
         </div>
       ) : (
         <p className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface)] px-4 py-3 text-sm leading-6 text-[var(--cma-muted)]">
-          恢复不会生成新 freezeId，不会覆盖首次说明或发起人，也不会解冻已冻结来源。请求使用上方服务端只读说明。
+          继续处理不会创建新流程，不会覆盖首次说明或发起人，也不会撤销已经固定的评估资料。操作将使用上方只读说明。
         </p>
       )}
 
@@ -264,8 +261,8 @@ export function ClinicalReportSourceFreezePanel({
         />
         <span>
           {isStart
-            ? '我已核对当前已确认并锁定的报告，理解来源冻结不可逆，且该操作可能跨多个集合逐步完成。'
-            : '我理解当前流程可能已部分完成，并确认继续使用原冻结范围和原冻结说明完成同一流程。'}
+            ? '我已核对当前已确认并锁定的报告，理解固定报告依据不可逆，且该操作可能分步完成。'
+            : '我理解当前流程可能已部分完成，并确认继续使用首次确定的范围和说明完成同一流程。'}
         </span>
       </label>
 
@@ -309,10 +306,10 @@ export function ClinicalReportSourceFreezePanel({
           onClick={() => void workflow.confirmSourceFreeze()}
         >
           {isWriting
-            ? '正在执行来源链冻结'
+            ? '正在固定报告依据'
             : isStart
-              ? '确认冻结报告来源'
-              : '确认继续同一冻结流程'}
+              ? '确认固定报告依据'
+              : '确认继续同一流程'}
         </Button>
         <Button
           disabled={isWriting}
@@ -325,7 +322,7 @@ export function ClinicalReportSourceFreezePanel({
 
       {isWriting ? (
         <p aria-live="polite" className="text-sm leading-6 text-[var(--cma-muted)]">
-          该 POST 可能跨多个集合执行；系统不根据耗时猜测阶段，不显示百分比，也不会自动轮询、重试或恢复。
+          该操作可能分步执行；系统不会根据耗时猜测进度，也不会自动轮询、重试或恢复。
         </p>
       ) : null}
     </section>

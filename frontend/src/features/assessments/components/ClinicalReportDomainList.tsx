@@ -23,15 +23,15 @@ export function ClinicalReportDomainList({
           className="text-xl font-semibold text-[var(--cma-text-strong)]"
           id="clinical-report-domain-heading"
         >
-          认知域快照
+          认知域结果
         </h3>
         <p className="mt-1 text-sm leading-6 text-[var(--cma-muted)]">
-          认知域结果来自题目编码映射，一个项目可能完整归入多个认知域；各域存在重叠，不能跨域求和解释量表总分。结果尚未独立确认，服务端比例不是诊断概率。
+          同一评估项目可能归入多个认知域；各域存在重叠，不能跨域求和解释量表总分。结果尚未独立确认，得分比例不是诊断概率。
         </p>
       </div>
       {sortedSnapshots.length === 0 ? (
         <p className="text-base text-[var(--cma-muted)]">
-          当前安全报告响应未提供认知域快照。
+          本版报告未记录认知域结果。
         </p>
       ) : (
         <ul className="grid gap-3 md:grid-cols-2">
@@ -46,10 +46,11 @@ export function ClinicalReportDomainList({
                   snapshot.domainTitle,
                 )}
               </h4>
-              <p className="mt-1 text-sm text-[var(--cma-muted)]">
-                {snapshot.scaleCode ? `${snapshot.scaleCode} · ` : ''}
-                {snapshot.domainCode}
-              </p>
+              {snapshot.scaleCode ? (
+                <p className="mt-1 text-sm text-[var(--cma-muted)]">
+                  {snapshot.scaleCode}
+                </p>
+              ) : null}
               <dl className="mt-4 grid gap-x-4 gap-y-3 sm:grid-cols-2">
                 <div>
                   <dt className="text-sm font-semibold text-[var(--cma-muted)]">
@@ -62,7 +63,7 @@ export function ClinicalReportDomainList({
                 </div>
                 <div>
                   <dt className="text-sm font-semibold text-[var(--cma-muted)]">
-                    服务端比例
+                    得分比例
                   </dt>
                   <dd className="mt-1 text-base text-[var(--cma-text-strong)]">
                     {formatClinicalReportPercent(snapshot.scorePercent)}
@@ -88,7 +89,7 @@ export function ClinicalReportDomainList({
                 </div>
               </dl>
               <p className="mt-4 whitespace-pre-wrap border-t border-[var(--cma-line)] pt-3 text-base leading-7 text-[var(--cma-text-strong)]">
-                {snapshot.summary?.trim() || '当前快照未提供认知域摘要。'}
+                {snapshot.summary?.trim() || '本版报告未记录认知域摘要。'}
               </p>
             </li>
           ))}
