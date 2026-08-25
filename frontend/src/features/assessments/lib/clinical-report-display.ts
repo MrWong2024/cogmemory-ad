@@ -166,14 +166,14 @@ export const clinicalReportGenerationConfirmationStatements = [
   '本次未使用 AI；生成后状态为 draft，尚未经医生确认。',
   '报告不包含诊断阈值、疾病判断或治疗建议。',
   '认知域结果尚未独立确认，认知域之间存在重叠归因，不能跨域求和解释量表总分。',
-  '当前不支持修改 scope、重生成或 version 2，也不生成 PDF 或可下载文件。',
+  '报告生成后，本版报告所依据的评估内容不会直接修改；如需后续补充或更正，请通过报告更正流程处理。当前不生成 PDF 或可下载文件。',
 ];
 
 export const clinicalReportScopeFixedStatements = [
-  'A20 的 reportVersion 固定为 1，同一访视当前只允许一份 cognitive_assessment version 1 报告。',
-  '报告生成后 scope 固定，当前前端不能增加、移除或替换已纳入实例。',
-  '后续新增量表实例不会自动加入已经生成的 version 1 报告。',
-  '当前不支持重生成或 reportVersion 2，请在生成前认真核对范围。',
+  '报告将基于当前选择并满足生成条件的评估结果生成。',
+  '报告生成后，本版报告所依据的评估内容将被固定，后续新增的量表结果不会自动加入本版报告。',
+  '如后续需要补充或更正，请通过系统提供的报告更正流程处理。',
+  '请在生成前确认当前评估内容完整、准确。',
 ];
 
 export const clinicalReportLockBoundaryStatements = [

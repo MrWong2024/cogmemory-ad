@@ -211,7 +211,7 @@ export function ClinicalReportScopeSelector({
       )}
 
       <div className="rounded-md border border-[var(--cma-line-strong)] bg-[var(--cma-info-soft)] p-4 text-sm leading-6 text-[var(--cma-info)]">
-        <h4 className="font-semibold">scope 固定性说明</h4>
+        <h4 className="font-semibold">报告生成提示</h4>
         <ul className="mt-2 list-disc space-y-1 pl-5">
           {clinicalReportScopeFixedStatements.map((statement) => (
             <li key={statement}>{statement}</li>
