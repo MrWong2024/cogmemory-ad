@@ -275,7 +275,7 @@ export function PatientAdministrationCurrentStep({
         asset.role === 'stimulus' && asset.technicalReplayAuthorized,
     );
 
-    void (async () => {
+    async function initialize() {
       if (imageAsset) {
         setStatus('正在读取本题图形');
         try {
@@ -311,9 +311,14 @@ export function PatientAdministrationCurrentStep({
           ? '请按题目要求作答，并等待医护人员完成本步骤'
           : '题目已准备好，请完成本题回答',
       );
-    })();
+    }
+
+    // React development probes effects with setup-cleanup-setup. Wait until the
+    // committed setup survives that probe before starting non-repeatable POSTs.
+    const initializationTimer = window.setTimeout(() => void initialize(), 0);
 
     return () => {
+      window.clearTimeout(initializationTimer);
       mountedRef.current = false;
       mutationInFlightRef.current = false;
       audioInFlightRef.current = false;
