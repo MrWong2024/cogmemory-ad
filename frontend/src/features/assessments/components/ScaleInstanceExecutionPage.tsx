@@ -1980,13 +1980,15 @@ export function ScaleInstanceExecutionPage({
     });
   const isCompletedSupervisedPatientReview =
     executionDisclosure.isCompletedSupervisedReview;
-  const canDeleteScaleInstance =
+  const canDeleteUnstartedScaleInstance =
     patientAdministrationSessionResolved &&
     scaleInstance.administrationMode === 'supervised_patient_input' &&
-    (scaleInstance.status === 'draft' ||
-      scaleInstance.status === 'in_progress') &&
-    (patientAdministrationStatus === null ||
-      patientAdministrationStatus === 'terminated' ||
+    scaleInstance.status === 'draft' &&
+    patientAdministrationStatus === null;
+  const canDeleteFailedScaleInstance =
+    scaleInstance.administrationMode === 'supervised_patient_input' &&
+    scaleInstance.status === 'in_progress' &&
+    (patientAdministrationStatus === 'terminated' ||
       patientAdministrationStatus === 'expired');
   const readOnlyReason = getScaleExecutionReadOnlyReason(
     visit.status,
@@ -2212,7 +2214,52 @@ export function ScaleInstanceExecutionPage({
         />
       ) : null}
 
-      {canDeleteScaleInstance ? (
+      {canDeleteUnstartedScaleInstance ? (
+        <details className="rounded-md border border-[var(--cma-line)] bg-[var(--cma-surface-muted)] p-4">
+          <summary className="cursor-pointer text-sm font-semibold text-[var(--cma-muted)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cma-ring)]">
+            删除未开始量表
+          </summary>
+          <div className="mt-4 grid gap-4 border-t border-[var(--cma-line)] pt-4">
+            <p className="text-base leading-7 text-[var(--cma-muted)]">
+              永久删除这个尚未开始的量表实例。当前访视不会删除，删除后可以重新初始化该量表。
+            </p>
+            <label className="flex items-start gap-3 text-base leading-7 text-[var(--cma-text-strong)]">
+              <input
+                checked={deleteConfirmed}
+                className="mt-1 h-5 w-5"
+                disabled={isDeletingScaleInstance}
+                onChange={(event) => {
+                  setDeleteConfirmed(event.target.checked);
+                  setDeleteScaleInstanceError(null);
+                }}
+                type="checkbox"
+              />
+              我确认永久删除这个尚未开始的量表实例
+            </label>
+            <div>
+              <Button
+                disabled={!deleteConfirmed || isDeletingScaleInstance}
+                onClick={() => void handleDeleteScaleInstance()}
+                variant="secondary"
+              >
+                {isDeletingScaleInstance
+                  ? '正在永久删除...'
+                  : '永久删除未开始量表'}
+              </Button>
+            </div>
+            {deleteScaleInstanceError ? (
+              <p
+                className="rounded-md border border-[var(--cma-danger)] bg-[var(--cma-danger-soft)] px-4 py-3 text-base leading-7 text-[var(--cma-danger)]"
+                role="alert"
+              >
+                {deleteScaleInstanceError}
+              </p>
+            ) : null}
+          </div>
+        </details>
+      ) : null}
+
+      {canDeleteFailedScaleInstance ? (
         <Card>
           <CardHeader className="border-b border-[var(--cma-line)]">
             <div className="flex flex-wrap items-start justify-between gap-3">
