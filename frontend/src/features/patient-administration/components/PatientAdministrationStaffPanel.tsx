@@ -362,6 +362,15 @@ export function PatientAdministrationStaffPanel({
       await handoffPatientAdministration(ids, latest.revision);
       window.location.replace('/patient-administration');
     } catch (error: unknown) {
+      if (
+        error instanceof PatientAdministrationApiError &&
+        error.kind === 'session_conflict'
+      ) {
+        setFailClosed(false);
+        await reconcileAfterWrite('conflict', false);
+        finishWrite();
+        return;
+      }
       window.location.replace(
         error instanceof PatientAdministrationApiError &&
           error.kind === 'unauthenticated'
@@ -555,6 +564,12 @@ export function PatientAdministrationStaffPanel({
       !session.hasPatientCredential &&
       session.deviceMode === 'same_device' &&
       handoffConfirmed,
+  );
+  const canContinuePatientAdministration = Boolean(
+    session?.status === 'active' &&
+      session.deviceMode === 'same_device' &&
+      session.preparationConfirmedAt &&
+      session.hasPatientCredential,
   );
 
   return (
@@ -883,6 +898,25 @@ export function PatientAdministrationStaffPanel({
             session={session}
             writeAction={writeAction}
           />
+        ) : null}
+
+        {canContinuePatientAdministration ? (
+          <section className="grid gap-4 border-t border-[var(--cma-line)] pt-6">
+            <div>
+              <h3 className="text-xl font-semibold">继续同设备患者施测</h3>
+              <p className="mt-1 text-base leading-7 text-[var(--cma-muted)]">
+                将退出当前医护登录，并把本设备重新切换为患者施测；患者会从当前步骤继续。
+              </p>
+            </div>
+            <Button
+              className="min-h-12 sm:w-fit"
+              disabled={Boolean(writeAction)}
+              onClick={() => void handleHandoff()}
+              size="lg"
+            >
+              继续患者施测
+            </Button>
+          </section>
         ) : null}
 
         {session && openStatuses.has(session.status) ? (

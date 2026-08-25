@@ -194,7 +194,7 @@
 
 ### 9.1 医护侧
 
-- PatientAdministrationStaffPanel — features/patient-administration/components/PatientAdministrationStaffPanel.tsx：ScaleInstance 页面上的医护患者施测控制面板；负责读取 / 创建 / 控制最新 PatientAdministrationSession。创建前设备模式是 local UI choice，创建后以 server session 为权威；组合 Preparation 与 StaffStepControls，并向父页面回传必要 session 状态。
+- PatientAdministrationStaffPanel — features/patient-administration/components/PatientAdministrationStaffPanel.tsx：ScaleInstance 页面上的医护患者施测控制面板；负责读取 / 创建 / 控制最新 PatientAdministrationSession。创建前设备模式是 local UI choice，创建后以 server session 为权威；组合 Preparation 与 StaffStepControls，并向父页面回传必要 session 状态。same-device active Session 可由医护显式重新安全 handoff；该 intent 使用当前 server revision 复用既有 handoff Client，成功后切换回患者 shell，Session 与 current step 继续由 server 权威维护。
 - PatientAdministrationPreparation — components/PatientAdministrationPreparation.tsx：管理当前页面的设备准备与可选练习 UI，将本地准备结果和影响因素 intent 交给 StaffPanel；测试媒体、stream 和 object URL 在组件替换 / 卸载时清理，不形成正式 Evidence。
 - PatientAdministrationStaffStepControls — components/PatientAdministrationStaffStepControls.tsx：按最新 server session 呈现医护可用的当前步骤 / 异常控制动作并回传用户 intent；不自行生成业务进度、正式答案或服务端并发事实。
 
