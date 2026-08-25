@@ -435,6 +435,7 @@ describe('AssessmentsService', () => {
     updateOne: jest.Mock;
     find: jest.Mock;
     deleteMany: jest.Mock;
+    deleteOne: jest.Mock;
   };
   let itemResponseModel: {
     findOne: jest.Mock;
@@ -445,6 +446,8 @@ describe('AssessmentsService', () => {
   };
   let patientAdministrationSessionModel: {
     exists: jest.Mock;
+    find: jest.Mock;
+    deleteMany: jest.Mock;
   };
   let patientsService: {
     findPatientById: jest.Mock;
@@ -466,6 +469,7 @@ describe('AssessmentsService', () => {
       updateOne: jest.fn(),
       find: jest.fn(),
       deleteMany: jest.fn(),
+      deleteOne: jest.fn(),
     };
     itemResponseModel = {
       findOne: jest.fn(),
@@ -476,6 +480,8 @@ describe('AssessmentsService', () => {
     };
     patientAdministrationSessionModel = {
       exists: jest.fn(),
+      find: jest.fn(),
+      deleteMany: jest.fn(),
     };
     patientsService = {
       findPatientById: jest.fn(),
@@ -570,6 +576,177 @@ describe('AssessmentsService', () => {
       scaleInstanceId,
       status: 'completed',
     });
+  });
+
+  it('prepares a supervised draft without a session for physical deletion', async () => {
+    const patientId = new Types.ObjectId();
+    const visitId = new Types.ObjectId();
+    const scaleInstanceId = new Types.ObjectId();
+    patientsService.findPatientById.mockResolvedValue(
+      createPatientSummary(patientId),
+    );
+    assessmentVisitModel.findOne.mockReturnValue(
+      createExecQuery(createVisitDocumentLike(patientId, visitId)),
+    );
+    scaleInstanceModel.findOne.mockReturnValue(
+      createExecQuery(
+        createScaleInstanceDocumentLike(patientId, visitId, scaleInstanceId, {
+          administrationMode: 'supervised_patient_input',
+        }),
+      ),
+    );
+    patientAdministrationSessionModel.find.mockReturnValue(createExecQuery([]));
+    itemResponseModel.countDocuments.mockReturnValue(createExecQuery(11));
+
+    await expect(
+      service.prepareScaleInstanceDeletion(patientId, visitId, scaleInstanceId),
+    ).resolves.toEqual({
+      patientId,
+      assessmentVisitId: visitId,
+      scaleInstanceId,
+      patientAdministrationSessionIds: [],
+      itemResponseCount: 11,
+    });
+  });
+
+  it('prepares an in-progress supervised instance with only terminated or expired sessions', async () => {
+    const patientId = new Types.ObjectId();
+    const visitId = new Types.ObjectId();
+    const scaleInstanceId = new Types.ObjectId();
+    const terminatedSessionId = new Types.ObjectId();
+    const expiredSessionId = new Types.ObjectId();
+    patientsService.findPatientById.mockResolvedValue(
+      createPatientSummary(patientId),
+    );
+    assessmentVisitModel.findOne.mockReturnValue(
+      createExecQuery(createVisitDocumentLike(patientId, visitId)),
+    );
+    scaleInstanceModel.findOne.mockReturnValue(
+      createExecQuery(
+        createScaleInstanceDocumentLike(patientId, visitId, scaleInstanceId, {
+          administrationMode: 'supervised_patient_input',
+          status: 'in_progress',
+          startedAt: new Date('2026-08-25T01:00:00.000Z'),
+        }),
+      ),
+    );
+    patientAdministrationSessionModel.find.mockReturnValue(
+      createExecQuery([
+        { _id: terminatedSessionId, status: 'terminated' },
+        { _id: expiredSessionId, status: 'expired' },
+      ]),
+    );
+    itemResponseModel.countDocuments.mockReturnValue(createExecQuery(11));
+
+    await expect(
+      service.prepareScaleInstanceDeletion(patientId, visitId, scaleInstanceId),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        patientAdministrationSessionIds: [
+          terminatedSessionId,
+          expiredSessionId,
+        ],
+      }),
+    );
+  });
+
+  it.each([
+    [
+      'prepared session',
+      {},
+      [{ _id: new Types.ObjectId(), status: 'prepared' }],
+    ],
+    ['active session', {}, [{ _id: new Types.ObjectId(), status: 'active' }]],
+    ['paused session', {}, [{ _id: new Types.ObjectId(), status: 'paused' }]],
+    [
+      'completed session',
+      {},
+      [{ _id: new Types.ObjectId(), status: 'completed' }],
+    ],
+    ['completed instance', { status: 'completed' }, []],
+    ['locked instance', { status: 'locked', lockedAt: new Date() }, []],
+    ['voided instance', { status: 'voided', voidedAt: new Date() }, []],
+    [
+      'submission barrier',
+      { submissionWriteBarrier: { version: 1, state: 'fencing' } },
+      [],
+    ],
+    [
+      'non-supervised instance',
+      { administrationMode: 'clinician_administered' },
+      [],
+    ],
+    ['isolated in-progress instance', { status: 'in_progress' }, []],
+  ])('rejects deletion for %s', async (_name, overrides, sessions) => {
+    const patientId = new Types.ObjectId();
+    const visitId = new Types.ObjectId();
+    const scaleInstanceId = new Types.ObjectId();
+    patientsService.findPatientById.mockResolvedValue(
+      createPatientSummary(patientId),
+    );
+    assessmentVisitModel.findOne.mockReturnValue(
+      createExecQuery(createVisitDocumentLike(patientId, visitId)),
+    );
+    scaleInstanceModel.findOne.mockReturnValue(
+      createExecQuery(
+        createScaleInstanceDocumentLike(patientId, visitId, scaleInstanceId, {
+          administrationMode: 'supervised_patient_input',
+          ...overrides,
+        }),
+      ),
+    );
+    patientAdministrationSessionModel.find.mockReturnValue(
+      createExecQuery(sessions),
+    );
+
+    await expectHttpExceptionCode(
+      service.prepareScaleInstanceDeletion(patientId, visitId, scaleInstanceId),
+      409,
+      'SCALE_INSTANCE_NOT_DELETABLE',
+    );
+    expect(itemResponseModel.countDocuments).not.toHaveBeenCalled();
+  });
+
+  it('deletes only the planned failed-session and core instance ownership', async () => {
+    const plan = {
+      patientId: new Types.ObjectId(),
+      assessmentVisitId: new Types.ObjectId(),
+      scaleInstanceId: new Types.ObjectId(),
+      patientAdministrationSessionIds: [new Types.ObjectId()],
+      itemResponseCount: 11,
+    };
+    patientAdministrationSessionModel.deleteMany.mockReturnValue(
+      createExecQuery({ deletedCount: 1 }),
+    );
+    itemResponseModel.deleteMany.mockReturnValue(
+      createExecQuery({ deletedCount: 11 }),
+    );
+    scaleInstanceModel.deleteOne.mockReturnValue(
+      createExecQuery({ deletedCount: 1 }),
+    );
+
+    await service.deletePatientAdministrationSessionsForScaleInstance(plan);
+    await service.deleteItemResponsesForScaleInstance(plan);
+    await service.deleteScaleInstance(plan);
+
+    expect(patientAdministrationSessionModel.deleteMany).toHaveBeenCalledWith({
+      _id: { $in: plan.patientAdministrationSessionIds },
+      scaleInstanceId: plan.scaleInstanceId,
+      status: { $in: ['terminated', 'expired'] },
+    });
+    expect(itemResponseModel.deleteMany).toHaveBeenCalledWith({
+      assessmentVisitId: plan.assessmentVisitId,
+      patientId: plan.patientId,
+      scaleInstanceId: plan.scaleInstanceId,
+    });
+    expect(scaleInstanceModel.deleteOne).toHaveBeenCalledWith(
+      expect.objectContaining({
+        _id: plan.scaleInstanceId,
+        assessmentVisitId: plan.assessmentVisitId,
+        patientId: plan.patientId,
+      }),
+    );
+    expect(assessmentVisitModel.deleteOne).not.toHaveBeenCalled();
   });
 
   it('conditionally starts the owned scale and visit without overwriting lifecycle facts', async () => {

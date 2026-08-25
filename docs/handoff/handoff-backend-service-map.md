@@ -30,7 +30,7 @@ Service current 事实以 `backend/src` 为准。本文保留理解长期内部�
 - 文件：`backend/src/modules/storage/storage-config.service.ts`、`fake-storage.service.ts`、`oss-storage.service.ts`、`storage.constants.ts`
 - `StorageConfigService` 读取并规范化 Storage / OSS 配置；必需配置缺失时 fail closed。静态配置值由 Backend Config Matrix 维护。
 - `STORAGE_SERVICE` 是调用方使用的 driver token；`StorageModule` 根据配置提供 fake 或 OSS 实现。`FakeStorageService` 提供同一内部接口的本地实现，`OssStorageService` 负责 object put/delete 与短期 signed URL。
-- `OssStorageService` 固定使用安全连接，并在返回 signed URL 前验证 HTTPS；错误不得泄漏凭据、完整对象定位或 provider 原始响应。
+- `OssStorageService` 固定使用安全连接，并在返回 signed URL 前验证 HTTPS；put、delete 与 signed URL provider failure 均以安全的 `ServiceUnavailableException` 向调用层暴露，不吞掉 delete failure，也不得泄漏凭据、完整对象定位或 provider 原始响应。需要 best-effort compensation 的 Media workflow 在自身补偿边界 catch 并记录受控失败。
 - 上游：Media 相关 workflow；下游：`StorageConfigService` 与 OSS client。Storage driver 不判断 Patient、Visit、ItemResponse 或 Evidence 业务资格。
 
 ### 2.2 Scales
@@ -79,6 +79,7 @@ Service current 事实以 `backend/src` 为准。本文保留理解长期内部�
 - 上游：Assessment controllers，以及 execution、draft、submission、Patient Administration、Media、Scoring、Cognitive Domains、Reports/History workflow；下游：相关 Mongoose Models 与 `PatientsService`。
 - 生命周期：仅初始化的 Visit/Instance 保持 draft；第一次已持久化的真实子活动以同一服务端事实时间条件启动所属 Instance 与 Visit，后续写不得覆盖首次 `startedAt` 或终态字段。
 - 访视维护：物理删除只适用于没有执行事实的初始化集合，并按目标 Visit 精确移除子记录；已有执行事实只写首次 void 审计，保留实例、作答、患者会话、媒体、评分、报告和历史。
+- 未完成实例删除原语：对完整 Patient→Visit→ScaleInstance ownership 执行 supervised/draft-or-in-progress/终态字段/submission barrier/Session eligibility 判定；`in_progress` 无 terminated/expired 失败 Session 时 fail closed。导出的精确删除原语只删除计划中的 terminated/expired Session、owned ItemResponse，并以完整 ownership/lifecycle filter 最后删除 ScaleInstance；不删除或重置 Visit。
 - 条件写：Evidence attach/clear、submission scope 与 freeze 方法均带完整 ownership、状态和 barrier 条件；恢复方法只用于已知补偿窗口，不开放通用旁路。跨集合流程由调用 workflow 负责恢复，不在本 Service 内假装事务原子性。
 
 #### `AssessmentExecutionService`
@@ -156,6 +157,7 @@ Service current 事实以 `backend/src` 为准。本文保留理解长期内部�
 - 上游：`MediaEvidenceWorkflowService`、`PatientAdministrationEvidenceService`、`MediaEvidenceTranscriptionService`、Reports/History read workflows；下游：`MediaEvidence` Model。
 - 并发：transcription claim 匹配完整 ownership、当前媒体/存储/lock 状态与允许旧状态；finalize 继续匹配本次 request token。stale provider、reclaim 或相邻生命周期变化不能覆盖新事实。
 - 边界：不调用 Storage/ASR，不修改 Session、ItemResponse、评分或报告；内部 Storage/metadata 摘要不直接作为公开响应。
+- 未完成实例清理：按完整 Patient/Visit/ScaleInstance ownership 列出目标 Evidence，只投影行 ID、lock/processing 判定和 Evidence 明确持有的 `storage.objectKey` / `handwritingTrace.trajectoryObjectKey`；不使用 `objectPrefix`。Storage 成功后才按同一 ownership 与计划 ID 精确物理删除 Evidence rows。
 
 #### `PatientAudioAsrClientService`
 
@@ -198,6 +200,14 @@ Service current 事实以 `backend/src` 为准。本文保留理解长期内部�
 - `patient-administration-review-structured-bindings.ts` 是 version-bound review placement registry，不推导患者业务流程。
 
 `MediaModule` 单向依赖 `AssessmentsModule`、`StorageModule`、`ScalesModule` 等；`AssessmentsModule` 不反向导入 Media，Patient Administration session 通过导出 Service 被 Media 复用，避免 circular dependency、`forwardRef` 与重复 Schema registration。
+
+#### `ScaleInstanceDeletionService`
+
+- 文件：`backend/src/modules/scale-instance-deletion/services/scale-instance-deletion.service.ts`
+- 上游：`ScaleInstanceDeletionController`；下游：Assessments、Media、Storage 及 Scoring/Cognitive Domains/Reports 的现有只读 Service。
+- 职责：作为叶子 orchestration owner，先完成 ownership/eligibility、正式 Score/Domain/Report existence、Media lock/transcription processing 判定，再去重并严格删除 Evidence 明确持有的 object keys。
+- 删除顺序固定为 Storage objects → MediaEvidence rows → terminated/expired PatientAdministrationSession → ItemResponse → ScaleInstance；任一 Storage failure 返回 `MEDIA_STORAGE_UNAVAILABLE` 且不进入 DB 删除，非预期 DB 删除失败返回 `SCALE_INSTANCE_DELETE_FAILED`，ScaleInstance 始终最后删除。
+- 模块边界：`ScaleInstanceDeletionModule` 单向导入现有 owner modules；来源模块不反向依赖它。没有 `forwardRef`、重复 Schema registration、transaction、queue、后台 GC 或自动 retry/replay。
 
 ### 2.5 Scoring
 
@@ -368,6 +378,7 @@ Service current 事实以 `backend/src` 为准。本文保留理解长期内部�
 - **条件写与幂等**：长期默认是服务端读取权威事实后执行精确 ownership/status/version/token CAS；竞争 miss 通过有界重读分类为同一事实幂等、合法 stale 或损坏状态，不自动重放副作用写。
 - **Submission barrier**：父 Instance 和固定 ItemResponse scope 通过持久化 fencing/fenced/releasing token 协调；进程中断后按同 token 恢复完成或释放，completed 后旧草稿/媒体写仍被 child barrier 阻断。
 - **媒体补偿**：新上传采用 Storage→Evidence→业务 reference 顺序，后续失败只删除本次新对象/记录；adoption 复用既有患者 Evidence，不复制对象，revoke 只撤销 formal reference。
+- **未完成实例物理删除**：仅显式清理 eligible supervised failed attempt；先删所有显式 owned Storage keys，再按 owner 边界删 Evidence/failed Session/ItemResponse，最后删 ScaleInstance。Visit、其它实例和正式结果链不级联；正式事实存在时 fail closed。
 - **Patient Administration**：session 原始 facts、MediaEvidence 与正式 ItemResponse 是分层事实；session/evidence workflow 不旁路写正式答案，ASR 只产生候选。稳定业务流程由 Patient Administration Contract 拥有。
 - **Report lifecycle**：普通 transition 是单报告 CAS；source freeze 和 correction/replacement 使用持久化阶段 receipt、确定性 identity、固定 scope/lineage 与有界重读恢复跨集合/多文档流程，不假装 transaction。
 - **Module direction**：依赖方向总体为基础模块 → Assessments/Media → Scoring → Cognitive Domains → Reports → Clinical History；跨模块只使用导出 Service，不通过 `forwardRef`、重复 Schema registration 或内部 HTTP 构造循环。

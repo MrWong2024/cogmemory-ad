@@ -13,9 +13,9 @@
 
 ## 2. 当前公开 surface 与共同约定
 
-- current source inventory：16 个 Controller 文件、64 个公开 endpoint；Auth、Patients/Visits、Scales、Assessment Execution、Media、Submission、Scoring、Cognitive Domains、Reports/History 与 Patient Administration 均有公开 API。
+- current source inventory：17 个 Controller 文件、65 个公开 endpoint；Auth、Patients/Visits、Scales、Assessment Execution、Media、Submission、Scoring、Cognitive Domains、Reports/History 与 Patient Administration 均有公开 API。
 - 当前没有公开用户管理、注册、密码重置、短信验证码、OAuth/SSO、JWT 登录、患者通用编辑/归档/合并、评分重跑/锁定、认知域人工修改/确认、报告签名/PDF/AI 等 API。
-- Controller、DTO 与 response type 的 current 事实以 current code 为准；本表的 64 个 endpoint 均与 Controller inventory 对齐。
+- Controller、DTO 与 response type 的 current 事实以 current code 为准；本表的 65 个 endpoint 均与 Controller inventory 对齐。
 - `PW` 表示类级 `SessionAuthGuard + RolesGuard` 与 `admin | doctor | nurse | research_assistant`；`D/A` 表示方法级收窄为 `doctor | admin`。
 - 除表中公开/患者会话例外外，`PW` endpoint 的共同 HTTP 边界为 DTO/path validation `400`、未认证 `401`、角色不足 `403`。这些共同状态不在每行重复。
 - 所有 DTO 字段只在 DTO Cheatsheet 完整维护；表中只列 DTO/type 名称。无独立响应 type 的极简响应或二进制流允许内联。
@@ -31,7 +31,7 @@
 | `POST /auth/logout` | `AuthController` | `@Public()` | 无 | `LogoutResponse` / 201 | 尝试撤销现有 Session 并始终清 Cookie；缺失/失效 Cookie 仍稳定成功，不泄露 Session 是否存在。 |
 | `GET /auth/me` | `AuthController` | `SessionAuthGuard` | 无 | `MeResponse` / 200 | 返回当前安全用户投影；所有无效登录态统一 401。 |
 
-### 3.2 Patients、Visits、Scales 与 Assessment Execution（13）
+### 3.2 Patients、Visits、Scales 与 Assessment Execution（14）
 
 | Endpoint | Controller | Auth | Request DTO | Response / status | Endpoint-specific contract |
 |---|---|---|---|---|---|
@@ -47,6 +47,7 @@
 | `POST /patients/:patientId/visits/:visitId/void` | `AssessmentVisitsController` | PW | Param `PatientVisitParamDto`; Body `VoidAssessmentVisitDto` | `AssessmentVisitExecutionDetailResponse` / 201 | 将已开始且可作废的 Visit 转为 voided；已 voided 幂等返回原事实；400 `VISIT_VOID_CONFIRMATION_REQUIRED`；404 ownership；409 `VISIT_NOT_VOIDABLE`。不级联删除下游事实。 |
 | `POST /patients/:patientId/visits/:visitId/scale-instances` | `AssessmentVisitsController` | PW | Param `PatientVisitParamDto`; Body `InitializeScaleInstanceDto` | `InitializeScaleInstanceResponse` / 201 | 创建 `ScaleInstance` 与 `ItemResponse` 初始骨架，不启动 Visit/实例、不评分；404 `PATIENT_NOT_FOUND`, `VISIT_NOT_FOUND`, `SCALE_NOT_AVAILABLE`, `SCALE_VERSION_NOT_AVAILABLE`；409 `PATIENT_NOT_ACTIVE`, `VISIT_NOT_INITIALIZABLE`, `SCALE_NOT_ACTIVE`, `SCALE_VERSION_NOT_ACTIVE`, `SCALE_CATALOG_VERSION_CONFLICT`, `SCALE_INSTANCE_ALREADY_EXISTS`；500 `SCALE_CATALOG_INVALID`, `SCALE_EXECUTION_INITIALIZATION_FAILED`。 |
 | `GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId` | `AssessmentExecutionController` | PW | Param `ScaleInstanceExecutionParamDto` | `ScaleInstanceExecutionDetailResponse` / 200 | 读取实例执行详情、安全题目配置、草稿与 evidence requirement；404 `PATIENT_NOT_FOUND`, `VISIT_NOT_FOUND`, `SCALE_INSTANCE_NOT_FOUND`；409 `SCALE_INSTANCE_CONFIGURATION_UNAVAILABLE`。详细字段见 DTO owner。 |
+| `DELETE /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId` | `ScaleInstanceDeletionController` | PW | Param `ScaleInstanceExecutionParamDto`；无 Body | 无 body / 204 | 只物理删除 eligible `supervised_patient_input` 未完成失败实例及其 owned ItemResponse、terminated/expired PatientAdministrationSession、MediaEvidence 与显式 object keys；Visit 和同 Visit 其他实例保留。404 沿用 ownership/not-found；409 `SCALE_INSTANCE_NOT_DELETABLE`；503 `MEDIA_STORAGE_UNAVAILABLE`；500 `SCALE_INSTANCE_DELETE_FAILED`。不自动 terminate，不删除 completed Session、正式结果或报告历史。 |
 | `PATCH /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/item-responses/:itemResponseId` | `AssessmentExecutionController` | PW | Param `ItemResponseDraftParamDto`; Body `UpdateItemResponseDraftDto` | `UpdateItemResponseDraftResponse` / 200 | 保存单题正式草稿并以 `expectedRevision` 执行高层 revision CAS；有效首次作答可启动父级，不能评分/提交/改 evidence。`supervised_patient_input` 受 completed-session gate 约束。400 `ITEM_RESPONSE_EMPTY_PATCH`, `ITEM_RESPONSE_PAYLOAD_INVALID`, `ITEM_RESPONSE_MISSING_REASON_REQUIRED`, `ITEM_RESPONSE_STEP_NOT_FOUND`, `ITEM_RESPONSE_DUPLICATE_STEP`, `ITEM_RESPONSE_PROMPT_NOT_FOUND`, `ITEM_RESPONSE_DUPLICATE_PROMPT`, `ITEM_RESPONSE_TIMING_NOT_ALLOWED`, `ITEM_RESPONSE_INVALID_TIMING`；404 ownership/`ITEM_RESPONSE_NOT_FOUND`；409 `PATIENT_NOT_ACTIVE`, `PATIENT_ADMINISTRATION_NOT_COMPLETED`, `VISIT_NOT_EDITABLE`, `SCALE_INSTANCE_NOT_EDITABLE`, `ITEM_RESPONSE_NOT_EDITABLE`, `ITEM_RESPONSE_DRAFT_CONFLICT`, `ITEM_RESPONSE_CANNOT_MARK_ANSWERED`；500 `ITEM_RESPONSE_SAVE_FAILED`。字段/shape 见 DTO Cheatsheet；CAS/父级一致性见 Service Map。 |
 
 ### 3.3 Submission、Scoring 与 Cognitive Domains（8）

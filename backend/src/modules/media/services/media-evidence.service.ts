@@ -195,6 +195,14 @@ export type MediaEvidenceOwnership = {
   itemResponseId: Types.ObjectId | string;
 };
 
+export type ScaleInstanceMediaDeletionTarget = {
+  id: string;
+  status: MediaEvidenceStatus;
+  lockedAt: Date | null;
+  transcriptionStatus: MediaTranscriptionStatus | null;
+  objectKeys: string[];
+};
+
 export type CreateMediaEvidenceInput = {
   patientId: Types.ObjectId;
   assessmentVisitId: Types.ObjectId;
@@ -313,6 +321,46 @@ export class MediaEvidenceService {
       .exec();
 
     return evidences.map((evidence) => this.mapEvidence(evidence));
+  }
+
+  async listScaleInstanceDeletionTargets(
+    patientId: Types.ObjectId | string,
+    assessmentVisitId: Types.ObjectId | string,
+    scaleInstanceId: Types.ObjectId | string,
+  ): Promise<ScaleInstanceMediaDeletionTarget[]> {
+    const normalizedPatientId = this.normalizeObjectId(patientId);
+    const normalizedVisitId = this.normalizeObjectId(assessmentVisitId);
+    const normalizedScaleInstanceId = this.normalizeObjectId(scaleInstanceId);
+    if (
+      !normalizedPatientId ||
+      !normalizedVisitId ||
+      !normalizedScaleInstanceId
+    ) {
+      return [];
+    }
+
+    const evidences = await this.mediaEvidenceModel
+      .find({
+        patientId: normalizedPatientId,
+        assessmentVisitId: normalizedVisitId,
+        scaleInstanceId: normalizedScaleInstanceId,
+      })
+      .sort({ createdAt: 1, _id: 1 })
+      .exec();
+
+    return evidences.map((evidence) => ({
+      id: evidence._id.toString(),
+      status: evidence.status,
+      lockedAt: evidence.lockedAt ?? null,
+      transcriptionStatus: evidence.transcription?.status ?? null,
+      objectKeys: [
+        evidence.storage?.objectKey,
+        evidence.handwritingTrace?.trajectoryObjectKey,
+      ].filter(
+        (objectKey): objectKey is string =>
+          typeof objectKey === 'string' && objectKey.length > 0,
+      ),
+    }));
   }
 
   async listEvidenceByVisitId(
@@ -714,6 +762,47 @@ export class MediaEvidenceService {
       .exec();
 
     return result.deletedCount === 1;
+  }
+
+  async deleteScaleInstanceEvidence(
+    patientId: Types.ObjectId | string,
+    assessmentVisitId: Types.ObjectId | string,
+    scaleInstanceId: Types.ObjectId | string,
+    mediaEvidenceIds: readonly string[],
+  ): Promise<void> {
+    const normalizedPatientId = this.normalizeObjectId(patientId);
+    const normalizedVisitId = this.normalizeObjectId(assessmentVisitId);
+    const normalizedScaleInstanceId = this.normalizeObjectId(scaleInstanceId);
+    const normalizedEvidenceIds: Types.ObjectId[] = [];
+    for (const mediaEvidenceId of mediaEvidenceIds) {
+      const normalizedEvidenceId = this.normalizeObjectId(mediaEvidenceId);
+      if (!normalizedEvidenceId) {
+        throw new Error('Media evidence deletion ownership is invalid');
+      }
+      normalizedEvidenceIds.push(normalizedEvidenceId);
+    }
+    if (
+      !normalizedPatientId ||
+      !normalizedVisitId ||
+      !normalizedScaleInstanceId
+    ) {
+      throw new Error('Media evidence deletion ownership is invalid');
+    }
+    if (normalizedEvidenceIds.length === 0) {
+      return;
+    }
+
+    const result = await this.mediaEvidenceModel
+      .deleteMany({
+        _id: { $in: normalizedEvidenceIds },
+        patientId: normalizedPatientId,
+        assessmentVisitId: normalizedVisitId,
+        scaleInstanceId: normalizedScaleInstanceId,
+      })
+      .exec();
+    if (result.deletedCount !== normalizedEvidenceIds.length) {
+      throw new Error('Media evidence deletion was incomplete');
+    }
   }
 
   private normalizeOwnership(

@@ -269,6 +269,14 @@ export type EnsureVisitAndScaleStartedInput = {
   startedAt: Date;
 };
 
+export type ScaleInstanceDeletionPlan = {
+  patientId: Types.ObjectId;
+  assessmentVisitId: Types.ObjectId;
+  scaleInstanceId: Types.ObjectId;
+  patientAdministrationSessionIds: Types.ObjectId[];
+  itemResponseCount: number;
+};
+
 type VisitMaintenanceContext = {
   visit: AssessmentVisitSummary;
   scaleInstances: ScaleInstanceSummary[];
@@ -1335,6 +1343,142 @@ export class AssessmentsService {
       .exec();
 
     return completedSession !== null;
+  }
+
+  async prepareScaleInstanceDeletion(
+    patientId: Types.ObjectId | string,
+    assessmentVisitId: Types.ObjectId | string,
+    scaleInstanceId: Types.ObjectId | string,
+  ): Promise<ScaleInstanceDeletionPlan> {
+    const normalizedPatientId = this.requireObjectId(patientId, 'patientId');
+    const normalizedVisitId = this.requireObjectId(
+      assessmentVisitId,
+      'assessmentVisitId',
+    );
+    const normalizedScaleInstanceId = this.requireObjectId(
+      scaleInstanceId,
+      'scaleInstanceId',
+    );
+
+    await this.requirePatient(normalizedPatientId);
+    const visit = await this.findVisitByPatientAndId(
+      normalizedPatientId,
+      normalizedVisitId,
+    );
+    if (!visit) {
+      throw new NotFoundException({
+        code: 'VISIT_NOT_FOUND',
+        message: 'Assessment visit not found',
+      });
+    }
+
+    const scaleInstance = await this.scaleInstanceModel
+      .findOne({
+        _id: normalizedScaleInstanceId,
+        assessmentVisitId: normalizedVisitId,
+        patientId: normalizedPatientId,
+      })
+      .exec();
+    if (!scaleInstance) {
+      throw new NotFoundException({
+        code: 'SCALE_INSTANCE_NOT_FOUND',
+        message: 'Scale instance not found',
+      });
+    }
+
+    const sessions = await this.patientAdministrationSessionModel
+      .find({ scaleInstanceId: normalizedScaleInstanceId })
+      .exec();
+    const hasBlockedSession = sessions.some(
+      (session) =>
+        session.status !== 'terminated' && session.status !== 'expired',
+    );
+    const isIsolatedInProgress =
+      scaleInstance.status === 'in_progress' && sessions.length === 0;
+    const isDeletableInstance =
+      scaleInstance.administrationMode === 'supervised_patient_input' &&
+      (scaleInstance.status === 'draft' ||
+        scaleInstance.status === 'in_progress') &&
+      (scaleInstance.completedAt ?? null) === null &&
+      (scaleInstance.lockedAt ?? null) === null &&
+      (scaleInstance.voidedAt ?? null) === null &&
+      (scaleInstance.submissionWriteBarrier ?? null) === null;
+
+    if (!isDeletableInstance || hasBlockedSession || isIsolatedInProgress) {
+      throw new ConflictException({
+        code: 'SCALE_INSTANCE_NOT_DELETABLE',
+        message: 'Scale instance cannot be physically deleted',
+      });
+    }
+
+    const itemResponseCount = await this.itemResponseModel
+      .countDocuments({
+        assessmentVisitId: normalizedVisitId,
+        patientId: normalizedPatientId,
+        scaleInstanceId: normalizedScaleInstanceId,
+      })
+      .exec();
+
+    return {
+      patientId: normalizedPatientId,
+      assessmentVisitId: normalizedVisitId,
+      scaleInstanceId: normalizedScaleInstanceId,
+      patientAdministrationSessionIds: sessions.map((session) => session._id),
+      itemResponseCount,
+    };
+  }
+
+  async deletePatientAdministrationSessionsForScaleInstance(
+    plan: ScaleInstanceDeletionPlan,
+  ): Promise<void> {
+    if (plan.patientAdministrationSessionIds.length === 0) {
+      return;
+    }
+
+    const result = await this.patientAdministrationSessionModel
+      .deleteMany({
+        _id: { $in: plan.patientAdministrationSessionIds },
+        scaleInstanceId: plan.scaleInstanceId,
+        status: { $in: ['terminated', 'expired'] },
+      })
+      .exec();
+    if (result.deletedCount !== plan.patientAdministrationSessionIds.length) {
+      throw new Error('Patient administration session deletion was incomplete');
+    }
+  }
+
+  async deleteItemResponsesForScaleInstance(
+    plan: ScaleInstanceDeletionPlan,
+  ): Promise<void> {
+    const result = await this.itemResponseModel
+      .deleteMany({
+        assessmentVisitId: plan.assessmentVisitId,
+        patientId: plan.patientId,
+        scaleInstanceId: plan.scaleInstanceId,
+      })
+      .exec();
+    if (result.deletedCount !== plan.itemResponseCount) {
+      throw new Error('Item response deletion was incomplete');
+    }
+  }
+
+  async deleteScaleInstance(plan: ScaleInstanceDeletionPlan): Promise<void> {
+    const result = await this.scaleInstanceModel
+      .deleteOne({
+        _id: plan.scaleInstanceId,
+        assessmentVisitId: plan.assessmentVisitId,
+        patientId: plan.patientId,
+        administrationMode: 'supervised_patient_input',
+        status: { $in: ['draft', 'in_progress'] },
+        completedAt: null,
+        lockedAt: null,
+        voidedAt: null,
+        submissionWriteBarrier: null,
+      })
+      .exec();
+    if (result.deletedCount !== 1) {
+      throw new Error('Scale instance deletion was incomplete');
+    }
   }
 
   async ensureVisitAndScaleStarted(

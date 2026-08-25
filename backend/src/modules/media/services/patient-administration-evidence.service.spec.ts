@@ -536,6 +536,27 @@ describe('PatientAdministrationEvidenceService', () => {
     expect(sessionService.attachCurrentStepEvidence).not.toHaveBeenCalled();
   });
 
+  it('keeps upload compensation best-effort when strict storage deletion fails', async () => {
+    mediaEvidenceService.createEvidence.mockRejectedValue(
+      new Error('fake database failure'),
+    );
+    storageService.deleteObject.mockRejectedValue(
+      new Error('strict provider delete failure'),
+    );
+
+    await expectCode(
+      service.uploadEvidence(
+        requestContext,
+        { expectedRevision: 3, evidenceType: 'audio' },
+        webmFile(),
+      ),
+      500,
+      'MEDIA_EVIDENCE_CREATE_FAILED',
+    );
+    expect(storageService.deleteObject).toHaveBeenCalledTimes(1);
+    expect(sessionService.attachCurrentStepEvidence).not.toHaveBeenCalled();
+  });
+
   it('deletes the exact evidence and object when session CAS fails', async () => {
     sessionService.attachCurrentStepEvidence.mockRejectedValue(
       new ConflictException({

@@ -105,8 +105,8 @@ export class OssStorageService implements StorageService {
 
     try {
       await client.delete(objectKey);
-    } catch {
-      return undefined;
+    } catch (error: unknown) {
+      throw this.toStorageError(error, 'Failed to delete OSS object');
     }
   }
 

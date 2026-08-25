@@ -177,7 +177,7 @@ describe('Storage services', () => {
     });
   });
 
-  it('deletes with a secure internal OSS client and preserves best-effort failure semantics', async () => {
+  it('deletes with a secure internal OSS client and exposes provider failure safely', async () => {
     setValidOssEnvironment();
     const client = createMockAliOssClient();
     client.delete.mockRejectedValue(new Error('sensitive delete failure'));
@@ -186,7 +186,9 @@ describe('Storage services', () => {
 
     await expect(
       storage.deleteObject('test-prefix/smoke/object.txt'),
-    ).resolves.toBeUndefined();
+    ).rejects.toMatchObject({
+      message: 'Failed to delete OSS object',
+    });
 
     expect(ossClientConstructor).toHaveBeenCalledWith({
       region: 'test-region',

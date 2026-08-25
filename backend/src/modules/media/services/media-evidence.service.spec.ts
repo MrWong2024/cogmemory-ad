@@ -311,6 +311,7 @@ describe('MediaEvidenceService', () => {
     findOneAndUpdate: jest.Mock;
     create: jest.Mock;
     deleteOne: jest.Mock;
+    deleteMany: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -320,6 +321,7 @@ describe('MediaEvidenceService', () => {
       findOneAndUpdate: jest.fn(),
       create: jest.fn(),
       deleteOne: jest.fn(),
+      deleteMany: jest.fn(),
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -797,6 +799,77 @@ describe('MediaEvidenceService', () => {
     ).resolves.toBe(true);
     expect(mediaEvidenceModel.deleteOne).toHaveBeenCalledWith({
       _id: rawEvidence._id,
+    });
+  });
+
+  it('collects only explicit owned object keys and deletes the exact evidence rows', async () => {
+    const patientId = new Types.ObjectId();
+    const assessmentVisitId = new Types.ObjectId();
+    const scaleInstanceId = new Types.ObjectId();
+    const first = createEvidenceFixture({
+      patientId,
+      assessmentVisitId,
+      scaleInstanceId,
+      storage: {
+        objectKey: 'owned/main-object',
+        objectPrefix: 'must-not-be-used',
+      },
+      handwritingTrace: {
+        trajectoryObjectKey: 'owned/shared-object',
+      },
+      transcription: { status: 'succeeded' },
+    });
+    const second = createEvidenceFixture({
+      _id: new Types.ObjectId(),
+      patientId,
+      assessmentVisitId,
+      scaleInstanceId,
+      storage: { objectKey: 'owned/shared-object' },
+      handwritingTrace: null,
+      transcription: { status: 'processing' },
+    });
+    const sort = jest.fn().mockReturnValue(createExecQuery([first, second]));
+    mediaEvidenceModel.find.mockReturnValue({ sort });
+
+    const targets = await service.listScaleInstanceDeletionTargets(
+      patientId,
+      assessmentVisitId,
+      scaleInstanceId,
+    );
+
+    expect(mediaEvidenceModel.find).toHaveBeenCalledWith({
+      patientId,
+      assessmentVisitId,
+      scaleInstanceId,
+    });
+    expect(targets).toEqual([
+      expect.objectContaining({
+        id: first._id.toString(),
+        transcriptionStatus: 'succeeded',
+        objectKeys: ['owned/main-object', 'owned/shared-object'],
+      }),
+      expect.objectContaining({
+        id: second._id.toString(),
+        transcriptionStatus: 'processing',
+        objectKeys: ['owned/shared-object'],
+      }),
+    ]);
+    expect(JSON.stringify(targets)).not.toContain('must-not-be-used');
+
+    mediaEvidenceModel.deleteMany.mockReturnValue(
+      createExecQuery({ deletedCount: 2 }),
+    );
+    await service.deleteScaleInstanceEvidence(
+      patientId,
+      assessmentVisitId,
+      scaleInstanceId,
+      targets.map((target) => target.id),
+    );
+    expect(mediaEvidenceModel.deleteMany).toHaveBeenCalledWith({
+      _id: { $in: [first._id, second._id] },
+      patientId,
+      assessmentVisitId,
+      scaleInstanceId,
     });
   });
 

@@ -20,6 +20,7 @@ import { ClinicalHistoryModule } from './modules/clinical-history/clinical-histo
 import { MediaModule } from './modules/media/media.module';
 import { PatientsModule } from './modules/patients/patients.module';
 import { ReportsModule } from './modules/reports/reports.module';
+import { ScaleInstanceDeletionModule } from './modules/scale-instance-deletion/scale-instance-deletion.module';
 import { ScalesModule } from './modules/scales/scales.module';
 import { ScoringModule } from './modules/scoring/scoring.module';
 import { StorageModule } from './modules/storage/storage.module';
@@ -70,6 +71,7 @@ import { UsersModule } from './modules/users/users.module';
     ScoringModule,
     CognitiveDomainsModule,
     ReportsModule,
+    ScaleInstanceDeletionModule,
     ClinicalHistoryModule,
     UsersModule,
     AuthModule,
