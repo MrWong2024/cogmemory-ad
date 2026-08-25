@@ -158,9 +158,11 @@ function VersionItem({
 
 export function ClinicalReportVersionPanel({
   patientId,
+  refreshKey,
   visitId,
 }: {
   patientId: string;
+  refreshKey: string | null;
   visitId: string;
 }) {
   const router = useRouter();
@@ -225,7 +227,7 @@ export function ClinicalReportVersionPanel({
       });
 
     return () => controller.abort();
-  }, [idsAreValid, page, patientId, retryKey, router, visitId]);
+  }, [idsAreValid, page, patientId, refreshKey, retryKey, router, visitId]);
 
   return (
     <Card>

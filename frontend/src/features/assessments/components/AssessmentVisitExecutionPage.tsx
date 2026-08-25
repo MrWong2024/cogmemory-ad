@@ -254,6 +254,9 @@ export function AssessmentVisitExecutionPage({
     onReportUpdated: reportState.applyClinicalReport,
     refreshLatest: reportState.refreshLatest,
   });
+  const clinicalReportVersionsRefreshKey = reportState.report
+    ? `${reportState.report.id}:${reportState.report.updatedAt ?? ''}`
+    : null;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -762,7 +765,11 @@ export function AssessmentVisitExecutionPage({
         workflow={reportWorkflow}
       />
 
-      <ClinicalReportVersionPanel patientId={patientId} visitId={visitId} />
+      <ClinicalReportVersionPanel
+        patientId={patientId}
+        refreshKey={clinicalReportVersionsRefreshKey}
+        visitId={visitId}
+      />
 
       <ScaleInitializationPanel
         catalogError={catalogError}
