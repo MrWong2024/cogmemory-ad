@@ -78,7 +78,7 @@ Service current 事实以 `backend/src` 为准。本文保留理解长期内部�
 - 职责：`AssessmentVisit`、`ScaleInstance`、`ItemResponse` 与必要 Patient Administration session identity 的共享数据访问层；提供联合 ownership 读取、进度摘要、访视维护、首次开始、submission scope、Evidence ref 条件写、来源冻结和 History 批量读取原语。
 - 上游：Assessment controllers，以及 execution、draft、submission、Patient Administration、Media、Scoring、Cognitive Domains、Reports/History workflow；下游：相关 Mongoose Models 与 `PatientsService`。
 - 生命周期：仅初始化的 Visit/Instance 保持 draft；第一次已持久化的真实子活动以同一服务端事实时间条件启动所属 Instance 与 Visit，后续写不得覆盖首次 `startedAt` 或终态字段。
-- 访视维护：物理删除只适用于没有执行事实的初始化集合，并按目标 Visit 精确移除子记录；已有执行事实只写首次 void 审计，保留实例、作答、患者会话、媒体、评分、报告和历史。
+- 访视维护：物理删除适用于无执行事实的初始化集合，或经正式 incomplete ScaleInstance cleanup 后成为无 ScaleInstance、无 ItemResponse 子事实空壳的 started Visit；前者按目标 Visit 精确移除初始化子记录，后者保留真实 started 历史直到用户显式删除。其他已有执行事实 Visit 只写首次 void 审计，保留实例、作答、患者会话、媒体、评分、报告和历史。
 - 未完成实例删除原语：对完整 Patient→Visit→ScaleInstance ownership 执行 supervised/draft-or-in-progress/终态字段/submission barrier/Session eligibility 判定；`in_progress` 无 terminated/expired 失败 Session 时 fail closed。导出的精确删除原语只删除计划中的 terminated/expired Session、owned ItemResponse，并以完整 ownership/lifecycle filter 最后删除 ScaleInstance；不删除或重置 Visit。
 - 条件写：Evidence attach/clear、submission scope 与 freeze 方法均带完整 ownership、状态和 barrier 条件；恢复方法只用于已知补偿窗口，不开放通用旁路。跨集合流程由调用 workflow 负责恢复，不在本 Service 内假装事务原子性。
 

@@ -1813,6 +1813,146 @@ describe('AssessmentsService', () => {
     );
   });
 
+  it('allows deletion but not editing or voiding for a started empty visit', async () => {
+    const patientId = new Types.ObjectId();
+    const visitId = new Types.ObjectId();
+    patientsService.findPatientById.mockResolvedValue(
+      createPatientSummary(patientId),
+    );
+    assessmentVisitModel.findOne.mockReturnValue(
+      createExecQuery(
+        createVisitDocumentLike(patientId, visitId, {
+          status: 'in_progress',
+          startedAt: new Date('2026-08-01T08:05:00.000Z'),
+        }),
+      ),
+    );
+    const sort = jest.fn().mockReturnValue(createExecQuery([]));
+    scaleInstanceModel.find.mockReturnValue({ sort });
+
+    const result = await service.getVisitExecutionDetail(patientId, visitId);
+
+    expect(itemResponseModel.find).toHaveBeenCalledWith({
+      assessmentVisitId: visitId,
+      patientId,
+    });
+    expect(result.visitMaintenance).toEqual({
+      canEdit: false,
+      canDelete: true,
+      canVoid: false,
+      initializedScaleCount: 0,
+    });
+  });
+
+  it('blocks deletion for a started empty visit with a residual item response', async () => {
+    const patientId = new Types.ObjectId();
+    const visitId = new Types.ObjectId();
+    patientsService.findPatientById.mockResolvedValue(
+      createPatientSummary(patientId),
+    );
+    assessmentVisitModel.findOne.mockReturnValue(
+      createExecQuery(
+        createVisitDocumentLike(patientId, visitId, {
+          status: 'in_progress',
+          startedAt: new Date('2026-08-01T08:05:00.000Z'),
+        }),
+      ),
+    );
+    const sort = jest.fn().mockReturnValue(createExecQuery([]));
+    scaleInstanceModel.find.mockReturnValue({ sort });
+    itemResponseModel.find.mockReturnValue(
+      createExecQuery([createPristineItemResponseDocumentLike()]),
+    );
+
+    const result = await service.getVisitExecutionDetail(patientId, visitId);
+
+    expect(result.visitMaintenance).toEqual({
+      canEdit: false,
+      canDelete: false,
+      canVoid: true,
+      initializedScaleCount: 0,
+    });
+  });
+
+  it('blocks started visit deletion while a scale instance still exists', async () => {
+    const patientId = new Types.ObjectId();
+    const visitId = new Types.ObjectId();
+    const scaleInstanceId = new Types.ObjectId();
+    patientsService.findPatientById.mockResolvedValue(
+      createPatientSummary(patientId),
+    );
+    assessmentVisitModel.findOne.mockReturnValue(
+      createExecQuery(
+        createVisitDocumentLike(patientId, visitId, {
+          status: 'in_progress',
+          startedAt: new Date('2026-08-01T08:05:00.000Z'),
+        }),
+      ),
+    );
+    const sort = jest.fn().mockReturnValue(
+      createExecQuery([
+        createScaleInstanceDocumentLike(patientId, visitId, scaleInstanceId, {
+          status: 'in_progress',
+          startedAt: new Date('2026-08-01T08:05:00.000Z'),
+        }),
+      ]),
+    );
+    scaleInstanceModel.find.mockReturnValue({ sort });
+    itemResponseModel.countDocuments.mockReturnValue(createExecQuery(0));
+
+    const result = await service.getVisitExecutionDetail(patientId, visitId);
+
+    expect(result.visitMaintenance).toEqual({
+      canEdit: false,
+      canDelete: false,
+      canVoid: true,
+      initializedScaleCount: 1,
+    });
+  });
+
+  it.each([
+    [
+      'completed',
+      {
+        status: 'completed',
+        startedAt: new Date('2026-08-01T08:05:00.000Z'),
+        completedAt: new Date('2026-08-01T08:30:00.000Z'),
+      },
+    ],
+    [
+      'locked',
+      {
+        status: 'locked',
+        startedAt: new Date('2026-08-01T08:05:00.000Z'),
+        completedAt: new Date('2026-08-01T08:30:00.000Z'),
+        lockedAt: new Date('2026-08-01T08:35:00.000Z'),
+      },
+    ],
+    [
+      'voided',
+      {
+        status: 'voided',
+        startedAt: new Date('2026-08-01T08:05:00.000Z'),
+        voidedAt: new Date('2026-08-01T08:30:00.000Z'),
+      },
+    ],
+  ])('does not allow deletion for a %s visit', async (_name, overrides) => {
+    const patientId = new Types.ObjectId();
+    const visitId = new Types.ObjectId();
+    patientsService.findPatientById.mockResolvedValue(
+      createPatientSummary(patientId),
+    );
+    assessmentVisitModel.findOne.mockReturnValue(
+      createExecQuery(createVisitDocumentLike(patientId, visitId, overrides)),
+    );
+    const sort = jest.fn().mockReturnValue(createExecQuery([]));
+    scaleInstanceModel.find.mockReturnValue({ sort });
+
+    const result = await service.getVisitExecutionDetail(patientId, visitId);
+
+    expect(result.visitMaintenance.canDelete).toBe(false);
+  });
+
   it.each([
     [
       'saved answer draft',

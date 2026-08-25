@@ -2353,21 +2353,19 @@ export class AssessmentsService {
     const scaleInstanceIds = scaleInstances.map(
       (scaleInstance) => new Types.ObjectId(scaleInstance.id),
     );
-    const [itemResponses, patientAdministrationSession] =
+    const [itemResponses, patientAdministrationSession] = await Promise.all([
+      this.itemResponseModel
+        .find({
+          assessmentVisitId: visitId,
+          patientId,
+        })
+        .exec(),
       scaleInstanceIds.length === 0
-        ? [[], null]
-        : await Promise.all([
-            this.itemResponseModel
-              .find({
-                assessmentVisitId: visitId,
-                patientId,
-                scaleInstanceId: { $in: scaleInstanceIds },
-              })
-              .exec(),
-            this.patientAdministrationSessionModel
-              .exists({ scaleInstanceId: { $in: scaleInstanceIds } })
-              .exec(),
-          ]);
+        ? null
+        : this.patientAdministrationSessionModel
+            .exists({ scaleInstanceId: { $in: scaleInstanceIds } })
+            .exec(),
+    ]);
     const isPreAssessment =
       patientAdministrationSession === null &&
       this.isPristineVisit(visit) &&
@@ -2377,14 +2375,23 @@ export class AssessmentsService {
       itemResponses.every((itemResponse) =>
         this.isPristineItemResponse(itemResponse),
       );
+    const isStartedEmpty =
+      visit.status === 'in_progress' &&
+      visit.startedAt !== null &&
+      visit.completedAt === null &&
+      visit.lockedAt === null &&
+      visit.voidedAt === null &&
+      scaleInstances.length === 0 &&
+      itemResponses.length === 0;
+    const canDelete = isPreAssessment || isStartedEmpty;
 
     return {
       visit,
       scaleInstances,
       visitMaintenance: {
         canEdit: isPreAssessment,
-        canDelete: isPreAssessment,
-        canVoid: !isPreAssessment,
+        canDelete,
+        canVoid: !canDelete,
         initializedScaleCount,
       },
     };

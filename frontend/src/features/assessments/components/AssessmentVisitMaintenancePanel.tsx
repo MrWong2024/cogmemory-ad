@@ -343,7 +343,7 @@ export function AssessmentVisitMaintenancePanel({
         onRefreshRequested();
         setFeedback({
           kind: 'error',
-          message: '该访视尚未开始评估，应删除访视而不是作废。',
+          message: '当前访视应删除而不是作废，请刷新后核对维护资格。',
         });
       } else {
         setFeedback({
@@ -502,7 +502,7 @@ export function AssessmentVisitMaintenancePanel({
         {activeMode === 'delete' && maintenance.canDelete ? (
           <div className="grid gap-4 border-t border-[var(--cma-line)] pt-5">
             <p className="text-base leading-7 text-[var(--cma-text-strong)]">
-              删除只适用于尚未开始的访视，操作成功后无法从页面恢复。
+              当前访视没有需要保留的评估记录，可以永久删除。删除后无法恢复。
             </p>
             {maintenance.initializedScaleCount > 0 ? (
               <p className="rounded-md border border-[var(--cma-warning)] bg-[var(--cma-warning-soft)] px-4 py-3 text-base leading-7 text-[var(--cma-text-strong)]">
@@ -518,7 +518,7 @@ export function AssessmentVisitMaintenancePanel({
                 onChange={(event) => setDeleteConfirmed(event.target.checked)}
                 type="checkbox"
               />
-              我确认删除本次尚未开始的访视。
+              我确认永久删除本次访视。
             </label>
             <div className="flex flex-wrap gap-3">
               <Button

@@ -66,6 +66,10 @@ const ACCOUNT_NAME = 'doctor-scale-instance-deletion';
 const PASSWORD = 'Scale-Instance-Deletion-E2E!';
 const SUBJECT_CODE = 'SUBJ-SCALE-INSTANCE-DELETE-E2E';
 const VISIT_CODE = 'VISIT-SCALE-INSTANCE-DELETE-E2E';
+const EMPTY_VISIT_SUBJECT_CODE = 'SUBJ-SCALE-INSTANCE-DELETE-E2E-EMPTY-VISIT';
+const EMPTY_VISIT_CODE = 'VISIT-SCALE-INSTANCE-DELETE-E2E-EMPTY-VISIT';
+const OWNED_SUBJECT_CODES = [SUBJECT_CODE, EMPTY_VISIT_SUBJECT_CODE];
+const OWNED_VISIT_CODES = [VISIT_CODE, EMPTY_VISIT_CODE];
 const WEBM = Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0x01]);
 
 type SupertestApp = NonNullable<Parameters<typeof request.agent>[0]>;
@@ -158,7 +162,7 @@ describe('incomplete scale instance physical deletion (e2e)', () => {
 
   async function cleanupOwnedData(): Promise<void> {
     const patients = await patientModel
-      .find({ subjectCode: SUBJECT_CODE })
+      .find({ subjectCode: { $in: OWNED_SUBJECT_CODES } })
       .select({ _id: 1 })
       .exec();
     const patientIds = patients.map((patient) => patient._id);
@@ -206,8 +210,10 @@ describe('incomplete scale instance physical deletion (e2e)', () => {
       ownedUserId
         ? authSessionModel.countDocuments({ userId: ownedUserId })
         : Promise.resolve(0),
-      patientModel.countDocuments({ subjectCode: SUBJECT_CODE }),
-      visitModel.countDocuments({ visitCode: VISIT_CODE }),
+      patientModel.countDocuments({
+        subjectCode: { $in: OWNED_SUBJECT_CODES },
+      }),
+      visitModel.countDocuments({ visitCode: { $in: OWNED_VISIT_CODES } }),
       scaleInstanceModel.countDocuments({ _id: { $in: scaleInstanceIds } }),
       itemResponseModel.countDocuments({
         scaleInstanceId: { $in: scaleInstanceIds },
@@ -570,5 +576,118 @@ describe('incomplete scale instance physical deletion (e2e)', () => {
     );
     expect(replacementScaleInstanceId).not.toBe(targetScaleInstanceId);
     await staff.delete(targetBase).expect(404);
+  });
+
+  it('deletes a started visit after its terminated scale instance is formally removed', async () => {
+    const patientResponse = await staff
+      .post('/patients')
+      .send({
+        subjectCode: EMPTY_VISIT_SUBJECT_CODE,
+        displayName: 'De-identified empty visit deletion test patient',
+      })
+      .expect(201);
+    const patientId = stringOf(bodyOf(patientResponse), 'id');
+    const visitResponse = await staff
+      .post(`/patients/${patientId}/visits`)
+      .send({
+        visitCode: EMPTY_VISIT_CODE,
+        assessmentDate: '2026-08-25T02:00:00.000Z',
+      })
+      .expect(201);
+    const visitId = stringOf(bodyOf(visitResponse), 'id');
+    const initializeResponse = await staff
+      .post(`/patients/${patientId}/visits/${visitId}/scale-instances`)
+      .send({
+        scaleCode: 'mmse',
+        scaleVersion: '1.0',
+        administrationMode: 'supervised_patient_input',
+      })
+      .expect(201);
+    const scaleInstance = bodyOf(initializeResponse).scaleInstance;
+    if (!isRecord(scaleInstance)) {
+      throw new Error('Expected initialized ScaleInstance response');
+    }
+    const scaleInstanceId = stringOf(scaleInstance, 'id');
+    ownedScaleInstanceIds.add(scaleInstanceId);
+    const scaleInstanceBase = `/patients/${patientId}/visits/${visitId}/scale-instances/${scaleInstanceId}`;
+    const administrationBase = `${scaleInstanceBase}/patient-administration`;
+    const sessionResponse = await staff
+      .post(administrationBase)
+      .send({ deviceMode: 'cross_device' })
+      .expect(201);
+    const patientAgent = request.agent(httpServer);
+    await patientAgent
+      .post('/patient-administration/enter')
+      .send({ code: stringOf(bodyOf(sessionResponse), 'entryCode') })
+      .expect(200);
+    const preparationResponse = await staff
+      .post(`${administrationBase}/preparation/confirm`)
+      .send({ expectedRevision: 1, impactFactorCodes: [] })
+      .expect(200);
+    const evidenceResponse = await patientAgent
+      .post('/patient-administration/current/evidence')
+      .field(
+        'expectedRevision',
+        numberOf(bodyOf(preparationResponse), 'revision').toString(),
+      )
+      .field('evidenceType', 'audio')
+      .field('durationMs', '1800')
+      .attach('file', WEBM, {
+        filename: 'de-identified-empty-visit-audio.webm',
+        contentType: 'audio/webm',
+      })
+      .expect(201);
+    await staff
+      .post(`${administrationBase}/terminate`)
+      .send({
+        expectedRevision: numberOf(bodyOf(evidenceResponse), 'revision'),
+        reason: 'Synthetic interrupted administration for empty visit',
+      })
+      .expect(200);
+
+    const blockedVisitDelete = await staff
+      .delete(`/patients/${patientId}/visits/${visitId}`)
+      .expect(409);
+    expect(bodyOf(blockedVisitDelete)).toEqual(
+      expect.objectContaining({ code: 'VISIT_NOT_DELETABLE' }),
+    );
+    expect(
+      await scaleInstanceModel.countDocuments({ _id: scaleInstanceId }),
+    ).toBe(1);
+
+    await staff.delete(scaleInstanceBase).expect(204);
+    const detailResponse = await staff
+      .get(`/patients/${patientId}/visits/${visitId}`)
+      .expect(200);
+    const detailBody = bodyOf(detailResponse);
+    expect(detailBody.scaleInstances).toEqual([]);
+    expect(detailBody.visitMaintenance).toEqual({
+      canEdit: false,
+      canDelete: true,
+      canVoid: false,
+      initializedScaleCount: 0,
+    });
+    expect(detailBody.visit).toEqual(
+      expect.objectContaining({
+        status: 'in_progress',
+        completedAt: null,
+        lockedAt: null,
+        voidedAt: null,
+      }),
+    );
+
+    const deletedVisit = await staff
+      .delete(`/patients/${patientId}/visits/${visitId}`)
+      .expect(204);
+    expect(deletedVisit.text).toBe('');
+    const missingVisit = await staff
+      .get(`/patients/${patientId}/visits/${visitId}`)
+      .expect(404);
+    expect(bodyOf(missingVisit)).toEqual(
+      expect.objectContaining({ code: 'VISIT_NOT_FOUND' }),
+    );
+    await expect(
+      patientModel.exists({ _id: new Types.ObjectId(patientId) }),
+    ).resolves.not.toBeNull();
   });
 });
