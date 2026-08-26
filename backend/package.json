@@ -6,6 +6,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "build": "nest build",
+    "db:clear-data": "node -r ts-node/register -r tsconfig-paths/register scripts/clear-database-data.ts",
     "db:sync-indexes": "node -r ts-node/register -r tsconfig-paths/register scripts/sync-indexes.ts",
     "typecheck": "tsc --project tsconfig.typecheck.json",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",

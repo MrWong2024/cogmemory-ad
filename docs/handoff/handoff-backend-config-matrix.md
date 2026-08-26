@@ -48,7 +48,7 @@
 | `CORS_ORIGIN` | `app.corsOrigin` | `http://localhost:3002` | 部署域名覆盖 | `http://localhost:3002` | 支持逗号分隔多个 origin |
 | `COGMEMORY_DATABASE_PURPOSE` | `mongo.purpose` | 可不设置 | 可不设置 | `standard_test` / `browser_acceptance` | test 进程用途；未设置默认 `standard_test` |
 | `MONGO_URI` | `mongo.uri` | `cogmemory_ad_dev` 口径 | required | 按用途映射到普通测试或 Browser 专用库 | 不写真实密码或完整 URI |
-| `MONGO_ADMIN_URI` | `mongo.adminUri` | `cogmemory_ad_dev` 口径 | required；运维门禁为 `cogmemory_ad` | standard_test 测试管理连接；browser_acceptance 受控管理连接按 §3.2 映射 | 供受控测试管理或 `db:sync-indexes` 运维脚本使用；不得作为应用常驻连接 |
+| `MONGO_ADMIN_URI` | `mongo.adminUri` | `cogmemory_ad_dev` 口径 | required；运维门禁为 `cogmemory_ad` | standard_test 测试管理连接；browser_acceptance 受控管理连接按 §3.2 映射 | 供受控测试管理或 `db:sync-indexes` / `db:clear-data` 运维脚本使用；不得作为应用常驻连接 |
 | `MONGO_AUTO_INDEX` | `mongo.autoIndex` | 默认按非生产启用 | `false` | 默认按非生产启用 | production 强制关闭；索引同步必须显式运行 `db:sync-indexes -- --execute`，不属于应用启动行为 |
 | `MONGO_SERVER_SELECTION_TIMEOUT_MS` | `mongo.serverSelectionTimeoutMs` | `5000` | `5000` | `5000` | MongoDB 连接超时 |
 | `STORAGE_DRIVER` | `storage.driver` | 默认 `fake`；example 为 `oss` | 默认 / example 为 `oss` | `fake` | 支持 `fake` / `oss` |
@@ -88,6 +88,8 @@
 | `ALIYUN_SMS_INTERVAL_SECONDS` | `smsAuth.aliyun.intervalSeconds` | `60` | `60` | `60` | 验证码策略占位 |
 | `ALIYUN_SMS_CODE_TYPE` | `smsAuth.aliyun.codeType` | `1` | `1` | `1` | 验证码策略占位 |
 | `ALIYUN_SMS_CASE_AUTH_POLICY` | `smsAuth.aliyun.caseAuthPolicy` | `1` | `1` | `1` | 验证码策略占位 |
+
+`db:clear-data` 默认仅报告目标数据库普通 collection 的文档与索引状态；真正执行必须同时提供 `--execute` 和与当前环境预期数据库逐字一致的 `--confirm=<databaseName>`。执行只通过 `deleteMany({})` 清空文档并保留 collection 与现有索引；production 必须显式运行，且不属于应用启动行为。
 
 ## 5. 安全与部署注意事项
 
