@@ -48,8 +48,8 @@
 | `CORS_ORIGIN` | `app.corsOrigin` | `http://localhost:3002` | 部署域名覆盖 | `http://localhost:3002` | 支持逗号分隔多个 origin |
 | `COGMEMORY_DATABASE_PURPOSE` | `mongo.purpose` | 可不设置 | 可不设置 | `standard_test` / `browser_acceptance` | test 进程用途；未设置默认 `standard_test` |
 | `MONGO_URI` | `mongo.uri` | `cogmemory_ad_dev` 口径 | required | 按用途映射到普通测试或 Browser 专用库 | 不写真实密码或完整 URI |
-| `MONGO_ADMIN_URI` | `mongo.adminUri` | `cogmemory_ad_dev` 口径 | required | standard_test 测试管理连接；browser_acceptance 受控管理连接按 §3.2 映射 | 仅供受控测试管理或运维场景 |
-| `MONGO_AUTO_INDEX` | `mongo.autoIndex` | 默认按非生产启用 | `false` | 默认按非生产启用 | 生产强制关闭 |
+| `MONGO_ADMIN_URI` | `mongo.adminUri` | `cogmemory_ad_dev` 口径 | required；运维门禁为 `cogmemory_ad` | standard_test 测试管理连接；browser_acceptance 受控管理连接按 §3.2 映射 | 供受控测试管理或 `db:sync-indexes` 运维脚本使用；不得作为应用常驻连接 |
+| `MONGO_AUTO_INDEX` | `mongo.autoIndex` | 默认按非生产启用 | `false` | 默认按非生产启用 | production 强制关闭；索引同步必须显式运行 `db:sync-indexes -- --execute`，不属于应用启动行为 |
 | `MONGO_SERVER_SELECTION_TIMEOUT_MS` | `mongo.serverSelectionTimeoutMs` | `5000` | `5000` | `5000` | MongoDB 连接超时 |
 | `STORAGE_DRIVER` | `storage.driver` | 默认 `fake`；example 为 `oss` | 默认 / example 为 `oss` | `fake` | 支持 `fake` / `oss` |
 | `OSS_REGION` | `storage.oss.region` | `oss-cn-shenzhen` | `oss-cn-shenzhen` | 可为空 | OSS 示例区域 |

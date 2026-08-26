@@ -6,6 +6,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "build": "nest build",
+    "db:sync-indexes": "node -r ts-node/register -r tsconfig-paths/register scripts/sync-indexes.ts",
     "typecheck": "tsc --project tsconfig.typecheck.json",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
@@ -75,7 +76,7 @@
       "ts"
     ],
     "rootDir": ".",
-    "testRegex": "src/.*\\.spec\\.ts$",
+    "testRegex": "(src|scripts)/.*\\.spec\\.ts$",
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },
