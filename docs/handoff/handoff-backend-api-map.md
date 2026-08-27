@@ -102,16 +102,18 @@
 
 带 `expectedUpdatedAt` 的 A21-A25 report write 在时间戳无法解析时返回 400 `VALIDATION_ERROR`；字段格式与 validation 仍由 DTO Cheatsheet 唯一维护。
 
-### 3.6 Patient Administration（18）
+### 3.6 Patient Administration（20）
 
-#### Staff endpoints（12）
+#### Staff endpoints（14）
 
-共同根路径为 `/patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/patient-administration`；Controller 为 `PatientAdministrationStaffController`；Auth 为 PW。表中只维护 endpoint 投影；详细 same/cross、准备、逐题、播放/evidence、takeover/redo/technical replay 与安全合同由 Patient Contract 拥有。
+共同根路径为 `/patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/patient-administration`；生命周期与控制入口由 `PatientAdministrationStaffController` 承担，历史查询和单次失败施测删除由 `PatientAdministrationHistoryController` 承担；Auth 均为 PW。表中只维护 endpoint 投影；详细 same/cross、准备、逐题、播放/evidence、takeover/redo/technical replay 与安全合同由 Patient Contract 拥有。
 
 | Endpoint | Request DTO | Response / status | Endpoint-specific side effect / state boundary |
 |---|---|---|---|
 | `POST /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/patient-administration` | Param `ScaleInstanceExecutionParamDto`; Body `CreatePatientAdministrationSessionDto` | `PatientAdministrationSessionCreateResponse` / 201 | 创建 prepared 短期会话并固化 deviceMode；completed 历史阻止重建。 |
 | `GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/patient-administration` | Param `ScaleInstanceExecutionParamDto` | `PatientAdministrationSessionSummaryResponse` / 200 | 只读最新 staff summary。 |
+| `GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/patient-administration/sessions` | Param `ScaleInstanceExecutionParamDto` | `PatientAdministrationSessionSummaryResponse[]` / 200 | 返回该实例全部 Session，按 `createdAt` 倒序；读取时惰性收口已过期开放 Session，只返回安全摘要，不返回进入码、hash 或 token。 |
+| `DELETE /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/patient-administration/sessions/:sessionId` | Param `PatientAdministrationHistorySessionParamDto` | 无 body / 204 | 仅物理删除指定 terminated/expired Session，以及只属于该 Session、未锁定/处理/正式引用的 patient-origin Evidence 和明确 object keys；保留 ScaleInstance、全部 ItemResponse 与其他 Session。404 表示 ownership/session 不匹配；409 `PATIENT_ADMINISTRATION_SESSION_NOT_DELETABLE`；Storage 失败为 503 `MEDIA_STORAGE_UNAVAILABLE`，数据库删除失败为 500 `PATIENT_ADMINISTRATION_SESSION_DELETE_FAILED`。 |
 | `POST /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/patient-administration/handoff` | Param `ScaleInstanceExecutionParamDto`; Body `PatientAdministrationRevisionDto` | `PatientAdministrationSessionSummaryResponse` / 200 | same-device 身份交接：prepared 首次交接进入 active，paused 替换 credential 且保持 paused，未过期 active 轮换 credential 并继续同一 active Session；成功时撤销当前 staff 身份，stale revision、非 same-device 或不合法状态继续 conflict。不改变创建时 deviceMode。 |
 | `POST /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/patient-administration/preparation/confirm` | Param `ScaleInstanceExecutionParamDto`; Body `ConfirmPatientAdministrationPreparationDto` | `PatientAdministrationSessionSummaryResponse` / 200 | 首次确认准备事实；设备模式决定是否进入 active。 |
 | `POST /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId/patient-administration/pause` | Param `ScaleInstanceExecutionParamDto`; Body `PatientAdministrationControlDto` | `PatientAdministrationSessionSummaryResponse` / 200 | active → paused。 |

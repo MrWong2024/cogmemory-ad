@@ -203,6 +203,9 @@ export type ScaleInstanceMediaDeletionTarget = {
   objectKeys: string[];
 };
 
+export type PatientAdministrationSessionMediaDeletionTarget =
+  ScaleInstanceMediaDeletionTarget;
+
 export type CreateMediaEvidenceInput = {
   patientId: Types.ObjectId;
   assessmentVisitId: Types.ObjectId;
@@ -344,6 +347,50 @@ export class MediaEvidenceService {
         patientId: normalizedPatientId,
         assessmentVisitId: normalizedVisitId,
         scaleInstanceId: normalizedScaleInstanceId,
+      })
+      .sort({ createdAt: 1, _id: 1 })
+      .exec();
+
+    return evidences.map((evidence) => ({
+      id: evidence._id.toString(),
+      status: evidence.status,
+      lockedAt: evidence.lockedAt ?? null,
+      transcriptionStatus: evidence.transcription?.status ?? null,
+      objectKeys: [
+        evidence.storage?.objectKey,
+        evidence.handwritingTrace?.trajectoryObjectKey,
+      ].filter(
+        (objectKey): objectKey is string =>
+          typeof objectKey === 'string' && objectKey.length > 0,
+      ),
+    }));
+  }
+
+  async listPatientAdministrationSessionDeletionTargets(
+    patientId: Types.ObjectId | string,
+    assessmentVisitId: Types.ObjectId | string,
+    scaleInstanceId: Types.ObjectId | string,
+    sessionId: Types.ObjectId | string,
+  ): Promise<PatientAdministrationSessionMediaDeletionTarget[]> {
+    const normalizedPatientId = this.normalizeObjectId(patientId);
+    const normalizedVisitId = this.normalizeObjectId(assessmentVisitId);
+    const normalizedScaleInstanceId = this.normalizeObjectId(scaleInstanceId);
+    const normalizedSessionId = this.normalizeObjectId(sessionId);
+    if (
+      !normalizedPatientId ||
+      !normalizedVisitId ||
+      !normalizedScaleInstanceId ||
+      !normalizedSessionId
+    ) {
+      return [];
+    }
+
+    const evidences = await this.mediaEvidenceModel
+      .find({
+        patientId: normalizedPatientId,
+        assessmentVisitId: normalizedVisitId,
+        scaleInstanceId: normalizedScaleInstanceId,
+        'patientAdministrationContext.sessionId': normalizedSessionId,
       })
       .sort({ createdAt: 1, _id: 1 })
       .exec();
@@ -798,6 +845,45 @@ export class MediaEvidenceService {
         patientId: normalizedPatientId,
         assessmentVisitId: normalizedVisitId,
         scaleInstanceId: normalizedScaleInstanceId,
+      })
+      .exec();
+    if (result.deletedCount !== normalizedEvidenceIds.length) {
+      throw new Error('Media evidence deletion was incomplete');
+    }
+  }
+
+  async deletePatientAdministrationSessionEvidence(
+    patientId: Types.ObjectId | string,
+    assessmentVisitId: Types.ObjectId | string,
+    scaleInstanceId: Types.ObjectId | string,
+    sessionId: Types.ObjectId | string,
+    mediaEvidenceIds: readonly string[],
+  ): Promise<void> {
+    const normalizedPatientId = this.normalizeObjectId(patientId);
+    const normalizedVisitId = this.normalizeObjectId(assessmentVisitId);
+    const normalizedScaleInstanceId = this.normalizeObjectId(scaleInstanceId);
+    const normalizedSessionId = this.normalizeObjectId(sessionId);
+    const normalizedEvidenceIds = this.normalizeObjectIds(mediaEvidenceIds);
+    if (
+      !normalizedPatientId ||
+      !normalizedVisitId ||
+      !normalizedScaleInstanceId ||
+      !normalizedSessionId ||
+      !normalizedEvidenceIds
+    ) {
+      throw new Error('Media evidence deletion ownership is invalid');
+    }
+    if (normalizedEvidenceIds.length === 0) {
+      return;
+    }
+
+    const result = await this.mediaEvidenceModel
+      .deleteMany({
+        _id: { $in: normalizedEvidenceIds },
+        patientId: normalizedPatientId,
+        assessmentVisitId: normalizedVisitId,
+        scaleInstanceId: normalizedScaleInstanceId,
+        'patientAdministrationContext.sessionId': normalizedSessionId,
       })
       .exec();
     if (result.deletedCount !== normalizedEvidenceIds.length) {

@@ -1345,6 +1345,22 @@ export class AssessmentsService {
     return completedSession !== null;
   }
 
+  async hasItemResponseEvidenceReferences(
+    mediaEvidenceIds: readonly string[],
+  ): Promise<boolean> {
+    const normalizedEvidenceIds = this.normalizeObjectIds(mediaEvidenceIds);
+    if (!normalizedEvidenceIds || normalizedEvidenceIds.length === 0) {
+      return false;
+    }
+
+    const itemResponse = await this.itemResponseModel
+      .exists({
+        'evidenceRefs.mediaEvidenceId': { $in: normalizedEvidenceIds },
+      })
+      .exec();
+    return itemResponse !== null;
+  }
+
   async prepareScaleInstanceDeletion(
     patientId: Types.ObjectId | string,
     assessmentVisitId: Types.ObjectId | string,

@@ -489,6 +489,7 @@ describe('ClinicalReport schema', () => {
 describe('ReportsService', () => {
   let service: ReportsService;
   let clinicalReportModel: {
+    exists: jest.Mock;
     findOne: jest.Mock;
     findOneAndUpdate: jest.Mock;
     find: jest.Mock;
@@ -497,6 +498,7 @@ describe('ReportsService', () => {
 
   beforeEach(async () => {
     clinicalReportModel = {
+      exists: jest.fn(),
       findOne: jest.fn(),
       findOneAndUpdate: jest.fn(),
       find: jest.fn(),
@@ -1655,6 +1657,36 @@ describe('ReportsService', () => {
     expect(service.canTransitionReportStatus('archived', 'voided')).toBe(false);
     expect(clinicalReportModel.find).not.toHaveBeenCalled();
     expect(clinicalReportModel.findOne).not.toHaveBeenCalled();
+  });
+
+  it('detects report root, snapshot, or frozen-scope references to target evidence', async () => {
+    const firstEvidenceId = new Types.ObjectId();
+    const secondEvidenceId = new Types.ObjectId();
+    clinicalReportModel.exists.mockReturnValue(
+      createExecQuery({ _id: new Types.ObjectId() }),
+    );
+
+    await expect(
+      service.hasMediaEvidenceReferences([
+        firstEvidenceId.toString(),
+        secondEvidenceId.toString(),
+      ]),
+    ).resolves.toBe(true);
+    expect(clinicalReportModel.exists).toHaveBeenCalledWith({
+      $or: [
+        { mediaEvidenceIds: { $in: [firstEvidenceId, secondEvidenceId] } },
+        {
+          'evidenceSnapshots.mediaEvidenceId': {
+            $in: [firstEvidenceId, secondEvidenceId],
+          },
+        },
+        {
+          'metadata.a23SourceFreeze.scope.mediaEvidenceIds': {
+            $in: [firstEvidenceId.toString(), secondEvidenceId.toString()],
+          },
+        },
+      ],
+    });
   });
 
   it('returns stable allowed transition lists', () => {

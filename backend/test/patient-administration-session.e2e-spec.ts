@@ -387,6 +387,89 @@ describe('patient administration session APIs (e2e)', () => {
     return `/patients/${fixture.patient._id.toString()}/visits/${fixture.visit._id.toString()}/scale-instances/${fixture.scaleInstance._id.toString()}/patient-administration`;
   }
 
+  async function createHistoryEvidence(
+    fixture: Fixture,
+    sessionId: string,
+    stepKey: string,
+    suffix: string,
+  ): Promise<MediaEvidenceDocument> {
+    const itemResponse = await itemResponseModel
+      .findOne({ scaleInstanceId: fixture.scaleInstance._id })
+      .sort({ itemOrder: 1, _id: 1 })
+      .exec();
+    if (!itemResponse) {
+      throw new Error('Expected an initialized MMSE ItemResponse');
+    }
+    const uploadedAt = new Date();
+    const evidence = await mediaEvidenceModel.create({
+      patientId: fixture.patient._id,
+      assessmentVisitId: fixture.visit._id,
+      scaleInstanceId: fixture.scaleInstance._id,
+      itemResponseId: itemResponse._id,
+      subjectCode: fixture.patient.subjectCode,
+      scaleDefinitionId: fixture.scaleInstance.scaleDefinitionId,
+      scaleVersionId: fixture.scaleInstance.scaleVersionId,
+      scaleCode: fixture.scaleInstance.scaleCode,
+      scaleVersion: fixture.scaleInstance.scaleVersion,
+      instanceCode: fixture.scaleInstance.instanceCode,
+      itemCode: itemResponse.itemCode,
+      evidenceCode: `EVD-${TEST_PREFIX}-${suffix}`,
+      evidenceType: 'audio',
+      captureMode: 'browser_audio_recording',
+      status: 'attached',
+      storageStatus: 'stored',
+      countsTowardTotal: itemResponse.countsTowardTotal,
+      cognitiveDomainCodes: [],
+      itemSnapshot: { itemCode: itemResponse.itemCode },
+      versionTrace: null,
+      storage: {
+        storageDriver: 'fake',
+        bucket: 'test-bucket',
+        objectKey: `history/${suffix}.webm`,
+        mimeType: 'audio/webm',
+        sizeBytes: 16,
+        storedAt: uploadedAt,
+      },
+      imageMetadata: null,
+      handwritingTrace: null,
+      captureContext: { capturedAt: uploadedAt, uploadedAt },
+      operatorSnapshot: null,
+      patientAdministrationContext: {
+        sessionId: new Types.ObjectId(sessionId),
+        stepKey,
+        stepRun: 1,
+      },
+      audioMetadata: { durationMs: 1_000 },
+      transcription: { status: 'not_requested' },
+      qualityStatus: 'acceptable',
+      qualityHints: { requiresReview: false },
+      metadata: { source: 'patient-administration-history-e2e' },
+      lockedAt: null,
+      voidedAt: null,
+      deletedAt: null,
+    });
+    const attachResult = await administrationSessionModel
+      .updateOne(
+        { _id: new Types.ObjectId(sessionId) },
+        {
+          $push: {
+            stepEvidenceRefs: {
+              stepKey,
+              stepRun: 1,
+              evidenceType: 'audio',
+              mediaEvidenceId: evidence._id,
+              uploadedAt,
+            },
+          },
+        },
+      )
+      .exec();
+    if (attachResult.modifiedCount !== 1) {
+      throw new Error('Expected history evidence to attach to its session');
+    }
+    return evidence;
+  }
+
   function requireAgent(accountName: string): TestAgent {
     const agent = agents.get(accountName);
     if (!agent) {
@@ -802,6 +885,215 @@ describe('patient administration session APIs (e2e)', () => {
         .countDocuments({ scaleInstanceId: fixture.scaleInstance._id })
         .exec(),
     ).toBe(2);
+  });
+
+  it('lists all history and safely deletes only one unreferenced failed session', async () => {
+    const doctor = requireAgent(ACCOUNTS.doctor);
+    const fixture = await createFixture(
+      'HISTORY',
+      'supervised_patient_input',
+      doctor,
+    );
+    const base = staffBase(fixture);
+    expect(
+      await itemResponseModel.countDocuments({
+        scaleInstanceId: fixture.scaleInstance._id,
+      }),
+    ).toBe(11);
+
+    const sessionA = readBody(
+      await doctor.post(base).send({ deviceMode: 'same_device' }).expect(201),
+    );
+    const sessionAId = readString(sessionA, 'id');
+    await doctor
+      .post(`${base}/terminate`)
+      .send({ expectedRevision: 0, reason: 'history session A failed' })
+      .expect(200);
+    const evidenceA = await createHistoryEvidence(
+      fixture,
+      sessionAId,
+      readString(sessionA, 'currentStepKey'),
+      'HISTORY-A',
+    );
+
+    const sessionB = readBody(
+      await doctor.post(base).send({ deviceMode: 'same_device' }).expect(201),
+    );
+    const sessionBId = readString(sessionB, 'id');
+    await doctor
+      .post(`${base}/terminate`)
+      .send({ expectedRevision: 0, reason: 'history session B failed' })
+      .expect(200);
+    const evidenceB = await createHistoryEvidence(
+      fixture,
+      sessionBId,
+      readString(sessionB, 'currentStepKey'),
+      'HISTORY-B',
+    );
+
+    const sessionC = readBody(
+      await doctor.post(base).send({ deviceMode: 'cross_device' }).expect(201),
+    );
+    const sessionCId = readString(sessionC, 'id');
+    const patient = request.agent(httpServer);
+    await patient
+      .post('/patient-administration/enter')
+      .send({ code: readString(sessionC, 'entryCode') })
+      .expect(200);
+    await doctor
+      .post(`${base}/preparation/confirm`)
+      .send({ expectedRevision: 1, impactFactorCodes: [] })
+      .expect(200)
+      .expect((response: Response) => {
+        expect(readBody(response)).toEqual(
+          expect.objectContaining({ status: 'active', revision: 2 }),
+        );
+      });
+    const evidenceC = await createHistoryEvidence(
+      fixture,
+      sessionCId,
+      readString(sessionC, 'currentStepKey'),
+      'HISTORY-C',
+    );
+
+    const historyResponse = await doctor.get(`${base}/sessions`).expect(200);
+    const history: unknown = historyResponse.body;
+    if (!Array.isArray(history)) {
+      throw new Error('Expected patient administration history array');
+    }
+    const historyEntries = history.map((entry) => {
+      if (!isRecord(entry)) {
+        throw new Error('Expected a patient administration history entry');
+      }
+      return entry;
+    });
+    expect(historyEntries.map((entry) => readString(entry, 'id'))).toEqual([
+      sessionCId,
+      sessionBId,
+      sessionAId,
+    ]);
+    expect(historyEntries.map((entry) => readString(entry, 'status'))).toEqual([
+      'active',
+      'terminated',
+      'terminated',
+    ]);
+    for (const entry of historyEntries) {
+      expect(entry).not.toHaveProperty('entryCode');
+      expect(entry).not.toHaveProperty('entryCodeHash');
+      expect(entry).not.toHaveProperty('sessionTokenHash');
+    }
+
+    const scaleBefore = await scaleInstanceModel
+      .findById(fixture.scaleInstance._id)
+      .lean()
+      .exec();
+    const itemResponsesBefore = await itemResponseModel
+      .find({ scaleInstanceId: fixture.scaleInstance._id })
+      .sort({ _id: 1 })
+      .lean()
+      .exec();
+
+    await doctor.delete(`${base}/sessions/${sessionAId}`).expect(204);
+
+    expect(
+      await scaleInstanceModel
+        .findById(fixture.scaleInstance._id)
+        .lean()
+        .exec(),
+    ).toEqual(scaleBefore);
+    expect(
+      await itemResponseModel
+        .find({ scaleInstanceId: fixture.scaleInstance._id })
+        .sort({ _id: 1 })
+        .lean()
+        .exec(),
+    ).toEqual(itemResponsesBefore);
+    expect(itemResponsesBefore).toHaveLength(11);
+    expect(
+      await administrationSessionModel.findById(sessionAId).exec(),
+    ).toBeNull();
+    expect(
+      (await administrationSessionModel.findById(sessionBId).exec())?.status,
+    ).toBe('terminated');
+    expect(
+      (await administrationSessionModel.findById(sessionCId).exec())?.status,
+    ).toBe('active');
+    expect(await mediaEvidenceModel.findById(evidenceA._id).exec()).toBeNull();
+    expect(
+      await mediaEvidenceModel.findById(evidenceB._id).exec(),
+    ).not.toBeNull();
+    expect(
+      await mediaEvidenceModel.findById(evidenceC._id).exec(),
+    ).not.toBeNull();
+
+    const sessionCountBeforeActiveDelete = await administrationSessionModel
+      .countDocuments({ scaleInstanceId: fixture.scaleInstance._id })
+      .exec();
+    const evidenceCountBeforeActiveDelete = await mediaEvidenceModel
+      .countDocuments({ scaleInstanceId: fixture.scaleInstance._id })
+      .exec();
+    await doctor
+      .delete(`${base}/sessions/${sessionCId}`)
+      .expect(409)
+      .expect((response: Response) => {
+        expect(readBody(response)).toEqual(
+          expect.objectContaining({
+            code: 'PATIENT_ADMINISTRATION_SESSION_NOT_DELETABLE',
+          }),
+        );
+      });
+    expect(
+      await administrationSessionModel.countDocuments({
+        scaleInstanceId: fixture.scaleInstance._id,
+      }),
+    ).toBe(sessionCountBeforeActiveDelete);
+    expect(
+      await mediaEvidenceModel.countDocuments({
+        scaleInstanceId: fixture.scaleInstance._id,
+      }),
+    ).toBe(evidenceCountBeforeActiveDelete);
+
+    const adoptableItemResponse = await itemResponseModel
+      .findOne({
+        scaleInstanceId: fixture.scaleInstance._id,
+        'evidenceRefs.0': { $exists: true },
+      })
+      .exec();
+    if (!adoptableItemResponse) {
+      throw new Error('Expected an MMSE evidence reference slot');
+    }
+    await itemResponseModel
+      .updateOne(
+        { _id: adoptableItemResponse._id },
+        {
+          $set: {
+            'evidenceRefs.0.mediaEvidenceId': evidenceB._id,
+            'evidenceRefs.0.status': 'attached',
+          },
+        },
+      )
+      .exec();
+    await doctor
+      .delete(`${base}/sessions/${sessionBId}`)
+      .expect(409)
+      .expect((response: Response) => {
+        expect(readBody(response)).toEqual(
+          expect.objectContaining({
+            code: 'PATIENT_ADMINISTRATION_SESSION_NOT_DELETABLE',
+          }),
+        );
+      });
+    expect(
+      await administrationSessionModel.findById(sessionBId).exec(),
+    ).not.toBeNull();
+    expect(
+      await mediaEvidenceModel.findById(evidenceB._id).exec(),
+    ).not.toBeNull();
+    expect(
+      await itemResponseModel.countDocuments({
+        scaleInstanceId: fixture.scaleInstance._id,
+      }),
+    ).toBe(11);
   });
 
   it('allows every workflow role, rejects other roles, and enforces one open session under concurrency', async () => {

@@ -873,6 +873,68 @@ describe('MediaEvidenceService', () => {
     });
   });
 
+  it('queries and deletes only evidence with the exact patient administration session provenance', async () => {
+    const patientId = new Types.ObjectId();
+    const assessmentVisitId = new Types.ObjectId();
+    const scaleInstanceId = new Types.ObjectId();
+    const sessionId = new Types.ObjectId();
+    const evidence = createEvidenceFixture({
+      patientId,
+      assessmentVisitId,
+      scaleInstanceId,
+      patientAdministrationContext: {
+        sessionId,
+        stepKey: 'orientation-time',
+        stepRun: 1,
+      },
+      storage: { objectKey: 'history/main-object' },
+      handwritingTrace: {
+        trajectoryObjectKey: 'history/trajectory-object',
+      },
+    });
+    const sort = jest.fn().mockReturnValue(createExecQuery([evidence]));
+    mediaEvidenceModel.find.mockReturnValue({ sort });
+
+    const targets =
+      await service.listPatientAdministrationSessionDeletionTargets(
+        patientId,
+        assessmentVisitId,
+        scaleInstanceId,
+        sessionId,
+      );
+
+    expect(mediaEvidenceModel.find).toHaveBeenCalledWith({
+      patientId,
+      assessmentVisitId,
+      scaleInstanceId,
+      'patientAdministrationContext.sessionId': sessionId,
+    });
+    expect(targets).toEqual([
+      expect.objectContaining({
+        id: evidence._id.toString(),
+        objectKeys: ['history/main-object', 'history/trajectory-object'],
+      }),
+    ]);
+
+    mediaEvidenceModel.deleteMany.mockReturnValue(
+      createExecQuery({ acknowledged: true, deletedCount: 1 }),
+    );
+    await service.deletePatientAdministrationSessionEvidence(
+      patientId,
+      assessmentVisitId,
+      scaleInstanceId,
+      sessionId,
+      targets.map((target) => target.id),
+    );
+    expect(mediaEvidenceModel.deleteMany).toHaveBeenCalledWith({
+      _id: { $in: [evidence._id] },
+      patientId,
+      assessmentVisitId,
+      scaleInstanceId,
+      'patientAdministrationContext.sessionId': sessionId,
+    });
+  });
+
   it('atomically claims missing, failed or stale transcription with a completion token', async () => {
     const rawEvidence = createEvidenceFixture({
       evidenceType: 'audio',

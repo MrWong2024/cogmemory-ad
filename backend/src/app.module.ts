@@ -18,6 +18,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { CognitiveDomainsModule } from './modules/cognitive-domains/cognitive-domains.module';
 import { ClinicalHistoryModule } from './modules/clinical-history/clinical-history.module';
 import { MediaModule } from './modules/media/media.module';
+import { PatientAdministrationHistoryModule } from './modules/patient-administration-history/patient-administration-history.module';
 import { PatientsModule } from './modules/patients/patients.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { ScaleInstanceDeletionModule } from './modules/scale-instance-deletion/scale-instance-deletion.module';
@@ -72,6 +73,7 @@ import { UsersModule } from './modules/users/users.module';
     CognitiveDomainsModule,
     ReportsModule,
     ScaleInstanceDeletionModule,
+    PatientAdministrationHistoryModule,
     ClinicalHistoryModule,
     UsersModule,
     AuthModule,

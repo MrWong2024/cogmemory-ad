@@ -1107,6 +1107,36 @@ export class ReportsService {
     return reports.map((report) => this.mapReport(report));
   }
 
+  async hasMediaEvidenceReferences(
+    mediaEvidenceIds: readonly string[],
+  ): Promise<boolean> {
+    const normalizedEvidenceIds = this.normalizeObjectIds(mediaEvidenceIds);
+    if (!normalizedEvidenceIds || normalizedEvidenceIds.length === 0) {
+      return false;
+    }
+    const normalizedEvidenceIdStrings = normalizedEvidenceIds.map((id) =>
+      id.toString(),
+    );
+    const report = await this.clinicalReportModel
+      .exists({
+        $or: [
+          { mediaEvidenceIds: { $in: normalizedEvidenceIds } },
+          {
+            'evidenceSnapshots.mediaEvidenceId': {
+              $in: normalizedEvidenceIds,
+            },
+          },
+          {
+            'metadata.a23SourceFreeze.scope.mediaEvidenceIds': {
+              $in: normalizedEvidenceIdStrings,
+            },
+          },
+        ],
+      })
+      .exec();
+    return report !== null;
+  }
+
   async listReportsByStatus(status: string): Promise<ClinicalReportSummary[]> {
     const normalizedStatus = this.normalizeReportStatus(status);
 

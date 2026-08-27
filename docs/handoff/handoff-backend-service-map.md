@@ -75,7 +75,7 @@ Service current 事实以 `backend/src` 为准。本文保留理解长期内部�
 #### `AssessmentsService`
 
 - 文件：`backend/src/modules/assessments/services/assessments.service.ts`
-- 职责：`AssessmentVisit`、`ScaleInstance`、`ItemResponse` 与必要 Patient Administration session identity 的共享数据访问层；提供联合 ownership 读取、进度摘要、访视维护、首次开始、submission scope、Evidence ref 条件写、来源冻结和 History 批量读取原语。
+- 职责：`AssessmentVisit`、`ScaleInstance`、`ItemResponse` 与必要 Patient Administration session identity 的共享数据访问层；提供联合 ownership 读取、进度摘要、访视维护、首次开始、submission scope、Evidence ref 条件写与正式引用存在性检查、来源冻结和 History 批量读取原语。
 - 上游：Assessment controllers，以及 execution、draft、submission、Patient Administration、Media、Scoring、Cognitive Domains、Reports/History workflow；下游：相关 Mongoose Models 与 `PatientsService`。
 - 生命周期：仅初始化的 Visit/Instance 保持 draft；第一次已持久化的真实子活动以同一服务端事实时间条件启动所属 Instance 与 Visit，后续写不得覆盖首次 `startedAt` 或终态字段。
 - 访视维护：物理删除适用于无执行事实的初始化集合，或经正式 incomplete ScaleInstance cleanup 后成为无 ScaleInstance、无 ItemResponse 子事实空壳的 started Visit；前者按目标 Visit 精确移除初始化子记录，后者保留真实 started 历史直到用户显式删除。其他已有执行事实 Visit 只写首次 void 审计，保留实例、作答、患者会话、媒体、评分、报告和历史。
@@ -135,10 +135,10 @@ Service current 事实以 `backend/src` 为准。本文保留理解长期内部�
 #### `PatientAdministrationSessionService`
 
 - 文件：`backend/src/modules/assessments/services/patient-administration-session.service.ts`
-- 职责：集中持久化患者施测 session 生命周期、设备模式、患者凭证、当前步骤、capture/playback/evidence references、staff/patient 控制动作、完成与惰性过期；提供 staff/patient controllers、患者 Guard、Media evidence/review workflow 所需的最小内部方法。
+- 职责：集中持久化患者施测 session 生命周期、设备模式、患者凭证、当前步骤、capture/playback/evidence references、staff/patient 控制动作、完成与惰性过期；提供 staff/patient controllers、患者 Guard、Media evidence/review workflow，以及历史查询与精确终态 Session 删除编排所需的最小内部方法。
 - 下游：`PatientAdministrationSession` 与只读 `ScaleInstance` identity Model、`PatientsService`、`AssessmentsService`、`ScalesService`、`PresentationAssetsService`、`AuthService`。
 - 并发：credential、control、capture、playback 与 evidence attach 共享单一 revision CAS；患者写额外匹配 token hash 与 current step。并发同 revision 至多一个成功，失败不自动 replay；流在 CAS/最终授权失败时立即关闭。
-- 唯一性与恢复：同实例 partial unique index 阻止多个开放 session；凭证碰撞仅有限重试。各入口惰性检查绝对有效期，以状态+revision 原子失效并清凭证；不存在 TTL、cron、queue、transaction 或物理删除。
+- 唯一性与恢复：同实例 partial unique index 阻止多个开放 session；凭证碰撞仅有限重试。各入口惰性检查绝对有效期，以状态+revision 原子失效并清凭证；不存在 TTL、cron、queue 或 transaction。历史读取按创建时间倒序并复用同一惰性过期原语；物理删除原语只接受完整 ownership 下已锁定计划中的 terminated/expired Session，供独立叶子 workflow 在最后一步调用。
 - 持久化边界：session 内嵌 capture/playback/evidence facts，redo 保留旧 run 事实但 current completion 只读取当前 run。首次进入真实 active 状态后才委派 `AssessmentsService` 条件启动 Instance/Visit。
 - 非职责：不创建 Storage object 或 MediaEvidence，不把患者原始事实/ASR 候选直接写入正式 `ItemResponse`，不评分或生成报告。
 
@@ -158,6 +158,7 @@ Service current 事实以 `backend/src` 为准。本文保留理解长期内部�
 - 并发：transcription claim 匹配完整 ownership、当前媒体/存储/lock 状态与允许旧状态；finalize 继续匹配本次 request token。stale provider、reclaim 或相邻生命周期变化不能覆盖新事实。
 - 边界：不调用 Storage/ASR，不修改 Session、ItemResponse、评分或报告；内部 Storage/metadata 摘要不直接作为公开响应。
 - 未完成实例清理：按完整 Patient/Visit/ScaleInstance ownership 列出目标 Evidence，只投影行 ID、lock/processing 判定和 Evidence 明确持有的 `storage.objectKey` / `handwritingTrace.trajectoryObjectKey`；不使用 `objectPrefix`。Storage 成功后才按同一 ownership 与计划 ID 精确物理删除 Evidence rows。
+- 单次失败施测清理：额外匹配 `patientAdministrationContext.sessionId` 列出和删除目标 patient-origin Evidence；删除继续同时匹配 Patient/Visit/ScaleInstance/Session provenance 与计划 ID，不能触碰其他 Session 的 Evidence。
 
 #### `PatientAudioAsrClientService`
 
@@ -200,6 +201,14 @@ Service current 事实以 `backend/src` 为准。本文保留理解长期内部�
 - `patient-administration-review-structured-bindings.ts` 是 version-bound review placement registry，不推导患者业务流程。
 
 `MediaModule` 单向依赖 `AssessmentsModule`、`StorageModule`、`ScalesModule` 等；`AssessmentsModule` 不反向导入 Media，Patient Administration session 通过导出 Service 被 Media 复用，避免 circular dependency、`forwardRef` 与重复 Schema registration。
+
+#### `PatientAdministrationHistoryService`
+
+- 文件：`backend/src/modules/patient-administration-history/services/patient-administration-history.service.ts`
+- 上游：`PatientAdministrationHistoryController`；下游：`PatientAdministrationSessionService`、`AssessmentsService`、`MediaEvidenceService`、`ReportsService`、`STORAGE_SERVICE`。
+- 职责：作为叶子 orchestration owner 提供全部 Session 安全历史查询，并编排指定 terminated/expired 失败 Session 的窄范围不可逆物理删除；模块单向导入现有 owner modules，不引入 `forwardRef` 或重复 Schema registration。
+- 删除门禁：先锁定完整 Patient/Visit/ScaleInstance/Session ownership 与终态，再 fail closed 校验 Session step evidence 集合、Evidence provenance、lock/lockedAt、transcription processing，以及任意 ItemResponse evidenceRef 或 ClinicalReport root/snapshot/frozen scope 正式引用。prepared/active/paused/completed、集合不一致或任何正式采用均返回 `PATIENT_ADMINISTRATION_SESSION_NOT_DELETABLE`。
+- 删除顺序固定为去重后的明确 Storage object keys → 精确 MediaEvidence rows → 目标 Session；Storage 失败返回 `MEDIA_STORAGE_UNAVAILABLE` 且不进入数据库删除，数据库阶段失败返回 `PATIENT_ADMINISTRATION_SESSION_DELETE_FAILED`，Session 始终最后删除。不删除 ScaleInstance、ItemResponse、答案、其他 Session 或其 Evidence。
 
 #### `ScaleInstanceDeletionService`
 
@@ -272,8 +281,8 @@ Service current 事实以 `backend/src` 为准。本文保留理解长期内部�
 #### `ReportsService`
 
 - 文件：`backend/src/modules/reports/services/reports.service.ts`
-- 职责：ClinicalReport 的 ownership/latest/history 读取、初始/替代报告 create，以及 review、lock、source-freeze、archive、correction/replacement 所需的完整条件单文档写原语。
-- 上游：所有 ClinicalReport workflow、`ClinicalReportHistoryQueryService`、`ClinicalHistoryQueryService`；下游：`ClinicalReport` Model。
+- 职责：ClinicalReport 的 ownership/latest/history 读取、初始/替代报告 create，以及 review、lock、source-freeze、archive、correction/replacement 所需的完整条件单文档写原语；提供跨 root media IDs、evidence snapshots 与冻结 scope 的正式 MediaEvidence 引用存在性检查。
+- 上游：所有 ClinicalReport workflow、`ClinicalReportHistoryQueryService`、`ClinicalHistoryQueryService`、Patient Administration History 删除 workflow；下游：`ClinicalReport` Model。
 - 边界：负责 ObjectId、精确 filter、create/findOneAndUpdate 与结果映射；不独立决定完整生命周期资格、lineage、跨集合顺序或恢复，这些由 workflow/纯函数负责。不物理删除报告，不生成 PDF/AI。
 
 #### `ClinicalReportGenerationWorkflowService`

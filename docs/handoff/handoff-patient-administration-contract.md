@@ -149,7 +149,7 @@ manifest 不承担独立资产数据库、资产管理后台、多级审批、TT
 - 会话必须表达准备、活动、暂停、完成、终止和过期语义；这些是业务语义，不预先规定最终枚举名或 Schema。
 - `prepared` 仅表示患者施测会话已准备，不代表 Visit 或 ScaleInstance 已真正开始；创建会话、same-device 准备确认、cross-device 进入码创建 / 重发 / 兑换和单纯查看页面都保持父级 `draft / startedAt=null`。same-device 仅在首次安全 handoff 使 Session 从 prepared 转 active 时开始，cross-device 仅在准备确认真正使 Session 从 prepared 转 active 时开始；Session、当前 ScaleInstance 与所属 Visit 必须共用同一个服务端首次 start timestamp，并把父级 draft 推进为 in_progress。pause / resume、换凭证和后续复核不得重置或覆盖该时间。
 - `completed` 是同一 `ScaleInstance` 患者施测成功完成的永久终点；历史中存在任意 completed `PatientAdministrationSession` 时，不得再次创建患者施测会话。`terminated` / `expired` 表示未成功完成，只有在不存在 completed 历史时才允许重新创建；terminate + recreate 仅用于失败、中止或设备方式选择错误后的恢复，不是 completed 后重测。
-- terminate / expiry 本身继续保留失败施测事实，不自动删除任何 Session、Evidence 或实例。对于不存在 completed 历史、没有开放 Session、没有 submission barrier / 正式结果且满足当前 backend eligibility 的 `supervised_patient_input` 未完成实例，医护可另行显式执行窄范围物理删除；该动作把 terminated/expired Session、患者原始 Evidence 及其明确持有的私有 Storage objects 作为整个失败 attempt 一并清除。completed Session 永不进入该能力，DELETE 也不自动 terminate。
+- terminate / expiry 本身继续保留失败施测事实，不自动删除任何 Session、Evidence 或实例。医护可在历史中独立选择任意 terminated/expired Session 执行显式不可逆单次失败施测删除；该动作不要求目标是最新 Session，保留所属 ScaleInstance、全部 ItemResponse/答案与其他 Session，只删除目标 Session，以及 provenance 精确属于该 Session、未锁定、未处于 transcription processing 且未被 ItemResponse 或 ClinicalReport 正式引用的 patient-origin Evidence 与其明确持有的私有 Storage object keys。prepared、active、paused、completed Session 永不进入该能力，集合或引用关系不一致时 fail closed，DELETE 不自动 terminate。另一个独立能力仍可对不存在 completed 历史、没有开放 Session、没有 submission barrier / 正式结果且满足 backend eligibility 的整个 `supervised_patient_input` 未完成实例执行物理删除。
 - 对 MMSE `supervised_patient_input`，completed 是进入正式医护复核与量表提交的唯一成功门槛。无 Session、prepared、active、paused、terminated、expired 都仍属于患者施测阶段：前端不开放正式 ItemResponse、readiness / submit、评分或认知域；后端 A14 正式 draft write 返回 `PATIENT_ADMINISTRATION_NOT_COMPLETED`，A16 readiness 返回 blocking `SCALE_INSTANCE_PATIENT_ADMINISTRATION_INCOMPLETE`，直接 submit 复用同一 evaluation 不能绕过。该门禁只读历史 completed 事实，不改变 Session 生命周期、same-device / cross-device、父级 startedAt 或任何 Session。
 - 患者只能读取和完成服务端当前步骤，不能自行跳题；但正常 happy path 应由患者端连续推进整个正常题目主链。条件提示等合同明确的受控步骤仍由医护解锁，不能把“需要医护临床观察”机械等同为“需要 staff 同步系统写入才能进入下一题”。
 - cross-device 存在保持有效 staff Session 的独立医护终端时，医护可通过该终端执行暂停、接管、纠正、恢复、换设备或终止等已存在控制操作。
@@ -302,7 +302,7 @@ F3 的组织原则是“正常复核优先，重点项目适度提示”。系�
 
 - 题目呈现资产保存在服务器私有只读目录；回答与证据对象保存在 OSS 私有 Bucket；结构化业务事实保存在 MongoDB。
 - 正式证据和已作废证据不得原地覆盖。普通用户不得物理删除正式临床证据；作废继续保留逻辑状态和追溯关系。
-- 上述正式证据保留边界不排除一个窄例外：eligible `supervised_patient_input` 未完成失败实例可经显式不可逆 DELETE 整体物理清理。该例外不适用于 completed Session、已提交/评分/报告事实，不删除 Visit 或同 Visit 其他实例；删除成功后可在同一 Visit 重新初始化同一量表形成新实例。
+- 上述正式证据保留边界不排除两个彼此独立的窄例外：其一，任意 terminated/expired 单次失败 Session 可经显式不可逆 DELETE 清除自身及仅属于自身、未被正式采用的 patient-origin Evidence/objects，同时保留 ScaleInstance、全部 ItemResponse/答案和其他 Session；其二，eligible `supervised_patient_input` 未完成失败实例可经另一显式不可逆 DELETE 整体物理清理。两者都不适用于 completed Session 或已采用的正式证据；整体实例删除还排除已提交/评分/报告事实，不删除 Visit 或同 Visit 其他实例，成功后可在同一 Visit 重新初始化同一量表形成新实例。
 - 试用期内不实现未经院方确认的自动删除年限，不虚构五年、十年或其他期限。后续由医院、伦理或研究协议明确后，再实施统一删除策略。
 - 麦克风测试和不计分练习不上传，不进入保留合同。
 - 正式备份范围与可验证恢复归入 WP-09；本合同只要求后续 WP-09 能识别医院最终确认的 MongoDB 与 OSS 正式备份范围。
@@ -324,7 +324,7 @@ F3 的组织原则是“正常复核优先，重点项目适度提示”。系�
 - 当前步骤最小授权、提示不预加载、刺激 / guidance / prompt 的播放和重播边界。
 - 两张逐题矩阵，以及口头回答默认短录音、非语音不默认录音、动作由医护观察、绘图不默认全事件回放。
 - 四项必要设备检查门槛、可选不计分操作练习隔离、既定 `ScaleVersion` / 呈现资产决定当前施测语言、短期患者会话、创建时持久化且不可切换的 same-device / cross-device、same-device 不签发进入码、cross-device 六位一次性进入码十分钟、无 completed 历史时可因失败 / 中止 / 选择错误 terminate 或 expire 后 recreate、任意 completed 历史永久禁止同一 `ScaleInstance` 再次 create、legacy 模式不推断且 mode-specific mutation fail closed、同一 `ScaleInstance` 同时只允许一个有效患者设备、两小时绝对有效期、same-device staff Session 失效与重新认证、cross-device staff Session 保留、服务端权威步骤和安全退出。
-- terminated / expired 默认保留失败施测事实；只有 eligible supervised 未完成失败实例经独立显式 DELETE 才整体物理清除其失败 Session、patient-origin Evidence 和 owned private objects。completed Session 与正式结果链永久排除在该窄能力之外。
+- terminated / expired 默认保留失败施测事实；医护可显式不可逆删除任意单个 terminated/expired 失败 Session 及其未采用 patient-origin Evidence/owned private objects，同时保留实例、全部 ItemResponse/答案和其他 Session；eligible supervised 未完成失败实例另可经独立 DELETE 整体物理清除。completed Session 与已采用正式事实永久排除在这些窄能力之外。
 - 患者正常题目主链连续推进，医护现场观察与后续复核记录解耦；双设备不等于双写者，独立患者 / 独立 `ScaleInstance` 正常并行，同一评估不默认多人实时协同编辑。
 - 患者原始事实、ASR 候选、现场医护观察的事实来源、量表作答复核草稿和整体正式提交结果的五层语义；现场观察可在 F3 直接形成现有 `ItemResponse`，不默认要求独立 Observation 数据层。F3 正常复核优先、原始证据按需查看，患者已有有效 `MediaEvidence` 可经明确采用受控进入现有 `evidenceRefs` 而不重新上传或复制；第 4 层由现有 A14 `ItemResponse` 单题草稿与 `markAsAnswered` 承载，第 5 层通过 readiness 后的现有 A16 整体提交使同一批 `ItemResponse` 成为正式作答结果，不创建第二套答案、复核状态或批量确认写协议，A14 / A16 技术权限继续服从当前 backend 授权合同。
 - MMSE supervised 执行阶段严格按 server-owned PatientAdministrationSession completed 事实收口：completed 前 UI 只呈现患者施测与基础信息，backend 同时阻断正式 A14 写与 A16 submit；completed 后才开放 unified review / readiness / submission，ScaleInstance completed / locked / voided 后才展示评分，final/history ScoreResult 后才展示认知域。前端 progressive disclosure 不替代后端 invariant。

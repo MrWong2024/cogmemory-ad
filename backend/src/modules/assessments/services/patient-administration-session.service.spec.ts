@@ -90,11 +90,13 @@ describe('PatientAdministrationSessionService', () => {
   let service: PatientAdministrationSessionService;
   let sessionModel: {
     exists: jest.Mock;
+    find: jest.Mock;
     findOne: jest.Mock;
     findOneAndUpdate: jest.Mock;
     findById: jest.Mock;
     updateOne: jest.Mock;
     create: jest.Mock;
+    deleteOne: jest.Mock;
   };
   let scaleInstanceModel: { findOne: jest.Mock };
   let patientsService: { findPatientById: jest.Mock };
@@ -264,11 +266,13 @@ describe('PatientAdministrationSessionService', () => {
   beforeEach(async () => {
     sessionModel = {
       exists: jest.fn().mockReturnValue(createQuery(null)),
+      find: jest.fn(),
       findOne: jest.fn(),
       findOneAndUpdate: jest.fn(),
       findById: jest.fn(),
       updateOne: jest.fn(),
       create: jest.fn(),
+      deleteOne: jest.fn(),
     };
     scaleInstanceModel = { findOne: jest.fn() };
     patientsService = { findPatientById: jest.fn() };
@@ -1568,6 +1572,133 @@ describe('PatientAdministrationSessionService', () => {
     );
 
     expect(response.deviceMode).toBeNull();
+  });
+
+  it('lists every session newest first and expires an overdue open session before mapping', async () => {
+    arrangeEditableBusiness();
+    const newest = sessionDocument({
+      _id: new Types.ObjectId('507f1f77bcf86cd799439029'),
+      status: 'active',
+      revision: 4,
+      expiresAt: new Date(Date.now() - 1_000),
+      sessionTokenHash: 'private-session-token-hash',
+      createdAt: new Date('2026-08-27T02:00:00.000Z'),
+    });
+    const older = sessionDocument({
+      _id: new Types.ObjectId('507f1f77bcf86cd799439028'),
+      status: 'terminated',
+      terminatedAt: new Date('2026-08-27T01:10:00.000Z'),
+      createdAt: new Date('2026-08-27T01:00:00.000Z'),
+      stepEvidenceRefs: [],
+    });
+    const expired = sessionDocument({
+      ...newest,
+      status: 'expired',
+      revision: 5,
+      expiredAt: new Date('2026-08-27T02:10:00.000Z'),
+      sessionTokenHash: undefined,
+    });
+    const historyQuery = createQuery([newest, older]);
+    sessionModel.find.mockReturnValue(historyQuery);
+    sessionModel.findOneAndUpdate.mockReturnValue(createQuery(expired));
+
+    const history = await service.listSessionHistory(
+      patientId,
+      visitId,
+      scaleInstanceId,
+    );
+
+    expect(sessionModel.find).toHaveBeenCalledWith({
+      scaleInstanceId: new Types.ObjectId(scaleInstanceId),
+    });
+    expect(historyQuery.sort).toHaveBeenCalledWith({
+      createdAt: -1,
+      _id: -1,
+    });
+    expect(history.map((session) => session.id)).toEqual([
+      newest._id.toString(),
+      older._id.toString(),
+    ]);
+    expect(history.map((session) => session.status)).toEqual([
+      'expired',
+      'terminated',
+    ]);
+    expect(JSON.stringify(history)).not.toContain('private-session-token-hash');
+  });
+
+  it.each(['terminated', 'expired'] as const)(
+    'prepares an exact %s history session for deletion without touching assessment answers',
+    async (status) => {
+      arrangeEditableBusiness();
+      const deletable = sessionDocument({ status });
+      sessionModel.findOne.mockReturnValue(createQuery(deletable));
+
+      const plan = await service.prepareHistorySessionDeletion(
+        patientId,
+        visitId,
+        scaleInstanceId,
+        deletable._id.toString(),
+      );
+
+      expect(plan).toEqual({
+        patientId: new Types.ObjectId(patientId),
+        assessmentVisitId: new Types.ObjectId(visitId),
+        scaleInstanceId: new Types.ObjectId(scaleInstanceId),
+        sessionId: deletable._id,
+        status,
+        stepEvidenceIds: [
+          '507f1f77bcf86cd799439018',
+          '507f1f77bcf86cd799439019',
+        ],
+      });
+      expect(sessionModel.findOne).toHaveBeenCalledWith({
+        _id: deletable._id,
+        scaleInstanceId: new Types.ObjectId(scaleInstanceId),
+      });
+    },
+  );
+
+  it.each(['prepared', 'active', 'paused', 'completed'] as const)(
+    'rejects %s history session deletion with the stable not-deletable code',
+    async (status) => {
+      arrangeEditableBusiness();
+      const blocked = sessionDocument({ status });
+      sessionModel.findOne.mockReturnValue(createQuery(blocked));
+
+      await expectHttpException(
+        service.prepareHistorySessionDeletion(
+          patientId,
+          visitId,
+          scaleInstanceId,
+          blocked._id.toString(),
+        ),
+        409,
+        'PATIENT_ADMINISTRATION_SESSION_NOT_DELETABLE',
+      );
+      expect(sessionModel.deleteOne).not.toHaveBeenCalled();
+    },
+  );
+
+  it('deletes only the exact terminal session in a prepared history plan', async () => {
+    const sessionId = new Types.ObjectId('507f1f77bcf86cd799439027');
+    sessionModel.deleteOne.mockReturnValue(
+      createQuery({ acknowledged: true, deletedCount: 1 }),
+    );
+
+    await service.deleteHistorySession({
+      patientId: new Types.ObjectId(patientId),
+      assessmentVisitId: new Types.ObjectId(visitId),
+      scaleInstanceId: new Types.ObjectId(scaleInstanceId),
+      sessionId,
+      status: 'terminated',
+      stepEvidenceIds: [],
+    });
+
+    expect(sessionModel.deleteOne).toHaveBeenCalledWith({
+      _id: sessionId,
+      scaleInstanceId: new Types.ObjectId(scaleInstanceId),
+      status: 'terminated',
+    });
   });
 
   it('still permits terminating a legacy open session', async () => {

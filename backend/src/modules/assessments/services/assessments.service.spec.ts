@@ -442,6 +442,7 @@ describe('AssessmentsService', () => {
     findOneAndUpdate: jest.Mock;
     find: jest.Mock;
     countDocuments: jest.Mock;
+    exists: jest.Mock;
     deleteMany: jest.Mock;
   };
   let patientAdministrationSessionModel: {
@@ -476,6 +477,7 @@ describe('AssessmentsService', () => {
       findOneAndUpdate: jest.fn(),
       find: jest.fn(),
       countDocuments: jest.fn(),
+      exists: jest.fn(),
       deleteMany: jest.fn(),
     };
     patientAdministrationSessionModel = {
@@ -518,6 +520,7 @@ describe('AssessmentsService', () => {
     patientAdministrationSessionModel.exists.mockReturnValue(
       createExecQuery(null),
     );
+    itemResponseModel.exists.mockReturnValue(createExecQuery(null));
   });
 
   afterEach(() => {
@@ -575,6 +578,26 @@ describe('AssessmentsService', () => {
     expect(patientAdministrationSessionModel.exists).toHaveBeenCalledWith({
       scaleInstanceId,
       status: 'completed',
+    });
+  });
+
+  it('detects formal ItemResponse references to any target evidence id', async () => {
+    const firstEvidenceId = new Types.ObjectId();
+    const secondEvidenceId = new Types.ObjectId();
+    itemResponseModel.exists.mockReturnValue(
+      createExecQuery({ _id: new Types.ObjectId() }),
+    );
+
+    await expect(
+      service.hasItemResponseEvidenceReferences([
+        firstEvidenceId.toString(),
+        secondEvidenceId.toString(),
+      ]),
+    ).resolves.toBe(true);
+    expect(itemResponseModel.exists).toHaveBeenCalledWith({
+      'evidenceRefs.mediaEvidenceId': {
+        $in: [firstEvidenceId, secondEvidenceId],
+      },
     });
   });
 

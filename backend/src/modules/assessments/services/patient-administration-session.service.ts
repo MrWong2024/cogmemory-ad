@@ -161,6 +161,15 @@ export type PatientAdministrationReviewFacts = {
   stepEvidenceRefs: PatientAdministrationReviewEvidenceRefFact[];
 };
 
+export type PatientAdministrationSessionHistoryDeletionPlan = {
+  patientId: Types.ObjectId;
+  assessmentVisitId: Types.ObjectId;
+  scaleInstanceId: Types.ObjectId;
+  sessionId: Types.ObjectId;
+  status: Extract<PatientAdministrationStatus, 'terminated' | 'expired'>;
+  stepEvidenceIds: string[];
+};
+
 const REVIEW_EVENT_ACTIONS = new Set<PatientAdministrationControlEventAction>([
   'paused',
   'resumed',
@@ -352,6 +361,75 @@ export class PatientAdministrationSessionService {
 
     const current = await this.expireIfNeeded(session, new Date());
     return this.toSessionSummary(current);
+  }
+
+  async listSessionHistory(
+    patientId: string,
+    visitId: string,
+    scaleInstanceId: string,
+  ): Promise<PatientAdministrationSessionSummaryResponse[]> {
+    await this.requireRouteOwnership(patientId, visitId, scaleInstanceId);
+    const sessions = await this.patientAdministrationSessionModel
+      .find({ scaleInstanceId: new Types.ObjectId(scaleInstanceId) })
+      .sort({ createdAt: -1, _id: -1 })
+      .select('+sessionTokenHash')
+      .exec();
+    const now = new Date();
+    const summaries: PatientAdministrationSessionSummaryResponse[] = [];
+    for (const session of sessions) {
+      const current = await this.expireIfNeeded(session, now);
+      summaries.push(this.toSessionSummary(current));
+    }
+    return summaries;
+  }
+
+  async prepareHistorySessionDeletion(
+    patientId: string,
+    visitId: string,
+    scaleInstanceId: string,
+    sessionId: string,
+  ): Promise<PatientAdministrationSessionHistoryDeletionPlan> {
+    await this.requireRouteOwnership(patientId, visitId, scaleInstanceId);
+    const session = await this.patientAdministrationSessionModel
+      .findOne({
+        _id: new Types.ObjectId(sessionId),
+        scaleInstanceId: new Types.ObjectId(scaleInstanceId),
+      })
+      .exec();
+    if (!session) {
+      this.throwSessionNotFound();
+    }
+
+    const current = await this.expireIfNeeded(session, new Date());
+    if (current.status !== 'terminated' && current.status !== 'expired') {
+      this.throwSessionNotDeletable();
+    }
+
+    return {
+      patientId: new Types.ObjectId(patientId),
+      assessmentVisitId: new Types.ObjectId(visitId),
+      scaleInstanceId: new Types.ObjectId(scaleInstanceId),
+      sessionId: current._id,
+      status: current.status,
+      stepEvidenceIds: (current.stepEvidenceRefs ?? []).map((reference) =>
+        reference.mediaEvidenceId.toString(),
+      ),
+    };
+  }
+
+  async deleteHistorySession(
+    plan: PatientAdministrationSessionHistoryDeletionPlan,
+  ): Promise<void> {
+    const result = await this.patientAdministrationSessionModel
+      .deleteOne({
+        _id: plan.sessionId,
+        scaleInstanceId: plan.scaleInstanceId,
+        status: plan.status,
+      })
+      .exec();
+    if (result.deletedCount !== 1) {
+      throw new Error('Patient administration session deletion was incomplete');
+    }
   }
 
   async getLatestReviewFacts(
@@ -2587,6 +2665,13 @@ export class PatientAdministrationSessionService {
     throw new ConflictException({
       code: 'PATIENT_ADMINISTRATION_SESSION_CONFLICT',
       message: 'Patient administration session is not in the required state',
+    });
+  }
+
+  private throwSessionNotDeletable(): never {
+    throw new ConflictException({
+      code: 'PATIENT_ADMINISTRATION_SESSION_NOT_DELETABLE',
+      message: 'Patient administration session cannot be physically deleted',
     });
   }
 
