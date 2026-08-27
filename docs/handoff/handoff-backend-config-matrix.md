@@ -58,7 +58,7 @@
 | `OSS_PUBLIC_ENDPOINT` | `storage.oss.publicEndpoint` | `oss-cn-shenzhen.aliyuncs.com` | `oss-cn-shenzhen.aliyuncs.com` | 可为空 | 签名 URL endpoint |
 | `OSS_ACCESS_KEY_ID` | `storage.oss.accessKeyId` | 占位或空 | required when `oss` | 可为空 | 不写真实 AccessKey |
 | `OSS_ACCESS_KEY_SECRET` | `storage.oss.accessKeySecret` | 占位或空 | required when `oss` | 可为空 | 不写真实 AccessKey |
-| `OSS_OBJECT_PREFIX` | `storage.oss.objectPrefix` | `cogmemory_ad/development` | `cogmemory_ad/production` | `cogmemory_ad` | `STORAGE_DRIVER=oss` 时 required；development / production example 环境隔离；test fake 保持当前口径 |
+| `OSS_OBJECT_PREFIX` | `storage.oss.objectPrefix` | `cogmemory_ad/development` | `cogmemory_ad/production` | `cogmemory_ad` | `STORAGE_DRIVER=oss` 时 required；development / production 必须与 `NODE_ENV` 对应值精确匹配；test fake 保持当前口径 |
 | `SESSION_COOKIE_NAME` | `session.cookieName` | `cogmemory_ad_session` | `cogmemory_ad_session` | `cogmemory_ad_session` | Cookie 名称 |
 | `SESSION_TTL_MS` | `session.ttlMs` | `86400000` | `86400000` | `86400000` | 会话 TTL 占位 |
 | `MAX_ACTIVE_SESSIONS_PER_USER` | `session.maxActiveSessionsPerUser` | `5` | `5` | `5` | 当前仅配置占位 |

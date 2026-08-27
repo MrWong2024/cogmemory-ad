@@ -139,6 +139,10 @@ describe('OSS object prefix validation', () => {
     OSS_ACCESS_KEY_ID: 'test-access-key-id',
     OSS_ACCESS_KEY_SECRET: 'test-access-key-secret',
   };
+  const productionDatabase = {
+    MONGO_URI: 'mongodb://localhost/cogmemory_ad',
+    MONGO_ADMIN_URI: 'mongodb://localhost/cogmemory_ad',
+  };
 
   it.each([undefined, '', ' '])(
     'rejects OSS storage without an explicit non-empty object prefix: %p',
@@ -161,6 +165,59 @@ describe('OSS object prefix validation', () => {
     expect(result.error).toBeUndefined();
     expect(Reflect.get(result.value as object, 'OSS_OBJECT_PREFIX')).toBe(
       'cogmemory_ad/development',
+    );
+  });
+
+  it.each([
+    ['development', 'cogmemory_ad/development'],
+    ['production', 'cogmemory_ad/production'],
+  ] as const)(
+    'accepts the exact %s OSS object prefix',
+    (nodeEnv, objectPrefix) => {
+      const result = envValidationSchema.validate({
+        ...ossEnvironment,
+        ...(nodeEnv === 'production' ? productionDatabase : {}),
+        NODE_ENV: nodeEnv,
+        OSS_OBJECT_PREFIX: objectPrefix,
+      });
+
+      expect(result.error).toBeUndefined();
+      expect(Reflect.get(result.value as object, 'OSS_OBJECT_PREFIX')).toBe(
+        objectPrefix,
+      );
+    },
+  );
+
+  it.each([
+    ['development', 'cogmemory_ad/production'],
+    ['development', 'cogmemory_ad'],
+    ['development', 'cogmemory_ad/development-shadow'],
+    ['production', 'cogmemory_ad/development'],
+    ['production', 'cogmemory_ad'],
+  ] as const)(
+    'rejects NODE_ENV=%s with OSS_OBJECT_PREFIX=%s',
+    (nodeEnv, objectPrefix) => {
+      const result = envValidationSchema.validate({
+        ...ossEnvironment,
+        ...(nodeEnv === 'production' ? productionDatabase : {}),
+        NODE_ENV: nodeEnv,
+        OSS_OBJECT_PREFIX: objectPrefix,
+      });
+
+      expect(result.error?.message).toContain('OSS_OBJECT_PREFIX');
+    },
+  );
+
+  it('does not add an environment-specific prefix rule for test OSS configuration', () => {
+    const result = envValidationSchema.validate({
+      ...ossEnvironment,
+      NODE_ENV: 'test',
+      OSS_OBJECT_PREFIX: 'test-local-prefix',
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(Reflect.get(result.value as object, 'OSS_OBJECT_PREFIX')).toBe(
+      'test-local-prefix',
     );
   });
 

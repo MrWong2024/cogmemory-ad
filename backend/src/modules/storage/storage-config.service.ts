@@ -1,5 +1,6 @@
 // backend/src/modules/storage/storage-config.service.ts
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { getExpectedOssObjectPrefix } from '../../config/oss-object-prefix';
 import { StorageDriver } from './storage.constants';
 
 export type OssStorageConfig = {
@@ -33,7 +34,7 @@ export class StorageConfigService {
   }
 
   getOssConfigOrThrow(): OssStorageConfig {
-    return {
+    const config = {
       region: this.required('OSS_REGION'),
       bucket: this.required('OSS_BUCKET'),
       internalEndpoint: this.required('OSS_INTERNAL_ENDPOINT'),
@@ -42,6 +43,19 @@ export class StorageConfigService {
       accessKeySecret: this.required('OSS_ACCESS_KEY_SECRET'),
       objectPrefix: this.required('OSS_OBJECT_PREFIX'),
     };
+    const nodeEnv = process.env.NODE_ENV?.trim();
+    const expectedObjectPrefix = getExpectedOssObjectPrefix(nodeEnv);
+
+    if (
+      expectedObjectPrefix !== undefined &&
+      config.objectPrefix !== expectedObjectPrefix
+    ) {
+      throw new ServiceUnavailableException(
+        `OSS storage object prefix does not match NODE_ENV=${nodeEnv}; expected ${expectedObjectPrefix}`,
+      );
+    }
+
+    return config;
   }
 
   private optional(key: string): string | undefined {

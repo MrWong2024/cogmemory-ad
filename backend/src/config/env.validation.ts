@@ -1,5 +1,6 @@
 // backend/src/config/env.validation.ts
 import Joi from 'joi';
+import { OSS_OBJECT_PREFIX_BY_NODE_ENV } from './oss-object-prefix';
 
 const DEFAULT_DEV_MONGO_URI =
   'mongodb://cogmemory_ad_dev_app:{COGMEMORY_AD_DEV_APP_PASSWORD}@127.0.0.1:27017/cogmemory_ad_dev?authSource=cogmemory_ad_dev';
@@ -65,6 +66,30 @@ const smsAuthProviderSchema = Joi.when('NODE_ENV', {
 });
 
 const optionalStringSchema = Joi.string().trim().allow('').default('');
+
+const ossObjectPrefixSchema = Joi.when('STORAGE_DRIVER', {
+  is: 'oss',
+  then: Joi.when('NODE_ENV', {
+    switch: [
+      {
+        is: 'development',
+        then: Joi.string()
+          .trim()
+          .valid(OSS_OBJECT_PREFIX_BY_NODE_ENV.development)
+          .required(),
+      },
+      {
+        is: 'production',
+        then: Joi.string()
+          .trim()
+          .valid(OSS_OBJECT_PREFIX_BY_NODE_ENV.production)
+          .required(),
+      },
+    ],
+    otherwise: Joi.string().trim().min(1).required(),
+  }),
+  otherwise: Joi.string().trim().allow('').default('cogmemory_ad'),
+});
 
 type SessionEnvCandidate = {
   SESSION_COOKIE_SAME_SITE?: unknown;
@@ -178,11 +203,7 @@ export const envValidationSchema = Joi.object({
     then: Joi.string().trim().min(1).required(),
     otherwise: optionalStringSchema.optional(),
   }),
-  OSS_OBJECT_PREFIX: Joi.when('STORAGE_DRIVER', {
-    is: 'oss',
-    then: Joi.string().trim().min(1).required(),
-    otherwise: Joi.string().trim().allow('').default('cogmemory_ad'),
-  }),
+  OSS_OBJECT_PREFIX: ossObjectPrefixSchema,
   SESSION_COOKIE_NAME: Joi.string()
     .trim()
     .min(1)

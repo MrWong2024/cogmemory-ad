@@ -52,6 +52,7 @@ function createMockAliOssClient(): MockAliOssClient {
 
 describe('Storage services', () => {
   const ossEnvKeys = [
+    'NODE_ENV',
     'STORAGE_DRIVER',
     'OSS_REGION',
     'OSS_BUCKET',
@@ -85,7 +86,11 @@ describe('Storage services', () => {
     previousEnv.clear();
   });
 
-  function setValidOssEnvironment(): void {
+  function setValidOssEnvironment(
+    nodeEnv: 'development' | 'production' = 'development',
+    objectPrefix = `cogmemory_ad/${nodeEnv}`,
+  ): void {
+    process.env.NODE_ENV = nodeEnv;
     process.env.STORAGE_DRIVER = 'oss';
     process.env.OSS_REGION = 'test-region';
     process.env.OSS_BUCKET = 'test-bucket';
@@ -93,7 +98,7 @@ describe('Storage services', () => {
     process.env.OSS_PUBLIC_ENDPOINT = 'public-endpoint-test-value';
     process.env.OSS_ACCESS_KEY_ID = 'test-access-key-id';
     process.env.OSS_ACCESS_KEY_SECRET = 'test-access-key-secret';
-    process.env.OSS_OBJECT_PREFIX = 'cogmemory_ad/development';
+    process.env.OSS_OBJECT_PREFIX = objectPrefix;
   }
 
   it('uses fake storage without requiring OSS configuration', async () => {
@@ -157,6 +162,72 @@ describe('Storage services', () => {
 
     expect(ossClientConstructor).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ['development', 'cogmemory_ad/development'],
+    ['production', 'cogmemory_ad/production'],
+  ] as const)(
+    'returns OSS configuration for the exact %s prefix',
+    (nodeEnv, objectPrefix) => {
+      setValidOssEnvironment(nodeEnv, objectPrefix);
+
+      expect(new StorageConfigService().getOssConfigOrThrow()).toMatchObject({
+        objectPrefix,
+      });
+      expect(ossClientConstructor).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ['development', 'cogmemory_ad/production'],
+    ['development', 'cogmemory_ad'],
+    ['development', 'cogmemory_ad/development-shadow'],
+    ['production', 'cogmemory_ad/development'],
+    ['production', 'cogmemory_ad'],
+  ] as const)(
+    'rejects direct OSS configuration for NODE_ENV=%s with prefix=%s',
+    (nodeEnv, objectPrefix) => {
+      setValidOssEnvironment(nodeEnv, objectPrefix);
+
+      expect(() => new StorageConfigService().getOssConfigOrThrow()).toThrow(
+        `OSS storage object prefix does not match NODE_ENV=${nodeEnv}; expected cogmemory_ad/${nodeEnv}`,
+      );
+      expect(ossClientConstructor).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['uploadFile', 'getSignedUrl', 'deleteObject'] as const)(
+    'rejects a NODE_ENV/prefix mismatch before provider access for %s',
+    async (operation) => {
+      setValidOssEnvironment('development', 'cogmemory_ad/production');
+      const client = createMockAliOssClient();
+      ossClientConstructor.mockReturnValue(client);
+      const storage = new OssStorageService(new StorageConfigService());
+      const objectKey = 'cogmemory_ad/production/smoke/object.txt';
+
+      let result: Promise<unknown>;
+      if (operation === 'uploadFile') {
+        result = storage.uploadFile({
+          objectKey,
+          buffer: Buffer.from('mismatch'),
+          sizeBytes: 8,
+          mimeType: 'text/plain',
+        });
+      } else if (operation === 'getSignedUrl') {
+        result = storage.getSignedUrl(objectKey, { expiresInSeconds: 120 });
+      } else {
+        result = storage.deleteObject(objectKey);
+      }
+
+      await expect(result).rejects.toThrow(
+        'OSS storage object prefix does not match NODE_ENV=development; expected cogmemory_ad/development',
+      );
+      expect(ossClientConstructor).not.toHaveBeenCalled();
+      expect(client.put).not.toHaveBeenCalled();
+      expect(client.delete).not.toHaveBeenCalled();
+      expect(client.signatureUrl).not.toHaveBeenCalled();
+    },
+  );
 
   it.each(['uploadFile', 'getSignedUrl', 'deleteObject'] as const)(
     'rejects a foreign environment key before provider access for %s',
