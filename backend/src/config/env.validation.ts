@@ -93,7 +93,15 @@ export const envValidationSchema = Joi.object({
     .default('development'),
   PORT: Joi.number().port().default(5002),
   FRONTEND_URL: Joi.string().trim().min(1).default('http://localhost:3002'),
-  CORS_ORIGIN: Joi.string().trim().min(1).default('http://localhost:3002'),
+  CORS_ORIGIN: Joi.when('NODE_ENV', {
+    is: 'production',
+    then: Joi.string()
+      .trim()
+      .min(1)
+      .invalid('*')
+      .default('http://localhost:3002'),
+    otherwise: Joi.string().trim().min(1).default('http://localhost:3002'),
+  }),
   COGMEMORY_DATABASE_PURPOSE: Joi.when('NODE_ENV', {
     is: 'test',
     then: Joi.string()

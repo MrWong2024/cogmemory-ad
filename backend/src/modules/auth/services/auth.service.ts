@@ -1,5 +1,5 @@
 // backend/src/modules/auth/services/auth.service.ts
-import { Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { createHash, randomBytes, scrypt, timingSafeEqual } from 'crypto';
 import { Model, Types } from 'mongoose';
@@ -8,7 +8,13 @@ import {
   UserCredentialRecord,
   UserSummary,
 } from '../../users/services/users.service';
-import { DEFAULT_SESSION_TTL_MS } from '../auth.constants';
+import {
+  AUTH_LOGIN_FAILURE_WINDOW_MS,
+  AUTH_LOGIN_MAX_FAILURES,
+  AUTH_LOGIN_RATE_LIMIT_CODE,
+  AUTH_LOGIN_RATE_LIMIT_MESSAGE,
+  DEFAULT_SESSION_TTL_MS,
+} from '../auth.constants';
 import {
   Session,
   SessionDocument,
@@ -22,6 +28,11 @@ const PASSWORD_HASH_VERSION = 'v1';
 const PASSWORD_SALT_BYTES = 16;
 const PASSWORD_KEY_LENGTH = 64;
 const SESSION_TOKEN_BYTES = 32;
+
+type LoginFailureState = {
+  failureCount: number;
+  windowExpiresAtMs: number;
+};
 
 export type CreateSessionForUserInput = {
   userId: Types.ObjectId | string;
@@ -69,6 +80,9 @@ function derivePasswordKey(
 
 @Injectable()
 export class AuthService {
+  private readonly loginFailureStates = new Map<string, LoginFailureState>();
+  private nextLoginFailureSweepAtMs = 0;
+
   constructor(
     @InjectModel(Session.name)
     private readonly sessionModel: Model<SessionDocument>,
@@ -133,11 +147,22 @@ export class AuthService {
   async authenticateWithPassword(
     input: AuthenticateWithPasswordInput,
   ): Promise<AuthenticateWithPasswordResult | null> {
+    const normalizedAccountName = input.accountName.trim().toLowerCase();
+    const failureKey = this.buildLoginFailureKey(
+      input.ipAddress,
+      normalizedAccountName,
+    );
+    const attemptStartedAtMs = Date.now();
+
+    this.deleteExpiredLoginFailureStates(attemptStartedAtMs);
+    this.assertLoginAttemptAllowed(failureKey, attemptStartedAtMs);
+
     const credential = await this.usersService.findUserCredentialByAccountName(
-      input.accountName,
+      normalizedAccountName,
     );
 
     if (!credential || !this.canCredentialAuthenticate(credential)) {
+      this.recordLoginFailure(failureKey, Date.now());
       return null;
     }
 
@@ -147,6 +172,7 @@ export class AuthService {
     );
 
     if (!passwordMatches) {
+      this.recordLoginFailure(failureKey, Date.now());
       return null;
     }
 
@@ -157,8 +183,11 @@ export class AuthService {
     });
 
     if (!sessionResult) {
+      this.recordLoginFailure(failureKey, Date.now());
       return null;
     }
+
+    this.loginFailureStates.delete(failureKey);
 
     return {
       user: sessionResult.user,
@@ -287,6 +316,75 @@ export class AuthService {
 
   private canCredentialAuthenticate(credential: UserCredentialRecord): boolean {
     return credential.status === 'active';
+  }
+
+  private buildLoginFailureKey(
+    ipAddress: string | undefined,
+    normalizedAccountName: string,
+  ): string {
+    return JSON.stringify([
+      ipAddress?.trim() || 'unknown',
+      normalizedAccountName,
+    ]);
+  }
+
+  private deleteExpiredLoginFailureStates(nowMs: number): void {
+    if (nowMs < this.nextLoginFailureSweepAtMs) {
+      return;
+    }
+
+    for (const [key, state] of this.loginFailureStates) {
+      if (state.windowExpiresAtMs <= nowMs) {
+        this.loginFailureStates.delete(key);
+      }
+    }
+
+    this.nextLoginFailureSweepAtMs = nowMs + AUTH_LOGIN_FAILURE_WINDOW_MS;
+  }
+
+  private assertLoginAttemptAllowed(key: string, nowMs: number): void {
+    const state = this.loginFailureStates.get(key);
+
+    if (!state) {
+      return;
+    }
+
+    if (state.windowExpiresAtMs <= nowMs) {
+      this.loginFailureStates.delete(key);
+      return;
+    }
+
+    if (state.failureCount < AUTH_LOGIN_MAX_FAILURES) {
+      return;
+    }
+
+    const remainingSeconds = Math.max(
+      1,
+      Math.ceil((state.windowExpiresAtMs - nowMs) / 1000),
+    );
+
+    throw new HttpException(
+      {
+        code: AUTH_LOGIN_RATE_LIMIT_CODE,
+        message: AUTH_LOGIN_RATE_LIMIT_MESSAGE,
+        remainingSeconds,
+      },
+      HttpStatus.TOO_MANY_REQUESTS,
+    );
+  }
+
+  private recordLoginFailure(key: string, nowMs: number): void {
+    const state = this.loginFailureStates.get(key);
+
+    if (!state || state.windowExpiresAtMs <= nowMs) {
+      this.loginFailureStates.set(key, {
+        failureCount: 1,
+        windowExpiresAtMs: nowMs + AUTH_LOGIN_FAILURE_WINDOW_MS,
+      });
+      return;
+    }
+
+    state.failureCount += 1;
   }
 
   private normalizeObjectId(

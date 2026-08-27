@@ -99,8 +99,6 @@ export class AllExceptionsFilter implements ExceptionFilter {
         remainingSeconds = parsedResponseBody?.remainingSeconds;
         reasons = parsedResponseBody?.reasons;
       }
-    } else if (exception instanceof Error && exception.message) {
-      message = exception.message;
     }
 
     const body = {

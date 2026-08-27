@@ -10,6 +10,12 @@ async function bootstrap(): Promise<void> {
 
   const configService = app.get(ConfigService);
   const port = configService.get<number>('app.port') ?? 5002;
+  const environment = configService.get<string>('app.env');
+
+  if (environment === 'production') {
+    await app.listen(port, '127.0.0.1');
+    return;
+  }
 
   await app.listen(port);
 }

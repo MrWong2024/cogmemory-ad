@@ -87,3 +87,43 @@ describe('ASR configuration', () => {
     ).toBe('qwen-audio-3.0-asr-flash');
   });
 });
+
+describe('CORS origin validation', () => {
+  const productionBase = {
+    NODE_ENV: 'production',
+    MONGO_URI: 'mongodb://localhost/cogmemory_ad',
+    MONGO_ADMIN_URI: 'mongodb://localhost/cogmemory_ad',
+    STORAGE_DRIVER: 'fake',
+  };
+
+  it('rejects wildcard CORS in production', () => {
+    const result = envValidationSchema.validate({
+      ...productionBase,
+      CORS_ORIGIN: '*',
+    });
+
+    expect(result.error?.message).toContain('CORS_ORIGIN');
+  });
+
+  it('accepts the production HTTPS origin', () => {
+    const result = envValidationSchema.validate({
+      ...productionBase,
+      CORS_ORIGIN: 'https://cogmemory.cqupt.fun',
+    });
+
+    expect(result.error).toBeUndefined();
+  });
+
+  it.each(['development', 'test'] as const)(
+    'keeps wildcard CORS valid in %s',
+    (nodeEnv) => {
+      const result = envValidationSchema.validate({
+        NODE_ENV: nodeEnv,
+        CORS_ORIGIN: '*',
+      });
+
+      expect(result.error).toBeUndefined();
+      expect(Reflect.get(result.value as object, 'CORS_ORIGIN')).toBe('*');
+    },
+  );
+});

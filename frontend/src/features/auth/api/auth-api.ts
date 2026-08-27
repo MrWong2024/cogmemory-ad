@@ -10,6 +10,7 @@ import type {
 
 export type AuthApiErrorCode =
   | 'invalid_credentials'
+  | 'rate_limited'
   | 'service_unavailable';
 
 export class AuthApiError extends Error {
@@ -20,7 +21,9 @@ export class AuthApiError extends Error {
     super(
       code === 'invalid_credentials'
         ? 'Authentication failed.'
-        : 'Authentication service unavailable.',
+        : code === 'rate_limited'
+          ? 'Authentication rate limited.'
+          : 'Authentication service unavailable.',
     );
     this.name = 'AuthApiError';
   }
@@ -65,6 +68,10 @@ export async function login(input: LoginRequest): Promise<LoginResponse> {
 
   if (response.status === 401) {
     throw new AuthApiError('invalid_credentials', response.status);
+  }
+
+  if (response.status === 429) {
+    throw new AuthApiError('rate_limited', response.status);
   }
 
   if (!response.ok) {

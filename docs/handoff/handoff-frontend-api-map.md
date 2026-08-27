@@ -29,7 +29,7 @@
 
 | Client / caller | Backend | Frontend request → response | Cancel/retry | Success projection / privacy |
 |---|---|---|---|---|
-| `login()` — `LoginForm` | `POST /auth/login` | `LoginRequest → LoginResponse` | no Signal; no retry | 使用公开 user 后导航；password 只存在于即时 body，不进入 URL/storage/log。 |
+| `login()` — `LoginForm` | `POST /auth/login` | `LoginRequest → LoginResponse`；401 → `invalid_credentials`；429 → `rate_limited` | no Signal; no retry | 使用公开 user 后导航；password 只存在于即时 body，不进入 URL/storage/log。 |
 | `logout()` — `useAuth().signOut()` | `POST /auth/logout` | no body → `LogoutResponse` | no Signal; no retry | 清理本地公开 auth state；服务端 Cookie/Session 清理由 Backend 负责。 |
 | `getMe()` — `useAuth` | `GET /auth/me` | no body → `MeResponse \| null` | no Signal; no retry | 401 投影为 `null`；其他错误保持可重试 auth state。 |
 
@@ -154,7 +154,7 @@ Staff root 的三个 ID 均编码；staff Client 的主要 caller 为 `PatientAd
 
 ### 4.2 Error class 与 current kind
 
-- `AuthApiError.code`：`invalid_credentials`、`service_unavailable`。
+- `AuthApiError.code`：`invalid_credentials`、`rate_limited`、`service_unavailable`。
 - `PatientsApiError.kind`：common + `patient_not_found`、`patient_code_conflict`、`patient_not_active`、`visit_code_conflict`、`invalid_date_range`。
 - `ClinicalHistoryApiError.kind`：common + `invalid_date_range`、`patient_not_found`、`scale_not_available`、`follow_up_trend_range_too_large`、`follow_up_trend_data_invalid`。
 - `AssessmentExecutionApiError.kind`：common + `patient_not_found`、`patient_not_active`、`patient_administration_not_completed`、`visit_not_found`、`visit_not_initializable`、`visit_not_editable`、`visit_not_deletable`、`visit_not_voidable`、`visit_update_empty_patch`、`visit_code_conflict`、`scale_not_available`、`scale_version_not_available`、`scale_not_active`、`scale_version_not_active`、`scale_catalog_invalid`、`scale_catalog_version_conflict`、`scale_instance_already_exists`、`scale_instance_not_found`、`scale_instance_not_editable`、`scale_instance_configuration_unavailable`、`scale_instance_not_submittable`、`scale_instance_not_ready`、`scale_instance_start_time_invalid`、`scale_instance_submission_confirmation_required`、`scale_instance_submission_conflict`、`scale_instance_submission_audit_unavailable`、`scale_instance_submission_failed`、`item_response_not_found`、`item_response_not_editable`、`item_response_draft_conflict`、`item_response_empty_patch`、`item_response_payload_invalid`、`item_response_missing_reason_required`、`item_response_cannot_mark_answered`、`item_response_step_not_found`、`item_response_duplicate_step`、`item_response_prompt_not_found`、`item_response_duplicate_prompt`、`item_response_timing_not_allowed`、`item_response_invalid_timing`、`item_response_save_failed`、`request_outcome_uncertain`、`scale_execution_initialization_failed`。

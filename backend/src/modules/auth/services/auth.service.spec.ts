@@ -1,4 +1,5 @@
 // backend/src/modules/auth/services/auth.service.spec.ts
+import { HttpException, HttpStatus } from '@nestjs/common';
 import { getModelToken } from '@nestjs/mongoose';
 import { Test } from '@nestjs/testing';
 import { Types } from 'mongoose';
@@ -7,6 +8,12 @@ import {
   UserCredentialRecord,
   UserSummary,
 } from '../../users/services/users.service';
+import {
+  AUTH_LOGIN_FAILURE_WINDOW_MS,
+  AUTH_LOGIN_MAX_FAILURES,
+  AUTH_LOGIN_RATE_LIMIT_CODE,
+  AUTH_LOGIN_RATE_LIMIT_MESSAGE,
+} from '../auth.constants';
 import { Session, SessionSchema } from '../schemas/session.schema';
 import { AuthService } from './auth.service';
 
@@ -178,6 +185,7 @@ describe('AuthService', () => {
   });
 
   afterEach(() => {
+    jest.restoreAllMocks();
     jest.clearAllMocks();
   });
 
@@ -365,6 +373,177 @@ describe('AuthService', () => {
       }),
     ).resolves.toBeNull();
     expect(sessionModel.create).not.toHaveBeenCalled();
+  });
+
+  it('allows ten failures, then rejects before password verification with a stable 429 contract', async () => {
+    jest.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    usersService.findUserCredentialByAccountName.mockResolvedValue(
+      createCredentialRecord(),
+    );
+    const verifyPassword = jest
+      .spyOn(service, 'verifyPassword')
+      .mockResolvedValue(false);
+    const input = {
+      accountName: 'doctor-test-001',
+      password: 'wrong-password-test',
+      ipAddress: '203.0.113.10',
+    };
+
+    for (let attempt = 0; attempt < AUTH_LOGIN_MAX_FAILURES; attempt += 1) {
+      await expect(service.authenticateWithPassword(input)).resolves.toBeNull();
+    }
+
+    let caughtError: unknown;
+
+    try {
+      await service.authenticateWithPassword(input);
+    } catch (error: unknown) {
+      caughtError = error;
+    }
+
+    expect(caughtError).toBeInstanceOf(HttpException);
+    const rateLimitException = caughtError as HttpException;
+    expect(rateLimitException.getStatus()).toBe(HttpStatus.TOO_MANY_REQUESTS);
+    expect(rateLimitException.getResponse()).toEqual({
+      code: AUTH_LOGIN_RATE_LIMIT_CODE,
+      message: AUTH_LOGIN_RATE_LIMIT_MESSAGE,
+      remainingSeconds: 60,
+    });
+    expect(verifyPassword).toHaveBeenCalledTimes(AUTH_LOGIN_MAX_FAILURES);
+    expect(usersService.findUserCredentialByAccountName).toHaveBeenCalledTimes(
+      AUTH_LOGIN_MAX_FAILURES,
+    );
+  });
+
+  it('isolates failure buckets by IP address and account name', async () => {
+    jest.spyOn(Date, 'now').mockReturnValue(2_000_000);
+    usersService.findUserCredentialByAccountName.mockResolvedValue(
+      createCredentialRecord(),
+    );
+    const verifyPassword = jest
+      .spyOn(service, 'verifyPassword')
+      .mockResolvedValue(false);
+
+    for (let attempt = 0; attempt < AUTH_LOGIN_MAX_FAILURES; attempt += 1) {
+      await expect(
+        service.authenticateWithPassword({
+          accountName: 'doctor-test-001',
+          password: 'wrong-password-test',
+          ipAddress: '203.0.113.20',
+        }),
+      ).resolves.toBeNull();
+    }
+
+    await expect(
+      service.authenticateWithPassword({
+        accountName: 'doctor-test-001',
+        password: 'wrong-password-test',
+        ipAddress: '198.51.100.20',
+      }),
+    ).resolves.toBeNull();
+    await expect(
+      service.authenticateWithPassword({
+        accountName: 'doctor-test-002',
+        password: 'wrong-password-test',
+        ipAddress: '203.0.113.20',
+      }),
+    ).resolves.toBeNull();
+
+    expect(verifyPassword).toHaveBeenCalledTimes(AUTH_LOGIN_MAX_FAILURES + 2);
+  });
+
+  it('normalizes account name casing and surrounding whitespace for the failure bucket', async () => {
+    jest.spyOn(Date, 'now').mockReturnValue(3_000_000);
+    usersService.findUserCredentialByAccountName.mockResolvedValue(
+      createCredentialRecord(),
+    );
+    const verifyPassword = jest
+      .spyOn(service, 'verifyPassword')
+      .mockResolvedValue(false);
+
+    for (let attempt = 0; attempt < AUTH_LOGIN_MAX_FAILURES; attempt += 1) {
+      await expect(
+        service.authenticateWithPassword({
+          accountName:
+            attempt % 2 === 0 ? ' Doctor-Test-001 ' : 'DOCTOR-TEST-001',
+          password: 'wrong-password-test',
+          ipAddress: '203.0.113.30',
+        }),
+      ).resolves.toBeNull();
+    }
+
+    await expect(
+      service.authenticateWithPassword({
+        accountName: 'doctor-test-001',
+        password: 'wrong-password-test',
+        ipAddress: '203.0.113.30',
+      }),
+    ).rejects.toBeInstanceOf(HttpException);
+    expect(verifyPassword).toHaveBeenCalledTimes(AUTH_LOGIN_MAX_FAILURES);
+    expect(
+      usersService.findUserCredentialByAccountName,
+    ).toHaveBeenLastCalledWith('doctor-test-001');
+  });
+
+  it('removes an expired failure window and allows authentication work to resume', async () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(4_000_000);
+    usersService.findUserCredentialByAccountName.mockResolvedValue(
+      createCredentialRecord(),
+    );
+    const verifyPassword = jest
+      .spyOn(service, 'verifyPassword')
+      .mockResolvedValue(false);
+    const input = {
+      accountName: 'doctor-test-001',
+      password: 'wrong-password-test',
+      ipAddress: '203.0.113.40',
+    };
+
+    for (let attempt = 0; attempt < AUTH_LOGIN_MAX_FAILURES; attempt += 1) {
+      await expect(service.authenticateWithPassword(input)).resolves.toBeNull();
+    }
+
+    now.mockReturnValue(4_000_000 + AUTH_LOGIN_FAILURE_WINDOW_MS);
+    await expect(service.authenticateWithPassword(input)).resolves.toBeNull();
+    expect(verifyPassword).toHaveBeenCalledTimes(AUTH_LOGIN_MAX_FAILURES + 1);
+  });
+
+  it('clears the failure bucket after a successful login', async () => {
+    jest.spyOn(Date, 'now').mockReturnValue(5_000_000);
+    const userId = new Types.ObjectId();
+    const sessionId = new Types.ObjectId();
+    usersService.findUserCredentialByAccountName.mockResolvedValue(
+      createCredentialRecord({ id: userId.toString() }),
+    );
+    usersService.findUserById.mockResolvedValue(
+      createUserSummary({ id: userId.toString() }),
+    );
+    sessionModel.create.mockImplementation((input) =>
+      Promise.resolve({
+        _id: sessionId,
+        ...input,
+      }),
+    );
+    const verifyPassword = jest
+      .spyOn(service, 'verifyPassword')
+      .mockResolvedValue(false);
+    const input = {
+      accountName: 'doctor-test-001',
+      password: 'password-test-001',
+      ipAddress: '203.0.113.50',
+    };
+
+    for (let attempt = 0; attempt < 9; attempt += 1) {
+      await expect(service.authenticateWithPassword(input)).resolves.toBeNull();
+    }
+
+    verifyPassword.mockResolvedValueOnce(true);
+    const successfulLogin = await service.authenticateWithPassword(input);
+    expect(successfulLogin?.user.id).toBe(userId.toString());
+
+    await expect(service.authenticateWithPassword(input)).resolves.toBeNull();
+    await expect(service.authenticateWithPassword(input)).resolves.toBeNull();
+    expect(verifyPassword).toHaveBeenCalledTimes(12);
   });
 
   it('returns null when validating a missing session token', async () => {

@@ -9,6 +9,7 @@ import { AuthApiError, login } from '@/src/features/auth/api/auth-api';
 import { useAuth } from '@/src/features/auth/hooks/use-auth';
 
 const invalidCredentialsMessage = '账号或密码错误，或账号不可用。';
+const rateLimitedMessage = '登录尝试次数过多，请稍后再试。';
 const serviceUnavailableMessage = '暂时无法连接认证服务，请稍后再试。';
 
 export function LoginForm() {
@@ -49,6 +50,11 @@ export function LoginForm() {
         error.code === 'invalid_credentials'
       ) {
         setFormError(invalidCredentialsMessage);
+      } else if (
+        error instanceof AuthApiError &&
+        error.code === 'rate_limited'
+      ) {
+        setFormError(rateLimitedMessage);
       } else {
         setFormError(serviceUnavailableMessage);
       }

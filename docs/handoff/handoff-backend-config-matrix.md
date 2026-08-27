@@ -45,7 +45,7 @@
 | `NODE_ENV` | `app.env` | `development` | `production` | `test` | 运行环境 |
 | `PORT` | `app.port` | `5002` | `5002` | `5002` | 后端默认端口 |
 | `FRONTEND_URL` | `app.frontendUrl` | `http://localhost:3002` | 部署域名覆盖 | `http://localhost:3002` | 本地前端 origin |
-| `CORS_ORIGIN` | `app.corsOrigin` | `http://localhost:3002` | 部署域名覆盖 | `http://localhost:3002` | 支持逗号分隔多个 origin |
+| `CORS_ORIGIN` | `app.corsOrigin` | `http://localhost:3002` | 部署域名覆盖；`*` 非法并拒绝启动 | `http://localhost:3002` | 支持逗号分隔多个 origin；development / test 保留 wildcard 能力 |
 | `COGMEMORY_DATABASE_PURPOSE` | `mongo.purpose` | 可不设置 | 可不设置 | `standard_test` / `browser_acceptance` | test 进程用途；未设置默认 `standard_test` |
 | `MONGO_URI` | `mongo.uri` | `cogmemory_ad_dev` 口径 | required | 按用途映射到普通测试或 Browser 专用库 | 不写真实密码或完整 URI |
 | `MONGO_ADMIN_URI` | `mongo.adminUri` | `cogmemory_ad_dev` 口径 | required；运维门禁为 `cogmemory_ad` | standard_test 测试管理连接；browser_acceptance 受控管理连接按 §3.2 映射 | 供受控测试管理或 `db:sync-indexes` / `db:clear-data` 运维脚本使用；不得作为应用常驻连接 |
@@ -93,6 +93,7 @@
 
 ## 5. 安全与部署注意事项
 
+- production Backend 仅监听 `127.0.0.1`，公开访问边界由部署层反向代理承担。
 - `.env.*.example` 只能保留占位值或示例值，不得写入真实密钥。
 - production MongoDB URI 必须由真实部署环境提供，不得写入仓库。
 - production 默认 `STORAGE_DRIVER=oss`，但真实 bucket 与 AccessKey 必须由安全环境变量提供。

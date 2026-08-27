@@ -27,7 +27,7 @@
 | Endpoint | Controller | Auth | Request DTO | Response / status | Endpoint 职责、错误与安全边界 |
 |---|---|---|---|---|---|
 | `GET /health` | `AppController` | Public | 无 | `AppHealthResponse` / 200 | 仅返回服务健康摘要；无业务副作用或业务错误。 |
-| `POST /auth/login` | `AuthController` | `@Public()` | Body `LoginDto` | `LoginResponse` / 201 | 创建服务端 Session 并下发 HttpOnly Cookie；失败统一 401，不区分账号、密码、状态或 session 原因；响应不含 token/credential。 |
+| `POST /auth/login` | `AuthController` | `@Public()` | Body `LoginDto` | `LoginResponse` / 201 | 创建服务端 Session 并下发 HttpOnly Cookie；失败统一 401，不区分账号、密码、状态或 session 原因；同一真实客户端 IP + 规范化账号 60 秒内前 10 次失败保持 401，后续尝试返回 429 `AUTH_LOGIN_RATE_LIMITED`；响应不含 token/credential。 |
 | `POST /auth/logout` | `AuthController` | `@Public()` | 无 | `LogoutResponse` / 201 | 尝试撤销现有 Session 并始终清 Cookie；缺失/失效 Cookie 仍稳定成功，不泄露 Session 是否存在。 |
 | `GET /auth/me` | `AuthController` | `SessionAuthGuard` | 无 | `MeResponse` / 200 | 返回当前安全用户投影；所有无效登录态统一 401。 |
 

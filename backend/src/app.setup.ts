@@ -52,6 +52,7 @@ export function configureApp(app: INestApplication): void {
   if (isExpressLikeApplication(httpInstance)) {
     httpInstance.disable('x-powered-by');
     httpInstance.set('x-powered-by', false);
+    httpInstance.set('trust proxy', 'loopback');
   }
 
   const configService = app.get(ConfigService);
