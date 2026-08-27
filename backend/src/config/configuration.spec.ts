@@ -127,3 +127,52 @@ describe('CORS origin validation', () => {
     },
   );
 });
+
+describe('OSS object prefix validation', () => {
+  const ossEnvironment = {
+    NODE_ENV: 'development',
+    STORAGE_DRIVER: 'oss',
+    OSS_REGION: 'test-region',
+    OSS_BUCKET: 'test-bucket',
+    OSS_INTERNAL_ENDPOINT: 'internal-endpoint-test-value',
+    OSS_PUBLIC_ENDPOINT: 'public-endpoint-test-value',
+    OSS_ACCESS_KEY_ID: 'test-access-key-id',
+    OSS_ACCESS_KEY_SECRET: 'test-access-key-secret',
+  };
+
+  it.each([undefined, '', ' '])(
+    'rejects OSS storage without an explicit non-empty object prefix: %p',
+    (objectPrefix) => {
+      const result = envValidationSchema.validate({
+        ...ossEnvironment,
+        OSS_OBJECT_PREFIX: objectPrefix,
+      });
+
+      expect(result.error?.message).toContain('OSS_OBJECT_PREFIX');
+    },
+  );
+
+  it('accepts and trims an explicit OSS object prefix', () => {
+    const result = envValidationSchema.validate({
+      ...ossEnvironment,
+      OSS_OBJECT_PREFIX: ' cogmemory_ad/development ',
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(Reflect.get(result.value as object, 'OSS_OBJECT_PREFIX')).toBe(
+      'cogmemory_ad/development',
+    );
+  });
+
+  it('keeps the shared object prefix default for fake storage', () => {
+    const result = envValidationSchema.validate({
+      NODE_ENV: 'development',
+      STORAGE_DRIVER: 'fake',
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(Reflect.get(result.value as object, 'OSS_OBJECT_PREFIX')).toBe(
+      'cogmemory_ad',
+    );
+  });
+});

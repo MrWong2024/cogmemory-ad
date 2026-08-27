@@ -93,7 +93,7 @@ describe('Storage services', () => {
     process.env.OSS_PUBLIC_ENDPOINT = 'public-endpoint-test-value';
     process.env.OSS_ACCESS_KEY_ID = 'test-access-key-id';
     process.env.OSS_ACCESS_KEY_SECRET = 'test-access-key-secret';
-    process.env.OSS_OBJECT_PREFIX = 'test-prefix';
+    process.env.OSS_OBJECT_PREFIX = 'cogmemory_ad/development';
   }
 
   it('uses fake storage without requiring OSS configuration', async () => {
@@ -141,6 +141,83 @@ describe('Storage services', () => {
     ).rejects.toThrow('missing OSS_REGION');
   });
 
+  it('requires an explicit object prefix before creating an OSS client', async () => {
+    setValidOssEnvironment();
+    delete process.env.OSS_OBJECT_PREFIX;
+    const storage = new OssStorageService(new StorageConfigService());
+
+    await expect(
+      storage.uploadFile({
+        objectKey: 'cogmemory_ad/development/smoke/object.txt',
+        buffer: Buffer.from('oss'),
+        sizeBytes: 3,
+        mimeType: 'text/plain',
+      }),
+    ).rejects.toThrow('missing OSS_OBJECT_PREFIX');
+
+    expect(ossClientConstructor).not.toHaveBeenCalled();
+  });
+
+  it.each(['uploadFile', 'getSignedUrl', 'deleteObject'] as const)(
+    'rejects a foreign environment key before provider access for %s',
+    async (operation) => {
+      setValidOssEnvironment();
+      const client = createMockAliOssClient();
+      ossClientConstructor.mockReturnValue(client);
+      const storage = new OssStorageService(new StorageConfigService());
+      const objectKey =
+        'cogmemory_ad/production/clinical-evidence/foreign-object.txt';
+
+      let result: Promise<unknown>;
+      if (operation === 'uploadFile') {
+        result = storage.uploadFile({
+          objectKey,
+          buffer: Buffer.from('foreign'),
+          sizeBytes: 7,
+          mimeType: 'text/plain',
+        });
+      } else if (operation === 'getSignedUrl') {
+        result = storage.getSignedUrl(objectKey, { expiresInSeconds: 120 });
+      } else {
+        result = storage.deleteObject(objectKey);
+      }
+
+      const error = await result.catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(ServiceUnavailableException);
+      const message = (error as ServiceUnavailableException).message;
+      expect(message).toBe('OSS object is outside the configured namespace');
+      expect(message).not.toContain(objectKey);
+      expect(message).not.toContain('test-bucket');
+      expect(message).not.toContain('test-access-key');
+      expect(ossClientConstructor).not.toHaveBeenCalled();
+      expect(client.put).not.toHaveBeenCalled();
+      expect(client.delete).not.toHaveBeenCalled();
+      expect(client.signatureUrl).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    'cogmemory_ad/development-shadow/clinical-evidence/collision.txt',
+    'cogmemory_ad/development',
+    'cogmemory_ad/clinical-evidence/legacy.txt',
+  ])(
+    'rejects a key outside the exact namespace segment: %s',
+    async (objectKey) => {
+      setValidOssEnvironment();
+      const client = createMockAliOssClient();
+      ossClientConstructor.mockReturnValue(client);
+      const storage = new OssStorageService(new StorageConfigService());
+
+      await expect(storage.deleteObject(objectKey)).rejects.toThrow(
+        'OSS object is outside the configured namespace',
+      );
+
+      expect(ossClientConstructor).not.toHaveBeenCalled();
+      expect(client.delete).not.toHaveBeenCalled();
+    },
+  );
+
   it('uploads with a secure internal OSS client and preserves the result contract', async () => {
     setValidOssEnvironment();
     const client = createMockAliOssClient();
@@ -150,7 +227,7 @@ describe('Storage services', () => {
     const buffer = Buffer.from('synthetic');
 
     const uploaded = await storage.uploadFile({
-      objectKey: 'test-prefix/smoke/object.txt',
+      objectKey: 'cogmemory_ad/development/smoke/object.txt',
       buffer,
       sizeBytes: buffer.length,
       mimeType: 'text/plain; charset=utf-8',
@@ -165,12 +242,12 @@ describe('Storage services', () => {
       secure: true,
     });
     expect(client.put).toHaveBeenCalledWith(
-      'test-prefix/smoke/object.txt',
+      'cogmemory_ad/development/smoke/object.txt',
       buffer,
       { mime: 'text/plain; charset=utf-8' },
     );
     expect(uploaded).toEqual({
-      objectKey: 'test-prefix/smoke/object.txt',
+      objectKey: 'cogmemory_ad/development/smoke/object.txt',
       bucket: 'test-bucket',
       sizeBytes: buffer.length,
       mimeType: 'text/plain; charset=utf-8',
@@ -185,7 +262,7 @@ describe('Storage services', () => {
     const storage = new OssStorageService(new StorageConfigService());
 
     await expect(
-      storage.deleteObject('test-prefix/smoke/object.txt'),
+      storage.deleteObject('cogmemory_ad/development/smoke/object.txt'),
     ).rejects.toMatchObject({
       message: 'Failed to delete OSS object',
     });
@@ -198,7 +275,9 @@ describe('Storage services', () => {
       accessKeySecret: 'test-access-key-secret',
       secure: true,
     });
-    expect(client.delete).toHaveBeenCalledWith('test-prefix/smoke/object.txt');
+    expect(client.delete).toHaveBeenCalledWith(
+      'cogmemory_ad/development/smoke/object.txt',
+    );
   });
 
   it('returns an HTTPS signed URL from a secure public OSS client', async () => {
@@ -210,9 +289,10 @@ describe('Storage services', () => {
     const storage = new OssStorageService(new StorageConfigService());
     const before = Date.now();
 
-    const result = await storage.getSignedUrl('test-prefix/smoke/object.txt', {
-      expiresInSeconds: 120,
-    });
+    const result = await storage.getSignedUrl(
+      'cogmemory_ad/development/smoke/object.txt',
+      { expiresInSeconds: 120 },
+    );
 
     expect(ossClientConstructor).toHaveBeenCalledWith({
       region: 'test-region',
@@ -223,7 +303,7 @@ describe('Storage services', () => {
       secure: true,
     });
     expect(client.signatureUrl).toHaveBeenCalledWith(
-      'test-prefix/smoke/object.txt',
+      'cogmemory_ad/development/smoke/object.txt',
       { expires: 120, method: 'GET' },
     );
     expect(result.url).toBe(signedUrl);
@@ -233,7 +313,7 @@ describe('Storage services', () => {
   it('rejects an HTTP signed URL without leaking sensitive context', async () => {
     setValidOssEnvironment();
     const client = createMockAliOssClient();
-    const objectKey = 'test-prefix/smoke/private-object.txt';
+    const objectKey = 'cogmemory_ad/development/smoke/private-object.txt';
     const signedUrl =
       'http://signed-url.test/private-object.txt?signature=sensitive';
     client.signatureUrl.mockReturnValue(signedUrl);
@@ -263,7 +343,7 @@ describe('Storage services', () => {
       const storage = new OssStorageService(new StorageConfigService());
 
       await expect(
-        storage.getSignedUrl('test-prefix/smoke/object.txt', {
+        storage.getSignedUrl('cogmemory_ad/development/smoke/object.txt', {
           expiresInSeconds: 120,
         }),
       ).rejects.toThrow(ServiceUnavailableException);
@@ -280,7 +360,7 @@ describe('Storage services', () => {
     const storage = new OssStorageService(new StorageConfigService());
 
     const error = await storage
-      .getSignedUrl('test-prefix/smoke/private-object.txt', {
+      .getSignedUrl('cogmemory_ad/development/smoke/private-object.txt', {
         expiresInSeconds: 120,
       })
       .catch((caught: unknown) => caught);

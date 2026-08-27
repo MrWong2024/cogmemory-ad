@@ -47,7 +47,7 @@ export class OssStorageService implements StorageService {
   constructor(private readonly storageConfigService: StorageConfigService) {}
 
   async uploadFile(input: UploadFileInput): Promise<UploadedFileResult> {
-    const config = this.storageConfigService.getOssConfigOrThrow();
+    const config = this.getOwnedOssConfigOrThrow(input.objectKey);
     const client = this.createClient(config, config.internalEndpoint);
 
     try {
@@ -72,7 +72,7 @@ export class OssStorageService implements StorageService {
   ): Promise<SignedUrlResult> {
     return Promise.resolve()
       .then(() => {
-        const config = this.storageConfigService.getOssConfigOrThrow();
+        const config = this.getOwnedOssConfigOrThrow(objectKey);
         const client = this.createClient(config, config.publicEndpoint);
         const expiresAt = new Date(
           Date.now() + options.expiresInSeconds * 1000,
@@ -100,7 +100,7 @@ export class OssStorageService implements StorageService {
   }
 
   async deleteObject(objectKey: string): Promise<void> {
-    const config = this.storageConfigService.getOssConfigOrThrow();
+    const config = this.getOwnedOssConfigOrThrow(objectKey);
     const client = this.createClient(config, config.internalEndpoint);
 
     try {
@@ -108,6 +108,22 @@ export class OssStorageService implements StorageService {
     } catch (error: unknown) {
       throw this.toStorageError(error, 'Failed to delete OSS object');
     }
+  }
+
+  private getOwnedOssConfigOrThrow(objectKey: string): OssStorageConfig {
+    const config = this.storageConfigService.getOssConfigOrThrow();
+    const namespacePrefix = `${config.objectPrefix}/`;
+
+    if (
+      !objectKey.startsWith(namespacePrefix) ||
+      objectKey.length === namespacePrefix.length
+    ) {
+      throw new ServiceUnavailableException(
+        'OSS object is outside the configured namespace',
+      );
+    }
+
+    return config;
   }
 
   private createClient(config: OssStorageConfig, endpoint: string) {

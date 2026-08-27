@@ -178,7 +178,11 @@ export const envValidationSchema = Joi.object({
     then: Joi.string().trim().min(1).required(),
     otherwise: optionalStringSchema.optional(),
   }),
-  OSS_OBJECT_PREFIX: Joi.string().trim().allow('').default('cogmemory_ad'),
+  OSS_OBJECT_PREFIX: Joi.when('STORAGE_DRIVER', {
+    is: 'oss',
+    then: Joi.string().trim().min(1).required(),
+    otherwise: Joi.string().trim().allow('').default('cogmemory_ad'),
+  }),
   SESSION_COOKIE_NAME: Joi.string()
     .trim()
     .min(1)

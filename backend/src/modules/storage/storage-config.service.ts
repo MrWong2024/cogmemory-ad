@@ -40,7 +40,7 @@ export class StorageConfigService {
       publicEndpoint: this.required('OSS_PUBLIC_ENDPOINT'),
       accessKeyId: this.required('OSS_ACCESS_KEY_ID'),
       accessKeySecret: this.required('OSS_ACCESS_KEY_SECRET'),
-      objectPrefix: this.getObjectPrefix(),
+      objectPrefix: this.required('OSS_OBJECT_PREFIX'),
     };
   }
 

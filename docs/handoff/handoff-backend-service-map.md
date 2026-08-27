@@ -28,9 +28,9 @@ Service current 事实以 `backend/src` 为准。本文保留理解长期内部�
 #### `StorageConfigService`、`FakeStorageService`、`OssStorageService` 与 `STORAGE_SERVICE`
 
 - 文件：`backend/src/modules/storage/storage-config.service.ts`、`fake-storage.service.ts`、`oss-storage.service.ts`、`storage.constants.ts`
-- `StorageConfigService` 读取并规范化 Storage / OSS 配置；必需配置缺失时 fail closed。静态配置值由 Backend Config Matrix 维护。
+- `StorageConfigService` 读取并规范化 Storage / OSS 配置；真实 OSS driver 要求 `OSS_OBJECT_PREFIX` 显式非空，任一必需配置缺失时 fail closed。静态配置值由 Backend Config Matrix 维护。
 - `STORAGE_SERVICE` 是调用方使用的 driver token；`StorageModule` 根据配置提供 fake 或 OSS 实现。`FakeStorageService` 提供同一内部接口的本地实现，`OssStorageService` 负责 object put/delete 与短期 signed URL。
-- `OssStorageService` 固定使用安全连接，并在返回 signed URL 前验证 HTTPS；put、delete 与 signed URL provider failure 均以安全的 `ServiceUnavailableException` 向调用层暴露，不吞掉 delete failure，也不得泄漏凭据、完整对象定位或 provider 原始响应。需要 best-effort compensation 的 Media workflow 在自身补偿边界 catch 并记录受控失败。
+- `OssStorageService` 固定使用安全连接，并在创建 client 或触发 put、delete、signed URL 前按完整 `<OSS_OBJECT_PREFIX>/` segment boundary 校验 objectKey ownership；foreign / legacy namespace fail closed。provider failure 与 namespace 拒绝均以安全的 `ServiceUnavailableException` 向调用层暴露，不吞掉 delete failure，也不得泄漏凭据、完整对象定位或 provider 原始响应；返回 signed URL 前仍必须验证 HTTPS。需要 best-effort compensation 的 Media workflow 在自身补偿边界 catch 并记录受控失败。
 - 上游：Media 相关 workflow；下游：`StorageConfigService` 与 OSS client。Storage driver 不判断 Patient、Visit、ItemResponse 或 Evidence 业务资格。
 
 ### 2.2 Scales
