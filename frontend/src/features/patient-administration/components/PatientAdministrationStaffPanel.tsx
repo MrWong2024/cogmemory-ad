@@ -923,6 +923,9 @@ export function PatientAdministrationStaffPanel({
         {session && openStatuses.has(session.status) ? (
           <section className="grid gap-5 border-t border-[var(--cma-line)] pt-6">
             <h3 className="text-xl font-semibold">会话控制</h3>
+            <p className="text-base leading-7 text-[var(--cma-muted)]">
+              暂停用于患者休息、技术故障或医护介入。暂停后患者端将暂时无法继续操作，需由医护恢复施测；单纯关闭或刷新浏览器不会自动暂停施测。
+            </p>
             <label className="grid gap-2 font-semibold">
               暂停 / 恢复原因（可选，最多 500 字）
               <input
