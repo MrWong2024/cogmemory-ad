@@ -25,6 +25,7 @@ export type PatientAdministrationApiErrorKind =
   | 'forbidden'
   | 'validation'
   | 'session_not_found'
+  | 'session_not_deletable'
   | 'session_conflict'
   | 'entry_invalid'
   | 'rate_limited'
@@ -121,6 +122,16 @@ function mapError(response: Response, body: ErrorBody): PatientAdministrationApi
   if (response.status === 404 && code === 'PATIENT_ADMINISTRATION_SESSION_NOT_FOUND') {
     return new PatientAdministrationApiError('session_not_found', response.status, code);
   }
+  if (
+    response.status === 409 &&
+    code === 'PATIENT_ADMINISTRATION_SESSION_NOT_DELETABLE'
+  ) {
+    return new PatientAdministrationApiError(
+      'session_not_deletable',
+      response.status,
+      code,
+    );
+  }
   if (response.status === 409) {
     return new PatientAdministrationApiError('session_conflict', response.status, code);
   }
@@ -214,6 +225,28 @@ export async function getPatientAdministrationSession(
   signal?: AbortSignal,
 ): Promise<PatientAdministrationSessionSummary> {
   return readStaffSession(ids, '', { method: 'GET', signal });
+}
+
+export async function listPatientAdministrationSessions(
+  ids: PatientAdministrationRouteIds,
+  signal?: AbortSignal,
+): Promise<PatientAdministrationSessionSummary[]> {
+  const response = await patientAdministrationFetch(
+    `${buildStaffRoot(ids)}/sessions`,
+    { method: 'GET', signal },
+  );
+  return readJson<PatientAdministrationSessionSummary[]>(response);
+}
+
+export async function deletePatientAdministrationSession(
+  ids: PatientAdministrationRouteIds,
+  sessionId: string,
+): Promise<void> {
+  await patientAdministrationFetch(
+    `${buildStaffRoot(ids)}/sessions/${encodeURIComponent(sessionId)}`,
+    { method: 'DELETE' },
+    true,
+  );
 }
 
 export async function getPatientAdministrationReview(

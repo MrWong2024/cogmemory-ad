@@ -30,6 +30,7 @@ import {
   PatientAdministrationPreparation,
   type PatientAdministrationPreparationValue,
 } from '@/src/features/patient-administration/components/PatientAdministrationPreparation';
+import { PatientAdministrationHistoryPanel } from '@/src/features/patient-administration/components/PatientAdministrationHistoryPanel';
 import { PatientAdministrationStaffStepControls } from '@/src/features/patient-administration/components/PatientAdministrationStaffStepControls';
 import {
   formatPatientAdministrationDate,
@@ -572,7 +573,7 @@ export function PatientAdministrationStaffPanel({
       session.hasPatientCredential,
   );
 
-  return (
+  const staffPanel = (
     <Card data-testid="patient-administration-staff-panel">
       <CardHeader className="border-b border-[var(--cma-line)]">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1036,5 +1037,21 @@ export function PatientAdministrationStaffPanel({
         ) : null}
       </CardContent>
     </Card>
+  );
+
+  return (
+    <>
+      {staffPanel}
+      <PatientAdministrationHistoryPanel
+        latestSessionRefreshSignal={
+          session ? { id: session.id, revision: session.revision } : null
+        }
+        onLatestSessionRefresh={() => loadSession(true)}
+        onUnauthorized={onUnauthorized}
+        patientId={patientId}
+        scaleInstanceId={scaleInstanceId}
+        visitId={visitId}
+      />
+    </>
   );
 }

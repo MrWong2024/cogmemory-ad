@@ -116,13 +116,15 @@
 - 导出 helper `normalizeClinicalReportScopeIds()` 只对 frontend scope IDs 做 trim/lowercase/shape/unique 防御，不定义 Backend scope 合同。
 - 所有 report write 使用服务端 `report.updatedAt` 形成 frontend request；Client 不自动恢复、覆盖或重放。reconciliation/workflow 属于 Action Hook/Component owner。
 
-### 3.9 Patient Administration — `frontend/src/features/patient-administration/api/patient-administration-api.ts`（19）
+### 3.9 Patient Administration — `frontend/src/features/patient-administration/api/patient-administration-api.ts`（21）
 
 Staff root 的三个 ID 均编码；staff Client 的主要 caller 为 `PatientAdministrationStaffPanel`/review panel，patient Client 的主要 caller 为独立 enter/current 页面。详细 workflow 统一引用 Patient Contract 与 Component Map。
 
 | Client | Backend | Frontend request → response | Cancel/retry | Success projection / privacy |
 |---|---|---|---|---|
 | `getPatientAdministrationSession()` | `GET .../patient-administration` | `PatientAdministrationRouteIds → PatientAdministrationSessionSummary` | Signal; no retry | 更新 staff session summary。 |
+| `listPatientAdministrationSessions()` | `GET .../patient-administration/sessions` | route IDs → `PatientAdministrationSessionSummary[]` | Signal; no retry | 保持服务端 `createdAt desc` 顺序，供 history panel 展示全部 Session。 |
+| `deletePatientAdministrationSession()` | `DELETE .../patient-administration/sessions/:sessionId` | route IDs + session ID；no body → 204 | no Signal; uncertain write; no retry | 仅请求后端删除符合资格的单条 failed Session；caller 重新读取 history/latest，不修改 ScaleInstance、正式 ItemResponse 或其他 Session。 |
 | `getPatientAdministrationReview()` | `GET .../patient-administration/review` | route IDs → `PatientAdministrationReviewResponse` | Signal; no retry | 更新安全 review 投影；不形成正式答案。 |
 | `createPatientAdministrationSession()` | `POST .../patient-administration` | `PatientAdministrationCreateInput → PatientAdministrationSessionCreateResponse` | no Signal; no retry | 采用 session；raw entry code 仅保存在 staff React memory。 |
 | `confirmPatientAdministrationPreparation()` | `POST .../preparation/confirm` | `PatientAdministrationPreparationInput → PatientAdministrationSessionSummary` | no Signal; no retry | 采用新 session summary。 |
@@ -150,6 +152,7 @@ Staff root 的三个 ID 均编码；staff Client 的主要 caller 为 `PatientAd
 - Backend business code 的完整 HTTP contract 只在 Backend API Map 维护；本节只维护 Client 输出的 frontend kind。
 - `saveItemResponseDraft()` 将 `ITEM_RESPONSE_DRAFT_CONFLICT` 映射为 `item_response_draft_conflict`；网络或 HTTP 5xx 的写结果不确定映射为 `request_outcome_uncertain`。Client 不自动重放 PATCH。
 - Patient Administration 中标记为 uncertain write 的网络/5xx 映射 `request_outcome_uncertain`；其他 Client 不把普通确定性 4xx 归入 uncertain。
+- Patient Administration 单条历史 DELETE 的 409 `PATIENT_ADMINISTRATION_SESSION_NOT_DELETABLE` 映射 `session_not_deletable`，404 `PATIENT_ADMINISTRATION_SESSION_NOT_FOUND` 复用 `session_not_found`；Client 不自动重放 DELETE。
 - UI 中文文案与具体恢复 workflow 由 Component Map/current hooks 拥有；Client error 不直接展示 Backend message/stack/path/body。
 
 ### 4.2 Error class 与 current kind
@@ -162,7 +165,7 @@ Staff root 的三个 ID 均编码；staff Client 的主要 caller 为 `PatientAd
 - `ProvisionalScoringApiError.kind`：common + patient/visit/instance/config kinds、`score_computation_confirmation_required`、`score_instance_not_computable`、`score_input_invalid`、`score_result_not_found`、`score_result_incomplete`、`score_result_voided`、`score_result_not_reviewable`、`score_item_not_found`、`score_item_not_reviewable`、`score_item_review_target_unavailable`、`score_manual_value_out_of_range`、`score_manual_value_step_invalid`、`score_result_metadata_unsupported`、`score_review_audit_limit_reached`、`score_result_review_conflict`、`score_result_review_failed`、`score_result_confirmation_required`、`score_result_not_ready_for_confirmation`、`score_result_confirmation_warnings_present`、`score_result_confirmation_conflict`、`score_result_confirmation_audit_unavailable`、`score_result_confirmation_failed`、`score_computation_conflict`、`score_computation_failed`。
 - `CognitiveDomainApiError.kind`：common + patient/visit/instance/config/score-result kinds、`cognitive_domain_computation_confirmation_required`、`cognitive_domain_instance_not_computable`、`cognitive_domain_source_score_not_final`、`cognitive_domain_source_score_invalid`、`cognitive_domain_mapping_unavailable`、`cognitive_domain_input_invalid`、`cognitive_domain_result_not_found`、`cognitive_domain_result_incomplete`、`cognitive_domain_result_voided`、`cognitive_domain_computation_conflict`、`cognitive_domain_computation_failed`。
 - `ClinicalReportApiError.kind`：common + patient/visit/instance/config kinds、`clinical_report_generation_confirmation_required`、`clinical_report_scope_invalid`、`clinical_report_source_scale_not_ready`、`clinical_report_source_score_not_final`、`clinical_report_source_domain_result_required`、`clinical_report_source_domain_result_invalid`、`clinical_report_source_media_invalid`、`clinical_report_input_invalid`、`clinical_report_not_found`、`clinical_report_incomplete`、`clinical_report_history_lineage_invalid`、`clinical_report_voided`、`clinical_report_scope_conflict`、`clinical_report_generation_conflict`、`clinical_report_generation_failed`、`clinical_report_metadata_unsupported`、`clinical_report_not_editable`、`clinical_report_edit_no_changes`、`clinical_report_edit_audit_limit_reached`、`clinical_report_edit_conflict`、`clinical_report_edit_failed`、`clinical_report_submission_confirmation_required`、`clinical_report_not_ready_for_submission`、`clinical_report_submission_conflict`、`clinical_report_submission_audit_unavailable`、`clinical_report_submission_failed`、`clinical_report_confirmation_required`、`clinical_report_not_ready_for_confirmation`、`clinical_report_confirmation_conflict`、`clinical_report_confirmation_audit_unavailable`、`clinical_report_confirmation_failed`、`clinical_report_lock_confirmation_required`、`clinical_report_not_lockable`、`clinical_report_lock_conflict`、`clinical_report_lock_audit_unavailable`、`clinical_report_lock_failed`、`clinical_report_source_freeze_confirmation_required`、`clinical_report_not_source_freezable`、`clinical_report_source_freeze_scope_invalid`、`clinical_report_source_freeze_input_invalid`、`clinical_report_source_freeze_conflict`、`clinical_report_source_freeze_audit_unavailable`、`clinical_report_source_freeze_incomplete`、`clinical_report_source_freeze_failed`、`clinical_report_archive_confirmation_required`、`clinical_report_not_archivable`、`clinical_report_archive_conflict`、`clinical_report_archive_audit_unavailable`、`clinical_report_archive_failed`、`clinical_report_replacement_lineage_invalid`、`clinical_report_correction_confirmation_required`、`clinical_report_not_correctable`、`clinical_report_correction_not_latest`、`clinical_report_correction_conflict`、`clinical_report_correction_audit_unavailable`、`clinical_report_correction_replacement_conflict`、`clinical_report_correction_incomplete`、`clinical_report_correction_failed`、`clinical_report_correction_workflow_forbidden`。
-- `PatientAdministrationApiError.kind`：`unauthenticated`、`forbidden`、`validation`、`session_not_found`、`session_conflict`、`entry_invalid`、`rate_limited`、`step_invalid`、`asset_not_allowed`、`evidence_not_allowed`、`media_invalid`、`request_outcome_uncertain`、`service_unavailable`、`invalid_response`、`unknown`。
+- `PatientAdministrationApiError.kind`：`unauthenticated`、`forbidden`、`validation`、`session_not_found`、`session_not_deletable`、`session_conflict`、`entry_invalid`、`rate_limited`、`step_invalid`、`asset_not_allowed`、`evidence_not_allowed`、`media_invalid`、`request_outcome_uncertain`、`service_unavailable`、`invalid_response`、`unknown`。
 
 ## 5. Client-side privacy boundaries
 
@@ -173,6 +176,6 @@ Staff root 的三个 ID 均编码；staff Client 的主要 caller 为 `PatientAd
 
 ## 6. Coverage boundary
 
-- 9 个 Client 文件的 63 个网络函数均在 `3` 覆盖；`serializeItemResponseDraftRequest()` 与 `normalizeClinicalReportScopeIds()` 两个导出 helper 作为 request construction projection 单独记录。
-- Backend 的 64 个公开 endpoint 中 `GET /health` 没有业务 frontend Client；其余 endpoint 均有对应 client function。
+- 9 个 Client 文件的 66 个网络函数均在 `3` 覆盖；`serializeItemResponseDraftRequest()` 与 `normalizeClinicalReportScopeIds()` 两个导出 helper 作为 request construction projection 单独记录。
+- Backend 的 67 个公开 endpoint 中 `GET /health` 没有业务 frontend Client；其余 endpoint 均有对应 client function。
 - 新增/删除 Client 时只更新本文件的 integration projection；不得把 Backend DTO 字段或服务端算法横向复制到本文件。

@@ -194,7 +194,8 @@
 
 ### 9.1 医护侧
 
-- PatientAdministrationStaffPanel — features/patient-administration/components/PatientAdministrationStaffPanel.tsx：ScaleInstance 页面上的医护患者施测控制面板；负责读取 / 创建 / 控制最新 PatientAdministrationSession。创建前设备模式是 local UI choice，创建后以 server session 为权威；组合 Preparation 与 StaffStepControls，并向父页面回传必要 session 状态。same-device active Session 可由医护显式重新安全 handoff；该 intent 使用当前 server revision 复用既有 handoff Client，成功后切换回患者 shell，Session 与 current step 继续由 server 权威维护。
+- PatientAdministrationStaffPanel — features/patient-administration/components/PatientAdministrationStaffPanel.tsx：ScaleInstance 页面上的医护患者施测控制面板；负责读取 / 创建 / 控制 latest PatientAdministrationSession。创建前设备模式是 local UI choice，创建后以 server session 为权威；组合 Preparation、StaffStepControls 与 HistoryPanel，并向父页面回传必要 session 状态。latest 的 `id + revision` 变化触发 HistoryPanel 重读；历史删除完成后，HistoryPanel 回调 StaffPanel 重读 latest。same-device active Session 可由医护显式重新安全 handoff；该 intent 使用当前 server revision 复用既有 handoff Client，成功后切换回患者 shell，Session 与 current step 继续由 server 权威维护。
+- PatientAdministrationHistoryPanel — features/patient-administration/components/PatientAdministrationHistoryPanel.tsx：负责读取并按服务端顺序展示同一 ScaleInstance 的全部 PatientAdministrationSession 历史，latest 为 active / completed 时也不隐藏旧 terminated / expired。只为 terminated / expired 提供明确不可逆的单条删除确认；资格最终以后端为权威，DELETE 不自动重放，404 / uncertain write 通过重新读取服务端事实恢复。删除只影响该失败 Session 及后端判定可安全清理的关联 Evidence；ScaleInstance、正式 ItemResponse 与其他 Session 保留。
 - PatientAdministrationPreparation — components/PatientAdministrationPreparation.tsx：管理当前页面的设备准备与可选练习 UI，将本地准备结果和影响因素 intent 交给 StaffPanel；测试媒体、stream 和 object URL 在组件替换 / 卸载时清理，不形成正式 Evidence。
 - PatientAdministrationStaffStepControls — components/PatientAdministrationStaffStepControls.tsx：按最新 server session 呈现医护可用的当前步骤 / 异常控制动作并回传用户 intent；不自行生成业务进度、正式答案或服务端并发事实。
 
