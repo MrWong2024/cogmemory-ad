@@ -1,4 +1,6 @@
 import {
+  BUSINESS_CLEAR_COLLECTIONS,
+  BUSINESS_PRESERVE_COLLECTIONS,
   type ClearDataCollection,
   type ClearDataDatabase,
   type ClearDataContext,
@@ -6,6 +8,7 @@ import {
   assertExecuteConfirmation,
   resolveClearDataArguments,
   resolveClearDataExpectedDatabaseName,
+  resolveCollectionAction,
   resolveOssCleanupNamespace,
   runClearDatabaseData,
 } from './clear-database-data';
@@ -129,13 +132,76 @@ function createContext(
 }
 
 describe('clear-database-data', () => {
-  it('defaults to dry-run and rejects unknown arguments', () => {
-    expect(resolveClearDataArguments([])).toEqual({ mode: 'dry-run' });
+  it('defaults to dry-run with all scope and rejects unknown arguments', () => {
+    expect(resolveClearDataArguments([])).toEqual({
+      mode: 'dry-run',
+      scope: 'all',
+    });
     expect(() => resolveClearDataArguments(['--unknown'])).toThrow(
       'Unknown or duplicate clear-data argument',
     );
     expect(() => resolveClearDataArguments(['--execute', '--execute'])).toThrow(
       'Unknown or duplicate clear-data argument',
+    );
+  });
+
+  it('parses all and business scope for dry-run or execute and rejects invalid scope', () => {
+    expect(resolveClearDataArguments(['--scope=all'])).toEqual({
+      mode: 'dry-run',
+      scope: 'all',
+    });
+    expect(resolveClearDataArguments(['--scope=business'])).toEqual({
+      mode: 'dry-run',
+      scope: 'business',
+    });
+    expect(
+      resolveClearDataArguments([
+        '--scope=business',
+        '--execute',
+        '--confirm=cogmemory_ad_test',
+      ]),
+    ).toEqual({
+      mode: 'execute',
+      scope: 'business',
+      confirm: 'cogmemory_ad_test',
+      confirmOss: undefined,
+    });
+    expect(() => resolveClearDataArguments(['--scope='])).toThrow(
+      '--scope must be all or business',
+    );
+    expect(() => resolveClearDataArguments(['--scope=foo'])).toThrow(
+      '--scope must be all or business',
+    );
+    expect(() =>
+      resolveClearDataArguments(['--scope=all', '--scope=business']),
+    ).toThrow('Unknown or duplicate clear-data argument');
+  });
+
+  it('keeps the current business collection classification explicit', () => {
+    expect([...BUSINESS_CLEAR_COLLECTIONS].sort()).toEqual(
+      [
+        'assessment_visits',
+        'clinical_reports',
+        'cognitive_domain_results',
+        'item_responses',
+        'media_evidences',
+        'patient_administration_sessions',
+        'patients',
+        'scale_instances',
+        'score_results',
+        'sessions',
+      ].sort(),
+    );
+    expect([...BUSINESS_PRESERVE_COLLECTIONS].sort()).toEqual(
+      ['scale_definitions', 'scale_versions', 'users'].sort(),
+    );
+    expect(resolveCollectionAction('business', 'sessions')).toBe('delete');
+    expect(resolveCollectionAction('business', 'users')).toBe('preserve');
+    expect(resolveCollectionAction('business', 'future_system_settings')).toBe(
+      'unclassified',
+    );
+    expect(resolveCollectionAction('all', 'future_system_settings')).toBe(
+      'delete',
     );
   });
 
@@ -148,6 +214,7 @@ describe('clear-database-data', () => {
       ]),
     ).toEqual({
       mode: 'execute',
+      scope: 'all',
       confirm: 'cogmemory_ad_test',
       confirmOss: OSS_CLEANUP_NAMESPACE,
     });
@@ -177,6 +244,7 @@ describe('clear-database-data', () => {
       assertOssExecuteConfirmation({
         options: {
           mode: 'execute',
+          scope: 'all',
           confirmOss: `${OSS_CLEANUP_NAMESPACE}/`,
         },
         storageDriver: 'oss',
@@ -187,6 +255,7 @@ describe('clear-database-data', () => {
       assertOssExecuteConfirmation({
         options: {
           mode: 'execute',
+          scope: 'all',
           confirmOss: OSS_CLEANUP_NAMESPACE,
         },
         storageDriver: 'fake',
@@ -251,6 +320,12 @@ describe('clear-database-data', () => {
     expect(logger.messages.join('\n')).toContain(
       'storageDriver=fake ossCleanup=skipped',
     );
+    expect(logger.messages.join('\n')).toContain(
+      'summary mode=dry-run scope=all',
+    );
+    expect(logger.messages.join('\n')).toContain(
+      'collection=users action=delete',
+    );
   });
 
   it('fails closed on actual databaseName mismatch before collection access', async () => {
@@ -262,7 +337,7 @@ describe('clear-database-data', () => {
     );
 
     const exitCode = await runClearDatabaseData({
-      args: ['--execute', '--confirm=cogmemory_ad_test'],
+      args: ['--scope=all', '--execute', '--confirm=cogmemory_ad_test'],
       env: createEnvironment(),
       logger: createLogger(),
       createContext: () => Promise.resolve(createContext(database)),
@@ -289,7 +364,7 @@ describe('clear-database-data', () => {
     const ossListerFactory = jest.fn();
 
     const exitCode = await runClearDatabaseData({
-      args: ['--execute', '--confirm=cogmemory_ad_test'],
+      args: ['--scope=all', '--execute', '--confirm=cogmemory_ad_test'],
       env: createEnvironment(),
       logger,
       createContext: () => Promise.resolve(createContext(database, storage)),
@@ -308,6 +383,164 @@ describe('clear-database-data', () => {
     for (const operation of Object.values(prohibited)) {
       expect(operation.mock.calls).toHaveLength(0);
     }
+  });
+
+  it('business dry-run reports delete and preserve actions without deleting', async () => {
+    const patients = createCollection({ counts: [2] });
+    const sessions = createCollection({ counts: [1] });
+    const users = createCollection({ counts: [3] });
+    const scaleDefinitions = createCollection({ counts: [4] });
+    const scaleVersions = createCollection({ counts: [5] });
+    const storage = createStorageService('fake');
+    const logger = createLogger();
+
+    const exitCode = await runClearDatabaseData({
+      args: ['--scope=business'],
+      env: createEnvironment(),
+      logger,
+      createContext: () =>
+        Promise.resolve(
+          createContext(
+            createDatabase({
+              patients,
+              sessions,
+              users,
+              scale_definitions: scaleDefinitions,
+              scale_versions: scaleVersions,
+            }),
+            storage,
+          ),
+        ),
+    });
+
+    expect(exitCode).toBe(0);
+    expect(patients.deleteMany.mock.calls).toHaveLength(0);
+    expect(sessions.deleteMany.mock.calls).toHaveLength(0);
+    expect(users.deleteMany.mock.calls).toHaveLength(0);
+    expect(scaleDefinitions.deleteMany.mock.calls).toHaveLength(0);
+    expect(scaleVersions.deleteMany.mock.calls).toHaveLength(0);
+    expect(storage.deleteObject.mock.calls).toHaveLength(0);
+    const output = logger.messages.join('\n');
+    expect(output).toContain('collection=patients action=delete');
+    expect(output).toContain('collection=sessions action=delete');
+    expect(output).toContain('collection=users action=preserve');
+    expect(output).toContain('collection=scale_definitions action=preserve');
+    expect(output).toContain('collection=scale_versions action=preserve');
+    expect(output).toContain(
+      'summary mode=dry-run scope=business collections=5 targetCollections=2 preservedCollections=3 unclassifiedCollections=0',
+    );
+    expect(output).toContain(
+      'targetDocumentsBefore=3 preservedDocuments=12 deletedDocuments=0 residualDocuments=3',
+    );
+  });
+
+  it('business execute clears targets and verifies preserved documents and indexes', async () => {
+    const patients = createCollection({ counts: [2, 0], deletedCount: 2 });
+    const sessions = createCollection({ counts: [1, 0], deletedCount: 1 });
+    const users = createCollection({ counts: [3, 3] });
+    const scaleDefinitions = createCollection({ counts: [4, 4] });
+    const scaleVersions = createCollection({ counts: [5, 5] });
+    const logger = createLogger();
+
+    const exitCode = await runClearDatabaseData({
+      args: ['--scope=business', '--execute', '--confirm=cogmemory_ad_test'],
+      env: createEnvironment(),
+      logger,
+      createContext: () =>
+        Promise.resolve(
+          createContext(
+            createDatabase({
+              patients,
+              sessions,
+              users,
+              scale_definitions: scaleDefinitions,
+              scale_versions: scaleVersions,
+            }),
+          ),
+        ),
+    });
+
+    expect(exitCode).toBe(0);
+    expect(patients.deleteMany.mock.calls).toEqual([[{}]]);
+    expect(sessions.deleteMany.mock.calls).toEqual([[{}]]);
+    expect(users.deleteMany.mock.calls).toHaveLength(0);
+    expect(scaleDefinitions.deleteMany.mock.calls).toHaveLength(0);
+    expect(scaleVersions.deleteMany.mock.calls).toHaveLength(0);
+    for (const collection of [
+      patients,
+      sessions,
+      users,
+      scaleDefinitions,
+      scaleVersions,
+    ]) {
+      expect(collection.indexes.mock.calls).toHaveLength(2);
+    }
+    const output = logger.messages.join('\n');
+    expect(output).toContain(
+      'collection=users action=preserve collectionExists=true documentCount=3 expectedDocumentCount=3 indexesPreserved=true',
+    );
+    expect(output).toContain(
+      'summary mode=execute scope=business collections=5 targetCollections=2 preservedCollections=3 unclassifiedCollections=0',
+    );
+    expect(output).toContain('residualDocuments=0');
+  });
+
+  it('business execute fails verification when preserved document count drifts', async () => {
+    const patients = createCollection({ counts: [1, 0] });
+    const users = createCollection({ counts: [2, 1] });
+    const logger = createLogger();
+
+    const exitCode = await runClearDatabaseData({
+      args: ['--scope=business', '--execute', '--confirm=cogmemory_ad_test'],
+      env: createEnvironment(),
+      logger,
+      createContext: () =>
+        Promise.resolve(createContext(createDatabase({ patients, users }))),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(patients.deleteMany.mock.calls).toEqual([[{}]]);
+    expect(users.deleteMany.mock.calls).toHaveLength(0);
+    expect(logger.messages.join('\n')).toContain(
+      'collection=users action=preserve collectionExists=true documentCount=1 expectedDocumentCount=2 indexesPreserved=true indexCount=2 aligned=false',
+    );
+  });
+
+  it('business dry-run fails closed on an unclassified collection', async () => {
+    const patients = createCollection({ counts: [1] });
+    const futureSettings = createCollection({ counts: [2] });
+    const storage = createStorageService('fake');
+    const logger = createLogger();
+
+    const exitCode = await runClearDatabaseData({
+      args: ['--scope=business'],
+      env: createEnvironment(),
+      logger,
+      createContext: () =>
+        Promise.resolve(
+          createContext(
+            createDatabase({
+              patients,
+              future_system_settings: futureSettings,
+            }),
+            storage,
+          ),
+        ),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(patients.deleteMany.mock.calls).toHaveLength(0);
+    expect(futureSettings.deleteMany.mock.calls).toHaveLength(0);
+    expect(storage.deleteObject.mock.calls).toHaveLength(0);
+    const output = logger.messages.join('\n');
+    expect(output).toContain(
+      'collection=future_system_settings action=unclassified',
+    );
+    expect(output).toContain(
+      'phase=classification scope=business unclassifiedCollections=1 allowed=false',
+    );
+    expect(output).toContain('unclassifiedCollections=1');
+    expect(output).toContain('exitCode=1');
   });
 
   it('rejects OSS confirmation for fake execute before database deletion', async () => {
@@ -424,11 +657,45 @@ describe('clear-database-data', () => {
     expect(logger.messages.join('\n')).not.toContain(providerError);
   });
 
+  it('business execute inventories OSS but blocks every destructive operation for an unclassified collection', async () => {
+    const patients = createCollection();
+    const futureSettings = createCollection();
+    const database = createDatabase({
+      patients,
+      future_system_settings: futureSettings,
+    });
+    const storage = createStorageService('oss');
+    const lister = createOssLister([[`${OSS_CLEANUP_PREFIX}initial-object`]]);
+    const logger = createLogger();
+
+    const exitCode = await runClearDatabaseData({
+      args: [
+        '--scope=business',
+        '--execute',
+        '--confirm=cogmemory_ad_test',
+        `--confirm-oss=${OSS_CLEANUP_NAMESPACE}`,
+      ],
+      env: createEnvironment(),
+      logger,
+      createContext: () => Promise.resolve(createContext(database, storage)),
+      createOssLister: () => lister,
+    });
+
+    expect(exitCode).toBe(1);
+    expect(lister.listObjectKeys.mock.calls).toEqual([[OSS_CLEANUP_PREFIX]]);
+    expect(patients.deleteMany.mock.calls).toHaveLength(0);
+    expect(futureSettings.deleteMany.mock.calls).toHaveLength(0);
+    expect(storage.deleteObject.mock.calls).toHaveLength(0);
+    expect(logger.messages.join('\n')).toContain(
+      'ossCleanup=skipped_due_to_database_failure',
+    );
+  });
+
   it.each([
     ['delete failure', [1, 1], true],
     ['residual documents', [2, 1], false],
   ])(
-    'skips OSS deletion after database %s',
+    'skips OSS deletion after business database %s',
     async (_label, counts, rejectDelete) => {
       const collection = createCollection({
         counts: [...counts],
@@ -437,20 +704,23 @@ describe('clear-database-data', () => {
       if (rejectDelete) {
         collection.deleteMany.mockRejectedValue(new Error('delete failed'));
       }
-      const database = createDatabase({ users: collection });
       const storage = createStorageService('oss');
       const lister = createOssLister([[`${OSS_CLEANUP_PREFIX}initial-object`]]);
       const logger = createLogger();
 
       const exitCode = await runClearDatabaseData({
         args: [
+          '--scope=business',
           '--execute',
           '--confirm=cogmemory_ad_test',
           `--confirm-oss=${OSS_CLEANUP_NAMESPACE}`,
         ],
         env: createEnvironment(),
         logger,
-        createContext: () => Promise.resolve(createContext(database, storage)),
+        createContext: () =>
+          Promise.resolve(
+            createContext(createDatabase({ patients: collection }), storage),
+          ),
         createOssLister: () => lister,
       });
 
@@ -463,9 +733,10 @@ describe('clear-database-data', () => {
     },
   );
 
-  it('clears the database before deleting only the initial OSS snapshot', async () => {
-    const collection = createCollection({ counts: [2, 0], deletedCount: 2 });
-    const database = createDatabase({ users: collection });
+  it('business execute clears DB targets before deleting only the current OSS snapshot', async () => {
+    const patients = createCollection({ counts: [2, 0], deletedCount: 2 });
+    const users = createCollection({ counts: [3, 3] });
+    const database = createDatabase({ patients, users });
     const storage = createStorageService('oss');
     const initialObjectKeys = [
       `${OSS_CLEANUP_PREFIX}one`,
@@ -473,7 +744,7 @@ describe('clear-database-data', () => {
     ];
     const lister = createOssLister([initialObjectKeys, []]);
     const order: string[] = [];
-    collection.deleteMany.mockImplementation(() => {
+    patients.deleteMany.mockImplementation(() => {
       order.push('database-delete');
       return Promise.resolve({ deletedCount: 2 });
     });
@@ -484,6 +755,7 @@ describe('clear-database-data', () => {
 
     const exitCode = await runClearDatabaseData({
       args: [
+        '--scope=business',
         '--execute',
         '--confirm=cogmemory_ad_test',
         `--confirm-oss=${OSS_CLEANUP_NAMESPACE}`,
@@ -495,6 +767,8 @@ describe('clear-database-data', () => {
     });
 
     expect(exitCode).toBe(0);
+    expect(patients.deleteMany.mock.calls).toEqual([[{}]]);
+    expect(users.deleteMany.mock.calls).toHaveLength(0);
     expect(storage.deleteObject.mock.calls).toEqual(
       initialObjectKeys.map((objectKey) => [objectKey]),
     );

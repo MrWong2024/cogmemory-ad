@@ -89,7 +89,7 @@
 | `ALIYUN_SMS_CODE_TYPE` | `smsAuth.aliyun.codeType` | `1` | `1` | `1` | 验证码策略占位 |
 | `ALIYUN_SMS_CASE_AUTH_POLICY` | `smsAuth.aliyun.caseAuthPolicy` | `1` | `1` | `1` | 验证码策略占位 |
 
-`db:clear-data` dry-run 报告目标数据库普通 collection 的文档与索引状态；实际 Storage driver 为 `oss` 时，还会只读枚举当前 `<OSS_OBJECT_PREFIX>/clinical-evidence/`，fake storage 明确跳过 OSS。真正执行继续要求 `--execute` 和与当前环境预期数据库逐字一致的 `--confirm=<databaseName>`；OSS 模式额外要求与当前 cleanup namespace 逐字一致且不带末尾斜杠的 `--confirm-oss=<namespace>`。数据库仍只通过 `deleteMany({})` 清空文档并保留 collection 与现有索引，且只有数据库清理与验证完整成功后，才通过现有 Storage ownership guard 删除初始枚举中的当前环境 clinical-evidence 对象并复核残留；不扫描或清理 Bucket root、foreign environment 或 legacy shared namespace。production 必须显式运行，且该脚本不属于应用启动行为。
+`db:clear-data` dry-run 报告目标数据库普通 collection 的文档与索引状态；默认或 `--scope=all` 继续清空全部普通 collection 文档，`--scope=business` 只清显式业务 allowlist（包括运行态 `sessions`），保留 `users`、`scale_definitions`、`scale_versions`，并在出现未分类普通 collection 时 fail closed。business verifier 同时要求目标文档归零、保留 collection 文档数不变，以及两类 collection 的索引均不变。实际 Storage driver 为 `oss` 时，两个 scope 都仍只读枚举并清理当前 `<OSS_OBJECT_PREFIX>/clinical-evidence/`，fake storage 明确跳过 OSS；`--execute`、数据库与 OSS 双确认、DB-first 顺序及现有 Storage ownership guard 均不变。数据库仍只通过 `deleteMany({})` 清空目标文档并保留 collection 与现有索引；不扫描或清理 Bucket root、foreign environment 或 legacy shared namespace。production 必须显式运行，且该脚本不属于应用启动行为。
 
 ## 5. 安全与部署注意事项
 

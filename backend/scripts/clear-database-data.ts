@@ -18,11 +18,50 @@ import {
 
 export type ClearDataMode = 'dry-run' | 'execute';
 
+export type ClearDataScope = 'all' | 'business';
+
 export type ClearDataArguments = {
   mode: ClearDataMode;
+  scope: ClearDataScope;
   confirm?: string;
   confirmOss?: string;
 };
+
+export type CollectionAction = 'delete' | 'preserve' | 'unclassified';
+
+export const BUSINESS_CLEAR_COLLECTIONS: ReadonlySet<string> = new Set([
+  'assessment_visits',
+  'clinical_reports',
+  'cognitive_domain_results',
+  'item_responses',
+  'media_evidences',
+  'patient_administration_sessions',
+  'patients',
+  'scale_instances',
+  'score_results',
+  'sessions',
+]);
+
+export const BUSINESS_PRESERVE_COLLECTIONS: ReadonlySet<string> = new Set([
+  'scale_definitions',
+  'scale_versions',
+  'users',
+]);
+
+export function resolveCollectionAction(
+  scope: ClearDataScope,
+  collectionName: string,
+): CollectionAction {
+  if (scope === 'all' || BUSINESS_CLEAR_COLLECTIONS.has(collectionName)) {
+    return 'delete';
+  }
+
+  if (BUSINESS_PRESERVE_COLLECTIONS.has(collectionName)) {
+    return 'preserve';
+  }
+
+  return 'unclassified';
+}
 
 type EmptyFilter = Record<string, never>;
 
@@ -55,6 +94,7 @@ export type RunClearDataOptions = {
 
 type CollectionSnapshot = {
   name: string;
+  action: CollectionAction;
   documentCount: number;
   indexCount: number;
   indexNames: string[];
@@ -63,9 +103,15 @@ type CollectionSnapshot = {
 
 type ClearDataSummary = {
   collectionCount: number;
+  targetCollectionCount: number;
+  preservedCollectionCount: number;
+  unclassifiedCollectionCount: number;
   beforeDocuments: number;
+  targetDocumentsBefore: number;
+  preservedDocuments: number;
   deletedDocuments: number;
   residualDocuments: number;
+  classificationFailures: number;
   operationFailures: number;
   verifierFailures: number;
 };
@@ -92,21 +138,39 @@ type StorageCleanupSummary = {
 
 const EMPTY_DATABASE_SUMMARY: ClearDataSummary = {
   collectionCount: 0,
+  targetCollectionCount: 0,
+  preservedCollectionCount: 0,
+  unclassifiedCollectionCount: 0,
   beforeDocuments: 0,
+  targetDocumentsBefore: 0,
+  preservedDocuments: 0,
   deletedDocuments: 0,
   residualDocuments: 0,
+  classificationFailures: 0,
   operationFailures: 0,
   verifierFailures: 0,
 };
 
 export function resolveClearDataArguments(args: string[]): ClearDataArguments {
   let execute = false;
+  let scope: ClearDataScope = 'all';
+  let scopeProvided = false;
   let confirm: string | undefined;
   let confirmOss: string | undefined;
 
   for (const argument of args) {
     if (argument === '--execute' && !execute) {
       execute = true;
+      continue;
+    }
+
+    if (argument.startsWith('--scope=') && !scopeProvided) {
+      const value = argument.slice('--scope='.length);
+      if (value !== 'all' && value !== 'business') {
+        throw new Error('--scope must be all or business');
+      }
+      scope = value;
+      scopeProvided = true;
       continue;
     }
 
@@ -138,8 +202,8 @@ export function resolveClearDataArguments(args: string[]): ClearDataArguments {
   }
 
   return execute
-    ? { mode: 'execute', confirm, confirmOss }
-    : { mode: 'dry-run' };
+    ? { mode: 'execute', scope, confirm, confirmOss }
+    : { mode: 'dry-run', scope };
 }
 
 export function assertExecuteConfirmation(
@@ -225,12 +289,13 @@ function getSafeErrorMessage(
 function logClearDataSummary(input: {
   logger: SyncIndexesLogger;
   mode: ClearDataMode | 'unknown';
+  scope: ClearDataScope | 'unknown';
   database: ClearDataSummary;
   storage: StorageCleanupSummary;
   exitCode: number;
 }): void {
   input.logger.log(
-    `[clear-data] summary mode=${input.mode} collections=${input.database.collectionCount} beforeDocuments=${input.database.beforeDocuments} deletedDocuments=${input.database.deletedDocuments} residualDocuments=${input.database.residualDocuments} databaseOperationFailures=${input.database.operationFailures} databaseVerifierFailures=${input.database.verifierFailures} storageDriver=${input.storage.driver} ossCleanup=${input.storage.ossCleanup} namespace=${input.storage.namespace ?? 'skipped'} beforeObjects=${input.storage.beforeObjects} deletedObjects=${input.storage.deletedObjects} residualObjects=${input.storage.residualObjects} storageOperationFailures=${input.storage.operationFailures} storageVerifierFailures=${input.storage.verifierFailures} exitCode=${input.exitCode}`,
+    `[clear-data] summary mode=${input.mode} scope=${input.scope} collections=${input.database.collectionCount} targetCollections=${input.database.targetCollectionCount} preservedCollections=${input.database.preservedCollectionCount} unclassifiedCollections=${input.database.unclassifiedCollectionCount} beforeDocuments=${input.database.beforeDocuments} targetDocumentsBefore=${input.database.targetDocumentsBefore} preservedDocuments=${input.database.preservedDocuments} deletedDocuments=${input.database.deletedDocuments} residualDocuments=${input.database.residualDocuments} databaseClassificationFailures=${input.database.classificationFailures} databaseOperationFailures=${input.database.operationFailures} databaseVerifierFailures=${input.database.verifierFailures} storageDriver=${input.storage.driver} ossCleanup=${input.storage.ossCleanup} namespace=${input.storage.namespace ?? 'skipped'} beforeObjects=${input.storage.beforeObjects} deletedObjects=${input.storage.deletedObjects} residualObjects=${input.storage.residualObjects} storageOperationFailures=${input.storage.operationFailures} storageVerifierFailures=${input.storage.verifierFailures} exitCode=${input.exitCode}`,
   );
 }
 
@@ -338,6 +403,7 @@ function getIndexNames(indexes: unknown[]): string[] {
 async function snapshotCollections(input: {
   database: ClearDataDatabase;
   logger: SyncIndexesLogger;
+  scope: ClearDataScope;
   phase: 'dry-run' | 'execute-before';
 }): Promise<CollectionSnapshot[]> {
   const collectionInfos = await input.database.listCollections();
@@ -356,8 +422,10 @@ async function snapshotCollections(input: {
     const documentCount = await collection.countDocuments({});
     const indexes = await collection.indexes();
     const indexNames = getIndexNames(indexes);
+    const action = resolveCollectionAction(input.scope, name);
     const snapshot = {
       name,
+      action,
       documentCount,
       indexCount: indexes.length,
       indexNames,
@@ -365,7 +433,7 @@ async function snapshotCollections(input: {
     };
     snapshots.push(snapshot);
     input.logger.log(
-      `[clear-data] phase=${input.phase} collection=${name} documentCount=${documentCount} indexCount=${indexes.length} indexes=${JSON.stringify(indexNames)}`,
+      `[clear-data] phase=${input.phase} scope=${input.scope} collection=${name} action=${action} documentCount=${documentCount} indexCount=${indexes.length} indexes=${JSON.stringify(indexNames)}`,
     );
   }
 
@@ -395,7 +463,7 @@ async function verifyCollections(input: {
     if (!currentCollectionNames.has(snapshot.name)) {
       failures += 1;
       input.logger.error(
-        `[clear-data] phase=verifier collection=${snapshot.name} collectionExists=false indexesPreserved=false`,
+        `[clear-data] phase=verifier collection=${snapshot.name} action=${snapshot.action} collectionExists=false indexesPreserved=false`,
       );
       continue;
     }
@@ -407,13 +475,19 @@ async function verifyCollections(input: {
       const indexesPreserved =
         indexes.length === snapshot.indexCount &&
         fingerprintIndexes(indexes) === snapshot.indexFingerprint;
-      const aligned = residualCount === 0 && indexesPreserved;
-      residualDocuments += residualCount;
+      const documentsAligned =
+        snapshot.action === 'delete'
+          ? residualCount === 0
+          : residualCount === snapshot.documentCount;
+      const aligned = documentsAligned && indexesPreserved;
+      if (snapshot.action === 'delete') {
+        residualDocuments += residualCount;
+      }
       if (!aligned) {
         failures += 1;
       }
       input.logger.log(
-        `[clear-data] phase=verifier collection=${snapshot.name} collectionExists=true residualCount=${residualCount} indexesPreserved=${String(indexesPreserved)} indexCount=${indexes.length} aligned=${String(aligned)}`,
+        `[clear-data] phase=verifier collection=${snapshot.name} action=${snapshot.action} collectionExists=true documentCount=${residualCount} expectedDocumentCount=${snapshot.action === 'delete' ? 0 : snapshot.documentCount} indexesPreserved=${String(indexesPreserved)} indexCount=${indexes.length} aligned=${String(aligned)}`,
       );
     } catch (error: unknown) {
       failures += 1;
@@ -429,6 +503,7 @@ async function verifyCollections(input: {
 export async function runClearDataOperations(input: {
   database: ClearDataDatabase;
   mode: ClearDataMode;
+  scope: ClearDataScope;
   logger: SyncIndexesLogger;
   env: NodeJS.ProcessEnv;
   objectKeysToRedact?: string[];
@@ -436,19 +511,53 @@ export async function runClearDataOperations(input: {
   const snapshots = await snapshotCollections({
     database: input.database,
     logger: input.logger,
+    scope: input.scope,
     phase: input.mode === 'dry-run' ? 'dry-run' : 'execute-before',
   });
+  const targetSnapshots = snapshots.filter(
+    (snapshot) => snapshot.action === 'delete',
+  );
+  const preservedSnapshots = snapshots.filter(
+    (snapshot) => snapshot.action === 'preserve',
+  );
+  const unclassifiedSnapshots = snapshots.filter(
+    (snapshot) => snapshot.action === 'unclassified',
+  );
   const beforeDocuments = snapshots.reduce(
     (total, snapshot) => total + snapshot.documentCount,
     0,
   );
+  const targetDocumentsBefore = targetSnapshots.reduce(
+    (total, snapshot) => total + snapshot.documentCount,
+    0,
+  );
+  const preservedDocuments = preservedSnapshots.reduce(
+    (total, snapshot) => total + snapshot.documentCount,
+    0,
+  );
+  const classificationFailures = unclassifiedSnapshots.length > 0 ? 1 : 0;
+  const summaryBase = {
+    collectionCount: snapshots.length,
+    targetCollectionCount: targetSnapshots.length,
+    preservedCollectionCount: preservedSnapshots.length,
+    unclassifiedCollectionCount: unclassifiedSnapshots.length,
+    beforeDocuments,
+    targetDocumentsBefore,
+    preservedDocuments,
+    classificationFailures,
+  };
 
-  if (input.mode === 'dry-run') {
+  if (classificationFailures > 0) {
+    input.logger.error(
+      `[clear-data] phase=classification scope=${input.scope} unclassifiedCollections=${unclassifiedSnapshots.length} allowed=false`,
+    );
+  }
+
+  if (input.mode === 'dry-run' || classificationFailures > 0) {
     return {
-      collectionCount: snapshots.length,
-      beforeDocuments,
+      ...summaryBase,
       deletedDocuments: 0,
-      residualDocuments: beforeDocuments,
+      residualDocuments: targetDocumentsBefore,
       operationFailures: 0,
       verifierFailures: 0,
     };
@@ -456,7 +565,7 @@ export async function runClearDataOperations(input: {
 
   let deletedDocuments = 0;
   let operationFailures = 0;
-  for (const snapshot of snapshots) {
+  for (const snapshot of targetSnapshots) {
     try {
       const result = await input.database
         .collection(snapshot.name)
@@ -475,15 +584,14 @@ export async function runClearDataOperations(input: {
 
   const verifier = await verifyCollections({
     database: input.database,
-    snapshots,
+    snapshots: [...targetSnapshots, ...preservedSnapshots],
     logger: input.logger,
     env: input.env,
     objectKeysToRedact: input.objectKeysToRedact,
   });
 
   return {
-    collectionCount: snapshots.length,
-    beforeDocuments,
+    ...summaryBase,
     deletedDocuments,
     residualDocuments: verifier.residualDocuments,
     operationFailures,
@@ -548,6 +656,7 @@ export async function runClearDatabaseData(
   let context: ClearDataContext | undefined;
   let exitCode = 0;
   let mode: ClearDataMode | 'unknown' = 'unknown';
+  let scope: ClearDataScope | 'unknown' = 'unknown';
   let databaseSummary = { ...EMPTY_DATABASE_SUMMARY };
   let storageSummary: StorageCleanupSummary = {
     driver: 'unknown',
@@ -563,10 +672,11 @@ export async function runClearDatabaseData(
   try {
     const clearOptions = resolveClearDataArguments(args);
     mode = clearOptions.mode;
+    scope = clearOptions.scope;
     const { nodeEnv, expectedDatabaseName } = prepareIndexSyncEnvironment(env);
     assertExecuteConfirmation(clearOptions, expectedDatabaseName);
     logger.log(
-      `[clear-data] mode=${clearOptions.mode} NODE_ENV=${nodeEnv} expectedDatabaseName=${expectedDatabaseName} adminConnection=true autoIndex=false`,
+      `[clear-data] mode=${clearOptions.mode} scope=${clearOptions.scope} NODE_ENV=${nodeEnv} expectedDatabaseName=${expectedDatabaseName} adminConnection=true autoIndex=false`,
     );
 
     context = await createContext();
@@ -637,6 +747,7 @@ export async function runClearDatabaseData(
       databaseSummary = await runClearDataOperations({
         database: context.database,
         mode: clearOptions.mode,
+        scope: clearOptions.scope,
         logger,
         env,
         objectKeysToRedact: initialObjectKeys,
@@ -649,6 +760,7 @@ export async function runClearDatabaseData(
     }
 
     const databaseSucceeded =
+      databaseSummary.classificationFailures === 0 &&
       databaseSummary.operationFailures === 0 &&
       databaseSummary.verifierFailures === 0 &&
       (clearOptions.mode === 'dry-run' ||
@@ -703,6 +815,7 @@ export async function runClearDatabaseData(
   logClearDataSummary({
     logger,
     mode,
+    scope,
     database: databaseSummary,
     storage: storageSummary,
     exitCode,
