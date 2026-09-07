@@ -53,12 +53,9 @@ Codex 执行边界和验证策略以 `docs/codex-rules.md` 为准；数据库隔
 
 ### 3.1 隔离原则
 
-- E2E 必须使用与 development / production 完全隔离的 test database
-- 测试数据库不得与 dev / prod 共享：
-  - 数据库名称
-  - 用户账号
-  - 连接串
-  - 数据文件或物理实例
+- E2E 必须使用独立 test database，与 development / production 实现 database-level isolation
+- test 不得与 dev / prod 共用 `databaseName`，不得使用 dev / prod 数据库账号或凭据，也不得把连接目标指向 dev / prod database；production database 对自动测试绝对禁止
+- generic E2E governance 不默认要求不同环境运行在独立 MongoDB server、cluster 或 physical instance；项目存在更严格部署或安全要求时，以 `docs/database-conventions.md` 及项目级配置、部署治理为准
 
 ### 3.2 启动期校验
 
