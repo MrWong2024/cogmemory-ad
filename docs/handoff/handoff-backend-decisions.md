@@ -106,10 +106,9 @@ Superseded by: D-009 / current `backend/tsconfig.json`
 ### D-010：记录后端公共底座基础闭环验证通过
 
 - 日期：2026-07-05
-- 决策：在 `rootDir` 调整为 `"."` 且 `start:prod` 保持指向 `./dist/src/main.js` 后，用户已本地验证 `npm run start:prod` 启动成功。至此后端公共底座已完成 `npm install`、`npm run build`、`npm test -- --runInBand`、`npm run start:prod` 的基础闭环验证。
-- 背景：`src/main.ts` 当前 build 产物为 `dist/src/main.js`，与 `start:prod` 启动路径一致；用户补充完成了本地 `start:prod` 启动验证。
-- 影响范围：后端 README 和后端 handoff 文档的验证记录；不修改 package、tsconfig、后端源码、测试、脚本或业务边界。
-- 后续复查点：该结论仅覆盖公共底座本地基础启动链路，不代表业务模块、E2E、lint、真实生产部署、OSS/SMS/LLM 集成或医疗业务能力已完成。
+- 决策：在 D-009 完成 TypeScript rootDir / production start 路径调整后，记录当时后端公共底座已完成本地基础构建、单元测试与 production-start 闭环验证，作为该工程调整收口时的历史 evidence。
+- 边界：该历史验证只说明当时公共底座启动链能够闭合，不代表业务模块、HTTP E2E、真实生产部署、外部 OSS / SMS / LLM 集成或临床能力已经完成。
+- Owner：当前测试资产、runner、执行方式和 evidence 状态见 [Backend Testing Playbook](./handoff-backend-testing-playbook.md)；当前 build / start 实现以 package scripts 与代码为准。
 
 ### D-011：先建设量表定义模型底座，不暴露公开 API
 
@@ -281,13 +280,11 @@ Superseded by: [Backend Service Map](./handoff-backend-service-map.md) / current
 ### D-028：自动评分与人工复核分离，并以显式确认完成评分闭环
 
 - 日期：2026-07-11
-- 决策：A18 只允许对 ScoreResult 内 countsTowardTotal=true 的 needs_review / manual_scored 项目执行单题人工复核；auto_scored、not_scored 和过程项不可人工覆盖。人工分值按实例当前绑定 ScaleVersion 的 scoreRange / step 验证，不从原始作答建议或重新自动判分。
-- 审计：每次人工修改向 `metadata.a18ManualReview.events` 追加 randomUUID 受控事件，保留旧事件和其他 metadata，单结果上限 500。内部事件可保存 previousScoreValue，但公开响应只显示每题最新操作者、时间和意见；不公开 metadata、完整历史或 previousScoreValue。
-- 汇总：单题更新后始终复用 `summarizeItemScores()` 从 ScoreResult.itemScores 重新派生 total / group / scorePercent，并按 auto / manual 当前组成派生 scoringSource。客户端不能提交 item / group / total、status、quality 或 reviewer。
-- 并发：manual-review 与 confirm 都要求 expectedUpdatedAt，并把 ScoreResult.updatedAt 与完整 ownership / runNo=1 / 状态加入同一次 findOneAndUpdate 条件；原子 miss 后重读并返回稳定 conflict，不自动覆盖或重试。不新增 revision Schema 字段，不使用 transaction 或分布式锁。
-- 确认：全部计分项为 auto_scored / manual_scored 且实时汇总、range、source、percentage 与 A17 warning 检查通过后，必须由独立 confirm=true 操作进入 confirmed。confirmed 不等于 locked，不设置 lockedAt；confirmed / locked 重复确认幂等且不重写审计，缺 confirmedAt 的历史数据不猜测。
-- 质量口径：确认成功的 qualityStatus=passed 仅表示评分结果完整性与人工复核流程通过，不表示患者正常、疾病诊断或报告结论。A19 再进入认知域结果；A18 不创建 CognitiveDomainResult / ClinicalReport，不实现诊断或 AI。
-- 影响范围：仅 scoring 模块、A18 E2E 和指定 backend handoff / roadmap；未修改 Schema、seed、auth / patients / assessments / scales / media / cognitive-domains / reports、AppModule、依赖、环境配置或前端。
+- 决策：自动评分与人工复核分离。只有服务端认定需人工复核 / 人工评分的计分项可以由人工修改；自动评分项、非计分项和过程项不得被人工任意覆盖。人工评分依据实例绑定的量表版本规则校验，服务端不从原始作答推断分值或重新自动判分。
+- 审计与汇总：人工复核必须保留受控、可追溯的审计；评分汇总与质量由服务端从合法评分事实派生，客户端不得伪造汇总、状态或审核身份。公开投影只暴露必要的复核信息，不公开完整内部审计。
+- 并发：修改和确认采用乐观并发，冲突时拒绝写入，不静默覆盖、不自动合并或重试。
+- 确认与后果：完整复核并通过服务端完整性检查后，仍需独立的显式确认。confirmed 不等于 locked；重复确认幂等且不重写既有确认事实，缺失的历史确认事实不猜测。评分流程完成只表示结果完整性与复核流程通过，不表示患者正常、疾病诊断或报告结论。
+- Owner：当前 endpoint / error contract 见 [Backend API Map](./handoff-backend-api-map.md)；public request / response shape 见 [Backend DTO Cheatsheet](./handoff-backend-dto-cheatsheet.md)；人工复核、审计、汇总、CAS 与确认编排见 [Backend Service Map](./handoff-backend-service-map.md) 和当前代码。
 
 ### D-029：认知域结果只基于确认评分快照并采用完整分值重叠归因
 
@@ -313,12 +310,11 @@ Superseded by: [Backend Service Map](./handoff-backend-service-map.md) / current
 
 ### D-031：A21 只开放 clinician narrative，并分离提交与最终确认
 
-- 决策：A20 五段系统规则摘要与 patient / visit / scale / score / domain / evidence 快照保持不可编辑；A21 只允许显式输入 doctorOpinion 和可选 recommendationText，首次成功编辑后 source=mixed。mixed 表示系统快照与人工补充共存，不表示 AI。
-- 审计：编辑事件追加在 `metadata.a21Edits`，单报告最多 200 条；submission / confirmation 分别使用独立 UUID namespace。保留未知顶层 metadata，写入前严格验证 A20 generation 和既有 A21 namespace；不创建 AuditLog 集合。
-- 并发：三个写接口使用服务端 `updatedAt` / 客户端 `expectedUpdatedAt` 乐观并发和单文档条件 `findOneAndUpdate`；不自动覆盖、合并或重试，不引入 revision 字段、transaction 或分布式锁。
-- 状态：draft edit 与 submit 分离，submit 进入 pending_confirmation；仅 doctor / admin 可从 pending_confirmation 显式 confirm。A21 不公开 pending → draft、reject、withdraw 或 reopen。
-- 最终性：确认后 status=confirmed、qualityStatus=passed、public isFinal=true；passed 只表示本阶段报告确认流程通过，不表示患者正常、诊断成立或来源结果锁定。
-- 锁定边界：confirmed 不等于 locked。A21 不设置 lockedAt / signatureText，不锁定 Patient、Visit、ScaleInstance、ItemResponse、ScoreResult、CognitiveDomainResult 或 MediaEvidence，不实现 archive / correct / void / PDF / AI。
+- 决策：系统生成的来源快照与规则化内容保持不可编辑，clinician 只补充允许的 narrative，以保持系统事实与人工意见的边界。`mixed` 表示系统事实与人工补充共存，不代表 AI。
+- 动作分离：edit、submit 与 final confirmation 是不同动作；编辑不等于提交，提交后仍需独立、显式的最终确认，资格由服务端裁决。
+- 审计与并发：编辑、提交与确认分别保留受控审计；写操作采用乐观并发，不自动覆盖、合并或 retry。
+- 最终性边界：confirmed 不等于 locked。confirmation 流程完成不代表患者正常、诊断成立或来源结果锁定，也不把后续锁定等生命周期动作合并到确认中。
+- Owner：当前 endpoint / role / error contract 见 [Backend API Map](./handoff-backend-api-map.md)；public narrative / response shape 见 [Backend DTO Cheatsheet](./handoff-backend-dto-cheatsheet.md)；review / submit / confirm workflow、审计与 CAS 见 [Backend Service Map](./handoff-backend-service-map.md) 和当前代码。
 
 ### D-032：ClinicalReport 锁定采用 confirmed 上的不可逆正交事实
 
@@ -387,33 +383,30 @@ Superseded by: D-036
 ### D-038：Browser 验收数据与普通自动化测试数据采用数据库级隔离
 
 - 日期：2026-07-21
-- 状态：决策已锁定；代码接入、Browser 专用启动入口、实际库名与用户角色门禁、隔离回归均已实施。
-- 背景：普通 E2E 会删除并重新物化全局 MMSE / MoCA 定义和版本；长期保留的 Browser fixture 则依赖稳定的定义、版本和实例绑定。namespace 只能隔离患者、访视和业务记录，不能隔离全局量表目录；两者共库会造成目录代际漂移和实例绑定失效。
-- 决策：普通自动化测试与 Browser 验收使用不同数据库；Browser fixture CLI 与 Browser test backend 使用同一个 Browser 专用数据库。具体数据库名、用户和操作命令以 `handoff-backend-testing-playbook.md` 为准；通用 Codex 规则只规定抽象用途分类，不保存项目具体映射。
-- 实施：`standard_test` 与 `browser_acceptance` 采用固定项目映射；AppModule 在连接前校验 URI 声明库名并在连接后校验 `connection.name`。当前所有 Browser fixture CLI 只接受 Browser db_admin + `dbOwner`，test-only Browser backend 只接受 Browser app + `readWrite` 且通过后才监听。
-- 验证证据：D-038 的当前门禁结果、Browser 验收状态、verify 与 cleanup 事实统一由 `handoff-backend-testing-playbook.md` 维护，本决策记录不重复保存验收流水。
-- 后果：普通 E2E 可继续重建普通测试库；Browser fixture 可在验收期间跨多轮保留而不受普通 E2E 影响，并在收口时按 namespace 精确清理。未来批次仍须遵循 backend testing playbook 的独立生命周期。
-- 影响范围：实现仅涉及测试数据库用途、配置/连接门禁、fixture CLI、test-only 启动入口与测试；未修改产品 Schema、catalog resolver、readiness、量表规则或业务接口。
+- 背景：普通自动化测试可能重建全局量表目录、定义与版本，长期 Browser fixture 则依赖稳定的目录与实例绑定。namespace 只能隔离业务记录，不能隔离这些全局事实；共库会导致目录漂移和实例绑定失效。
+- 决策：`standard_test` 与 `browser_acceptance` 必须数据库级隔离；Browser fixture 与 Browser test backend 必须使用同一个 Browser 专用数据库及其用途。namespace 不能替代 database-level isolation。
+- 连接边界：连接和工具链必须核对声明用途与实际目标并 fail closed，用途不匹配时不得回退到其他数据库。
+- 后果：普通自动化重建与长期 Browser fixture 生命周期互不破坏；具体 fixture 生命周期与验证证据由 Testing Owner 维护。
+- Owner：当前 databaseName、URI / account 配置来源及 purpose mapping 见 [Backend Config Matrix](./handoff-backend-config-matrix.md)；当前 Browser runner、fixture、verify、cleanup 与 evidence 见 [Backend Testing Playbook](./handoff-backend-testing-playbook.md)；连接实现以当前代码为准。
 
 ### D-039：A14 采用独立草稿版本 CAS，并将实时计时状态持久化在 ItemResponse 草稿
 
 - 日期：2026-08-03
-- 草稿版本：A14 使用每条 ItemResponse 独立的 `draftRevision` 与 `draftSavedAt`，而不是通用 `updatedAt` 或 Mongoose `__v`。历史缺失字段按 0 / null 读取；首次合法保存可通过 expectedRevision=0 原子升级，不做迁移、批量回填或新增索引。
-- 并发语义：所有实际草稿 PATCH 必须携带客户端已读 `expectedRevision`；ownership、可编辑状态、锁状态和 revision 共同进入单文档 `findOneAndUpdate` 条件。初始 stale 与合法竞争 miss 都返回 409 `ITEM_RESPONSE_DRAFT_CONFLICT`；冲突不覆盖、不合并、不自动重试，B18 通过既有 GET 重新读取服务端事实。
-- 媒体边界：A15 上传与作废可以改变 evidenceRefs 和通用 `updatedAt`，但不递增 `draftRevision`、不修改 `draftSavedAt`；A14 草稿 PATCH 不覆盖或重建 evidenceRefs。草稿版本只代表 A14 作答、备注和计时，不是 ItemResponse 全局版本。
-- 计时持久化：实时计时的 idle / running / paused / completed、`lastResumedAt` 与累计 duration 随 ItemResponse 草稿完整快照保存；legacy timing 只读安全规范化，不在 GET 回写。计时不新建 collection、history 或后台 job，也不自动 answered、提交、评分或修改 Visit / ScaleInstance startedAt。
-- 跨端边界：A29 只完成后端保存合同；决策当时前端仍为 B17 / 旧 B4 客户端。B18 负责 expectedRevision 适配、自动保存、冲突恢复、网络 / 切组恢复、未保存状态和实时计时交互；当时 B18 尚未完成，因此当时 WP-03 尚未完成。
+- 决策与理由：A14 草稿拥有独立于通用 document timestamp/version 的专用 draft revision，以解决多端编辑、自动保存和中断恢复时的 stale write 风险。
+- 并发语义：实际草稿写必须使用 optimistic CAS；stale 或 competing write 必须 fail closed，不自动 merge、overwrite 或 retry。冲突后的恢复以重新读取服务端事实为基础。
+- 写域隔离：draft revision 只代表作答、备注和 timing 写域，不是 ItemResponse 全局版本。Evidence ref 写域与 draft CAS 分离，媒体变更不推进草稿版本，草稿写不得覆盖或重建 Evidence refs。
+- 计时持久化：timing 状态保存在 ItemResponse 草稿内，不建立独立 timing collection、history 或 background job；计时持久化本身不自动形成作答完成、提交或评分事实。
+- Owner：当前 request / response 与 conflict contract 见 [Backend API Map](./handoff-backend-api-map.md) 和 [Backend DTO Cheatsheet](./handoff-backend-dto-cheatsheet.md)；CAS、timing、parent-start 与 Evidence isolation 编排见 [Backend Service Map](./handoff-backend-service-map.md) 和当前代码；前端 recovery / autosave 当前事实从 [Frontend Handoff 入口](./handoff-frontend-INDEX.md) 进入对应 Owner。
 
 ### D-040：A16 采用父实例 + 固定题目 scope 的可恢复 submission write barrier
 
 - 日期：2026-08-03
-- 线性化边界：不用 Mongo transaction、内存 mutex、`lockedAt` 或状态字段冒充互斥锁；在 `ScaleInstance.submissionWriteBarrier` 保存 version=1、UUID `barrierId`、`fencing / fenced / releasing / completed`、首次 actor / 时间与稳定排序且去重的完整 `ItemResponse` scope，并在每个 scope 子项保存同 token 屏障。
-- 写入门禁：A14 草稿 CAS、A15 evidenceRef attach / clear 都要求父、子 submission barrier 为 null / missing；原子 miss 后重读并优先把合法或损坏的父/子屏障归类为 409 `SCALE_INSTANCE_NOT_EDITABLE`，损坏内部屏障不 fail-open。A15 restore 仅作为 clear 后下游作废失败的受控补偿例外，不新增普通业务写入口。
-- 可恢复编排：首次提交在 readiness 后原子建立父 `fencing`，按固定 scope 幂等写入并重读验证所有子屏障，再把父推进 `fenced`；完成前重新读取同一 scope 并执行第二次 readiness。中断请求只沿持久化 state / token / scope 恢复，不重新生成 scope，不轮询或自动重放外部写。
-- 失败释放：readiness 失效时先把父推进 `releasing`，只清理 barrierId 精确相同的子屏障，逐项确认 open 后再清父屏障；外部或其他 token 永不由本次释放删除。释放中断可恢复，完成与释放通过父状态 CAS 竞争且只能有一个方向成功。
-- 完成事实：最终 `submissionId` 复用首次 `barrierId`，submittedBy / startedAt 复用首次 actor / 时间；ScaleInstance 原子变为 completed 并把父屏障置 completed，所有同 token 子屏障继续保留，永久阻断暂停后释放的 A14 / A15 写。completed 幂等不重写首次事实；无 A30 字段的 legacy completed 实例继续按既有 A16 审计兼容读取。
-- 公开与数据边界：屏障是 private persistence state，不新增 index、collection、endpoint、DTO、role、公开 response、配置、队列或后台任务；公开 mapper 不返回屏障、scope、内部 ID 或首次 actor 字段。A17 / A18 / A23 既有来源冻结边界不因 A30 改变。
-- 跨端边界：A30 关闭 A29 的相邻生命周期并发写保护 gap 并使 B18 在决策当时重新成为下一实施阶段；当时 B18 的自动保存、冲突恢复与 Browser 交互尚未实现，因此当时 WP-03 仍未完成。
+- 决策与理由：A16 使用持久化 parent + fixed ItemResponse scope write barrier，在线性化边界内协调 submit 与 A14 draft / A15 Evidence 写竞争。不依赖 Mongo transaction、进程内 mutex 或普通 lifecycle status 冒充跨请求锁。
+- 写入门禁：最终提交前 fence 相关写入，并在 fence 后再次验证 readiness，避免检查后仍有竞争写改变提交依据。损坏或不属于本次提交的 barrier 必须 fail closed；补偿仅限已知失败窗口，不形成普通写旁路。
+- 中断恢复：请求中断后依据持久化 barrier、同一 submission identity 与固定 scope 恢复，不依赖进程内状态，也不重新生成提交范围或自动重放外部写。
+- 受控释放：失败时只能释放属于同一 submission identity 的 barrier，不得清理其他 token / scope；完成与释放互斥，释放中断仍须可恢复。
+- 完成与边界：成功提交保留足够的 terminal fence，阻止旧写越过 completed；重复完成幂等且不重写首次提交事实。barrier 属于 private persistence state，不扩张公开业务 API / DTO，也不改变既有来源冻结边界。
+- Owner：当前 barrier field、state、CAS transition、recovery algorithm 与 Service composition 见 [Backend Service Map](./handoff-backend-service-map.md) 和当前代码。
 
 ## 4. 后续同步规则
 
