@@ -126,13 +126,13 @@ manifest 不承担独立资产数据库、资产管理后台、多级审批、TT
 4. 适用的麦克风本地检查。
 5. 记录明显影响因素。
 
-本地 `PatientAdministrationPreparation` 的 `ready` 只承担 `screen`、`input`、`sound`、`microphone` 四项必要设备检查。`microphone=true` 只表示当前页面已经通过实际 `MediaRecorder` 流程取得 `Blob.size > 0`、可供本地回放的短录音；每次重新检查都会先撤销旧成功事实。浏览器不支持录音、权限拒绝、麦克风设备不可用、录音初始化或运行失败、无法形成非空本地录音时均保持 `microphone=false`，不得以“已检查但不可用”、影响因素或手工勾选视为完成。
+正式施测前必须确认屏幕显示、基本输入、声音播放及适用的麦克风实际可用。当前 supervised MMSE 的麦克风检查不能仅凭“权限已询问”或手工勾选通过；当前设备必须实际形成非空、可在本机回放的短测试录音。每次重新检查都必须重新建立成功事实，不能沿用旧的检查结果。浏览器不支持录音、权限拒绝、麦克风设备不可用、录音初始化或运行失败、无法形成有效测试录音时，均视为必要设备检查未完成；不得以“已检查但不可用”、影响因素、医护文字说明或手工勾选视为完成。
 
-当前支持的 supervised MMSE workflow 包含必须形成患者 audio Evidence 的 speech steps，因此上述麦克风失败均表示必要设备检查未完成；必须检查权限，或更换麦克风、设备、支持录音的浏览器后重新检查成功，才能开始正式患者施测。该门禁限定当前支持的 supervised MMSE workflow，不把所有未来 Scale 永久规定为必须使用麦克风。四项全部完成后，same-device 可继续既有 preparation confirm；cross-device 患者可告知医护本机必要设备检查已完成，再由医护按既有合同显式确认。本地测试录音只存在于当前页面内存，不上传、不保存、不进入 Evidence、不调用 ASR，也不建立 checklist Schema 或设备可信历史。
+当前支持的 supervised MMSE workflow 包含必须形成患者 audio Evidence 的 speech steps，因此上述麦克风失败均表示必要设备检查未完成；必须检查权限，或更换麦克风、设备、支持录音的浏览器后重新检查成功，才能开始正式患者施测。该门禁限定当前支持的 supervised MMSE workflow，不把所有未来 Scale 永久规定为必须使用麦克风。四项全部完成后，same-device 由医护继续确认准备；cross-device 患者可告知医护本机必要设备检查已完成，再由医护按既有合同显式确认。本地测试录音只在当前设备临时使用，不上传、不保存、不进入正式 Evidence、不调用 ASR、不进入保留合同，也不建立独立检查清单或设备可信历史体系。准备状态的页面表示、具体字段和浏览器录音实现见 [Frontend Component Map](./handoff-frontend-component-map.md) 和当前代码。
 
-触摸 / 书写不计分操作练习推荐给不熟悉设备的患者，按需展开使用，不是每次正式施测的强制门槛，也不影响 preparation `ready`。患者已熟悉设备时可以完全跳过练习。练习不使用正式刺激，画布只存在于当前患者设备内存；不上传、不计分、不保存，不进入正式 timing、`ItemResponse`、`MediaEvidence`、报告或正式播放次数，离开或 reset 后自然丢弃。
+触摸 / 书写不计分操作练习推荐给不熟悉设备的患者，按需展开使用，不是每次正式施测的强制门槛，也不影响必要设备检查的完成判定。患者已熟悉设备时可以完全跳过练习。练习不使用正式刺激，练习内容只在当前患者设备临时使用；不上传、不计分、不保存，不进入正式计时、作答、Evidence、报告或正式播放次数，离开或重置后丢弃。
 
-当前一期中文量表的施测语言由既定 `ScaleVersion` 与呈现资产合同决定，准备页不通过本地 checkbox 选择或改变施测语言；未来多语言能力另行设计。不得建设麦克风分贝分析、噪声评分、设备质量报告或练习历史系统。
+当前一期中文量表的施测语言由既定 `ScaleVersion` 与呈现资产合同决定，准备页面不得通过本地选择改变施测语言；未来多语言能力另行设计。不得建设麦克风分贝分析、噪声评分、设备质量报告或练习历史系统。
 
 ## 8. 患者施测会话与控制权
 
@@ -149,8 +149,8 @@ manifest 不承担独立资产数据库、资产管理后台、多级审批、TT
 - 会话必须表达准备、活动、暂停、完成、终止和过期语义；这些是业务语义，不预先规定最终枚举名或 Schema。
 - `prepared` 仅表示患者施测会话已准备，不代表 Visit 或 ScaleInstance 已真正开始；创建会话、same-device 准备确认、cross-device 进入码创建 / 重发 / 兑换和单纯查看页面都保持父级 `draft / startedAt=null`。same-device 仅在首次安全 handoff 使 Session 从 prepared 转 active 时开始，cross-device 仅在准备确认真正使 Session 从 prepared 转 active 时开始；Session、当前 ScaleInstance 与所属 Visit 必须共用同一个服务端首次 start timestamp，并把父级 draft 推进为 in_progress。pause / resume、换凭证和后续复核不得重置或覆盖该时间。
 - `completed` 是同一 `ScaleInstance` 患者施测成功完成的永久终点；历史中存在任意 completed `PatientAdministrationSession` 时，不得再次创建患者施测会话。`terminated` / `expired` 表示未成功完成，只有在不存在 completed 历史时才允许重新创建；terminate + recreate 仅用于失败、中止或设备方式选择错误后的恢复，不是 completed 后重测。
-- terminate / expiry 本身继续保留失败施测事实，不自动删除任何 Session、Evidence 或实例。医护可在历史中独立选择任意 terminated/expired Session 执行显式不可逆单次失败施测删除；该动作不要求目标是最新 Session，保留所属 ScaleInstance、全部 ItemResponse/答案与其他 Session，只删除目标 Session，以及 provenance 精确属于该 Session、未锁定、未处于 transcription processing 且未被 ItemResponse 或 ClinicalReport 正式引用的 patient-origin Evidence 与其明确持有的私有 Storage object keys。prepared、active、paused、completed Session 永不进入该能力，集合或引用关系不一致时 fail closed，DELETE 不自动 terminate。另一个独立能力仍可对不存在 completed 历史、没有开放 Session、没有 submission barrier / 正式结果且满足 backend eligibility 的整个 `supervised_patient_input` 未完成实例执行物理删除。
-- 对 MMSE `supervised_patient_input`，completed 是进入正式医护复核与量表提交的唯一成功门槛。无 Session、prepared、active、paused、terminated、expired 都仍属于患者施测阶段：前端不开放正式 ItemResponse、readiness / submit、评分或认知域；后端 A14 正式 draft write 返回 `PATIENT_ADMINISTRATION_NOT_COMPLETED`，A16 readiness 返回 blocking `SCALE_INSTANCE_PATIENT_ADMINISTRATION_INCOMPLETE`，直接 submit 复用同一 evaluation 不能绕过。该门禁只读历史 completed 事实，不改变 Session 生命周期、same-device / cross-device、父级 startedAt 或任何 Session。
+- terminate / expiry 本身继续保留失败施测事实，不自动删除任何 Session、Evidence 或实例。医护可在历史中独立选择任意 terminated/expired Session 执行显式不可逆单次失败施测删除；该动作不要求目标是最新 Session，保留所属 ScaleInstance、全部 ItemResponse/答案与其他 Session，只删除目标 Session，以及 provenance 精确属于该 Session、未锁定、未处于 transcription processing 且未被 ItemResponse 或 ClinicalReport 正式引用的 patient-origin Evidence 与其明确持有的私有 Storage object keys。prepared、active、paused、completed Session 永不进入该能力，集合或引用关系不一致时 fail closed，删除操作不会先自动终止会话。另一个独立能力仍可对不存在 completed 历史、没有开放 Session、没有 submission barrier / 正式结果且满足 backend eligibility 的整个 `supervised_patient_input` 未完成实例执行物理删除。
+- 对 MMSE `supervised_patient_input`，completed 是进入正式医护复核与量表提交的唯一成功门槛。无 Session、prepared、active、paused、terminated、expired 都仍属于患者施测阶段：前端不开放正式 ItemResponse、readiness / 整体提交、评分或认知域；后端的正式 ItemResponse 编辑、submission readiness 与整体提交链必须共同 fail closed，直接提交不能绕过同一 completed 门槛。该门禁只读历史 completed 事实，不改变 Session 生命周期、same-device / cross-device、父级首次开始时间或任何 Session。具体 endpoint、issue/error code 与 response projection 由 [Backend API Map](./handoff-backend-api-map.md) 和 [Backend DTO Cheatsheet](./handoff-backend-dto-cheatsheet.md) 维护。
 - 患者只能读取和完成服务端当前步骤，不能自行跳题；但正常 happy path 应由患者端连续推进整个正常题目主链。条件提示等合同明确的受控步骤仍由医护解锁，不能把“需要医护临床观察”机械等同为“需要 staff 同步系统写入才能进入下一题”。
 - cross-device 存在保持有效 staff Session 的独立医护终端时，医护可通过该终端执行暂停、接管、纠正、恢复、换设备或终止等已存在控制操作。
 - same-device 安全交接后，当前浏览器 staff Session 已失效，患者施测期间不保留隐藏 staff 权限，也不承诺医护可以在同一设备上无须重新认证就实时执行 staff 控制。正常 happy path 由患者连续完成主链，医护进行现实观察和必要辅助。
@@ -158,13 +158,13 @@ manifest 不承担独立资产数据库、资产管理后台、多级审批、TT
 - 无论 same-device 或 cross-device，旧患者设备或旧患者操作在控制权变化后提交的 stale write 都必须被服务端安全拒绝，不能覆盖已经成功的新服务端事实；既有 CAS、安全拒绝、读取最新状态和用户显式重试原则不变。
 - 患者刷新或网络恢复后只从服务端权威状态恢复当前步骤；不依赖浏览器历史、客户端步骤号或本地持久队列决定进度。
 - 一期使用普通 HTTP 与服务端权威状态；不建设 WebSocket、SSE、Redis、在线心跳中心、屏幕镜像或双端协同编辑。
-- 合同修正前缺少设备方式的 legacy 会话不得根据患者凭证、准备时间或进入码过期时间推断或写回模式；对外摘要返回 null，终止仍允许，handoff、重签、准备确认等 mode-specific mutation 使用既有 session conflict fail closed。
+- 合同修正前缺少设备方式的 legacy 会话不得根据患者凭证、准备时间或进入码过期时间推断或写回模式；终止仍允许，需要明确设备模式的 handoff、重签、准备确认等 mutation 必须 fail closed。具体 public projection 由 [Backend DTO Cheatsheet](./handoff-backend-dto-cheatsheet.md) 维护。
 
 长期默认不要求患者端与临床端同时写入时进行无缝自动协调。控制权变化或并发写入时，服务端可以安全拒绝已经过期的操作；被拒绝的一方应重新读取服务端权威状态，并由患者或医护显式决定是否重试。不得自动重放可能产生业务副作用的操作，已经成功的事实也不得被旧操作覆盖。该原则用于降低并发协调复杂度，不削弱数据一致性、控制权边界或关键失败恢复。
 
 系统级允许正常并行：医护 A 服务患者 A、医护 B 服务患者 B，以及不同 `Patient`、`Visit`、`ScaleInstance` 或 `PatientAdministrationSession` 的工作无需全局串行。读操作正常并发。同一个业务聚合、同一个 `ScaleInstance` 或同一个 Session 内，业务允许时优先一个阶段只有一个主要写入主体，不把多人实时协同编辑同一评估作为默认能力。“串行优先”不表示 Node 单线程、全局 mutex、MongoDB 全局锁、Redis 锁、`session locked` 字段、所有 HTTP 请求排队、分布式锁或 worker 全局串行。
 
-具体 HTTP 路径、刷新频率、凭证载体、Cookie 名称和服务拆分由 WP-10 根据最新代码确定，但不得改变上述业务语义。
+具体 HTTP 路径、刷新频率、凭证载体、Cookie 名称和服务拆分由对应专项 Owner 与当前代码维护，但不得改变上述业务语义。
 
 ### 8.2 单设备与双设备正常流程
 
@@ -242,21 +242,21 @@ MMSE 的命名、阅读并执行、三步指令等观察型步骤遵循同一正
 2. ASR 机器候选文本。
 3. 医护动作观察、实物操作结果、控制动作和影响因素；这里描述临床事实来源类别，不表示每一类都必须具有独立 Schema、collection、DTO 或 endpoint。正常现场观察可以在 F3 直接形成现有 `ItemResponse` 草稿内容，不要求逐题同步写入才能推进患者 Session。
 4. 医护 / 医生复核过程中人工形成、修订并拟提交的结构化答案；该层通过现有 `ItemResponse` 草稿承载。
-5. 具备现有 A16 权限的临床工作用户对满足既有 readiness 的整份 `ScaleInstance` 执行显式整体提交后形成的正式提交结果。
+5. 具备现有正式提交权限的临床工作用户对满足既有 readiness 的整份 `ScaleInstance` 执行显式整体提交后形成的正式提交结果。
 
-第 1～3 层不得自动成为 `ItemResponse` 正式答案；患者完成、ASR 候选、原始录音、医护观察、媒体上传成功、自动评分或系统规则均不得自动写入正式答案。对 supervised 流程，只有服务端历史 completed PatientAdministrationSession 才允许医护 / 医生进入第 4 层并通过现有 A14 revision / CAS 草稿 PATCH 受控录入或修订答案；其它 Session 状态和无 Session 均 fail closed，且失败不写草稿或启动 Visit / ScaleInstance。第 4 层继续复用 step、prompt、`operatorNote` 等既有字段，并按既有规则 `markAsAnswered`。第 5 层不创建或复制第二份答案；全部 `ItemResponse` 满足包含该 completed 门禁的 submission readiness 后，由具备现有权限的临床工作用户使用现有 A16 `submit(confirm=true)` 对整份 `ScaleInstance` 做整体正式提交。提交成功后，这批既有 `ItemResponse` 作为该次已提交 `ScaleInstance` 的正式作答结果，再进入既有评分、认知域和报告链。
+第 1～3 层不得自动成为 `ItemResponse` 正式答案；患者完成、ASR 候选、原始录音、医护观察、媒体上传成功、自动评分或系统规则均不得自动写入正式答案。对 supervised 流程，只有服务端历史 completed PatientAdministrationSession 才允许医护 / 医生进入第 4 层，受控录入或修订答案；其它 Session 状态和无 Session 均 fail closed，且失败不写草稿或启动 Visit / ScaleInstance。第 4 层继续复用既有 `ItemResponse` 草稿，并按题目合同完成作答。第 5 层不创建或复制第二份答案；全部 `ItemResponse` 满足包含该 completed 门禁的 submission readiness 后，由具备现有权限的临床工作用户对整份 `ScaleInstance` 做显式整体正式提交。提交成功后，这批既有 `ItemResponse` 作为该次已提交 `ScaleInstance` 的正式作答结果，再进入既有评分、认知域和报告链。具体 endpoint 与授权见 [Backend API Map](./handoff-backend-api-map.md)，request/response 见 [Backend DTO Cheatsheet](./handoff-backend-dto-cheatsheet.md)，CAS 与 submission 实现见 [Backend Service Map](./handoff-backend-service-map.md)。
 
-F3 不修改 A14、readiness 或 A16 的当前技术权限模型，具体 role list 只由当前 backend API / `RolesGuard` 合同维护；不新增 F3 专属 role、reviewer、审批人、doctor-confirm 前置状态，也不把 A14 或 A16 改为 doctor-only。医生继续按既有产品 / 临床合同承担临床解释、需要专业判断的题目、下游评分复核、`ClinicalReport` 和医疗业务责任，但专业责任不自动等价于 A16 endpoint 必须 doctor-only；未来如明确要求只有医生可正式提交，必须作为新的权限需求单独治理和实现。
+F3 不改变现有正式作答、readiness 或整体提交的授权边界；不新增 F3 专属角色、复核人身份、审批人或医生确认前置状态，也不因进入复核而把正式作答或整体提交改为仅医生可执行。医生继续按既有产品 / 临床合同承担临床解释、需要专业判断的题目、下游评分复核、`ClinicalReport` 和医疗业务责任，但专业责任不自动等价于整体正式提交必须由医生独占；未来如明确要求只有医生可正式提交，必须作为新的权限需求单独治理和实现。具体 endpoint 授权由 [Backend API Map](./handoff-backend-api-map.md) 维护。
 
-F3 统一称为“量表作答复核”或“患者施测作答复核”，首先服务正常完成的患者施测，不首先服务异常处理。正常 happy path 固定为：已完成的患者施测 → 医护 / 医生打开现有 `ScaleInstance` 临床工作页 → 查看系统按量表项目整理的患者施测结果、患者原始事实、现有 `ItemResponse` 草稿、待补录或修订项与 readiness 阻断 → 对需要现场观察判断的题目依据医护现场观察补录答案 → 有业务需要时查看录音、图片 / handwriting、已有 ASR 候选和 `reviewEvents` → 正式需要患者已有图片 / handwriting 时，受控采用同一个既有 `MediaEvidence` 到现有 `ItemResponse.evidenceRefs` → 通过现有 A14 单题 PATCH 补录或修订正式答案草稿，并按既有规则对需要完成的题目使用 `markAsAnswered` → 查看 submission readiness → readiness 满足后由具备现有权限的临床工作用户使用现有 A16 `submit(confirm=true)` 整体正式提交 → 再进入既有评分、认知域和报告链。医生最终复核的是整份量表，不要求先进入异常中心或待处理任务列表。
+F3 统一称为“量表作答复核”或“患者施测作答复核”，首先服务正常完成的患者施测，不首先服务异常处理。正常 happy path 固定为：患者施测 completed → 医护 / 医生进入整份量表作答复核 → 查看系统按量表项目整理的患者原始事实、既有 `ItemResponse` 草稿、待补录或修订项与 readiness 阻断 → 对需要现场观察判断的题目依据医护现场观察补录或修订答案 → 有业务需要时查看录音、图片 / handwriting、已有 ASR 候选和控制事实 → 正式需要患者已有 Evidence 时，明确采用同一个既有 `MediaEvidence` 作为正式 Evidence 引用 → 补录、修订并完成正式答案草稿 → 查看 submission readiness → readiness 满足后由具备现有权限的临床工作用户显式整体正式提交 → 再进入既有评分、认知域和报告链。医生最终复核的是整份量表，不要求先进入异常中心或待处理任务列表。
 
-患者施测中已经合法形成且仍有效的 `MediaEvidence` 是可复用的原始临床证据，不得仅因进入 F3 而要求重新上传、下载后重传、复制 OSS object、创建内容相同的第二个 `MediaEvidence`，或转换为“医生 Evidence”副本。患者上传当前只在施测 Session 的 step / run 中记录引用，C2 review 可安全读取，但不写 `ItemResponse.evidenceRefs`；现有 readiness 对 photo / handwriting 等正式媒体要求只读取 `ItemResponse.evidenceRefs`，因此患者 Evidence 的存在不自动满足正式 evidence requirement。对 photo、handwriting 或未来其他既有 evidenceRef 类型，若 ownership、`ScaleInstance`、Item、step / run、evidence type、有效状态与本次有效施测事实均匹配，且未 void / delete，F3 应允许已授权 staff 在复核后明确采用同一个既有 `MediaEvidence`，使其受控进入现有 `ItemResponse.evidenceRefs`。
+患者施测中已经合法形成且仍有效的 `MediaEvidence` 是可复用的原始临床证据，不得仅因进入 F3 而要求重新上传、下载后重传、复制 OSS object、创建内容相同的第二个 `MediaEvidence`，或转换为“医生 Evidence”副本。患者原始 Evidence 可以作为安全复核参考，但其存在不自动满足正式 evidence requirement；readiness 只认可正式采用后的 Evidence 关系。对 photo、handwriting 或其他合同允许的既有证据类型，若 ownership、`ScaleInstance`、Item、step / run、证据类型、有效状态与本次有效施测事实均匹配，且未作废或删除，F3 应允许已授权 staff 在复核后明确采用同一个既有 `MediaEvidence`，建立受控的正式 Evidence 引用。
 
-Evidence adoption 与答案形成是两个独立动作。采用时必须继续校验 staff 授权、ownership、Item / step / evidenceType、`ScaleInstance` / `ItemResponse` 可编辑性和 submission barrier，由服务端最终裁决；该动作不得自动修改答案、`markAsAnswered`、提交 `ScaleInstance`、评分、生成报告、接受 ASR，或认定图片 / 绘图正确。F3 实现 discovery 应优先评估现有 A15 `MediaEvidence` 体系、`ItemResponse.evidenceRefs` 绑定逻辑、C2 ownership / evidence mapping、submission barrier 与 CAS / fail-closed 机制，再选择实现、测试和维护复杂度最低的方案；本合同不提前规定 endpoint、DTO 或 Service 形状，也不要求自动绑定全部患者媒体或批量采用。
+Evidence adoption 与答案形成是两个独立动作。采用时必须继续校验 staff 授权、ownership、Item / step / 证据类型、`ScaleInstance` / `ItemResponse` 可编辑性和提交保护，由服务端最终裁决；该动作不得自动修改答案、完成题目、提交 `ScaleInstance`、评分、生成报告、接受 ASR，或认定图片 / 绘图正确。实现应优先复用既有 `MediaEvidence` 体系、正式 Evidence 引用、归属校验、提交保护与一致性能力，再选择实现、测试和维护复杂度最低的方案；不要求自动绑定全部患者媒体或批量采用。当前绑定、CAS、字段和 endpoint 由前述 Backend API / DTO / Service Owner 维护，本合同不规定其具体形状。
 
-患者施测原始 `MediaEvidence` 与正式 `ItemResponse.evidenceRef` 的生命周期必须解耦：采用只建立指向同一 MediaEvidence ID 的正式引用；撤销采用只清除该正式引用，不得把患者原始 MediaEvidence 标记 voided、删除或移出患者复核，也不得删除 / 覆盖 Storage object。撤销后原始 Evidence 仍须保持可访问并可再次采用。只有不具有 patient-administration provenance 的 direct formal upload 才继续使用“清正式引用 + void MediaEvidence”的既有作废语义；generic void 不得绕过该来源保护。正式 readiness 始终只读取 `ItemResponse.evidenceRefs`，不得因保留患者原始 Evidence 而视为已满足。
+患者施测原始 `MediaEvidence` 与正式 Evidence 引用的生命周期必须解耦：采用只建立指向同一个既有 MediaEvidence 的正式引用；撤销采用只解除该正式引用，不得把患者原始 MediaEvidence 作废、删除或移出患者复核，也不得删除 / 覆盖 Storage object。撤销后原始 Evidence 仍须保持可访问，并可按资格再次采用。只有不具有患者施测来源的直接正式上传才继续使用“解除正式引用并作废 MediaEvidence”的既有语义；通用作废不得绕过该来源保护。正式 readiness 始终只认可正式采用后的 Evidence 关系，不得因保留患者原始 Evidence 而视为已满足。
 
-completed supervised review 中的患者手写 / 绘图事实必须来自患者正式施测阶段；医护在复核阶段查看患者原始 Evidence，并在需要时采用同一个既有 MediaEvidence 到正式 evidenceRef，而不是通过正式编辑器重新绘制或重采集 handwriting。该阶段前端不渲染 handwriting capture / canvas / upload，正式 media upload API 对 `supervised_patient_input + completed PatientAdministrationSession + handwriting` 同样以 409 `MEDIA_EVIDENCE_HANDWRITING_RECAPTURE_NOT_ALLOWED` fail closed；patient Evidence 自身的 capture API、adoption / revoke-adoption 不受该门禁影响。adoption 是建立正式引用，不是重新采集；clinician-administered handwriting 与 completed supervised 的正式 photo 采集继续保留，既有 direct formal handwriting 历史也不因本边界被隐藏或自动作废。
+completed supervised review 中的患者手写 / 绘图事实必须来自患者正式施测阶段；医护在复核阶段查看患者原始 Evidence，并在需要时采用同一个既有 MediaEvidence 作为正式 Evidence 引用，不得通过正式编辑器重新绘制或重采集 handwriting。前端不提供本阶段的手写 / 绘图重采入口，后端对此必须 fail closed；具体 endpoint 和 error code 由 [Backend API Map](./handoff-backend-api-map.md) 维护。患者 Evidence 采集与 adoption / revoke-adoption 的原始能力边界不因此改变。adoption 是建立正式引用，不是重新采集；clinician-administered handwriting 与 completed supervised 的正式 photo 采集继续保留，既有直接正式上传的 handwriting 历史也不因本边界被隐藏或自动作废。
 
 “谁负责临床判定”与“谁推动 patient Session 到下一步”是两个独立职责。正常患者主链由患者端连续推进，医护在现实中观察和辅助；`staff_observation` 首先表示该题的正式临床判断主要来自这种现场观察，不表示 F2 必须持久化独立 `StaffObservation` 记录。正常链为现实观察 → F3 直接填写或修订现有 `ItemResponse`；只有未来某量表明确要求观察事实独立长期留存、审计或跨流程复用时，才另行评估最小持久化。暂停、接管、重做、technical replay、重签和终止只在异常或控制需要时使用。
 
@@ -264,11 +264,11 @@ WP-10 应优先复用现有 `ItemResponse` 的分步、提示、计时、缺失�
 
 F3 的组织原则是“正常复核优先，重点项目适度提示”。系统可对 `ItemResponse` 尚未完整、按 responseMode / 题目合同需要人工观察判断且当前正式答案尚待医护依据现场观察补录、书写 / 绘图或 ASR 候选、pause / takeover / redo 等既有控制事实、影响因素、无法完成原因和 readiness blocking issue 等已有事实进行视觉标记、排序、分组或展开提示；这些 attention cue 只辅助整份量表的正常复核，不表示数据库中已有 observation record 待 review，也不创建 Anomaly / Review / ReviewItem 实体、风险等级、队列、持久化待处理状态或新工作流状态机。
 
-允许汇总呈现多个简单客观项目、减少跳转并提供快速逐项复核，但不建设批量确认写协议。正式答案写入继续使用 A14 单题 PATCH，需要形成有效完成状态时继续使用既有 `markAsAnswered`，提交前完整性继续由 readiness 判断，整份量表最终只由 A16 `submit(confirm=true)` 整体提交；“确认需要确认的项目”仅指这些现有业务动作，不新增 `reviewed`、`confirmed`、`reviewCompleted`、`doctorConfirmed`、`reviewRevision` 等表示“医生看过”的持久状态。
+允许汇总呈现多个简单客观项目、减少跳转并提供快速逐项复核，但不建设批量确认写协议。正式答案继续通过既有单题草稿能力录入或修订，并按题目合同完成作答；提交前完整性继续由 readiness 判断，整份量表最终通过既有提交链显式整体提交。“确认需要确认的项目”仅指这些现有业务动作，不新增表示“医生看过”的复核 / 确认持久状态、独立复核版本或新写协议。
 
-现有 `GET .../patient-administration/review` 只作为患者施测事实的安全只读参考来源，可安全展示 Session 引用的患者 `MediaEvidence`；允许投影 MIME / 扩展名 / 大小、图片尺寸、手写摘要和音频时长等只读 review metadata，但不得公开 Storage identity、object key / prefix、checksum、trajectory key、公开 / 签名 URL 或凭据。其中 step 的 `structuredFieldCodes` 只是可用时用于就近展示的 review placement 关联事实，空数组表示没有安全具体字段关联，不改变患者原始事实、Evidence 或正式答案的权威边界。review 不存储正式答案、修改 `ItemResponse.evidenceRefs`、保存复核 / 确认 / 异常状态或扩张为写接口；正式答案仍只进入既有 A14 / readiness / A16 链，采用已有患者 Evidence 的最小写动作也与该只读 projection 分离。医生对正式提交结果承担相应专业责任，患者原始事实、ASR、现场医护观察和需专业判断的书写 / 绘图均不得自动成为正式答案；readiness 必须通过，A16 必须显式整体提交，关键操作与必要原始证据继续留痕和可追溯。
+患者施测 review 是安全只读参考来源，可按最低充分需要投影患者 Session、步骤和 Evidence 的安全复核信息，只服务原始事实查看、证据就近呈现与复核辅助。不得公开 Storage identity、object key / prefix、凭据、公开、永久或签名 URL 或其他内部敏感定位。review placement 关联只用于展示，不改变患者原始事实、Evidence 或正式答案的权威边界。review 不保存正式答案、不修改正式 Evidence 引用、不保存复核 / 确认 / 异常状态，也不扩张为写工作流或成为正式答案 Owner；正式答案仅通过既有 `ItemResponse` 草稿、readiness 和显式整体提交链形成，采用既有患者 Evidence 的独立写动作也与该只读 projection 分离。医生对正式提交结果承担相应专业责任，患者原始事实、ASR、现场医护观察和需专业判断的书写 / 绘图均不得自动成为正式答案；readiness 必须通过，整份量表必须显式整体提交，关键操作与必要原始证据继续留痕和可追溯。当前 review endpoint/error 由 [Backend API Map](./handoff-backend-api-map.md) 维护，public response shape 与安全字段由 [Backend DTO Cheatsheet](./handoff-backend-dto-cheatsheet.md) 维护，组合与完整性由 [Backend Service Map](./handoff-backend-service-map.md) 维护。
 
-保留现有 `operatorNote`，但它是按业务需要填写的可选说明，不是正常首次复核的形式性逐题必填项，也不填写“已确认”“正常”“无异常”等无业务价值文字。只有实质纠正需要解释、原始事实与正式答案存在值得说明的明显差异、临床判断需要额外解释，或某题真实业务合同明确要求说明时，才填写必要 note。继续复用现有 `operatorNote`、submission actor / time、Audit 和提交留痕，不新增 `reviewNote`、`correctionReason`、`confirmationReason`、`doctorComment` 等第二套 note / reason 体系。
+继续复用现有可选 operator note 能力，具体字段和 validation 由 [Backend DTO Cheatsheet](./handoff-backend-dto-cheatsheet.md) 维护。它按业务需要填写，不是正常首次复核的形式性逐题必填项，也不填写“已确认”“正常”“无异常”等无业务价值文字。只有实质纠正需要解释、原始事实与正式答案存在值得说明的明显差异、临床判断需要额外解释，或某题真实业务合同明确要求说明时，才填写必要 note。继续复用既有提交操作者、时间与审计留痕，不建立第二套 note / reason 体系。
 
 ## 12. 录音、ASR、上传与降级
 
@@ -302,7 +302,7 @@ F3 的组织原则是“正常复核优先，重点项目适度提示”。系�
 
 - 题目呈现资产保存在服务器私有只读目录；回答与证据对象保存在 OSS 私有 Bucket；结构化业务事实保存在 MongoDB。
 - 正式证据和已作废证据不得原地覆盖。普通用户不得物理删除正式临床证据；作废继续保留逻辑状态和追溯关系。
-- 上述正式证据保留边界不排除两个彼此独立的窄例外：其一，任意 terminated/expired 单次失败 Session 可经显式不可逆 DELETE 清除自身及仅属于自身、未被正式采用的 patient-origin Evidence/objects，同时保留 ScaleInstance、全部 ItemResponse/答案和其他 Session；其二，eligible `supervised_patient_input` 未完成失败实例可经另一显式不可逆 DELETE 整体物理清理。两者都不适用于 completed Session 或已采用的正式证据；整体实例删除还排除已提交/评分/报告事实，不删除 Visit 或同 Visit 其他实例，成功后可在同一 Visit 重新初始化同一量表形成新实例。
+- 上述正式证据保留边界不排除两个彼此独立的窄例外：其一，任意 terminated/expired 单次失败 Session 可经显式不可逆删除能力清除自身及仅属于自身、未被正式采用的 patient-origin Evidence/objects，同时保留 ScaleInstance、全部 ItemResponse/答案和其他 Session；其二，eligible `supervised_patient_input` 未完成失败实例可经另一显式不可逆删除能力整体物理清理。两者都不适用于 completed Session 或已采用的正式证据；整体实例删除还排除已提交/评分/报告事实，不删除 Visit 或同 Visit 其他实例，成功后可在同一 Visit 重新初始化同一量表形成新实例。
 - 试用期内不实现未经院方确认的自动删除年限，不虚构五年、十年或其他期限。后续由医院、伦理或研究协议明确后，再实施统一删除策略。
 - 麦克风测试和不计分练习不上传，不进入保留合同。
 - 正式备份范围与可验证恢复归入 WP-09；本合同只要求后续 WP-09 能识别医院最终确认的 MongoDB 与 OSS 正式备份范围。
@@ -324,16 +324,20 @@ F3 的组织原则是“正常复核优先，重点项目适度提示”。系�
 - 当前步骤最小授权、提示不预加载、刺激 / guidance / prompt 的播放和重播边界。
 - 两张逐题矩阵，以及口头回答默认短录音、非语音不默认录音、动作由医护观察、绘图不默认全事件回放。
 - 四项必要设备检查门槛、可选不计分操作练习隔离、既定 `ScaleVersion` / 呈现资产决定当前施测语言、短期患者会话、创建时持久化且不可切换的 same-device / cross-device、same-device 不签发进入码、cross-device 六位一次性进入码十分钟、无 completed 历史时可因失败 / 中止 / 选择错误 terminate 或 expire 后 recreate、任意 completed 历史永久禁止同一 `ScaleInstance` 再次 create、legacy 模式不推断且 mode-specific mutation fail closed、同一 `ScaleInstance` 同时只允许一个有效患者设备、两小时绝对有效期、same-device staff Session 失效与重新认证、cross-device staff Session 保留、服务端权威步骤和安全退出。
-- terminated / expired 默认保留失败施测事实；医护可显式不可逆删除任意单个 terminated/expired 失败 Session 及其未采用 patient-origin Evidence/owned private objects，同时保留实例、全部 ItemResponse/答案和其他 Session；eligible supervised 未完成失败实例另可经独立 DELETE 整体物理清除。completed Session 与已采用正式事实永久排除在这些窄能力之外。
+- terminated / expired 默认保留失败施测事实；医护可显式不可逆删除任意单个 terminated/expired 失败 Session 及其未采用 patient-origin Evidence/owned private objects，同时保留实例、全部 ItemResponse/答案和其他 Session；eligible supervised 未完成失败实例另可经独立的显式不可逆删除能力整体物理清除。completed Session 与已采用正式事实永久排除在这些窄能力之外。
 - 患者正常题目主链连续推进，医护现场观察与后续复核记录解耦；双设备不等于双写者，独立患者 / 独立 `ScaleInstance` 正常并行，同一评估不默认多人实时协同编辑。
-- 患者原始事实、ASR 候选、现场医护观察的事实来源、量表作答复核草稿和整体正式提交结果的五层语义；现场观察可在 F3 直接形成现有 `ItemResponse`，不默认要求独立 Observation 数据层。F3 正常复核优先、原始证据按需查看，患者已有有效 `MediaEvidence` 可经明确采用受控进入现有 `evidenceRefs` 而不重新上传或复制；第 4 层由现有 A14 `ItemResponse` 单题草稿与 `markAsAnswered` 承载，第 5 层通过 readiness 后的现有 A16 整体提交使同一批 `ItemResponse` 成为正式作答结果，不创建第二套答案、复核状态或批量确认写协议，A14 / A16 技术权限继续服从当前 backend 授权合同。
-- MMSE supervised 执行阶段严格按 server-owned PatientAdministrationSession completed 事实收口：completed 前 UI 只呈现患者施测与基础信息，backend 同时阻断正式 A14 写与 A16 submit；completed 后才开放 unified review / readiness / submission，ScaleInstance completed / locked / voided 后才展示评分，final/history ScoreResult 后才展示认知域。前端 progressive disclosure 不替代后端 invariant。
+- 患者原始事实、ASR 候选、现场医护观察、量表作答复核草稿和整体正式提交结果的五层语义；前 3 层不自动成为正式答案，现场观察可在 F3 由医护直接形成现有 `ItemResponse` 草稿，不默认要求独立 Observation 数据层。F3 正常复核优先、原始证据按需查看，患者已有有效 `MediaEvidence` 可经明确采用建立正式 Evidence 引用而不重新上传或复制；第 4 层复用既有 `ItemResponse` 草稿，第 5 层通过 readiness 后显式整体提交，使同一批 `ItemResponse` 成为正式作答结果，不创建第二套答案、复核状态或批量确认写协议，正式作答与整体提交权限继续服从既有后端授权合同。
+- MMSE supervised 执行阶段严格按服务端权威的患者施测 completed 事实收口：completed 前 UI 只呈现患者施测与基础信息，后端同时阻断正式草稿编辑与整体提交；completed 后才开放量表作答复核、readiness 与整体提交，量表实例完成、锁定或作废后才展示评分，有最终或历史评分结果后才展示认知域。前端 progressive disclosure 不替代后端 invariant。
 - 一种基础 ASR、上传门禁、内存重试和人工降级；ASR 不阻断。
 - 影响因素、无法完成、保留 / 作废 / 删除、WP-09 备份责任和最低审计边界。
 
 ### B. 技术事实与后续选择
 
-已实施的 Schema、DTO、endpoint、Cookie、凭证、当前步骤、`MediaEvidence` audio、ASR 和 Service 等技术事实不在本合同重复维护，以最新代码及 backend API / DTO / service maps 和 snapshot 为准。
+当前技术事实以代码为准，并由专项 Owner 维护：
+
+- [Backend API Map](./handoff-backend-api-map.md) 维护 endpoint、error 与 authorization；[Backend DTO Cheatsheet](./handoff-backend-dto-cheatsheet.md) 维护 public data shape 与安全字段；Schema、内部字段以当前代码为准；[Backend Service Map](./handoff-backend-service-map.md) 维护 lifecycle、CAS、recovery、side effects 与 Service composition。
+- [Frontend API Map](./handoff-frontend-api-map.md) 维护 client integration；[Frontend Component Map](./handoff-frontend-component-map.md) 维护 component、local UI 与 browser state；[Frontend Route Map](./handoff-frontend-route-map.md) 维护路由事实。
+- 当前测试资产与 evidence 由 [Backend Testing Playbook](./handoff-backend-testing-playbook.md) 和 [Frontend Testing Playbook](./handoff-frontend-testing-playbook.md) 维护。
 
 后续只有在尚未实现的合同确有最低必要技术选择时，才按最低充分复杂度原则决定；能够安全复用现有能力时不得新增平行模型、接口、状态或持久事实。
 
