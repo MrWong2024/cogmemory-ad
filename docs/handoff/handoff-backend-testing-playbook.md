@@ -2,7 +2,7 @@
 
 ## 1. Scope / Owner
 
-本文是 CogMemory AD backend test layers、真实 runner / command、Database Purpose、DB / process isolation、Browser backend APP / ADMIN role 与当前 backend test asset 事实的 Owner。通用验证候选生成、初始 / 增量 A/B/C、候选归属、完成治理与覆盖对账由 [Codex instruction spec](../codex-instruction-spec.md) §3.9 维护。
+本文是 CogMemory AD backend test layers、真实 runner / command、Database Purpose、DB / process isolation、Browser backend APP / ADMIN role 与当前 backend test asset 事实的 Owner。通用验证候选生成、初始 / 增量 A/B/C、候选归属、完成治理与覆盖对账由 [Codex instruction spec](../codex-instruction-spec.md) §3.9 维护；本文不复制通用候选来源或完成合同。
 
 精确 databaseName、连接变量、env file 与运行模式映射由 [Backend Config Matrix](./handoff-backend-config-matrix.md) 维护；本文维护测试用途语义与运行门禁。产品范围、工作包状态和下一主线由 [Roadmap](./handoff-roadmap.md) 维护；前端测试、Browser evidence execution mode、UI / Agent-assisted / Human smoke，以及 Browser / UI evidence 与 Batch E 状态由 [Frontend Testing Playbook](./handoff-frontend-testing-playbook.md) 维护，本手册不保存对应阶段台账。
 
@@ -46,29 +46,15 @@ Storage / ASR / presentation 相关受控 test double 只证明服务端 API、s
 
 ## 3. 后端证据职责
 
-### 3.1 后端候选来源补充
+### 3.1 通用候选治理引用
 
-本节后端候选清单同时适用于实现前初始阶段 A、实现中即时追加和实现后增量阶段 A。新 A#、涉及后端合同的 B#、工作包子任务或其他实现单元在后端合同基本锁定后、生成实现 Codex 指令前，应依据目标后端合同、当前既有资产、预计新增或修改资产及预计调用链和副作用，至少核对：
+Risk Classification 定义采用 [Frontend Testing Playbook](./handoff-frontend-testing-playbook.md)；验证候选生成、风险必要性判断、已有证据复用、候选归属、完成治理与覆盖对账，以及风险到最低充分证据层的分配遵循 [Codex instruction spec](../codex-instruction-spec.md) §3.9。
 
-- Controller / Route / Guard / Pipe 的真实入口、认证顺序和拒绝边界。
-- DTO、whitelist、path/query/body 转换与 Controller 到 Service 的参数传递。
-- ownership、角色、服务端 actor 与跨资源归属。
-- Service 状态转换、readiness、错误边界、不可逆动作和相邻生命周期写保护。
-- Repository / Mongoose 条件过滤与原子写，以及幂等、合法并发、部分写入、显式恢复和网络不确定终态。
-- Schema、索引、唯一性、版本/replacement 关系与持久不变量。
-- mapper、response 白名单、错误响应与公开隐私。
-- audit、protected roots、数据库写入次数和最终状态，以及 Patient / Visit / 来源 / Storage 等外部副作用。
-- 是否需要 HTTP E2E，或现有 HTTP E2E 是否已提供当前代码态的精确证据。
-- Browser 写入是否需要后置 database verifier，fixture 是否只制造合法最小前置，cleanup 是否精确、幂等且可核对。
-- 已有 unit / HTTP E2E / verifier 等后端证据，以及证据形成后相关 Controller、DTO、Service、Repository、Schema、mapper 或配置是否变化。
+本章只维护 backend-specific evidence capability 与跨层不重复证明边界，不另建 candidate-generation checklist、A/B/C lifecycle 或 risk → evidence mapping。
 
-实现完成后的增量阶段 A 必须核对实际 backend diff、新增或删除文件、Controller—Service—Repository / Mongoose 调用链、公共 Guard / Pipe / mapper 和共享服务、Schema / 数据库 / Storage / audit 等真实副作用，以及测试执行结果暴露的新风险；新增或发生实质变化的候选继续按 `docs/codex-instruction-spec.md` 3.9 的阶段 B、C 治理。
+页面是否可操作不由后端 E2E 冒充；服务端合同已被精确 HTTP E2E 证明时，Browser 不通过 `page.evaluate(fetch(...))`、Browser-side direct HTTP 或人工构造请求重复模拟同一服务端 API bypass / 攻击矩阵。Browser / UI 不可替代语义的 execution mode 由 Frontend Testing Playbook 维护。
 
-A# 默认从 backend unit、HTTP E2E、database verifier 与 static gate 中选择最低充分证据；没有正式 UI 入口时不机械要求 Browser。UI 候选可以归属到同一工作包中的具名 B#，但该归属不表示候选已经关闭：只有 A# 自身锁定的纯后端范围实际关闭后，才可准确写为“A# 后端范围完成”；具名 B# 仍 pending 时，不得宣布完整工作包或产品能力完成。若 A# 的锁定范围本身包含跨层产品闭环，不得把 UI 风险转移到后续 B# 以提前完成。
-
-B# 可以引用当前代码态下仍适用的 A# 精确 unit、HTTP E2E 或 verifier 证据，不重复建设同一风险的主测试；若 B# 改变后端合同或暴露新的公开调用路径，必须重新扫描后端候选，并明确由当前跨层任务或具名 A# 承担。
-
-本小节只补充后端特有风险候选；通用治理时序、默认实现与即时验收一体化、具名独立验收、无界扩张止损、阶段/实现单元/工作包完成门禁和最终覆盖核对，统一引用 `docs/codex-instruction-spec.md` 3.9，跨层分类引用 frontend testing playbook“验证候选的系统生成与即时闭环”，不复制完整跨层流程。不得为每个 Controller、DTO 字段或 Schema 字段机械建立测试，也不得把只能直接改库形成的数据库损坏状态默认升级为阻断验收。
+测试文件存在、测试名称或代码阅读不等于本次动态通过；本次实际执行与结果由当前任务报告记录。
 
 ### 3.2 后端证据层职责
 
@@ -100,6 +86,8 @@ B# 可以引用当前代码态下仍适用的 A# 精确 unit、HTTP E2E 或 veri
 - `MediaEvidence` 的“两阶段 Storage / DB CAS + 失败精确补偿”继续保留；它承担真实对象与数据库引用的一致性、单一引用和零残留责任，不是为了隐藏普通 CAS 拒绝，也不因本次复杂度治理删除。
 
 ## 4. 定向 Jest / HTTP E2E 命令
+
+命令生成期核验、discovery、定向执行、目标集合精确匹配、`not_executed` 判定与是否扩大测试范围统一遵循 [Codex instruction spec](../codex-instruction-spec.md) §3.8 / §3.9；本节只保留 CogMemory AD 当前真实 Jest / HTTP E2E runner 与命令入口。
 
 当前 `npm run test:e2e` 包装器固定向 Jest 传入 `test/jest-e2e.json` 和 `--runInBand`，未读取 `process.argv`，因此 npm 追加参数不会透传。禁止用下列命令表示定向运行：
 
@@ -133,9 +121,7 @@ node -e "process.env.NODE_ENV='test'; process.env.COGMEMORY_DATABASE_PURPOSE='st
 node -e "process.env.NODE_ENV='test'; process.env.COGMEMORY_DATABASE_PURPOSE='standard_test'; require('jest').run(['--config', './test/jest-e2e.json', '--runInBand', '--runTestsByPath', ...process.argv.slice(1)])" ./test/<first-target>.e2e-spec.ts ./test/<second-target>.e2e-spec.ts
 ```
 
-正式运行前必须把 discovery 输出规范化为文件路径集合，并与预期目标完全相等；单文件只能发现一个目标，多文件不得缺失、重复或包含额外文件。discovery 为 0、出现非目标文件、完整套件迹象或长期没有目标摘要时立即停止，不延长超时掩盖范围错误。
-
-参数或选择器错误导致目标未执行时记 `not_executed`。命令已启动但超时且没有可靠摘要、输出不完整或证据不足时，临时结论为 `unknown`；`unknown` 不是活动场景状态。明确且持续的外部环境、工具或权限阻断才记 `blocked`。四类动态证据互不替代：fixture E2E 不冒充产品 Browser，页面文本不替代 verifier，cleanup 成功不推导业务通过。
+正式运行前必须用当前 runner discovery 得到目标文件集合，并要求与预期目标精确一致；具体 discovery / `not_executed` / `unknown` 治理引用 [Codex instruction spec](../codex-instruction-spec.md) §3.8。
 
 ## 5. Fixture、verifier、cleanup 与 Stage
 
@@ -179,23 +165,12 @@ Agent-assisted interactive Browser smoke 优先复用已有合法测试起点、
 - fixture、HTTP E2E、verifier 和 cleanup 的通用复杂度治理引用 `docs/codex-instruction-spec.md` 3.10；按职责、状态、进程、Secret、生命周期、耦合和重复实现判断，不以行数或文件数单独决定通过、失败或拆分。
 - 当 fixture / verifier / support 的维护工程明显超过所证明的 Browser 风险，或开始复制 catalog、服务端状态判断和业务流程而形成第二套实现时，停止继续扩张并回到 frontend testing playbook 重新评估 execution mode。不得为了把 UI flow 伪装成 scripted 而扩张 fixture、support、test-only hook、复杂 harness 或第二套业务状态模型；大量稳定化基础设施本身进一步支持 Agent-assisted / human，不得用更多后端测试资产追求 scripted UI green。
 
-## 6. 失败、止损与执行范围
+## 6. 失败归因、Browser 止损与执行范围 Owner
 
-每轮先分类并分别报告 `product`、`spec/test`、`fixture`、`support/runner`、`environment`、`tool limitation` 和 `not_executed`。不新增 `database/data-integrity` 平行来源：产品造成的数据完整性违例归 `product`，fixture 造成的测试数据错误归 `fixture`，数据库环境不可用归 `environment`。只有稳定复现并证明违反正式产品合同的行为才归类为产品缺陷；测试工具时序、fixture、runner 或环境问题只修对应层，不得自动演化为 production 并发、锁、重试或协调要求。
-
-测试基础设施失败不等于产品失败，也不等于 Browser 通过；stale spec / fixture / support / runner、environment 或 tool limitation 不自动回退其他仍适用证据，但没有可信 Browser 证据时不得虚报 Browser passed。Browser-only 事实已有可信实际证据与完全没有可信实际证据时的准确记录口径，以 frontend testing playbook 2.7 为权威，不在本手册复制或新增状态。
-
-UI scripted Profile 不等待失败两轮：静态审计证明主要 assertion target 是 UI semantic 时，直接按 frontend testing playbook 判定不符合 v1.20，不再执行、patch selector 或 rewrite scripted UI body。连续两轮止损继续适用于真正 `ELIGIBLE_NON_UI_SCRIPTED` 的测试资产：同一 execution mode 与资产方案因 `spec/test`、fixture、support/runner、environment 或 tool limitation 连续两轮失败时，不得第三轮同方案 patch / rerun，必须在修复或重写合格 non-UI Profile、退役 Profile、Agent-assisted smoke、manual / real-device smoke 中重新选择最低充分方案。公共 support 连续影响两个场景时停止方案；每个合格 non-UI micro-profile 最多一次测试资产修复轮。不得扫全仓库历史资产或越界重构 future Browser framework；明确 production contract violation 仍归 product `gap`，不得以 execution-mode 重选掩盖。不得在同一任务同时重构 fixture、重构 runner、修改业务断言并执行正式完整验收；测试基础设施明显超过被测业务时停止扩张并重新评估分层。
-
-测试范围按变化影响选择：
-
-- 纯文档变化只执行文档、链接、diff 与 Git 范围检查。
-- 单个测试文件变化先执行精确 discovery，再执行定向测试和必要静态检查。
-- 单模块生产代码变化执行受影响 unit / HTTP E2E 及对应 lint、typecheck、build；在最终代码态实际通过的定向 unit / HTTP E2E 可以作为最终有效动态证据。
-- 只有存在明确扩大依据时才执行完整 unit / 完整 HTTP E2E，例如认证或公共 Guard / Pipe、Schema 或共享持久化合同、公共 mapper / 共享基础设施、跨模块公共合同、修改影响边界无法由定向证据可靠界定、工作包最终收口明确要求，或用户明确要求。
-- “最终代码态”只决定何时运行已经证明有必要的完整回归，不构成扩大测试范围的理由；需要执行完整回归时，应在本实现单元最终代码态运行。不得仅因已经到最终代码态、“为了保险”“为了更完整”或后端代码发生修改而执行完整套件。
-
-lint、typecheck、build、unit、HTTP E2E、Browser、verifier 和 cleanup 互不替代。删除测试资产后必须额外核对 discovery、TypeScript 全量范围、import、package script 和文档链接。禁止放宽 TypeScript、扩大 exclude、添加 suppression、跳过测试或吞掉退出码制造通过。
+- 活动场景状态、跨层 Failure Attribution、Browser-only evidence 的准确记录、scripted / Agent-assisted / human execution-mode 重选与 Browser stop-loss，由 [Frontend Testing Playbook](./handoff-frontend-testing-playbook.md) 统一维护；Backend Playbook 不建立第二套状态或失败分类。
+- 命令未实际执行、discovery / runner 错误、`not_executed` 与临时 `unknown` 的通用执行语义遵循 [Codex instruction spec](../codex-instruction-spec.md) §3.8。
+- 验证候选治理、已有证据复用、最低充分证据、是否扩大为完整 unit / HTTP E2E，以及“最终代码态”不自动构成扩大理由，统一遵循 [Codex instruction spec](../codex-instruction-spec.md) §3.9；backend-specific 真实 runner 仍见 §4。
+- Backend 测试基础设施问题本身不自动等于 production defect；只有稳定复现并证明违反正式产品合同，才按 Frontend Testing Playbook 的 Failure Attribution 归入产品问题。后端测试资产、fixture、数据库或 runner 问题修对应测试层，不得反向塑造 production 锁、重试、队列或状态机。
 
 ## 7. Current asset 与 historical evidence 边界
 
