@@ -17,7 +17,7 @@
 ## 1. 已完成能力
 
 1. **工程、安全与认证底座**：NestJS、Next.js、MongoDB、Storage 抽象、配置校验、统一异常、服务端 Session + HttpOnly Cookie、角色 Guard 与安全响应边界已建立；当前只有认证与角色底座，没有公开用户管理和完整权限管理界面（A1–A11、B1）。
-2. **患者与访视**：支持患者列表、创建、详情，访视列表、创建、详情、未开始时编辑 / 物理删除、已开始时保留事实作废，以及访视下量表实例初始化；患者编辑、更正、归档和其他运营能力仍待一期剩余工作补齐（A2、A12–A13，B2–B3，WP-12 访视维护窄切片）。
+2. **患者与访视**：患者与访视基础临床链路已形成，访视维护窄切片已提前完成；患者编辑、更正、归档和其他运营能力仍归 WP-12。当前访视 endpoint / 维护资格与可见副作用见 [Backend API Map](./handoff-backend-api-map.md)，内部级联与一致性见 [Backend Service Map](./handoff-backend-service-map.md)，页面与组件投影见 [Frontend Route Map](./handoff-frontend-route-map.md) 和 [Frontend Component Map](./handoff-frontend-component-map.md)（A2、A12–A13，B2–B3，WP-12 访视维护窄切片）。
 3. **MMSE / MoCA 量表配置与医生侧执行**：已建立版本化量表配置、种子校验、按需物化、执行实例与医生侧安全施测页面；MMSE 患者受监督施测由 WP-10 补齐，MoCA 患者闭环仍归 WP-11，配置管理后台和全量 seed runner 尚未建设（A1、A8–A9、A13–A14，B3–B4）。
 4. **作答、计时、图片与平板手写证据**：逐题草稿、独立 revision / CAS、持久化计时、分步和提示后记录、图片上传、平板手写、短期访问、作废重传及提交屏障已完成；患者原始事实与正式答案的分离、复核和提交闭环由 WP-10 补齐（A3–A4、A14–A16、A29–A30，B4–B6、B18）。
 5. **提交检查、评分与人工复核**：支持提交完整性检查、幂等提交、保守混合评分、待复核清单、单题人工评分、乐观并发与显式评分确认；评分确认不等于独立评分锁定（A5、A16–A18，B6–B8）。
@@ -137,7 +137,7 @@ same-device / cross-device、准备、逐题呈现、Evidence、播放、ASR、�
 
 **目标**
 
-- 已提前实现的窄切片：服务端权威区分空 / initialized-only / 已产生评估事实 Visit；前两类可编辑并级联删除初始化 skeleton，后一类只可带操作人和原因作废且保留全部子事实。既有访视详情提供对应 Edit / Delete / Void UX；不新增路由、状态机或删除工作流。
+- 已提前完成访视维护窄切片；当前访视维护资格、可见操作与结果由 [Backend API Map](./handoff-backend-api-map.md) 维护，内部级联与一致性由 [Backend Service Map](./handoff-backend-service-map.md) 维护，页面与组件投影由 [Frontend Route Map](./handoff-frontend-route-map.md) 和 [Frontend Component Map](./handoff-frontend-component-map.md) 维护。该窄切片不改变 WP-12 整体仍未完成的状态。
 - 最小账号运营能力：医护账号开通、启停、密码重置和固定角色分配；可按最低充分合同采用简单管理员页面、受控运维工具、管理脚本或页面与工具组合，不预设完整用户管理 UI。
 - 患者编辑、更正与归档，以及访视维护窄切片之外的剩余运营能力。
 - 最小临床入口能力：患者查找或创建、访视建立、发起施测，以及查看进行中、待复核、待报告和异常任务；允许复用既有患者列表、访视详情、筛选和聚合入口，不预设新建完整首页或 Dashboard。
