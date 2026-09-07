@@ -1,8 +1,14 @@
 # CogMemory AD / 智忆评 后端关键决策记录
 
-## 1. 文档定位
+## 1. Owner / Maintenance
 
-本文档用于记录 CogMemory AD 后端方向的关键工程决策、约束来源、影响范围和后续复查点。
+本文维护长期工程决策、理由、影响及历史生命周期；当前具体配置事实由 [Config Matrix](./handoff-backend-config-matrix.md) 维护，实现事实以当前代码为准。
+
+- Decision 中出现的测试文件、用例或验证方式仅作为形成该决策时的历史 evidence；当前测试资产、runner、执行方式与证据状态由 [Backend Testing Playbook](./handoff-backend-testing-playbook.md) 维护。
+- Decision 默认记录创建时的历史决策；当前仍有效且未被替代的决策可视为 `CURRENT`，既有决策无需逐条补 `Status: CURRENT`。
+- 后续替代决策时保留原背景、理由与历史语义，显式标记 `Status: SUPERSEDED`，并用 `Superseded by: Decision N / 当前 Owner 文档` 指向承接来源；历史内容不再作为 current contract。
+- 新增长期决策使用当前最大编号的连续下一编号，不重排历史编号，也不复制 Config Matrix 的配置表或环境组合。
+- 仅部分条款被替代时，不得把整条 Decision 标记为 `SUPERSEDED`；使用 `Superseded scope:` 与 `Superseded by:` 精确标出已失效范围，未被替代的长期决策语义继续保留。
 
 ## 2. 决策记录格式
 
@@ -51,6 +57,10 @@
 
 ### D-005：修正 fake 存储 env 口径与阿里云 SMS 占位
 
+Status: SUPERSEDED
+
+Superseded by: D-006 / [Backend Config Matrix](./handoff-backend-config-matrix.md)
+
 - 日期：2026-07-04
 - 决策：development / test 默认 `STORAGE_DRIVER=fake` 时，不在 env example 中显式配置 `OSS_BUCKET` / `OSS_OBJECT_PREFIX`；production 的 `OSS_BUCKET` 保持 CogMemory AD 占位，`OSS_OBJECT_PREFIX` 保持 `cogmemory_ad`；SMS 变量保留为阿里云 SMS 示例 / 待确认配置，全部使用 `COGMEMORY_AD_ALIYUN_SMS_*` 占位符。
 - 背景：dev/test env example 不应保留看似真实但尚未确认的 OSS bucket；短信配置也需要明确为阿里云 SMS 方向的配置预留。
@@ -74,6 +84,10 @@
 - 后续复查点：后续新增认证、用户、医生、患者、量表、评估、报告、SMS、LLM 或业务上传能力时，必须以单独任务明确边界、接口、数据模型和测试。
 
 ### D-008：TypeScript 增量构建缓存不纳入版本库
+
+Superseded scope: `backend/tsconfig.json` 保留 `rootDir: "./src"` 的历史口径。
+
+Superseded by: D-009 / current `backend/tsconfig.json`
 
 - 日期：2026-07-05
 - 决策：保留 `backend\tsconfig.json` 中 `rootDir: "./src"`，用于解决 TypeScript / VS Code 对源代码根目录的提示问题；显式将 `tsBuildInfoFile` 指向 `./dist/tsconfig.build.tsbuildinfo`，并将 `*.tsbuildinfo` 视为 TypeScript 增量构建缓存生成物，不纳入仓库跟踪。
@@ -211,6 +225,10 @@
 
 ### D-024：开放单实例执行详情与单题作答草稿保存最小公开 API
 
+Superseded scope: “不新增 revision / 版本并发控制”以及“草稿保存不启动 AssessmentVisit / ScaleInstance”的阶段性限制。
+
+Superseded by: D-039 / [Backend Service Map](./handoff-backend-service-map.md)
+
 - 日期：2026-07-10
 - 决策：后端 A14 新增单实例执行详情 GET 与单题 ItemResponse 草稿 PATCH；两个接口显式使用 `SessionAuthGuard`、`RolesGuard` 和四个临床工作流角色。执行详情可读历史状态，PATCH 只允许 active Patient、draft / in_progress Visit 与 ScaleInstance、not_started / in_progress / answered ItemResponse。
 - 安全决策：公开 mapper 只输出施测所需的题目身份、显式安全 config、现有草稿、既有 step / prompt 槽位、timing 和证据要求状态；不开放完整 itemConfigSnapshot / scoringRule，不返回 expectedValue、正确答案、score、isCorrect、scoreValue、metadata 或内部引用。客户端非白名单字段由全局 ValidationPipe 拒绝，JSON 草稿经过递归安全校验和克隆。
@@ -232,6 +250,10 @@
 
 ### D-026：提交与评分解耦，先完整性检查再完成 ScaleInstance
 
+Superseded scope: A16 仅依赖单 ScaleInstance 条件更新、且完全不写 ItemResponse persistence state 的早期 submission 一致性实现。
+
+Superseded by: D-040 / [Backend Service Map](./handoff-backend-service-map.md)
+
 - 决策：A16 公开只读 submission readiness 与显式确认 submit。所有 ScaleVersion 项目（包括 countsTowardTotal=false 的临床过程项）都必须完成或明确 missing；提示槽位不猜测是否施用，不强制全部填写。
 - 完整性：有效作答认 false / 0，拒绝空字符串 / 空数组 / 空对象；missing 题要求原因并跳过 step / timing / media / note；已有 countsTowardItemScore=true step 必填。requiresTimer / duration 要求有效非负整数 durationMs。
 - 媒体与备注：photo / handwriting 同时要求时视为替代采集方式 one_of，单独要求时必须对应 attached；只信任 evidenceRefs 的 attached + mediaEvidenceId 配对，不查询 MediaEvidence。requiresOperatorNote / operator_note 在提交阶段执行。
@@ -241,6 +263,10 @@
 - 影响范围：仅 assessments 模块、A16 E2E 与指定 backend handoff / roadmap；未修改 Schema、auth / patients / scales / media / scoring / reports、依赖、环境配置、AppModule 或前端。
 
 ### D-027：completed 实例采用保守混合阶段性评分，人工确认后置
+
+Superseded scope: 将自动评分能力限定为严格 `multi_step_manual` 及当时列出的具体聚合模式的阶段性实现边界。
+
+Superseded by: [Backend Service Map](./handoff-backend-service-map.md) / current scoring engine code
 
 - 日期：2026-07-11
 - 决策：A17 只对 completed ScaleInstance 首次创建 runNo=1 阶段性 ScoreResult；提交与评分继续解耦，结果即使全部自动计算也不在 A17 confirmed / locked，`isFinal=false`。
@@ -314,6 +340,10 @@
 
 ### D-034：归档复用既有 archived 状态并以 completed 来源冻结为不可变锚点
 
+Superseded scope: A24 仅适用于 reportVersion=1 的阶段性版本资格限制。
+
+Superseded by: D-036 / [Backend Service Map](./handoff-backend-service-map.md)
+
 - 状态决策：A24 不新增状态、不修改 `ClinicalReportStatus` 或转换表；首次归档复用既有 `confirmed -> archived`，成功后 status=archived、isFinal=true。archivedAt 与 lockedAt 是不同事实，归档不创建 reportVersion=2，也不等于 PDF 或更正。
 - 前置与 ownership：首次只接受完整 confirmed / mixed / passed、A22 已锁定且 A23 sourceFreeze completed 的 version 1 cognitive_assessment 报告。Patient / Visit 只用于资源存在性和 ownership，Patient inactive 与 Visit locked 不阻断；A24 不修改二者。
 - 审计：`metadata.a24Archive` version=1 且只写一次，保存服务端 UUID / 时间、认证 doctor/admin actor、用户显式 archiveNote，以及 A23 freezeId / completedAt 锚点；构造新 metadata 根对象，保留 A20-A23 和未来未知合法 namespace，不创建 AuditLog 集合。
@@ -323,6 +353,10 @@
 - 后续边界：不实现 unarchive 或恢复 confirmed。后续 A25 可从 archived 建设独立受控更正流程；更正不是取消归档，也不能覆盖原归档报告。A24 不实现 correction、void、delete、PDF / Word / download 或 AI。下一阶段建议为前端 B14 归档确认与安全摘要展示。
 
 ### D-035：归档更正采用原报告保留、线性 replacement 与可恢复跨文档编排
+
+Superseded scope: “A22-A24 泛化到 V2 留给后续独立阶段”的阶段性限制。
+
+Superseded by: D-036
 
 - 原报告不原地覆盖：latest archived source 保留固定正文、快照、scope、confirmation、lock、freeze、archive、code 与 version，完成时只转 corrected、追加一条版本替换 correctionRecords 并完成 a25Correction。
 - 版本链严格线性：replacementVersion=sourceVersion+1，correctionNo=replacementVersion-1，code 复用确定性 builder；同 source / visit-type-version 只允许一个 replacement，不允许跳号、分支、merge、delete 或 cancel。
