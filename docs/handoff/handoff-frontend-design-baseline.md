@@ -2,16 +2,16 @@
 
 ## 1. 文档定位
 
-本文档是 CogMemory AD / 智忆评前端视觉风格、交互气质、页面布局和组件表现的长期基线，用于约束后续前端页面、组件、布局、样式和交互迁移。
+本文是 CogMemory AD / 智忆评 稳定前端产品、视觉、交互与 UX 原则的 Owner，用于约束后续页面、组件、布局、样式和用户可见交互。
 
 - 本文档约束后续 `frontend\app`、`frontend\src`、页面、组件、布局、样式和交互迁移。
 - 后续从 ReviewX 迁移前端公共结构时，必须先阅读本文档。
 - 本项目只继承 ReviewX 的工程结构、配置经验和组件治理方法，不继承 ReviewX 的视觉风格。
 - 后续前端页面与组件设计必须以本文档作为设计边界。
-- 当前前端已形成 Auth、Patients、Assessments、ClinicalReport 与 B17 历史 / 趋势产品页面，并使用 Tailwind CSS 与既有 `Button`、`Card`、`Badge` UI components。
-- 本设计基线不冻结具体 token、class 或组件实现；当前工程结构、组件和页面事实以 frontend snapshot、component map 与实际代码为准。
+- 当前前端工程结构和能力范围由 [Frontend snapshot](./handoff-frontend-snapshot.md) 维护。
+- 当前路由、API 对接和组件职责分别由 [route map](./handoff-frontend-route-map.md)、[API map](./handoff-frontend-api-map.md) 与 [component map](./handoff-frontend-component-map.md) 维护。
+- 本文不冻结具体 Tailwind class、色值或组件实现，也不把尚未实现的未来产品方向写成当前设计事实。
 - 受监督患者施测的 same/cross、准备、逐题、媒体、播放、安全会话、异常控制与 F2/F3 详细业务合同统一见 [Patient Administration Contract](./handoff-patient-administration-contract.md)，本文只维护其设计投影。
-- 上述当前实现仍不代表一期完整产品或完整设计系统全部完成。
 
 ## 2. 产品气质
 
@@ -45,7 +45,6 @@ CogMemory AD 更适合：
 - 警示色只用于异常、风险、错误、重要提醒。
 - 不使用强营销感渐变作为主要视觉语言。
 - 色彩必须服务于阅读、分区和状态识别。
-- 当前使用 Tailwind CSS 与既有 UI components；本文档只约束长期视觉原则，不定义或冻结具体 Tailwind token、class 和组件实现。
 
 ## 5. 布局原则
 
