@@ -2,10 +2,11 @@
 
 ## 1. 文档定位
 
-本文档维护当前 frontend 稳定组件、Hook、Client 与关键纯模块的职责投影：名称 / 位置、输入输出、local state ownership、调用 / 组合关系、必要生命周期和边界引用。
+本文档维护当前 frontend 稳定组件、Hook 与关键纯模块的职责投影：名称 / 位置、输入输出、local state ownership、调用 / 组合关系、必要生命周期和边界引用。
 
 - 产品范围、工作包状态和当前主线见 [Roadmap](./handoff-roadmap.md)。
-- 路由职责见 [Route Map](./handoff-frontend-route-map.md)；API method、请求 / 响应和错误映射见 [Frontend API Map](./handoff-frontend-api-map.md)。
+- 路由职责与页面成功导航见 [Route Map](./handoff-frontend-route-map.md)；API helper / client 的 method/path、请求 / 响应、transport/error adaptation 与 integration invariant 由 [Frontend API Map](./handoff-frontend-api-map.md) 唯一维护。
+- 本文件中的 Client 内容仅作为调用关系、文件位置或修改落点引用，不维护第二套 Client 输入输出合同。
 - 受监督患者施测的 detailed same/cross、准备、逐题、媒体、ASR、Evidence、控制与正式复核合同见 [Patient Administration Contract](./handoff-patient-administration-contract.md)。
 - current / historical 测试证据与 current executable inventory 见 [Frontend Testing Playbook](./handoff-frontend-testing-playbook.md)。
 - 视觉、布局和长期 UX 原则见 [Design Baseline](./handoff-frontend-design-baseline.md)。
@@ -39,7 +40,7 @@
 | AuthDashboard — features/auth/components/AuthDashboard.tsx | 展示公开用户摘要、患者入口、能力概览和登出 | 组合 useAuth；不是完整临床工作台 |
 | useAuth — features/auth/hooks/use-auth.ts | 读取会话并提供 refresh / signOut | 维护 loading / authenticated / unauthenticated / error；被 LoginForm、AuthDashboard、PatientsWorkspaceShell 使用 |
 
-### 4.2 Client 与类型
+### 4.2 Client 与类型引用
 
 - features/auth/api/auth-api.ts：封装认证相关 fetch 与统一错误；具体 method / endpoint 见 Frontend API Map。
 - features/auth/types/auth.ts：维护 frontend 使用的安全认证公开类型，不包含 token、secret 或后端凭据。
@@ -85,7 +86,7 @@
 
 ### 6.2 量表实例页面与导航
 
-- ScaleInstanceExecutionPage — components/ScaleInstanceExecutionPage.tsx：量表实例工作页总编排器；加载执行详情，组合正式作答、媒体、submission、评分、认知域和受监督患者施测 staff / review 投影。页面持有分组选择、作答 snapshot、媒体草稿、未收口提示和子工作流组合状态；各写入仍经对应 Hook / Client。页面同时拥有 eligible `supervised_patient_input` 未完成实例的显式不可逆删除 UI：仅在患者会话首次读取后保守展示，资格最终以后端为准，成功后返回当前 Visit。
+- ScaleInstanceExecutionPage — components/ScaleInstanceExecutionPage.tsx：量表实例工作页总编排器；加载执行详情，组合正式作答、媒体、submission、评分、认知域和受监督患者施测 staff / review 投影。页面持有分组选择、作答 snapshot、媒体草稿、未收口提示和子工作流组合状态；各写入仍经对应 Hook / Client。页面同时拥有 eligible `supervised_patient_input` 未完成实例的显式不可逆删除 UI：仅在患者会话首次读取后保守展示，资格最终以后端为准，成功导航见 [Route Map](./handoff-frontend-route-map.md)。
 - ScaleExecutionGroupNavigation — components/ScaleExecutionGroupNavigation.tsx：按服务端分组展示进度并回传当前分组选择，不清理其他分组的合法内存草稿。
 - assessment-execution-display.ts：集中维护安全展示标签和页面级展示判断；它是纯展示辅助，不是权限或业务状态机。
 
@@ -194,7 +195,7 @@
 
 ### 9.1 医护侧
 
-- PatientAdministrationStaffPanel — features/patient-administration/components/PatientAdministrationStaffPanel.tsx：ScaleInstance 页面上的医护患者施测控制面板；负责读取 / 创建 / 控制 latest PatientAdministrationSession。创建前设备模式是 local UI choice，创建后以 server session 为权威；组合 Preparation、StaffStepControls 与 HistoryPanel，并向父页面回传必要 session 状态。latest 的 `id + revision` 变化触发 HistoryPanel 重读；历史删除完成后，HistoryPanel 回调 StaffPanel 重读 latest。same-device active Session 可由医护显式重新安全 handoff；该 intent 使用当前 server revision 复用既有 handoff Client，成功后切换回患者 shell，Session 与 current step 继续由 server 权威维护。
+- PatientAdministrationStaffPanel — features/patient-administration/components/PatientAdministrationStaffPanel.tsx：ScaleInstance 页面上的医护患者施测控制面板；负责读取 / 创建 / 控制 latest PatientAdministrationSession。创建前设备模式是 local UI choice，创建后以 server session 为权威；组合 Preparation、StaffStepControls 与 HistoryPanel，并向父页面回传必要 session 状态。latest 的 `id + revision` 变化触发 HistoryPanel 重读；历史删除完成后，HistoryPanel 回调 StaffPanel 重读 latest。same-device active Session 可由医护显式重新安全 handoff；该 intent 使用当前 server revision 复用既有 handoff Client，成功导航见 [Route Map](./handoff-frontend-route-map.md)，Session 与 current step 继续由 server 权威维护。
 - PatientAdministrationHistoryPanel — features/patient-administration/components/PatientAdministrationHistoryPanel.tsx：负责读取并按服务端顺序展示同一 ScaleInstance 的全部 PatientAdministrationSession 历史，latest 为 active / completed 时也不隐藏旧 terminated / expired。只为 terminated / expired 提供明确不可逆的单条删除确认；资格最终以后端为权威，DELETE 不自动重放，404 / uncertain write 通过重新读取服务端事实恢复。删除只影响该失败 Session 及后端判定可安全清理的关联 Evidence；ScaleInstance、正式 ItemResponse 与其他 Session 保留。
 - PatientAdministrationPreparation — components/PatientAdministrationPreparation.tsx：管理当前页面的设备准备与可选练习 UI，将本地准备结果和影响因素 intent 交给 StaffPanel；测试媒体、stream 和 object URL 在组件替换 / 卸载时清理，不形成正式 Evidence。
 - PatientAdministrationStaffStepControls — components/PatientAdministrationStaffStepControls.tsx：按最新 server session 呈现医护可用的当前步骤 / 异常控制动作并回传用户 intent；不自行生成业务进度、正式答案或服务端并发事实。
@@ -220,7 +221,7 @@
 - 正式 ItemResponse 保存、readiness 和整体提交仍由 ScaleInstanceExecutionPage、ItemResponseEditor、autosave coordinator 与 SubmissionPanel 负责；ReviewPanel 不建立第二套正式写链。
 - Evidence / ASR / adoption 的详细安全语义和正式复核业务边界见 [Patient Administration Contract](./handoff-patient-administration-contract.md)；具体 calls 见 [Frontend API Map](./handoff-frontend-api-map.md)。
 
-### 9.5 Client、类型与展示辅助
+### 9.5 Client 引用、类型与展示辅助
 
 - features/patient-administration/api/patient-administration-api.ts：patient administration 唯一 fetch Client；方法与请求 / 响应由 Frontend API Map 维护。
 - types/patient-administration.ts：维护 staff / patient 组件消费的公开类型，不暴露内部 token、Storage 定位或评分事实。
@@ -229,8 +230,8 @@
 
 ## 10. 后续同步规则
 
-- 只有稳定组件、Hook、Client 职责、输入输出、组合关系或 local state ownership 变化时更新本地图。
-- API method、DTO、错误和请求 / 响应由 Frontend API Map 维护；精确算法与常量由 current code / pure contracts 维护。
+- 只有稳定组件、Hook、关键纯模块的职责、输入输出、组合关系或 local state ownership 变化时更新本地图。
+- API method/path、请求 / 响应、transport/error adaptation 与 Client integration 由 Frontend API Map 维护；精确算法与常量由 current code / pure contracts 维护。
 - 患者施测详细业务合同由 Patient Administration Contract 维护；测试通过、失败、数量、fixture 与 executable inventory 由 testing playbook 维护；工作包状态由 Roadmap 维护。
 - 遵循 reference, don't restate；“同步相关文档”只在本组件投影确实变化时更新，没有职责变化则保持 zero diff。
 - 不得把 Component Map 扩展为 release notes、测试 ledger、API 规格或患者业务合同。

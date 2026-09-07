@@ -2,12 +2,12 @@
 
 ## 1. 文档定位
 
-本文档维护当前 frontend route 投影：页面职责、访问边界、主要数据来源、主要状态 / 高层交互、关联组件与必要非目标。
+本文档维护当前 frontend route 投影：页面职责、访问边界、主要数据来源、主要状态 / 高层交互、关联组件与必要非目标；页面成功导航事实由本文件唯一维护。
 
 - route 是否存在以 frontend/app current code 为准。
 - 产品阶段和工作包状态见 [Roadmap](./handoff-roadmap.md)。
-- 请求 / 响应、DTO、错误映射与写协议见 [Frontend API Map](./handoff-frontend-api-map.md)。
-- 组件 / Hook / Client 内部职责见 [Frontend Component Map](./handoff-frontend-component-map.md)。
+- API Client、请求 / 响应适配、错误映射与 integration contract 见 [Frontend API Map](./handoff-frontend-api-map.md)。
+- 组件 / Hook / module 内部职责见 [Frontend Component Map](./handoff-frontend-component-map.md)。
 - 受监督患者施测的逐题、媒体、播放、same/cross、安全和 F2/F3 合同见 [Patient Administration Contract](./handoff-patient-administration-contract.md)。
 
 Route Map 只保留理解页面所需的高层投影，不作为 API、算法、业务合同或测试 evidence 的第二 owner。
@@ -79,7 +79,7 @@ Route Map 只保留理解页面所需的高层投影，不作为 API、算法、
 ### 3.7 /patients/[patientId]/visits/new
 
 - 页面名称：创建评估访视。
-- 页面职责：核对患者后创建访视并跳转至访视详情。
+- 页面职责：核对患者后创建访视，并在成功后返回患者详情。
 - 访问边界：认证后的 patients workspace；患者状态和创建资格由后端裁决。
 - 主要数据来源：getPatient() 与 createPatientVisit()。
 - 关联组件：AssessmentVisitCreateForm。
@@ -102,6 +102,7 @@ Route Map 只保留理解页面所需的高层投影，不作为 API、算法、
 - 访问边界：认证后的临床工作区；实例可读 / 可写状态和业务资格由后端裁决。
 - 主要数据来源：量表执行详情、ItemResponse、Media Evidence、submission readiness、评分、认知域与 Patient Administration Clients；具体调用见 Frontend API Map。
 - 主要状态 / 交互：动态分组、正式作答保存、媒体操作、整体提交、评分复核和认知域展示；患者施测未完成时按服务端事实保持相应页面投影。
+- 成功导航：删除符合资格的未完成实例后替换浏览器历史并返回当前 Visit；same-device active Session 由医护显式重新安全 handoff 成功后切换回患者当前会话页。
 - Patient Administration 投影：医护控制面板挂载于本 route；患者施测 completed 后 F3 继续在本 route 复用既有正式作答与提交链，不新增独立 review route。
 - 关联组件：ScaleInstanceExecutionPage、ScaleExecutionGroupNavigation、ItemResponseEditor、MediaEvidencePanel、ScaleInstanceSubmissionPanel、ProvisionalScoringPanel、CognitiveDomainResultPanel、PatientAdministrationStaffPanel、PatientAdministrationReviewPanel。
 - 非目标：不在此复制逐题 responseMode、媒体 / 播放规则、异常控制、revision / CAS、评分或报告业务协议；患者施测详细合同见 [Patient Administration Contract](./handoff-patient-administration-contract.md)。
@@ -168,7 +169,7 @@ Route Map 只保留理解页面所需的高层投影，不作为 API、算法、
 
 ## 4. 后续同步规则
 
-- 新增、删除或改变 route、页面职责、访问边界、主要数据来源或组件组合时更新本文件。
+- 新增、删除或改变 route、页面职责、成功导航、访问边界、主要数据来源或组件组合时更新本文件。
 - DTO、endpoint、错误、Client 请求 / 响应变化只更新 Frontend API Map；组件内部状态和算法只更新 Component Map / current code。
 - 患者施测逐题与安全业务合同只更新 Patient Administration Contract；测试 evidence 只更新 testing playbook。
 - 遵循 reference, don't restate；“同步相关文档”只在本 route projection 确实变化时更新，没有 route 职责变化则保持 zero diff。

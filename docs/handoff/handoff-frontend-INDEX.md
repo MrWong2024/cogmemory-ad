@@ -2,30 +2,37 @@
 
 ## 1. 文档定位与权威来源
 
-- 本 INDEX 只负责前端 handoff 的文档入口与职责导航，不维护阶段日志或实现明细。
-- [Roadmap](./handoff-roadmap.md) 维护产品范围、工作包状态和当前主线；本 INDEX 不复制这些事实。
-- Frontend snapshot 维护当前工程结构、能力和真实未实现边界；各 map、design baseline 与 testing playbook 按下文分工维护专项事实。
+- 本 INDEX 只负责前端 handoff 的导航、推荐阅读顺序和文档 Owner 指引，不维护阶段日志或实现明细。
+- [项目 Roadmap](./handoff-roadmap.md) 是产品主线、工作包状态、近期计划和延期方向的唯一 Owner；本 INDEX 不复制这些事实。
+- [Frontend snapshot](./handoff-frontend-snapshot.md) 维护当前前端高层实现事实；route、API、component 与 design baseline 分别维护专项事实。
+- 具体实现与文档冲突时，以当前 `frontend/**` 源码或用户指定 commit 为准，并修订对应 Owner 文档。
 
-## 2. Handoff 文档导航与职责
+## 2. 推荐阅读顺序
 
-- [受监督患者施测合同](./handoff-patient-administration-contract.md)：WP-10 跨端业务、逐题呈现、题目媒体、会话、安全退出与医生复核边界的稳定合同入口；不预设前端路由或页面结构。
-- [Frontend snapshot](./handoff-frontend-snapshot.md)：当前前端工程结构、能力范围与真实未实现边界。
-- [Frontend route map](./handoff-frontend-route-map.md)：路由、页面职责、访问边界与数据来源。
-- [Frontend API map](./handoff-frontend-api-map.md)：API Client 对接、请求、响应、错误处理与 UI 映射。
-- [Frontend component map](./handoff-frontend-component-map.md)：组件、Hook、API Client 与调用职责。
-- [Frontend design baseline](./handoff-frontend-design-baseline.md)：前端视觉与交互原则。
-- [Frontend testing playbook](./handoff-frontend-testing-playbook.md)：前端与 Browser 的稳定验证规则、跨层证据分工和当前仍待验边界。
+1. 需要确认当前产品主线或工作包状态时，先读 [项目 Roadmap](./handoff-roadmap.md)。
+2. 需要建立前端全貌时，读 [Frontend snapshot](./handoff-frontend-snapshot.md)。
+3. 修改页面、组件、布局、样式或用户交互前，读 [Frontend design baseline](./handoff-frontend-design-baseline.md)。
+4. 设计测试证据或执行 Browser / smoke 验收前，读 [Frontend testing playbook](./handoff-frontend-testing-playbook.md)。
+5. 按任务进入 route、API 或 component map；涉及后端合同时，从 [Backend Handoff 入口](./handoff-backend-INDEX.md) 进入后端 Owner。
 
-- 跨端契约参考：[Backend API map](./handoff-backend-api-map.md) 维护后端 endpoint、权限与错误；[Backend DTO cheatsheet](./handoff-backend-dto-cheatsheet.md) 维护 DTO、response 与字段形状。
+## 3. 文档导航与 Owner
 
-> 修改页面、组件或样式前必须阅读并遵循 frontend design baseline；不得继承 ReviewX 的业务视觉。
+| 文档 | 唯一职责 / Owner 范围 |
+|---|---|
+| [Patient Administration Contract](./handoff-patient-administration-contract.md) | 受监督患者施测跨端稳定业务、安全、媒体、逐题与医护复核领域合同；不维护 Frontend route/component inventory 或 Client integration contract。 |
+| [项目 Roadmap](./handoff-roadmap.md) | 当前产品主线、工作包状态、近期计划与明确延期项 |
+| [Frontend snapshot](./handoff-frontend-snapshot.md) | 当前前端工程结构、能力范围、高层实现事实与真实未实现边界 |
+| [Frontend route map](./handoff-frontend-route-map.md) | 路由清单、页面用途、主要依赖、核心交互与实现状态，含访问/角色投影 |
+| [Frontend API map](./handoff-frontend-api-map.md) | API helper / client、BFF proxy 与后端集成、请求/响应适配、Server/Browser 调用边界及跨层集成不变量 |
+| [Frontend component map](./handoff-frontend-component-map.md) | 组件/模块位置与职责、必要局部状态与组合、可复用行为及修改/非职责边界 |
+| [Frontend design baseline](./handoff-frontend-design-baseline.md) | CogMemory AD / 智忆评 稳定的前端产品、视觉、交互与 UX 原则 |
+| [Frontend testing playbook](./handoff-frontend-testing-playbook.md) | 前端测试、Browser evidence、Agent-assisted Browser smoke 与 Human smoke 治理 |
 
-## 3. 使用与同步规则
+跨端接口、DTO、配置、Service 与稳定决策分别由 [Backend API map](./handoff-backend-api-map.md)、[Backend DTO cheatsheet](./handoff-backend-dto-cheatsheet.md)、[Backend config matrix](./handoff-backend-config-matrix.md)、[Backend Service map](./handoff-backend-service-map.md) 和 [Backend decisions](./handoff-backend-decisions.md) 维护。
 
-- 产品范围、工作包状态或当前主线变化时，更新 roadmap。
-- 前端工程结构、能力范围或真实未实现边界变化时，更新 frontend snapshot。
-- 路由、API 对接、组件或 Hook 变化时，分别更新 route map、API map、component map。
-- 视觉或交互原则变化时，更新 frontend design baseline。
-- 前端或 Browser 稳定验证规则、跨层证据分工或当前仍待验边界变化时，更新 frontend testing playbook；已关闭阶段的详细执行证据由 Git 历史和当前测试资产追溯。
-- 阅读当前 frontend 全貌时先看 frontend snapshot，再按问题进入 route / API / component map、design baseline 或 testing playbook；产品阶段与患者施测详细合同分别回到各自权威文档。
-- 仅当导航入口或文档职责变化时更新本 INDEX；遵循 `reference, don't restate`，不在此维护技术栈、实现摘要、患者合同、测试事实或工作包状态。
+## 4. 同步规则
+
+- 产品范围、工作包状态或当前主线变化时更新 Roadmap。
+- 前端高层结构、能力范围或真实未实现边界变化时更新 snapshot。
+- 路由、API 对接、组件职责、稳定设计原则或测试证据治理变化时，只更新对应专项 Owner；其他文档按需更新引用或高层投影。
+- 仅当导航入口、推荐阅读顺序或文档职责变化时更新本 INDEX；专项 Owner Scope 变化只同步一句职责摘要，不复制全文；遵循 `reference, don't restate`，不在此维护技术栈、API 明细、运行模式、测试事实或工作包状态。

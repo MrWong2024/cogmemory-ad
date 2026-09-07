@@ -8,14 +8,14 @@
 - Backend DTO/response 字段、validation、nested shape 与 safe exposure：见 [Backend DTO Cheatsheet](./handoff-backend-dto-cheatsheet.md)。
 - Backend Service 的 CAS/屏障、一致性、恢复与 ASR claim/finalize 算法：见 [Backend Service Map](./handoff-backend-service-map.md) 和 current code。
 - Patient Administration 的 detailed same/cross、逐题、媒体、ASR、takeover/redo/technical replay 与 F2/F3 合同：见 [Patient Administration Contract](./handoff-patient-administration-contract.md)。
-- Route/Component workflow、autosave/reconciliation 与 UI ownership：见 [Frontend Route Map](./handoff-frontend-route-map.md)、[Frontend Component Map](./handoff-frontend-component-map.md) 和 current pure contracts。
+- 页面成功导航：由 [Frontend Route Map](./handoff-frontend-route-map.md) 唯一维护；Component workflow、autosave/reconciliation 与 UI ownership 见 [Frontend Component Map](./handoff-frontend-component-map.md) 和 current pure contracts。
 - 测试/evidence 与工作包状态分别见 [Frontend Testing Playbook](./handoff-frontend-testing-playbook.md) 和 [Roadmap](./handoff-roadmap.md)。
 
 本文档不重新定义 Backend DTO、服务端业务状态机、CAS/屏障算法、Component workflow 或测试事实。
 
 ## 2. Client architecture 与共同 transport
 
-- current source inventory：9 个 `frontend/src/features/**/api/*-api.ts` 文件，63 个网络 client function；另有 2 个导出的 request construction helper。
+- Client 源文件位于 `frontend/src/features/**/api/*-api.ts`；各 family 的 integration inventory 与 request construction helper 见第 3 节。
 - 所有 client 以 `frontendEnv.apiBaseUrl`（`NEXT_PUBLIC_API_BASE_URL`，安全默认 `http://localhost:5002`）拼接公开 Backend path；当前无 BFF、Next Route Handler 代理或本地 token 层。
 - fetch 统一使用 `credentials: 'include'` 与 `cache: 'no-store'`；浏览器管理 HttpOnly Cookie，Client 不读取 Cookie、不保存 token。
 - 动态 path segment 使用 `encodeURIComponent()`；有本地 MongoId shape gate 的 family 会先拒绝无效 ID，但 Backend validation/ownership 仍是最终边界。
@@ -29,7 +29,7 @@
 
 | Client / caller | Backend | Frontend request → response | Cancel/retry | Success projection / privacy |
 |---|---|---|---|---|
-| `login()` — `LoginForm` | `POST /auth/login` | `LoginRequest → LoginResponse`；401 → `invalid_credentials`；429 → `rate_limited` | no Signal; no retry | 使用公开 user 后导航；password 只存在于即时 body，不进入 URL/storage/log。 |
+| `login()` — `LoginForm` | `POST /auth/login` | `LoginRequest → LoginResponse`；401 → `invalid_credentials`；429 → `rate_limited` | no Signal; no retry | 采用公开 user 投影；password 只存在于即时 body，不进入 URL/storage/log。 |
 | `logout()` — `useAuth().signOut()` | `POST /auth/logout` | no body → `LogoutResponse` | no Signal; no retry | 清理本地公开 auth state；服务端 Cookie/Session 清理由 Backend 负责。 |
 | `getMe()` — `useAuth` | `GET /auth/me` | no body → `MeResponse \| null` | no Signal; no retry | 401 投影为 `null`；其他错误保持可重试 auth state。 |
 
@@ -38,10 +38,10 @@
 | Client / caller | Backend | Frontend request → response | Cancel/retry | Success projection |
 |---|---|---|---|---|
 | `listPatients()` — `PatientsListPage` | `GET /patients` | `ListPatientsQuery → PatientListResponse` | Signal; no retry | `URLSearchParams` 省略空值；响应进入分页列表。 |
-| `createPatient()` — `PatientCreateForm` | `POST /patients` | `CreatePatientRequest → PatientDetail` | no Signal; no retry | 成功使用服务端 id 导航；不提交 server-owned 字段。 |
+| `createPatient()` — `PatientCreateForm` | `POST /patients` | `CreatePatientRequest → PatientDetail` | no Signal; no retry | 采用服务端返回的患者投影；不提交 server-owned 字段。 |
 | `getPatient()` — patient detail/create visit callers | `GET /patients/:patientId` | no body → `PatientDetail` | Signal; no retry | 安全详情进入页面 state。 |
 | `listPatientVisits()` — `PatientDetailPage` | `GET /patients/:patientId/visits` | `ListAssessmentVisitsQuery → AssessmentVisitListResponse` | Signal; no retry | query 用 `URLSearchParams`；响应保持后端排序。 |
-| `createPatientVisit()` — `AssessmentVisitCreateForm` | `POST /patients/:patientId/visits` | `CreateAssessmentVisitRequest → AssessmentVisit` | no Signal; no retry | 成功返回患者详情；operator/ownership 不由前端提交。 |
+| `createPatientVisit()` — `AssessmentVisitCreateForm` | `POST /patients/:patientId/visits` | `CreateAssessmentVisitRequest → AssessmentVisit` | no Signal; no retry | 返回创建后的访视投影；成功后的页面导航见 [Route Map](./handoff-frontend-route-map.md)；operator/ownership 不由前端提交。 |
 
 ### 3.3 Clinical history — `frontend/src/features/patients/api/clinical-history-api.ts`（2）
 
@@ -57,11 +57,11 @@
 | `listAvailableScales()` — `AssessmentVisitExecutionPage` | `GET /scales/available` | no body → `AvailableScaleListResponse` | Signal; no retry | 目录安全摘要进入初始化面板。 |
 | `getAssessmentVisitExecutionDetail()` — visit execution page | `GET /patients/:patientId/visits/:visitId` | no body → `AssessmentVisitExecutionDetailResponse` | Signal; no retry | 建立 Visit/实例/maintenance 服务端基线。 |
 | `updateAssessmentVisit()` — visit maintenance UI | `PATCH /patients/:patientId/visits/:visitId` | `UpdateAssessmentVisitRequest → AssessmentVisitExecutionDetailResponse` | no Signal; no retry | 完整采用新详情；workflow 见 Component Map。 |
-| `deleteAssessmentVisit()` — visit maintenance UI | `DELETE /patients/:patientId/visits/:visitId` | no body → `void` | no Signal; no retry | 调用方移除/导航；不推断级联。 |
+| `deleteAssessmentVisit()` — visit maintenance UI | `DELETE /patients/:patientId/visits/:visitId` | no body → `void` | no Signal; no retry | 页面更新由调用方处理；不推断级联。 |
 | `voidAssessmentVisit()` — visit maintenance UI | `POST /patients/:patientId/visits/:visitId/void` | `VoidAssessmentVisitRequest → AssessmentVisitExecutionDetailResponse` | no Signal; no retry | 完整采用 void 后详情。 |
 | `initializeScaleInstance()` — `ScaleInitializationPanel` | `POST /patients/:patientId/visits/:visitId/scale-instances` | `InitializeScaleInstanceRequest → InitializeScaleInstanceResponse` | no Signal; no retry | 合并服务端实例摘要；不乐观构造 ItemResponse。 |
 | `getScaleInstanceExecutionDetail()` — `ScaleInstanceExecutionPage` | `GET /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId` | no body → `ScaleInstanceExecutionDetailResponse` | Signal; no retry | 建立逐题 server baseline；字段合同见 Backend DTO owner。 |
-| `deleteScaleInstance()` — `ScaleInstanceExecutionPage` maintenance UI | `DELETE /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId` | no body → `void` | uncertain write; no Signal; no automatic retry | 成功后替换浏览器历史并返回 Visit；结果不确定时不重发 DELETE，由 Visit 最新状态核对。 |
+| `deleteScaleInstance()` — `ScaleInstanceExecutionPage` maintenance UI | `DELETE /patients/:patientId/visits/:visitId/scale-instances/:scaleInstanceId` | no body → `void` | uncertain write; no Signal; no automatic retry | 成功后的页面导航见 [Route Map](./handoff-frontend-route-map.md)；结果不确定时不重发 DELETE，由调用方核对最新服务端状态。 |
 | `getScaleInstanceSubmissionReadiness()` — submission panel | `GET .../:scaleInstanceId/submission-readiness` | no body → `ScaleSubmissionReadinessResponse` | Signal; no retry | 只更新 readiness/安全 scale instance 投影。 |
 | `submitScaleInstance()` — submission panel | `POST .../:scaleInstanceId/submit` | `SubmitScaleInstanceRequest → SubmitScaleInstanceResponse` | no Signal; no retry | 采用服务端 instance/submission/readiness；`alreadySubmitted` 仍为成功。 |
 | `saveItemResponseDraft()` — `useItemResponseAutosaveCoordinator` | `PATCH .../:scaleInstanceId/item-responses/:itemResponseId` | `UpdateItemResponseDraftRequest → UpdateItemResponseDraftResponse` | no Signal; no automatic retry | 请求使用当前 `expectedRevision`；响应 item/progress 成为新 server baseline。conflict/uncertain 的恢复算法由 coordinator/current pure contract 拥有。 |
@@ -176,6 +176,6 @@ Staff root 的三个 ID 均编码；staff Client 的主要 caller 为 `PatientAd
 
 ## 6. Coverage boundary
 
-- 9 个 Client 文件的 66 个网络函数均在 `3` 覆盖；`serializeItemResponseDraftRequest()` 与 `normalizeClinicalReportScopeIds()` 两个导出 helper 作为 request construction projection 单独记录。
-- Backend 的 67 个公开 endpoint 中 `GET /health` 没有业务 frontend Client；其余 endpoint 均有对应 client function。
-- 新增/删除 Client 时只更新本文件的 integration projection；不得把 Backend DTO 字段或服务端算法横向复制到本文件。
+- 第 3 节维护当前 Frontend Client integration inventory；`serializeItemResponseDraftRequest()` 与 `normalizeClinicalReportScopeIds()` 作为 request construction projection 单独记录。
+- Backend endpoint inventory 由 [Backend API Map](./handoff-backend-api-map.md) 维护。
+- 新增/删除 Client 时只更新本文件的 integration projection；不得把 Backend endpoint 总数、DTO 字段或服务端算法横向复制到本文件。

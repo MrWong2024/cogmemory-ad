@@ -13,9 +13,9 @@
 
 ## 2. 当前公开 surface 与共同约定
 
-- current source inventory：17 个 Controller 文件、65 个公开 endpoint；Auth、Patients/Visits、Scales、Assessment Execution、Media、Submission、Scoring、Cognitive Domains、Reports/History 与 Patient Administration 均有公开 API。
+- 当前公开 surface 覆盖 Auth、Patients/Visits、Scales、Assessment Execution、Media、Submission、Scoring、Cognitive Domains、Reports/History 与 Patient Administration。
 - 当前没有公开用户管理、注册、密码重置、短信验证码、OAuth/SSO、JWT 登录、患者通用编辑/归档/合并、评分重跑/锁定、认知域人工修改/确认、报告签名/PDF/AI 等 API。
-- Controller、DTO 与 response type 的 current 事实以 current code 为准；本表的 65 个 endpoint 均与 Controller inventory 对齐。
+- Controller、DTO 与 response type 的 current 事实以 current code 为准；完整 endpoint inventory 见本文件第 3 节。
 - `PW` 表示类级 `SessionAuthGuard + RolesGuard` 与 `admin | doctor | nurse | research_assistant`；`D/A` 表示方法级收窄为 `doctor | admin`。
 - 除表中公开/患者会话例外外，`PW` endpoint 的共同 HTTP 边界为 DTO/path validation `400`、未认证 `401`、角色不足 `403`。这些共同状态不在每行重复。
 - 所有 DTO 字段只在 DTO Cheatsheet 完整维护；表中只列 DTO/type 名称。无独立响应 type 的极简响应或二进制流允许内联。
