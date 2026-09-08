@@ -2,9 +2,9 @@
 
 ## 1. Scope / Owner
 
-本文是 CogMemory AD 前端项目级 Risk Classification、evidence hierarchy、Browser evidence、scripted / Agent-assisted / Human execution mode、Browser profile admission、Failure Attribution、Browser stop-loss 与当前人工 / real-device 验收边界的 Owner。通用验证候选生成、初始 / 增量 A/B/C、候选归属、即时验收、覆盖对账及实现单元 / 工作包完成治理由 [Codex instruction spec](../codex-instruction-spec.md) §3.9 维护。
+本文是 CogMemory AD 前端项目级 Risk Classification、evidence hierarchy、Browser evidence、scripted / Agent-assisted / Human execution mode、Browser profile admission、Failure Attribution、Browser stop-loss 与当前人工 / real-device 验收边界的 Owner。通用验证候选生成、初始 / 增量 A/B/C、候选归属、即时验收、覆盖对账及实现单元 / 工作包完成治理由 [Codex instruction spec](../codex-instruction-spec.md) §3.9 维护；本文不复制其完整规则。
 
-Browser/test infrastructure 的通用复杂度治理由 [Codex instruction spec](../codex-instruction-spec.md) §3.10 统一维护；本文只维护前端 / Browser 项目级准入、执行模式和 stop-loss。
+Browser/test infrastructure 的通用复杂度治理由 [Codex instruction spec](../codex-instruction-spec.md) §3.10 统一维护；本文只维护前端 / Browser 项目级准入、执行模式和 stop-loss，不复制其通用正文。
 
 后端 Jest / HTTP E2E runner 与命令、Database Purpose、fixture、verifier 和 cleanup 由 [Backend Testing Playbook](./handoff-backend-testing-playbook.md) 维护；产品范围、WP 状态与当前主线由 [Roadmap](./handoff-roadmap.md) 维护。当前 route、组件与 UI/UX 事实分别见 [Frontend Route Map](./handoff-frontend-route-map.md)、[Frontend Component Map](./handoff-frontend-component-map.md) 与 [Frontend Design Baseline](./handoff-frontend-design-baseline.md)。当前仍需执行的人工 / real-device 验收范围见 §5。
 
@@ -21,40 +21,13 @@ Browser/test infrastructure 的通用复杂度治理由 [Codex instruction spec]
 
 长期分层总原则：能不用真实浏览器证明的事实，不使用 Browser 作为主证据；只有证据本身依赖真实浏览器语义，或必须证明 production 页面到真实 HTTP 的最低充分 wiring，才进入 Browser。进入 Browser 后仍先区分 assertion target：non-UI Browser semantic 才可评估 scripted deterministic regression；客观 production UI semantic 默认使用 Agent-assisted interactive Browser smoke；可理解性、自然性、视觉层级、专业判断与真实设备 / 硬件体验由 human manual / real-device smoke 负责。Browser 不是全量业务回归框架，也不是所有 UI 可达风险的默认最高层；最低充分不等于削弱安全、权限、数据完整性和关键业务合同，而是把自动化证据放到职责准确的层级。
 
-### 2.1 验证候选的系统生成与即时闭环
+### 2.1 通用候选与完成治理引用
 
-通用候选治理时序以 `docs/codex-instruction-spec.md` 3.9 为唯一事实源。新 A#、B#、工作包子任务、跨层缺陷修复或其他实现单元在目标合同基本锁定后、生成实现 Codex 指令前，必须执行初始阶段 A、B、C：依据目标合同、当前既有资产和预计影响生成临时的 `初始验证风险候选集合`，治理必要性、可达性、证据复用和最低充分证据，并为候选分配当前任务、具名后续阶段、已有精确证据或人工边界。合同尚未锁定时先完成合同设计或拆分阶段；纯文档、纯格式和无行为变化的机械重构只做简化扫描。
+通用验证候选生成、必要性、可达性、已有证据复用、初始 / 增量 A/B/C、候选归属、完成治理与覆盖对账统一遵循 [Codex instruction spec](../codex-instruction-spec.md) §3.9；本文不维护第二套候选来源 checklist、A/B/C lifecycle 或完成合同。
 
-项目级候选来源至少覆盖：
+Frontend Testing Playbook 只在 §2.2 及后续章节维护 CogMemory AD 前端项目级 Risk Classification、evidence classes、Browser qualification、execution mode 与 Human / real-device 边界。
 
-1. 业务角色、用户目标、正常/阻断路径和明确非目标。
-2. 页面路由与入口、可见性、输入、writing / disabled、错误恢复、刷新、当前会话与持久状态。
-3. 公开 API、DTO、Guard / Pipe、ownership、客户端可控字段、服务端生成字段与 mapper 隐私。
-4. 状态机、readiness、幂等、合法并发、部分完成、显式恢复、网络结果不确定及版本/replacement 关系。
-5. 数据副作用、audit、protected roots，以及 Patient / Visit / 来源 / Storage 等外部对象的不变量。
-6. shared workflow、认证与权限、coordinator / writing lock / identity、Origin / CORS / Cookie 和构建时变量。
-7. 已有 unit / HTTP E2E / Browser / verifier、已知回归，以及证据形成后相关实现是否变化。
-8. Batch E 或其他人工、真实设备、相机、触控笔/手写、打印、硬件和专业判断边界。
-
-默认采用“实现与即时验收一体化”：实现前写入 Codex 指令的是初始最低充分验收集合，不是封闭的最终清单；实现期间发现新风险时立即加入候选并治理；实现完成后必须依据基线至当前工作区的实际 diff、新增或删除资产、共享调用链和横切资产变化、数据或外部副作用及测试执行结果，执行增量阶段 A、B、C，再完成最终验收、候选覆盖完整性对账和证据收口。复杂任务可以按 3.9 拆为具名实现阶段和独立验收阶段，但当前阶段完成不得替代 A#、B# 或其他实现单元完成；实际影响或新增候选明显超出预计时，应拆出边界稳定的后续阶段，不得无界扩张。候选生成避免遗漏，后续治理避免过度测试；任何候选都必须有且只有一个主要归属，不得用“以后再看”替代明确阶段。分配到后续阶段、具名的其他实现单元或人工项目只表示已有归属，在对应验收实际通过、精确证据仍适用或其他正式关闭条件满足前不表示候选已经关闭。
-
-候选集合只是 GPT 生成 Codex 指令期间的临时风险工作集，不要求完整输出给 Codex，不在 Playbook 保存新实现单元的候选全集，也不按候选建立永久 Audit ID 仓库。active / pending 阶段只持久化当前真实 `gap`、人工或真实设备项目和必要场景设计；完成后收缩为当前状态、精确证据资产、evidence commit 与长期合同摘要，逐轮生成、筛选、执行和治理过程由 Git 历史承担。
-
-完成口径引用 `docs/codex-instruction-spec.md` 3.9，并在项目内分为三级：
-
-- **当前任务或阶段完成**：本阶段实现和验收已完成，候选均有明确归属且状态/证据已同步；具名后续阶段或工作包最终收口候选仍 `pending` 时可以关闭当前子阶段，但不能据此宣布对应工作包完成。
-- **A# / B# 或其他实现单元完成**：锁定范围内当前阻断候选、即时自动化验收及属于本单元完成门禁的后续阶段均已关闭，不存在未披露的阻断性 `gap`，mandatory 人工/真实设备项目满足当前范围，且最终覆盖对账和证据收口完成。仅允许保留经治理且具名归属到工作包最终收口的非阻断候选；它们在关闭前继续阻断对应工作包完成。
-- **工作包或产品能力完成**：相关 A#、B#、跨层合同、联调和用户流程验收均按锁定范围关闭，manual / real-device 边界满足工作包合同并由 roadmap 按真实证据维护；Testing Playbook 不自行启动或关闭工作包。
-
-A# 没有正式 UI 风险时不机械建立 Browser；UI 候选可以归属到同一工作包中具名的 B#，但在 B# 验收通过前仍是 open，只能准确表述 A# 的后端范围完成。B# 应复用当前代码态仍适用的 A# unit / HTTP E2E / verifier 精确证据，只为新增用户可见风险补最低充分 Browser；若 B# 改变后端合同或暴露新的公开调用路径，必须重新扫描后端候选，并明确由当前跨层实现单元或具名 A# 承担。
-
-mandatory 人工或真实设备项目尚未签收时，不得无条件宣布完整范围完成；当前合同明确只覆盖桌面、自动化、后端或其他子范围时，必须使用准确限定语。Batch E 的现有状态和范围继续由第 5 节维护，本次规则补强不重新评定其阻断关系。
-
-#### 2.1.1 阶段阻断与工作包最终收口
-
-正常主流程优先：开发阶段先证明普通、预期、单用户或单写者的用户主链完整可用，再按风险补充异常组合。以下任一情况属于当前阶段阻断，必须当前关闭：普通主流程不可达；数据错误、丢失或重复；权限或隐私问题；正常单次操作持续出现未知 4xx / 5xx；用户无法继续；直接违反当前实现合同；或没有可信恢复路径。
-
-低频并发恢复、多种异常组合、代表性但不影响核心操作的 accessibility 项、真实设备专项，以及已有 unit / HTTP E2E 强证据但尚缺高层补充验收的边缘恢复，可以治理为工作包最终收口候选，不阻断当前子阶段。此类候选必须写明具体工作包与复核时点，不得静默删除或无期限延期，并在工作包完成前重新核对。该判断沿用现有活动场景和 roadmap 语义，不新增 `core_complete`、`partial_complete`、`hardening_pending`、`acceptance_partial` 或其他状态，也不建立持久候选仓库。
+当前仍 active / pending 的 manual / real-device 验收范围见 §5；它们是当前项目级 acceptance scope，不是通用 A/B/C 规则的副本。
 
 ### 2.2 可达性、风险与最低充分证据
 
@@ -69,22 +42,19 @@ mandatory 人工或真实设备项目尚未签收时，不得无条件宣布完�
 | `manual_or_real_device` | 自动化无法可靠替代的真实设备、相机、触控笔、手写、打印或专业判断 | Batch E 或明确人工验收；不得伪装为桌面 Browser 已通过 |
 | `general_gate` | lint、typecheck、build、discovery、依赖、路由所有权、数据脱敏等 | 最终代码态或对应层变化后按影响范围执行；不创建业务 Audit ID |
 
-设计顺序：
+通用候选必要性、可达性、已有证据复用与验收优先级遵循 [Codex instruction spec](../codex-instruction-spec.md) §3.9；前端 / Browser evidence 选择顺序：
 
-1. 先证明正常用户主流程，再证明真实 UI、公开 API、合法并发、正式导入或真实设备入口。
-2. 判断风险是否涉及临床数据完整性、不可逆动作、权限、安全、隐私、恢复或已知回归，且是否足以阻断发布。
-3. 检查相关代码、接口与配置未变化时是否已有可复用的精确证据。
-4. Q1：不用真实 Browser 能证明吗？能则选择 lower layer；不能才进入 Browser evidence。
-5. Q2：必须 Browser 时，assertion target 是 Browser semantic 还是 UI semantic？BrowserContext、Cookie / Storage、origin、CORS / credentials、必要 lifecycle 或独立 Browser-native primitive 等 non-UI semantic 可以继续评估 scripted；页面结构、控件、文案、locator、interaction topology、用户 workflow 或页面级 restore 体验等客观 UI semantic 默认 Agent-assisted。
-6. Q3：是否需要可理解性、自然性、视觉层级、专业判断或真实设备 / 硬件体验？需要则归 human manual / real-device；Agent 不可用或 manual 本身是合同要求时，客观 UI 也按实际 execution mode 由 human 执行。
-7. 最后设计最小合法前置、场景和断言；禁止先扩张断言再反向建设 fixture。
+1. 判断风险是否涉及临床数据完整性、不可逆动作、权限、安全、隐私、恢复或已知回归，且是否足以阻断发布。
+2. Q1：不用真实 Browser 能证明吗？能则选择 lower layer；不能才进入 Browser evidence。
+3. Q2：必须 Browser 时，assertion target 是 Browser semantic 还是 UI semantic？BrowserContext、Cookie / Storage、origin、CORS / credentials、必要 lifecycle 或独立 Browser-native primitive 等 non-UI semantic 可以继续评估 scripted；页面结构、控件、文案、locator、interaction topology、用户 workflow 或页面级 restore 体验等客观 UI semantic 默认 Agent-assisted。
+4. Q3：是否需要可理解性、自然性、视觉层级、专业判断或真实设备 / 硬件体验？需要则归 human manual / real-device；Agent 不可用或 manual 本身是合同要求时，客观 UI 也按实际 execution mode 由 human 执行。
+5. 最后设计最小合法前置、场景和断言；禁止先扩张断言再反向建设 fixture。
 
-Browser evidence 按以下优先级执行；这是现有阶段 A/B/C 内的证据选择与执行顺序，不新增测试阶段或项目状态：
+Browser evidence 的项目级职责：
 
-1. **Happy Path UI Smoke**：需要真实 production UI 的客观正常主链默认由 Agent-assisted 执行；主观、专业或真实设备部分由 human 执行。happy path 未完成前，不持续扩大低频异常矩阵。
-2. **高价值 non-UI Browser 防御**：真实 Cookie / Storage / Session / BrowserContext isolation、CORS / credentials 和必要 lifecycle 可由薄 scripted profile 证明；页面级 reload 恢复、关键 UI wiring、凭证失效后的用户操作与页面恢复交互属于 UI，默认由 Agent-assisted 补证。重复提交、权限绕过、stale write、合法并发和数据库终态以 HTTP E2E / verifier 为主证据。
-3. **少量代表性恢复**：按实际合同选择 refresh、pause / resume 或 recovery 等代表性路径，不排列所有恢复组合，也不在每条主链重复已有低层精确证据。
-4. **工作包最终收口**：非关键 Axe、真实设备、极低频组合和可用性细节在具名归属与复核时点下收口。第四层未全部完成时，不默认阻断下一业务功能，但在实际关闭前仍按 roadmap 合同阻断对应工作包完成。
+- **Happy Path UI Smoke**：需要真实 production UI 的客观正常主链默认由 Agent-assisted 执行；主观、专业或真实设备部分由 human 执行。
+- **高价值 non-UI Browser 防御**：真实 Cookie / Storage / Session / BrowserContext isolation、CORS / credentials 和必要 lifecycle 可由薄 scripted profile 证明；页面级 reload 恢复、关键 UI wiring、凭证失效后的用户操作与页面恢复交互属于 UI，默认由 Agent-assisted 补证。重复提交、权限绕过、stale write、合法并发和数据库终态以 HTTP E2E / verifier 为主证据。
+- **少量代表性恢复**：按实际合同选择 refresh、pause / resume 或 recovery 等代表性路径，不排列所有恢复组合，也不在每条主链重复已有低层精确证据。
 
 业务风险守恒针对真实可达风险、不可替代状态语义和安全边界，不针对历史 Audit ID 数量、层级组合或顺序。同一风险只在最合适层作为主证据；代码阅读不等于动态通过，页面文本不替代数据库终态，fixture E2E 不冒充产品 Browser。Browser 收缩不得删除认证、授权、ownership、DTO 白名单、不可逆状态门禁、幂等、合法并发、隐私或数据库无副作用证据。
 
@@ -117,14 +87,13 @@ Codex/Agent 控制的内置 Browser 与系统 Chrome 在 Agent-assisted interact
 
 backend unit、HTTP E2E、database verifier、fixture 与 cleanup 的具体规则以 backend testing playbook 为准。
 
-### 2.4 按变化影响选择执行范围
+### 2.4 命令、discovery 与执行范围 Owner
 
-- 纯文档变化只执行文档内容、链接、diff 与 Git 范围检查。
-- 单个测试文件变化执行精确 discovery、定向测试和必要静态检查，不自动扩大到完整 E2E。
-- 单模块生产代码变化执行受影响 unit / E2E 与对应层静态门禁。
-- 只有认证、公共 Guard、Schema、通用 mapper、公共测试基础设施或跨模块合同变化，才按实际影响扩大回归。
-- 是否执行完整 unit / E2E 由真实影响决定；“最终代码态”只决定已经证明有必要的完整回归何时执行，不构成扩大测试范围的理由。不得仅因达到最终代码态、“为了保险”或“为了更完整”而执行完整套件。
-- 前端 pure/static contract 变化按实际影响选择 `npm run test:contracts:list`、`npm run test:contracts`、定向 lint 与正式 `npm run typecheck`；其它 production 静态门禁仍按实际影响选择。当前没有 Browser semantic runner 或 script；未来候选通过 qualification 后才建立对应的精确 discovery / execution 命令。
+命令生成期核验、discovery、定向执行、目标集合精确匹配、`not_executed` 判定与是否扩大回归统一遵循 [Codex instruction spec](../codex-instruction-spec.md) §3.8 / §3.9；本文只保留 CogMemory AD 当前真实 runner 与命令入口。
+
+Frontend Testing Playbook 不维护第二套 doc-only / 单文件 / 单模块 / full regression 选择矩阵；本文件只维护当前 Frontend evidence capability、Browser qualification 与真实项目级 runner / asset facts。
+
+当前 contracts runner 与 Browser executable 边界见 §1；从 `frontend` 目录执行的 pure/static contracts discovery 命令为 `npm run test:contracts:list`，执行命令为 `npm run test:contracts`。当前没有 Browser semantic runner 或 script；future Browser candidate 只有通过 §2.5 qualification 后才建立对应最低充分 runner / discovery / execution。
 
 ### 2.5 Scripted Non-UI Browser Micro-Profile 与任务粒度
 
@@ -179,7 +148,11 @@ GET aborted / canceled 本身不代表产品失败；只有必要读取因此无
 
 活动场景只使用 `pending`、`passed`、`failed`、`blocked`、`not_executed`。只有全部必需子断言的主证据、必要支持证据、适用数据库终态与资源 cleanup 均实际通过，且无测试资产、环境或未执行项阻断时，场景才能标记 `passed`。
 
-`unknown` 仅是命令已启动但没有可靠摘要、输出不完整或证据不足时的临时执行结论，不是活动场景状态；它不得关闭、通过或判失败场景。明确且持续的外部环境、工具或权限阻断才记 `blocked`；命令、选择器、权限或进程未启动导致目标没有实际执行时记 `not_executed`。exit code、测试文件存在、历史失败轮局部观察或 cleanup 成功均不能批量推导通过。
+`not_executed` 是活动场景状态之一；其“目标是否形成有效执行”的通用判定遵循 [Codex instruction spec](../codex-instruction-spec.md) §3.8。
+
+`unknown` 不是活动场景状态，只是 [Codex instruction spec](../codex-instruction-spec.md) §3.8 定义的临时执行结论，不能关闭、通过或判失败场景。
+
+明确且持续的外部环境、工具或权限阻断才记 `blocked`。exit code、测试文件存在、历史失败轮局部观察或 cleanup 成功均不能批量推导通过。
 
 每轮先分类为 `product`、`spec/test`、`fixture`、`support/runner`、`environment`、`tool limitation` 或 `not_executed`，再修正对应层；这些是失败归因，不是新的活动场景状态，也不新增 `database/data-integrity` 平行来源：产品造成的数据完整性违例归 `product`，fixture 造成的测试数据错误归 `fixture`，数据库环境不可用归 `environment`。只有稳定复现且证明违反正式产品合同的行为才归类为产品缺陷。GET aborted、Next prefetch、Playwright response / requestfailed 时序、测试鼠标坐标和 runner 编排问题不能因自动化失败本身升级为产品 `gap`。
 
@@ -187,7 +160,7 @@ GET aborted / canceled 本身不代表产品失败；只有必要读取因此无
 
 UI scripted Profile 不等待失败两轮：静态审计证明主要 assertion target 是 UI semantic 时，直接判定不符合 v1.20，不再执行、patch selector 或 rewrite scripted UI body。连续两轮止损只继续约束真正 `ELIGIBLE_NON_UI_SCRIPTED` 的测试资产：同一 execution mode 与资产方案因 `spec/test`、fixture、support/runner、environment 或 tool limitation 连续两轮失败时，不得第三轮同方案 patch / rerun，必须在修复或重写合格的 non-UI Profile、退役 Profile、Agent-assisted smoke、manual / real-device smoke 中重新选择最低充分方案。公共 support 连续影响两个场景或测试基础设施明显超过被测风险时同样停止扩张。每个合格 non-UI Profile 最多一次测试资产修复轮；不得扫全仓库历史资产、越界重构 future Browser framework、把测试债务扩张成 production 状态机。若证据明确证明 production contract violation，仍按 product `gap` 处理，不用 execution-mode 重选掩盖。
 
-测试资产通用复杂度治理引用 `docs/codex-instruction-spec.md` 3.10。frontend/Browser 只补充：按职责内聚、重复基础设施、跨进程链路、独立状态、cleanup 责任、证据价值与维护成本判断；不得以物理行、非空行、净新增行或文件数量单独决定通过、失败、压缩或拆分。
+测试资产通用复杂度治理引用 [Codex instruction spec](../codex-instruction-spec.md) §3.10；Frontend / Browser 只补充 §2.5 的项目级准入与本节的具体 stop-loss。
 
 ## 3. Browser 专属稳定运行规则
 
@@ -252,14 +225,14 @@ UI scripted Profile 不等待失败两轮：静态审计证明主要 assertion t
 | `B5-MV-061` | 待验 | 只恢复当前合同已有的真实设备或人工验收意图 |
 | `B5-MV-062` | 待验 | 只恢复当前合同已有的真实设备或人工验收意图 |
 
-WP-08 启动时必须依据 WP-10、WP-11、WP-12 的最终患者施测合同、标准触控设备和真实使用流程重新执行真实设备与人工候选的阶段 A/B/C。当前仍适用的项目保留原 ID；被新流程替代、与新增候选重复或已不可达的项目可以明确标记为 `superseded` 或 `retired`，但必须记录原因和替代证据；患者语音、具备触摸功能的电脑大屏、跨设备安全进入、医生接管、患者可读性等新增必要候选按最终合同纳入。不得静默删除、更换或合并历史 ID。WP-08 的完成标准是最终适用候选全部关闭，不是机械关闭当前 8 项；本次治理不改变这 8 项的当前数量、`pending` 状态、历史 ID 或既有 evidence。
+WP-08 启动时必须依据 WP-10、WP-11、WP-12 的最终患者施测合同、标准触控设备和真实使用流程，按 [Codex instruction spec](../codex-instruction-spec.md) §3.9 重新治理真实设备与人工验证候选。当前仍适用的项目保留原 ID；被新流程替代、与新增候选重复或已不可达的项目可以明确标记为 `superseded` 或 `retired`，但必须记录原因和替代证据；患者语音、具备触摸功能的电脑大屏、跨设备安全进入、医生接管、患者可读性等新增必要候选按最终合同纳入。不得静默删除、更换或合并历史 ID。WP-08 的完成标准是最终适用候选全部关闭，不是机械关闭当前 8 项；本次治理不改变这 8 项的当前数量、`pending` 状态、历史 ID 或既有 evidence。
 
 ## 6. 后续维护规则
 
 - active / pending 且会直接影响后续验收的场景可以保留当前范围、状态、必要场景设计与 Owner；场景完成后，不再长期维护逐轮 evidence、historical executable、evidence commit 或 aggregate count，历史由 Git 追溯。
 - 当前 test asset 由 current commit + discovery 判断；历史资产存在和历史通过不冒充 current executable / dynamic green。
 - 逐轮命令、精确耗时、失败过程、旧编号全文、迁移过程、历史 verifier / cleanup 和完整 evidence table 由 Git history 承担，不搬入新文档。
-- 只有影响性产品代码、接口、配置、测试基础设施或产品合同变化时，才按实际影响重新展开风险与证据设计；未变化事实复用现有精确证据。
+- 风险重新展开、已有证据复用、候选归属和验收范围变化统一遵循 [Codex instruction spec](../codex-instruction-spec.md) §3.9。
 - Browser 活动场景的主证据、必要支持证据、适用 verifier 和 cleanup 均通过后才能关闭；静态存在核对不得冒充动态通过。
 - 数据库用途、fixture、verifier、cleanup、Stage 和后端定向命令以 backend testing playbook 为准。
 - 产品 / WP 状态由 Roadmap 维护；Testing Playbook 不自行启动或关闭工作包。
