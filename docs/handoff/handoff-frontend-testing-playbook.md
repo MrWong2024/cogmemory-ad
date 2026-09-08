@@ -6,7 +6,7 @@
 
 Browser/test infrastructure 的通用复杂度治理由 [Codex instruction spec](../codex-instruction-spec.md) §3.10 统一维护；本文只维护前端 / Browser 项目级准入、执行模式和 stop-loss，不复制其通用正文。
 
-后端 Jest / HTTP E2E runner 与命令、Database Purpose、fixture、verifier 和 cleanup 由 [Backend Testing Playbook](./handoff-backend-testing-playbook.md) 维护；产品范围、WP 状态与当前主线由 [Roadmap](./handoff-roadmap.md) 维护。当前 route、组件与 UI/UX 事实分别见 [Frontend Route Map](./handoff-frontend-route-map.md)、[Frontend Component Map](./handoff-frontend-component-map.md) 与 [Frontend Design Baseline](./handoff-frontend-design-baseline.md)。当前仍需执行的人工 / real-device 验收范围见 §5。
+后端 Jest / HTTP E2E runner 与命令、Database Purpose、fixture、verifier 和 cleanup 由 [Backend Testing Playbook](./handoff-backend-testing-playbook.md) 维护；产品范围、WP 状态与当前主线由 [Roadmap](./handoff-roadmap.md) 维护。当前 route、组件与 UI/UX 事实分别见 [Frontend Route Map](./handoff-frontend-route-map.md)、[Frontend Component Map](./handoff-frontend-component-map.md) 与 [Frontend Design Baseline](./handoff-frontend-design-baseline.md)。
 
 本文维护当前证据职责和选择规则，不维护逐轮执行日志、完整 historical evidence index、完整 spec inventory 或 deterministic CI / Browser 历史通过台账。
 
@@ -27,8 +27,6 @@ Browser/test infrastructure 的通用复杂度治理由 [Codex instruction spec]
 
 Frontend Testing Playbook 只在 §2.2 及后续章节维护 CogMemory AD 前端项目级 Risk Classification、evidence classes、Browser qualification、execution mode 与 Human / real-device 边界。
 
-当前仍 active / pending 的 manual / real-device 验收范围见 §5；它们是当前项目级 acceptance scope，不是通用 A/B/C 规则的副本。
-
 ### 2.2 可达性、风险与最低充分证据
 
 系统生成后的候选风险必须先分类，再决定是否进入强制验收：
@@ -39,7 +37,7 @@ Frontend Testing Playbook 只在 §2.2 及后续章节维护 CogMemory AD 前端
 | `public_api_reachable` | 页面无入口，但公开 API 可由 Postman、curl 或自编客户端调用 | HTTP E2E 验证认证、权限、DTO、ownership、状态门禁、错误码与数据库无非法副作用；不另建 Browser 场景 |
 | `legitimate_concurrency` | 两个合法用户、标签页、Session 或请求可通过正式页面或公开 API 形成 | HTTP E2E 验证原子性、幂等、写入次数与数据库终态；不可替代的客观 UI 恢复交互默认由 Agent-assisted 补证 |
 | `internal_corruption_only` | 只能直接改库、伪造内部对象、篡改运行时或损坏历史数据形成 | 默认不进入业务批次；可保留廉价 pure/unit 防御证据，只有正式导入、迁移、兼容合同、已知事故或明确合规要求才升级 |
-| `manual_or_real_device` | 自动化无法可靠替代的真实设备、相机、触控笔、手写、打印或专业判断 | Batch E 或明确人工验收；不得伪装为桌面 Browser 已通过 |
+| `manual_or_real_device` | 自动化无法可靠替代的真实设备、相机、触控笔、手写、打印或专业判断 | 明确的 human manual / real-device 验收；不得伪装为桌面 Browser 已通过 |
 | `general_gate` | lint、typecheck、build、discovery、依赖、路由所有权、数据脱敏等 | 最终代码态或对应层变化后按影响范围执行；不创建业务 Audit ID |
 
 通用候选必要性、可达性、已有证据复用与验收优先级遵循 [Codex instruction spec](../codex-instruction-spec.md) §3.9；前端 / Browser evidence 选择顺序：
@@ -210,24 +208,7 @@ UI scripted Profile 不等待失败两轮：静态审计证明主要 assertion t
 - 当前任务实际执行的 pure/static、scripted Browser、Agent-assisted、Human / real-device evidence 及结果由当前任务最终报告记录，不回写为长期阶段台账。
 - completed Batch/WP 的逐轮 evidence 不在 Playbook 长期保存；仍 active / pending 且会直接决定后续验收的人工 / real-device 项目可以继续以 current scope 维护。
 
-## 5. Batch E：真实设备或人工验收
-
-以下稳定 ID 不属于桌面自动化范围，也不得被桌面 viewport、鼠标 Canvas 或普通 automated 测试替代；它们与当前 B18 自动化 gap 分离，全部保持 `pending`，当前主要归属为 WP-08。它们是历史待验候选，不是 WP-08 永久且完整的最终清单：
-
-| 验证 ID | 当前状态 | 执行边界 |
-|---|---|---|
-| `B5-MV-008` | 待验 | 原合同分类为真实设备/人工项，不并入桌面媒体校验结论 |
-| `B5-MV-028` | 待验 | 原合同分类为真实设备/人工项，不由桌面 mouse-only handwriting 覆盖 |
-| `B5-MV-029` | 待验 | 原合同分类为真实设备/人工项，不由桌面 mouse-only handwriting 覆盖 |
-| `B5-MV-058` | 待验 | 只恢复当前合同已有的真实设备或人工验收意图 |
-| `B5-MV-059` | 待验 | 只恢复当前合同已有的真实设备或人工验收意图 |
-| `B5-MV-060` | 待验 | 只恢复当前合同已有的真实设备或人工验收意图 |
-| `B5-MV-061` | 待验 | 只恢复当前合同已有的真实设备或人工验收意图 |
-| `B5-MV-062` | 待验 | 只恢复当前合同已有的真实设备或人工验收意图 |
-
-WP-08 启动时必须依据 WP-10、WP-11、WP-12 的最终患者施测合同、标准触控设备和真实使用流程，按 [Codex instruction spec](../codex-instruction-spec.md) §3.9 重新治理真实设备与人工验证候选。当前仍适用的项目保留原 ID；被新流程替代、与新增候选重复或已不可达的项目可以明确标记为 `superseded` 或 `retired`，但必须记录原因和替代证据；患者语音、具备触摸功能的电脑大屏、跨设备安全进入、医生接管、患者可读性等新增必要候选按最终合同纳入。不得静默删除、更换或合并历史 ID。WP-08 的完成标准是最终适用候选全部关闭，不是机械关闭当前 8 项；本次治理不改变这 8 项的当前数量、`pending` 状态、历史 ID 或既有 evidence。
-
-## 6. 后续维护规则
+## 5. 后续维护规则
 
 - active / pending 且会直接影响后续验收的场景可以保留当前范围、状态、必要场景设计与 Owner；场景完成后，不再长期维护逐轮 evidence、historical executable、evidence commit 或 aggregate count，历史由 Git 追溯。
 - 当前 test asset 由 current commit + discovery 判断；历史资产存在和历史通过不冒充 current executable / dynamic green。
