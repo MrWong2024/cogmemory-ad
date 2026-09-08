@@ -1,47 +1,21 @@
 # CogMemory AD / 智忆评 前端验证手册
 
-## 1. 文档定位与当前状态
+## 1. Scope / Owner
 
-本文档是验证候选的项目级生成来源、跨层分类与最低充分证据、Browser 验收规则、活动场景状态、Batch D 当前证据索引、B14.1 累计证据索引和 Batch E 待验范围的权威来源。产品范围与工作包状态由 `handoff-roadmap.md` 维护；数据库用途、fixture、verifier、cleanup 与后端定向命令由 `handoff-backend-testing-playbook.md` 维护；通用候选生成、任务归属和即时验收规则由 `docs/codex-instruction-spec.md` 3.9 维护；逐轮命令、执行耗时、失败过程、旧编号全文、迁移表和完整合同表由 Git 历史追溯。
+本文是 CogMemory AD 前端项目级 Risk Classification、evidence hierarchy、Browser evidence、scripted / Agent-assisted / Human execution mode、Browser profile admission、Failure Attribution、Browser stop-loss 与当前人工 / real-device 验收边界的 Owner。通用验证候选生成、初始 / 增量 A/B/C、候选归属、即时验收、覆盖对账及实现单元 / 工作包完成治理由 [Codex instruction spec](../codex-instruction-spec.md) §3.9 维护。
 
-| 范围 | 当前状态 | 详细入口 |
-|---|---|---|
-| WP-02 / B16 | 已完成 | 当前产品事实见 frontend snapshot / component map |
-| WP-04 / B17 | 已完成 | 当前产品事实见 frontend snapshot / route map / component map |
-| Batch A / B1–B3 | 已完成 | Git 历史与当前测试资产 |
-| Batch B / B4–B6 | 桌面范围已完成 | Batch E 仍有 8 项待验 |
-| Batch C / B7–B10 | 已完成 | Git 历史与当前测试资产 |
-| Batch D / B11 | 70 项已完成，最终闭环 | Git 历史与 retained non-Browser / backend 合同证据 |
-| Batch D / B12 | `B12-U01`～`B12-U03`；`passed=3`、`pending=0`；P0 `gap=0`；最终门禁与 Browser 闭环完成 | “当前证据索引” |
-| Batch D / B13 | `B13-U01`～`B13-U03`；`passed=3`、`pending=0`；P0 `gap=0`；最终门禁与 Browser 闭环完成 | “当前证据索引” |
-| Batch D / B14 | `B14-U01`～`B14-U02`；`passed=2`、`pending=0`；P0 `gap=0`；最终门禁与 Browser 闭环完成 | “当前证据索引” |
-| B14.1 | 累计证据索引，不是独立 Browser 批次，不拥有独立活动 ID | “B14.1 累计证据索引” |
-| Batch D / B15 | `B15-U01`～`B15-U02`；`passed=2`、`pending=0`；P0 `gap=0`；最终门禁与 Browser 闭环完成 | “当前证据索引” |
-| WP-03 / B18-A | 前端实现、原 47 项与新增 3 项 single-flight 非 Browser 合同完成 | “B18-A、B18-B1、B18-B2 与补充验证证据” |
-| WP-03 / B18-B1 | 核心真实 Browser 阶段完成；`passed=6`、`pending=0`；证据复用 | “B18-A、B18-B1 与 B18-B2 证据” |
-| WP-03 / B18-B2 | 剩余真实 Browser 阶段完成；P4/P5/P6 `passed=6`、`pending=0`；P0 `gap=0` | “B18-A、B18-B1 与 B18-B2 证据” |
-| WP-03 / B18 补充验证 | P7 `passed=2`、P8 `passed=1`；single-flight contract、P3 与 P9 `passed`；自动化 `gap=0` | “B18-A、B18-B1、B18-B2 与补充验证证据” |
-| WP-10-F1 | 产品范围已完成，WP-10 状态不回退；`patient-administration-handoff` same-device / cross-device replacement 的 green 继续作为形成时策略下有效的历史证据。两个 `UI_FLOW_DISQUALIFIED` executable 已按 v1.20 物理退役，不再属于 current / future scripted UI regression gate | “WP-10 F1 / F2 / F3 历史验证证据索引” |
-| WP-10-F2 | 产品范围已完成且历史 P1 / P2 green 保留；两个 `UI_FLOW_DISQUALIFIED` executable 已按 v1.20 物理退役，不再属于 current / future scripted UI regression gate | “WP-10 F1 / F2 / F3 历史验证证据索引” |
-| WP-10-F3 | 产品范围保持完成，历史 Browser 证据保留；2026-08-22 current deterministic Playwright re-automation 已在连续两轮 `spec/test` locator / test-asset 失败后按止损停止，未形成 current Playwright green，也未证明 production contract conflict。F3 scripted Browser executable 已退役 | “WP-10 F1 / F2 / F3 历史验证证据索引” |
-| Batch E | 8 个真实设备或人工项目待验；最终主要归属 WP-08 | “Batch E：真实设备或人工验收” |
+Browser/test infrastructure 的通用复杂度治理由 [Codex instruction spec](../codex-instruction-spec.md) §3.10 统一维护；本文只维护前端 / Browser 项目级准入、执行模式和 stop-loss。
 
-B11～B15 保持完成；B18 补充验证已闭合，自动化 `gap=0`，WP-03 已完成。F1 replacement 与 F2 P1 / P2 的既有 green 均继续作为形成时策略下有效的历史证据；v1.20 requalification 后四个 executable 已物理退役，这只改变 future / current evidence execution mode，不把历史通过改写成失败，也不回退 WP-10 产品完成状态。F3 current Playwright re-automation 已止损且其 scripted Browser executable 已退役；该工具状态既不形成 current F3 Playwright green，也不回退 WP-10。产品范围、工作包状态和当前主线以 `handoff-roadmap.md` 为准；Batch E 的 8 项真实设备或人工项目仍为 `pending`，最终主要归属为 WP-08。
+后端 Jest / HTTP E2E runner 与命令、Database Purpose、fixture、verifier 和 cleanup 由 [Backend Testing Playbook](./handoff-backend-testing-playbook.md) 维护；产品范围、WP 状态与当前主线由 [Roadmap](./handoff-roadmap.md) 维护。当前 route、组件与 UI/UX 事实分别见 [Frontend Route Map](./handoff-frontend-route-map.md)、[Frontend Component Map](./handoff-frontend-component-map.md) 与 [Frontend Design Baseline](./handoff-frontend-design-baseline.md)。当前仍需执行的人工 / real-device 验收范围见 §5。
 
-Current physical inventory 已与 v1.20 clean-slate 决策对齐：`@playwright/test` 当前只作为 `frontend/test/contracts/` 的 pure/static contract runner；这些 specs 不声明 `page`、`context`、`browser`、`browserName`、`BrowserContext` 或 `chromium`，不启动 Browser，也不属于 Browser evidence。Current scripted deterministic real-Browser executable inventory = 0。旧 `frontend/test/browser-acceptance/` 目录及其 infrastructure、live topology、safe-output 与 shared support 已全部退役，当前物理路径不存在；这不否定其 pre-clean-slate 历史作用或当时形成的通过证据。
+本文维护当前证据职责和选择规则，不维护逐轮执行日志、完整 historical evidence index、完整 spec inventory 或 deterministic CI / Browser 历史通过台账。
 
-下表记录 pre-clean-slate requalification 与后续物理处置。前两行曾通过 non-UI classification，但 clean slate 不 grandfather 未被 current 风险消费的 Browser framework，因此与后四行一样都不是 current executable inventory。
+当前 physical Browser baseline：
 
-| Profile | Main assertion target | Production UI dependency | v1.20 classification | Reason |
-|---|---|---|---|---|
-| Browser infrastructure（retired clean slate） | Chromium / BrowserContext、Cookie / Storage / permissions、request control、safe audit 与 support 自检 | 无；使用自有 synthetic HTML，不验证 production UI contract | `ELIGIBLE_NON_UI_SCRIPTED`（pre-clean-slate） | 当时主目标属于 non-UI Browser semantic；后续确认 current 风险没有长期消费该 framework，故不 grandfather 整套 infrastructure / support |
-| live topology（retired clean slate） | production frontend / backend origin、health、exact CORS、credentials、runtime / Network / Console 边界与零写入 wiring | 低；login 页面只是 runtime 宿主，未执行 production UI workflow | `ELIGIBLE_NON_UI_SCRIPTED`（pre-clean-slate） | 当时主要断言不依赖产品业务操作路径；后续 clean slate 决定不为未来可能性保留 current executable 或旧 framework |
-| handoff same-device（retired） | 创建、reload、准备确认、安全交接、患者页到达与控件可见性 | 高；radio、button、checkbox、testid、heading、URL 与点击顺序构成主路径 | `UI_FLOW_DISQUALIFIED` | Cookie / Storage / HTTP 子事实被完整 production UI handoff workflow 包裹，不能为整个 scripted UI profile 授权 |
-| handoff cross-device（retired） | 创建、进入码兑换、reload、重新签发、患者页到达及双端身份流 | 高；输入、按钮、checkbox、testid、文案与用户步骤构成主路径 | `UI_FLOW_DISQUALIFIED` | 独立 BrowserContext 和 Cookie isolation 有安全价值，但退役前 spec 主体仍是产品 UI handoff，不能保留整条 UI flow |
-| WP10-F2 P1（retired） | 19 步正式施测、录音、播放、Canvas / Pointer、照片选择 / 上传、完成页与 UI privacy | 高；production UI interaction topology 是测试主体 | `UI_FLOW_DISQUALIFIED` | MediaRecorder、Canvas、Pointer、file input、Blob / Storage 子事实不因 Browser API 身份使完整 golden path 获得 scripted 资格 |
-| WP10-F2 P2（retired） | 经 UI 创建 / 准备 / 录音上传后 reload，并观察当前题恢复与继续按钮 | 高；业务页面 reload / resume 与 UI 控件是主要目标和路径 | `UI_FLOW_DISQUALIFIED` | server-authoritative 状态与重复上传不变量优先由低层证据证明，剩余 UI restore 体验改由 Agent-assisted / human；没有独立、明显值得保留的 non-UI scripted body |
-
-此前 4 个 scripted UI specs、两个专用 frontend support 与两个专用 backend fixture，以及本次旧 Browser infrastructure / live / safe-output / shared support，均已完成物理退役。Future v1.20 scripted non-UI Browser semantic 的 canonical path 是 `frontend/test/browser-semantics/`；当前没有通过 qualification 且必须长期保留的候选，所以该目录当前不存在，也没有 placeholder、config、script、README 或 support skeleton。未来首次候选只有在 lower layer 不可证明、assertion target 为 non-UI Browser semantic、不依赖 production UI workflow 且复杂度最低充分时，才从零建立所需 spec / config / support。same/cross 或 F2 UI flow 如需重新验证，objective production UI 使用 Agent-assisted interactive Browser smoke，subjective / professional / real-device 使用 human manual / real-device smoke；不得恢复已退役的 UI body。
+- `@playwright/test` 当前仅运行 `frontend/test/contracts/` 的 pure/static contracts，不启动 Browser；current scripted deterministic real-Browser executable inventory = 0。
+- future scripted Browser 候选须按 §2.5 重新 qualification 后，建立最低充分 non-UI Browser semantic micro-profile；canonical path 为 `frontend/test/browser-semantics/`，当前该目录不存在，也没有必须长期保留的合格 executable。
+- 已退役 scripted UI / historical Browser framework 不属于 current executable inventory，不恢复其 scripted UI body；历史作用与历史通过由 Git 追溯，不作为 current dynamic green。
+- objective production UI 默认使用 Agent-assisted；subjective / professional / real-device 使用 Human，具体资格、执行模式与 stop-loss 见 §2。
 
 ## 2. 当前测试设计规则
 
@@ -74,7 +48,7 @@ Current physical inventory 已与 v1.20 clean-slate 决策对齐：`@playwright/
 
 A# 没有正式 UI 风险时不机械建立 Browser；UI 候选可以归属到同一工作包中具名的 B#，但在 B# 验收通过前仍是 open，只能准确表述 A# 的后端范围完成。B# 应复用当前代码态仍适用的 A# unit / HTTP E2E / verifier 精确证据，只为新增用户可见风险补最低充分 Browser；若 B# 改变后端合同或暴露新的公开调用路径，必须重新扫描后端候选，并明确由当前跨层实现单元或具名 A# 承担。
 
-mandatory 人工或真实设备项目尚未签收时，不得无条件宣布完整范围完成；当前合同明确只覆盖桌面、自动化、后端或其他子范围时，必须使用准确限定语。Batch E 的现有状态和范围继续由第 6 节维护，本次规则补强不重新评定其阻断关系。
+mandatory 人工或真实设备项目尚未签收时，不得无条件宣布完整范围完成；当前合同明确只覆盖桌面、自动化、后端或其他子范围时，必须使用准确限定语。Batch E 的现有状态和范围继续由第 5 节维护，本次规则补强不重新评定其阻断关系。
 
 #### 2.1.1 阶段阻断与工作包最终收口
 
@@ -254,67 +228,16 @@ UI scripted Profile 不等待失败两轮：静态审计证明主要 assertion t
 
 持久结果不得记录 Cookie、Session、token、数据库连接串、真实凭据、完整敏感响应或其他 Secret。本条是后续测试基础设施的长期实施要求；仅有本规则不证明当前 runner 已满足，也不得把尚未实施归类为产品缺陷或 Browser 已通过。
 
-## 4. 当前证据索引
+## 4. Current asset 与 historical evidence 边界
 
-以下为已完成 Batch D 的紧凑历史索引。表内 Browser fixture / spec 路径描述证据形成时的 executable 资产，其中 B11～B15 与 B18 的 historical scripted executable 现已退役；保留的 non-Browser contract 与 backend unit / HTTP E2E 仍按各自职责提供 current 证据。路径退役不表示本次重新动态执行，也不否定所列 evidence commit 与 Git 历史中的通过事实。
+- current frontend test asset 以当前 commit 的 tracked files、package / Playwright 配置和实际 discovery 为准；本文不维护完整 spec inventory、historical evidence index 或 aggregate test count。
+- historical Browser green、旧 Batch/WP evidence、旧 fixture / support / executable、evidence commit、历史 verifier / cleanup 和逐轮执行日志由 Git history 追溯，不代表当前代码态 dynamic green；历史 desktop Browser evidence 不替代真实设备、主观或专业判断。
+- 测试文件存在、历史通过或历史 product green 本身不能替代本次应执行的验证；historical evidence 是否仍可复用，须依据当前 diff、合同和资产判断。
+- 已退役 scripted Browser 资产不能冒充 current executable；测试资产退役本身不自动回退 Roadmap / current contract 已确认的产品状态。
+- 当前任务实际执行的 pure/static、scripted Browser、Agent-assisted、Human / real-device evidence 及结果由当前任务最终报告记录，不回写为长期阶段台账。
+- completed Batch/WP 的逐轮 evidence 不在 Playbook 长期保存；仍 active / pending 且会直接决定后续验收的人工 / real-device 项目可以继续以 current scope 维护。
 
-| 批次 | 活动场景与最终状态 | P0 / 最终门禁 | 证据资产（历史路径含已退役项） | 最终 evidence commit | 持久合同摘要 |
-|---|---|---|---|---|---|
-| B12 | `B12-U01`～`B12-U03`；`passed=3`、`pending=0` | P0 `gap=0`；final gates 完成 | `backend/scripts/b12-u01-browser-fixtures.ts`；`frontend/test/browser-acceptance/b12/`（historical）；`frontend/test/contracts/b12-lock-non-browser.spec.ts`；`backend/test/clinical-report-lock.e2e-spec.ts` | `bba97ead5a2b7b673c002518ccdeeb44f08711d6` | 报告锁定闭环；认证失效和网络中止不自动重放；草稿仅在 React 内存 |
-| B13 | `B13-U01`～`B13-U03`；`passed=3`、`pending=0` | P0 `gap=0`；final gates 完成 | `backend/scripts/b13-browser-fixtures.ts`；`frontend/test/browser-acceptance/b13/`（historical）；`frontend/test/contracts/b13-source-freeze-non-browser.spec.ts`；`backend/test/clinical-report-source-freeze.e2e-spec.ts` | `38b56daea38e53dbada0806863f9e13befac0c41` | `in_progress` 是正式恢复状态；精确 scope 与首次事实保真；网络不确定结果不自动 POST/latest |
-| B14 | `B14-U01`～`B14-U02`；`passed=2`、`pending=0` | P0 `gap=0`；final gates 完成 | `backend/scripts/b14-browser-fixtures.ts`；`frontend/test/browser-acceptance/b14/`（historical）；`frontend/test/contracts/b14-archive-non-browser.spec.ts`；`backend/test/clinical-report-archive.e2e-spec.ts` | `335090c8ea5cb826c3f93e3419cb0c3980bb70fb` | A24 没有正式 `in_progress`；historical fallback 仅是兼容合同；首次归档与持久摘要闭环 |
-| B15 | `B15-U01`～`B15-U02`；`passed=2`、`pending=0` | P0 `gap=0`；final gates 完成 | `backend/scripts/b15-browser-fixtures.ts`；`frontend/test/browser-acceptance/b15/`（historical）；`frontend/test/contracts/b15-correction-non-browser.spec.ts`；`backend/test/clinical-report-correction.e2e-spec.ts` | `6a5c55dbc926ddff534d1fb30e936395a531edae` | A25 正式 `in_progress` 恢复；correctionId 是内部标识，correctionNo 是用户可见业务序号；首次、更正恢复、network uncertain 与线性 replacement 均闭环 |
-| B18-B1 | `B18-U01`～`B18-U03`；`passed=6`、`pending=0` | P0 `gap=0`；证据复用 | `backend/scripts/b18-browser-fixtures.ts`；`frontend/test/browser-acceptance/b18/`；B18-A 两个 contract spec；A29 / A30 既有 backend 证据 | 当前工作树（未提交） | trailing 自动保存、reload / beforeunload、双 Session 显式冲突选择、submit 生命周期关闭、offline/online 与响应丢失只读核对闭环 |
-| B18-B2 | P4 / P5 / P6；`passed=6`、`pending=0` | P0 `gap=0`；final gates 完成 | `frontend/test/browser-acceptance/b18/p04-group-switch.spec.ts`、`p05-media-generation.spec.ts`、`p06-realtime-timing.spec.ts`；B18 局部精确 Gate；既有 fixture/verifier | 当前工作树（未提交）；P5 证据基线 `5479181da3840504fe0ddeeb15406e2e9b3e8010` | 切组 flush/无效草稿保留、媒体 generation 竞态、system/external timing 均闭环；B18 桌面自动化 `gap=0` |
-| B18 补充验证 | P7 `passed=2`、P8 `passed=1`；single-flight contract `passed=3`；P3 `passed=2`；P9 `passed=1` | `gap=0`；验证闭合 | B18-A 两个 contract、P3/P9 spec、精确上传 abort support、既有 fixture/verifier；A29/A30 与 P1–P8 证据复用 | P9 基线 `e99c4a6dceab69aa2ab274dc99270a20a0797d39` 上的当前工作树 | reconciliation 采用逐题/attempt operation-level single-flight；P3 回归闭合；P9 证明上传网络中止后当前 React 会话文字与图片草稿保留，A14 独立保存且 A15 无副作用 |
-
-### 4.1 B14.1 累计证据索引
-
-B14.1 不是独立业务能力，不拥有独立 Browser 活动 ID，也不恢复大型组合 Browser suite。它只索引共享 façade、coordinator、reducer、identity isolation 与各业务动作的累计证据：
-
-| 动作 / shared 合同 | 主证据归属 | 当前索引 |
-|---|---|---|
-| edit / submit / confirm | B11 | B11 历史 Browser 通过证据与 current retained contract / backend 证据 |
-| lock | B12 | B12 Browser、lock Node-only 与 A22 HTTP E2E |
-| source-freeze | B13 | B13 Browser、source-freeze Node-only 与 A23 HTTP E2E |
-| archive | B14 | B14 Browser、Archive Node-only 与 A24 HTTP E2E |
-| correction | B15 | B15 Browser、Correction Node-only 与 A25 HTTP E2E |
-| shared façade / coordinator / reducer / identity isolation | 跨 B11～B15 | `frontend/test/contracts/clinical-report-workflow-shared-non-browser.spec.ts`；稳定 `reportId`、route RESET、unexpected identity 隔离、expected correction transition 保真、identity generation、layout barrier、单一 writingRef/latest/beforeunload |
-
-### 4.2 WP-10 F1 / F2 / F3 历史验证证据索引
-
-| 范围 | 形成时有效的核心验证证据 | Current / future testing 状态 |
-|---|---|---|
-| F1（WP-10-F1） | F1 产品范围已完成；same-device / cross-device replacement 曾在形成时有效策略下取得真实 Browser green，并覆盖会话创建与准备、same-device 安全交接、staff Session revoke / patient identity transition、cross-device redeem、reload / reissue，以及独立 BrowserContext / 身份隔离等核心交接风险。旧 F1 与 replacement historical green 继续有效。 | same-device / cross-device scripted UI body 后续均判为 `UI_FLOW_DISQUALIFIED`，executable 已物理退役；退役不否定历史通过，也不回退 WP-10。Future objective same/cross UI flow 使用 Agent-assisted，subjective / real-device 边界由 human；若独立 BrowserContext / Cookie / Storage semantic 未来确有 persistent regression 价值，须重新 qualification 后从零建立薄 non-UI profile，不恢复旧 UI body。 |
-| F2（WP-10-F2） | F2 产品范围已完成；P1 正常 MMSE 患者施测主链曾取得真实 Browser green，覆盖服务端权威步骤、speech / audio Evidence、staff observation、handwriting、drawing / photo、completion，以及 Evidence / patient privacy 等核心多模态风险。P2 reload / no-duplicate recovery 曾取得真实 Browser green，覆盖 upload 后 reload、服务端权威状态恢复、不重复上传及 takeover / redo 等代表性恢复风险；P1 / P2 historical green 继续有效。 | v1.20 requalification 后 P1 / P2 均为 `UI_FLOW_DISQUALIFIED`，executable 已物理退役；P2 没有识别出值得保留的 `NEEDS_THINNING` profile。server-authoritative / no-duplicate 等业务不变量优先由 lower-layer evidence 承担；future objective UI workflow / restore 使用 Agent-assisted，subjective / professional / real-device 使用 human，不恢复旧 Playwright UI body。 |
-| F3（WP-10-F3） | F3 产品范围保持完成；historical Browser happy path 曾形成有效 green，并证明 completed patient administration 后 review projection 可达、显式 ASR / transcription、on-demand Evidence access、Evidence adoption、复用 existing ItemResponse 编辑链、readiness 与 existing overall submission，且没有额外评分、cognitive-domain 或 report 写副作用。 | 2026-08-22 current deterministic Playwright re-automation 曾先冻结 independent expected contract，随后连续两轮因 `spec/test` locator / test-asset 问题失败并按止损停止；没有形成 current Playwright green，也没有证明 production contract conflict 或 product gap，因此不回退 WP-10。F3 scripted Browser spec / support / fixture 已退役但不否定 historical green；future objective F3 UI flow 默认 Agent-assisted，当前 Agent smoke 未执行，不得写为 passed / green，也不恢复旧复杂 Playwright body。 |
-
-- Historical green 仅表示在形成时对应代码态和当时策略下真实验证曾通过；current WP-10 F1 / F2 / F3 scripted UI executables 均不存在。Executable 退役不表示产品能力退役，WP-10 状态仍由 Roadmap 维护。
-- 真实麦克风、真实触控笔、真实患者媒体与真实设备体验不由历史 desktop Browser evidence 冒充，继续归既有 human / real-device 验证安排；未来只有独立 non-UI Browser semantic 通过 v1.20 qualification 后，才从零建立薄 scripted profile。
-- 逐轮命令、运行标识、精确计数、耗时、fixture / verifier / cleanup 过程与环境排障由 Git 历史承担；可使用 `WP-10-F1`、`WP-10-F2`、`WP-10-F3`、`F1`、`F2`、`F3` 检索。
-
-## 5. B18-A、B18-B1、B18-B2 与补充验证证据
-
-- 精确 contract discovery：`b18-item-response-autosave.contract.spec.ts` 为 30 项，原 27 项没有删除或弱化；与 20 项 `b18-item-response-timer.contract.spec.ts` 合计 50 项。两个文件不声明 page、context、browser 或 browserName fixture。
-- Autosave contract：`frontend/test/contracts/b18-item-response-autosave.contract.spec.ts`，30/30 通过。除既有 debounce / max wait / 串行 / trailing / cleanup、序列化、冲突与网络分类外，新增 3 项正式证明 pending single-flight、读取失败后的显式重试释放和 initialize stale run 失效；没有真实 HTTP。
-- Timer contract：`frontend/test/contracts/b18-item-response-timer.contract.spec.ts`，20 项通过。使用普通对象与固定 wall-clock 验证状态转换、elapsed、checkpoint、manual / imported 和同一逐题队列；没有启动 Browser。
-- 本次静态门禁：frontend `npm run lint`、正式 `npm run typecheck`、固定 API Base 的 production `npm run build` 均 exit 0；P9 精确 discovery 为 1 file / 1 test，完整 Browser discovery 为 172 tests / 39 files。正式 typecheck / build 前确认系统 Node / Next 与 3002 / 5002 listener 均为 0，并以同一沙箱外身份写入 `.next`；输出未出现 `EPERM`、未处理拒绝或异常。backend `src`、fixture、P1–P8/support 均未修改，因此未机械重跑 backend 静态、unit 或 HTTP E2E。
-- 数据与运行边界：P3/P9 使用 production frontend、真实 Browser backend、Chromium、公开 HTTP 与 `cogmemory_ad_browser_test`；runner/frontend 未继承数据库变量或 fixture Secret。A29 / A30 后端 unit、HTTP E2E、CAS、媒体隔离、提交屏障与隐私证据直接复用。托管服务单元终止后遗留的本任务 Node 子进程均先按 PID、启动时间、命令和端口核对归属，再精确停止；最终端口、进程、runtime 与 namespace residual 为 0。
-- B18-B1 discovery 与 Profile：三个目标 spec 精确发现 6 项，分布为 P1=1、P2=3、P3=2；三个 Profile 分别使用独立 namespace、production frontend、Browser test backend、真实 HTTP 与 `cogmemory_ad_browser_test`，均完成 prepare、prepared verify、Browser、post verify、cleanup，最终 runtime / namespace / 端口 / 进程 / test-results residual=0。
-- P1 核心自动保存：真实 gate 证明单题最多一个 active PATCH，trailing edit 形成第二个 PATCH，两个请求均只含 `expectedRevision` / `responseText` 且状态 200，revision `0→1→2`；dirty navigation 触发 beforeunload 并 dismiss，clean reload 无对话框，reload 只恢复服务器事实，Storage / Cookie / URL 无草稿持久化。
-- P2 冲突与生命周期：两个真实独立 Session 形成 409 冲突；server choice 不补写，local choice 仅以最新 revision 显式补写一次且无 retry loop。代表性 390×844 冲突 UI 无全局横向溢出，键盘事件可信、focus-visible 生效、alert / 非颜色状态明确，focused Axe serious / critical 为 0。readiness=true 场景中 doctor 只提交一次，nurse 延迟 PATCH 得到 `SCALE_INSTANCE_NOT_EDITABLE`，本地值保留且控件只读；verifier 确认 completed、唯一 doctor submission audit、目标草稿业务状态未变且无评分 / 认知域 / 报告副作用。
-- P3 网络恢复本次回归：全新 Profile 2/2 通过。真实 `BrowserContext` offline/online 各触发一次事件；离线期间 PATCH=0，联网后仅 PATCH=1。响应丢失场景上游 PATCH=1 且 200、浏览器写尝试=1、首次 reconciliation GET 受控中止=1、人工 reconciliation GET=1，最终 revision+1，全程无 PATCH replay 或伪造 business response。prepared/post verifier 均通过，两个场景实例仍为 draft，score/domain/report/media 均为 0，cleanup `residualCount=0`、runtime absent。
-- P4 切组：2/2 通过；valid 场景对目标题目的精确 PATCH URL 与 `expectedRevision` / `responseText` 白名单 Body 使用 one-shot Gate，summary 为 matched=1、continued=1、aborted=0。切组时目标草稿立即 flush，目标请求持有期间已进入另一分组，两个独立题目各一次 PATCH、各 revision+1、各自最大 active PATCH=1；invalid 场景首次切组 PATCH=0，合法原因补齐后恰好一次 PATCH、revision+1，未自动 answered。prepared/post verifier 与 cleanup `residualCount=0`。
-- P5 媒体 generation：不机械重跑；只读确认 `p05-media-generation.spec.ts`、`b18-upstream-response-gate.ts`、`b18-browser-fixtures.ts`、媒体生产代码与公共 Browser support 相对完整基线 `5479181da3840504fe0ddeeb15406e2e9b3e8010` 均零变化，复用该基线已锁定的 2/2 Browser、prepared/post verifier、cleanup `residualCount=0` 证据。两个 A14 上游各一次且 200，upload、void、reupload 通过真实公开 UI/HTTP，revision 各+1，最终 active MediaEvidence=1，旧媒体 voided、新媒体 attached，evidenceRef 与相邻/受保护事实保持。
-- P6 实时计时：2/2 通过；system 精确 Body Gate 只匹配 `expectedRevision=R+1` 且 running/system、durationMs≥15000、锚点完整的 checkpoint，trailing pause 不计入 summary；实际 checkpoint wall-clock 为 15,694ms，5 次 PATCH 依次为 start、checkpoint、pause、resume、complete，revision+5、最大 active PATCH=1。external 两次 reset 均发送 timing=null，manual/imported 只形成 completed，revision+5；键盘、focus-visible、800×1280 viewport 与 focused Axe 通过。prepared/post verifier 与 cleanup `residualCount=0`。
-- Reconciliation single-flight：`AutosaveEntry` 以内存 `{attemptId,promise}` 标识活动 run，同 attempt 的自动核对、两次 retry 与一次 online 复用同一操作。正式 contract 证明 pending 期间 `readLatest=1`、PATCH=1、committed 接受=1，最终 clean 且服务器 revision=5；首次读取已失败后一次显式 retry 启动第二次读取，第二次 pending 的重复 retry/online 不启动第三次；initialize 会 abort 旧 Controller，旧结果不调用 summary/accept，也不覆盖 revision=20 的新基线，新 entry 随后可正常完成新 run。single-flight 产品 gap 已关闭。
-- P7 显式操作：2/2 通过且未使用资产修复轮。“保存草稿”在 debounce 前仅发送一次 A14 PATCH，Body keys 为 `expectedRevision,responseText`，revision+1，status 仅从 not_started 进入 in_progress，answered/progress 不变，重载恢复服务端事实且无第二次 PATCH。“保存并标记本题完成”直接使用合法预保存草稿，仅发送一次 `expectedRevision,markAsAnswered`，revision+1、status=answered、answeredItemCount+1，无 trailing、submit、score、domain 或 report。两个独立业务根的 post verifier 均通过，cleanup `residualCount=0`。
-- P8 running 重载：首次执行因公开 API 将数据库 timing=null 规范化为 idle/none 对象而在首写前失败；使用唯一一次测试资产修复轮后 1/1 通过。start/reload/checkpoint/pause 的 PATCH 数为 3，`expectedRevision=[R,R+1,R+2]`，重载保持服务器 startedAt/lastResumedAt 且不二次 start，显示继续增加；checkpoint wall-clock=15,214ms，最终 paused/system、revision+3、最大 active PATCH=1。post verifier 证明 answered 不变、实例 draft、衍生产物为 0，cleanup `residualCount=0`。
-- P9 媒体失败：1/1 Browser 通过。图片采集区从目标题目内 exact 可访问文件输入“选择已有图片”开始，断言输入 count=1，再以 `xpath=ancestor::section[1]` 取得最近祖先 section 并断言 count=1；exact level-5 heading、待上传预览和上传按钮均限定在该 section。证据要求继续从当前 article 内 exact region“证据要求”取得唯一 photo listitem，并核对 exact“图片”“待记录”“服务端标识：未关联”。真实上传 POST=1，精确 abort matched=1 / aborted=1 / continued=0，Browser backend upload response=0，requestfailed=1；错误 alert 可见，文字值、已处理图片草稿与预览保留，上传按钮恢复 enabled。A14 PATCH=1、status=200、Body keys 仅为 `expectedRevision,responseText`、revisionDelta=1，超过 debounce 后无第二次 PATCH。prepared/post verifier 均通过：MediaEvidence=0、evidenceRefs 不变、photo requirement=pending、answeredItemCount 不变、实例保持 draft，score/domain/report=0，protected/adjacent facts matched；cleanup `residualCount=0`、runtime absent。
-- 最低充分 Storage 证据：development / Browser fake Storage 是进程内测试 Driver，产品没有公开 Storage 管理或对象计数 API；A30 HTTP E2E 已提供 fake Storage 调用集与补偿证据，P5 Browser 已提供真实上传、MediaEvidence、evidenceRef 与终态证据。因此不增加 test-only endpoint、生产 hook、Driver introspection 或跨进程对象计数；该候选按已有精确证据复用关闭，不构成独立剩余产品 gap。
-- 完成边界：A29/A30、B18-A 原 47 项、B18-B1 P1/P2、B18-B2 P4–P6、P7 2 项与 P8 1 项继续复用；single-flight 3 项、P3 2 项与本次 P9 1 项均已关闭，自动化 `gap=0`。B18 补充验证闭合，WP-03 按当前 roadmap 锁定范围完成；Batch E 的 8 项真实设备或人工项目保持原 ID 和待验状态，最终主要归属为 WP-08。
-
-## 6. Batch E：真实设备或人工验收
+## 5. Batch E：真实设备或人工验收
 
 以下稳定 ID 不属于桌面自动化范围，也不得被桌面 viewport、鼠标 Canvas 或普通 automated 测试替代；它们与当前 B18 自动化 gap 分离，全部保持 `pending`，当前主要归属为 WP-08。它们是历史待验候选，不是 WP-08 永久且完整的最终清单：
 
@@ -331,11 +254,13 @@ B14.1 不是独立业务能力，不拥有独立 Browser 活动 ID，也不恢�
 
 WP-08 启动时必须依据 WP-10、WP-11、WP-12 的最终患者施测合同、标准触控设备和真实使用流程重新执行真实设备与人工候选的阶段 A/B/C。当前仍适用的项目保留原 ID；被新流程替代、与新增候选重复或已不可达的项目可以明确标记为 `superseded` 或 `retired`，但必须记录原因和替代证据；患者语音、具备触摸功能的电脑大屏、跨设备安全进入、医生接管、患者可读性等新增必要候选按最终合同纳入。不得静默删除、更换或合并历史 ID。WP-08 的完成标准是最终适用候选全部关闭，不是机械关闭当前 8 项；本次治理不改变这 8 项的当前数量、`pending` 状态、历史 ID 或既有 evidence。
 
-## 7. 后续维护规则
+## 6. 后续维护规则
 
-- 只有 active / pending 批次保留详细场景设计；批次完成后收缩为当前状态、证据资产、evidence commit 与持久合同摘要。
-- 逐轮命令、精确耗时、失败过程、旧编号全文、迁移表和完整合同表由 Git 历史承担，不搬入新文档。
+- active / pending 且会直接影响后续验收的场景可以保留当前范围、状态、必要场景设计与 Owner；场景完成后，不再长期维护逐轮 evidence、historical executable、evidence commit 或 aggregate count，历史由 Git 追溯。
+- 当前 test asset 由 current commit + discovery 判断；历史资产存在和历史通过不冒充 current executable / dynamic green。
+- 逐轮命令、精确耗时、失败过程、旧编号全文、迁移过程、历史 verifier / cleanup 和完整 evidence table 由 Git history 承担，不搬入新文档。
 - 只有影响性产品代码、接口、配置、测试基础设施或产品合同变化时，才按实际影响重新展开风险与证据设计；未变化事实复用现有精确证据。
 - Browser 活动场景的主证据、必要支持证据、适用 verifier 和 cleanup 均通过后才能关闭；静态存在核对不得冒充动态通过。
 - 数据库用途、fixture、verifier、cleanup、Stage 和后端定向命令以 backend testing playbook 为准。
-- testing playbook 与 roadmap 已同步：B18 补充验证闭合、自动化 `gap=0`，WP-03 已完成；Batch E 的 8 项保持 `pending` 并主要归属 WP-08。
+- 产品 / WP 状态由 Roadmap 维护；Testing Playbook 不自行启动或关闭工作包。
+- 当前任务实际验证由 task final report 记录，不累计成永久 historical ledger。
