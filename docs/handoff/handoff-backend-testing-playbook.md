@@ -4,7 +4,7 @@
 
 本文是 CogMemory AD backend test layers、真实 runner / command、Database Purpose、DB / process isolation、Browser backend APP / ADMIN role 与当前 backend test asset 事实的 Owner。通用验证候选生成、初始 / 增量 A/B/C、候选归属、完成治理与覆盖对账由 [Codex instruction spec](../codex-instruction-spec.md) §3.9 维护；本文不复制通用候选来源或完成合同。
 
-精确 databaseName、连接变量、env file 与运行模式映射由 [Backend Config Matrix](./handoff-backend-config-matrix.md) 维护；本文维护测试用途语义与运行门禁。产品范围、工作包状态和下一主线由 [Roadmap](./handoff-roadmap.md) 维护；前端测试、Browser evidence execution mode、UI / Agent-assisted / Human smoke，以及 Browser / UI evidence 与 Batch E 状态由 [Frontend Testing Playbook](./handoff-frontend-testing-playbook.md) 维护，本手册不保存对应阶段台账。
+精确 databaseName、连接变量、env file 与运行模式映射由 [Backend Config Matrix](./handoff-backend-config-matrix.md) 维护；本文维护测试用途语义与运行门禁。产品范围、工作包状态和下一主线由 [Roadmap](./handoff-roadmap.md) 维护；前端 / Browser / UI / Agent-assisted / Human evidence governance 由 [Frontend Testing Playbook](./handoff-frontend-testing-playbook.md) 维护，本手册不保存对应阶段台账。
 
 本文不复制 API、DTO、Service 或配置明细，也不保存逐轮执行日志、覆盖率流水或完整 spec inventory。
 

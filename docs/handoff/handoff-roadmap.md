@@ -5,7 +5,7 @@
 - 本次路线图重构的起始基线：`27a2e02e6fa14bbe7831a8db9397e8ae367aa408`。该 SHA 只用于追溯上次范围重构的起点，不表示当前 Git 基线。
 - 正式名称：智忆评——阿尔茨海默病认知评估与辅助诊断系统；CogMemory AD — Alzheimer’s Cognitive Assessment and Clinical Decision Support System。
 - 一期产品目标：**院内受监督临床试用闭环**。
-- 当前实现：医生侧临床工作底座已形成，WP-10 院内受监督 MMSE 患者施测闭环已完成；详细稳定合同见[受监督患者施测合同](./handoff-patient-administration-contract.md)，current / historical 测试证据见[前端验证手册](./handoff-frontend-testing-playbook.md)和[后端验证手册](./handoff-backend-testing-playbook.md)。
+- 当前实现：医生侧临床工作底座已形成，WP-10 院内受监督 MMSE 患者施测闭环已完成；详细稳定合同见[受监督患者施测合同](./handoff-patient-administration-contract.md)，当前测试治理与证据职责见[前端验证手册](./handoff-frontend-testing-playbook.md)和[后端验证手册](./handoff-backend-testing-playbook.md)，历史测试执行与证据由 Git 追溯。
 - 已完成工作包：WP-02、WP-03、WP-04、WP-10。
 - 一期已完成能力域：10 个，不因本次重新编组机械变化。
 - 一期正式剩余工作包：4 个，待确认 0 个；规模为 S 0 / M 2 / L 2；按 S=1、M=2、L=3 加权为 `0×1 + 2×2 + 2×3 = 10`。
@@ -23,7 +23,7 @@
 6. **认知域计算与安全展示**：基于确认评分快照计算认知域结果，采用完整题分重叠归因并保留非诊断边界（A6、A19，B9）。
 7. **临床报告生命周期**：规则化非 AI 草稿、受控编辑、提交确认、医生 / 管理员确认、不可逆锁定、来源冻结、归档、线性版本化更正及合法 V2+ replacement 生命周期已形成（A7、A20–A26，B10–B16）。
 8. **现有医生侧临床工作流底座**：认证、患者 / 访视、量表执行、证据采集、提交、评分复核、认知域、报告和版本化更正形成代码闭环；当前临床入口不等于统计型 Dashboard，统一临床运营职责编排仍归 WP-12（B1–B16）。
-9. **测试与质量保障**：后端 unit / 隔离 HTTP E2E 与前端静态 / Browser 验收体系已建立；精确测试数字、状态和 evidence commit 继续由两份 testing playbook 维护。
+9. **测试与质量保障**：后端 unit / 隔离 HTTP E2E 与前端静态 / Browser / Human 验收治理已建立；当前测试治理与证据职责由两份 Testing Playbook 维护，历史测试执行与 evidence 由 Git 追溯。
 10. **历史评估、报告版本与基础随访趋势**：患者历史分页与筛选、线性报告版本导航、指定历史报告只读详情、总分及认知域可比性和缺失 / 不可比语义已完成，不形成诊断概率或纵向临床结论（A27–A28、B17、WP-04）。
 
 ## 2. 一期产品目标与临床底线
@@ -74,7 +74,7 @@ same-device / cross-device、准备、逐题呈现、Evidence、播放、ASR、�
 
 ### 当前状态
 
-- WP-10 已完成；详细稳定合同见[受监督患者施测合同](./handoff-patient-administration-contract.md)，current / historical 测试证据见[前端验证手册](./handoff-frontend-testing-playbook.md)和[后端验证手册](./handoff-backend-testing-playbook.md)。
+- WP-10 已完成；详细稳定合同见[受监督患者施测合同](./handoff-patient-administration-contract.md)，当前测试治理与证据职责见[前端验证手册](./handoff-frontend-testing-playbook.md)和[后端验证手册](./handoff-backend-testing-playbook.md)，历史测试执行与证据由 Git 追溯。
 - WP-12 的访视维护窄切片已提前完成，但 WP-12 整体仍待开始、未完成。
 - 一期正式剩余工作包为 WP-11、WP-12、WP-08、WP-09，共 4 个。
 - 下一正式工作包为 WP-11，状态仍为待开始。
@@ -116,7 +116,7 @@ same-device / cross-device、准备、逐题呈现、Evidence、播放、ASR、�
 - 医护监督下的完整 MMSE 患者施测可以闭环完成。
 - 患者原始事实与正式 `ItemResponse` 严格分离，只有经临床复核并通过 A16 整体提交后才进入正式下游结果。
 - same-device / cross-device、安全恢复、必要 Evidence 与异常边界已有稳定合同。
-- 详细合同由[受监督患者施测合同](./handoff-patient-administration-contract.md)维护，current / historical 测试证据分别由[前端验证手册](./handoff-frontend-testing-playbook.md)和[后端验证手册](./handoff-backend-testing-playbook.md)维护。
+- 详细合同由[受监督患者施测合同](./handoff-patient-administration-contract.md)维护；当前测试治理与证据职责由[前端验证手册](./handoff-frontend-testing-playbook.md)和[后端验证手册](./handoff-backend-testing-playbook.md)维护，历史测试执行与证据由 Git 追溯。
 
 ### 4.3 WP-11：MoCA 多模态患者施测闭环
 
@@ -232,7 +232,7 @@ WP-05、WP-06、WP-07 不再是 WP-08 的一期前置；AI 失败降级和科研
 
 1. **Roadmap** 是一期范围、工作包状态、优先级、依赖、当前主线及高层目标 / 完成定义的唯一事实源；不维护完整业务合同、实现投影、commit 文件清单、API / Schema 明细或测试流水。范围变化仍须记录新增、延期、缩减、替代、取消或规模调整及原因，且不得重复计算；二期候选不得写成合同承诺或一期隐含前置。
 2. **Patient Administration Contract** 是患者施测详细稳定业务、安全、媒体、逐题、F2 / F3 边界和异常控制合同的 owner；Roadmap 只保留工作包所需的高层投影和链接，不复制详细规则。
-3. **Testing Playbooks** 是测试治理、current / historical evidence 和 current executable inventory 的 owner；它们不得自行启动或关闭 Roadmap 工作包，Roadmap 也不维护测试轮次、count、fixture、revision 或诊断流水。
+3. **Testing Playbooks** 是当前测试治理、证据职责及项目级特殊测试资产事实的 owner；当前具体测试资产以当前 commit 与实际 discovery 为准，historical execution、historical green、旧 evidence / executable 和 evidence commit 由 Git 追溯。Testing Playbooks 不得自行启动或关闭 Roadmap 工作包，Roadmap 也不维护测试轮次、count、fixture、revision 或诊断流水。
 4. **Maps / Snapshots / Decisions / Git** 各守其责：API / DTO / Service / Route / Component maps 维护当前实现投影，snapshots 维护当前实现高层摘要，decisions 维护历史决策及当时背景 / 原因，Git 维护开发过程和时间顺序的最终追溯。
 5. 项目级采用 `reference, don't restate`：非 owner 文档默认只保留自身职责所需的状态、高层摘要、依赖、引用或历史时间定界；owner 已完整保留事实时，删除 Roadmap 的重复副本属于 deduplication，不是 information loss。
 6. 工作包在 planning / development 阶段可以保留足够细节；正式 completed 后必须压缩为目标、高层交付摘要、高层完成定义及 owner 链接。Roadmap 的 current stage 只维护工作包状态、阻断和下一主线，不作为 release notes。
